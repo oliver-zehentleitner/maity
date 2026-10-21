@@ -5,6 +5,7 @@ README, for what Keep the Why actually is.
 <!-- keep-the-why:config -->
 - id: oliver-zehentleitner---maity---cli
 - canonical: https://github.com/oliver-zehentleitner/maity
+- dashboard-state: https://maity.dev/keep-the-why-dashboard/cli/state.json
 - root: cli
 - parent: ..
 - context: `context/`

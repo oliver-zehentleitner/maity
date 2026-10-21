@@ -8,8 +8,8 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is from the task brief
-**See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
 **Revisit when:** an agent has to join from a directory that is not a Git clone, or one clone has to carry two agent identities
+**See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
 
 `maity` keeps its state in `<git common dir>/maity/` — for an ordinary
 clone `.git/maity/` — with the directory at mode 0700 and two files at
@@ -18,8 +18,9 @@ clone `.git/maity/` — with the directory at mode 0700 and two files at
 identity, event cursor). Every worktree of one clone shares that one
 directory. Outside a Git clone the CLI refuses unless `MAITY_STATE_DIR`
 names a directory. The credential file is read only by the code that
-sends a request; no command prints from it, and a credential file
-readable by group or others is refused, not silently used.
+sends a request; no command prints from it. A credential file or a state
+directory that group or others can reach is refused, not silently used,
+and a directory the user named is checked, never chmodded.
 
 **Reason:** several agent profiles run on one machine under one shared
 home, each in its own clone, so anything keyed by the home directory

@@ -7,8 +7,8 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief
-**See:** https://github.com/oliver-zehentleitner/maity — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-21
 **Revisit when:** the hub's forge probe makes the agent-side check redundant, or agents routinely hit a refusal that is not a real mismatch
+**See:** https://github.com/oliver-zehentleitner/maity — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-21
 
 `maity report` reads the head commit from git, the remote head from
 `git ls-remote` on the branch's upstream, and the pull request from `gh`
