@@ -14,7 +14,10 @@ public site at maity.dev is `docs/index.html`, not this.
   `http://127.0.0.1:8070/?source=fixtures` (`HOST=` and `PORT=` override
   the address).
 - **From the hub:** the hub serves this directory at `/`, and the page
-  talks to `/api/v1/...` on the same origin.
+  talks to `/api/v1/...` on the same origin with the hub's HttpOnly
+  session cookie. Every request that is not GET or HEAD carries the
+  readable `maity_csrf` cookie's value as `X-CSRF-Token` (double submit);
+  a mismatch comes back as 403 `csrf_mismatch` and is shown as an error.
 
 ## Views
 

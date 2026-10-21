@@ -18,11 +18,12 @@ window.Maity = window.Maity || {};
   const source = chooseSource();
 
   class ApiError extends Error {
-    constructor(message, status, path) {
+    constructor(message, status, path, code) {
       super(message);
       this.name = "ApiError";
       this.status = status;
       this.path = path;
+      this.code = code || null;
     }
   }
 
@@ -126,12 +127,30 @@ window.Maity = window.Maity || {};
 
   // ---- API mode -----------------------------------------------------------
 
+  // Double-submit CSRF: the hub sets the readable cookie maity_csrf next to
+  // the HttpOnly session cookie; every request that is not GET or HEAD
+  // sends its value back as X-CSRF-Token. Without the cookie the header is
+  // left out and the hub answers 403 csrf_mismatch.
+  function csrfToken() {
+    for (const part of document.cookie.split(";")) {
+      const eq = part.indexOf("=");
+      if (eq > 0 && part.slice(0, eq).trim() === "maity_csrf") {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      }
+    }
+    return null;
+  }
+
   async function fromApi(method, path, body) {
     const init = {
       method,
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     };
+    if (method !== "GET" && method !== "HEAD") {
+      const token = csrfToken();
+      if (token) init.headers["X-CSRF-Token"] = token;
+    }
     if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
@@ -144,13 +163,18 @@ window.Maity = window.Maity || {};
     }
     if (!res.ok) {
       let detail = res.statusText;
+      let code = null;
       try {
         const data = await res.json();
-        if (data && data.error) detail = data.error.message || data.error;
+        if (data && data.error) {
+          code = data.error.code || null;
+          detail = data.error.message || data.error.code || detail;
+        }
       } catch (ignored) {
         // Not JSON; the status text is all there is.
       }
-      throw new ApiError(detail || ("HTTP " + res.status), res.status, path);
+      if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
+      throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code);
     }
     return res.status === 204 ? null : res.json();
   }
