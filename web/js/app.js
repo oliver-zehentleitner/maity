@@ -34,10 +34,17 @@ window.Maity = window.Maity || {};
 
   M.views = M.views || {};
 
+  // Counts and the open list are re-read on this interval (docs/api.md
+  // §5.1: /me after an answer and on an interval).
+  const POLL_MS = 15000;
+
+  const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
   function projectLink(slug, view, ...rest) {
     return "#/p/" + [slug, view].concat(rest).map(encodeURIComponent).join("/");
   }
 
+  // Throws URIError on a malformed escape; called inside render's try.
   function parseHash() {
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
@@ -53,12 +60,7 @@ window.Maity = window.Maity || {};
     const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
       h("strong", null, "Could not load" + where),
-      h("p", null, status + err.message),
-      M.api.source === "api"
-        ? h("p", null, "The page does not fall back to fixtures on its own. ",
-          h("a", { href: "?source=fixtures" + window.location.hash }, "Open with fixtures"),
-          " to look at sample data instead.")
-        : null);
+      h("p", null, status + err.message));
   }
 
   // The status line of a form: "Saving…", then nothing or the error.
@@ -260,11 +262,14 @@ window.Maity = window.Maity || {};
       projectLink,
       stateLabel: (state) => STATE_LABELS[state] || state,
       refresh: render,
+      markSeen: () => {},
+      every: (ms, fn) => { timers.push(window.setInterval(fn, ms)); },
       // After an answer: re-read /me for the switcher's counts.
       refreshCounts: async () => {
         const fresh = await M.api.get("/me");
         ctx.projects = fresh.projects;
         renderHeader(ctx, where.route);
+        ctx.markSeen();
       },
     };
     if (where.scope !== "project") return ctx;
@@ -288,14 +293,50 @@ window.Maity = window.Maity || {};
     return withMembers(ctx, members.items);
   }
 
+  // Timers belong to one render; the next render stops them.
+  let timers = [];
+  function stopTimers() {
+    timers.forEach((t) => window.clearInterval(t));
+    timers = [];
+  }
+
+  // Polls /me; when the open count of what is on screen changes, offers to
+  // reload the list instead of replacing it under the human's hands.
+  function pollCounts(ctx, where, main) {
+    const openNow = () => (where.scope === "all"
+      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
+      : (ctx.projects.find((p) => p.slug === ctx.slug) || {}).open_requests);
+    let seen = openNow();
+    const notice = h("div", { class: "notice", role: "status" });
+    main.insertBefore(notice, main.firstChild);
+    ctx.every(POLL_MS, async () => {
+      try {
+        await ctx.refreshCounts();
+        clear(notice);
+        const now = openNow();
+        if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
+          append(notice, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
+            h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
+        }
+      } catch (err) {
+        append(clear(notice), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
+      }
+    });
+    // A changed count is answered by reloading; an answer given here
+    // updates what counts as seen.
+    ctx.markSeen = () => { seen = openNow(); };
+  }
+
   let renderSeq = 0;
 
   async function render() {
     const seq = ++renderSeq;
-    const where = parseHash();
+    stopTimers();
     const main = document.getElementById("main");
+    let where = { scope: "unknown" };
     let ctx;
     try {
+      where = parseHash();
       try {
         await M.api.get("/auth/session");
       } catch (err) {
@@ -323,15 +364,17 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     renderHeader(ctx, where.route);
-    const root = h("section", { class: "view view-" + (where.scope === "all" ? "all" : where.route) });
+    const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
+    const known = where.scope === "all"
+      || (item && own(M.views, item.route) && !(item.admin && !ctx.canAdmin));
+    const root = h("section", { class: "view view-" + (where.scope === "all" ? "all" : (known ? where.route : "unknown")) });
     try {
-      const item = NAV.find((n) => n.route === where.route);
       if (where.scope === "all") {
         await M.views.inbox(ctx, root, []);
-      } else if (where.scope === "project" && M.views[where.route] && !(item && item.admin && !ctx.canAdmin)) {
-        await M.views[where.route](ctx, root, where.args);
+      } else if (known) {
+        await M.views[item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, "Unknown view. ", h("a", { href: "#/all" }, "Go to everything waiting for you.")));
+        append(root, h("p", null, "No such view. ", h("a", { href: "#/all" }, "Go to everything waiting for you.")));
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -339,9 +382,10 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
-    const label = where.scope === "all"
-      ? "All projects"
-      : (NAV.find((n) => n.route === where.route) || { label: "Maity" }).label + " · " + (ctx.project ? ctx.project.name : "");
+    pollCounts(ctx, where, main);
+    let label = "No such view";
+    if (where.scope === "all") label = "All projects";
+    else if (known) label = item.label + " · " + ctx.project.name;
     document.title = label + " · Maity";
   }
 
