@@ -2,7 +2,12 @@
   "items": [
     {
       "id": "req-0012",
-      "agent_id": "agt-b",
+      "asked_by": {
+        "profile_id": "agt-b",
+        "display_name": "Agent B",
+        "role": "developer",
+        "session_id": "ses-b-0003"
+      },
       "kind": "consent",
       "priority": "high",
       "created_at": "2026-10-21T13:20:00Z",
@@ -13,20 +18,48 @@
         "summary": "The credential table needs a hash before the first join can be tested end to end.",
         "tried": "Prototyped both: SHA-256 with a server pepper verifies in microseconds; Argon2id with the OWASP minimum takes about 40 ms per request on the VM.",
         "options": [
-          { "id": "sha", "label": "SHA-256 + pepper", "detail": "Credentials are long random tokens, so a slow hash adds little; fastest per request." },
-          { "id": "argon", "label": "Argon2id", "detail": "Defence in depth if a token generator is ever weak; 40 ms on every signed call." }
+          {
+            "id": "sha",
+            "label": "SHA-256 + pepper",
+            "detail": "Credentials are long random tokens, so a slow hash adds little; fastest per request."
+          },
+          {
+            "id": "argon",
+            "label": "Argon2id",
+            "detail": "Defence in depth if a token generator is ever weak; 40 ms on every signed call."
+          }
         ]
       },
       "replies": [
-        { "id": "sha", "label": "SHA-256 + pepper" },
-        { "id": "argon", "label": "Argon2id" },
-        { "id": "later", "label": "Later" }
+        {
+          "id": "sha",
+          "label": "SHA-256 + pepper"
+        },
+        {
+          "id": "argon",
+          "label": "Argon2id"
+        },
+        {
+          "id": "later",
+          "label": "Later"
+        }
       ],
       "harness_flag": null
     },
     {
       "id": "req-0011",
-      "agent_id": "agt-a",
+      "asked_by": {
+        "profile_id": "agt-a",
+        "display_name": "Agent A",
+        "role": "lead",
+        "session_id": "ses-a-0007"
+      },
+      "on_behalf_of": {
+        "profile_id": "agt-r",
+        "display_name": "Reviewer",
+        "role": "reviewer",
+        "session_id": null
+      },
       "kind": "decision",
       "priority": "normal",
       "created_at": "2026-10-21T12:48:00Z",
@@ -39,16 +72,33 @@
         "options": []
       },
       "replies": [
-        { "id": "go", "label": "Go" },
-        { "id": "no", "label": "No" },
-        { "id": "later", "label": "Later" },
-        { "id": "discuss", "label": "Discuss" }
+        {
+          "id": "go",
+          "label": "Go"
+        },
+        {
+          "id": "no",
+          "label": "No"
+        },
+        {
+          "id": "later",
+          "label": "Later"
+        },
+        {
+          "id": "discuss",
+          "label": "Discuss"
+        }
       ],
       "harness_flag": "The executing session's harness requires the human for merges; a go here is recorded, the merge itself happens in that session."
     },
     {
       "id": "req-0010",
-      "agent_id": "agt-c",
+      "asked_by": {
+        "profile_id": "agt-c",
+        "display_name": "Agent C",
+        "role": "developer",
+        "session_id": null
+      },
       "kind": "question",
       "priority": "low",
       "created_at": "2026-10-21T11:30:00Z",
@@ -59,19 +109,38 @@
         "summary": "The join line in context/join.md uses `maity join`.",
         "tried": "Checked PyPI and Debian: both names are free.",
         "options": [
-          { "id": "maity", "label": "maity", "detail": "Matches the join line already documented." },
-          { "id": "mty", "label": "mty", "detail": "Shorter to type." }
+          {
+            "id": "maity",
+            "label": "maity",
+            "detail": "Matches the join line already documented."
+          },
+          {
+            "id": "mty",
+            "label": "mty",
+            "detail": "Shorter to type."
+          }
         ]
       },
       "replies": [
-        { "id": "maity", "label": "maity" },
-        { "id": "mty", "label": "mty" }
+        {
+          "id": "maity",
+          "label": "maity"
+        },
+        {
+          "id": "mty",
+          "label": "mty"
+        }
       ],
       "harness_flag": null
     },
     {
       "id": "req-0009",
-      "agent_id": "agt-d",
+      "asked_by": {
+        "profile_id": "agt-d",
+        "display_name": "Agent D",
+        "role": "developer",
+        "session_id": "ses-d-0001"
+      },
       "kind": "review",
       "priority": "normal",
       "created_at": "2026-10-21T10:05:00Z",
@@ -84,10 +153,22 @@
         "options": []
       },
       "replies": [
-        { "id": "go", "label": "Go" },
-        { "id": "no", "label": "No" }
+        {
+          "id": "go",
+          "label": "Go"
+        },
+        {
+          "id": "no",
+          "label": "No"
+        }
       ],
-      "answer": { "reply_id": "go", "text": null, "by": "hum-maintainer", "on_behalf_of": null, "at": "2026-10-21T10:20:00Z" },
+      "answer": {
+        "reply_id": "go",
+        "text": null,
+        "by": "hum-maintainer",
+        "on_behalf_of": null,
+        "at": "2026-10-21T10:20:00Z"
+      },
       "harness_flag": null
     }
   ]

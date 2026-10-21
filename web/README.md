@@ -79,7 +79,7 @@ answer the views expect:
 | Endpoint (below `/api/v1`) | Fixture |
 |---|---|
 | `GET /me` (memberships with `open_requests`) | `me.json`; the counts are derived from the request fixtures |
-| `GET /requests?scope=all` | derived: the open requests of every project, each with `project` |
+| `GET /requests?scope=all` | derived: the open requests of every project, each with `project` `{slug, name}` |
 | `GET /projects/{slug}` | `{slug}/project.json` |
 | `GET /projects/{slug}/members` | `{slug}/members.json` |
 | `GET /projects/{slug}/requests` | `{slug}/requests.json` |
@@ -89,6 +89,10 @@ answer the views expect:
 | `POST /projects/{slug}/credentials/{id}/revoke` | updates `{slug}/credentials.json` |
 | `GET /projects/{slug}/conversations/{agent-id}/messages` | `{slug}/conversations.json`, keyed by agent |
 | `POST /projects/{slug}/conversations/{agent-id}/messages` | updates `{slug}/conversations.json` |
+
+Every request carries who asked inline (`asked_by`, and `on_behalf_of`
+where it was raised for someone else: `{profile_id, display_name, role,
+session_id}`), so the cross-project inbox renders from the requests alone.
 
 These are a proposal until `docs/api.md` exists; the two get reconciled
 then. Because a page loaded from `file://` cannot `fetch()` a local

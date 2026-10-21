@@ -87,7 +87,7 @@ window.Maity = window.Maity || {};
     ["GET", /^\/requests\?scope=all$/, () => ({
       items: myProjects().flatMap((p) => file(p.slug, "requests.json", "").items
         .filter((r) => r.status === "open")
-        .map((r) => Object.assign({ project: p.slug }, r))),
+        .map((r) => Object.assign({ project: { slug: p.slug, name: p.name } }, r))),
     })],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => file(m[1], "project.json", path)],
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path) => file(m[1], "requests.json", path)],

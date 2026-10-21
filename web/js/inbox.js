@@ -15,8 +15,17 @@ window.Maity = window.Maity || {};
   // is open. Not persisted.
   const ui = { sort: "priority", show: "open", current: null };
 
-  // An entry is addressed by project and id: ids are unique per project only.
-  const keyOf = (req) => req.project + "/" + req.id;
+  // An entry is addressed by project and id: ids are unique per project
+  // only. req.slug is set on load; the API gives a cross-project item its
+  // project as {slug, name} and a per-project item none.
+  const keyOf = (req) => req.slug + "/" + req.id;
+
+  // Who asked, from the request itself: asked_by and, where the request was
+  // raised for someone else, on_behalf_of.
+  function asker(req) {
+    const by = req.asked_by ? req.asked_by.display_name : "—";
+    return req.on_behalf_of ? by + " for " + req.on_behalf_of.display_name : by;
+  }
 
   function comparator(names) {
     const priority = (a, b) => (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
@@ -40,7 +49,7 @@ window.Maity = window.Maity || {};
   }
 
   function entrySummary(ctx, req, names, expanded, onToggle) {
-    const project = ctx.scope === "all" ? ctx.projects.find((p) => p.slug === req.project) : null;
+    const project = ctx.scope === "all" ? ctx.projects.find((p) => p.slug === req.slug) : null;
     return h("button", {
       class: "entry-head",
       type: "button",
@@ -50,11 +59,11 @@ window.Maity = window.Maity || {};
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, req.kind),
     project
-      ? h("span", { class: "project-label" }, project.name,
+      ? h("span", { class: "project-label" }, names.project(req),
         h("span", { class: "state state-" + project.state }, ctx.stateLabel(project.state)))
       : null,
     h("span", { class: "title" }, req.title),
-    h("span", { class: "meta" }, names.agent(req) + " · " + formatAgo(req.created_at)));
+    h("span", { class: "meta" }, asker(req) + " · " + formatAgo(req.created_at)));
   }
 
   function entryBody(ctx, req, names, tasksById, onAnswer) {
@@ -64,12 +73,18 @@ window.Maity = window.Maity || {};
 
     append(body, h("dl", { class: "facts" },
       ctx.scope === "all"
-        ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.project, "inbox") }, names.project(req)))]
+        ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
-      h("dt", null, "Agent"), h("dd", null, names.agent(req)),
+      h("dt", null, "Asked by"), h("dd", null, req.asked_by
+        ? req.asked_by.display_name + " · " + req.asked_by.role
+          + (req.asked_by.session_id ? " · session " + req.asked_by.session_id : "")
+        : "—"),
+      req.on_behalf_of
+        ? [h("dt", null, "On behalf of"), h("dd", null, req.on_behalf_of.display_name + " · " + req.on_behalf_of.role)]
+        : null,
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
       req.task_id
-        ? [h("dt", null, "Task"), h("dd", null, h("a", { href: ctx.projectLink(req.project, "board") },
+        ? [h("dt", null, "Task"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "board") },
           req.task_id + (task ? " — " + task.title : "")))]
         : null));
 
@@ -88,7 +103,7 @@ window.Maity = window.Maity || {};
       append(body, h("p", { class: "answered" },
         "Answered: " + answerLabel(req)
         + (req.answer && req.answer.text ? " — “" + req.answer.text + "”" : "")
-        + (req.answer ? " · " + names.member(req.project, req.answer.by) + " · " + formatTime(req.answer.at) : "")));
+        + (req.answer ? " · " + names.member(req.answer.by) + " · " + formatTime(req.answer.at) : "")));
       return body;
     }
 
@@ -103,7 +118,7 @@ window.Maity = window.Maity || {};
       });
     };
 
-    const textId = "reply-" + req.project + "-" + req.id;
+    const textId = "reply-" + req.slug + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
     append(body,
       h("div", { class: "replies" },
@@ -123,15 +138,17 @@ window.Maity = window.Maity || {};
         }, "Send")),
       status);
 
-    const agent = names.memberObj(req.project, req.agent_id);
-    if (agent && agent.owner_id === ctx.me.id) {
+    // Ownership is known inside a project only; across projects the link to
+    // the project's inbox leads there.
+    const agent = ctx.scope === "project" && req.asked_by ? ctx.memberById[req.asked_by.profile_id] : null;
+    if (agent && agent.kind === "agent" && agent.owner_id === ctx.me.id) {
       append(body, h("p", { class: "chat-link" },
-        h("a", { href: ctx.projectLink(req.project, "chat", agent.id) }, "Chat with " + agent.display_name)));
+        h("a", { href: ctx.link("chat", agent.id) }, "Chat with " + agent.display_name)));
     }
     return body;
   }
 
-  // Requests, members per project and tasks for the scope being shown.
+  // Requests, and in a project its tasks, for the scope being shown.
   async function load(ctx) {
     if (ctx.scope === "project") {
       const [requests, tasks] = await Promise.all([
@@ -140,27 +157,21 @@ window.Maity = window.Maity || {};
       ]);
       const tasksById = {};
       tasks.items.forEach((t) => { tasksById[t.id] = t; });
-      requests.items.forEach((r) => { r.project = ctx.slug; });
-      return { items: requests.items, members: { [ctx.slug]: ctx.memberById }, tasksById };
+      requests.items.forEach((r) => { r.slug = ctx.slug; });
+      return { items: requests.items, tasksById };
     }
     const requests = await M.api.get("/requests?scope=all");
-    const slugs = [...new Set(requests.items.map((r) => r.project))];
-    const lists = await Promise.all(slugs.map((s) => M.api.get("/projects/" + encodeURIComponent(s) + "/members")));
-    const members = {};
-    slugs.forEach((s, i) => {
-      members[s] = {};
-      lists[i].items.forEach((m) => { members[s][m.id] = m; });
-    });
-    return { items: requests.items, members, tasksById: {} };
+    requests.items.forEach((r) => { r.slug = r.project.slug; });
+    return { items: requests.items, tasksById: {} };
   }
 
   M.views.inbox = async function (ctx, root) {
     const data = await load(ctx);
     const names = {
-      memberObj: (slug, id) => (data.members[slug] || {})[id] || null,
-      member: (slug, id) => { const m = names.memberObj(slug, id); return m ? m.display_name : id || "—"; },
-      agent: (req) => names.member(req.project, req.agent_id),
-      project: (req) => { const p = ctx.projects.find((x) => x.slug === req.project); return p ? p.name : req.project; },
+      member: (id) => (ctx.nameOf ? ctx.nameOf(id) : id || "—"),
+      agent: (req) => asker(req),
+      project: (req) => (req.project && req.project.name)
+        || (ctx.projects.find((x) => x.slug === req.slug) || { name: req.slug }).name,
     };
     const sorts = ctx.scope === "all" ? ["priority", "date", "agent", "project"] : ["priority", "date", "agent"];
     if (!sorts.includes(ui.sort)) ui.sort = "priority";
@@ -192,14 +203,15 @@ window.Maity = window.Maity || {};
     }
 
     async function answer(req, payload) {
-      const updated = await M.api.post("/projects/" + encodeURIComponent(req.project)
+      const updated = await M.api.post("/projects/" + encodeURIComponent(req.slug)
         + "/requests/" + encodeURIComponent(req.id) + "/answer", payload);
-      updated.project = req.project;
+      updated.slug = req.slug;
+      if (req.project) updated.project = req.project;
       data.items[data.items.indexOf(req)] = updated;
       // Move on to the next open entry in the current order.
       const open = data.items.filter((r) => r.status === "open").sort(comparator(names));
       ui.current = open.length ? keyOf(open[0]) : null;
-      ctx.adjustOpen(req.project, -1);
+      ctx.adjustOpen(req.slug, -1);
       draw();
     }
 

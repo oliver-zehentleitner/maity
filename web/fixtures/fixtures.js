@@ -223,7 +223,12 @@ window.MAITY_FIXTURES = {
   "maity/requests.json": {
     "items": [
       {
-        "agent_id": "agt-b",
+        "asked_by": {
+          "display_name": "Agent B",
+          "profile_id": "agt-b",
+          "role": "developer",
+          "session_id": "ses-b-0003"
+        },
         "context": {
           "options": [
             {
@@ -264,7 +269,12 @@ window.MAITY_FIXTURES = {
         "title": "Store hashed session credentials with Argon2id instead of SHA-256?"
       },
       {
-        "agent_id": "agt-a",
+        "asked_by": {
+          "display_name": "Agent A",
+          "profile_id": "agt-a",
+          "role": "lead",
+          "session_id": "ses-a-0007"
+        },
         "context": {
           "options": [],
           "summary": "Records that credentials never enter a model's context.",
@@ -274,6 +284,12 @@ window.MAITY_FIXTURES = {
         "harness_flag": "The executing session's harness requires the human for merges; a go here is recorded, the merge itself happens in that session.",
         "id": "req-0011",
         "kind": "decision",
+        "on_behalf_of": {
+          "display_name": "Reviewer",
+          "profile_id": "agt-r",
+          "role": "reviewer",
+          "session_id": null
+        },
         "priority": "normal",
         "replies": [
           {
@@ -298,7 +314,12 @@ window.MAITY_FIXTURES = {
         "title": "Merge PR #2 (context/security.md)?"
       },
       {
-        "agent_id": "agt-c",
+        "asked_by": {
+          "display_name": "Agent C",
+          "profile_id": "agt-c",
+          "role": "developer",
+          "session_id": null
+        },
         "context": {
           "options": [
             {
@@ -335,13 +356,18 @@ window.MAITY_FIXTURES = {
         "title": "Name of the CLI binary: `maity` or `mty`?"
       },
       {
-        "agent_id": "agt-d",
         "answer": {
           "at": "2026-10-21T10:20:00Z",
           "by": "hum-maintainer",
           "on_behalf_of": null,
           "reply_id": "go",
           "text": null
+        },
+        "asked_by": {
+          "display_name": "Agent D",
+          "profile_id": "agt-d",
+          "role": "developer",
+          "session_id": "ses-d-0001"
         },
         "context": {
           "options": [],
@@ -595,7 +621,12 @@ window.MAITY_FIXTURES = {
   "sample/requests.json": {
     "items": [
       {
-        "agent_id": "agt-s1",
+        "asked_by": {
+          "display_name": "Shop Dev",
+          "profile_id": "agt-s1",
+          "role": "developer",
+          "session_id": "ses-s1-0042"
+        },
         "context": {
           "options": [
             {
