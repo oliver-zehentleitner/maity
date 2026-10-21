@@ -315,3 +315,39 @@ def test_the_exchange_records_the_client_and_needs_it(
     listed = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
     assert listed[0]["client"] == "curl"
     assert listed[0]["resumed_at"] is None  # "never resumed"
+
+
+def test_concurrent_wrong_codes_burn_after_exactly_three(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    created = flow.join(owner, "maity")
+    clients = [make_client(peer=f"203.0.113.{i + 20}") for i in range(8)]
+
+    def guess(client: object) -> str:
+        response = flow.exchange(client, {**created, "code": "ZZZZ-ZZZZ-ZZZZ"})  # type: ignore[arg-type]
+        return str(response.headers["Maity-Error"])
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = list(pool.map(guess, clients))
+    assert outcomes.count("code_invalid") == 3  # exactly three codes were compared
+    assert set(outcomes) <= {"code_invalid", "not_found"}
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.join_link).where(t.join_link.c.id == created["id"])).one()
+    assert (row.failed_attempts, row.burned_at is not None) == (3, True)
+    assert flow.exchange(make_client(), created).headers["Maity-Error"] == "not_found"
+
+
+@pytest.mark.parametrize(
+    "area", ["hub/`x", "a\n\n## Injected", "[x](https://evil.example)", "../etc", "a/../b", ""]
+)
+def test_areas_are_plain_paths(owner: flow.Human, area: str) -> None:
+    response = owner.post(
+        "/projects/maity/joins", {"agent": {"handle": "aa", "display_name": "A"}, "areas": [area]}
+    )
+    assert response.json()["error"]["details"]["fields"] == {"areas": "invalid_path"}
+
+
+def test_ordinary_areas_are_fine(owner: flow.Human) -> None:
+    flow.join(owner, "maity", areas=["/", "hub/", "context/", "docs/api.md", "web/js/app.js"])

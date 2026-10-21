@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -12,7 +13,7 @@ from sqlalchemy import Connection, case, select, update
 
 from maity_hub import clock, idempotency, rules
 from maity_hub import tables as t
-from maity_hub.access import Membership, member_row, membership
+from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke
 from maity_hub.deps import AnyCaller, engine_of
@@ -25,6 +26,8 @@ from maity_hub.views import credential_view, member_view
 router = APIRouter()
 
 CAPABILITIES = ("tag",)
+# A repository path; nothing that could leave a code span in the join page.
+AREA = re.compile(r"[A-Za-z0-9._/-]{1,255}")
 REVOKED_LISTED = timedelta(days=30)
 
 
@@ -83,7 +86,7 @@ def validate_assignment(
         except ApiError:
             errors["reports_to"] = "not_a_member"
     if areas is not None:
-        if any(not a or len(a) > 255 or a.startswith("..") for a in areas):
+        if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
             errors["areas"] = "invalid_path"
         values["areas"] = list(dict.fromkeys(areas))
     if capabilities is not None:
@@ -188,6 +191,9 @@ def patch_member(
                     subject=("member", member_id),
                 )
         if "paused" in given:
+            if target.agent_id is None:
+                # A human's absence is the project's `absence` (§6.1, §5.3).
+                raise invalid({"paused": "agents_only"}, "paused is for agent members")
             set_paused(conn, mine, target, body.paused.reason if body.paused else None, caller)
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
@@ -231,7 +237,11 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
-        target = member_row(conn, mine.project.id, member_id)
+        target = member_row_or_removed(conn, mine.project.id, member_id)
+        if target.active is None:  # removed already: DELETE is idempotent (§6.2)
+            return idempotency.Outcome(
+                200, "member", str(target.id), load_member(conn, str(target.id))
+            )
         if target.role == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
         now = clock.now()
@@ -301,7 +311,7 @@ def list_credentials(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        target = member_row(conn, mine.project.id, member_id)
+        target = member_row_or_removed(conn, mine.project.id, member_id)
         _may_manage_credentials(conn, mine, caller, target)
         since = clock.now() - REVOKED_LISTED
         rows = conn.execute(

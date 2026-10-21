@@ -32,7 +32,7 @@ from maity_hub.auth import credentials
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.events import Actor, emit
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import CROCKFORD, new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
 from maity_hub.ratelimit import Limiter
@@ -370,16 +370,34 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
+            # Take an attempt slot before comparing: one conditional UPDATE, so
+            # concurrent guesses cannot all read the same count (a lost update
+            # would let more than three codes be tried, or unburn a join).
+            now = clock.now()
+            slot = conn.execute(
+                update(t.join_link)
+                .where(
+                    t.join_link.c.id == row.id,
+                    t.join_link.c.failed_attempts < WRONG_CODES_BEFORE_BURN,
+                    t.join_link.c.used_at.is_(None),
+                    t.join_link.c.burned_at.is_(None),
+                    t.join_link.c.revoked_at.is_(None),
+                    t.join_link.c.expires_at > now,
+                )
+                .values(failed_attempts=t.join_link.c.failed_attempts + 1)
+            ).rowcount
+            if slot != 1:
+                raise not_found()
             if secrets.compare_digest(_hash(normalise_code(body.code)), row.code_hash):
                 return _consume(conn, row, body.client)
-            attempts = row.failed_attempts + 1
             conn.execute(
                 update(t.join_link)
-                .where(t.join_link.c.id == row.id)
-                .values(
-                    failed_attempts=attempts,
-                    burned_at=clock.now() if attempts >= WRONG_CODES_BEFORE_BURN else None,
+                .where(
+                    t.join_link.c.id == row.id,
+                    t.join_link.c.failed_attempts >= WRONG_CODES_BEFORE_BURN,
+                    t.join_link.c.burned_at.is_(None),
                 )
+                .values(burned_at=now)
             )
         return None
 
@@ -401,6 +419,9 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
 
 
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str]:
+    # Serialise with every other write to the project: two first exchanges for
+    # one new agent must not both insert its membership.
+    lock_project(conn, row.project_id)
     now = clock.now()
     consumed = conn.execute(
         update(t.join_link)
