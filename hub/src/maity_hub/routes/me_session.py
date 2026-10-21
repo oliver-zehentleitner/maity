@@ -52,6 +52,15 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("GET", "/projects/{slug}/rules", "project:read"),
     ("GET", "/projects/{slug}/members", "project:read"),
     ("GET", "/projects/{slug}/members/{id}", "project:read"),
+    ("GET", "/projects/{slug}/tasks", "project:read"),
+    ("GET", "/projects/{slug}/tasks/{id}", "project:read"),
+    ("POST", "/projects/{slug}/tasks", "tasks:write"),
+    ("PATCH", "/projects/{slug}/tasks/{id}", "tasks:write"),
+    ("POST", "/projects/{slug}/tasks/{id}/claim", "tasks:write"),
+    ("POST", "/projects/{slug}/tasks/{id}/release", "tasks:write"),
+    ("POST", "/projects/{slug}/tasks/{id}/checkpoint", "tasks:write"),
+    ("POST", "/projects/{slug}/tasks/{id}/report", "tasks:write"),
+    ("POST", "/projects/{slug}/tasks/{id}/assign", "tasks:admin"),
 ]
 
 
@@ -292,7 +301,9 @@ def operations(project: Any, role: str) -> list[str]:
     for method, path, scope in OPERATIONS:
         if scope is not None and not has_scope(role, "agent", scope):
             continue
-        if project.state in CLOSED_STATES and path.endswith("/claim"):
+        if project.state in CLOSED_STATES and (
+            path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
+        ):
             continue
         allowed.append(f"{method} {path.replace('{slug}', project.slug)}")
     return allowed
