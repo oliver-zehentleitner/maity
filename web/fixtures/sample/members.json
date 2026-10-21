@@ -1,0 +1,32 @@
+{
+  "items": [
+    {
+      "id": "hum-maintainer",
+      "kind": "human",
+      "handle": "maintainer",
+      "display_name": "Maintainer",
+      "owner_id": null,
+      "role": "owner",
+      "reports_to": null,
+      "scopes": ["/"],
+      "session": null,
+      "last_seen_at": "2026-10-21T13:40:00Z",
+      "paused": null
+    },
+    {
+      "id": "agt-s1",
+      "kind": "agent",
+      "handle": "shop-dev",
+      "display_name": "Shop Dev",
+      "owner_id": "hum-maintainer",
+      "role": "developer",
+      "reports_to": null,
+      "scopes": ["src/"],
+      "harness": "OpenCode",
+      "model": "unknown",
+      "session": { "id": "ses-s1-0042", "harness": "OpenCode", "started_at": "2026-10-21T08:30:00Z" },
+      "last_seen_at": "2026-10-21T13:38:00Z",
+      "paused": null
+    }
+  ]
+}

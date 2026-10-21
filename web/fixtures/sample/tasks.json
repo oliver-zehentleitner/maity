@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "tsk-0021",
+      "kind": "task",
+      "title": "Checkout rounding",
+      "status": "review",
+      "scope": "src/",
+      "claim": { "holder": "agt-s1", "since": "2026-10-21T09:00:00Z", "lease_until": "2026-10-21T17:00:00Z" },
+      "depends_on": []
+    }
+  ]
+}

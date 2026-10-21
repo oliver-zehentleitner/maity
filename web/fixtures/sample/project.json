@@ -1,0 +1,11 @@
+{
+  "slug": "sample",
+  "name": "Sample shop",
+  "state": "freeze",
+  "state_note": "Release 2.3 frozen; fixes only after the tag.",
+  "state_changed_at": "2026-10-20T16:00:00Z",
+  "org_model": "autonomous-pool",
+  "repository": "https://example.org/sample-shop",
+  "keep_the_why": false,
+  "absence": null
+}

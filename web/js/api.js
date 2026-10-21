@@ -51,20 +51,48 @@ window.Maity = window.Maity || {};
     return prefix + "-local-" + counter;
   }
 
-  function keyed(file, key, path) {
-    const entry = fixtures()[file][key];
+  // The fixture of one project: fixtures/<slug>/<name>.json.
+  function file(slug, name, path) {
+    const data = fixtures()[slug + "/" + name];
+    if (!data) throw new ApiError("Not found", 404, path);
+    return data;
+  }
+
+  function keyed(slug, name, key, path) {
+    const entry = file(slug, name, path)[key];
     if (!entry) throw new ApiError("Not found", 404, path);
     return entry;
   }
 
+  function myProjects() {
+    return fixtures()["me.json"].projects;
+  }
+
+  function openCount(slug) {
+    return fixtures()[slug + "/requests.json"].items.filter((r) => r.status === "open").length;
+  }
+
   // [method, pattern, handler(match, body, path)]. One row per endpoint the
-  // views use; the patterns are the paths below /api/v1.
+  // views use; the patterns are the paths below /api/v1, query included.
   const routes = [
-    ["GET", /^\/me$/, () => fixtures()["me.json"]],
-    ["GET", /^\/projects\/([^/]+)$/, () => fixtures()["project.json"]],
-    ["GET", /^\/projects\/([^/]+)\/requests$/, () => fixtures()["requests.json"]],
+    // open_requests is derived from the request fixtures, so that answers
+    // given in this tab show in the counts.
+    ["GET", /^\/me$/, () => {
+      const me = fixtures()["me.json"];
+      me.projects.forEach((p) => { p.open_requests = openCount(p.slug); });
+      return me;
+    }],
+    // Cross-project inbox: every open request waiting for this human, each
+    // labelled with its project.
+    ["GET", /^\/requests\?scope=all$/, () => ({
+      items: myProjects().flatMap((p) => file(p.slug, "requests.json", "").items
+        .filter((r) => r.status === "open")
+        .map((r) => Object.assign({ project: p.slug }, r))),
+    })],
+    ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => file(m[1], "project.json", path)],
+    ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path) => file(m[1], "requests.json", path)],
     ["POST", /^\/projects\/([^/]+)\/requests\/([^/]+)\/answer$/, (m, body, path) => {
-      const req = fixtures()["requests.json"].items.find((r) => r.id === m[2]);
+      const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
       if (!req) throw new ApiError("Not found", 404, path);
       if (req.status !== "open") throw new ApiError("Request is not open", 409, path);
       req.status = body.talk ? "talk" : (body.reply_id === "later" ? "deferred" : "answered");
@@ -78,12 +106,12 @@ window.Maity = window.Maity || {};
       };
       return req;
     }],
-    ["GET", /^\/projects\/([^/]+)\/tasks$/, () => fixtures()["tasks.json"]],
-    ["GET", /^\/projects\/([^/]+)\/members$/, () => fixtures()["members.json"]],
+    ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => file(m[1], "tasks.json", path)],
+    ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => file(m[1], "members.json", path)],
     ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/credentials$/,
-      (m, body, path) => keyed("credentials.json", m[2], path)],
+      (m, body, path) => keyed(m[1], "credentials.json", m[2], path)],
     ["POST", /^\/projects\/([^/]+)\/credentials\/([^/]+)\/revoke$/, (m, body, path) => {
-      const all = fixtures()["credentials.json"];
+      const all = file(m[1], "credentials.json", path);
       for (const member of Object.keys(all)) {
         const list = all[member].items;
         const i = list.findIndex((c) => c.id === m[2]);
@@ -96,9 +124,9 @@ window.Maity = window.Maity || {};
       throw new ApiError("Not found", 404, path);
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/,
-      (m, body, path) => keyed("conversations.json", m[2], path)],
+      (m, body, path) => keyed(m[1], "conversations.json", m[2], path)],
     ["POST", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path) => {
-      const conv = keyed("conversations.json", m[2], path);
+      const conv = keyed(m[1], "conversations.json", m[2], path);
       const msg = {
         id: localId("msg"),
         from: fixtures()["me.json"].member.id,

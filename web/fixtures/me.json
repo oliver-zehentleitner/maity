@@ -6,6 +6,7 @@
     "display_name": "Maintainer"
   },
   "projects": [
-    { "slug": "maity", "name": "Maity", "state": "build" }
+    { "slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3 },
+    { "slug": "sample", "name": "Sample shop", "state": "freeze", "role": "owner", "open_requests": 1 }
   ]
 }
