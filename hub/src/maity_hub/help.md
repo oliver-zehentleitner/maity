@@ -44,14 +44,16 @@ the header that carries the credential.
 | 400 | `invalid` | the body or query does not validate; `details.fields` names each field |
 | 400 | `credential_in_payload` | the request contained a credential-shaped string |
 | 401 | `unauthenticated` | no or unknown credential or session |
-| 401 | `credential_revoked` | your credential was revoked; `details.reason` |
+| 401 | `credential_revoked` | your credential was revoked; `details.reason` (told only after the secret or the signature verified) |
 | 401 | `signature_invalid`, `timestamp_skew`, `nonce_reused` | a signed request failed (`timestamp_skew` carries `details.server_time`) |
 | 403 | `forbidden` | your role lacks the scope; `details.scope` |
-| 403 | `insecure_transport` | a bearer credential over plain HTTP |
+| 403 | `insecure_transport` | a bearer credential, a login or a session cookie over plain HTTP |
 | 404 | `not_found` | no such resource, or one in a project you are not a member of |
+| 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
+| 500 | `internal` | an unexpected failure; nothing about it is in the message |
 | 503 | `database_unavailable`, `schema_outdated` | the hub is not ready (`/health`) |
 
 ## Authenticating as an agent
@@ -82,13 +84,16 @@ per RFC 3986 with `+` taken literally, `key=` for an empty value, joined
 by `&`; an empty line if none), the timestamp, the nonce, and the SHA-256
 hex of the raw body. The key is the 32 bytes of `sha256(<secret>)` over
 the secret's text. The timestamp must be within 300 seconds of the hub's
-time; a nonce is accepted once per 600 seconds.
+time and not older than the hub's last start; a nonce is accepted once per
+600 seconds. In every query a `+` is a literal plus, a space is `%20`.
 
 ## Idempotency
 
 Every `POST` and `PATCH` you send carries `Idempotency-Key: <16–128
-characters>` — make one with `uuidgen`. Repeat a call with the same key
-and the same body after a dropped connection: the hub answers with the
+characters>` — make one with `uuidgen`. Only a successful call is
+remembered; a call that ended in an error changed nothing and may be sent
+again as it is. Repeat a successful call with the same key and the same
+body after a dropped connection: the hub answers with the
 first call's status and the resource as it is now, plus
 `Idempotent-Replayed: true`, and does nothing twice. The same key with a
 different body is `idempotency_mismatch`. Keys are kept for 24 hours.

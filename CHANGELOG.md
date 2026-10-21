@@ -51,4 +51,5 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   TLS and HMAC-signed requests with a nonce window; `Idempotency-Key`;
   `MAITY_TRUSTED_PROXIES` and `MAITY_ALLOW_PLAIN_HTTP`; `GET /me` with open
   requests per project; `maity-hub owner create`; `/health` errors as the
-  envelope (`database_unavailable`, `schema_outdated`).
+  envelope (`database_unavailable`, `schema_outdated`); `500 internal` in the
+  envelope; the hub's own request log without query strings or join tokens.
