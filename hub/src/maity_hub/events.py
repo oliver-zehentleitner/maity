@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -143,9 +144,14 @@ SEE_ALL_ROLES = ("owner", "admin")
 def readable_by(row: Any, membership: Any, principal: str) -> bool:
     """§8.2: audience `all`, `member:<id>`, `role:<role>`, or one's own; owners and
     admins read every event of the project."""
-    if membership.role in SEE_ALL_ROLES or row.actor_membership == membership.id:
-        return True
     audience = row.audience or []
+    if row.actor_membership == membership.id:
+        return True
+    if row.conversation_id is not None:
+        # A conversation is its two parties' alone, admins included (§9).
+        return f"member:{principal}" in audience
+    if membership.role in SEE_ALL_ROLES:
+        return True
     return (
         "all" in audience
         or f"member:{principal}" in audience
@@ -174,3 +180,78 @@ def read(
             examined = row.seq
         if len(batch) < 500:
             return found, examined, False
+
+
+def wakes(row: Any, membership: Any, principal: str) -> bool:
+    """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
+    it), and not caused by the reader's own membership. Seeing everything as an owner or
+    admin never wakes."""
+    if row.actor_membership == membership.id:
+        return False
+    audience = row.audience or []
+    return (
+        "all" in audience
+        or f"member:{principal}" in audience
+        or f"role:{membership.role}" in audience
+        or row.conversation_id == principal
+    )
+
+
+def read_waking(
+    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+) -> tuple[list[Any], int]:
+    """Wake-relevant events after `after`: (rows, highest seq examined)."""
+    rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
+    found = [r for r in rows if wakes(r, membership, principal)][:limit]
+    if found and (len(found) == limit or truncated):
+        return found, found[-1].seq
+    return found, examined
+
+
+def highest_readable(conn: Connection, project_id: str, membership: Any, principal: str) -> int:
+    """`after=latest`: the highest seq this reader may read, or 0."""
+    query = (
+        select(t.event)
+        .where(t.event.c.project_id == project_id)
+        .order_by(t.event.c.seq.desc())
+        .limit(500)
+    )
+    before = None
+    while True:
+        batch = conn.execute(
+            query.where(t.event.c.seq < before) if before is not None else query
+        ).all()
+        for row in batch:
+            if readable_by(row, membership, principal):
+                seq: int = row.seq
+                return seq
+        if len(batch) < 500:
+            return 0
+        before = batch[-1].seq
+
+
+def mark_delivered(conn: Connection, rows: list[Any], reader: str) -> None:
+    """The first time a chat message reaches its recipient (docs/api.md §9)."""
+    seqs = [
+        r.seq
+        for r in rows
+        if r.kind == "message"
+        and not r.redacted
+        and (r.payload or {}).get("type") == "chat"
+        and (r.payload or {}).get("to") == reader
+    ]
+    if not seqs:
+        return
+    known = set(
+        conn.execute(
+            select(t.message_delivery.c.seq).where(t.message_delivery.c.seq.in_(seqs))
+        ).scalars()
+    )
+    now = clock.now()
+    for seq in seqs:
+        if seq not in known:
+            try:
+                with conn.begin_nested():
+                    conn.execute(insert(t.message_delivery).values(seq=seq, delivered_at=now))
+            except IntegrityError:
+                pass  # another read delivered it a moment earlier: the first time stands

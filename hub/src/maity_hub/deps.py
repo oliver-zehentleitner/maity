@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import forbidden
+from maity_hub.errors import forbidden, invalid
 from maity_hub.net import Origin
 
 
@@ -60,9 +60,23 @@ async def current_caller(request: Request) -> Caller:
     return await _resolve(request, renew_leases=True)
 
 
-async def listening_caller(request: Request) -> Caller:
-    """The events long-poll: presence, not work — leases are not renewed (§2.4)."""
-    return await _resolve(request, renew_leases=False)
+WAIT_MAX = 55  # seconds; a larger `wait` is clamped (§1.7)
+
+
+def wait_of(request: Request) -> int:
+    raw = request.query_params.get("wait", "0")
+    if not raw.isascii() or not raw.isdigit():
+        raise invalid({"wait": "not_a_number"})
+    return min(int(raw[:6]), WAIT_MAX)  # a larger value is clamped (§8.3)
+
+
+async def events_caller(request: Request) -> Caller:
+    """The events read: a long-poll (`wait > 0`) is presence, not work, and renews no
+    lease; a plain read (`wait=0`) renews like any call (§2.4). Authentication comes
+    first; the endpoint validates `wait` (an invalid one counts as a read here)."""
+    raw = request.query_params.get("wait", "0")
+    waiting = raw.isascii() and raw.isdigit() and int(raw) > 0
+    return await _resolve(request, renew_leases=not waiting)
 
 
 async def human_caller(request: Request) -> Caller:
@@ -83,4 +97,4 @@ async def agent_caller(request: Request) -> Caller:
 AnyCaller = Annotated[Caller, Depends(current_caller)]
 HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
-ListeningCaller = Annotated[Caller, Depends(listening_caller)]
+EventsCaller = Annotated[Caller, Depends(events_caller)]

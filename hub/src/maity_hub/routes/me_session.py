@@ -67,6 +67,11 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/projects/{slug}/requests", "requests:ask"),
     ("POST", "/projects/{slug}/requests/{id}/answer", "requests:ask"),
     ("POST", "/projects/{slug}/requests/{id}/withdraw", "requests:ask"),
+    ("GET", "/projects/{slug}/events", "project:read"),
+    ("POST", "/projects/{slug}/events", "events:post"),
+    ("GET", "/projects/{slug}/conversations", None),
+    ("GET", "/projects/{slug}/conversations/{agent_id}/messages", None),
+    ("POST", "/projects/{slug}/conversations/{agent_id}/messages", None),
 ]
 
 
@@ -203,6 +208,7 @@ def _packet(
     )
     events_cursor = rows[-1].seq if truncated else max(examined, started_seq, cursor)
     rows = [r for r in rows if r.seq != started_seq]  # never the session's own start
+    events.mark_delivered(conn, rows, caller.principal_id)
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
