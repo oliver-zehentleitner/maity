@@ -59,6 +59,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## R
 
 ## S
+- [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://
 
 ## T
 
