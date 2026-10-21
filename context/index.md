@@ -23,6 +23,7 @@ Why Maity is built the way it is.
 ## 9
 
 ## A
+- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally
 
 ## B
 
@@ -39,8 +40,10 @@ Why Maity is built the way it is.
 ## H
 
 ## I
+- [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
+- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path
 
 ## K
 
@@ -63,6 +66,7 @@ Why Maity is built the way it is.
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external
 
 ## T
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights, with limits enforced by the accounts agents act with
 
 ## U
 
