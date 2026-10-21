@@ -42,7 +42,9 @@ promises self-hosters; the two wheels are small.
 The image sets `MAITY_DATABASE_URL=sqlite:////app/data/maity-hub.db` and
 declares `/app/data` as a volume owned by the hub's user, so `docker run
 <image> migrate` and `serve` work without any configuration. Compose and
-Kubernetes override the URL with a server database.
+Kubernetes override the URL with a server database. The review found the
+unwritable default and offered both options below; the choice and its
+reason are the implementation session's.
 
 **Reason:** the hub's own default, a relative SQLite file, points into a
 directory the unprivileged user cannot write, so the image failed on its

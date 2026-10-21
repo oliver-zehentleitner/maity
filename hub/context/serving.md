@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-21
+**Source:** implementation session, 2026-10-21; review of the hub skeleton, 2026-10-21 (dotfiles and the API prefix)
 
 The hub mounts the static dashboard at `/` after the API routes, from
 `MAITY_WEB_DIR` or, unset, from `web/` beside `hub/` in the checkout.
@@ -15,7 +15,9 @@ at startup. A missing default directory only logs a warning, and the hub
 serves the API alone. The image copies `web/` when the build context has
 one and leaves `/app/web` empty otherwise. The mount never serves a path
 with a segment starting with `.` and nothing under `/api`, and the image
-build leaves dotfiles and `node_modules` out.
+build leaves dotfiles and `node_modules` out; that rule and its rejected
+alternative came from the review, the rest from the implementation
+session.
 
 **Reason:** the dashboard and the hub are built by different hands at
 different speeds; the API must be testable and deployable before `web/`
@@ -67,7 +69,9 @@ exposing an unauthenticated hub on every network the machine is on.
 
 The hub serves no interactive API documentation page; the OpenAPI
 document stays at `/api/v1/openapi.json`, and `/api/v1/help` is the
-description for agents.
+description for agents. Dropping the page, the CDN reason and the
+vendoring alternative came from the review; the implementation session
+adopted it and kept the OpenAPI document.
 
 **Reason:** FastAPI's Swagger UI and ReDoc pages load their scripts from a
 public CDN, so a self-hosted hub would make every browser that opens them
