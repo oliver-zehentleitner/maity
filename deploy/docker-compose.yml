@@ -2,7 +2,9 @@
 # deploy/.env (never committed) and start from the repository root:
 #   echo 'MAITY_DB_PASSWORD=<choose one>' > deploy/.env
 #   docker compose -f deploy/docker-compose.yml up --build
-# The password goes into a URL: letters, digits and - _ . ~ only, or percent-encoded.
+# The password: letters, digits and - _ . ~ only, nothing else. The same value
+# reaches PostgreSQL as it is and the hub inside a URL, so a character that
+# needs percent-encoding cannot work for both; Compose also interpolates `$`.
 # Migrations run in their own one-shot service before the hub starts; the hub
 # itself never migrates.
 

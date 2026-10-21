@@ -1,7 +1,7 @@
 name: ci
 
 # The hub's checks: lint, types and tests on SQLite; the test suite against
-# PostgreSQL and MariaDB; the built wheel on the newest Python; the image.
+# PostgreSQL and MariaDB; the built wheel on Python 3.13; the image.
 on:
   push:
     branches: [main]

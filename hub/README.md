@@ -39,8 +39,10 @@ docker compose -f deploy/docker-compose.yml up --build
 ```
 
 `deploy/.env` is ignored by Git and keeps the password out of the shell
-history. The password becomes part of a database URL: use letters, digits
-and `-_.~`, or percent-encode anything else.
+history. Use only letters, digits and `-_.~` in the password, nothing
+else: Compose hands the same value to PostgreSQL as it is and to the hub
+inside a URL, so a character that needs percent-encoding cannot be right
+for both. Compose also interpolates `$` in `.env` values.
 
 The `migrate` service runs `maity-hub migrate` once and exits; the hub
 starts after it succeeded and reports healthy once `/api/v1/health`
@@ -68,7 +70,7 @@ All settings come from the environment.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Special characters in the password must be percent-encoded; an unencoded `@` is refused. |
+| `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in the password must be percent-encoded (`@` is `%40`); a URL with an unencoded `@` in it is refused. |
 | `MAITY_BIND` | `127.0.0.1:8080` | `host:port` to listen on; `[::1]:8080` for IPv6. |
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles and paths under `/api` are never served from it. |
@@ -109,8 +111,9 @@ make revision m="add the task table"
 
 It migrates a scratch SQLite file to the current head, compares it with the
 tables defined in `maity_hub` and writes `000N_add_the_task_table.py`.
-Review the result: autogenerate does not detect renames and writes nothing
-for data changes. Revisions must run on all three engines: use
+Run `make format` on it before `make check` (the template imports `op` and
+`sa` whether the revision uses them or not), and review the result:
+autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use
 `op.*` operations and SQLAlchemy types, no raw engine-specific SQL, and
 name every constraint (the metadata's naming convention does that for
 tables defined in code). SQLite runs in Alembic's batch mode, so column
