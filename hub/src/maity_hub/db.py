@@ -44,6 +44,12 @@ def make_engine(url: str) -> Engine:
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    # Readers do not block the writer and the writer waits instead of failing
+    # (hub/context/persistence.md); WAL needs a file, not :memory:.
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA journal_mode")
+    if cursor.fetchone()[0] != "memory":
+        cursor.execute("PRAGMA journal_mode=WAL")
     cursor.close()
 
 
