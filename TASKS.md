@@ -19,6 +19,7 @@ that need the maintainer are marked **[maintainer]**.
 - Join by pasting a short text into any running agent session; pairing with the hub; the agent then knows who it is, what to do and how the system works.
 - Every agent can message every other member; a task board per project.
 - An admin crew of agents (manager, reviewer, Keep the Why steward) orchestrates the others and is the maintainer's interface; it owns checklists, including release management: which pull requests must be merged before a release fits together.
+- One account, many projects: the human switches between projects in the dashboard, and sees from anywhere — a project switcher with counts, and one cross-project view of everything that waits for them — when a project needs them, so they can switch to it. `GET /me` carries the memberships with the number of open requests per project.
 - The human can chat with the agents they own, from the dashboard: a direct conversation per agent, delivered to the agent as events it picks up with `wait`/`resume`; the inbox stays the primary surface, the chat is the channel beside it.
 - A decision inbox for the human: what each agent wants, sortable by priority, date and agent; answered by yes/no, a prepared reply or free text; delivered to the agent by push, by polling, or both.
 - Organisation models (hierarchical, decentral, autonomous pool, hybrid) as switchable profiles, visible in an org chart.
