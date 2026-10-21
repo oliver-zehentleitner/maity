@@ -62,6 +62,12 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   and the single-use exchange, the resume packet, `PATCH /me`, credentials
   list and revoke (`docs/api.md` §3, §5.2, §5.3, §6.1–§6.3, §6.9, §10); a
   join smoke script and CI job for the curl and the CLI path.
+- hub: cards on the board (`docs/api.md` §6.4–§6.6) — create with area
+  routing, edit, the transition table, `depends_on` without cycles and
+  mirrored `ships_with`, `done` refused with open dependencies, the paged
+  board; the atomic claim with leases, release, assign, the freeze and
+  fixes-only reason; checkpoints and completion reports with
+  `verification: signed|bearer`.
 
 ### Fixed
 

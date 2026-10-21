@@ -238,8 +238,10 @@ def test_a_failed_call_stores_nothing_and_may_be_repeated(
 
 
 def test_losing_the_race_for_a_key_replays_the_winner(
-    client: TestClient, agent: factory.Agent
+    client: TestClient, agent: factory.Agent, migrated: Engine
 ) -> None:
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite takes the write lock at BEGIN: a second writer cannot interleave")
     response = client.post("/api/v1/race", json={"a": 1}, headers=_auth(agent) | KEY)
     assert response.status_code == 201
     assert response.headers["Idempotent-Replayed"] == "true"

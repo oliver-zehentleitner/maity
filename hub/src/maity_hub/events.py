@@ -83,9 +83,15 @@ def transaction(engine: Engine) -> Iterator[Connection]:
         notifier.notify(project_id, seq)
 
 
-def lock_project(conn: Connection, project_id: str) -> None:
-    """`SELECT … FOR UPDATE` on the project row; SQLite's single writer serialises anyway."""
-    conn.execute(select(t.project.c.id).where(t.project.c.id == project_id).with_for_update())
+def lock_project(conn: Connection, project_id: str) -> Any:
+    """`SELECT … FOR UPDATE` on the project row, returned as it is now.
+
+    Decisions that depend on the project (its state, its policy) are taken
+    from this row, read under the lock; SQLite took its write lock at BEGIN.
+    """
+    return conn.execute(
+        select(t.project).where(t.project.c.id == project_id).with_for_update()
+    ).one()
 
 
 def emit(

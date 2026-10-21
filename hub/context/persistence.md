@@ -304,3 +304,43 @@ next one is identifiable.
 - Locking the project row at the start of every authenticated call —
   removes every cycle, but serialises all calls of a project, reads
   included.
+
+## READ COMMITTED on every server engine
+
+**Id:** 87b08f1e-c12c-48a6-adaf-f7bd93d5c32b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the cards slice; concurrent claims failed on MariaDB only); review of the cards slice, 2026-10-21 (SQLite, decisions under the lock)
+**Revisit when:** a write path needs a consistent snapshot across several reads, or a second replica brings stricter isolation into question
+
+The engine opens PostgreSQL and MySQL/MariaDB connections at isolation
+level `READ COMMITTED`. SQLite has one writer; every SQLite transaction
+starts with `BEGIN IMMEDIATE` and so holds the write lock before its first
+read, which is what `lock_project` gives the server engines. A MySQL
+server with `binlog_format=STATEMENT` refuses writes at `READ COMMITTED`;
+`ROW` (the default) and `MIXED` are fine.
+
+**Reason:** the hub's writers serialise on the project row
+(`events.lock_project`) and then read the rows they change. On
+PostgreSQL, whose default is `READ COMMITTED`, those reads see what the
+writer before them committed. InnoDB's default `REPEATABLE READ` keeps the
+snapshot of a transaction's first read instead. Six concurrent claims of
+one card then answered 500 on MariaDB: the losers waited for the lock, read
+the card as still unclaimed, and the conditional update matched no row.
+One isolation level on every engine makes the same code mean the same
+thing everywhere.
+
+Decisions that depend on the project (state, policy, lease length) are
+taken from the row `lock_project` returns, read under the lock, never from
+a read before it.
+
+**Rejected alternatives:**
+- Locking reads (`SELECT … FOR UPDATE`) on every row a writer reads after
+  the project lock — correct on InnoDB too, but every future read would
+  have to remember it, and one forgotten read would bring the stale
+  snapshot back.
+- pysqlite's own transaction start for SQLite — it sends `BEGIN` only at
+  the first write, so the reads before it ran unlocked: two crossing
+  `depends_on` changes stored a cycle, and a claim racing a cancel
+  answered 500.
