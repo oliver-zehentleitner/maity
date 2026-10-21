@@ -233,6 +233,31 @@ def test_a_failed_signature_does_not_spend_the_nonce(
     assert client.get("/api/v1/me", headers=good).status_code == 200
 
 
+@pytest.mark.parametrize("nonce", ["a" * 21, "a" * 129, "0123456789abcdef", "a.b" * 8, "a b" * 8])
+def test_a_nonce_outside_22_to_128_base64url_characters_is_invalid(
+    make_client: ClientFactory, agent: factory.Agent, nonce: str
+) -> None:
+    headers = signed(agent, "GET", "/api/v1/me", nonce=nonce)
+    response = make_client().get("/api/v1/me", headers=headers)
+    assert response.headers["Maity-Error"] == "signature_invalid"
+
+
+def test_a_non_ascii_nonce_is_not_base64url() -> None:
+    from maity_hub.auth.caller import _nonce_shape
+
+    assert not _nonce_shape("ü" * 22)
+    assert _nonce_shape("A-z_0" * 5)
+
+
+def test_a_nonce_of_22_and_of_128_characters_is_accepted(
+    make_client: ClientFactory, agent: factory.Agent
+) -> None:
+    client = make_client()
+    for nonce in ("a" * 22, "b" * 128):
+        headers = signed(agent, "GET", "/api/v1/me", nonce=nonce)
+        assert client.get("/api/v1/me", headers=headers).status_code == 200
+
+
 @pytest.mark.parametrize("missing", ["Maity-Timestamp", "Maity-Nonce", "Maity-Signature"])
 def test_incomplete_signature_headers_are_invalid(
     make_client: ClientFactory, agent: factory.Agent, missing: str

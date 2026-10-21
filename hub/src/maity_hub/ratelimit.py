@@ -27,6 +27,19 @@ class Limiter:
             hits.append(now)
             return 0
 
+    def blocked(self, key: str) -> int:
+        """Like `hit`, without recording an attempt."""
+        now = time.monotonic()
+        with self._lock:
+            hits = self._hits.get(key)
+            if hits is None:
+                return 0
+            while hits and hits[0] <= now - self.window:
+                hits.popleft()
+            if len(hits) >= self.limit:
+                return max(1, math.ceil(hits[0] + self.window - now))
+            return 0
+
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()

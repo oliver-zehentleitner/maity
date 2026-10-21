@@ -187,7 +187,10 @@ NONCES = credentials.NonceWindow()
 
 
 def _nonce_shape(nonce: str) -> bool:
-    return 16 <= len(nonce) <= 128 and all(c.isalnum() or c in "-_" for c in nonce)
+    # At least 16 random bytes as base64url: 22 characters (docs/api.md §2.2).
+    return 22 <= len(nonce) <= 128 and all(
+        c.isascii() and (c.isalnum() or c in "-_") for c in nonce
+    )
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:

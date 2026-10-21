@@ -132,9 +132,20 @@ def logout(request: Request, caller: HumanCaller) -> JSONResponse:
 @router.post("/password")
 def change_password(body: PasswordChange, request: Request, caller: HumanCaller) -> JSONResponse:
     _require_cookie(caller)
+    if len(body.new) < passwords.MIN_LENGTH:
+        raise invalid({"new": "too_short"}, "a password has at least 12 characters")
+    address = origin_of(request).address
     with engine_of(request).begin() as conn:
         row = conn.execute(select(t.human).where(t.human.c.id == caller.principal_id)).one()
+        # A wrong current password counts against the login limit (§2.1).
+        limits = ((LOGIN_BY_ADDRESS, address), (LOGIN_BY_HANDLE, row.handle))
+        for limiter, key in limits:
+            wait = limiter.blocked(key)
+            if wait:
+                raise rate_limited(wait)
         if not passwords.verify_password(body.current, row.password_hash):
+            for limiter, key in limits:
+                limiter.hit(key)
             raise invalid({"current": "mismatch"}, "the current password is wrong")
         conn.execute(
             update(t.human)

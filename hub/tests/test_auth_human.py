@@ -239,3 +239,48 @@ def test_agent_endpoints_and_auth_endpoints_are_separate(
     )
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
+
+
+def test_a_new_password_has_at_least_twelve_characters(
+    make_client: ClientFactory, owner: str
+) -> None:
+    client = make_client()
+    csrf = _login(client)
+    response = client.post(
+        "/api/v1/auth/password",
+        json={"current": factory.PASSWORD, "new": "eleven char"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["fields"] == {"new": "too_short"}
+    twelve = client.post(
+        "/api/v1/auth/password",
+        json={"current": factory.PASSWORD, "new": "twelve chars"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert twelve.status_code == 200
+
+
+def test_a_wrong_current_password_counts_against_the_login_limit(
+    make_client: ClientFactory, owner: str
+) -> None:
+    client = make_client()
+    csrf = _login(client)  # one login attempt
+    for _ in range(9):
+        wrong = client.post(
+            "/api/v1/auth/password",
+            json={"current": "guess", "new": "a new long password"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert wrong.headers["Maity-Error"] == "invalid"
+    limited = client.post(
+        "/api/v1/auth/password",
+        json={"current": factory.PASSWORD, "new": "a new long password"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert limited.status_code == 429
+    assert limited.headers["Maity-Error"] == "rate_limited"
+    login = make_client(peer="198.51.100.2").post(
+        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    )
+    assert login.headers["Maity-Error"] == "rate_limited"  # the handle's limit is shared

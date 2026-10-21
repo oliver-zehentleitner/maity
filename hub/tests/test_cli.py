@@ -146,7 +146,7 @@ def test_owner_create_reads_the_password_from_stdin(
     assert verify_password("a long password", stored)
     assert "a long password" not in stored
 
-    monkeypatch.setattr("sys.stdin", io.StringIO("again\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
     assert main(["owner", "create", "--handle", "maintainer", "--display-name", "X"]) == 1
     assert "exists" in capsys.readouterr().err
 
@@ -156,6 +156,7 @@ def test_owner_create_reads_the_password_from_stdin(
     [
         (["--handle", "Bad Handle", "--display-name", "X"], "pw\n"),
         (["--handle", "ok", "--display-name", "X"], "\n"),
+        (["--handle", "ok", "--display-name", "X"], "eleven char\n"),
     ],
 )
 def test_owner_create_refuses_a_bad_handle_or_an_empty_password(
@@ -173,6 +174,6 @@ def test_owner_create_needs_a_migrated_database(
 ) -> None:
     import io
 
-    monkeypatch.setattr("sys.stdin", io.StringIO("pw\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("a long enough password\n"))
     assert main(["owner", "create", "--handle", "ok", "--display-name", "X"]) == 1
     assert "maity-hub migrate" in capsys.readouterr().err

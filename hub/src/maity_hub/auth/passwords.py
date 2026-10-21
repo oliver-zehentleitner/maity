@@ -8,6 +8,7 @@ import hmac
 import secrets
 
 N, R, P = 2**15, 8, 1
+MIN_LENGTH = 12  # characters, no composition rules (docs/api.md §2.1)
 SALT_BYTES = 32
 KEY_BYTES = 32
 # 128 * r * n bytes of work memory, plus headroom; the default cap is too small.

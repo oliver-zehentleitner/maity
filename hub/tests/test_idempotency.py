@@ -140,3 +140,28 @@ def test_a_human_may_send_a_key_and_need_not(client: TestClient, migrated: Engin
     replay = client.post("/api/v1/probe", json={}, headers=headers | KEY)
     assert replay.headers["Idempotent-Replayed"] == "true"
     assert len(CALLS) == 2
+
+
+def test_a_call_refused_before_it_ran_leaves_its_key_unused(
+    client: TestClient, agent: factory.Agent
+) -> None:
+    """The CLI retries a `timestamp_skew` with the same key: that is no replay."""
+    from tests.test_auth_agent import signed
+
+    body = b'{"a": 1}'
+    stale = int(clock.now().timestamp()) - 400
+    headers = {"Content-Type": "application/json"} | KEY
+    refused = client.post(
+        "/api/v1/probe",
+        content=body,
+        headers=headers | signed(agent, "POST", "/api/v1/probe", body=body, timestamp=stale),
+    )
+    assert refused.headers["Maity-Error"] == "timestamp_skew"
+    retried = client.post(
+        "/api/v1/probe",
+        content=body,
+        headers=headers | signed(agent, "POST", "/api/v1/probe", body=body),
+    )
+    assert retried.status_code == 201
+    assert "Idempotent-Replayed" not in retried.headers
+    assert len(CALLS) == 1

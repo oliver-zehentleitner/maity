@@ -170,3 +170,10 @@ def test_any_call_that_needs_the_database_answers_database_unavailable(
     assert response.status_code == 503
     assert response.headers["Maity-Error"] == "database_unavailable"
     assert "sqlite" not in response.text.lower()
+
+
+def test_a_wrong_method_is_405_with_allow(make_client: ClientFactory) -> None:
+    response = make_client().delete("/api/v1/me")
+    assert response.status_code == 405
+    assert response.headers["Maity-Error"] == "method_not_allowed"
+    assert response.headers["Allow"] == "GET"

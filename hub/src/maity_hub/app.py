@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
+from starlette.routing import Match, Mount
 from starlette.types import Scope
 
 from maity_hub import API_VERSION, __version__, errors, events
@@ -143,11 +144,29 @@ class DashboardFiles(StaticFiles):
         return await super().get_response(path, scope)
 
 
+class WebMount(Mount):
+    """The dashboard at `/`, which never claims a path under `/api`.
+
+    A plain mount at `/` fully matches every path, so the router would never
+    fall back to a route that matched the path but not the method: a wrong
+    method on an API path would be the mount's 404 instead of `405` with
+    `Allow` (docs/api.md §1.3).
+    """
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        path = scope.get("path", "")
+        if path == "/api" or path.startswith("/api/"):
+            return Match.NONE, {}
+        return super().matches(scope)
+
+
 def _mount_web(app: FastAPI, settings: Settings) -> None:
     web_dir = settings.web_dir
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
-        app.mount("/", DashboardFiles(directory=web_dir, html=True), name="web")
+        app.router.routes.append(
+            WebMount("/", app=DashboardFiles(directory=web_dir, html=True), name="web")
+        )
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

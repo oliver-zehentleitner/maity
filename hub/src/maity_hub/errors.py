@@ -105,5 +105,11 @@ def install(app: FastAPI) -> None:
         if error.status_code == 404:
             return error_response(404, "not_found", "no such resource")
         if error.status_code == 405:
-            return error_response(405, "method_not_allowed", "method not allowed")
+            allow = (error.headers or {}).get("Allow")
+            return error_response(
+                405,
+                "method_not_allowed",
+                "the path exists, the method does not",
+                headers={"Allow": allow} if allow else None,
+            )
         return error_response(error.status_code, "http_error", str(error.detail))

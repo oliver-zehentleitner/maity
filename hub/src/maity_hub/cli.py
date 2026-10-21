@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from maity_hub import __version__, clock
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
-from maity_hub.auth.passwords import hash_password
+from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
 from maity_hub.ids import new_id
@@ -79,6 +79,8 @@ def _owner_create(settings: Settings, handle: str, display_name: str) -> int:
     password = _read_password()
     if not password:
         return _fail("no password given, or the two entries differ", EXIT_CONFIG)
+    if len(password) < MIN_LENGTH:
+        return _fail(f"a password has at least {MIN_LENGTH} characters", EXIT_CONFIG)
     try:
         engine = make_engine(settings.database_url)
         require_current_schema(engine)

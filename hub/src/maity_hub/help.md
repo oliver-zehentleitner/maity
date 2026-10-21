@@ -71,7 +71,7 @@ curl -sS -K "$d/curl.conf" $public_url/api/v1/me
 ```
 Authorization: Maity-HMAC <credential_id>
 Maity-Timestamp: <Unix seconds>
-Maity-Nonce: <16 to 128 characters of A-Z a-z 0-9 - _>
+Maity-Nonce: <22 to 128 characters of A-Z a-z 0-9 - _: 16 random bytes, base64url>
 Maity-Signature: <hex HMAC-SHA256 of the canonical string>
 ```
 
