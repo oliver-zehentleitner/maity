@@ -124,3 +124,25 @@ before it is handed to a person. Maity's completion report takes its
 facts from git and the forge rather than from what an agent types, and
 dogfooding started as soon as an agent could join, precisely because
 fixtures had hidden the first real defect.
+
+## Platforms changed underneath the build
+
+**Id:** f3bec014-28b7-4bfe-9ca8-304f1481fceb
+**Type:** incident
+**Status:** open
+**Evidence:** confirmed
+**Source:** build session, 2026-10-21
+
+Two external changes broke checks that had nothing to do with the code.
+A release of the Keep the Why linter moved its rolling action tag before
+the package was on PyPI, so every project's linter job failed for
+several minutes. And from a certain merge on, the forge stopped creating
+push events for merges into `main`: pull request runs went on, but no
+workflow ran on `main` and the project site was not deployed, with the
+platform's status page reporting everything operational. The second is
+unexplained; the site is deployed by hand meanwhile.
+
+**Learned:** a green pull request is not a deployed main branch. Maity's
+read-only forge probe observes what actually ran, and "the default
+branch's checks are green and the site is live" belongs on the release
+checklist as an observed item, not an assumption.
