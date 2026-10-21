@@ -30,6 +30,7 @@ from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import require_secure_transport
+from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project
@@ -401,7 +402,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             )
         return None
 
-    outcome = await run_in_threadpool(run)
+    outcome = await run_in_threadpool(retrying, run)
     if outcome is None:
         raise ApiError(403, "code_invalid", "the code does not match this join")
     value, credential_id, agent_id, project_slug = outcome

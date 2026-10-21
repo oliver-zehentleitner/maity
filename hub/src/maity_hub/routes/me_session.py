@@ -7,12 +7,13 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import API_VERSION, __version__, clock, events, idempotency, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
+from maity_hub.db import retrying
 from maity_hub.deps import AgentCaller, engine_of, settings_of
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
@@ -74,6 +75,10 @@ def _own_membership(conn: Connection, caller: Caller) -> Membership:
 
 @router.post("/me/resume")
 def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONResponse:
+    return JSONResponse(retrying(lambda: _resume(body, request, caller)))
+
+
+def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
@@ -81,6 +86,24 @@ def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONRespons
         # credential must not both open its live session.
         events.lock_project(conn, mine.project.id)
         now = clock.now()
+        # Rows in the order every authenticated call touches them (credential,
+        # membership, session, cards), so that the two never wait on each other
+        # in a cycle; InnoDB answers such a cycle with a deadlock.
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == caller.credential_id)
+            .values(
+                last_used_at=now,
+                resumed_at=func.coalesce(t.credential.c.resumed_at, now),
+            )
+        )
+        if mine.row.paused_since is not None and mine.row.paused_by == caller.agent_id:
+            # The agent's own pause ends with its next session; a human's stays.
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == mine.id)
+                .values(paused_reason=None, paused_since=None, paused_by=None)
+            )
         previous = conn.execute(
             select(t.agent_session)
             .where(t.agent_session.c.credential_id == caller.credential_id)
@@ -117,18 +140,6 @@ def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONRespons
             )
         )
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == caller.credential_id, t.credential.c.resumed_at.is_(None))
-            .values(resumed_at=now)
-        )
-        if mine.row.paused_since is not None and mine.row.paused_by == caller.agent_id:
-            # The agent's own pause ends with its next session; a human's stays.
-            conn.execute(
-                update(t.membership)
-                .where(t.membership.c.id == mine.id)
-                .values(paused_reason=None, paused_since=None, paused_by=None)
-            )
-        conn.execute(
             update(t.card)
             .where(t.card.c.claim_holder == mine.id, t.card.c.status.notin_(CLOSED_STATUSES))
             .values(claim_session_id=session_id)
@@ -154,7 +165,7 @@ def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONRespons
         )
         mine = _own_membership(conn, caller)  # with the pause cleared
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
-    return JSONResponse(packet)
+    return packet
 
 
 def _packet(

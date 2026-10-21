@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
+from maity_hub.db import retrying
 from maity_hub.errors import forbidden
 from maity_hub.net import Origin
 
@@ -50,7 +51,7 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
         with engine.begin() as conn:
             return authenticate(conn, facts, renew_leases=renew_leases)
 
-    caller = await run_in_threadpool(run)
+    caller = await run_in_threadpool(retrying, run)
     request.state.caller = caller
     return caller
 

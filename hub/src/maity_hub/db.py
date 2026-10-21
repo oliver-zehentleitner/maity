@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import random
+import time
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -11,6 +14,7 @@ from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, MetaData, create_engine, event
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 # Explicit constraint names, so that migrations can address constraints by
 # name on every engine (MySQL and SQLite generate their own otherwise).
@@ -95,3 +99,28 @@ def create_revision(engine: Engine, message: str, script_location: Path | None =
     if created is None or isinstance(created, list):
         raise RuntimeError("alembic did not create exactly one revision")
     return Path(created.path)
+
+
+# Deadlock and serialisation failures: the database rolled the transaction back
+# and expects it to be run again. InnoDB reports them under ordinary
+# concurrency (two calls of one agent touching its credential and cards).
+TRANSIENT = {"40001", "40P01", "1213", "1205"}
+RETRIES = 4
+
+
+def is_transient(error: BaseException) -> bool:
+    from maity_hub.errors import driver_code
+
+    return isinstance(error, OperationalError | DBAPIError) and driver_code(error) in TRANSIENT
+
+
+def retrying[T](work: Callable[[], T]) -> T:
+    """Run `work` (one whole transaction) again after a transient conflict."""
+    for attempt in range(RETRIES):
+        try:
+            return work()
+        except DBAPIError as error:
+            if not is_transient(error) or attempt == RETRIES - 1:
+                raise
+            time.sleep(0.01 * (2**attempt) * (1 + random.random()))
+    raise RuntimeError("unreachable")
