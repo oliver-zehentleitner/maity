@@ -3,23 +3,27 @@
 
 PYTHON ?= python3
 
-.PHONY: install format check lint typecheck test
+.PHONY: install format check lint typecheck test revision
 
 install:
 	$(PYTHON) -m pip install -e '.[dev]'
 
 format:
-	black src tests
-	ruff check --fix src tests
+	$(PYTHON) -m black src tests scripts
+	$(PYTHON) -m ruff check --fix src tests scripts
 
 check: lint typecheck test
 
 lint:
-	black --check src tests
-	ruff check src tests
+	$(PYTHON) -m black --check src tests scripts
+	$(PYTHON) -m ruff check src tests scripts
 
 typecheck:
-	mypy
+	$(PYTHON) -m mypy
 
 test:
-	pytest
+	$(PYTHON) -m pytest
+
+# make revision m="add the task table"
+revision:
+	$(PYTHON) scripts/new_revision.py "$(m)"

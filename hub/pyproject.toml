@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.156",
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0.36",
     "alembic>=1.14",
@@ -25,6 +25,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.3",
     "httpx2>=2.16",
+    "starlette>=1.2",  # the TestClient on httpx2
 ]
 
 [project.scripts]
@@ -47,7 +48,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["maity_hub"]
+files = ["src", "tests", "scripts"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]

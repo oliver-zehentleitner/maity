@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 from alembic import command
@@ -24,10 +25,16 @@ metadata = MetaData(
 )
 
 
+CONNECT_TIMEOUT_SECONDS = 5
+
+
 def make_engine(url: str) -> Engine:
     kwargs: dict[str, Any] = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # Fail fast on an unreachable server instead of waiting for TCP's own timeout.
+        kwargs["connect_args"] = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
     engine = create_engine(url, **kwargs)
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _sqlite_pragmas)
@@ -40,9 +47,11 @@ def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
     cursor.close()
 
 
-def alembic_config(engine: Engine) -> Config:
+def alembic_config(engine: Engine, script_location: Path | None = None) -> Config:
     config = Config()
-    config.set_main_option("script_location", str(files("maity_hub") / "migrations"))
+    location = script_location or Path(str(files("maity_hub") / "migrations"))
+    config.set_main_option("script_location", str(location))
+    config.set_main_option("file_template", "%%(rev)s_%%(slug)s")
     config.attributes["engine"] = engine
     return config
 
@@ -60,5 +69,22 @@ def head_revision(engine: Engine) -> str | None:
 
 
 def current_revision(engine: Engine) -> str | None:
+    """The database's revision; connecting at all proves it is reachable."""
     with engine.connect() as connection:
         return MigrationContext.configure(connection).get_current_revision()
+
+
+def create_revision(engine: Engine, message: str, script_location: Path | None = None) -> Path:
+    """Autogenerate the next numbered revision against a database at head.
+
+    Development only: `make revision m="..."` runs it on a scratch SQLite file.
+    """
+    config = alembic_config(engine, script_location)
+    script = ScriptDirectory.from_config(config)
+    numbers = [int(rev.revision) for rev in script.walk_revisions() if rev.revision.isdigit()]
+    rev_id = f"{max(numbers, default=0) + 1:04d}"
+    command.upgrade(config, "head")
+    created = command.revision(config, message=message, autogenerate=True, rev_id=rev_id)
+    if created is None or isinstance(created, list):
+        raise RuntimeError("alembic did not create exactly one revision")
+    return Path(created.path)
