@@ -12,3 +12,9 @@ README, for what Keep the Why actually is.
 - capture-confirmation: automatic
 - source-reference: never
 <!-- /keep-the-why:config -->
+
+<!-- keep-the-why:children -->
+- hub: hub — the server: API, persistence, events, claims, inbox, releases, the forge probe; `deploy/` with it
+- cli: cli — the agent-side command `maity` (join, resume, wait, report, ask, help) and the agent skill
+- web: web — the dashboard: inbox, board, agents and presence, organisation, chat with owned agents
+<!-- /keep-the-why:children -->

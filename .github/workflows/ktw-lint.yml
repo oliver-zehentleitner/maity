@@ -11,9 +11,14 @@ permissions:
 jobs:
   ktw-lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # the root and every child project: a family link is checked on both ends
+        path: [".", "hub", "cli", "web"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oliver-zehentleitner/keep-the-why@lint-latest   # rolling; @lint-v<version> pins action and linter together
         with:
-          path: .
+          path: ${{ matrix.path }}
           strict: "false"    # "true" turns warnings into failures
