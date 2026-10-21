@@ -19,7 +19,7 @@ It answers:
 
 > Why is the project built this way?
 
-For usage, installation, operation, or troubleshooting, see `docs/`.
+For how to open, check and develop the dashboard, see [`../README.md`](../README.md); the API it talks to is in the root `docs/api.md`.
 
 ## Reading the entries
 
