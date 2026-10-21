@@ -13,7 +13,9 @@ The hub mounts the static dashboard at `/` after the API routes, from
 An explicitly set `MAITY_WEB_DIR` that is not a directory stops the hub
 at startup. A missing default directory only logs a warning, and the hub
 serves the API alone. The image copies `web/` when the build context has
-one and leaves `/app/web` empty otherwise.
+one and leaves `/app/web` empty otherwise. The mount never serves a path
+with a segment starting with `.` and nothing under `/api`, and the image
+build leaves dotfiles and `node_modules` out.
 
 **Reason:** the dashboard and the hub are built by different hands at
 different speeds; the API must be testable and deployable before `web/`
@@ -26,6 +28,10 @@ reported where it was made instead of as a 404 on `/` later.
   exists.
 - Never fail, warn in both cases — hides a typo in an operator's
   configuration behind a log line.
+- Serve the directory as it is and rely on the dashboard's authors to
+  keep it clean — the default of a static mount, but a `.env` or a `.git/`
+  that lands in `web/` would then be public, and a file under `web/api/`
+  would answer inside the API's namespace.
 
 ## Local by default: `127.0.0.1` for plain Python and for Compose
 
