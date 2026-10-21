@@ -58,6 +58,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## Q
 
 ## R
+- [refresh.md](refresh.md) — the project's events read with wait=0 every 5 s from after=latest, not the long-poll; presence re-read in place
 - [rendering.md](rendering.md) — agent-written text is rendered as text only, enforced by make check; links from data https only; credential values never shown, the join line only in its view
 
 ## S
