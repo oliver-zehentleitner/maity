@@ -5,13 +5,16 @@
       "kind": "human",
       "handle": "maintainer",
       "display_name": "Maintainer",
-      "owner_id": null,
       "role": "owner",
       "reports_to": null,
-      "scopes": ["/"],
-      "session": null,
+      "areas": [
+        "/"
+      ],
+      "capabilities": [],
       "last_seen_at": "2026-10-21T13:40:00Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T08:00:00Z"
     },
     {
       "id": "agt-s1",
@@ -19,14 +22,27 @@
       "handle": "shop-dev",
       "display_name": "Shop Dev",
       "owner_id": "hum-maintainer",
-      "role": "developer",
+      "role": "member",
       "reports_to": null,
-      "scopes": ["src/"],
+      "areas": [
+        "src/"
+      ],
+      "capabilities": [],
       "harness": "OpenCode",
       "model": "unknown",
-      "session": { "id": "ses-s1-0042", "harness": "OpenCode", "started_at": "2026-10-21T08:30:00Z" },
+      "session": {
+        "id": "ses-s1-0042",
+        "harness": "OpenCode",
+        "model": "unknown",
+        "client": "curl/8.10.1",
+        "started_at": "2026-10-21T08:30:00Z",
+        "listening": true
+      },
       "last_seen_at": "2026-10-21T13:38:00Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T08:30:00Z"
     }
-  ]
+  ],
+  "next_cursor": null
 }

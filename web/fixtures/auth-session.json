@@ -1,0 +1,5 @@
+{
+  "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "display_name": "Maintainer" },
+  "csrf_token": "fixture-csrf-token",
+  "expires_at": "2026-11-04T13:42:00Z"
+}

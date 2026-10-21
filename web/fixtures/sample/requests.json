@@ -2,49 +2,32 @@
   "items": [
     {
       "id": "req-0003",
-      "asked_by": {
-        "profile_id": "agt-s1",
-        "display_name": "Shop Dev",
-        "role": "developer",
-        "session_id": "ses-s1-0042"
-      },
-      "kind": "consent",
-      "priority": "high",
-      "created_at": "2026-10-21T13:05:00Z",
-      "status": "open",
+      "class": "consent",
       "title": "Ship the checkout rounding fix into the frozen 2.3?",
-      "task_id": "tsk-0021",
-      "context": {
-        "summary": "Totals with three items at 0.335 round down instead of up.",
-        "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
-        "options": [
-          {
-            "id": "now",
-            "label": "Into 2.3",
-            "detail": "Retag the release candidate."
-          },
-          {
-            "id": "after",
-            "label": "2.3.1",
-            "detail": "Tag 2.3 as is, the fix follows."
-          }
-        ]
-      },
-      "replies": [
-        {
-          "id": "now",
-          "label": "Into 2.3"
-        },
-        {
-          "id": "after",
-          "label": "2.3.1"
-        },
-        {
-          "id": "later",
-          "label": "Later"
-        }
+      "summary": "Totals with three items at 0.335 round down instead of up.",
+      "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
+      "options": [
+        { "id": "now", "label": "Into 2.3", "detail": "Retag the release candidate." },
+        { "id": "after", "label": "2.3.1", "detail": "Tag 2.3 as is, the fix follows." }
       ],
-      "harness_flag": null
+      "replies": [
+        { "id": "now", "label": "Into 2.3" },
+        { "id": "after", "label": "2.3.1" }
+      ],
+      "priority": "urgent",
+      "to": "owner",
+      "asked_by": { "member_id": "agt-s1", "display_name": "Shop Dev", "role": "member", "session_id": "ses-s1-0042" },
+      "on_behalf_of": null,
+      "task_id": "tsk-0021",
+      "task": { "id": "tsk-0021", "title": "Checkout rounding", "status": "review" },
+      "while_open": "wait",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-21T13:05:00Z",
+      "answered_at": null
     }
-  ]
+  ],
+  "next_cursor": null
 }

@@ -5,13 +5,16 @@
       "kind": "human",
       "handle": "maintainer",
       "display_name": "Maintainer",
-      "owner_id": null,
       "role": "owner",
       "reports_to": null,
-      "scopes": ["/"],
-      "session": null,
+      "areas": [
+        "/"
+      ],
+      "capabilities": [],
       "last_seen_at": "2026-10-21T13:40:00Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T08:00:00Z"
     },
     {
       "id": "agt-a",
@@ -19,14 +22,29 @@
       "handle": "agent-a",
       "display_name": "Agent A",
       "owner_id": "hum-maintainer",
-      "role": "lead",
+      "role": "admin",
       "reports_to": "hum-maintainer",
-      "scopes": ["context/", "TASKS.md"],
+      "areas": [
+        "context/",
+        "TASKS.md"
+      ],
+      "capabilities": [
+        "tag"
+      ],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
-      "session": { "id": "ses-a-0007", "harness": "Claude Code", "started_at": "2026-10-21T07:55:00Z" },
+      "session": {
+        "id": "ses-a-0007",
+        "harness": "Claude Code",
+        "model": "claude-opus-5-5",
+        "client": "maity-cli/0.1.0",
+        "started_at": "2026-10-21T07:55:00Z",
+        "listening": true
+      },
       "last_seen_at": "2026-10-21T13:41:10Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T07:55:00Z"
     },
     {
       "id": "agt-b",
@@ -34,14 +52,26 @@
       "handle": "agent-b",
       "display_name": "Agent B",
       "owner_id": "hum-maintainer",
-      "role": "developer",
+      "role": "member",
       "reports_to": "agt-a",
-      "scopes": ["hub/"],
+      "areas": [
+        "hub/"
+      ],
+      "capabilities": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
-      "session": { "id": "ses-b-0003", "harness": "Claude Code", "started_at": "2026-10-21T10:12:00Z" },
+      "session": {
+        "id": "ses-b-0003",
+        "harness": "Claude Code",
+        "model": "claude-opus-5-5",
+        "client": "maity-cli/0.1.0",
+        "started_at": "2026-10-21T10:12:00Z",
+        "listening": true
+      },
       "last_seen_at": "2026-10-21T13:39:30Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T10:12:00Z"
     },
     {
       "id": "agt-c",
@@ -49,14 +79,23 @@
       "handle": "agent-c",
       "display_name": "Agent C",
       "owner_id": "hum-maintainer",
-      "role": "developer",
+      "role": "member",
       "reports_to": "agt-a",
-      "scopes": ["cli/"],
+      "areas": [
+        "cli/"
+      ],
+      "capabilities": [],
       "harness": "Pi",
       "model": "claude-sonnet-5-5",
       "session": null,
       "last_seen_at": "2026-10-21T12:05:00Z",
-      "paused": { "reason": "Waiting for the API contract in docs/api.md.", "since": "2026-10-21T12:04:00Z" }
+      "presence": "paused",
+      "paused": {
+        "reason": "Waiting for the API contract in docs/api.md.",
+        "since": "2026-10-21T12:04:00Z",
+        "by": "agt-c"
+      },
+      "joined_at": "2026-10-21T08:00:00Z"
     },
     {
       "id": "agt-d",
@@ -64,14 +103,26 @@
       "handle": "agent-d",
       "display_name": "Agent D",
       "owner_id": "hum-maintainer",
-      "role": "developer",
+      "role": "member",
       "reports_to": null,
-      "scopes": ["web/"],
+      "areas": [
+        "web/"
+      ],
+      "capabilities": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
-      "session": { "id": "ses-d-0001", "harness": "Claude Code", "started_at": "2026-10-21T13:00:00Z" },
+      "session": {
+        "id": "ses-d-0001",
+        "harness": "Claude Code",
+        "model": "claude-opus-5-5",
+        "client": "maity-cli/0.1.0",
+        "started_at": "2026-10-21T13:00:00Z",
+        "listening": false
+      },
       "last_seen_at": "2026-10-21T13:42:00Z",
-      "paused": null
+      "presence": "online",
+      "paused": null,
+      "joined_at": "2026-10-21T13:00:00Z"
     },
     {
       "id": "agt-r",
@@ -81,12 +132,16 @@
       "owner_id": "hum-maintainer",
       "role": "reviewer",
       "reports_to": "agt-a",
-      "scopes": [],
+      "areas": [],
+      "capabilities": [],
       "harness": "Codex",
       "model": "unknown",
       "session": null,
       "last_seen_at": "2026-10-20T18:30:00Z",
-      "paused": null
+      "presence": "offline",
+      "paused": null,
+      "joined_at": "2026-10-21T08:00:00Z"
     }
-  ]
+  ],
+  "next_cursor": null
 }

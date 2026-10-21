@@ -1,3 +1,6 @@
 {
-  "agt-s1": { "items": [] }
+  "agt-s1": {
+    "items": [],
+    "cursor": null
+  }
 }

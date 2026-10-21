@@ -3,46 +3,165 @@
 "use strict";
 
 window.MAITY_FIXTURES = {
+  "agents.json": {
+    "items": [
+      {
+        "created_at": "2026-10-21T07:50:00Z",
+        "display_name": "Agent A",
+        "git_identity": null,
+        "handle": "agent-a",
+        "id": "agt-a",
+        "memberships": [
+          {
+            "project": "maity",
+            "role": "admin"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-21T10:10:00Z",
+        "display_name": "Agent B",
+        "git_identity": null,
+        "handle": "agent-b",
+        "id": "agt-b",
+        "memberships": [
+          {
+            "project": "maity",
+            "role": "member"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-21T09:38:00Z",
+        "display_name": "Agent C",
+        "git_identity": null,
+        "handle": "agent-c",
+        "id": "agt-c",
+        "memberships": [
+          {
+            "project": "maity",
+            "role": "member"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-21T12:58:00Z",
+        "display_name": "Agent D",
+        "git_identity": null,
+        "handle": "agent-d",
+        "id": "agt-d",
+        "memberships": [
+          {
+            "project": "maity",
+            "role": "member"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-20T17:58:00Z",
+        "display_name": "Reviewer",
+        "git_identity": null,
+        "handle": "reviewer",
+        "id": "agt-r",
+        "memberships": [
+          {
+            "project": "maity",
+            "role": "reviewer"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-21T08:28:00Z",
+        "display_name": "Shop Dev",
+        "git_identity": null,
+        "handle": "shop-dev",
+        "id": "agt-s1",
+        "memberships": [
+          {
+            "project": "sample",
+            "role": "member"
+          }
+        ],
+        "owner_id": "hum-maintainer"
+      },
+      {
+        "created_at": "2026-10-19T12:00:00Z",
+        "display_name": "Spare",
+        "git_identity": null,
+        "handle": "spare",
+        "id": "agt-x",
+        "memberships": [],
+        "owner_id": "hum-maintainer"
+      }
+    ],
+    "next_cursor": null
+  },
+  "auth-session.json": {
+    "csrf_token": "fixture-csrf-token",
+    "expires_at": "2026-11-04T13:42:00Z",
+    "member": {
+      "display_name": "Maintainer",
+      "handle": "maintainer",
+      "id": "hum-maintainer",
+      "kind": "human"
+    }
+  },
   "maity/conversations.json": {
     "agt-a": {
+      "cursor": 4202,
       "items": [
         {
           "body": "How far is the API contract?",
+          "conversation_id": "agt-a",
           "delivered_at": "2026-10-21T13:10:04Z",
           "from": "hum-maintainer",
-          "id": "msg-0101",
+          "id": "evt-4201",
           "sent_at": "2026-10-21T13:10:00Z",
+          "seq": 4201,
           "to": "agt-a"
         },
         {
           "body": "Endpoints for join, tasks and requests are drafted.\nMessages and presence follow this afternoon.",
+          "conversation_id": "agt-a",
           "delivered_at": "2026-10-21T13:12:30Z",
           "from": "agt-a",
-          "id": "msg-0102",
+          "id": "evt-4202",
           "sent_at": "2026-10-21T13:12:30Z",
+          "seq": 4202,
           "to": "hum-maintainer"
         }
       ]
     },
     "agt-b": {
+      "cursor": null,
       "items": []
     },
     "agt-c": {
+      "cursor": null,
       "items": []
     },
     "agt-d": {
+      "cursor": 4203,
       "items": [
         {
           "body": "Keep the inbox usable on the phone.",
+          "conversation_id": "agt-d",
           "delivered_at": null,
           "from": "hum-maintainer",
-          "id": "msg-0201",
+          "id": "evt-4203",
           "sent_at": "2026-10-21T13:30:00Z",
+          "seq": 4203,
           "to": "agt-d"
         }
       ]
     },
     "agt-r": {
+      "cursor": null,
       "items": []
     }
   },
@@ -50,171 +169,278 @@ window.MAITY_FIXTURES = {
     "agt-a": {
       "items": [
         {
+          "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T07:55:00Z",
           "id": "crd-a-0007",
           "last_used_at": "2026-10-21T13:41:10Z",
+          "member_id": "agt-a",
+          "resumed_at": "2026-10-21T07:55:04Z",
+          "revoked_at": null,
+          "revoked_by": null,
+          "revoked_reason": null,
           "session_id": "ses-a-0007"
         }
-      ]
+      ],
+      "next_cursor": null
     },
     "agt-b": {
       "items": [
         {
+          "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T10:12:00Z",
           "id": "crd-b-0003",
           "last_used_at": "2026-10-21T13:39:30Z",
+          "member_id": "agt-b",
+          "resumed_at": "2026-10-21T10:12:03Z",
+          "revoked_at": null,
+          "revoked_by": null,
+          "revoked_reason": null,
           "session_id": "ses-b-0003"
         }
-      ]
+      ],
+      "next_cursor": null
     },
     "agt-c": {
       "items": [
         {
+          "client": "maity-cli/0.1.0",
+          "created_at": "2026-10-21T12:10:00Z",
+          "id": "crd-c-0003",
+          "last_used_at": "2026-10-21T12:10:00Z",
+          "member_id": "agt-c",
+          "resumed_at": null,
+          "revoked_at": null,
+          "revoked_by": null,
+          "revoked_reason": null,
+          "session_id": null
+        },
+        {
+          "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T09:40:00Z",
           "id": "crd-c-0002",
           "last_used_at": "2026-10-21T12:05:00Z",
+          "member_id": "agt-c",
+          "resumed_at": "2026-10-21T09:40:05Z",
+          "revoked_at": "2026-10-21T12:08:00Z",
+          "revoked_by": "hum-maintainer",
+          "revoked_reason": "replaced by a new clone",
           "session_id": null
         }
-      ]
+      ],
+      "next_cursor": null
     },
     "agt-d": {
       "items": [
         {
+          "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T13:00:00Z",
           "id": "crd-d-0001",
           "last_used_at": "2026-10-21T13:42:00Z",
+          "member_id": "agt-d",
+          "resumed_at": "2026-10-21T13:00:02Z",
+          "revoked_at": null,
+          "revoked_by": null,
+          "revoked_reason": null,
           "session_id": "ses-d-0001"
         }
-      ]
+      ],
+      "next_cursor": null
     },
     "agt-r": {
-      "items": []
+      "items": [],
+      "next_cursor": null
     }
+  },
+  "maity/joins.json": {
+    "items": [
+      {
+        "agent_id": "agt-r",
+        "burned": false,
+        "created_at": "2026-10-20T18:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-20T18:15:00Z",
+        "id": "join-0006",
+        "revoked_at": null,
+        "role": "reviewer",
+        "used_at": "2026-10-20T18:02:00Z"
+      }
+    ],
+    "next_cursor": null
   },
   "maity/members.json": {
     "items": [
       {
+        "areas": [
+          "/"
+        ],
+        "capabilities": [],
         "display_name": "Maintainer",
         "handle": "maintainer",
         "id": "hum-maintainer",
+        "joined_at": "2026-10-21T08:00:00Z",
         "kind": "human",
         "last_seen_at": "2026-10-21T13:40:00Z",
-        "owner_id": null,
         "paused": null,
+        "presence": "online",
         "reports_to": null,
-        "role": "owner",
-        "scopes": [
-          "/"
-        ],
-        "session": null
+        "role": "owner"
       },
       {
+        "areas": [
+          "context/",
+          "TASKS.md"
+        ],
+        "capabilities": [
+          "tag"
+        ],
         "display_name": "Agent A",
         "handle": "agent-a",
         "harness": "Claude Code",
         "id": "agt-a",
+        "joined_at": "2026-10-21T07:55:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:41:10Z",
         "model": "claude-opus-5-5",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "presence": "online",
         "reports_to": "hum-maintainer",
-        "role": "lead",
-        "scopes": [
-          "context/",
-          "TASKS.md"
-        ],
+        "role": "admin",
         "session": {
+          "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
           "id": "ses-a-0007",
+          "listening": true,
+          "model": "claude-opus-5-5",
           "started_at": "2026-10-21T07:55:00Z"
         }
       },
       {
+        "areas": [
+          "hub/"
+        ],
+        "capabilities": [],
         "display_name": "Agent B",
         "handle": "agent-b",
         "harness": "Claude Code",
         "id": "agt-b",
+        "joined_at": "2026-10-21T10:12:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
         "model": "claude-opus-5-5",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "presence": "online",
         "reports_to": "agt-a",
-        "role": "developer",
-        "scopes": [
-          "hub/"
-        ],
+        "role": "member",
         "session": {
+          "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
           "id": "ses-b-0003",
+          "listening": true,
+          "model": "claude-opus-5-5",
           "started_at": "2026-10-21T10:12:00Z"
         }
       },
       {
+        "areas": [
+          "cli/"
+        ],
+        "capabilities": [],
         "display_name": "Agent C",
         "handle": "agent-c",
         "harness": "Pi",
         "id": "agt-c",
+        "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
         "model": "claude-sonnet-5-5",
         "owner_id": "hum-maintainer",
         "paused": {
+          "by": "agt-c",
           "reason": "Waiting for the API contract in docs/api.md.",
           "since": "2026-10-21T12:04:00Z"
         },
+        "presence": "paused",
         "reports_to": "agt-a",
-        "role": "developer",
-        "scopes": [
-          "cli/"
-        ],
+        "role": "member",
         "session": null
       },
       {
+        "areas": [
+          "web/"
+        ],
+        "capabilities": [],
         "display_name": "Agent D",
         "handle": "agent-d",
         "harness": "Claude Code",
         "id": "agt-d",
+        "joined_at": "2026-10-21T13:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:42:00Z",
         "model": "claude-opus-5-5",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "presence": "online",
         "reports_to": null,
-        "role": "developer",
-        "scopes": [
-          "web/"
-        ],
+        "role": "member",
         "session": {
+          "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
           "id": "ses-d-0001",
+          "listening": false,
+          "model": "claude-opus-5-5",
           "started_at": "2026-10-21T13:00:00Z"
         }
       },
       {
+        "areas": [],
+        "capabilities": [],
         "display_name": "Reviewer",
         "handle": "reviewer",
         "harness": "Codex",
         "id": "agt-r",
+        "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-20T18:30:00Z",
         "model": "unknown",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "presence": "offline",
         "reports_to": "agt-a",
         "role": "reviewer",
-        "scopes": [],
         "session": null
       }
-    ]
+    ],
+    "next_cursor": null
   },
   "maity/project.json": {
     "absence": null,
+    "created_at": "2026-10-21T07:50:00Z",
     "keep_the_why": true,
     "name": "Maity",
-    "org_model": "hierarchical",
-    "repository": "https://github.com/oliver-zehentleitner/maity",
+    "policy": {
+      "claim_policy": "self-claim",
+      "contract_arbiter": "agt-a",
+      "done_authority": "reviewer",
+      "lease_seconds": 7200,
+      "preset": "hierarchical",
+      "steward_writes": "cards_only",
+      "tag_authority": "human"
+    },
+    "repository": {
+      "default_branch": "main",
+      "forge": "github",
+      "probe_configured": true,
+      "url": "https://github.com/oliver-zehentleitner/maity"
+    },
+    "rules_version": 7,
+    "settings": {
+      "release_checklist": [
+        "CHANGELOG has a section for this version",
+        "live version equals the tag"
+      ]
+    },
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -223,32 +449,32 @@ window.MAITY_FIXTURES = {
   "maity/requests.json": {
     "items": [
       {
+        "answer": null,
+        "answered_at": null,
         "asked_by": {
           "display_name": "Agent B",
-          "profile_id": "agt-b",
-          "role": "developer",
+          "member_id": "agt-b",
+          "role": "member",
           "session_id": "ses-b-0003"
         },
-        "context": {
-          "options": [
-            {
-              "detail": "Credentials are long random tokens, so a slow hash adds little; fastest per request.",
-              "id": "sha",
-              "label": "SHA-256 + pepper"
-            },
-            {
-              "detail": "Defence in depth if a token generator is ever weak; 40 ms on every signed call.",
-              "id": "argon",
-              "label": "Argon2id"
-            }
-          ],
-          "summary": "The credential table needs a hash before the first join can be tested end to end.",
-          "tried": "Prototyped both: SHA-256 with a server pepper verifies in microseconds; Argon2id with the OWASP minimum takes about 40 ms per request on the VM."
-        },
+        "class": "consent",
         "created_at": "2026-10-21T13:20:00Z",
-        "harness_flag": null,
         "id": "req-0012",
-        "kind": "consent",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "detail": "Credentials are long random tokens, so a slow hash adds little; fastest per request.",
+            "id": "sha",
+            "label": "SHA-256 + pepper"
+          },
+          {
+            "detail": "Defence in depth if a token generator is ever weak; 40 ms on every signed call.",
+            "id": "argon",
+            "label": "Argon2id"
+          }
+        ],
         "priority": "high",
         "replies": [
           {
@@ -258,38 +484,48 @@ window.MAITY_FIXTURES = {
           {
             "id": "argon",
             "label": "Argon2id"
-          },
-          {
-            "id": "later",
-            "label": "Later"
           }
         ],
         "status": "open",
+        "summary": "The credential table needs a hash before the first join can be tested end to end.",
+        "task": {
+          "id": "tsk-0004",
+          "status": "blocked",
+          "title": "Hub: credential exchange and storage"
+        },
         "task_id": "tsk-0004",
-        "title": "Store hashed session credentials with Argon2id instead of SHA-256?"
+        "title": "Store hashed session credentials with Argon2id instead of SHA-256?",
+        "to": "hum-maintainer",
+        "tried": "Prototyped both: SHA-256 with a server pepper verifies in microseconds; Argon2id with the OWASP minimum takes about 40 ms per request on the VM.",
+        "while_open": "wait"
       },
       {
+        "answer": null,
+        "answered_at": null,
         "asked_by": {
           "display_name": "Agent A",
-          "profile_id": "agt-a",
-          "role": "lead",
+          "member_id": "agt-a",
+          "role": "admin",
           "session_id": "ses-a-0007"
         },
-        "context": {
-          "options": [],
-          "summary": "Records that credentials never enter a model's context.",
-          "tried": "Reviewed; ktw-lint green; the agent account's merge is blocked by its harness."
-        },
+        "class": "consent",
         "created_at": "2026-10-21T12:48:00Z",
-        "harness_flag": "The executing session's harness requires the human for merges; a go here is recorded, the merge itself happens in that session.",
         "id": "req-0011",
-        "kind": "decision",
+        "ktw_ref": null,
+        "needs_in_session": {
+          "display_name": "Agent A",
+          "harness": "Claude Code",
+          "member_id": "agt-a",
+          "reason": "The harness requires the human in the executing session for merges; a go here is recorded, the merge itself happens there.",
+          "session_id": "ses-a-0007"
+        },
         "on_behalf_of": {
           "display_name": "Reviewer",
-          "profile_id": "agt-r",
+          "member_id": "agt-r",
           "role": "reviewer",
           "session_id": null
         },
+        "options": [],
         "priority": "normal",
         "replies": [
           {
@@ -299,47 +535,44 @@ window.MAITY_FIXTURES = {
           {
             "id": "no",
             "label": "No"
-          },
-          {
-            "id": "later",
-            "label": "Later"
-          },
-          {
-            "id": "discuss",
-            "label": "Discuss"
           }
         ],
         "status": "open",
+        "summary": "Records that credentials never enter a model's context.",
+        "task": null,
         "task_id": null,
-        "title": "Merge PR #2 (context/security.md)?"
+        "title": "Merge PR #2 (context/security.md)?",
+        "to": "owner",
+        "tried": "Reviewed; ktw-lint green.",
+        "while_open": "wait"
       },
       {
+        "answer": null,
+        "answered_at": null,
         "asked_by": {
           "display_name": "Agent C",
-          "profile_id": "agt-c",
-          "role": "developer",
+          "member_id": "agt-c",
+          "role": "member",
           "session_id": null
         },
-        "context": {
-          "options": [
-            {
-              "detail": "Matches the join line already documented.",
-              "id": "maity",
-              "label": "maity"
-            },
-            {
-              "detail": "Shorter to type.",
-              "id": "mty",
-              "label": "mty"
-            }
-          ],
-          "summary": "The join line in context/join.md uses `maity join`.",
-          "tried": "Checked PyPI and Debian: both names are free."
-        },
+        "class": "decision",
         "created_at": "2026-10-21T11:30:00Z",
-        "harness_flag": null,
         "id": "req-0010",
-        "kind": "question",
+        "ktw_ref": "context/join.md",
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "detail": "Matches the join line already documented.",
+            "id": "maity",
+            "label": "maity"
+          },
+          {
+            "detail": "Shorter to type.",
+            "id": "mty",
+            "label": "mty"
+          }
+        ],
         "priority": "low",
         "replies": [
           {
@@ -352,137 +585,384 @@ window.MAITY_FIXTURES = {
           }
         ],
         "status": "open",
+        "summary": "The join line in context/join.md uses `maity join`.",
+        "task": {
+          "id": "tsk-0006",
+          "status": "open",
+          "title": "CLI: join and wait"
+        },
         "task_id": "tsk-0006",
-        "title": "Name of the CLI binary: `maity` or `mty`?"
+        "title": "Name of the CLI binary: `maity` or `mty`?",
+        "to": "hum-maintainer",
+        "tried": "Checked PyPI and Debian: both names are free.",
+        "while_open": "proceed_provisionally"
       },
       {
         "answer": {
           "at": "2026-10-21T10:20:00Z",
           "by": "hum-maintainer",
+          "conversation_id": null,
           "on_behalf_of": null,
-          "reply_id": "go",
+          "reply_id": "keep",
+          "talk": false,
           "text": null
         },
+        "answered_at": "2026-10-21T10:20:00Z",
         "asked_by": {
           "display_name": "Agent D",
-          "profile_id": "agt-d",
-          "role": "developer",
+          "member_id": "agt-d",
+          "role": "member",
           "session_id": "ses-d-0001"
         },
-        "context": {
-          "options": [],
-          "summary": "Order taken from the brief.",
-          "tried": ""
-        },
+        "class": "decision",
         "created_at": "2026-10-21T10:05:00Z",
-        "harness_flag": null,
         "id": "req-0009",
-        "kind": "review",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "keep",
+            "label": "Keep the order"
+          },
+          {
+            "id": "board-first",
+            "label": "Board first"
+          }
+        ],
         "priority": "normal",
         "replies": [
           {
-            "id": "go",
-            "label": "Go"
+            "id": "keep",
+            "label": "Keep the order"
           },
           {
-            "id": "no",
-            "label": "No"
+            "id": "board-first",
+            "label": "Board first"
           }
         ],
         "status": "answered",
+        "summary": "Order taken from the brief.",
+        "task": {
+          "id": "tsk-0007",
+          "status": "in_progress",
+          "title": "Dashboard skeleton against fixtures"
+        },
         "task_id": "tsk-0007",
-        "title": "Dashboard view order: inbox, board, agents, organisation, chat?"
+        "title": "Dashboard view order: inbox, board, agents, organisation, chat?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
       }
-    ]
+    ],
+    "next_cursor": null
   },
   "maity/tasks.json": {
     "items": [
       {
+        "area": "docs/",
+        "assigned_to": "agt-a",
+        "blocked_by_request": null,
+        "body": "The REST contract hub, CLI and dashboard build against.",
+        "checkpoint": null,
         "claim": {
+          "expired": false,
           "holder": "agt-a",
-          "lease_until": "2026-10-21T17:10:00Z",
+          "lease_until": "2026-10-21T15:10:00Z",
+          "session_id": "ses-a-0007",
           "since": "2026-10-21T09:10:00Z"
         },
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [],
         "id": "tsk-0001",
         "kind": "task",
-        "scope": "docs/",
+        "ktw_ref": null,
+        "label": "feature",
+        "release": null,
+        "report": null,
+        "ships_with": [],
         "status": "in_progress",
-        "title": "API contract: docs/api.md"
+        "title": "API contract: docs/api.md",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
+        "area": "hub/",
+        "assigned_to": "agt-b",
         "blocked_by_request": "req-0012",
+        "body": "",
+        "checkpoint": {
+          "branch": "agent-b/credentials",
+          "head": "d91e294",
+          "last_step": "credential table and hash written",
+          "next_step": "the exchange endpoint",
+          "updated_at": "2026-10-21T12:40:00Z",
+          "verification": "signed"
+        },
         "claim": {
+          "expired": false,
           "holder": "agt-b",
-          "lease_until": "2026-10-21T19:00:00Z",
+          "lease_until": "2026-10-21T15:20:00Z",
+          "session_id": "ses-b-0003",
           "since": "2026-10-21T11:00:00Z"
         },
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [
           "tsk-0001"
         ],
         "id": "tsk-0004",
         "kind": "task",
-        "scope": "hub/",
+        "ktw_ref": null,
+        "label": "feature",
+        "release": null,
+        "report": null,
+        "ships_with": [],
         "status": "blocked",
-        "title": "Hub: credential exchange and storage"
+        "title": "Hub: credential exchange and storage",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
+        "area": "hub/",
+        "assigned_to": "agt-b",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
         "claim": {
+          "expired": false,
           "holder": "agt-b",
-          "lease_until": "2026-10-21T18:15:00Z",
+          "lease_until": "2026-10-21T15:20:00Z",
+          "session_id": "ses-b-0003",
           "since": "2026-10-21T10:15:00Z"
         },
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [],
         "id": "tsk-0005",
         "kind": "task",
-        "scope": "hub/",
+        "ktw_ref": null,
+        "label": "feature",
+        "release": null,
+        "report": {
+          "branch": "agent-b/hub-skeleton",
+          "head": "5c1e0aa",
+          "mismatch": false,
+          "observed": {
+            "branch_head_sha": "5c1e0aa",
+            "checks": "pending",
+            "observed_at": "2026-10-21T13:35:00Z",
+            "pr_head_sha": "5c1e0aa",
+            "pr_state": "open"
+          },
+          "pr": {
+            "head": "5c1e0aa",
+            "number": 3,
+            "state": "open",
+            "url": "https://github.com/oliver-zehentleitner/maity/pull/3"
+          },
+          "pr_status": "found",
+          "pr_unknown_reason": null,
+          "remote_head": "5c1e0aa",
+          "reported_at": "2026-10-21T13:30:00Z",
+          "reported_by": "agt-b",
+          "session_id": "ses-b-0003",
+          "summary": "Skeleton with /health and the migration check.",
+          "upstream": "origin/agent-b/hub-skeleton",
+          "verification": "signed"
+        },
+        "ships_with": [
+          "tsk-0006"
+        ],
         "status": "review",
-        "title": "Hub: skeleton with health endpoint"
+        "title": "Hub: skeleton with health endpoint",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
+        "area": "cli/",
+        "assigned_to": "agt-c",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
         "claim": null,
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [
           "tsk-0001",
           "tsk-0004"
         ],
         "id": "tsk-0006",
         "kind": "task",
-        "scope": "cli/",
+        "ktw_ref": null,
+        "label": "feature",
+        "release": null,
+        "report": null,
+        "ships_with": [
+          "tsk-0005"
+        ],
         "status": "open",
-        "title": "CLI: join and wait"
+        "title": "CLI: join and wait",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
+        "area": "web/",
+        "assigned_to": "agt-d",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
         "claim": {
+          "expired": true,
           "holder": "agt-d",
-          "lease_until": "2026-10-21T21:00:00Z",
+          "lease_until": "2026-10-21T13:30:00Z",
+          "session_id": "ses-d-0001",
           "since": "2026-10-21T13:00:00Z"
         },
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [],
         "id": "tsk-0007",
         "kind": "task",
-        "scope": "web/",
+        "ktw_ref": null,
+        "label": "feature",
+        "release": null,
+        "report": null,
+        "ships_with": [],
         "status": "in_progress",
-        "title": "Dashboard skeleton against fixtures"
+        "title": "Dashboard skeleton against fixtures",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
+        "area": "context/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
+        "depends_on": [],
+        "id": "tsk-0008",
+        "kind": "maintenance_round",
+        "ktw_ref": null,
+        "label": "chore",
+        "release": null,
+        "report": null,
+        "ships_with": [],
+        "status": "proposed",
+        "title": "Context round after the skeletons",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "docs/",
+        "assigned_to": "agt-a",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
         "claim": {
+          "expired": false,
           "holder": "agt-a",
-          "lease_until": null,
+          "lease_until": "2026-10-21T15:15:00Z",
+          "session_id": "ses-a-0007",
+          "since": "2026-10-21T13:15:00Z"
+        },
+        "closed_at": null,
+        "contract": {
+          "arbiter": "agt-a",
+          "state": "proposed",
+          "watchers": [
+            "agt-b",
+            "agt-c",
+            "agt-d"
+          ]
+        },
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
+        "depends_on": [],
+        "id": "tsk-0009",
+        "kind": "contract",
+        "ktw_ref": null,
+        "label": null,
+        "release": null,
+        "report": null,
+        "ships_with": [],
+        "status": "in_progress",
+        "title": "Contract: event kinds for chat",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "/",
+        "assigned_to": "agt-a",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": {
+          "expired": false,
+          "holder": "agt-a",
+          "lease_until": "2026-10-21T09:58:00Z",
+          "session_id": "ses-a-0007",
           "since": "2026-10-21T07:58:00Z"
         },
+        "closed_at": "2026-10-21T08:40:00Z",
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [],
         "id": "tsk-0003",
         "kind": "task",
-        "scope": "/",
+        "ktw_ref": null,
+        "label": "chore",
+        "release": null,
+        "report": null,
+        "ships_with": [],
         "status": "done",
-        "title": "Repository scaffold"
+        "title": "Repository scaffold",
+        "updated_at": "2026-10-21T13:00:00Z"
       },
       {
-        "claim": {
-          "holder": "agt-a",
-          "lease_until": null,
-          "since": "2026-10-21T09:00:00Z"
-        },
+        "area": "docs/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": "2026-10-21T09:30:00Z",
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
+        "depends_on": [],
+        "id": "tsk-0002",
+        "kind": "task",
+        "ktw_ref": null,
+        "label": "chore",
+        "release": null,
+        "report": null,
+        "ships_with": [],
+        "status": "cancelled",
+        "title": "Second site placeholder",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-a",
         "depends_on": [
           "tsk-0004",
           "tsk-0005",
@@ -491,40 +971,134 @@ window.MAITY_FIXTURES = {
         ],
         "id": "rel-0001",
         "kind": "release",
+        "ktw_ref": null,
+        "label": null,
         "release": {
+          "checklist": [
+            {
+              "at": "2026-10-21T12:00:00Z",
+              "by": "agt-a",
+              "done": true,
+              "id": "chk-1",
+              "text": "CHANGELOG has a section for this version"
+            },
+            {
+              "at": null,
+              "by": null,
+              "done": false,
+              "id": "chk-2",
+              "text": "live version equals the tag"
+            }
+          ],
+          "groups": [
+            [
+              "tsk-0005",
+              "tsk-0006"
+            ]
+          ],
           "pull_requests": [
             {
               "checks": "success",
               "head_sha": "e3fcd8b",
+              "merged_at": "2026-10-21T12:25:00Z",
               "number": 1,
               "observed_at": "2026-10-21T12:30:00Z",
+              "source": "typed",
               "state": "merged",
-              "title": "context: decisions of 2026-10-21"
+              "task_id": null,
+              "title": "context: decisions of 2026-10-21",
+              "url": "https://github.com/oliver-zehentleitner/maity/pull/1"
             },
             {
               "checks": "success",
               "head_sha": "d91e294",
+              "merged_at": null,
               "number": 2,
               "observed_at": "2026-10-21T13:35:00Z",
+              "source": "typed",
               "state": "open",
-              "title": "context: credentials never enter the model's context"
+              "task_id": null,
+              "title": "context: credentials never enter the model's context",
+              "url": "https://github.com/oliver-zehentleitner/maity/pull/2"
             },
             {
               "checks": "pending",
-              "head_sha": null,
+              "head_sha": "5c1e0aa",
+              "merged_at": null,
               "number": 3,
               "observed_at": "2026-10-21T13:35:00Z",
+              "source": "reported",
               "state": "open",
-              "title": "hub: skeleton"
+              "task_id": "tsk-0005",
+              "title": "hub: skeleton",
+              "url": "https://github.com/oliver-zehentleitner/maity/pull/3"
             }
           ],
+          "pull_requests_typed": [
+            {
+              "number": 1,
+              "state": "merged"
+            },
+            {
+              "number": 2
+            }
+          ],
+          "readiness": {
+            "blocking": [
+              {
+                "reason": "task_open",
+                "task": "tsk-0004"
+              },
+              {
+                "reason": "task_open",
+                "task": "tsk-0005"
+              },
+              {
+                "reason": "task_open",
+                "task": "tsk-0006"
+              },
+              {
+                "reason": "task_open",
+                "task": "tsk-0007"
+              },
+              {
+                "pr": 2,
+                "reason": "pr_open"
+              },
+              {
+                "pr": 3,
+                "reason": "pr_open"
+              },
+              {
+                "reason": "group_incomplete",
+                "tasks": [
+                  "tsk-0005",
+                  "tsk-0006"
+                ]
+              },
+              {
+                "item": "chk-2",
+                "reason": "checklist_open"
+              }
+            ],
+            "ready": false
+          },
+          "tag": {
+            "found": false,
+            "name": "v0.1.0",
+            "observed_at": "2026-10-21T13:35:00Z",
+            "sha": null
+          },
           "version": "0.1.0"
         },
-        "scope": "/",
+        "report": null,
+        "ships_with": [],
         "status": "open",
-        "title": "0.1.0 — first dogfooding build"
+        "title": "0.1.0 — first dogfooding build",
+        "updated_at": "2026-10-21T13:00:00Z"
       }
-    ]
+    ],
+    "next_cursor": null
   },
   "me.json": {
     "member": {
@@ -548,10 +1122,12 @@ window.MAITY_FIXTURES = {
         "slug": "sample",
         "state": "freeze"
       }
-    ]
+    ],
+    "server_time": "2026-10-21T13:42:00Z"
   },
   "sample/conversations.json": {
     "agt-s1": {
+      "cursor": null,
       "items": []
     }
   },
@@ -559,60 +1135,103 @@ window.MAITY_FIXTURES = {
     "agt-s1": {
       "items": [
         {
+          "client": "curl/8.10.1",
           "created_at": "2026-10-21T08:30:00Z",
           "id": "crd-s1-0042",
           "last_used_at": "2026-10-21T13:38:00Z",
+          "member_id": "agt-s1",
+          "resumed_at": "2026-10-21T08:30:02Z",
+          "revoked_at": null,
+          "revoked_by": null,
+          "revoked_reason": null,
           "session_id": "ses-s1-0042"
         }
-      ]
+      ],
+      "next_cursor": null
     }
+  },
+  "sample/joins.json": {
+    "items": [],
+    "next_cursor": null
   },
   "sample/members.json": {
     "items": [
       {
+        "areas": [
+          "/"
+        ],
+        "capabilities": [],
         "display_name": "Maintainer",
         "handle": "maintainer",
         "id": "hum-maintainer",
+        "joined_at": "2026-10-21T08:00:00Z",
         "kind": "human",
         "last_seen_at": "2026-10-21T13:40:00Z",
-        "owner_id": null,
         "paused": null,
+        "presence": "online",
         "reports_to": null,
-        "role": "owner",
-        "scopes": [
-          "/"
-        ],
-        "session": null
+        "role": "owner"
       },
       {
+        "areas": [
+          "src/"
+        ],
+        "capabilities": [],
         "display_name": "Shop Dev",
         "handle": "shop-dev",
         "harness": "OpenCode",
         "id": "agt-s1",
+        "joined_at": "2026-10-21T08:30:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:38:00Z",
         "model": "unknown",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "presence": "online",
         "reports_to": null,
-        "role": "developer",
-        "scopes": [
-          "src/"
-        ],
+        "role": "member",
         "session": {
+          "client": "curl/8.10.1",
           "harness": "OpenCode",
           "id": "ses-s1-0042",
+          "listening": true,
+          "model": "unknown",
           "started_at": "2026-10-21T08:30:00Z"
         }
       }
-    ]
+    ],
+    "next_cursor": null
   },
   "sample/project.json": {
-    "absence": null,
+    "absence": {
+      "scope": "bug fixes may be released, features wait",
+      "until": "2026-10-22T08:00:00Z"
+    },
+    "created_at": "2026-09-02T10:00:00Z",
     "keep_the_why": false,
     "name": "Sample shop",
-    "org_model": "autonomous-pool",
-    "repository": "https://example.org/sample-shop",
+    "policy": {
+      "claim_policy": "self-claim",
+      "contract_arbiter": "hum-maintainer",
+      "done_authority": "holder",
+      "lease_seconds": 7200,
+      "preset": "solo",
+      "steward_writes": "cards_only",
+      "tag_authority": "human"
+    },
+    "repository": {
+      "default_branch": "main",
+      "forge": "github",
+      "probe_configured": false,
+      "url": "https://github.com/example/sample-shop"
+    },
+    "rules_version": 3,
+    "settings": {
+      "release_checklist": [
+        "CHANGELOG has a section for this version",
+        "live version equals the tag"
+      ]
+    },
     "slug": "sample",
     "state": "freeze",
     "state_changed_at": "2026-10-20T16:00:00Z",
@@ -621,33 +1240,33 @@ window.MAITY_FIXTURES = {
   "sample/requests.json": {
     "items": [
       {
+        "answer": null,
+        "answered_at": null,
         "asked_by": {
           "display_name": "Shop Dev",
-          "profile_id": "agt-s1",
-          "role": "developer",
+          "member_id": "agt-s1",
+          "role": "member",
           "session_id": "ses-s1-0042"
         },
-        "context": {
-          "options": [
-            {
-              "detail": "Retag the release candidate.",
-              "id": "now",
-              "label": "Into 2.3"
-            },
-            {
-              "detail": "Tag 2.3 as is, the fix follows.",
-              "id": "after",
-              "label": "2.3.1"
-            }
-          ],
-          "summary": "Totals with three items at 0.335 round down instead of up.",
-          "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag."
-        },
+        "class": "consent",
         "created_at": "2026-10-21T13:05:00Z",
-        "harness_flag": null,
         "id": "req-0003",
-        "kind": "consent",
-        "priority": "high",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "detail": "Retag the release candidate.",
+            "id": "now",
+            "label": "Into 2.3"
+          },
+          {
+            "detail": "Tag 2.3 as is, the fix follows.",
+            "id": "after",
+            "label": "2.3.1"
+          }
+        ],
+        "priority": "urgent",
         "replies": [
           {
             "id": "now",
@@ -656,33 +1275,71 @@ window.MAITY_FIXTURES = {
           {
             "id": "after",
             "label": "2.3.1"
-          },
-          {
-            "id": "later",
-            "label": "Later"
           }
         ],
         "status": "open",
+        "summary": "Totals with three items at 0.335 round down instead of up.",
+        "task": {
+          "id": "tsk-0021",
+          "status": "review",
+          "title": "Checkout rounding"
+        },
         "task_id": "tsk-0021",
-        "title": "Ship the checkout rounding fix into the frozen 2.3?"
+        "title": "Ship the checkout rounding fix into the frozen 2.3?",
+        "to": "owner",
+        "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
+        "while_open": "wait"
       }
-    ]
+    ],
+    "next_cursor": null
   },
   "sample/tasks.json": {
     "items": [
       {
+        "area": "src/",
+        "assigned_to": "agt-s1",
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
         "claim": {
+          "expired": false,
           "holder": "agt-s1",
-          "lease_until": "2026-10-21T17:00:00Z",
+          "lease_until": "2026-10-21T15:00:00Z",
+          "session_id": "ses-s1-0042",
           "since": "2026-10-21T09:00:00Z"
         },
+        "closed_at": null,
+        "contract": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-s1",
         "depends_on": [],
         "id": "tsk-0021",
         "kind": "task",
-        "scope": "src/",
+        "ktw_ref": null,
+        "label": "fix",
+        "release": null,
+        "report": {
+          "branch": "fix/rounding",
+          "head": "81aa2f0",
+          "mismatch": null,
+          "observed": null,
+          "pr": null,
+          "pr_status": "unknown",
+          "pr_unknown_reason": "no forge CLI in this session",
+          "remote_head": "81aa2f0",
+          "reported_at": "2026-10-21T12:50:00Z",
+          "reported_by": "agt-s1",
+          "session_id": "ses-s1-0042",
+          "summary": "Round half up in the totals.",
+          "upstream": "origin/fix/rounding",
+          "verification": "bearer"
+        },
+        "ships_with": [],
         "status": "review",
-        "title": "Checkout rounding"
+        "title": "Checkout rounding",
+        "updated_at": "2026-10-21T13:00:00Z"
       }
-    ]
+    ],
+    "next_cursor": null
   }
 };
