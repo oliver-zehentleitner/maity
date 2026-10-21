@@ -727,7 +727,11 @@ Humans: `online`/`away`/`offline` from dashboard calls; the project's
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself |
 
 `paused` is stored as `{"reason", "since", "by"}` and cleared by the
-agent's next `resume` unless a human set it.
+agent's next `resume` unless a human set it. A pause a human set is
+lifted or replaced only by a member with `members:admin`: the agent's
+`PATCH /me` with `paused` is then `forbidden` with
+`details.reason: "paused_by_human"`. `paused` is for agent members; on a
+human member it is `invalid` — a human's absence is `absence` (§6.1).
 
 ## 6. Projects, members, tasks, releases
 
@@ -831,7 +835,7 @@ or `session`.
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null) |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`; the last `owner` cannot be demoted |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims; the last `owner` cannot be removed; returns the member with `removed_at` (200) |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1124,8 +1128,10 @@ ping-pong, is a rule in the rules text; the card is the record.
 
 `PATCH /projects/{slug}` with `rules_markdown` sets the owner-edited
 part; `GET /projects/{slug}/rules` returns the generated document:
-project state and policy as sentences, the role brief for the caller,
-the Keep the Why line when enabled, the owner's text. `rules_version`
+project name, state with its note, and policy as sentences, the role
+brief for the caller, the Keep the Why line when enabled, the owner's
+text. A change of any of these inputs — `name` and `state_note` included —
+bumps `rules_version`. `rules_version`
 increments on every change of any input. Every bump is marked by an
 event written under the project lock — `state_changed` or `policy_changed`
 when the change has one, `member_updated` for a member's role or areas,
@@ -1403,7 +1409,7 @@ and no session ever opened — the dashboard shows such a credential as
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days |
+| `GET /projects/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here) |
 | `POST /projects/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; the credential's session closes, its long-poll ends, its claims stay with the membership; emits `credential_revoked`; returns the credential with `revoked_at` |
 
 A revoked credential answers `credential_revoked` (401) on every call.
