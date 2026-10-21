@@ -53,7 +53,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## O
 
 ## P
-- [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three database drivers installed by default
+- [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume
 - [persistence.md](persistence.md) — SQLAlchemy Core without the ORM; migrations only on `maity-hub migrate`, `serve` refuses an outdated schema
 
 ## Q

@@ -30,3 +30,26 @@ promises self-hosters; the two wheels are small.
   install, but a self-hoster who picks the wrong extra gets a driver
   import error at startup, and SQLAlchemy's default for a bare
   `postgresql://` is psycopg2, which the hub does not use.
+
+## The image runs on SQLite in a data volume when no database is configured
+
+**Id:** a736c1bb-dc19-4a8a-8322-88207f5d53e1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the hub skeleton, 2026-10-21; implementation session, 2026-10-21
+
+The image sets `MAITY_DATABASE_URL=sqlite:////app/data/maity-hub.db` and
+declares `/app/data` as a volume owned by the hub's user, so `docker run
+<image> migrate` and `serve` work without any configuration. Compose and
+Kubernetes override the URL with a server database.
+
+**Reason:** the hub's own default, a relative SQLite file, points into a
+directory the unprivileged user cannot write, so the image failed on its
+first command. A writable default keeps "try it in minutes" true for the
+image too, and the volume keeps the data across container restarts.
+
+**Rejected alternative:** no default in the image — refuse to start and
+name `MAITY_DATABASE_URL` in one line. Clear, but the image would then be
+the one way to run the hub that cannot start without configuration, and
+a quick look would need a server database first.
