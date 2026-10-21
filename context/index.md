@@ -42,6 +42,7 @@ Why Maity is built the way it is.
 ## I
 
 ## J
+- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path
 
 ## K
 
