@@ -4,7 +4,8 @@
 
 **Id:** 19d4c8bf-f100-479a-a052-12d3c7fd48ed
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** beba53ac-5380-42e4-bae7-fbc33afe83ed
 **Evidence:** confirmed
 **Source:** the coordinator's task brief, 2026-10-21; the dashboard's first implementation, 2026-10-21
 **Revisit when:** `docs/api.md` is published and the hub answers every endpoint the views use — fixture mode then becomes a development aid only
@@ -33,3 +34,35 @@ without anyone noticing.
 the file-system requirement. Fixtures written only as JavaScript — loses
 the plain JSON the API contract is reconciled against. A fallback from a
 failing API to fixtures — rejected for the reason above.
+
+## Fixture mode only on file://: an http(s) origin never loads the fixtures
+
+**Id:** beba53ac-5380-42e4-bae7-fbc33afe83ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's review of the dashboard pull request, 2026-10-21
+**Revisit when:** development needs fixture data on an http origin, for example to test with a real browser's CSP — then a flag the hub cannot serve, not a query parameter
+
+The views read through `js/api.js`, which answers from `/api/v1/...` or,
+only when the page was opened from the file system, from the fixtures in
+`web/fixtures/`: one JSON file per endpoint in the shapes of
+`docs/api.md`, plus the generated `fixtures/fixtures.js` bundle that
+`make check` keeps current, because `file://` cannot `fetch()` JSON. The
+bundle is not referenced from `index.html`; `api.js` loads it on the
+first fixture request, so a page served over HTTP never has it. There is
+no query parameter or other switch into fixture mode, an API error
+offers no way into it, and fixture mode is labelled on every screen.
+
+**Reason:** the hub serves this directory at `/`, so whatever switch a
+developer could use would also work on the production origin. A human
+who reached fixture mode there — from an error page's link, a bookmark,
+a pasted URL — would answer fixture requests and believe the agents got
+the answers. The earlier rule "never fall back to fixtures on its own"
+stopped the silent case but not the one-click one.
+
+**Rejected alternative:** `?source=fixtures` on any origin, the previous
+entry's design — the case above. A development flag the hub never serves
+(a dotfile, a header) — workable, but `file://` already covers
+development, and every extra switch is one more thing to keep out of
+production.
