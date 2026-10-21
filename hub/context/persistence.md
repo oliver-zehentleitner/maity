@@ -158,3 +158,33 @@ cards or requests a project has.
   have to include the project everywhere.
 - UUIDs — no prefix, and 36 characters in every message and log line for
   uniqueness this volume does not need.
+
+## Nested values as JSON columns; tables only where the server queries or constrains
+
+**Id:** c0e833f1-b49c-48e8-94ad-3bc436ba1cf0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the data model for the V1 contract)
+**Revisit when:** reading events for a member gets slow enough to matter, or a JSON value has to be queried or constrained by the database
+
+Values the API returns as nested objects and the server reads and writes
+whole — a membership's areas and capabilities, a card's checkpoint,
+report, contract and release data, a request's options and answer, an
+event's audience and payload, project settings — are SQLAlchemy `JSON`
+columns. Relations the server queries or constrains are columns and
+tables: claim holder, assignee, addressee and asker as membership
+foreign keys, card edges as rows, the release version and the
+conversation id as plain columns with their own indexes.
+
+**Reason:** the nested values follow the contract's shapes, which grow
+within `v1`; as JSON they grow without a migration, and `JSON` maps to a
+native type on all three engines. The audience of an event is filtered
+in Python after the read by project and sequence number: one project
+produces a few thousand events a week, and the long-poll reads only what
+is newer than the cursor.
+
+**Rejected alternative:** normalising every list — an `event_audience`
+table, `membership_area`, `request_option`. It would let the database
+filter audiences and areas, at the cost of a join on every read and a
+multi-row write for every event, for a volume where the scan is cheap.
