@@ -49,15 +49,57 @@ def test_an_invalid_database_url_is_not_echoed(
     assert "s3cr" not in err
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://maity:s3cr@t-pw@db/maity",  # the tail would be the host
+        "postgresql://maity:s3cr@t:pw@db/maity",  # ... or a non-numeric port
+        "postgresql://maity:s3cr@t/pw@db/maity",  # ... or the database name
+        "postgresql://maity:s3cr@db/maity?x=t@pw",  # ... or the query
+    ],
+)
 def test_an_unencoded_at_in_the_password_is_refused_without_echo(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], url: str
 ) -> None:
-    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql://maity:s3cr@t-pw@db/maity")
+    monkeypatch.setenv("MAITY_DATABASE_URL", url)
     assert main(["migrate"]) == 2
     err = capsys.readouterr().err
+    assert err.count("\n") == 1
     assert "percent-encoded" in err
     assert "s3cr" not in err
-    assert "t-pw" not in err
+    assert "pw" not in err
+
+
+def test_a_non_numeric_port_is_refused_without_echo(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql://maity:s3cret@db:x5432/maity")
+    assert main(["migrate"]) == 2
+    err = capsys.readouterr().err
+    assert err == "maity-hub: MAITY_DATABASE_URL is not a valid database URL\n"
+
+
+@pytest.mark.parametrize("command", ["migrate", "serve"])
+@pytest.mark.parametrize(
+    ("url", "reason"),
+    [
+        ("foo://x/y", "Can't load plugin"),  # unknown dialect
+        ("postgresql+psycopg2://maity:s3cret@db/maity", "psycopg2"),  # driver not installed
+    ],
+)
+def test_an_unusable_dialect_or_driver_fails_in_one_line(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    url: str,
+    reason: str,
+) -> None:
+    monkeypatch.setenv("MAITY_DATABASE_URL", url)
+    assert main([command]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert reason in err
+    assert "s3cret" not in err
 
 
 @pytest.mark.parametrize("command", ["migrate", "serve"])

@@ -92,16 +92,18 @@ def normalize_database_url(url: str) -> str:
     `postgresql://` would otherwise make SQLAlchemy look for psycopg2 and
     `mysql://` for mysqlclient, neither of which is installed.
     """
-    try:
-        parsed = make_url(url)
-    except ArgumentError:
-        raise ConfigError("MAITY_DATABASE_URL is not a database URL") from None
-    if parsed.host and "@" in parsed.host:
+    scheme, _, rest = url.partition("://")
+    if not scheme.startswith("sqlite") and rest.count("@") > 1:
         # An unencoded `@` in the password splits it: the tail would be taken
-        # for the host name and end up in error messages.
+        # for the host, the port or the database name and end up in messages.
         raise ConfigError(
             "MAITY_DATABASE_URL: a password containing '@' must be percent-encoded (%40)"
         )
+    try:
+        parsed = make_url(url)
+    except (ArgumentError, ValueError):
+        # Never the parser's message: it quotes the text it failed on.
+        raise ConfigError("MAITY_DATABASE_URL is not a valid database URL") from None
     parsed = parsed.set(drivername=_DRIVERS.get(parsed.drivername, parsed.drivername))
     return parsed.render_as_string(hide_password=False)
 
@@ -110,5 +112,5 @@ def redact_database_url(url: str) -> str:
     """The URL with its password masked, for messages and logs."""
     try:
         return make_url(url).render_as_string(hide_password=True)
-    except ArgumentError:
+    except (ArgumentError, ValueError):
         return "<unparseable MAITY_DATABASE_URL>"

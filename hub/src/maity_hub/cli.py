@@ -7,7 +7,6 @@ import logging
 import sys
 
 import uvicorn
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from maity_hub import __version__
@@ -46,19 +45,19 @@ def _fail(message: str, code: int) -> int:
     return code
 
 
-def _database_error(settings: Settings, error: SQLAlchemyError) -> int:
-    # The driver's own message, first line only (SQLAlchemy appends the SQL and
-    # its parameters), with the password scrubbed should a driver ever quote it.
+def _database_error(settings: Settings, error: Exception) -> int:
+    # The driver's own message, first line only: SQLAlchemy appends the SQL and
+    # its parameters. The URL is printed only in its redacted form.
     original = getattr(error, "orig", None) or error
     reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
-    password = make_url(settings.database_url).password
-    if password:
-        reason = reason.replace(password, "***")
     return _fail(f"database {redact_database_url(settings.database_url)}: {reason}", EXIT_FAILURE)
 
 
 def _migrate(settings: Settings) -> int:
-    engine = make_engine(settings.database_url)
+    try:
+        engine = make_engine(settings.database_url)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
     try:
         before = current_revision(engine)
         migrate(engine)
@@ -71,15 +70,15 @@ def _migrate(settings: Settings) -> int:
 
 
 def _serve(settings: Settings) -> int:
-    engine = make_engine(settings.database_url)
     try:
+        engine = make_engine(settings.database_url)
         require_current_schema(engine)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
     except ConfigError as error:
         return _fail(str(error), EXIT_CONFIG)
-    except SQLAlchemyError as error:
+    except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=True)
     return 0
