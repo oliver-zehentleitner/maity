@@ -53,6 +53,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## O
 
 ## P
+- [persistence.md](persistence.md) — SQLAlchemy Core without the ORM; migrations only on `maity-hub migrate`, `serve` refuses an outdated schema
 
 ## Q
 

@@ -28,3 +28,41 @@ autogenerate keeps working.
 hub's correctness lives in single statements whose effect must be the
 same on PostgreSQL, SQLite and MySQL/MariaDB, and the ORM adds a layer
 that decides when and how those statements run.
+
+## Migrations run only on `maity-hub migrate`; `serve` refuses an outdated schema
+
+**Id:** ce7a3627-d04d-4708-bac9-ed0c7d64cfe4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (explicit `migrate`, never implicit); implementation session, 2026-10-21 (refusal at startup, the one-shot Compose service, portability rules)
+
+Schema changes are Alembic revisions shipped inside the package
+(`maity_hub/migrations`, no `alembic.ini`), applied only by `maity-hub
+migrate`. `maity-hub serve` compares the database's revision with the
+head and exits with a message naming `maity-hub migrate` when they
+differ; `/api/v1/health` answers 503 in the same case. Docker Compose
+runs a one-shot `migrate` service the hub waits for. Every revision must
+run and downgrade on PostgreSQL, SQLite and MySQL/MariaDB: `op.*`
+operations and SQLAlchemy types only, constraints named through the
+metadata's naming convention, SQLite in batch mode.
+
+**Reason:** a migration is a change to the production database and
+should happen when the operator decides, not as a side effect of a
+restart — with several replicas on Kubernetes, migrating at startup would
+also race. Refusing to serve instead of serving on an old schema is the
+loud failure: a hub that starts on the wrong schema fails later, on some
+request, with an error that no longer points at the cause. Shipping the
+migrations in the package makes `maity-hub migrate` work from a wheel or
+the image without a checkout.
+
+**Rejected alternatives:**
+- Migrate automatically when `serve` starts — the usual convenience for
+  small self-hosted tools. Rejected for the race between replicas and
+  because an upgrade would change the database without anyone asking.
+- Start anyway and only warn on an outdated schema — keeps a hub up
+  during a forgotten migration, but serves requests against tables that
+  may not match the code.
+- `alembic.ini` and `migrations/` beside the package, run with the
+  `alembic` command — the Alembic default, but it needs the source tree at
+  run time and a second tool in the operator's hands.
