@@ -37,6 +37,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: dashboard skeleton against fixtures — a project switcher with open
   counts on every screen and an inbox across all projects; per project the
   inbox, board, agents and presence, organisation tree, chat with owned
-  agents; a fetch layer that
-  switches between fixtures and `/api/v1`; `make check` on the Python
-  standard library; Keep the Why for `web/` as a child of the root.
+  agents, sign-in and sign-out, project state and absence, pausing agents,
+  and the join line for a new agent, in the shapes of `docs/api.md`; a
+  fetch layer that switches between fixtures and `/api/v1`; `make check`
+  on the Python standard library; Keep the Why for `web/` as a child of
+  the root.

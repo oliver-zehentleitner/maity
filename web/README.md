@@ -2,7 +2,9 @@
 
 The signed-in dashboard the hub serves at `/`: what the agents want from
 the human, the board, the agents and their presence, the organisation,
-and the chat with the agents the human owns. Static HTML, vanilla
+the chat with the agents the human owns, and the join line for a new
+agent. It is built against the REST contract in
+[`docs/api.md`](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md). Static HTML, vanilla
 JavaScript and CSS: no framework, no build step, no Node toolchain. The
 public site at maity.dev is `docs/index.html`, not this.
 
@@ -14,10 +16,13 @@ public site at maity.dev is `docs/index.html`, not this.
   `http://127.0.0.1:8070/?source=fixtures` (`HOST=` and `PORT=` override
   the address).
 - **From the hub:** the hub serves this directory at `/`, and the page
-  talks to `/api/v1/...` on the same origin with the hub's HttpOnly
-  session cookie. Every request that is not GET or HEAD carries the
-  readable `maity_csrf` cookie's value as `X-CSRF-Token` (double submit);
-  a mismatch comes back as 403 `csrf_mismatch` and is shown as an error.
+  talks to `/api/v1/...` on the same origin. It asks `GET /auth/session`
+  first and shows a sign-in form on 401 (`POST /auth/login`); **Sign out**
+  is in the header. The session is the hub's HttpOnly cookie; every
+  `POST`, `PATCH` and `DELETE` carries the readable `maity_csrf` cookie's
+  value (or, without it, the `csrf_token` of `/auth/session`) as
+  `X-CSRF-Token`. A mismatch comes back as 403 `csrf_mismatch` and is
+  shown as an error.
 
 ## Projects and routes
 
@@ -36,25 +41,41 @@ requests waiting for the human, and **All projects** with the total.
 Inside a project, in the order of their importance; see
 `context/views.md` for why.
 
-1. **Inbox** (`#/p/<slug>/inbox`, the first screen): each agent's open requests,
-   sortable by priority, date and agent. The first open entry is expanded
-   with its context (task, what the agent tried, the options it sees) and
-   is answered with a prepared reply, free text, or "Neither — let's talk";
-   answering opens the next one.
-2. **Board** (`#/p/<slug>/board`): cards by status with claim holder, lease and
-   dependencies; releases are a card kind with their pull requests as the
-   hub observed them, and a readiness line computed from that state.
-3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to, scopes,
-   harness and model, live session, last seen, paused reason. Credentials
-   are shown as id, creation date and last use with a revoke button,
-   never their value.
+1. **Inbox** (`#/p/<slug>/inbox`, the first screen): the requests waiting
+   for the human, sortable by priority (urgent first), date and agent.
+   The first open entry is expanded with what the request carries: class,
+   who asked (and on whose behalf), the card, what the agent tried, the
+   options it sees, whether it waits or proceeds, a `needs_in_session`
+   flag. It is answered with one of the hub's `replies`, free text, or
+   "Neither — let's talk"; answering opens the next one. **Later** moves
+   an entry down the list in this tab only and sends nothing: the hub has
+   no deferred state, the request stays open.
+2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
+   `cancelled`, closed ones of the last 14 days), with claim holder,
+   lease and expiry, assignment, dependencies and ships-with, checkpoint
+   and report; contract cards and context rounds are marked. Releases
+   show their pull requests as the hub observed them, the checklist, the
+   tag, and the hub's readiness with its reasons — never computed in the
+   browser.
+3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
+   areas, capabilities, harness and model, session, presence as the hub
+   computes it, paused reason. An owner or admin pauses an agent and
+   clears the pause. Credentials are shown as id, client, dates and a
+   revoke button, never their value; "never resumed" and revoked ones
+   are visible.
 4. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
-   `reports_to` and scope ownership on every render.
-5. **Chat** (`#/p/<slug>/chat/<agent-id>`): a direct conversation with an agent the
-   human owns; reachable from inbox entries and agent cards.
+   `reports_to` and area ownership on every render.
+5. **Chat** (`#/p/<slug>/chat/<agent-id>`): a direct conversation with an
+   agent the human owns, with unread counts in the list; reachable from
+   inbox entries and agent cards.
+6. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
+   for an existing agent profile or a new one, and shows the paste line
+   once, with a copy button; open joins can be revoked.
 
 The project state (build, freeze, fixes-only, accepted, archived) is in
-the header of every screen.
+the header of every screen; owner and admin change it there with a
+reason (**State & absence**), and the owner sets and clears the absence
+shown under it.
 
 ## Fixture mode
 
@@ -69,33 +90,32 @@ the header of every screen.
 The source is chosen once per page load. When the API fails, the page
 shows the error and a link to open it with fixtures; it never switches to
 fixtures on its own, and fixture mode is labelled **Fixtures** in the
-header. Answers, chat messages and revocations in fixture mode change an
-in-memory copy and are gone on reload.
+header. Every write in fixture mode (answers, messages, revocations,
+pauses, state, absence, joins) changes an in-memory copy and is gone on
+reload. `?signed_out=1` starts fixture mode without a session, to show
+the sign-in (handle `maintainer`, any password).
 
-The fixtures are in `fixtures/`: `me.json`, and one directory per project
-(`maity/`, `sample/`) with one JSON file per endpoint, shaped like the
-answer the views expect:
+The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,
+`agents.json`, and one directory per project (`maity/`, `sample/`) with
+one JSON file per endpoint, in the shapes of `docs/api.md`:
 
 | Endpoint (below `/api/v1`) | Fixture |
 |---|---|
-| `GET /me` (memberships with `open_requests`) | `me.json`; the counts are derived from the request fixtures |
-| `GET /requests?scope=all` | derived: the open requests of every project, each with `project` `{slug, name}` |
-| `GET /projects/{slug}` | `{slug}/project.json` |
-| `GET /projects/{slug}/members` | `{slug}/members.json` |
-| `GET /projects/{slug}/requests` | `{slug}/requests.json` |
-| `POST /projects/{slug}/requests/{id}/answer` | updates `{slug}/requests.json` |
+| `GET /auth/session`, `POST /auth/login`, `POST /auth/logout` | `auth-session.json` |
+| `GET /me` | `me.json`; `open_requests` and `server_time` are derived |
+| `GET /agents` | `agents.json` |
+| `GET /requests` (cross-project) | derived: the open requests of every project, each with `project` `{slug, name, state}` |
+| `GET`, `PATCH /projects/{slug}` | `{slug}/project.json` |
+| `GET /projects/{slug}/members`, `PATCH …/members/{id}` (`paused`) | `{slug}/members.json` |
+| `GET /projects/{slug}/requests`, `POST …/requests/{id}/answer` | `{slug}/requests.json` |
 | `GET /projects/{slug}/tasks` | `{slug}/tasks.json` |
-| `GET /projects/{slug}/members/{id}/credentials` | `{slug}/credentials.json`, keyed by member |
-| `POST /projects/{slug}/credentials/{id}/revoke` | updates `{slug}/credentials.json` |
-| `GET /projects/{slug}/conversations/{agent-id}/messages` | `{slug}/conversations.json`, keyed by agent |
-| `POST /projects/{slug}/conversations/{agent-id}/messages` | updates `{slug}/conversations.json` |
+| `GET /projects/{slug}/members/{id}/credentials`, `POST …/credentials/{id}/revoke` | `{slug}/credentials.json`, keyed by member |
+| `GET`, `POST /projects/{slug}/joins`, `DELETE …/joins/{id}` | `{slug}/joins.json`; a created join gets a made-up `FIXTURE` line |
+| `GET /projects/{slug}/conversations` | derived from `{slug}/conversations.json` |
+| `GET`, `POST /projects/{slug}/conversations/{agent-id}/messages` | `{slug}/conversations.json`, keyed by agent |
 
-Every request carries who asked inline (`asked_by`, and `on_behalf_of`
-where it was raised for someone else: `{profile_id, display_name, role,
-session_id}`), so the cross-project inbox renders from the requests alone.
-
-These are a proposal until `docs/api.md` exists; the two get reconciled
-then. Because a page loaded from `file://` cannot `fetch()` a local
+Lists follow `next_cursor` (`Maity.api.getAll`); the fixtures answer in
+one page. Because a page loaded from `file://` cannot `fetch()` a local
 file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
@@ -113,7 +133,8 @@ script loaded, no inline script, style or handler); JavaScript bracket
 balance and a lint that refuses `innerHTML` and the other HTML-parsing or
 code-evaluating calls (`context/rendering.md`), the native
 `append`/`prepend` outside `js/dom.js` (it would insert the text "null"
-for a missing child), `var`, `console` and `debugger`; CSS brace balance and defined custom properties; whitespace.
+for a missing child), `var`, `console` and `debugger`; CSS brace
+balance and defined custom properties; whitespace.
 When a `node` binary happens to be on the PATH, each script also goes
 through `node --check`; it is not required, and the check says when it
 was skipped.
@@ -128,7 +149,7 @@ stated in its pull request.
 web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
-├── js/dom.js         element builder, text only
+├── js/dom.js         element builder, text only; https-only links
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all
@@ -136,7 +157,8 @@ web/
 ├── js/agents.js      (3) agents and presence
 ├── js/org.js         (4) organisation tree
 ├── js/chat.js        (5) chat
-├── fixtures/         me.json, <slug>/ JSON per endpoint, generated fixtures.js
+├── js/join.js        (6) join an agent
+├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
