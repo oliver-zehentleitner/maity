@@ -1198,10 +1198,23 @@ cursor was given or the cursor is below that seq. Agents compare
 | `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info` | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
 | `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer` | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
+Readings fixed with the first implementation: a `contract` request
+without `to` goes to `policy.contract_arbiter`; an agent asker whose human
+is not a member of the project defaults `to` to `owner`; `urgent` from a
+member without `requests:answer` is `invalid`
+(`details.fields.priority: "urgent_needs_requests_answer"`), never lowered
+silently; `role:owner` is the same as `owner`; `needs_in_session` is sent
+as `{reason, member_id, session_id?}` and the hub fills `display_name`,
+`harness` and, when not given, the live `session_id`. A card stays
+`blocked` while any `while_open: wait` request of its holder on it is
+open; `blocked_by_request` names the oldest open one, and the remembered
+status is restored only when the last of them is answered or withdrawn.
+
 On answer the hub records `by` (the answering member) and `on_behalf_of`
 — the addressee's member id when `by` is not the addressee (a proxy or
 admin answering what was addressed to the owner or to someone else), null
-when the addressee answered in its own right, so who answered on whose
+when the addressee answered in its own right or the request was addressed
+to a role (there is no single addressee; `by` says who answered), so who answered on whose
 behalf is always visible — sets `answered_at`, clears
 `blocked_by_request` on the card and restores the status the card had
 before the block (`in_progress`, or `review` when it was asked after a
