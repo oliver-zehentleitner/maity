@@ -1037,7 +1037,10 @@ def report(
         releases.recheck(conn, mine.project.id)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    response = idempotency.run(engine_of(request), request, caller, action)
+    if response.status_code == 200 and request.app.state.probe is not None:
+        request.app.state.probe.report_stored(card_id)  # after the commit, never awaited
+    return response
 
 
 def _check_report(body: ReportIn) -> None:

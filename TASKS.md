@@ -17,7 +17,7 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent B (`hub/`)
 
-- The probe (§11) with `observed`/`mismatch` on reports and the release's pull requests and tag. Batching the board's per-card lookups after a measurement.
+- Batching the board's per-card lookups after a measurement.
 - Signed requests mandatory per project, later (a project setting; bearer stays for the page-driven join).
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).

@@ -23,6 +23,7 @@ from maity_hub import (
     errors,
     forge,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    probe,
 )
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
@@ -41,6 +42,7 @@ from maity_hub.routes import (
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import me as me_routes
+from maity_hub.routes import probe as probe_routes
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +59,13 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
+        worker = probe.Worker(engine) if forge.token() is not None else None
+        _app.state.probe = worker
+        if worker is not None:
+            worker.start()
         yield
+        if worker is not None:
+            worker.stop()
         engine.dispose()
 
     app = FastAPI(
@@ -71,6 +79,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.probe = None  # the worker, from startup on when a forge token is set
     forge.configure(settings.forge_github_token)
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
@@ -86,6 +95,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(probe_routes.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     _mount_web(app, settings)
     if settings.public_url_guessed:

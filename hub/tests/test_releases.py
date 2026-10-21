@@ -10,6 +10,7 @@ from sqlalchemy import Engine, delete, insert, select, update
 
 from maity_hub import clock, forge
 from maity_hub import tables as t
+from maity_hub.probe import Worker
 from maity_hub.routes import tasks as tasks_routes
 from tests import flow
 from tests.conftest import ClientFactory
@@ -43,6 +44,7 @@ def probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """A forge token as the operator would set it; observations are inserted by hand."""
     monkeypatch.setattr(forge, "_token", "test-token")
     monkeypatch.setattr(forge, "configure", lambda token: None)
+    monkeypatch.setattr(Worker, "start", lambda self: None)
 
 
 def task(who: Any, **body: Any) -> dict[str, Any]:
