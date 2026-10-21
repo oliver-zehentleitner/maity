@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import events, idempotency
 from maity_hub import tables as t
@@ -155,7 +156,7 @@ def read_messages(
     agent_id: str,
     request: Request,
     caller: AnyCaller,
-    after: int = Query(default=0, ge=0),
+    after: int = Query(default=0, ge=0, le=2**63 - 1),
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
@@ -189,11 +190,15 @@ def _remember_read(conn: Connection, reader: int, agent_id: str, seq: int) -> No
             )
         ).first()
         if exists is None:
-            conn.execute(
-                insert(t.conversation_read).values(
-                    reader=reader, conversation_id=agent_id, last_seq=seq
-                )
-            )
+            try:
+                with conn.begin_nested():
+                    conn.execute(
+                        insert(t.conversation_read).values(
+                            reader=reader, conversation_id=agent_id, last_seq=seq
+                        )
+                    )
+            except IntegrityError:  # another tab read first; the larger seq wins next time
+                pass
 
 
 def load_message(conn: Connection, seq: str) -> dict[str, Any]:

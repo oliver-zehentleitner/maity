@@ -65,15 +65,18 @@ WAIT_MAX = 55  # seconds; a larger `wait` is clamped (§1.7)
 
 def wait_of(request: Request) -> int:
     raw = request.query_params.get("wait", "0")
-    if not raw.isdigit():
+    if not raw.isascii() or not raw.isdigit():
         raise invalid({"wait": "not_a_number"})
-    return min(int(raw), WAIT_MAX)
+    return min(int(raw[:6]), WAIT_MAX)  # a larger value is clamped (§8.3)
 
 
 async def events_caller(request: Request) -> Caller:
     """The events read: a long-poll (`wait > 0`) is presence, not work, and renews no
-    lease; a plain read (`wait=0`) renews like any call (§2.4)."""
-    return await _resolve(request, renew_leases=wait_of(request) == 0)
+    lease; a plain read (`wait=0`) renews like any call (§2.4). Authentication comes
+    first; the endpoint validates `wait` (an invalid one counts as a read here)."""
+    raw = request.query_params.get("wait", "0")
+    waiting = raw.isascii() and raw.isdigit() and int(raw) > 0
+    return await _resolve(request, renew_leases=not waiting)
 
 
 async def human_caller(request: Request) -> Caller:

@@ -238,3 +238,61 @@ def test_a_redacted_chat_message_has_no_body(owner: flow.Human, make_client: Cli
     owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "a token"})
     items = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
     assert items[0]["body"] is None
+
+
+# --- review round ----------------------------------------------------------------------
+
+
+def test_a_chat_is_redacted_only_by_its_human_party(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    agent = flow.agent(make_client, owner)
+    message = chat(agent, agent.id, "my key is …").json()
+    other = flow.human(make_client, migrated, "second-admin")
+    with migrated.begin() as conn:  # a second human admin, as invitations will bring
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    refused = other.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "x"})
+    assert refused.status_code == 404 and refused.headers["Maity-Error"] == "not_found"
+    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "a key"})
+    with migrated.connect() as conn:
+        tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    assert tomb.audience == [f"member:{agent.id}", f"member:{owner.id}"]
+
+
+def test_the_humans_event_read_does_not_deliver_its_chat(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    chat(agent, agent.id, "to my human")
+    owner.get("/projects/maity/events?after=0")  # the human's side is the conversation endpoint
+    items = agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    assert items[0]["delivered_at"] is None
+    owner.get(f"/projects/maity/conversations/{agent.id}/messages")
+    assert agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"][0][
+        "delivered_at"
+    ]
+
+
+def test_a_chat_with_a_to_is_refused(owner: flow.Human, make_client: ClientFactory) -> None:
+    agent = flow.agent(make_client, owner)
+    response = say(owner, type="chat", conversation_id=agent.id, to=owner.id)
+    assert response.json()["error"]["details"]["fields"] == {"to": "not_for_chat"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/projects/maity/conversations/{agent}/messages?after=99999999999999999999",
+        "/projects/maity/events/99999999999999999999/redact",
+    ],
+)
+def test_integers_out_of_range_are_invalid(
+    owner: flow.Human, make_client: ClientFactory, path: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    url = path.replace("{agent}", agent.id)
+    response = owner.post(url, {"reason": "x"}) if url.endswith("redact") else owner.get(url)
+    assert response.status_code == 400 and response.headers["Maity-Error"] == "invalid"

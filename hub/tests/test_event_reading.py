@@ -135,7 +135,7 @@ def test_a_second_long_poll_supersedes_the_first(
         second = pool.submit(agent.get, f"/projects/maity/events?after={cursor}&wait=1")
         superseded = first.result(timeout=10).json()
         second.result(timeout=10)
-    assert superseded == superseded | {"items": [], "superseded": True}
+    assert superseded == superseded | {"items": [], "superseded": True, "cursor": cursor}
 
 
 def test_listening_shows_while_a_long_poll_is_open(
@@ -182,14 +182,49 @@ def test_a_dashboard_session_may_long_poll(owner: flow.Human, make_client: Clien
     assert [e["payload"]["body"] for e in body["items"]] == ["for the human"]
 
 
-def test_wait_is_clamped_to_55(owner: flow.Human, make_client: ClientFactory) -> None:
-    from maity_hub.deps import WAIT_MAX
-
-    assert WAIT_MAX == 55
-
-
 def test_events_of_another_project_are_not_found(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     stranger = flow.human(make_client, migrated, "stranger")
     assert stranger.get("/projects/maity/events").headers["Maity-Error"] == "not_found"
+
+
+# --- review round ------------------------------------------------------------------------
+
+
+def test_a_superseded_wait_reads_nothing_and_keeps_the_cursor(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    cursor = agent.get("/projects/maity/events?after=latest").json()["cursor"]
+    say(owner, agent.id, "waiting already")  # wake-relevant, there before both waits
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(agent.get, f"/projects/maity/events?after={cursor}&wait=20")
+        second = pool.submit(agent.get, f"/projects/maity/events?after={cursor}&wait=20")
+        answers = [first.result(timeout=10).json(), second.result(timeout=10).json()]
+    superseded = [a for a in answers if a["superseded"]]
+    for body in superseded:
+        assert body["items"] == [] and body["cursor"] == cursor  # nothing withheld behind it
+    assert any(a["items"] for a in answers)
+
+
+def test_an_unauthenticated_bad_wait_is_unauthenticated_first(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    response = make_client().get("/api/v1/projects/maity/events?wait=x")
+    assert response.headers["Maity-Error"] == "unauthenticated"
+
+
+@pytest.mark.parametrize("raw", ["100", "55", "999999999999"])
+def test_wait_is_clamped_to_55_seconds(raw: str) -> None:
+    from starlette.requests import Request
+
+    from maity_hub.deps import wait_of
+
+    request = Request({"type": "http", "query_string": f"wait={raw}".encode(), "headers": []})
+    assert wait_of(request) == 55
+
+
+@pytest.mark.parametrize("after", ["99999999999999999999", "9223372036854775808", "١"])
+def test_an_after_out_of_range_is_invalid(owner: flow.Human, after: str) -> None:
+    assert owner.get(f"/projects/maity/events?after={after}").headers["Maity-Error"] == "invalid"

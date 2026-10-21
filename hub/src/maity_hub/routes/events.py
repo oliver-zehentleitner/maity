@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
@@ -60,12 +60,15 @@ idempotency.LOADERS["event"] = load_event
 # --- reading and waiting -------------------------------------------------------------------
 
 
+SEQ_MAX = 2**63 - 1  # BIGINT
+
+
 def _parse_after(raw: str | None) -> int | Literal["latest"]:
     if raw is None:
         return 0
     if raw == "latest":
         return "latest"
-    if not raw.isdigit():
+    if not raw.isascii() or not raw.isdigit() or int(raw) > SEQ_MAX:
         raise invalid({"after": "not_a_seq"})
     return int(raw)
 
@@ -96,22 +99,23 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         # From now on, without the history; acknowledges nothing (§8.3).
         return _answer([], after, superseded=False)
 
-    def read(waking: bool) -> tuple[list[dict[str, Any]], int]:
+    def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, after, limit
+                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
                 )
             else:
                 rows, examined, _ = events.read(
-                    conn, mine.project.id, mine.row, mine.principal_id, after, limit
+                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
                 )
-            events.mark_delivered(conn, rows, mine.principal_id)
-            cursor = rows[-1].seq if rows else max(examined, after)
+            if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
+                events.mark_delivered(conn, rows, mine.principal_id)
+            cursor = rows[-1].seq if rows else max(examined, since)
             return [event_view(conn, r) for r in rows], cursor
 
     if wait == 0:
-        items, cursor = await run_in_threadpool(read, False)
+        items, cursor = await run_in_threadpool(read, False, after)
         return _answer(items, cursor, superseded=False)
 
     waiter = longpoll.Waiter(
@@ -123,13 +127,23 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     longpoll.registry.enter(waiter)
     try:
         deadline = time.monotonic() + wait
+        since = after
         while True:
-            waiter.event.clear()  # an event after this read wakes the next wait
-            items, cursor = await run_in_threadpool(read, True)
-            if items or waiter.superseded:
-                return _answer([] if waiter.superseded else items, cursor, waiter.superseded)
+            if waiter.superseded:
+                # Nothing read, nothing delivered, the cursor where it was: the wait that
+                # took over owns what came in (§8.3).
+                return _answer([], after, superseded=True)
+            if await request.is_disconnected():
+                return _answer([], since, superseded=False)
+            waiter.event.clear()  # an event after this read wakes the next pass
+            items, cursor = await run_in_threadpool(read, True, since)
+            if waiter.superseded:
+                return _answer([], after, superseded=True)
+            if items:
+                return _answer(items, cursor, superseded=False)
+            since = cursor  # nothing there wakes us: the next pass starts behind it
             remaining = deadline - time.monotonic()
-            if remaining <= 0 or await request.is_disconnected():
+            if remaining <= 0:
                 return _answer([], cursor, superseded=False)
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
@@ -190,6 +204,10 @@ def post_message(
     if body.type == "chat":
         if body.conversation_id is None:
             raise invalid({"conversation_id": "required_for_chat"})
+        if body.to is not None:
+            raise invalid(
+                {"to": "not_for_chat"}, "a chat goes to the other party of its conversation"
+            )
         try:
             agent, human = chat_parties(conn, mine, body.conversation_id)
         except ApiError:
@@ -264,7 +282,11 @@ def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) 
 
 @router.post("/projects/{slug}/events/{seq}/redact")
 def redact(
-    slug: str, seq: int, body: RedactIn, request: Request, caller: AnyCaller
+    slug: str,
+    seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
+    body: RedactIn,
+    request: Request,
+    caller: AnyCaller,
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -274,6 +296,14 @@ def redact(
         ).first()
         if row is None:
             raise not_found()
+        audience = ["role:owner", "role:admin"]
+        if row.conversation_id is not None:
+            # A chat is redacted only by its human party; to anyone else it does not
+            # exist, and the tombstone's event goes to the two parties (§8.5).
+            _, human = chat_parties(conn, mine, row.conversation_id)
+            if mine.id != human.id:
+                raise not_found()
+            audience = [f"member:{row.conversation_id}", f"member:{human.human_id}"]
         if not row.redacted:
             # The one mutation the log allows, itself on record (§8.5).
             tombstone = {
@@ -289,7 +319,7 @@ def redact(
                 conn,
                 mine.project.id,
                 "event_redacted",
-                ["role:owner", "role:admin"],
+                audience,
                 {"seq": seq, "reason": body.reason},
                 actor=caller.actor(mine.id),
                 subject=("event", str(seq)),
