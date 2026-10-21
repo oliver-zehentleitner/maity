@@ -85,4 +85,4 @@ or `--timeout N` seconds.
 ## Exit codes
 
 0 success · 1 error · 2 usage · 3 `wait` timed out · 4 `report` refused ·
-6 `wait` superseded.
+6 `wait` superseded · 130 interrupted.

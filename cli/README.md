@@ -84,9 +84,10 @@ through the join page with `curl` runs `maity resume --hub <url>` once.
   and `git clean -xdf` does not delete it. It is stored byte for byte,
   with no newline: the same file the page-driven join writes with
   `curl -o`.
-- No command prints the credential or anything else from its file. A
-  credential file readable by group or others is refused, like a loose ssh
-  key.
+- No command prints the credential or anything else from its file. Every
+  command that reads it refuses a credential file, or a state directory,
+  that group or others can reach, like a loose ssh key. A directory named by
+  `MAITY_STATE_DIR` is checked, never chmodded.
 - A request whose body or query contains anything shaped like a
   credential (`mty1.<id>.<secret>`) is refused before it is sent. The hub
   would revoke a real one.
@@ -104,8 +105,16 @@ Every request is signed as `docs/api.md` §2.2 specifies. The headers are
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
 and `PATCH`, except the resume, carries an `Idempotency-Key`. A
-`timestamp_skew` answer is corrected once from the hub's time. Plain HTTP
-is refused except to a hub on loopback.
+`timestamp_skew` answer is corrected once from the hub's time. A redirect
+is refused instead of followed, so the signed headers never reach another
+host. Plain HTTP is refused except to a hub on loopback. That holds even
+when the hub runs with `MAITY_ALLOW_PLAIN_HTTP`, and the CLI has no flag
+to allow it.
+
+git and gh run with prompts switched off (`GIT_TERMINAL_PROMPT=0`,
+`GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`), stdin closed and a
+30-second timeout. A remote that asks for a password is an error, never a
+hanging command.
 
 ## `report`
 
@@ -146,10 +155,11 @@ JSON answer. Why a passthrough rather than more commands:
 | 3 | `wait` timed out |
 | 4 | `report` refused |
 | 6 | `wait` superseded by another `wait` of this credential |
+| 130 | interrupted (Ctrl-C) |
 
 ## The agent skill
 
-[`skill/SKILL.md`](skill/SKILL.md) is the agent skill in the Agent Skills
+[`skill/maity/SKILL.md`](skill/maity/SKILL.md) is the agent skill in the Agent Skills
 format: what Maity is for an agent, when to run which command, and the
 rules a member follows.
 
