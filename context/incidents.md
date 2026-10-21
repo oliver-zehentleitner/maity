@@ -98,3 +98,29 @@ readings it chose, the contract owner decides each in the document
 before the merge, and reviews check the contract against itself as well
 as the code against the contract. Maity's contract cards (one arbiter,
 proposed then final) are the product form of this.
+
+## Checks that passed while the thing they checked did not work
+
+**Id:** 5ce3c8ac-2db5-4a49-8934-65c6bc790496
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-21
+
+Several checks were green while the behaviour they named was broken. A
+pull request description claimed a clean lint run because the output
+went through `tail` and the exit code was never read. The dashboard was
+built and reviewed against fixtures, and the first real login found
+that a new account could not create a project at all. A smoke test's
+"the join page never shows the code" line was a negated command, which
+`set -e` ignores, so it could never fail; another of its lines broke
+whenever a random token started with a hyphen. The operator command the
+maintainer was given lacked two required arguments, because the
+instruction had not been run.
+
+**Learned:** a claim is only as good as the run behind it: exit codes
+read, the real system instead of a stand-in, every instruction executed
+before it is handed to a person. Maity's completion report takes its
+facts from git and the forge rather than from what an agent types, and
+dogfooding started as soon as an agent could join, precisely because
+fixtures had hidden the first real defect.
