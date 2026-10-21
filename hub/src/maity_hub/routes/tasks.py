@@ -404,6 +404,9 @@ def patch_task(
             values["status"] = body.status
             if body.status in cards.CLOSED:
                 values["closed_at"] = clock.now()
+                # A closed card is blocked by nothing any more (§7).
+                values["status_before_block"] = None
+                values["blocked_by_request"] = None
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
@@ -564,6 +567,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
                 lease_until=None,
                 status="open" if card.status not in cards.CLOSED else card.status,
                 status_before_block=None,
+                blocked_by_request=None,
                 updated_at=now,
                 changed_by_credential=caller.credential_id,
                 changed_via=caller.via,
