@@ -37,6 +37,7 @@ from maity_hub.views import (
 router = APIRouter()
 
 PACKET_EVENTS = 100  # then `truncated: true` (§1.7)
+PACKET_REQUESTS = 100  # per list, then `requests.truncated: true`
 WAIT_TIMEOUTS = {"cline": 240}  # harnesses known to kill commands early
 WAIT_TIMEOUT_DEFAULT = 600
 KEEP_THE_WHY_INSTRUCTION = rules.KEEP_THE_WHY
@@ -329,10 +330,12 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
         and inbox.may_answer(conn, r, mine)
         and (inbox.addressed_to(conn, r, mine) or mine.may("requests:answer"))
     ]
+    # Bounded like the rest of the packet (§5.2): an admin may answer everything open.
     return {
-        "mine_open": [request_view(conn, r) for r in mine_open],
-        "answered_since_cursor": [request_view(conn, r) for r in answered],
-        "to_answer": [request_view(conn, r) for r in to_answer],
+        "mine_open": [request_view(conn, r) for r in mine_open[:PACKET_REQUESTS]],
+        "answered_since_cursor": [request_view(conn, r) for r in answered[:PACKET_REQUESTS]],
+        "to_answer": [request_view(conn, r) for r in to_answer[:PACKET_REQUESTS]],
+        "truncated": any(len(x) > PACKET_REQUESTS for x in (mine_open, answered, to_answer)),
     }
 
 

@@ -382,7 +382,9 @@ def test_nobody_answers_its_own_request(owner: flow.Human, make_client: ClientFa
     own = asked(admin)
     assert answer(admin, own, text="yes").headers["Maity-Error"] == "self_answer"
     worker = flow.agent(make_client, owner)
-    filed = asked(admin, on_behalf_of=worker.id, to=worker.id)
+    dead = ask(admin, on_behalf_of=worker.id, to=worker.id)  # could never be answered
+    assert dead.json()["error"]["details"]["fields"] == {"on_behalf_of": "is_the_addressee"}
+    filed = asked(admin, on_behalf_of=worker.id, to="role:member")  # worker holds the role
     assert answer(worker, filed, text="x").headers["Maity-Error"] == "self_answer"
 
 
@@ -454,3 +456,68 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent.post(f"/projects/maity/requests/{second['id']}/withdraw", {})
     freed = owner.get(f"/projects/maity/tasks/{card['id']}").json()
     assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+
+
+# --- review round ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("state", ["open", "proposed", "assigned"])
+def test_a_request_on_an_unheld_card_blocks_nothing(
+    owner: flow.Human, make_client: ClientFactory, state: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(
+        owner,
+        status="proposed" if state == "proposed" else "open",
+        **({"assigned_to": agent.id} if state == "assigned" else {}),
+    )
+    asked(agent, task_id=card["id"])
+    after = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    assert (after["status"], after["blocked_by_request"]) == (card["status"], None)
+    if state != "proposed":
+        assert _claim(agent, card).status_code == 200
+
+
+def test_done_on_a_blocked_card_clears_the_block(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    owner.patch("/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "solo"})
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    asked(agent, task_id=card["id"])
+    done = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True)).json()
+    assert (done["status"], done["blocked_by_request"]) == ("done", None)
+
+
+def test_the_cursor_survives_an_answer_between_pages(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    first, second, third = asked(agent), asked(agent), asked(agent)
+    page = owner.get("/projects/maity/requests?limit=2").json()
+    assert [r["id"] for r in page["items"]] == [first["id"], second["id"]]
+    answer(owner, first, text="done")  # leaves the open list
+    rest = owner.get(f"/projects/maity/requests?limit=2&cursor={page['next_cursor']}").json()
+    assert [r["id"] for r in rest["items"]] == [third["id"]]
+    other_sort = owner.get(f"/projects/maity/requests?sort=date&cursor={page['next_cursor']}")
+    assert other_sort.json()["error"]["details"]["fields"] == {"cursor": "other_sort"}
+
+
+def test_an_empty_text_is_no_answer(owner: flow.Human, make_client: ClientFactory) -> None:
+    agent = flow.agent(make_client, owner)
+    request = asked(agent)
+    assert answer(owner, request, text="").headers["Maity-Error"] == "invalid"
+
+
+def test_needs_in_session_names_a_session_of_that_member(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent, other = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    foreign = other.resume().json()["session"]["id"]
+    response = ask(
+        agent, needs_in_session={"reason": "x", "member_id": agent.id, "session_id": foreign}
+    )
+    assert response.json()["error"]["details"]["fields"] == {
+        "needs_in_session.session_id": "not_the_members"
+    }

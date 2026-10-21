@@ -70,7 +70,12 @@ def test_the_packet_has_every_part_of_the_contract(
         {"path": "/", "owner": owner.id},
         {"path": "hub/", "owner": agent.id},
     ]
-    assert packet["requests"] == {"mine_open": [], "answered_since_cursor": [], "to_answer": []}
+    assert packet["requests"] == {
+        "mine_open": [],
+        "answered_since_cursor": [],
+        "to_answer": [],
+        "truncated": False,
+    }
     assert packet["peers"] == [
         {
             "member_id": owner.id,

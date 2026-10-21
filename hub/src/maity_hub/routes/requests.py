@@ -57,7 +57,7 @@ class RequestCreate(Strict):
 
 class AnswerIn(Strict):
     reply_id: str | None = Field(default=None, max_length=64)
-    text: str | None = markdown(default=None)
+    text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
 
 
@@ -202,16 +202,20 @@ def _needs_in_session(
         )
     ).one()
     person = _person(conn, member.id, None)
-    session = conn.execute(
-        select(t.agent_session.c.id, t.agent_session.c.harness).where(
-            t.agent_session.c.membership_id == member.id, t.agent_session.c.live.is_(True)
-        )
-    ).first()
+    sessions = select(t.agent_session.c.id, t.agent_session.c.harness).where(
+        t.agent_session.c.membership_id == member.id
+    )
+    if needs.session_id is not None:
+        session = conn.execute(sessions.where(t.agent_session.c.id == needs.session_id)).first()
+        if session is None:
+            raise invalid({"needs_in_session.session_id": "not_the_members"})
+    else:
+        session = conn.execute(sessions.where(t.agent_session.c.live.is_(True))).first()
     return {
         "reason": needs.reason,
         "member_id": needs.member_id,
         "display_name": person["display_name"],
-        "session_id": needs.session_id or (session.id if session else None),
+        "session_id": session.id if session else None,
         "harness": session.harness if session else None,
     }
 
@@ -251,6 +255,9 @@ def create_request(
             mine.require("requests:answer")
             on_behalf = _member_id(conn, mine, body.on_behalf_of, "on_behalf_of")
         to = _resolve_to(conn, mine, body, on_behalf or mine.id)
+        if on_behalf is not None and _is_addressee(conn, mine, to, on_behalf):
+            # They could never answer it (self_answer): the request would be dead on arrival.
+            raise invalid({"on_behalf_of": "is_the_addressee"})
         if body.class_ == "consent" and not inbox.consent_target_ok(conn, mine.project.id, to):
             raise invalid(
                 {"to": "cannot_answer_consent"}, "a consent goes to a role that may answer it"
@@ -298,6 +305,7 @@ def create_request(
         if (
             card is not None
             and body.while_open == "wait"
+            and holder is not None  # an unheld card is nobody's to block
             and holder in (mine.id, on_behalf)
             and card.status not in ("blocked", "done", "cancelled")
         ):
@@ -325,6 +333,15 @@ def create_request(
         return idempotency.Outcome(201, "request", request_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, member: int) -> bool:
+    if to.kind == "member":
+        return to.member == member
+    if to.kind == "owner":
+        owner = inbox.owner_membership(conn, mine.project.id)
+        return owner is not None and owner.id == member
+    return False
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
@@ -403,22 +420,36 @@ def _handle(view: dict[str, Any]) -> str:
     return handle
 
 
-def _page(views: list[dict[str, Any]], limit: int, cursor: str | None) -> dict[str, Any]:
-    offset = 0
+def _key(view: dict[str, Any], sort: str) -> list[Any]:
+    """The position of an entry in `sort`, as a cursor can carry it."""
+    created = view["_created"].isoformat()
+    if sort == "date":
+        return [created, view["id"]]
+    if sort == "agent":
+        return [_handle(view), created, view["id"]]
+    return [inbox.PRIORITY_RANK[view["priority"]], created, view["id"]]
+
+
+def _page(views: list[dict[str, Any]], sort: str, limit: int, cursor: str | None) -> dict[str, Any]:
+    """Keyset paging: the cursor carries the last entry's position, so an entry that
+    left the list (answered) shifts nothing behind it."""
     if cursor is not None:
         try:
-            offset = int(
-                json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))["o"]
-            )
+            raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+            after_sort, after_key = raw["s"], raw["k"]
         except (ValueError, KeyError, TypeError):
             raise invalid({"cursor": "invalid"}) from None
-    page = views[offset : offset + limit]
-    following = offset + limit
-    next_cursor = (
-        base64.urlsafe_b64encode(json.dumps({"o": following}).encode()).decode().rstrip("=")
-        if following < len(views)
-        else None
-    )
+        if after_sort != sort:
+            raise invalid({"cursor": "other_sort"}, "this cursor belongs to another sort")
+        if sort == "date":  # newest first
+            views = [v for v in views if _key(v, sort) < after_key]
+        else:
+            views = [v for v in views if _key(v, sort) > after_key]
+    page = views[:limit]
+    next_cursor = None
+    if len(views) > limit:
+        token = json.dumps({"s": sort, "k": _key(page[-1], sort)})
+        next_cursor = base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
     for view in page:
         view.pop("_asker_handle", None)
         view.pop("_created", None)
@@ -464,7 +495,7 @@ def list_requests(
         mine.require("project:read")
         rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
         views = [_with_handle(conn, r, request_view(conn, r)) for r in rows]
-        return JSONResponse(_page(_sorted(views, sort), limit, cursor))
+        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
 
 
 @router.get("/requests")
@@ -503,7 +534,7 @@ def list_all_requests(
             views += [
                 {**_with_handle(conn, r, request_view(conn, r)), "project": inline} for r in rows
             ]
-        return JSONResponse(_page(_sorted(views, sort), limit, cursor))
+        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
 
 
 @router.get("/projects/{slug}/requests/{request_id}")

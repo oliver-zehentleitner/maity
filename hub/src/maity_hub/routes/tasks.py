@@ -757,7 +757,9 @@ def report(
         }
         values: dict[str, Any] = {"report": stored}
         if body.done:
-            values.update(status="done", closed_at=now, status_before_block=None)
+            values.update(
+                status="done", closed_at=now, status_before_block=None, blocked_by_request=None
+            )
         elif card.status == "blocked":
             values["status_before_block"] = "review"  # the answer restores review (§7)
         else:
