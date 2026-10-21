@@ -385,9 +385,9 @@ setting. The bearer-over-TLS rule (§2.2), the join rate limit per source
 address (§3.1) and the login limit (§2.1) all read the address and scheme
 decided this way.
 
-Without the flag, a login or any cookie-authenticated call over plain
-HTTP from a non-loopback address is `insecure_transport`, like a bearer
-credential. The cookies' `Secure` flag follows the scheme the request
+Without the flag, a login, any cookie-authenticated call, and the join
+exchange (its response is a credential) over plain HTTP from a
+non-loopback address are `insecure_transport`, like a bearer credential. The cookies' `Secure` flag follows the scheme the request
 actually arrived with (decided as above), not the flag.
 
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
@@ -551,7 +551,9 @@ the CLI's rule.
 
 The non-secret facts travel in headers; everything else comes from the
 resume packet. The join is consumed on the first successful exchange; a
-second call with the same token is `not_found`. Errors: `code_invalid`
+second call with the same token is `not_found`. Errors: `insecure_transport`
+(403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
+code is not consumed), `code_invalid`
 (403, the join is not burned until the third wrong code), `not_found`
 (404), `rate_limited` (429); on exit 22 nothing was written and the
 agent reads `Maity-Error` from the printed headers. A credential that
