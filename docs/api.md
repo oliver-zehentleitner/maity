@@ -105,7 +105,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
-| 503 | `schema_outdated` | the database is not at the migration head (`/health`) |
+| 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
+| 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
 ### 1.4 Pagination
 
@@ -541,7 +542,9 @@ and version. It states the output discipline (§2.2, §3.3), shows one
 complete state-changing bearer call with an idempotency key, and says
 that `/api/v1/help` always describes `/api/v1`. `GET /api/v1/openapi.json`
 is the same surface as OpenAPI 3.1. `GET /api/v1/health` exists as in the
-skeleton.
+skeleton: on `200` its body stays the skeleton's `{status, version, api,
+database: {reachable, revision, head}}`; a `503` is the error envelope
+(§1.3) with `Maity-Error: schema_outdated` or `database_unavailable`.
 
 ## 5. Me, resume, sessions
 
