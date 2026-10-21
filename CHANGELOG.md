@@ -15,6 +15,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - hub: server skeleton — `maity_hub` package with `maity-hub serve` and
   `maity-hub migrate`, settings from the environment, Alembic baseline
   portable across PostgreSQL, SQLite and MySQL/MariaDB, `GET /api/v1/health`,
-  `GET /api/v1/help` (Markdown), the dashboard served from `web/` at `/`;
-  `make check`, CI on SQLite, PostgreSQL and MariaDB; Dockerfile and Docker
+  `GET /api/v1/help` (Markdown), the dashboard served from `web/` at `/`
+  without dotfiles; `make check` and `make revision`; CI on SQLite,
+  PostgreSQL, MariaDB, the built wheel and the image; Dockerfile and Docker
   Compose with PostgreSQL in `deploy/`.

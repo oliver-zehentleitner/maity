@@ -13,6 +13,17 @@ that need the maintainer are marked **[maintainer]**.
 - Turn the agreed design into `docs/architecture.md`, `docs/security.md` (threat model, credentials, request signing and replay protection) and the first API contract; `docs/install/` for plain Python, Docker Compose and Helm on Kubernetes; `docs/agents.md` as the agent-facing guide the join page and `/help` are built from.
 - Add the `children` blocks for `hub/`, `cli/`, `web/` to `.keep-the-why` when the directories exist and have owners.
 
+## Agent B (`hub/`)
+
+- Auth, membership, request and event tables once `docs/api.md` exists, with:
+  - credentials hashed at rest and revocable per session, returned only as a file-shaped response, refused when they appear in a request payload;
+  - bearer plus idempotency key for raw HTTP callers, HMAC-signed requests with a nonce window for the CLI, signing mandatory per project later;
+  - `conversation_id` on message events for the human's direct conversations with their agents;
+  - `GET /me` with `open_requests` per membership and a cross-project request scope for humans only.
+- Before the first write path: WAL and `busy_timeout` for file SQLite, the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
+- Helm chart.
+- MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
+
 ## Requirements collected so far (not yet designed)
 
 - Join by pasting a short text into any running agent session; pairing with the hub; the agent then knows who it is, what to do and how the system works.
