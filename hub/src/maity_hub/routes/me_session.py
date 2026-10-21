@@ -37,6 +37,7 @@ from maity_hub.views import (
 router = APIRouter()
 
 PACKET_EVENTS = 100  # then `truncated: true` (§1.7)
+PACKET_REQUESTS = 100  # per list, then `requests.truncated: true`
 WAIT_TIMEOUTS = {"cline": 240}  # harnesses known to kill commands early
 WAIT_TIMEOUT_DEFAULT = 600
 KEEP_THE_WHY_INSTRUCTION = rules.KEEP_THE_WHY
@@ -61,6 +62,11 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/projects/{slug}/tasks/{id}/checkpoint", "tasks:write"),
     ("POST", "/projects/{slug}/tasks/{id}/report", "tasks:write"),
     ("POST", "/projects/{slug}/tasks/{id}/assign", "tasks:admin"),
+    ("GET", "/projects/{slug}/requests", "project:read"),
+    ("GET", "/projects/{slug}/requests/{id}", "project:read"),
+    ("POST", "/projects/{slug}/requests", "requests:ask"),
+    ("POST", "/projects/{slug}/requests/{id}/answer", "requests:ask"),
+    ("POST", "/projects/{slug}/requests/{id}/withdraw", "requests:ask"),
 ]
 
 
@@ -283,8 +289,7 @@ def _packet(
         },
         "claims": [task_view(conn, r) for r in held],
         "assigned": [task_view(conn, r) for r in assigned],
-        # Requests arrive with the requests slice; until then there are none.
-        "requests": {"mine_open": [], "answered_since_cursor": [], "to_answer": []},
+        "requests": _requests_block(conn, mine, cursor),
         "events": {
             "after": cursor,
             "items": [event_view(conn, r) for r in rows],
@@ -293,6 +298,44 @@ def _packet(
         },
         "peers": peers,
         "operations": operations(project, mine.role),
+    }
+
+
+def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
+    """§5.2: what I asked and is open, what was answered since my cursor, what I may answer."""
+    from maity_hub import inbox
+    from maity_hub.routes.requests import request_view
+
+    rows = conn.execute(
+        select(t.request)
+        .where(t.request.c.project_id == mine.project.id)
+        .order_by(t.request.c.created_at)
+    ).all()
+    mine_open = [r for r in rows if r.status == "open" and inbox.is_asker(r, mine)]
+    answered_ids = set(
+        conn.execute(
+            select(t.event.c.subject_id).where(
+                t.event.c.project_id == mine.project.id,
+                t.event.c.kind == "request_answered",
+                t.event.c.seq > cursor,
+            )
+        ).scalars()
+    )
+    answered = [r for r in rows if r.id in answered_ids and inbox.is_asker(r, mine)]
+    to_answer = [
+        r
+        for r in rows
+        if r.status == "open"
+        and not inbox.is_asker(r, mine)
+        and inbox.may_answer(conn, r, mine)
+        and (inbox.addressed_to(conn, r, mine) or mine.may("requests:answer"))
+    ]
+    # Bounded like the rest of the packet (§5.2): an admin may answer everything open.
+    return {
+        "mine_open": [request_view(conn, r) for r in mine_open[:PACKET_REQUESTS]],
+        "answered_since_cursor": [request_view(conn, r) for r in answered[:PACKET_REQUESTS]],
+        "to_answer": [request_view(conn, r) for r in to_answer[:PACKET_REQUESTS]],
+        "truncated": any(len(x) > PACKET_REQUESTS for x in (mine_open, answered, to_answer)),
     }
 
 

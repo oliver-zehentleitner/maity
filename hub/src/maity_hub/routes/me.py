@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, and_, func, or_, select
+from sqlalchemy import Connection, select
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -65,18 +65,17 @@ def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
 
 
 def open_requests(conn: Connection, membership_id: int, role: str) -> int:
-    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7)."""
-    addressed = [t.request.c.to_member == membership_id, t.request.c.to_role == role]
-    if role == "owner":
-        addressed.append(t.request.c.to_kind == "owner")
-    membership = select(t.membership.c.project_id).where(t.membership.c.id == membership_id)
-    count = conn.execute(
-        select(func.count()).where(
-            and_(
-                t.request.c.project_id == membership.scalar_subquery(),
-                t.request.c.status == "open",
-                or_(*addressed),
-            )
+    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
+    through the listing's own rule so that the two cannot drift."""
+    from maity_hub import inbox
+    from maity_hub.access import Membership
+
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    mine = Membership(project, row, "agent" if row.agent_id else "human")
+    open_rows = conn.execute(
+        select(t.request).where(
+            t.request.c.project_id == row.project_id, t.request.c.status == "open"
         )
-    ).scalar_one()
-    return int(count)
+    ).all()
+    return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))

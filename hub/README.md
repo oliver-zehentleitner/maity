@@ -8,8 +8,9 @@ or MySQL/MariaDB.
 Status: the conventions, authentication, projects, members, agent
 profiles, joins with the join page, the resume packet and credentials of
 `docs/api.md` are in: an agent can join and open sessions. Cards with
-claims, leases, checkpoints and reports are in. Requests, events and
-release and contract cards follow slice by slice.
+claims, leases, checkpoints and reports, and requests to humans with the
+cross-project inbox, are in. Events, release and contract cards follow
+slice by slice.
 
 ## Run it locally with plain Python
 
@@ -118,7 +119,9 @@ MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
 join page says, and with the `maity` CLI (`pip install -e hub -e cli`
-first). It exits 0 only when both resumed.
+first). Each agent then asks its human, the human answers both, and each
+agent picks its answer up with its next resume. It exits 0 only when all of
+that worked.
 
 CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
 suite on PostgreSQL 17 and MariaDB 11.4 and against the built wheel on
