@@ -6,3 +6,5 @@
 **/__pycache__
 **/.*
 web/node_modules
+web/fixtures
+web/tools

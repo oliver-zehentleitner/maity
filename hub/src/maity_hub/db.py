@@ -29,7 +29,8 @@ CONNECT_TIMEOUT_SECONDS = 5
 
 
 def make_engine(url: str) -> Engine:
-    kwargs: dict[str, Any] = {"pool_pre_ping": True}
+    # hide_parameters: a failing statement's error never carries the values.
+    kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
     else:
@@ -44,6 +45,12 @@ def make_engine(url: str) -> Engine:
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    # Readers do not block the writer and the writer waits instead of failing
+    # (hub/context/persistence.md); WAL needs a file, not :memory:.
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA journal_mode")
+    if cursor.fetchone()[0] != "memory":
+        cursor.execute("PRAGMA journal_mode=WAL")
     cursor.close()
 
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -28,6 +29,8 @@ class Settings:
     public_url_guessed: bool
     web_dir: Path | None
     web_dir_required: bool
+    trusted_proxies: tuple[IPNetwork, ...] = field(default=())
+    allow_plain_http: bool = False
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -45,7 +48,39 @@ class Settings:
             public_url_guessed=not public_url and host in _WILDCARD_HOSTS,
             web_dir=Path(web_dir_env) if web_dir_env else checkout_web_dir(),
             web_dir_required=bool(web_dir_env),
+            trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
+            allow_plain_http=parse_flag(
+                env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
+            ),
         )
+
+
+IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def parse_networks(value: str) -> tuple[IPNetwork, ...]:
+    """`MAITY_TRUSTED_PROXIES`: a comma-separated CIDR list; a bare address is a /32 or /128."""
+    networks = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            raise ConfigError(
+                f"MAITY_TRUSTED_PROXIES: {part!r} is not an address or CIDR"
+            ) from None
+    return tuple(networks)
+
+
+def parse_flag(value: str, name: str) -> bool:
+    lowered = value.strip().lower()
+    if lowered in ("", "0", "false", "no"):
+        return False
+    if lowered in ("1", "true", "yes"):
+        return True
+    raise ConfigError(f"{name} must be 1 or 0, got {value!r}")
 
 
 def parse_bind(bind: str) -> tuple[str, int]:

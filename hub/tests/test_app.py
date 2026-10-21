@@ -28,7 +28,10 @@ def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engin
     downgrade(engine)
     response = client.get("/api/v1/health")
     assert response.status_code == 503
-    assert response.json()["database"]["revision"] is None
+    assert response.headers["Maity-Error"] == "schema_outdated"
+    error = response.json()["error"]
+    assert error["code"] == "schema_outdated"
+    assert error["details"] == {"revision": None, "head": head_revision(engine)}
 
 
 def test_help_is_markdown_and_names_the_api_version(client: TestClient) -> None:
@@ -57,7 +60,16 @@ def test_dashboard_is_served_at_the_root(client: TestClient, web_dir: Path) -> N
 
 
 @pytest.mark.parametrize(
-    "path", ["/.env", "/.git/config", "/assets/.secret", "/api/v1/page.html", "/api/x"]
+    "path",
+    [
+        "/.env",
+        "/.git/config",
+        "/assets/.secret",
+        "/api/v1/page.html",
+        "/api/x",
+        "/fixtures/me.json",
+        "/tools/serve.py",
+    ],
 )
 def test_dotfiles_and_the_api_prefix_are_never_served_as_files(
     client: TestClient, web_dir: Path, path: str

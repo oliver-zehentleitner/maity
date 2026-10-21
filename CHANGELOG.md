@@ -43,3 +43,13 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   otherwise; `make check` on the Python standard library and `make smoke`
   on a bare node binary, both in a `web` CI job; Keep the Why for `web/`
   as a child of the root.
+- hub: the API conventions and authentication of `docs/api.md` §1–§2 —
+  error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
+  nosniff on every response, the 64 KiB body cap, refusal of credential-
+  shaped strings with revocation of a verified leak; human login with
+  scrypt, session cookies and `X-CSRF-Token`; agent bearer credentials over
+  TLS and HMAC-signed requests with a nonce window; `Idempotency-Key`;
+  `MAITY_TRUSTED_PROXIES` and `MAITY_ALLOW_PLAIN_HTTP`; `GET /me` with open
+  requests per project; `maity-hub owner create`; `/health` errors as the
+  envelope (`database_unavailable`, `schema_outdated`); `500 internal` in the
+  envelope; the hub's own request log without query strings or join tokens.

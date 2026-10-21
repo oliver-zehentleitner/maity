@@ -17,9 +17,9 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent B (`hub/`)
 
-- The endpoint slices of `docs/api.md` on top of the data model (#8), one pull request each, in this order: authentication and the conventions (#11); projects, agent profiles, members, joins with the join page and exchange, resume and sessions, credentials; tasks with claims and reports; requests with the cross-project inbox; events with the long-poll, messages and conversations; the probe and release readiness.
+- The endpoint slices of `docs/api.md` after authentication, one pull request each: projects, agent profiles, members, joins with the join page and exchange, resume and sessions, credentials; tasks with claims and reports; requests with the cross-project inbox; events with the long-poll, messages and conversations; the probe and release readiness.
 - Signed requests mandatory per project, later (a project setting; bearer stays for the page-driven join).
-- Before the first write path: WAL and `busy_timeout` for file SQLite, the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
+- Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - Helm chart.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
 - A constraints file pinning the tested dependency versions for CI and the image.

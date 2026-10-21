@@ -33,6 +33,10 @@ services:
       MAITY_DATABASE_URL: postgresql://maity:${MAITY_DB_PASSWORD:?set MAITY_DB_PASSWORD in deploy/.env}@db/maity
       # The address browsers and agents use; change it together with MAITY_PUBLISH.
       MAITY_PUBLIC_URL: ${MAITY_PUBLIC_URL:-http://localhost:8080}
+      # The port is published on loopback only, but the hub sees the Docker bridge
+      # as its peer: plain HTTP must be allowed explicitly (docs/api.md §2.5).
+      # Remove this once the hub is published on a network behind TLS.
+      MAITY_ALLOW_PLAIN_HTTP: "1"
     depends_on:
       db:
         condition: service_healthy

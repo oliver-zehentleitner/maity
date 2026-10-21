@@ -5,8 +5,9 @@ API under `/api/v1` and the static dashboard from `../web` at `/`. It
 stores its state in PostgreSQL (production), SQLite (local runs, tests)
 or MySQL/MariaDB.
 
-Status: skeleton. Health, `/help` and the migration machinery exist; the
-product endpoints follow once the API contract (`docs/api.md`) exists.
+Status: the conventions, authentication (human sessions, agent bearer
+and signed requests) and `GET /me` of `docs/api.md` are in; the join,
+resume, tasks, requests and events follow slice by slice.
 
 ## Run it locally with plain Python
 
@@ -17,8 +18,13 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 maity-hub migrate     # creates ./maity-hub.db and brings the schema to the current version
+maity-hub owner create --handle maintainer --display-name "Maintainer"   # asks for the password
 maity-hub serve       # http://127.0.0.1:8080
 ```
+
+`owner create` makes the first human account; it reads the password from
+the terminal (asked twice) or from the first line of standard input,
+never from the command line.
 
 ```sh
 curl http://127.0.0.1:8080/api/v1/health
@@ -46,8 +52,13 @@ for both. Compose also interpolates `$` in `.env` values.
 
 The `migrate` service runs `maity-hub migrate` once and exits; the hub
 starts after it succeeded and reports healthy once `/api/v1/health`
-answers. The hub is published on `127.0.0.1:8080`. To reach it from other
-machines, set both in `deploy/.env`: `MAITY_PUBLISH=0.0.0.0:8080` and
+answers. The hub is published on `127.0.0.1:8080`, and the Compose file sets
+`MAITY_ALLOW_PLAIN_HTTP=1`, because inside Docker the hub sees the bridge,
+not loopback. Create the first account with
+`docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer`
+and the password on standard input. To reach it from other machines, put
+a TLS proxy in front, remove `MAITY_ALLOW_PLAIN_HTTP` and set both in
+`deploy/.env`: `MAITY_PUBLISH=0.0.0.0:8080` and
 `MAITY_PUBLIC_URL` to the address the others use (`http://<host>:8080`),
 since the public URL ends up in `/help` and in join links.
 
@@ -61,8 +72,8 @@ docker run -d -v maity-data:/app/data -p 127.0.0.1:8080:8080 maity-hub
 
 Without `MAITY_DATABASE_URL` the image uses SQLite in `/app/data`, a
 volume owned by the hub's user (uid 10001). The image contains the
-dashboard from `web/` when that directory exists at build time; dotfiles
-and `node_modules` are never copied.
+dashboard from `web/` when that directory exists at build time; dotfiles,
+`node_modules`, `fixtures/` and `tools/` are never copied.
 
 ## Configuration
 
@@ -73,7 +84,13 @@ All settings come from the environment.
 | `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in any part of the URL (user, password, database, query) must be percent-encoded, `@` as `%40`; a server URL with an unencoded `@` besides the one before the host is refused. |
 | `MAITY_BIND` | `127.0.0.1:8080` | `host:port` to listen on; `[::1]:8080` for IPv6. |
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
-| `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles and paths under `/api` are never served from it. |
+| `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
+| `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
+| `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
+
+The hub logs each request as method, path and status on the
+`maity_hub.access` logger, never a query string or a header value, with
+join tokens shown as `…`; uvicorn's own access log is off.
 
 The machine-readable API description is at `/api/v1/openapi.json`;
 `/api/v1/help` is the one written for agents.
