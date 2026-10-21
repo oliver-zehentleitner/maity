@@ -131,7 +131,12 @@ one per entity of `docs/architecture.md` §3.6, with field names from
 `docs/api.md`; migration `0002` creates them. Ids come from
 `maity_hub.ids` (prefix and random part, never parsed), timestamps are
 `maity_hub.types.UtcDateTime` (aware UTC in Python), Markdown bodies use
-`MARKDOWN_TEXT` (`MEDIUMTEXT` on MySQL/MariaDB). The test suite checks on
-each engine that the migrations create exactly the tables in code.
+`MARKDOWN_TEXT` (`MEDIUMTEXT` on MySQL/MariaDB), JSON values `JSON_VALUE`
+(JSONB on PostgreSQL; an absent value is SQL NULL). On MySQL/MariaDB every
+table is `utf8mb4` with the binary collation, so comparisons and unique
+constraints are exact as on the other engines. The test suite checks on
+each engine that the migrations create exactly the tables, indexes,
+foreign keys and unique constraints in code; the CHECK constraints, which
+that comparison does not see, have tests of their own.
 
 Why it is built this way: [`context/`](context/index.md).
