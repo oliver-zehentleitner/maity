@@ -238,8 +238,10 @@ def patch_project(
         actor = caller.actor(mine.id)
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
-        if "name" in given and body.name is not None:
+        rules_inputs_changed = False
+        if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
+            rules_inputs_changed = True
         if "repository" in given:
             values.update(_repository_columns(body.repository))
         if "settings" in given and body.settings is not None:
@@ -271,12 +273,13 @@ def patch_project(
                 {"old": project.state, "new": body.state, "reason": body.reason},
                 actor=actor,
             )
-        elif "state_note" in given:
+        elif "state_note" in given and body.state_note != project.state_note:
             conn.execute(
                 update(t.project)
                 .where(t.project.c.id == project.id)
                 .values(state_note=body.state_note)
             )
+            rules_inputs_changed = True
         if new_policy is not None:
             conn.execute(
                 update(t.project)
@@ -322,8 +325,12 @@ def patch_project(
                 conn.execute(
                     update(t.project).where(t.project.c.id == project.id).values({name: new_value})
                 )
-                payload = {"reason": body.reason} if body.reason else {}
-                rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
+                rules_inputs_changed = True
+        # The name, a note without a state change, the owner's text and the Keep the
+        # Why line are rules inputs without an event of their own: one rules_changed.
+        if rules_inputs_changed:
+            payload = {"reason": body.reason} if body.reason else {}
+            rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
         return idempotency.Outcome(
             200, "project", project.id, project_view(_load(conn, project.id), settings_of(request))
         )

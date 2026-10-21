@@ -252,3 +252,15 @@ def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:
     assert response.json()["settings"] == {"release_checklist": ["CHANGELOG has the version"]}
     unknown = owner.patch("/projects/maity", {"settings": {"other": 1}})
     assert unknown.headers["Maity-Error"] == "invalid"
+
+
+def test_the_name_and_a_note_are_rules_inputs(owner: flow.Human, migrated: Engine) -> None:
+    flow.project(owner, "maity")
+    assert owner.patch("/projects/maity", {"name": "Maity hub"}).json()["rules_version"] == 2
+    assert owner.patch("/projects/maity", {"state_note": "busy week"}).json()["rules_version"] == 3
+    assert owner.patch("/projects/maity", {"name": "Maity hub"}).json()["rules_version"] == 3
+    assert [e.payload["version"] for e in _events(migrated, "rules_changed")] == [2, 3]
+    both = owner.patch("/projects/maity", {"state": "freeze", "state_note": "0.1.0", "reason": "r"})
+    assert both.json()["rules_version"] == 4  # the state change's own event marks it
+    assert len(_events(migrated, "rules_changed")) == 2
+    assert "Maity hub" in owner.get("/projects/maity/rules").text
