@@ -188,3 +188,26 @@ is newer than the cursor.
 table, `membership_area`, `request_option`. It would let the database
 filter audiences and areas, at the cost of a join on every read and a
 multi-row write for every event, for a volume where the scan is cheap.
+
+## Timestamps: aware UTC in Python, naive UTC with microseconds in the database
+
+**Id:** f6041871-9416-4565-b3dc-c5af45c4528b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the data model for the V1 contract)
+
+Every timestamp column is `maity_hub.types.UtcDateTime`: it refuses a
+naive `datetime`, converts an aware one to UTC and stores it without a
+zone, and returns it with `tzinfo=UTC`. On MySQL/MariaDB the column is
+`DATETIME(6)`.
+
+**Reason:** the hub's time is the only clock in the system
+(`docs/api.md` §1.2), so one zone everywhere is enough, and refusing naive
+values keeps a local time from slipping in. MySQL's `DATETIME` drops
+fractions by default, which would make lease ends, `updated_at` ordering
+and the server time's milliseconds engine-dependent.
+
+**Rejected alternative:** `DateTime(timezone=True)` — `timestamptz` on
+PostgreSQL, but MySQL has no zone-aware type and SQLite stores text, so
+the three engines would hand back different kinds of values.
