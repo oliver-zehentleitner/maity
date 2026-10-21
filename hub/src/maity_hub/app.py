@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException
 from starlette.routing import Match, Mount
 from starlette.types import Scope
 
-from maity_hub import API_VERSION, __version__, errors, events
+from maity_hub import API_VERSION, __version__, errors
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
@@ -55,7 +55,6 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     errors.install(app)
-    events.install(engine)
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)

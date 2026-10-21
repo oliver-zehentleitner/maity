@@ -2,18 +2,20 @@
 
 Writers serialise per project on the project row, so that a lower `seq`
 never becomes visible after a higher one and a cursor never skips an
-event. Waiters are signalled after the transaction committed, never
-before: a woken reader must find the row.
+event. Every write that emits runs in `transaction()`, which signals the
+waiters after the transaction committed, never before: a woken reader
+must find the row.
 """
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Connection, Engine, event, insert, select
+from sqlalchemy import Connection, Engine, insert, select
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -62,19 +64,23 @@ class Notifier:
 notifier = Notifier()
 
 
-def install(engine: Engine) -> None:
-    """Signal the notifier for every event a transaction wrote, once it committed."""
+@contextmanager
+def transaction(engine: Engine) -> Iterator[Connection]:
+    """`engine.begin()` that announces the events it wrote once they are committed.
 
-    def _after_commit(connection: Connection) -> None:
-        for project_id, seq in connection.info.pop(_PENDING, []):
-            notifier.notify(project_id, seq)
-
-    def _after_rollback(connection: Connection) -> None:
-        connection.info.pop(_PENDING, None)
-
-    if not event.contains(engine, "commit", _after_commit):
-        event.listen(engine, "commit", _after_commit)
-        event.listen(engine, "rollback", _after_rollback)
+    SQLAlchemy's `commit` event fires before the database has committed, so
+    a waiter woken there could read before the row is visible; the
+    announcement waits until `begin()` has returned cleanly.
+    """
+    pending: list[tuple[str, int]] = []
+    with engine.begin() as conn:
+        conn.info[_PENDING] = pending
+        try:
+            yield conn
+        finally:
+            conn.info.pop(_PENDING, None)
+    for project_id, seq in pending:
+        notifier.notify(project_id, seq)
 
 
 def lock_project(conn: Connection, project_id: str) -> None:
@@ -118,5 +124,8 @@ def emit(
     if key is None:
         raise RuntimeError("the event insert returned no seq")
     seq = int(key[0])
-    conn.info.setdefault(_PENDING, []).append((project_id, seq))
+    pending = conn.info.get(_PENDING)
+    if pending is None:
+        raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
+    pending.append((project_id, seq))
     return seq

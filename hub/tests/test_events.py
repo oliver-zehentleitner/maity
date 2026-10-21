@@ -14,33 +14,44 @@ from tests import factory
 
 @pytest.fixture
 def heard(migrated: Engine) -> Iterator[list[tuple[str, int]]]:
-    events.install(migrated)
     received: list[tuple[str, int]] = []
     unsubscribe = events.notifier.subscribe(lambda p, s: received.append((p, s)))
     yield received
     unsubscribe()
 
 
-def test_waiters_hear_an_event_only_after_its_commit(
-    migrated: Engine, heard: list[tuple[str, int]]
-) -> None:
+def test_a_woken_reader_on_another_connection_finds_the_row(migrated: Engine) -> None:
     project_id = factory.project(migrated)
-    with migrated.begin() as conn:
-        seq = events.emit(conn, project_id, "state_changed", ["all"], {"old": "build"})
-        assert heard == []  # not before the commit
-        visible = conn.execute(select(t.event.c.seq)).scalar()
-        assert visible == seq
-    assert heard == [(project_id, seq)]
+    seen: list[int | None] = []
+
+    def reader(_project: str, seq: int) -> None:
+        with migrated.connect() as other:  # a waiter's own connection
+            seen.append(other.execute(select(t.event.c.seq).where(t.event.c.seq == seq)).scalar())
+
+    unsubscribe = events.notifier.subscribe(reader)
+    try:
+        with events.transaction(migrated) as conn:
+            seq = events.emit(conn, project_id, "state_changed", ["all"], {"old": "build"})
+            assert seen == []  # not before the commit
+    finally:
+        unsubscribe()
+    assert seen == [seq]
+
+
+def test_emit_outside_the_transaction_helper_is_refused(migrated: Engine) -> None:
+    project_id = factory.project(migrated)
+    with pytest.raises(RuntimeError, match="events.transaction"), migrated.begin() as conn:
+        events.emit(conn, project_id, "state_changed", ["all"], {})
 
 
 def test_a_rolled_back_event_is_never_announced(
     migrated: Engine, heard: list[tuple[str, int]]
 ) -> None:
     project_id = factory.project(migrated)
-    with pytest.raises(RuntimeError), migrated.begin() as conn:
+    with pytest.raises(RuntimeError, match="abort"), events.transaction(migrated) as conn:
         events.emit(conn, project_id, "state_changed", ["all"], {})
         raise RuntimeError("abort")
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         seq = events.emit(conn, project_id, "state_changed", ["all"], {})
     assert heard == [(project_id, seq)]
     with migrated.connect() as conn:
@@ -51,7 +62,7 @@ def test_actor_and_subject_are_recorded(migrated: Engine) -> None:
     project_id = factory.project(migrated)
     member = factory.membership(migrated, project_id, human_id=factory.human(migrated))
     actor = events.Actor(member, "ses-1", "crd-1", "signed", "Claude Code", "opus")
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         events.emit(
             conn,
             project_id,
