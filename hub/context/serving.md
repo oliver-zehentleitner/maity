@@ -14,8 +14,10 @@ An explicitly set `MAITY_WEB_DIR` that is not a directory stops the hub
 at startup. A missing default directory only logs a warning, and the hub
 serves the API alone. The image copies `web/` when the build context has
 one and leaves `/app/web` empty otherwise. The mount never serves a path
-with a segment starting with `.` and nothing under `/api`, and the image
-build leaves dotfiles and `node_modules` out; that rule and its rejected
+with a segment starting with `.`, nothing under `/api`, and neither
+`fixtures/` nor `tools/` (the dashboard's test data and development
+tools), and the image build leaves dotfiles, `node_modules`, `fixtures/`
+and `tools/` out; that rule and its rejected
 alternative came from the review, the rest from the implementation
 session.
 
