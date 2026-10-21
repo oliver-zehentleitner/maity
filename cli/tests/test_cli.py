@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
+import time
 from pathlib import Path
+from typing import Any
 
 import fakehub
 import pytest
@@ -199,6 +202,24 @@ def test_wait_prints_the_first_event_and_advances_the_cursor(
 
 def test_wait_times_out_with_exit_3(joined: Path, fake: fakehub.FakeHub) -> None:
     assert cli.main(["wait", "--timeout", "1"]) == cli.EXIT_TIMEOUT
+
+
+def test_wait_ends_on_time_when_the_hub_stops_answering(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    release = threading.Event()
+
+    def hang(seen: fakehub.Seen) -> tuple[int, Any]:
+        release.wait(30)
+        return 200, {"items": [], "cursor": 0}
+
+    fake.routes[("GET", "/api/v1/projects/maity/events")] = hang
+    started = time.monotonic()
+    try:
+        assert cli.main(["wait", "--timeout", "3"]) == cli.EXIT_TIMEOUT
+    finally:
+        release.set()
+    assert time.monotonic() - started < 4
 
 
 def test_wait_exits_6_when_superseded(

@@ -188,11 +188,17 @@ def cmd_wait(args: argparse.Namespace) -> int:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return EXIT_TIMEOUT
-        poll = max(1, min(LONG_POLL, int(remaining)))
+        # The hub holds for `poll` and gets a second to answer; the read never outlasts the
+        # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.
+        poll = max(1, min(LONG_POLL, int(remaining) - 1))
+        read_timeout = max(0.5, min(poll + 15, remaining))
         started = time.monotonic()
         try:
             page = session.client.call(
-                "GET", path, query=[("after", str(cursor)), ("wait", str(poll))], timeout=poll + 15
+                "GET",
+                path,
+                query=[("after", str(cursor)), ("wait", str(poll))],
+                timeout=read_timeout,
             )
         except hub.HubError as exc:
             if exc.status is None and exc.code is None:  # dropped connection: same `after` again
@@ -399,7 +405,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=int,
         metavar="N",
-        help="seconds to wait (default: the resume packet's hint for this harness, else 600)",
+        help=(
+            "seconds to wait, never exceeded even when the hub stops answering "
+            "(default: the resume packet's hint for this harness, else 600)"
+        ),
     )
     p.set_defaults(handler=cmd_wait)
 

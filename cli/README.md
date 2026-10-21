@@ -152,7 +152,7 @@ JSON answer. Why a passthrough rather than more commands:
 | 0 | success |
 | 1 | error (the hub's error code is in the message) |
 | 2 | usage |
-| 3 | `wait` timed out |
+| 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
 | 6 | `wait` superseded by another `wait` of this credential |
 | 130 | interrupted (Ctrl-C) |

@@ -31,7 +31,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   printed), credential-shaped payloads refused before sending; `report` refuses
   on any mismatch between git, the remote and the pull request; the pointer
   block in `AGENTS.md`; redirects refused, git and gh run without prompts and
-  with a timeout; the agent skill in `cli/skill/maity/SKILL.md`.
+  with a timeout; `wait` never runs past its `--timeout`, even when the hub stops
+  answering; the agent skill in `cli/skill/maity/SKILL.md`.
 - ci: a `cli` job runs `make check` in `cli/` on Python 3.10 and 3.13.
 - docs: `docs/join-page.md`, the join page template the hub serves.
 - web: dashboard skeleton against fixtures — a project switcher with open
