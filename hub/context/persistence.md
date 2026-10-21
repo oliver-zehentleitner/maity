@@ -80,13 +80,18 @@ the image without a checkout.
 **Source:** implementation session, 2026-10-21 (the data model for the V1 contract)
 **Revisit when:** MySQL/MariaDB support is dropped, or one of these rules needs a condition a single marker column cannot express
 
-Two rules of the contract are "at most one row of a kind": one live
-session per credential, and one release card in flight per project. Each
-is a nullable boolean — `agent_session.live`, `card.release_in_flight` —
-set to true on the one row the rule is about and to NULL on every other,
-under a unique constraint with its scope (`credential_id, live`;
-`project_id, release_in_flight`). Ending a session or closing a release
-sets the marker back to NULL in the same statement.
+Three rules of the contract are "at most one row of a kind": one live
+session per credential, one release card in flight per project, and one
+active membership per principal and project (a removed membership keeps
+its row, §6.2, and the principal may join again). Each is a nullable
+boolean — `agent_session.live`, `card.release_in_flight`,
+`membership.active` — set to true on the one row the rule is about and
+to NULL on every other, under a unique constraint with its scope
+(`credential_id, live`; `project_id, release_in_flight`;
+`project_id, agent_id, active` and `project_id, human_id, active`), and a
+CHECK that the marker is never false, since false would be a second value
+the constraint lets through. Ending a session, closing a release or
+removing a member sets the marker back to NULL in the same statement.
 
 **Reason:** all three engines allow any number of NULLs in a unique
 constraint and refuse a second true, so the database enforces the rule
@@ -119,7 +124,8 @@ foreign keys, uniqueness (handles, versions, the at-most-one markers), a
 membership naming exactly one principal, a join naming an agent, no
 self-edge between cards.
 
-**Reason:** `docs/api.md` lets `v1` gain values without notice. With the
+**Reason:** `docs/api.md` §1.6 lets `v1` gain fields without notice; that
+values may be added the same way is this entry's own reading. With the
 value sets in the schema, every added value would be a migration on three
 engines, and on SQLite a table rebuild, for a check the API performs
 anyway before it writes.
@@ -172,17 +178,20 @@ Values the API returns as nested objects and the server reads and writes
 whole — a membership's areas and capabilities, a card's checkpoint,
 report, contract and release data, a request's options and answer, an
 event's audience and payload, project settings — are SQLAlchemy `JSON`
-columns. Relations the server queries or constrains are columns and
+columns, with `none_as_null`: an absent value is SQL NULL, never the
+JSON literal `null`, so that `IS NULL` finds it. Relations the server
+queries or constrains are columns and
 tables: claim holder, assignee, addressee and asker as membership
 foreign keys, card edges as rows, the release version and the
 conversation id as plain columns with their own indexes.
 
 **Reason:** the nested values follow the contract's shapes, which grow
-within `v1`; as JSON they grow without a migration, and `JSON` maps to a
-native type on all three engines. The audience of an event is filtered
-in Python after the read by project and sequence number: one project
-produces a few thousand events a week, and the long-poll reads only what
-is newer than the cursor.
+within `v1`; as JSON they grow without a migration. The type is JSONB on
+PostgreSQL, native JSON on MySQL, a validated `LONGTEXT` on MariaDB and
+text on SQLite. The audience of an event is filtered in Python after the
+read by project and sequence number: one project is expected to produce a
+few thousand events a week, and the long-poll reads only what is newer
+than the cursor.
 
 **Rejected alternative:** normalising every list — an `event_audience`
 table, `membership_area`, `request_option`. It would let the database
