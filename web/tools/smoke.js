@@ -185,6 +185,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const tree = main.querySelector(".org-tree");
   expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical"), "org tree by areas, policy preset");
 
+  // Presence is re-read in place; nothing else on the page is replaced.
+  await go("#/p/maity/agents");
+  const realGet3 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity/members"
+    ? realGet3(p).then((r) => { r.items.forEach((m) => { m.presence = "away"; }); return r; })
+    : realGet3(p));
+  const pauseBefore = main.querySelector("form.pause");
+  await fireIntervals(); await tick(); await tick();
+  const labels = main.querySelectorAll("span.presence");
+  expect(labels.length > 0 && labels.every((l) => l.textContent === "Away"), "presence re-read in place");
+  expect(main.querySelector("form.pause") === pauseBefore, "the presence refresh keeps the forms");
+  win.Maity.api.get = realGet3;
+
   await go("#/p/maity/chat");
   expect(main.querySelectorAll(".chat-picker li").length === 5, "chat picker lists own agents");
   await go("#/p/maity/chat/agt-a");
@@ -192,14 +205,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("textarea").value = "Thanks.";
   main.querySelector("form").dispatch("submit"); await tick();
   expect(main.querySelectorAll(".msg").length === 3 && text(main).includes("not picked up yet"), "sent message appended");
+  // The feed: a chat event of this conversation fetches its new messages.
   const realGet2 = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p.includes("/messages?after=")
-    ? Promise.resolve({ items: [{ id: "evt-9999", seq: 9999, conversation_id: "agt-a", from: "agt-a", to: "hum-maintainer", body: "On it.", sent_at: "2026-10-21T14:00:00Z", delivered_at: "2026-10-21T14:00:00Z" }], cursor: 9999 })
-    : realGet2(p));
+  let feed = [];
+  const feedPaths = [];
+  const chatEvent = { seq: 9999, kind: "message", actor: { member_id: "agt-a" }, payload: { type: "chat", conversation_id: "agt-a", to: "hum-maintainer", body: "On it." } };
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) {
+      feedPaths.push(p);
+      const items = feed; feed = [];
+      return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 0, superseded: false });
+    }
+    return p.includes("/messages?after=")
+      ? Promise.resolve({ items: [{ id: "evt-9999", seq: 9999, conversation_id: "agt-a", from: "agt-a", to: "hum-maintainer", body: "On it.", sent_at: "2026-10-21T14:00:00Z", delivered_at: "2026-10-21T14:00:00Z" }], cursor: 9999 })
+      : realGet2(p);
+  };
+  feed = [chatEvent];
   await fireIntervals(); await tick();
-  expect(main.querySelectorAll(".msg").length === 4 && text(main).includes("On it."), "polling shows the agent's reply");
+  expect(main.querySelectorAll(".msg").length === 4 && text(main).includes("On it."), "a chat event in the feed shows the agent's reply");
+  expect(feedPaths[0] && /after=0&wait=0&limit=200$/.test(feedPaths[0]), "the feed reads from the head with wait=0");
+  feed = [chatEvent];
   await fireIntervals(); await tick();
-  expect(main.querySelectorAll(".msg").length === 4, "a message polled twice is shown once");
+  expect(main.querySelectorAll(".msg").length === 4, "a message seen twice is shown once");
+
+  // The feed in other views: someone else's card event offers a reload,
+  // one's own does not; a request event re-reads the counts at once.
+  await go("#/p/maity/board");
+  feed = [{ seq: 10001, kind: "task_updated", actor: { member_id: "hum-maintainer" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(!text(main).includes("The board changed."), "the human's own card event offers nothing");
+  feed = [{ seq: 10002, kind: "task_claimed", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(text(main).includes("The board changed.") && btn(main, "Reload"), "an agent's card event offers a reload");
+  feed = [{ seq: 10003, kind: "state_changed", actor: { member_id: "hum-other" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(text(main).includes("The board changed.") && text(main).includes("state, absence or policy changed"), "state change added to the notice");
+  btn(main, "Reload").click(); await tick(); await tick();
+  expect(!text(main).includes("The board changed."), "reload clears the notice");
+  await go("#/p/maity/inbox");
+  const before = gets.length;
+  feed = [{ seq: 10004, kind: "request_created", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(gets.slice(before).filter((p) => p === "/me").length >= 1, "a request event re-reads /me");
+  const realGet4 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me"
+    ? realGet2(p).then((m) => { m.projects[0].open_requests += 1; return m; })
+    : (p.includes("/events?") ? Promise.resolve({ items: [], cursor: 10004 }) : realGet2(p)));
+  await fireIntervals(); await tick(); await tick();
+  expect(text(main).includes("What waits for you changed") && btn(main, "Reload the list"), "a changed open count offers to reload the list");
+  win.Maity.api.get = realGet4;
+  win.Maity.api.get = realGet2;
   win.Maity.api.get = realGet2;
   await go("#/p/maity/chat/nobody");
   expect(text(main).includes("No agent of yours"), "unknown agent id reported");
@@ -303,6 +358,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       return json(200, Object.assign({}, r, { status: "answered", answer: { reply_id: "sha", by: "hum-maintainer", at: "2026-10-21T14:00:00Z" } }));
     }
     const map = { "/auth/session": "auth-session.json", "/me": "me.json", "/projects/maity": "maity/project.json", "/projects/maity/members": "maity/members.json", "/projects/maity/requests": "maity/requests.json" };
+    if (p === "/projects/maity/events") return json(200, { items: [], cursor: 0, superseded: false });
     return map[p] ? json(200, F[map[p]]) : json(404, { error: { code: "not_found", message: "nope", details: {} } });
   };
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);

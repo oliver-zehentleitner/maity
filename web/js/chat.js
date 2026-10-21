@@ -1,6 +1,7 @@
 // (5) Chat: a direct conversation with an agent the human owns. Messages
-// are events the agent picks up with wait or resume (docs/api.md §9); the
-// view polls for the agent's replies. The inbox stays the primary surface.
+// are events the agent picks up with wait or resume (docs/api.md §9); a
+// chat event of this conversation in the project's feed fetches the new
+// messages. The inbox stays the primary surface.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -24,9 +25,6 @@ window.Maity = window.Maity || {};
         }))
         : h("p", { class: "muted" }, "You own no agents in this project."));
   }
-
-  // How often an open conversation asks for new messages.
-  const POLL_MS = 5000;
 
   function message(ctx, msg) {
     const own = msg.from === ctx.me.id;
@@ -63,7 +61,10 @@ window.Maity = window.Maity || {};
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
-    ctx.every(POLL_MS, async () => {
+    const mentions = (e) => e.kind === "message" && e.payload && e.payload.type === "chat"
+      && e.payload.conversation_id === agent.id && !shown.has(e.seq);
+    ctx.onEvents(async (events) => {
+      if (!events.some(mentions)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
         fresh.items.forEach(add);

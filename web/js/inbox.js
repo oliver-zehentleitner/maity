@@ -265,6 +265,7 @@ window.Maity = window.Maity || {};
       // The counts come from the hub (docs/api.md §5.1).
       try {
         await ctx.refreshCounts();
+        ctx.markSeen();
         listStatus.done();
       } catch (err) {
         listStatus.fail("Answer sent; the counts could not be refreshed: ", err);
