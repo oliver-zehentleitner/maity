@@ -248,3 +248,26 @@ uniqueness must be exact (release version, idempotency key, observed
 ref), as the review proposed. It is narrower, but every future unique
 text column would have to remember the variant, and one forgotten column
 would bring the inconsistency back.
+
+## File SQLite runs in WAL mode with a five-second busy timeout
+
+**Id:** 0d122efc-ffd8-4c2e-9115-9ea8ce24579e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the hub skeleton, 2026-10-21 (the suggestion, deferred to the first write path); implementation session, 2026-10-21 (applied with the authentication slice)
+**Revisit when:** a SQLite hub is reported to fail with "database is locked", or SQLite is used on a network file system
+
+Every SQLite connection to a file sets `journal_mode=WAL` and
+`busy_timeout=5000`; an in-memory database keeps its own journal mode.
+
+**Reason:** from the authentication slice on, every authenticated call
+writes (presence, leases), so readers and writers overlap constantly.
+In the default rollback journal a reader blocks the writer and a second
+writer fails at once with "database is locked"; with WAL readers and the
+one writer proceed side by side, and the timeout turns a collision
+between writers into a short wait instead of a 500.
+
+**Rejected alternative:** the default journal with retries in the
+application — more code in every write path for what SQLite offers as
+one pragma.
