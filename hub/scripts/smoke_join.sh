@@ -49,8 +49,9 @@ code="$(printf '%s' "$curl_join" | json 'd["code"]')"
 token="${url##*/}"
 page="$(curl -sS --fail "$url")"
 grep -q '^# Join Smoke test on Maity' <<<"$page"
-grep -q "$token" <<<"$page"
-! grep -q "$code" <<<"$page"   # the page never carries the code
+grep -qF -- "$token" <<<"$page"
+# The page never carries the code. (Not `! grep`: set -e ignores a negated command.)
+if grep -qF -- "$code" <<<"$page"; then echo "smoke: the join page shows the code" >&2; exit 1; fi
 git init -q "$work/clone-curl" && cd "$work/clone-curl"
 d="$(git rev-parse --git-common-dir)/maity"
 (umask 077; mkdir -p "$d"; curl -sS --fail -D "$work/exchange-headers" -o "$d/credential" \
