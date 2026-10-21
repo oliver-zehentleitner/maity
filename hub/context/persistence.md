@@ -304,3 +304,30 @@ next one is identifiable.
 - Locking the project row at the start of every authenticated call —
   removes every cycle, but serialises all calls of a project, reads
   included.
+
+## READ COMMITTED on every server engine
+
+**Id:** 87b08f1e-c12c-48a6-adaf-f7bd93d5c32b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the cards slice; concurrent claims failed on MariaDB only)
+**Revisit when:** a write path needs a consistent snapshot across several reads, or a second replica brings stricter isolation into question
+
+The engine opens PostgreSQL and MySQL/MariaDB connections at isolation
+level `READ COMMITTED`. SQLite has a single writer and needs no setting.
+
+**Reason:** the hub's writers serialise on the project row
+(`events.lock_project`) and then read the rows they change. On
+PostgreSQL, whose default is `READ COMMITTED`, those reads see what the
+writer before them committed. InnoDB's default `REPEATABLE READ` keeps the
+snapshot of a transaction's first read instead. Six concurrent claims of
+one card then answered 500 on MariaDB: the losers waited for the lock, read
+the card as still unclaimed, and the conditional update matched no row.
+One isolation level on every engine makes the same code mean the same
+thing everywhere.
+
+**Rejected alternative:** locking reads (`SELECT … FOR UPDATE`) on every
+row a writer reads after the project lock. It is correct on InnoDB too,
+but every future read would have to remember it, and one forgotten read
+would bring the stale snapshot back.
