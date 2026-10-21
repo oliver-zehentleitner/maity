@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from maity_hub.config import (
@@ -8,6 +10,7 @@ from maity_hub.config import (
     Settings,
     normalize_database_url,
     parse_bind,
+    redact_database_url,
 )
 
 
@@ -39,6 +42,39 @@ def test_bind_parsing() -> None:
     assert parse_bind("[::1]:8080") == ("::1", 8080)
     with pytest.raises(ConfigError):
         parse_bind("8080")
+
+
+@pytest.mark.parametrize(
+    ("bind", "public_url", "guessed"),
+    [
+        ("127.0.0.1:8080", "http://127.0.0.1:8080", False),
+        ("[::1]:8080", "http://[::1]:8080", False),
+        ("0.0.0.0:8080", "http://localhost:8080", True),
+        ("[::]:9000", "http://localhost:9000", True),
+        ("hub.internal:80", "http://hub.internal:80", False),
+    ],
+)
+def test_public_url_derived_from_the_bind(bind: str, public_url: str, guessed: bool) -> None:
+    settings = Settings.from_env({"MAITY_BIND": bind})
+    assert (settings.public_url, settings.public_url_guessed) == (public_url, guessed)
+
+
+def test_an_explicit_public_url_is_never_a_guess() -> None:
+    settings = Settings.from_env(
+        {"MAITY_BIND": "0.0.0.0:8080", "MAITY_PUBLIC_URL": "https://hub.example"}
+    )
+    assert (settings.public_url, settings.public_url_guessed) == ("https://hub.example", False)
+
+
+def test_the_checkout_dashboard_is_the_default_in_a_checkout() -> None:
+    web_dir = Settings.from_env({}).web_dir
+    assert web_dir is not None
+    assert web_dir == Path(__file__).resolve().parents[2] / "web"
+
+
+def test_redaction_masks_the_password() -> None:
+    url = normalize_database_url("postgresql://maity:pw@db/maity")
+    assert redact_database_url(url) == "postgresql+psycopg://maity:***@db/maity"
 
 
 def test_public_url_loses_its_trailing_slash() -> None:
