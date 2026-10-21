@@ -54,3 +54,33 @@ changes, while a computed one shows exactly what the policy acts on.
 
 **Rejected alternative:** a stored org chart edited on its own — the
 drift above.
+
+## Several projects: a switcher on every screen, and the cross-project inbox as the landing page
+
+**Id:** b8378331-be5c-4349-96ab-ed44a8563c4e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
+**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
+**Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+
+One account holds many projects. The header of every screen carries a
+project switcher: each project with its state and the number of open
+requests waiting for this human, plus "All projects" with the total. The
+cross-project view (`#/all`) is the inbox across every project, each
+entry labelled with its project and that project's state, answered in
+place. Opening the dashboard without a route lands there when the human
+belongs to more than one project, and on that project's inbox when there
+is only one. Everything else lives under `#/p/<slug>/...`.
+
+**Reason:** the requirement is that the human sees from anywhere that a
+project needs them; a count beside every project name does that on every
+screen, and a landing page across all projects keeps "the inbox is the
+first screen" true when there is more than one inbox.
+
+**Rejected alternative:** landing on the last project used — it needs
+remembered state, and it hides what waits elsewhere behind the switcher
+on exactly the screen opened first. A project chooser as the landing
+page — one click more before the first answer, and it shows counts but
+not the requests themselves.
