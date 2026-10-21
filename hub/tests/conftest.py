@@ -4,7 +4,8 @@ MariaDB; without it every test gets its own SQLite file."""
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -55,3 +56,48 @@ def client(settings: Settings, engine: Engine) -> Iterator[TestClient]:
     migrate(engine)
     with TestClient(create_app(settings, engine)) as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def _fresh_process_state() -> Iterator[None]:
+    """In-process state (limits, nonces, clock) must not leak between tests."""
+    from maity_hub import clock
+    from maity_hub.auth import caller
+    from maity_hub.auth.credentials import NonceWindow
+    from maity_hub.routes import auth
+
+    auth.LOGIN_BY_ADDRESS.reset()
+    auth.LOGIN_BY_HANDLE.reset()
+    caller.NONCES = NonceWindow()
+    yield
+    clock.reset()
+
+
+@pytest.fixture
+def migrated(engine: Engine) -> Engine:
+    migrate(engine)
+    return engine
+
+
+ClientFactory = Callable[..., TestClient]
+
+
+@pytest.fixture
+def make_client(settings: Settings, migrated: Engine) -> Iterator[ClientFactory]:
+    """A client with settings overrides, a base URL (https for TLS) and a peer address."""
+    opened: list[TestClient] = []
+
+    def factory(
+        base_url: str = "https://hub.example",
+        peer: str = "203.0.113.7",
+        **overrides: object,
+    ) -> TestClient:
+        app = create_app(replace(settings, **overrides), migrated)  # type: ignore[arg-type]
+        client = TestClient(app, base_url=base_url, client=(peer, 50000))
+        client.__enter__()
+        opened.append(client)
+        return client
+
+    yield factory
+    for client in opened:
+        client.__exit__(None, None, None)

@@ -124,3 +124,55 @@ def test_an_unwritable_sqlite_path_fails_in_one_line(
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "unable to open database file" in err
+
+
+def test_owner_create_reads_the_password_from_stdin(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    from maity_hub.auth.passwords import verify_password
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
+    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    assert "created maintainer (hum-" in capsys.readouterr().out
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine("sqlite:///maity-hub.db")
+    with engine.connect() as conn:
+        stored = conn.execute(text("SELECT password_hash FROM human")).scalar_one()
+    engine.dispose()
+    assert verify_password("a long password", stored)
+    assert "a long password" not in stored
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("again\n"))
+    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "X"]) == 1
+    assert "exists" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin"),
+    [
+        (["--handle", "Bad Handle", "--display-name", "X"], "pw\n"),
+        (["--handle", "ok", "--display-name", "X"], "\n"),
+    ],
+)
+def test_owner_create_refuses_a_bad_handle_or_an_empty_password(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], stdin: str
+) -> None:
+    import io
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+    assert main(["owner", "create", *args]) == 2
+
+
+def test_owner_create_needs_a_migrated_database(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("pw\n"))
+    assert main(["owner", "create", "--handle", "ok", "--display-name", "X"]) == 1
+    assert "maity-hub migrate" in capsys.readouterr().err

@@ -28,7 +28,10 @@ def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engin
     downgrade(engine)
     response = client.get("/api/v1/health")
     assert response.status_code == 503
-    assert response.json()["database"]["revision"] is None
+    assert response.headers["Maity-Error"] == "schema_outdated"
+    error = response.json()["error"]
+    assert error["code"] == "schema_outdated"
+    assert error["details"] == {"revision": None, "head": head_revision(engine)}
 
 
 def test_help_is_markdown_and_names_the_api_version(client: TestClient) -> None:
