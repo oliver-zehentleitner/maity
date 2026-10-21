@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "tsk-0001",
+      "kind": "task",
+      "title": "API contract: docs/api.md",
+      "status": "in_progress",
+      "scope": "docs/",
+      "claim": { "holder": "agt-a", "since": "2026-10-21T09:10:00Z", "lease_until": "2026-10-21T17:10:00Z" },
+      "depends_on": []
+    },
+    {
+      "id": "tsk-0004",
+      "kind": "task",
+      "title": "Hub: credential exchange and storage",
+      "status": "blocked",
+      "scope": "hub/",
+      "claim": { "holder": "agt-b", "since": "2026-10-21T11:00:00Z", "lease_until": "2026-10-21T19:00:00Z" },
+      "depends_on": ["tsk-0001"],
+      "blocked_by_request": "req-0012"
+    },
+    {
+      "id": "tsk-0005",
+      "kind": "task",
+      "title": "Hub: skeleton with health endpoint",
+      "status": "review",
+      "scope": "hub/",
+      "claim": { "holder": "agt-b", "since": "2026-10-21T10:15:00Z", "lease_until": "2026-10-21T18:15:00Z" },
+      "depends_on": []
+    },
+    {
+      "id": "tsk-0006",
+      "kind": "task",
+      "title": "CLI: join and wait",
+      "status": "open",
+      "scope": "cli/",
+      "claim": null,
+      "depends_on": ["tsk-0001", "tsk-0004"]
+    },
+    {
+      "id": "tsk-0007",
+      "kind": "task",
+      "title": "Dashboard skeleton against fixtures",
+      "status": "in_progress",
+      "scope": "web/",
+      "claim": { "holder": "agt-d", "since": "2026-10-21T13:00:00Z", "lease_until": "2026-10-21T21:00:00Z" },
+      "depends_on": []
+    },
+    {
+      "id": "tsk-0003",
+      "kind": "task",
+      "title": "Repository scaffold",
+      "status": "done",
+      "scope": "/",
+      "claim": { "holder": "agt-a", "since": "2026-10-21T07:58:00Z", "lease_until": null },
+      "depends_on": []
+    },
+    {
+      "id": "rel-0001",
+      "kind": "release",
+      "title": "0.1.0 — first dogfooding build",
+      "status": "open",
+      "scope": "/",
+      "claim": { "holder": "agt-a", "since": "2026-10-21T09:00:00Z", "lease_until": null },
+      "depends_on": ["tsk-0004", "tsk-0005", "tsk-0006", "tsk-0007"],
+      "release": {
+        "version": "0.1.0",
+        "pull_requests": [
+          { "number": 1, "title": "context: decisions of 2026-10-21", "state": "merged", "checks": "success", "observed_at": "2026-10-21T12:30:00Z", "head_sha": "e3fcd8b" },
+          { "number": 2, "title": "context: credentials never enter the model's context", "state": "open", "checks": "success", "observed_at": "2026-10-21T13:35:00Z", "head_sha": "d91e294" },
+          { "number": 3, "title": "hub: skeleton", "state": "open", "checks": "pending", "observed_at": "2026-10-21T13:35:00Z", "head_sha": null }
+        ]
+      }
+    }
+  ]
+}

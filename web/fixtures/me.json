@@ -1,0 +1,11 @@
+{
+  "member": {
+    "id": "hum-maintainer",
+    "kind": "human",
+    "handle": "maintainer",
+    "display_name": "Maintainer"
+  },
+  "projects": [
+    { "slug": "maity", "name": "Maity", "state": "build" }
+  ]
+}

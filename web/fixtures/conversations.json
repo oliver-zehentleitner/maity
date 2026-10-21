@@ -1,0 +1,16 @@
+{
+  "agt-a": {
+    "items": [
+      { "id": "msg-0101", "from": "hum-maintainer", "to": "agt-a", "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z" },
+      { "id": "msg-0102", "from": "agt-a", "to": "hum-maintainer", "body": "Endpoints for join, tasks and requests are drafted.\nMessages and presence follow this afternoon.", "sent_at": "2026-10-21T13:12:30Z", "delivered_at": "2026-10-21T13:12:30Z" }
+    ]
+  },
+  "agt-b": { "items": [] },
+  "agt-c": { "items": [] },
+  "agt-d": {
+    "items": [
+      { "id": "msg-0201", "from": "hum-maintainer", "to": "agt-d", "body": "Keep the inbox usable on the phone.", "sent_at": "2026-10-21T13:30:00Z", "delivered_at": null }
+    ]
+  },
+  "agt-r": { "items": [] }
+}

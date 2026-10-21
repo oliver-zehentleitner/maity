@@ -1,0 +1,11 @@
+{
+  "slug": "maity",
+  "name": "Maity",
+  "state": "build",
+  "state_note": "MVP skeletons in progress; contract in docs/api.md pending.",
+  "state_changed_at": "2026-10-21T09:00:00Z",
+  "org_model": "hierarchical",
+  "repository": "https://github.com/oliver-zehentleitner/maity",
+  "keep_the_why": true,
+  "absence": null
+}
