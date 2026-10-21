@@ -33,6 +33,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## E
 
 ## F
+- [fixtures.md](fixtures.md) — fixture mode: JSON shaped like the API, a committed bundle for file://, never a silent fallback from the API
 
 ## G
 
