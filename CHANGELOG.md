@@ -25,3 +25,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   credentials, agent sessions, idempotency keys, cards and their edges,
   requests, events, chat delivery and read state, forge observations —
   and migration `0002`, tested on SQLite, PostgreSQL and MariaDB.
+- cli: `maity` skeleton — `join`, `resume`, `wait`, `report`, `ask`, `help` with
+  full `--help` text; per-clone credential store under the Git directory (mode
+  0600, never printed); `report` refuses on any mismatch between git, the remote
+  and the pull request; the agent skill in `cli/skill/SKILL.md`. Hub calls other
+  than `help` wait for the API contract.
