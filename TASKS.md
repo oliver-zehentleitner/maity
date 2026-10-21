@@ -17,7 +17,7 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent B (`hub/`)
 
-- The endpoint slices of `docs/api.md` after the join, one pull request each: tasks with claims and reports; requests with the cross-project inbox (fills the resume packet's `requests`); events with the long-poll, `after=latest`, messages and conversations; the probe and release readiness.
+- The endpoint slices of `docs/api.md` after cards, one pull request each: requests with the cross-project inbox (fills the resume packet's `requests`, blocks and restores cards); release and contract cards (§6.7, §6.8, the checklist endpoint); events with the long-poll, `after=latest`, messages and conversations; the probe with `observed`/`mismatch` on reports and release readiness.
 - Signed requests mandatory per project, later (a project setting; bearer stays for the page-driven join).
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - Helm chart.

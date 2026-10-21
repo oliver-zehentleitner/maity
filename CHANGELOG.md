@@ -66,3 +66,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 ### Fixed
 
 - hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.
+- hub: cards on the board (`docs/api.md` §6.4–§6.6) — create with area
+  routing, edit, the transition table, `depends_on` without cycles and
+  mirrored `ships_with`, `done` refused with open dependencies, the paged
+  board; the atomic claim with leases, release, assign, the freeze and
+  fixes-only reason; checkpoints and completion reports with
+  `verification: signed|bearer`.

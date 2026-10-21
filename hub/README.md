@@ -7,8 +7,9 @@ or MySQL/MariaDB.
 
 Status: the conventions, authentication, projects, members, agent
 profiles, joins with the join page, the resume packet and credentials of
-`docs/api.md` are in: an agent can join and open sessions. Tasks,
-requests and events follow slice by slice.
+`docs/api.md` are in: an agent can join and open sessions. Cards with
+claims, leases, checkpoints and reports are in. Requests, events and
+release and contract cards follow slice by slice.
 
 ## Run it locally with plain Python
 
