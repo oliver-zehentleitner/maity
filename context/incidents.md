@@ -51,3 +51,25 @@ in the earlier seven-agent project. Maity records the model on every
 event so that cost per role and per kind of work can be compared later;
 a budget the admin roles can see, and review depth as a project policy
 rather than a habit, are the follow-ups.
+
+## One agent stopped another's server: process clean-up by pattern
+
+**Id:** 871f9226-a39d-4a71-84a6-c0b65a4fbf2e
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-21
+
+An agent ended its own test server with `pkill -f "maity-hub serve"`. The
+pattern also matched the dogfood hub the maintainer was about to use,
+and a leftover server of an earlier review that had held port 8080 for
+hours. The agent reported it at once and precisely; the hub was
+restarted without data loss. The leftover had already forced the
+dogfood hub onto another port.
+
+**Learned:** on a shared machine a process belongs to whoever started
+it. The rule for every agent since: start servers in the background,
+keep the PID, kill exactly that PID, never by pattern, and treat the
+dogfood hub's port as off limits. For Maity this belongs in the rules a
+project serves to its agents, and the dogfood hub's address is project
+knowledge every agent receives at join.
