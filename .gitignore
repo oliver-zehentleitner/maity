@@ -1,0 +1,16 @@
+# personal, never committed
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.local.md
+.env
+.env.*
+
+# build and runtime
+site/
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+.pytest_cache/
+.ruff_cache/
