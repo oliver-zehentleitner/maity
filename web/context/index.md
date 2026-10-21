@@ -61,7 +61,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 - [rendering.md](rendering.md) — agent-written text is rendered as text only, enforced by make check; links from data https only; credential values never shown, the join line only in its view
 
 ## S
-- [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://
+- [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://; the smoke test on a bare node binary
 
 ## T
 
