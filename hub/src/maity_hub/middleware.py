@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import MutableMapping
 from typing import Any
 
 from sqlalchemy import Engine
+from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -57,7 +59,10 @@ class HubMiddleware:
 
         found = credentials.find_all(body) + credentials.find_all(scope.get("query_string", b""))
         if found:
-            await run_in_threadpool(self._revoke, found)
+            # Refused all the same when the database is down; a verified leak is
+            # revoked on its next sighting.
+            with contextlib.suppress(OperationalError, InterfaceError):
+                await run_in_threadpool(self._revoke, found)
             response = error_response(
                 400,
                 "credential_in_payload",

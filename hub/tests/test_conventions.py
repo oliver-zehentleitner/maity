@@ -153,3 +153,20 @@ def test_health_says_database_unavailable_without_driver_text(
     assert response.headers["Maity-Error"] == "database_unavailable"
     assert response.json()["error"]["details"] == {}
     assert "sqlite" not in response.text.lower()
+
+
+def test_any_call_that_needs_the_database_answers_database_unavailable(
+    make_client: ClientFactory, migrated: Engine, tmp_path: Path
+) -> None:
+    from maity_hub.db import make_engine
+
+    project_id = factory.project(migrated)
+    agent = factory.agent(migrated, project_id, factory.human(migrated))
+    client = make_client()
+    client.app.state.engine = make_engine(  # type: ignore[attr-defined]
+        f"sqlite:///{tmp_path / 'missing' / 'dir' / 'hub.db'}"
+    )
+    response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {agent.value}"})
+    assert response.status_code == 503
+    assert response.headers["Maity-Error"] == "database_unavailable"
+    assert "sqlite" not in response.text.lower()

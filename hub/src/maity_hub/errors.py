@@ -7,14 +7,18 @@ body.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 ERROR_HEADER = "Maity-Error"
+
+log = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -88,6 +92,13 @@ def install(app: FastAPI) -> None:
             # The reason is pydantic's type of failure, never the input value.
             fields[".".join(location) or "body"] = str(item.get("type", "invalid"))
         return error_response(400, "invalid", "the request does not validate", {"fields": fields})
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(InterfaceError)
+    async def _database(_request: Request, error: Exception) -> JSONResponse:
+        # Connection-level failures; never the driver's text (§1.3).
+        log.error("database unavailable: %s", type(error).__name__)
+        return error_response(503, "database_unavailable", "the database is unreachable")
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(_request: Request, error: StarletteHTTPException) -> JSONResponse:
