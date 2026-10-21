@@ -220,3 +220,31 @@ and the server time's milliseconds engine-dependent.
 **Rejected alternative:** `DateTime(timezone=True)` — `timestamptz` on
 PostgreSQL, but MySQL has no zone-aware type and SQLite stores text, so
 the three engines would hand back different kinds of values.
+
+## On MySQL and MariaDB every table is utf8mb4 with the binary collation
+
+**Id:** ae5662be-59b8-4f99-a4cc-665ce4aedc6a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the data model, 2026-10-21 (the finding: case- and accent-insensitive uniques on MariaDB); implementation session, 2026-10-21 (table-wide instead of per column; the MariaDB dialect's own option prefix)
+
+Every table carries `utf8mb4` and `utf8mb4_bin` as its charset and
+collation on the MySQL family (`maity_hub.types.MYSQL_TABLE`, with both the
+`mysql_` and the `mariadb_` option prefix, since SQLAlchemy's MariaDB
+dialect reads only its own). Text then compares and is unique byte for
+byte, as on PostgreSQL and SQLite.
+
+**Reason:** without it a table inherits the server's defaults: `latin1`
+on many installations, and on MariaDB 11.4 the accent- and
+case-insensitive `utf8mb4_uca1400_ai_ci`. A release version `0.1.0-rc1`
+would then collide with `0.1.0-RC1`, and an idempotency key with its
+upper-case twin, on one engine and not on the others. Handles and slugs
+are lower case by validation, so nothing the hub sorts for people loses
+by a binary order.
+
+**Rejected alternative:** a binary collation only on the columns where
+uniqueness must be exact (release version, idempotency key, observed
+ref), as the review proposed. It is narrower, but every future unique
+text column would have to remember the variant, and one forgotten column
+would bring the inconsistency back.
