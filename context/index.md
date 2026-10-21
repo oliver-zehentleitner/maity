@@ -40,6 +40,7 @@ Why Maity is built the way it is.
 ## H
 
 ## I
+- [incidents.md](incidents.md) — what went wrong while agents built Maity together, and what each incident requires of the product
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
