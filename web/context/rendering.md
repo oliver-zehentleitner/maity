@@ -28,3 +28,32 @@ filtering it, and the lint keeps it removed.
 (DOMPurify) — nothing on these screens needs markup yet, and the
 sanitiser's bypasses would become this project's. Escaping by
 convention without a lint — one forgotten call is enough.
+
+## Links from data are https only; the join line lives in the join view and nowhere else
+
+**Id:** 5b7f6472-086d-4d69-87a5-0030204b76bc
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the dashboard's reconciliation with docs/api.md, 2026-10-21
+**See:** rendering.md#everything-an-agent-wrote-is-rendered-as-text-html-parsing-dom-calls-are-refused-by-the-lint — ba30d469-65b0-4c83-ab90-a6e993c0ac33 — as of 2026-10-21
+**Revisit when:** another URL field from the API is rendered as a link, or the join flow gets a second place that shows the line
+
+A URL that comes from data — a pull request link a member typed into a
+release, say — becomes a link only when it is plain `https://`
+(`Maity.dom.safeUrl`); anything else is shown as text. The paste line a
+join returns, with its single-use code, is kept in the join view's own
+variables only: it is not stored in the page's storage, not put into the
+URL, not logged, and leaving the view drops it.
+
+**Reason:** text-only rendering stops markup, but an `href` is a second
+way in: a `javascript:` URL typed into a release would run in the
+human's session on one click. The join code is the one secret the
+human handles in the dashboard (the root's credential rule allows it in
+the pasted line only); the less of the page it touches, the fewer places
+it can be read back from.
+
+**Rejected alternative:** no links from data at all — the release list
+is where the human checks a pull request, and a link there is what makes
+it usable. A blocklist of schemes — `https` alone is the one the forge
+uses, and an allowlist of one cannot miss a scheme.
