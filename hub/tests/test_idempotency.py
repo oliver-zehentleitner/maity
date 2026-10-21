@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
@@ -10,11 +11,13 @@ import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Connection, Engine, insert
 from starlette.routing import Mount
 
 from maity_hub import clock, idempotency
+from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.errors import ApiError
 from tests import factory
 from tests.conftest import ClientFactory
 
@@ -40,6 +43,57 @@ def client(make_client: ClientFactory) -> Iterator[TestClient]:
             return idempotency.Outcome(201, "probe", f"p-{len(CALLS)}", {"id": f"p-{len(CALLS)}"})
 
         return idempotency.run(engine_of(request), request, caller, action)
+
+    @app.post("/api/v1/conflict")  # type: ignore[attr-defined, untyped-decorator]
+    def conflict(request: Request, caller: AnyCaller) -> JSONResponse:
+        def action(conn: Connection) -> idempotency.Outcome:
+            CALLS.append({"conflict": True})
+            # A unique violation inside the action itself, as a second release
+            # in flight would be: it must surface once, not run twice.
+            conn.execute(
+                insert(t.idempotency_key).values(
+                    caller="x", idem_key="dup", body_hash="0", status_code=1, created_at=clock.now()
+                )
+            )
+            conn.execute(
+                insert(t.idempotency_key).values(
+                    caller="x", idem_key="dup", body_hash="0", status_code=1, created_at=clock.now()
+                )
+            )
+            return idempotency.Outcome(201, None, None, {})
+
+        return idempotency.run(engine_of(request), request, caller, action)
+
+    @app.post("/api/v1/failing")  # type: ignore[attr-defined, untyped-decorator]
+    def failing(request: Request, caller: AnyCaller) -> JSONResponse:
+        def action(_conn: Connection) -> idempotency.Outcome:
+            CALLS.append({"failing": True})
+            raise ApiError(409, "already_claimed", "held")
+
+        return idempotency.run(engine_of(request), request, caller, action)
+
+    @app.post("/api/v1/race")  # type: ignore[attr-defined, untyped-decorator]
+    def race(request: Request, caller: AnyCaller) -> JSONResponse:
+        engine = engine_of(request)
+
+        def action(_conn: Connection) -> idempotency.Outcome:
+            CALLS.append({"race": True})
+            # Another request with the same key commits while this one runs.
+            with engine.begin() as other:
+                other.execute(
+                    insert(t.idempotency_key).values(
+                        caller=caller.idempotency_caller,
+                        idem_key=KEY["Idempotency-Key"],
+                        body_hash=hashlib.sha256(request.scope["state"]["body"]).hexdigest(),
+                        status_code=201,
+                        resource_type="probe",
+                        resource_id="p-other",
+                        created_at=clock.now(),
+                    )
+                )
+            return idempotency.Outcome(201, "probe", "p-mine", {"id": "p-mine"})
+
+        return idempotency.run(engine, request, caller, action)
 
     @app.post("/api/v1/me/resume")  # type: ignore[attr-defined, untyped-decorator]
     def resume(request: Request, caller: AnyCaller) -> JSONResponse:
@@ -165,3 +219,37 @@ def test_a_call_refused_before_it_ran_leaves_its_key_unused(
     assert retried.status_code == 201
     assert "Idempotent-Replayed" not in retried.headers
     assert len(CALLS) == 1
+
+
+def test_a_conflict_inside_the_action_runs_once_and_is_the_internal_envelope(
+    client: TestClient, agent: factory.Agent
+) -> None:
+    response = client.post("/api/v1/conflict", json={}, headers=_auth(agent) | KEY)
+    assert response.status_code == 500
+    assert response.headers["Maity-Error"] == "internal"
+    assert response.json()["error"] == {
+        "code": "internal",
+        "message": "an unexpected failure",
+        "details": {},
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+    assert len(CALLS) == 1
+
+
+def test_a_failed_call_stores_nothing_and_may_be_repeated(
+    client: TestClient, agent: factory.Agent
+) -> None:
+    for _ in range(2):
+        response = client.post("/api/v1/failing", json={}, headers=_auth(agent) | KEY)
+        assert response.headers["Maity-Error"] == "already_claimed"
+        assert "Idempotent-Replayed" not in response.headers
+    assert len(CALLS) == 2
+
+
+def test_losing_the_race_for_a_key_replays_the_winner(
+    client: TestClient, agent: factory.Agent
+) -> None:
+    response = client.post("/api/v1/race", json={"a": 1}, headers=_auth(agent) | KEY)
+    assert response.status_code == 201
+    assert response.headers["Idempotent-Replayed"] == "true"
+    assert response.json() == {"id": "p-other", "loaded": True}

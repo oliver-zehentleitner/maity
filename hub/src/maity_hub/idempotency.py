@@ -65,7 +65,11 @@ def run(
     caller: Caller,
     action: Callable[[Connection], Outcome],
 ) -> JSONResponse:
-    """Run `action` once per key: in one transaction with the stored reference."""
+    """Run `action` once per key: in one transaction with the stored reference.
+
+    The action runs inside the transaction; it must not commit, and it uses
+    `events.emit` only through a caller that announces after this returns.
+    """
     key = key_for(request, caller)
     body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
     who = caller.idempotency_caller
@@ -75,15 +79,25 @@ def run(
                 replay = _replay(conn, who, key, body_hash) if key else None
                 if replay is not None:
                     return replay
+                # The action's own errors (a unique conflict included) propagate.
                 outcome = action(conn)
-                if key:
-                    _store(conn, who, key, body_hash, outcome)
+                # Only a success is stored: a failed call changed nothing (§1.5).
+                if key and 200 <= outcome.status < 300:
+                    try:
+                        with conn.begin_nested():
+                            _store(conn, who, key, body_hash, outcome)
+                    except IntegrityError:
+                        raise _KeyTaken from None
                 return JSONResponse(outcome.body, status_code=outcome.status)
-        except IntegrityError:
-            # A concurrent call with the same key committed first; replay it.
-            if not key:
-                raise
+        except _KeyTaken:
+            # A concurrent call with the same key committed first: this one
+            # rolled back entirely and replays that one.
+            continue
     raise RuntimeError("idempotent call neither ran nor replayed")
+
+
+class _KeyTaken(Exception):
+    pass
 
 
 def _replay(conn: Connection, who: str, key: str, body_hash: str) -> JSONResponse | None:
