@@ -147,7 +147,9 @@ only they or an admin can lift or change it (`forbidden`, `details.reason:
 Cards live on the project's board: `GET /api/v1/projects/{slug}/tasks`
 (filters `status`, `kind`, `label`, `holder`, `assigned_to`, `area`,
 `closed_after`; newest change first; `limit` up to 200, then `cursor` from
-`next_cursor`). A card you hold is yours until you release it or report it:
+`next_cursor`). A card you hold stays yours until you release it, the card
+closes, or an admin reassigns it after your lease ran out; a report keeps
+it with you:
 
 ```sh
 k() { printf 'Idempotency-Key: %s' "$(uuidgen)"; }
