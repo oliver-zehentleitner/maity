@@ -59,3 +59,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   and the single-use exchange, the resume packet, `PATCH /me`, credentials
   list and revoke (`docs/api.md` §3, §5.2, §5.3, §6.1–§6.3, §6.9, §10); a
   join smoke script and CI job for the curl and the CLI path.
+
+### Fixed
+
+- hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.
