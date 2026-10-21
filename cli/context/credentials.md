@@ -44,3 +44,27 @@ never have to open it.
   on headless machines, which is where agents run.
 - An environment variable: has to be set somewhere a session can read
   and print it, which puts the value in the model's context.
+
+## A request carrying a string in the credential format is refused before it is sent
+
+**Id:** 21e0401d-ab8e-462e-8bac-ec315c8258f8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** CLI design against docs/api.md §2.2, 2026-10-21
+**See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
+
+Before sending, the CLI checks every request body and query string for
+the pattern the hub refuses, `mty1.<id>.<secret>`. On a match it refuses
+locally and names the reason without quoting the match. Nothing is sent.
+
+**Reason:** the hub refuses such a payload too, but when the string is a
+real credential the hub also revokes it at once. An agent that pastes a
+log line or a config snippet into `maity ask` would lose its own session
+mid-task, and would have sent the secret over the network to do so. A
+refusal on the machine costs one regular expression.
+
+**Rejected alternative:** leave the check to the hub alone. That is
+simpler and still safe, since the leaked credential is revoked. But the
+secret has then already left the machine, and the agent finds out only
+when its next call fails with `credential_revoked`.

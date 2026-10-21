@@ -28,7 +28,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 
 ## C
 - [commands.md](commands.md) — the command surface: a signed passthrough `maity api` and `--tried` on `ask`, sugar commands deferred
-- [credentials.md](credentials.md) — where the session credential and local state live: the clone's Git directory, never the home
+- [credentials.md](credentials.md) — where the session credential and local state live (the clone's Git directory, never the home); outgoing requests checked for credential-shaped strings
 
 ## D
 
