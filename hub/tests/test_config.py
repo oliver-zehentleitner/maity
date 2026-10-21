@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from maity_hub import config
 from maity_hub.config import (
     DEFAULT_DATABASE_URL,
     ConfigError,
@@ -66,10 +67,12 @@ def test_an_explicit_public_url_is_never_a_guess() -> None:
     assert (settings.public_url, settings.public_url_guessed) == ("https://hub.example", False)
 
 
-def test_the_checkout_dashboard_is_the_default_in_a_checkout() -> None:
+def test_the_dashboard_default_depends_on_running_from_a_checkout() -> None:
     web_dir = Settings.from_env({}).web_dir
-    assert web_dir is not None
-    assert web_dir == Path(__file__).resolve().parents[2] / "web"
+    if Path(config.__file__).resolve().parent.parent.name == "src":
+        assert web_dir == Path(__file__).resolve().parents[2] / "web"
+    else:  # an installed wheel has no checkout beside it
+        assert web_dir is None
 
 
 def test_redaction_masks_the_password() -> None:
