@@ -64,6 +64,21 @@ jobs:
       - run: docker run --rm maity-hub:ci migrate
       - run: docker run --rm -e MAITY_DATABASE_URL=sqlite:////tmp/t.db maity-hub:ci migrate
 
+  # The paste line end to end, both ways a joining agent can take it (docs/api.md §3):
+  # plain curl as the join page says, and the maity CLI.
+  join-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e hub -e cli
+      - run: hub/scripts/smoke_join.sh
+
   hub-postgresql:
     runs-on: ubuntu-latest
     services:
