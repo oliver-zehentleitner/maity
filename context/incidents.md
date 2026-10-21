@@ -146,3 +146,23 @@ unexplained; the site is deployed by hand meanwhile.
 read-only forge probe observes what actually ran, and "the default
 branch's checks are green and the site is live" belongs on the release
 checklist as an observed item, not an assumption.
+
+## Messages crossed, and a review ran against a stale head
+
+**Id:** f5af51a7-1a53-4782-9af5-6c91b4f7d77c
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-21
+
+Two instructions to the dashboard's agent crossed: "apply the contract's
+renames" arrived first, "change nothing until the review is in" second.
+The agent had already done the first, held it locally, and the review
+ran against the old pushed head — half of its findings were renames that
+were already done. The coordinator then filtered the review by hand.
+
+**Learned:** an instruction about a moving branch has to name the state
+it refers to, and a review has to name the head it reviewed. Maity's
+completion report carries the head from git, and reviews of a card
+should be tied to the head they saw, so that a crossing like this shows
+instead of costing a review.
