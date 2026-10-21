@@ -379,3 +379,33 @@ def test_resume_adopts_a_credential_from_the_page_driven_join(
     assert cli.main(["resume", "--hub", fake.url]) == cli.EXIT_OK
     data = state.load_state(directory)
     assert data["hub"] == fake.url and data["project"] == "maity" and data["member_id"] == "agt-b"
+
+
+def test_a_redirect_is_refused_not_followed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.redirects["/api/v1/me/resume"] = "http://elsewhere.example/steal"
+    assert cli.main(["resume"]) == cli.EXIT_ERROR
+    assert "redirect" in capsys.readouterr().err
+    assert [s.path for s in fake.seen] == ["/api/v1/me/resume"]
+
+
+def test_help_refuses_a_redirect(fake: fakehub.FakeHub) -> None:
+    fake.redirects["/api/v1/help"] = f"{fake.url}/elsewhere"
+    with pytest.raises(hub.HubError, match="redirect"):
+        hub.get_text(f"{fake.url}/api/v1/help")
+
+
+@pytest.mark.parametrize(
+    "url", ["ftp://user:hunter2@hub.example/x", "https://user:hunter2@hub.example/j/t"]
+)
+def test_userinfo_is_never_echoed(url: str) -> None:
+    for call in (hub.hub_base, hub.join_token):
+        try:
+            call(url)
+        except hub.HubError as exc:
+            assert "hunter2" not in str(exc)
+
+
+def test_safe_url_drops_userinfo_and_query() -> None:
+    assert hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/t"

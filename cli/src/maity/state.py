@@ -14,9 +14,11 @@ from __future__ import annotations
 import json
 import os
 import stat
-import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, SupportsIndex
+
+from maity import proc
 
 STATE_DIR_ENV = "MAITY_STATE_DIR"
 CREDENTIAL_FILE = "credential"
@@ -50,6 +52,9 @@ class Secret:
     def __format__(self, spec: str) -> str:
         return repr(self)
 
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[Any, ...]:
+        raise TypeError("a Secret cannot be pickled or copied")
+
 
 def resolve_state_dir(cwd: Path | None = None) -> Path:
     """Return the state directory for the clone `cwd` belongs to.
@@ -63,36 +68,37 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
         return Path(override).expanduser().resolve()
     base = cwd or Path.cwd()
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            cwd=base,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise StateError(f"git is not installed; set {STATE_DIR_ENV} to a directory") from exc
-    if proc.returncode != 0:
+        result = proc.run(["git", "rev-parse", "--git-common-dir"], base)
+    except proc.ToolError as exc:
+        raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
+    if result.returncode != 0:
         raise StateError(
             f"{base} is not inside a Git clone; run maity from the clone the agent works in, "
             f"or set {STATE_DIR_ENV} to a directory of its own"
         )
-    common = Path(proc.stdout.strip())
+    common = Path(result.stdout.strip())
     if not common.is_absolute():
         common = base / common
     return common.resolve() / "maity"
 
 
 def _ensure_dir(path: Path) -> None:
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(path, 0o700)
+    """Create the state directory 0700, or accept an existing one only if it is private already.
+
+    A directory the user named (`MAITY_STATE_DIR`) is theirs: it is checked, never chmodded.
+    """
+    if path.is_dir():
+        _check_private(path)
+        return
+    path.mkdir(mode=0o700, parents=True)
+    os.chmod(path, 0o700)  # mkdir's mode is masked by the umask; this one is not
 
 
 def _atomic_write(path: Path, data: str) -> None:
     """Write `data` to `path` with mode 0600, never leaving a partly written file behind."""
     _ensure_dir(path.parent)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)  # mkstemp creates it 0600
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(data)
@@ -105,15 +111,16 @@ def _atomic_write(path: Path, data: str) -> None:
 
 
 def _check_private(path: Path) -> None:
-    """Refuse a file that others could read, the way ssh refuses a loose private key."""
+    """Refuse a file or directory others could reach, the way ssh refuses a loose private key."""
     st = path.stat()
     if st.st_uid != os.getuid():
         raise StateError(f"{path} belongs to another user; refusing to use it")
     if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         mode = stat.S_IMODE(st.st_mode)
+        fix = "700" if path.is_dir() else "600"
         raise StateError(
             f"{path} is accessible by group or others (mode {mode:04o}); "
-            f"run `chmod 600 {path}` if the file is yours, or revoke the session in the dashboard"
+            f"run `chmod {fix} {path}` if it is yours, or revoke the session in the dashboard"
         )
 
 
@@ -143,6 +150,7 @@ def read_credential(state_dir: Path) -> Secret:
     path = credential_path(state_dir)
     if not path.is_file():
         raise StateError(f"no session credential in {state_dir}; run `maity join` first")
+    _check_private(state_dir)
     _check_private(path)
     value = path.read_text(encoding="utf-8").strip()
     if not value:

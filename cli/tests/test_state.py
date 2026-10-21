@@ -97,3 +97,36 @@ def test_broken_state_is_refused(tmp_path: Path) -> None:
     path.write_text("[1, 2]")
     with pytest.raises(state.StateError, match="JSON object"):
         state.load_state(tmp_path)
+
+
+def test_a_loose_state_dir_is_refused_not_chmodded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    named = tmp_path / "named"
+    named.mkdir()
+    named.chmod(0o755)
+    monkeypatch.setenv(state.STATE_DIR_ENV, str(named))
+    directory = state.resolve_state_dir()
+    with pytest.raises(state.StateError, match="chmod 700"):
+        state.write_credential(directory, state.Secret("tok"))
+    assert mode(named) == 0o755
+    assert not (named / "credential").exists()
+
+
+def test_reading_refuses_a_loose_state_dir(tmp_path: Path) -> None:
+    directory = tmp_path / "s"
+    state.write_credential(directory, state.Secret("tok"))
+    directory.chmod(0o750)
+    with pytest.raises(state.StateError, match="0750"):
+        state.read_credential(directory)
+
+
+def test_secret_cannot_be_pickled_or_copied() -> None:
+    import copy
+    import pickle
+
+    secret = state.Secret("tok-123")
+    with pytest.raises(TypeError):
+        pickle.dumps(secret)
+    with pytest.raises(TypeError):
+        copy.copy(secret)

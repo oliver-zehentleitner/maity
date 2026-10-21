@@ -35,18 +35,50 @@ class HubError(Exception):
         self.details: dict[str, Any] = {}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The hub never redirects an API call. Following one would carry `Authorization` (and the
+    signed headers) to another host or down to plain HTTP, so every redirect is an error."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Message,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        raise HubError(
+            f"refusing to follow a redirect ({code}) to {safe_url(newurl)}; check the hub URL",
+            status=code,
+        )
+
+
+def opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(_NoRedirect)
+
+
+def safe_url(url: str) -> str:
+    """A URL fit for a message: scheme, host, port and path; never userinfo or query."""
+    parts = urllib.parse.urlsplit(url.strip())
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", "")) or "<empty>"
+
+
 def hub_base(url: str) -> str:
     """Reduce a join or hub URL to the hub's base URL; refuse anything but HTTPS off loopback.
 
     Credentials travel over TLS only; plain HTTP is accepted for a hub on this machine.
     """
     parts = urllib.parse.urlsplit(url.strip())
-    if parts.scheme not in ("https", "http") or not parts.hostname:
-        raise HubError(f"not a hub URL: {url!r}")
-    if parts.scheme == "http" and parts.hostname not in LOOPBACK_HOSTS:
-        raise HubError(f"refusing plain HTTP to {parts.hostname}; the hub must be served over TLS")
     if parts.username or parts.password:
         raise HubError("refusing a URL with credentials in it")
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise HubError(f"not a hub URL: {safe_url(url)}")
+    if parts.scheme == "http" and parts.hostname not in LOOPBACK_HOSTS:
+        raise HubError(f"refusing plain HTTP to {parts.hostname}; the hub must be served over TLS")
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "", "", "")).rstrip("/")
 
 
@@ -56,7 +88,7 @@ def join_token(url: str) -> str:
     for prefix in ("/j/", f"{API}/join/"):
         if path.startswith(prefix) and "/" not in path[len(prefix) :] and path[len(prefix) :]:
             return urllib.parse.unquote(path[len(prefix) :])
-    raise HubError(f"not a join URL (expected /j/<token>): {url!r}")
+    raise HubError(f"not a join URL (expected /j/<token>): {safe_url(url)}")
 
 
 def segment(value: str) -> str:
@@ -97,12 +129,12 @@ def get_text(url: str, timeout: float = 30.0) -> str:
     headers = {"Accept": "text/markdown, text/plain", "User-Agent": USER_AGENT}
     request = urllib.request.Request(url, headers=headers)  # noqa: S310
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with opener().open(request, timeout=timeout) as response:
             body: bytes = response.read()
             charset = response.headers.get_content_charset() or "utf-8"
             return body.decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
-        raise _error_from(exc, url) from exc
+        raise _error_from(exc, safe_url(url)) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         raise HubError(f"cannot reach {url}: {reason}") from exc
@@ -128,7 +160,7 @@ def exchange(base: str, token: str, code: str, timeout: float = 30.0) -> JoinRes
     headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
     request = urllib.request.Request(url, data=body, method="POST", headers=headers)  # noqa: S310
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with opener().open(request, timeout=timeout) as response:
             raw: bytes = response.read()
             facts: Message = response.headers
     except urllib.error.HTTPError as exc:
@@ -165,9 +197,7 @@ class Client:
     key: sign.SigningKey
     clock_offset: float = 0.0
     timeout: float = 30.0
-    _opener: urllib.request.OpenerDirector = field(
-        default_factory=urllib.request.build_opener, repr=False
-    )
+    _opener: urllib.request.OpenerDirector = field(default_factory=opener, repr=False)
 
     def call(
         self,

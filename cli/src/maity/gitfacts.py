@@ -16,6 +16,8 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
+from maity import proc
+
 
 class FactsError(Exception):
     """git or gh could not answer a question the report depends on."""
@@ -43,18 +45,28 @@ class Facts:
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise FactsError(f"{cmd[0]} is not installed") from exc
+        return proc.run(cmd, cwd)
+    except proc.ToolError as exc:
+        raise FactsError(str(exc)) from exc
 
 
 def _git(cwd: Path, *args: str) -> str | None:
-    proc = _run(["git", *args], cwd)
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    """For lookups where a non-zero exit is an answer (no such ref, no such key): None."""
+    result = _run(["git", *args], cwd)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _git_required(cwd: Path, *args: str) -> str:
+    """For questions that must be answered; a failure is an error, never an empty answer."""
+    result = _run(["git", *args], cwd)
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
+        raise FactsError(f"git {args[0]} failed: {detail}")
+    return result.stdout.strip()
 
 
 def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
-    proc = _run(
+    result = _run(
         [
             "gh",
             "pr",
@@ -70,11 +82,11 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         ],
         cwd,
     )
-    if proc.returncode != 0:
-        detail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "no output"
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
         raise FactsError(f"gh could not list pull requests: {detail}")
     try:
-        rows = json.loads(proc.stdout or "[]")
+        rows = json.loads(result.stdout or "[]")
         if not rows:
             return None
         row = rows[0]
@@ -115,20 +127,18 @@ def collect(cwd: Path) -> Facts:
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
     branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
-    status = _git(cwd, "status", "--porcelain", "--untracked-files=no")
-    dirty = bool(status)
+    dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
     remote = remote_branch = remote_head = None
     if branch:
         remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
+        if remote == ".":  # tracks a local branch: ls-remote would answer from this clone
+            remote = None
         merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
         if remote and merge_ref:
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            proc = _run(["git", "ls-remote", "--heads", remote, merge_ref], cwd)
-            if proc.returncode != 0:
-                raise FactsError(f"git ls-remote {remote} failed: {proc.stderr.strip()}")
-            line = proc.stdout.strip().splitlines()
-            remote_head = line[0].split()[0] if line else None
+            listing = _git_required(cwd, "ls-remote", "--heads", remote, merge_ref).splitlines()
+            remote_head = listing[0].split()[0] if listing else None
 
     unknown = _forge_unknown(cwd, remote)
     pr = _pull_request(cwd, remote_branch or branch) if unknown is None and branch else None
@@ -147,11 +157,11 @@ def collect(cwd: Path) -> Facts:
 def mismatches(facts: Facts) -> list[str]:
     """Every reason the facts cannot be reported as they are; empty when they agree."""
     problems: list[str] = []
+    if facts.dirty:
+        problems.append("tracked files have uncommitted changes; commit or stash them")
     if facts.branch is None:
         problems.append("HEAD is detached; check out the branch the work is on")
         return problems
-    if facts.dirty:
-        problems.append("tracked files have uncommitted changes; commit or stash them")
     if facts.remote is None or facts.remote_branch is None:
         problems.append(f"branch {facts.branch} has no upstream; push it with `git push -u`")
     elif facts.remote_head is None:

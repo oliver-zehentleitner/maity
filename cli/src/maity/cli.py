@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, gitfacts, hub, pointer, sign, state
+from maity import __version__, gitfacts, hub, pointer, proc, sign, state
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -19,6 +19,7 @@ EXIT_USAGE = 2
 EXIT_TIMEOUT = 3
 EXIT_REFUSED = 4
 EXIT_SUPERSEDED = 6
+EXIT_INTERRUPTED = 130
 
 REQUEST_CLASSES = ("decision", "consent", "contract", "info")
 PRIORITIES = ("low", "normal", "high", "urgent")
@@ -42,7 +43,11 @@ state:
 
 exit codes:
   0 success, 1 error, 2 usage, 3 wait timed out, 4 report refused,
-  6 wait superseded by another wait of this credential (do not start a second one)
+  6 wait superseded by another wait of this credential (do not start a second one),
+  130 interrupted (Ctrl-C)
+
+plain HTTP:
+  refused except to a hub on loopback; there is no flag to allow it
 """
 
 Handler = Callable[[argparse.Namespace], int]
@@ -244,6 +249,7 @@ def _report_body(facts: gitfacts.Facts, summary: str, done: bool) -> dict[str, A
 def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
+    session = Session()  # the cheap check first: ls-remote and gh only for a joined clone
     facts = gitfacts.collect(Path.cwd())
     problems = gitfacts.mismatches(facts)
     if problems:
@@ -251,7 +257,6 @@ def cmd_report(args: argparse.Namespace) -> int:
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return EXIT_REFUSED
-    session = Session()
     body = _report_body(facts, args.summary.strip(), args.done)
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
@@ -477,6 +482,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         gitfacts.FactsError,
         hub.HubError,
         sign.CredentialFormatError,
+        proc.ToolError,
         OSError,
     ) as exc:
         _err(str(exc))
@@ -485,4 +491,4 @@ def main(argv: Sequence[str] | None = None) -> int:
         _err(str(exc))
         return EXIT_USAGE
     except KeyboardInterrupt:
-        return 130
+        return EXIT_INTERRUPTED

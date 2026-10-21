@@ -13,7 +13,7 @@ format:
 	$(PY) -m black src tests
 
 typecheck:
-	$(PY) -m mypy src
+	$(PY) -m mypy src tests
 
 test:
 	$(PY) -m pytest -q

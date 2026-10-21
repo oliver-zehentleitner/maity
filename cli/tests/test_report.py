@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -84,7 +85,7 @@ def test_failing_gh_is_an_error_not_a_silent_none(clone: Path, bin_dir: Path) ->
 
 
 def test_report_command_refuses_with_exit_4(
-    clone: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+    joined: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_gh(bin_dir, pr_json("f" * 40, number=7))
     assert cli.main(["report", "--task", "T-1", "--summary", "s"]) == cli.EXIT_REFUSED
@@ -114,3 +115,41 @@ def test_remote_off_github_is_unknown_without_asking_gh(clone: Path, bin_dir: Pa
 )
 def test_remote_host(url: str, host: str | None) -> None:
     assert gitfacts.remote_host(url) == host
+
+
+def test_a_failing_git_status_is_an_error_not_a_clean_tree(clone: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root reads an unreadable index")
+    (clone / "a.txt").write_text("modified\n")
+    index = clone / ".git" / "index"
+    index.chmod(0)
+    try:
+        with pytest.raises(gitfacts.FactsError, match="git status failed"):
+            gitfacts.collect(clone)
+    finally:
+        index.chmod(0o644)
+
+
+def test_an_upstream_on_a_local_branch_is_no_upstream(clone: Path) -> None:
+    git(clone, "branch", "--quiet", "base")
+    git(clone, "switch", "--quiet", "-c", "feature", "--track", "base")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+
+
+def test_detached_and_dirty_are_both_reported(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "--detach")
+    (clone / "a.txt").write_text("dirty\n")
+    problems = gitfacts.mismatches(gitfacts.collect(clone))
+    assert any("uncommitted" in p for p in problems)
+    assert any("detached" in p for p in problems)
+
+
+def test_report_checks_the_join_before_asking_git_and_gh(
+    clone: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")
+    assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "maity join" in err and "must not be called" not in err

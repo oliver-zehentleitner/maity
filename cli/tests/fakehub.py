@@ -28,7 +28,10 @@ VERIFIER = hashlib.sha256(SECRET.encode()).digest()
 def canonical_query(raw_query: str) -> str:
     """The hub's rule: split on '&' and the first '=', percent-decode ('+' stays '+', unlike
     parse_qsl), re-encode with safe '-_.~', sort bytewise by the encoded key, keep repeats."""
-    enc = lambda s: urllib.parse.quote(urllib.parse.unquote(s), safe="-_.~")  # noqa: E731
+
+    def enc(text: str) -> str:
+        return urllib.parse.quote(urllib.parse.unquote(text), safe="-_.~")
+
     pairs = [p.partition("=") for p in raw_query.split("&") if p]
     encoded = [(enc(k), enc(v)) for k, _, v in pairs]
     encoded.sort(key=lambda kv: kv[0])
@@ -62,6 +65,7 @@ class FakeHub:
     skew_once: bool = False
     join_used: bool = False
     routes: dict[tuple[str, str], Callable[[Seen], tuple[int, Any]]] = field(default_factory=dict)
+    redirects: dict[str, str] = field(default_factory=dict)
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -130,6 +134,12 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 self.rfile.read(length),
             )
             hub.seen.append(seen)
+            if path in hub.redirects:
+                self.send_response(302)
+                self.send_header("Location", hub.redirects[path])
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
             if path == "/api/v1/help":
                 return self._send(200, "# Maity help\n")
             if path == f"/api/v1/join/{TOKEN}" and self.command == "POST":

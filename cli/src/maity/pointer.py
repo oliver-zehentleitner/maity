@@ -7,8 +7,9 @@ in the resume packet). Whether it is committed is the repository's choice.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+
+from maity import proc
 
 BEGIN = "<!-- maity:begin -->"
 END = "<!-- maity:end -->"
@@ -23,9 +24,11 @@ you hold, and what you missed. `maity --help` lists the other commands.
 
 
 def repo_root(cwd: Path) -> Path | None:
-    cmd = ["git", "rev-parse", "--show-toplevel"]
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
-    return Path(proc.stdout.strip()) if proc.returncode == 0 else None
+    try:
+        result = proc.run(["git", "rev-parse", "--show-toplevel"], cwd)
+    except proc.ToolError:
+        return None
+    return Path(result.stdout.strip()) if result.returncode == 0 else None
 
 
 def _upsert(path: Path) -> bool:
