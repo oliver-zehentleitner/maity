@@ -11,10 +11,7 @@ public site at maity.dev is `docs/index.html`, not this.
 ## Open it
 
 - **From the file system:** open `web/index.html` in a browser. A page
-  loaded from `file://` runs in fixture mode on its own.
-- **Over HTTP without the hub:** `make serve`, then open
-  `http://127.0.0.1:8070/?source=fixtures` (`HOST=` and `PORT=` override
-  the address).
+  loaded from `file://` runs in fixture mode, and only such a page does.
 - **From the hub:** the hub serves this directory at `/`, and the page
   talks to `/api/v1/...` on the same origin. It asks `GET /auth/session`
   first and shows a sign-in form on 401 (`POST /auth/login`); **Sign out**
@@ -79,18 +76,13 @@ shown under it.
 
 ## Fixture mode
 
-`js/api.js` is the only place that knows where data comes from:
-
-| Page opened from | Source |
-|---|---|
-| `file://` | fixtures |
-| `http(s)://` | the API at `/api/v1` |
-| any, with `?source=fixtures` or `?source=api` | as given |
-
-The source is chosen once per page load. When the API fails, the page
-shows the error and a link to open it with fixtures; it never switches to
-fixtures on its own, and fixture mode is labelled **Fixtures** in the
-header. Every write in fixture mode (answers, messages, revocations,
+`js/api.js` is the only place that knows where data comes from: a page
+opened from `file://` reads the fixtures, a page served over `http(s)`
+reads the API at `/api/v1`, and nothing switches between the two. The
+fixture bundle is not referenced from `index.html`; `api.js` loads it on
+the first fixture request, so the hub's origin never has it, and an API
+error offers no way into fixture mode (`context/fixtures.md`). Fixture
+mode is labelled **Fixtures** in the header. Every write in fixture mode (answers, messages, revocations,
 pauses, state, absence, joins) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
 the sign-in (handle `maintainer`, any password).
@@ -120,28 +112,45 @@ file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
 
+## Refresh
+
+The page re-reads `GET /me` every 15 seconds for the switcher's counts
+and after every answer. When the number of open requests on screen
+changes, it offers to reload the list rather than replacing it while the
+human is reading. An open chat asks for new messages every 5 seconds
+(`?after=<cursor>`). The events endpoint is not used yet.
+
 ## Checks
 
 ```sh
-make check
+make check   # structure, Python standard library only
+make smoke   # behaviour, needs a node binary (no packages)
 ```
 
-Python 3 standard library only (`tools/check.py`): fixture JSON and
-bundle freshness; `index.html` structure (balanced tags, doctype, lang,
+`make smoke` runs `tools/smoke.js`: the page's scripts against a minimal
+DOM shim, walking every view in fixture mode and against a fake hub in
+API mode (`context/stack.md`). CI runs both in the `web` job of
+`.github/workflows/ci.yml`.
+
+Python 3 standard library only (`tools/check.py`): every project in
+`me.json` has its fixture files, fixture JSON, bundle freshness; `index.html` structure (balanced tags, doctype, lang,
 charset, viewport, title, unique ids, labels, local references, every
 script loaded, no inline script, style or handler); JavaScript bracket
 balance and a lint that refuses `innerHTML` and the other HTML-parsing or
 code-evaluating calls (`context/rendering.md`), the native
 `append`/`prepend` outside `js/dom.js` (it would insert the text "null"
-for a missing child), `var`, `console` and `debugger`; CSS brace
+for a missing child), `var`, `console` and `debugger` — and at run time
+`Maity.dom.h` refuses a string `on*` handler and any `href`/`src` that is
+neither a route nor an `https://` URL; CSS brace
 balance and defined custom properties; whitespace.
 When a `node` binary happens to be on the PATH, each script also goes
 through `node --check`; it is not required, and the check says when it
 was skipped.
 
-This is a structural checker, not a full HTML conformance validator, and
-none of it runs the page. What a change looked like in a browser is
-stated in its pull request.
+The structure check is not a full HTML conformance validator, and the
+smoke test is not a browser: layout, CSS and real events are outside
+both. What a change looked like in a browser is stated in its pull
+request.
 
 ## Layout
 
@@ -160,5 +169,6 @@ web/
 ├── js/join.js        (6) join an agent
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
+├── tools/smoke.js    make smoke
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
