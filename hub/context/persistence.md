@@ -103,3 +103,30 @@ visible in the schema.
   "one" too, but makes the session and credential tables reference each
   other, a circular foreign key that complicates every migration and
   insert order.
+
+## Value sets are checked by the API; the schema constrains only invariants
+
+**Id:** 7322ba9d-27f6-4642-83f4-12a1139012f2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the data model for the V1 contract)
+
+States, statuses, kinds, roles, classes and priorities are plain
+`VARCHAR` columns; the API layer validates their values. The database
+carries constraints only for the invariants the server relies on: keys,
+foreign keys, uniqueness (handles, versions, the at-most-one markers), a
+membership naming exactly one principal, a join naming an agent, no
+self-edge between cards.
+
+**Reason:** `docs/api.md` lets `v1` gain values without notice. With the
+value sets in the schema, every added value would be a migration on three
+engines, and on SQLite a table rebuild, for a check the API performs
+anyway before it writes.
+
+**Rejected alternatives:**
+- A `CHECK (status IN (...))` per enumerated column — keeps a direct
+  database write honest, at the price of a migration for every new value;
+  nothing but the hub writes to this database.
+- Native enum types (`CREATE TYPE` on PostgreSQL, `ENUM` on MySQL) — not
+  portable, and changing them is the hardest migration of all.
