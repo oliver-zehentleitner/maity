@@ -38,6 +38,11 @@ def make_engine(url: str) -> Engine:
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
     else:
+        # READ COMMITTED on every server engine, PostgreSQL's default: after a
+        # writer waited for the project lock, its reads see what the writer
+        # before it committed. InnoDB's default REPEATABLE READ would keep the
+        # snapshot of the first read (hub/context/persistence.md).
+        kwargs["isolation_level"] = "READ COMMITTED"
         # Fail fast on an unreachable server instead of waiting for TCP's own timeout.
         kwargs["connect_args"] = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
     engine = create_engine(url, **kwargs)
