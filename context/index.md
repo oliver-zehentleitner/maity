@@ -49,6 +49,8 @@ Why Maity is built the way it is.
 ## M
 
 ## N
+- [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
+
 
 ## O
 
