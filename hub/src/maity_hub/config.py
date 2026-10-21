@@ -31,6 +31,8 @@ class Settings:
     web_dir_required: bool
     trusted_proxies: tuple[IPNetwork, ...] = field(default=())
     allow_plain_http: bool = False
+    # Never logged, never in a response; only whether it is set is shown (§11).
+    forge_github_token: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -49,6 +51,7 @@ class Settings:
             web_dir=Path(web_dir_env) if web_dir_env else checkout_web_dir(),
             web_dir_required=bool(web_dir_env),
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
+            forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),

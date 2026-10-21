@@ -129,3 +129,42 @@ def emit(
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
     pending.append((project_id, seq))
     return seq
+
+
+SEE_ALL_ROLES = ("owner", "admin")
+
+
+def readable_by(row: Any, membership: Any, principal: str) -> bool:
+    """§8.2: audience `all`, `member:<id>`, `role:<role>`, or one's own; owners and
+    admins read every event of the project."""
+    if membership.role in SEE_ALL_ROLES or row.actor_membership == membership.id:
+        return True
+    audience = row.audience or []
+    return (
+        "all" in audience
+        or f"member:{principal}" in audience
+        or f"role:{membership.role}" in audience
+    )
+
+
+def read(
+    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+) -> tuple[list[Any], int, bool]:
+    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated)."""
+    found: list[Any] = []
+    examined = after
+    while True:
+        batch = conn.execute(
+            select(t.event)
+            .where(t.event.c.project_id == project_id, t.event.c.seq > examined)
+            .order_by(t.event.c.seq)
+            .limit(500)
+        ).all()
+        for row in batch:
+            if readable_by(row, membership, principal):
+                if len(found) == limit:
+                    return found, found[-1].seq, True
+                found.append(row)
+            examined = row.seq
+        if len(batch) < 500:
+            return found, examined, False

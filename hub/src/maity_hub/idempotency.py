@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid
@@ -67,15 +67,15 @@ def run(
 ) -> JSONResponse:
     """Run `action` once per key: in one transaction with the stored reference.
 
-    The action runs inside the transaction; it must not commit, and it uses
-    `events.emit` only through a caller that announces after this returns.
+    The action runs inside an `events.transaction`: it must not commit, and
+    the events it emits are announced once the transaction committed.
     """
     key = key_for(request, caller)
     body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
     who = caller.idempotency_caller
     for _attempt in range(2):
         try:
-            with engine.begin() as conn:
+            with events.transaction(engine) as conn:
                 replay = _replay(conn, who, key, body_hash) if key else None
                 if replay is not None:
                     return replay
