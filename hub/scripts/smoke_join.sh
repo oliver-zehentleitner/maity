@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end join, both paths a pasted line can take (docs/api.md §3), then one
-# request from each agent to its human, answered and picked up (§7):
+# request from each agent to its human, answered and picked up (§7), and a chat
+# message from the human that wakes each agent's long-poll (§8.3, §9):
 #   1. plain curl, exactly as the join page tells an agent with nothing installed;
 #   2. the `maity` CLI: `maity join <url> --code <code>`, then `maity resume`.
 # Runs a fresh hub on SQLite on loopback. Needs `maity-hub` and `maity` on PATH:
@@ -101,7 +102,29 @@ curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -d
     "$hub/api/v1/me/resume" | json '"curl agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
     | tee "$work/curl-answers" && grep -q "got 1 answer" "$work/curl-answers"
 
+step "events: each agent waits, its human writes to it, the wait wakes"
+cli_agent="$(grep -o 'agt-[0-9a-z]*' "$work/cli-join.out" | head -1)"
+curl_agent="$(printf '%s' "$curl_join" | json 'd["agent_id"]')"
+cd "$work/clone-cli"
+maity wait --timeout 30 >"$work/cli-wait.out" &
+cli_wait=$!
+cd "$work/clone-curl"
+after="$(curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/smoke/events?after=latest" | json 'd["cursor"]')"
+curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/smoke/events?after=$after&wait=30" >"$work/curl-wait.out" &
+curl_wait=$!
+sleep 1
+human -o /dev/null -d '{"body":"how far are you?"}' "$hub/api/v1/projects/smoke/conversations/$cli_agent/messages"
+human -o /dev/null -d '{"body":"and you?"}' "$hub/api/v1/projects/smoke/conversations/$curl_agent/messages"
+wait "$cli_wait"
+wait "$curl_wait"
+json '"cli agent woke on: " + d["payload"]["body"]' <"$work/cli-wait.out" | tee "$work/cli-woke"
+grep -q "how far are you" "$work/cli-woke"
+json '"curl agent woke on: " + d["items"][0]["payload"]["body"]' <"$work/curl-wait.out" | tee "$work/curl-woke"
+grep -q "and you" "$work/curl-woke"
+human -X GET "$hub/api/v1/projects/smoke/conversations/$cli_agent/messages" \
+    | json '"delivered: " + str(d["items"][-1]["delivered_at"] is not None)' | grep -q "delivered: True"
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked, and both agents got their answers\n'
+printf '\nsmoke: both join paths worked, both agents got their answers and woke on a message\n'
