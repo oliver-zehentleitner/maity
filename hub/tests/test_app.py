@@ -60,7 +60,16 @@ def test_dashboard_is_served_at_the_root(client: TestClient, web_dir: Path) -> N
 
 
 @pytest.mark.parametrize(
-    "path", ["/.env", "/.git/config", "/assets/.secret", "/api/v1/page.html", "/api/x"]
+    "path",
+    [
+        "/.env",
+        "/.git/config",
+        "/assets/.secret",
+        "/api/v1/page.html",
+        "/api/x",
+        "/fixtures/me.json",
+        "/tools/serve.py",
+    ],
 )
 def test_dotfiles_and_the_api_prefix_are_never_served_as_files(
     client: TestClient, web_dir: Path, path: str

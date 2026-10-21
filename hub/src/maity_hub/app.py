@@ -129,17 +129,23 @@ def _api_router() -> APIRouter:
     return router
 
 
+# Parts of web/ that belong to the dashboard's development, not to the page:
+# the fixture data it is tested against and its tools.
+NOT_SERVED = {"api", "fixtures", "tools"}
+
+
 class DashboardFiles(StaticFiles):
-    """Static files without dotfiles and without anything under the API prefix.
+    """Static files without dotfiles, the API prefix, or web/'s development parts.
 
     A `.env`, `.git/` or `.htaccess` that ends up in the dashboard directory is
-    never served, and no file can answer for an API path.
+    never served, no file can answer for an API path, and `fixtures/` and
+    `tools/` stay in the repository.
     """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         # `path` is normalised; the root arrives as ".".
         parts = [part for part in path.replace("\\", "/").split("/") if part != "."]
-        if any(part.startswith(".") for part in parts) or parts[:1] == ["api"]:
+        if any(part.startswith(".") for part in parts) or parts[:1] and parts[0] in NOT_SERVED:
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
 
