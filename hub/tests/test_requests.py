@@ -434,3 +434,23 @@ def test_the_resume_packet_lists_requests(owner: flow.Human, make_client: Client
     assert [r["id"] for r in packet["answered_since_cursor"]] == [answered["id"]]
     assert [r["id"] for r in packet["to_answer"]] == [to_me["id"]]
     assert packet["answered_since_cursor"][0]["answer"]["text"] == "done"
+
+
+def test_a_card_stays_blocked_while_any_waiting_request_is_open(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """PR #25: answering the first of two must not unblock work that waits on the second."""
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    first = asked(agent, task_id=card["id"])
+    second = asked(agent, task_id=card["id"])
+    assert (
+        owner.get(f"/projects/maity/tasks/{card['id']}").json()["blocked_by_request"] == first["id"]
+    )
+    answer(owner, first, text="yes")
+    held = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    assert (held["status"], held["blocked_by_request"]) == ("blocked", second["id"])
+    agent.post(f"/projects/maity/requests/{second['id']}/withdraw", {})
+    freed = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)

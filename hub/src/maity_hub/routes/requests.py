@@ -522,21 +522,36 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
 
 
 def _unblock(conn: Connection, row: Any) -> None:
-    """Restore the card this request blocked, if it still does (§7)."""
+    """After `row` was answered or withdrawn: the card stays blocked while any other
+    waiting request of its holder on it is open, naming the oldest; when none is
+    left, the remembered status comes back (§7)."""
     if row.task_id is None:
         return
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
-    if card.blocked_by_request != row.id or card.status != "blocked":
+    if card.status != "blocked":
         return
-    conn.execute(
-        update(t.card)
-        .where(t.card.c.id == card.id)
-        .values(
-            status=card.status_before_block or "in_progress",
-            status_before_block=None,
-            blocked_by_request=None,
-            updated_at=clock.now(),
+    holder = card.claim_holder
+    still_waiting = conn.execute(
+        select(t.request.c.id)
+        .where(
+            t.request.c.task_id == card.id,
+            t.request.c.status == "open",
+            t.request.c.while_open == "wait",
+            t.request.c.id != row.id,
+            (t.request.c.asked_by == holder) | (t.request.c.on_behalf_of == holder),
         )
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).first()
+    if still_waiting is not None:
+        values: dict[str, Any] = {"blocked_by_request": still_waiting.id}
+    else:
+        values = {
+            "status": card.status_before_block or "in_progress",
+            "status_before_block": None,
+            "blocked_by_request": None,
+        }
+    conn.execute(
+        update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
 
 
