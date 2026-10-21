@@ -73,3 +73,28 @@ keep the PID, kill exactly that PID, never by pattern, and treat the
 dogfood hub's port as off limits. For Maity this belongs in the rules a
 project serves to its agents, and the dogfood hub's address is project
 knowledge every agent receives at join.
+
+## The contract contradicted itself, and an implementation took one side
+
+**Id:** a693f08e-ee64-44b7-b245-872065c2dc0e
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-21; reviews of pull requests #21 and #30
+
+Two review blockers came from the API contract, not from the code. The
+PATCH rule for cards named holder, creator and admin, while the scope
+table gave reviewers the right to close a reviewed card; the hub
+implemented the narrower rule, so under the default organisation preset
+the reviewer could never close anything. And "release groups among the
+shipped cards" was implemented literally, so a paired card left out of
+a release was ignored — the half-merged pair the release gate exists
+for. Each implementation also listed its own readings of open points,
+and most of the contract's later amendments came from those lists.
+
+**Learned:** a written contract with one owner works only if ambiguity
+surfaces before the code. The habit that worked: every slice lists the
+readings it chose, the contract owner decides each in the document
+before the merge, and reviews check the contract against itself as well
+as the code against the contract. Maity's contract cards (one arbiter,
+proposed then final) are the product form of this.
