@@ -77,10 +77,22 @@ window.Maity = window.Maity || {};
     h("label", { for: id }, "Pause"), reason, h("button", { type: "submit" }, "Pause"), status.el);
   }
 
+  // One failing credentials call costs that card its credentials section,
+  // not the view.
+  function loadCredentials(ctx, m) {
+    return M.api.getAll(ctx.base + "/members/" + encodeURIComponent(m.id) + "/credentials")
+      .then((list) => ({ list }), (error) => ({ error }));
+  }
+
   M.views.agents = async function (ctx, root) {
     const agents = ctx.members.filter((m) => m.kind === "agent");
-    const creds = await Promise.all(agents.map((m) =>
-      M.api.getAll(ctx.base + "/members/" + encodeURIComponent(m.id) + "/credentials")));
+    const creds = await Promise.all(agents.map((m) => loadCredentials(ctx, m)));
+    if (!agents.length) {
+      append(root, h("h2", null, "Agents"),
+        h("p", { class: "muted" }, "No agents in this project yet. ",
+          ctx.canAdmin ? h("a", { href: ctx.link("join") }, "Join an agent.") : null));
+      return;
+    }
 
     append(root, h("h2", null, "Agents"),
       h("div", { class: "profiles" }, agents.map((m, i) => {
@@ -112,7 +124,9 @@ window.Maity = window.Maity || {};
               + (m.paused.by && m.paused.by !== m.id ? " by " + ctx.nameOf(m.paused.by) : "") + ": " + m.paused.reason)
             : null,
           ctx.canAdmin ? pauseControl(ctx, m) : null,
-          credentials(ctx, m, creds[i]),
+          creds[i].error
+            ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(creds[i].error))
+            : credentials(ctx, m, creds[i].list),
           mine ? h("p", { class: "chat-link" }, h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
       })));
   };

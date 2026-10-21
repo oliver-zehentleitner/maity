@@ -11,8 +11,12 @@ window.Maity = window.Maity || {};
     if (attrs) {
       for (const [key, value] of Object.entries(attrs)) {
         if (value === null || value === undefined || value === false) continue;
-        if (key.startsWith("on") && typeof value === "function") {
+        if (key.startsWith("on")) {
+          // Handlers are functions; a string here would be inline script.
+          if (typeof value !== "function") throw new TypeError("h(): " + key + " must be a function");
           el.addEventListener(key.slice(2), value);
+        } else if ((key === "href" || key === "src") && !isLocalRef(value) && !safeUrl(value)) {
+          throw new TypeError("h(): " + key + " is neither a route nor an https URL");
         } else if (key === "class") {
           el.className = value;
         } else if (value === true) {
@@ -42,6 +46,11 @@ window.Maity = window.Maity || {};
       }
     }
     return el;
+  }
+
+  // Routes ("#/..."), the page's own query and relative files are local.
+  function isLocalRef(value) {
+    return typeof value === "string" && /^(#|\?|[a-z0-9_-]+\/[a-z0-9_./-]+$)/i.test(value) && !/^[a-z]+:/i.test(value);
   }
 
   // A link target from data (a forge URL a member typed, say) is used only

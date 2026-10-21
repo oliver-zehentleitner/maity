@@ -1,6 +1,6 @@
 // (5) Chat: a direct conversation with an agent the human owns. Messages
 // are events the agent picks up with wait or resume (docs/api.md §9); the
-// inbox stays the primary surface.
+// view polls for the agent's replies. The inbox stays the primary surface.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -25,6 +25,9 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, "You own no agents in this project."));
   }
 
+  // How often an open conversation asks for new messages.
+  const POLL_MS = 5000;
+
   function message(ctx, msg) {
     const own = msg.from === ctx.me.id;
     return h("li", { class: "msg " + (own ? "out" : "in") },
@@ -45,8 +48,31 @@ window.Maity = window.Maity || {};
 
     const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
     const conv = await M.api.get(path);
+    let cursor = conv.cursor || 0;
+    const shown = new Set(conv.items.map((m) => m.seq));
     const list = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map((m) => message(ctx, m)) : h("li", { class: "empty" }, "No messages yet."));
+    const pollStatus = M.statusLine();
+
+    function add(msg) {
+      if (shown.has(msg.seq)) return;
+      shown.add(msg.seq);
+      const empty = list.querySelector(".empty");
+      if (empty) empty.remove();
+      append(list, message(ctx, msg));
+      if (msg.seq > cursor) cursor = msg.seq;
+    }
+
+    ctx.every(POLL_MS, async () => {
+      try {
+        const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
+        fresh.items.forEach(add);
+        if (fresh.cursor && fresh.cursor > cursor) cursor = fresh.cursor;
+        pollStatus.done();
+      } catch (err) {
+        pollStatus.fail("New messages could not be fetched: ", err);
+      }
+    });
     const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
     const status = M.statusLine();
     const button = h("button", { type: "submit" }, "Send");
@@ -59,9 +85,7 @@ window.Maity = window.Maity || {};
       status.busy("Sending…");
       try {
         const msg = await M.api.post(path, { body });
-        const empty = list.querySelector(".empty");
-        if (empty) empty.remove();
-        append(list, message(ctx, msg));
+        add(msg);
         text.value = "";
         status.done();
       } catch (err) {
@@ -83,6 +107,7 @@ window.Maity = window.Maity || {};
           : "no session — picked up when it resumes"),
         h("a", { href: ctx.link("chat") }, "Other agents")),
       list,
+      pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
         text, button, status.el));

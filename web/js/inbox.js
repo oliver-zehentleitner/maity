@@ -81,6 +81,14 @@ window.Maity = window.Maity || {};
     h("span", { class: "meta" }, asker(req) + " · " + formatAgo(req.created_at)));
   }
 
+  // A reply id is chosen by the asking agent, so it never becomes a class:
+  // only the hub's own "go" of a consent without options is styled as the
+  // primary answer.
+  function replyClass(req, reply) {
+    const computedGo = req.class === "consent" && !(req.options && req.options.length) && reply.id === "go";
+    return computedGo ? "reply primary" : "reply";
+  }
+
   function who(person) {
     return person.display_name + " · " + person.role + (person.session_id ? " · session " + person.session_id : "");
   }
@@ -144,7 +152,7 @@ window.Maity = window.Maity || {};
     append(body,
       h("div", { class: "replies" },
         (req.replies || []).map((r) =>
-          h("button", { type: "button", class: "reply reply-" + r.id, onclick: () => send({ reply_id: r.id }) }, r.label)),
+          h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label)),
         h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
         h("button", {
           type: "button",
@@ -223,26 +231,36 @@ window.Maity = window.Maity || {};
       });
     }
 
-    function next() {
-      const open = items.filter((r) => r.status === "open").sort(comparator(names));
-      ui.current = open.length ? keyOf(open[0]) : null;
+    // The open entry after `after` in the current order, wrapping round to
+    // the first; the order is taken before the answer changed anything.
+    function next(order, after) {
+      const i = order.findIndex((r) => keyOf(r) === keyOf(after));
+      const rest = order.slice(i + 1).concat(order.slice(0, i));
+      const pick = rest.find((r) => r.status === "open" && keyOf(r) !== keyOf(after));
+      ui.current = pick ? keyOf(pick) : null;
     }
 
+    const visible = () => items
+      .filter((r) => show() === "all" || r.status === "open")
+      .sort(comparator(names));
+
     function later(req) {
+      const order = visible();
       ui.later.add(keyOf(req));
-      next();
+      next(order, req);
       draw();
     }
 
     async function answer(req, payload) {
+      const order = visible();
       const updated = await M.api.post("/projects/" + encodeURIComponent(req.slug)
         + "/requests/" + encodeURIComponent(req.id) + "/answer", payload);
       updated.slug = req.slug;
       if (req.project) updated.project = req.project;
       items[items.indexOf(req)] = updated;
       ui.later.delete(keyOf(req));
-      // Move on to the next open entry in the current order.
-      next();
+      // Move on to the open entry after this one in the current order.
+      next(order, req);
       draw();
       // The counts come from the hub (docs/api.md §5.1).
       try {

@@ -223,6 +223,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 }
 
 .entry-head .title { font-weight: 600; flex: 1 1 16rem; }
+
+/* Agent-written tokens (paths, hashes, URLs) can be long and unbroken. */
+.entry-head .title, .entry-body, .card, .profile, .msg, .org-node, .joins li { overflow-wrap: anywhere; min-width: 0; }
 .entry-head .meta { color: var(--muted); font-size: 0.85rem; }
 
 .project-label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; }
@@ -239,7 +242,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 .replies { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .reply { min-width: 5rem; }
-.reply-go { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
 
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
@@ -371,6 +374,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .joins li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .joins button { margin-left: auto; padding: 2px 10px; }
 .reply.later { color: var(--muted); }
+.notice:empty { display: none; }
 
 /* ---- phone width ---------------------------------------------------- */
 
