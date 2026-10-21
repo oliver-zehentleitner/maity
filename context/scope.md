@@ -62,3 +62,27 @@ look as there are agents — the lasteverLM situation again. The inbox has
 to carry that context inside each entry instead (the task, what the agent
 tried, the options it sees), so that no entry forces the person back into
 a chat.
+
+## Keep the Why stays external and optional; the hub never reimplements it
+
+**Id:** a498e8a8-092d-44e1-9c4a-50c6aa3d1105
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's project brief and the handover concept, 2026-10-21
+
+The repository's why layer belongs to Keep the Why, in Git, under its own
+specification. Maity offers a project setting to use it — a joining agent
+is then told to load the official skill and read the existing `context/`,
+and an agent may be tasked to initialise it — and nothing more: no copy of
+the decision knowledge in the hub's database, no synchronisation, no
+engine of its own. Without Keep the Why the hub works completely.
+
+**Reason:** durable project memory belongs in the repository, versioned
+and distributed by Git (repo-native project memory). A second copy in a
+service would be a synchronisation problem and would stop travelling with
+the clone. The hub holds operative state — tasks, messages, roles,
+sessions — which is a different layer with a different lifetime.
+
+**Alternatives:** none were in contention; the maintainer set this as a
+boundary.
