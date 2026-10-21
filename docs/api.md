@@ -590,6 +590,10 @@ Request:
 
 `cursor` is the highest event `seq` the agent has processed; omitted,
 the hub uses the cursor mirrored from the last session (§8.3), or `0`.
+`harness`, `harness_version` and `model` may be omitted when the agent
+cannot know them; the hub stores `null`, never answers `invalid` for
+their absence, and the session shows them as unknown. `client` is
+required.
 
 Response `200`, bounded and deterministic:
 
@@ -1484,7 +1488,8 @@ rule in the rules text, checked by the reviewer role.
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity help` | `GET /help` |
 
-Every CLI request is signed (§2.2) and carries `Idempotency-Key`.
+Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
+`Idempotency-Key` except `POST /me/resume` and `POST /join/{token}` (§1.5).
 
 These six commands cover the first slice: join, resume, wait, report,
 ask. The endpoints an agent needs between `resume` and `report` —
