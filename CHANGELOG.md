@@ -46,6 +46,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   as a child of the root.
 - web: create a project (`#/new`, `POST /projects`) with field errors from the hub,
   reachable from the switcher and from the empty state of an account without projects
+- web: refresh from the project's events (`after=latest`, then `wait=0` every 5 s):
+  reload offers on the board, agents and organisation, chat replies from the feed,
+  presence re-read in place; the "what waits for you changed" notice now appears
+  (the count re-read had marked itself as seen)
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

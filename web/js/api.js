@@ -218,6 +218,13 @@ window.Maity = window.Maity || {};
       if ("absence" in body) p.absence = body.absence;
       return p;
     }],
+    // Fixture mode has no other writers: the log stays empty and the head
+    // is 0.
+    ["GET", /^\/projects\/([^/]+)\/events$/, (m, body, path, query) => {
+      project(m[1], path);
+      const after = query.get("after");
+      return { items: [], cursor: after === "latest" ? 0 : Number(after || 0), server_time: nowIso(), superseded: false };
+    }],
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path, query) => {
       const keep = statusFilter(query, "open");
       return { items: file(m[1], "requests.json", path).items.filter(keep), next_cursor: null };

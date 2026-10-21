@@ -16,11 +16,14 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
+  // watch: the event kinds that change what the view shows; one arriving
+  // from someone else offers a reload. The inbox follows the open counts,
+  // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
-    { route: "board", label: "Board" },
-    { route: "agents", label: "Agents" },
-    { route: "org", label: "Organisation" },
+    { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
+    { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
+    { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     { route: "join", label: "Join an agent", admin: true },
   ];
@@ -39,6 +42,15 @@ window.Maity = window.Maity || {};
   // Counts and the open list are re-read on this interval (docs/api.md
   // §5.1: /me after an answer and on an interval).
   const POLL_MS = 15000;
+
+  // The open project's events are read on this interval, with wait=0; see
+  // context/refresh.md for why not the long-poll.
+  const EVENTS_MS = 5000;
+  const EVENTS_PAGE = 200;
+
+  // Events that change the header of every project view.
+  const PROJECT_KINDS = /^(state_changed|absence_changed|policy_changed|rules_changed)$/;
+  const REQUEST_KINDS = /^request_/;
 
   const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
@@ -268,12 +280,14 @@ window.Maity = window.Maity || {};
       refresh: render,
       markSeen: () => {},
       every: (ms, fn) => { timers.push(window.setInterval(fn, ms)); },
-      // After an answer: re-read /me for the switcher's counts.
+      listeners: [],
+      onEvents: (fn) => { ctx.listeners.push(fn); },
+      // Re-reads /me for the switcher's counts. What counts as seen stays;
+      // the inbox marks it after an answer of its own.
       refreshCounts: async () => {
         const fresh = await M.api.get("/me");
         ctx.projects = fresh.projects;
         renderHeader(ctx, where.route);
-        ctx.markSeen();
       },
     };
     if (where.scope !== "project") return ctx;
@@ -289,11 +303,15 @@ window.Maity = window.Maity || {};
     ctx.isOwner = mine.role === "owner";
     ctx.base = "/projects/" + encodeURIComponent(where.slug);
     ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
-    const [project, members] = await Promise.all([
+    // The event head is read before the view's data, so that nothing that
+    // happens while the view loads is missed (it is offered as a reload).
+    const [project, members, head] = await Promise.all([
       M.api.get(ctx.base),
       M.api.get(ctx.base + "/members"),
+      M.api.get(ctx.base + "/events?after=latest&wait=0"),
     ]);
     ctx.project = project;
+    ctx.eventCursor = head.cursor;
     return withMembers(ctx, members.items);
   }
 
@@ -305,30 +323,73 @@ window.Maity = window.Maity || {};
   }
 
   // Polls /me; when the open count of what is on screen changes, offers to
-  // reload the list instead of replacing it under the human's hands.
-  function pollCounts(ctx, where, main) {
+  // reload the list instead of replacing it under the human's hands. In a
+  // project it also reads the project's events (docs/api.md §8.3) from the
+  // head on: requests re-read the counts at once, and an event of a kind
+  // the view watches, from someone else, offers a reload. Listeners added
+  // with ctx.onEvents get every event, the human's own included.
+  function watch(ctx, where, item, main) {
     const openNow = () => (where.scope === "all"
       ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
       : (ctx.projects.find((p) => p.slug === ctx.slug) || {}).open_requests);
     let seen = openNow();
-    const notice = h("div", { class: "notice", role: "status" });
+    const countLine = h("div");
+    const changeLine = h("div");
+    const failLine = h("div");
+    const notice = h("div", { class: "notice", role: "status" }, countLine, changeLine, failLine);
     main.insertBefore(notice, main.firstChild);
-    ctx.every(POLL_MS, async () => {
-      try {
-        await ctx.refreshCounts();
-        clear(notice);
-        const now = openNow();
-        if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
-          append(notice, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
-            h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
-        }
-      } catch (err) {
-        append(clear(notice), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
+    const reload = h("button", { type: "button", class: "small", onclick: () => render() }, "Reload");
+    const changed = new Set();
+
+    async function counts() {
+      await ctx.refreshCounts();
+      clear(countLine);
+      const now = openNow();
+      if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
+        append(countLine, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
+          h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
       }
-    });
+    }
+    const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
+    ctx.every(POLL_MS, () => counts().then(() => clear(failLine), failed));
     // A changed count is answered by reloading; an answer given here
     // updates what counts as seen.
     ctx.markSeen = () => { seen = openNow(); };
+
+    if (where.scope !== "project") return;
+    ctx.onEvents((events) => {
+      const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
+      const texts = [];
+      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push("The project's state, absence or policy changed.");
+      if (item && item.watch && theirs.some((e) => item.watch.test(e.kind))) texts.push(item.changed);
+      texts.forEach((t) => changed.add(t));
+      if (texts.length) append(clear(changeLine), h("p", { class: "flag" }, Array.from(changed).join(" ") + " ", reload));
+      if (events.some((e) => REQUEST_KINDS.test(e.kind))) counts().catch(failed);
+    });
+    let reading = false;
+    ctx.every(EVENTS_MS, async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        await readEvents(ctx);
+        clear(failLine);
+      } catch (err) {
+        failed(err);
+      } finally {
+        reading = false;
+      }
+    });
+  }
+
+  // Reads every event after the cursor, page by page, and hands them on.
+  async function readEvents(ctx) {
+    for (;;) {
+      const page = await M.api.get(ctx.base + "/events?after=" + encodeURIComponent(ctx.eventCursor)
+        + "&wait=0&limit=" + EVENTS_PAGE);
+      if (page.cursor !== null && page.cursor !== undefined) ctx.eventCursor = page.cursor;
+      if (page.items.length) ctx.listeners.forEach((fn) => fn(page.items));
+      if (page.items.length < EVENTS_PAGE) return;
+    }
   }
 
   let renderSeq = 0;
@@ -391,7 +452,7 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
-    pollCounts(ctx, where, main);
+    watch(ctx, where, known ? item : null, main);
     let label = "No such view";
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";

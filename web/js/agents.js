@@ -11,6 +11,19 @@ window.Maity = window.Maity || {};
 
   const PRESENCE_LABELS = { online: "Online", away: "Away", offline: "Offline", paused: "Paused" };
 
+  // Presence is computed by the hub on every read and emits no event
+  // (docs/api.md §5.3); the view re-reads it on this interval, in place.
+  const PRESENCE_MS = 30000;
+
+  function presenceNodes(m) {
+    const label = PRESENCE_LABELS[m.presence] || m.presence;
+    return {
+      dot: h("span", { class: "dot " + m.presence, "aria-hidden": "true" }),
+      label: h("span", { class: "presence " + m.presence }, label),
+      seen: h("dd", null, formatAgo(m.last_seen_at)),
+    };
+  }
+
   function credentials(ctx, m, list) {
     const box = h("div", { class: "credentials" }, h("h4", null, "Credentials"));
     if (!list.items.length) {
@@ -94,16 +107,37 @@ window.Maity = window.Maity || {};
       return;
     }
 
-    append(root, h("h2", null, "Agents"),
+    const live = {};
+    const presenceStatus = M.statusLine();
+    ctx.every(PRESENCE_MS, async () => {
+      try {
+        const fresh = await M.api.get(ctx.base + "/members");
+        fresh.items.forEach((f) => {
+          const n = live[f.id];
+          if (!n) return;
+          n.dot.className = "dot " + f.presence;
+          n.label.className = "presence " + f.presence;
+          n.label.textContent = PRESENCE_LABELS[f.presence] || f.presence;
+          n.seen.textContent = formatAgo(f.last_seen_at);
+        });
+        presenceStatus.done();
+      } catch (err) {
+        presenceStatus.fail("Presence could not be refreshed: ", err);
+      }
+    });
+
+    append(root, h("h2", null, "Agents"), presenceStatus.el,
       h("div", { class: "profiles" }, agents.map((m, i) => {
         const mine = m.owner_id === ctx.me.id;
         const s = m.session;
+        const p = presenceNodes(m);
+        live[m.id] = p;
         return h("article", { class: "profile", "aria-label": m.display_name },
           h("header", null,
-            h("span", { class: "dot " + m.presence, "aria-hidden": "true" }),
+            p.dot,
             h("h3", null, m.display_name),
             h("span", { class: "handle" }, "@" + m.handle),
-            h("span", { class: "presence " + m.presence }, PRESENCE_LABELS[m.presence] || m.presence)),
+            p.label),
           h("dl", { class: "facts" },
             h("dt", null, "Owner"), h("dd", null, ctx.nameOf(m.owner_id)),
             h("dt", null, "Role"), h("dd", null, m.role),
@@ -117,7 +151,7 @@ window.Maity = window.Maity || {};
               ? s.id + " since " + formatTime(s.started_at) + (s.client ? " · " + s.client : "")
                 + (s.listening ? " · listening" : "")
               : "none"),
-            h("dt", null, "Last seen"), h("dd", null, formatAgo(m.last_seen_at)),
+            h("dt", null, "Last seen"), p.seen,
             h("dt", null, "Joined"), h("dd", null, formatTime(m.joined_at))),
           m.paused
             ? h("p", { class: "flag" }, "Paused " + formatAgo(m.paused.since)

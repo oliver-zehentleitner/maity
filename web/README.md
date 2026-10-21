@@ -126,11 +126,23 @@ fails while the bundle is stale.
 
 ## Refresh
 
-The page re-reads `GET /me` every 15 seconds for the switcher's counts
-and after every answer. When the number of open requests on screen
-changes, it offers to reload the list rather than replacing it while the
-human is reading. An open chat asks for new messages every 5 seconds
-(`?after=<cursor>`). The events endpoint is not used yet.
+- `GET /me` every 15 seconds and after every answer, for the switcher's
+  counts. When the number of open requests on screen changes, the page
+  offers **Reload the list** rather than replacing it while the human is
+  reading.
+- In a project, the project's events (`docs/api.md` §8.3): the head is
+  read with `after=latest&wait=0` together with the project and its
+  members, then `after=<cursor>&wait=0` every 5 seconds, page by page.
+  Not the long-poll: `context/refresh.md`.
+  - a request event re-reads `/me` at once;
+  - a card event (`task_*`) on the board, a member, session or
+    credential event on Agents, a member event on Organisation, and a
+    state, absence, policy or rules change anywhere offer **Reload** when
+    someone else caused them;
+  - a chat event of the open conversation fetches its new messages
+    (`?after=<cursor>`).
+- Presence emits no event; the Agents view re-reads the members every
+  30 seconds and updates presence and "last seen" in place.
 
 ## Checks
 
