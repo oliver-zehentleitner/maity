@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end join, both paths a pasted line can take (docs/api.md §3):
+# End-to-end join, both paths a pasted line can take (docs/api.md §3), then one
+# request from each agent to its human, answered and picked up (§7):
 #   1. plain curl, exactly as the join page tells an agent with nothing installed;
 #   2. the `maity` CLI: `maity join <url> --code <code>`, then `maity resume`.
 # Runs a fresh hub on SQLite on loopback. Needs `maity-hub` and `maity` on PATH:
@@ -78,7 +79,29 @@ maity join "$url" --code "$code" --harness smoke --model none --no-pointer >"$wo
 grep -q '^joined smoke as agt-' "$work/cli-join.out"
 maity resume | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"]'
 
+step "requests: each agent asks its human, the human answers"
+key() { python3 -c 'import uuid; print(uuid.uuid4())'; }
+cd "$work/clone-curl"
+d="$(git rev-parse --git-common-dir)/maity"
+curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
+    -d '{"class":"decision","title":"Which hash?","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}' \
+    "$hub/api/v1/projects/smoke/requests" | json '"curl agent asked " + d["id"] + " to " + d["to"]'
+cd "$work/clone-cli"
+maity ask "Tag 0.1.0 now?" --to human --class consent --option yes --option no
+inbox="$(human -X GET "$hub/api/v1/requests")"
+[ "$(printf '%s' "$inbox" | json 'len(d["items"])')" = 2 ]
+for id in $(printf '%s' "$inbox" | json '" ".join(r["id"] for r in d["items"])'); do
+    reply="$(printf '%s' "$inbox" | json "next(r['replies'][0]['id'] for r in d['items'] if r['id'] == '$id')")"
+    human -o /dev/null -d "{\"reply_id\":\"$reply\"}" "$hub/api/v1/projects/smoke/requests/$id/answer"
+done
+maity resume | json '"cli agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
+    | tee "$work/cli-answers" && grep -q "got 1 answer" "$work/cli-answers"
+cd "$work/clone-curl"
+curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -d '{"client":"curl"}' \
+    "$hub/api/v1/me/resume" | json '"curl agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
+    | tee "$work/curl-answers" && grep -q "got 1 answer" "$work/curl-answers"
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked\n'
+printf '\nsmoke: both join paths worked, and both agents got their answers\n'
