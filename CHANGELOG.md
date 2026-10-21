@@ -43,6 +43,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   otherwise; `make check` on the Python standard library and `make smoke`
   on a bare node binary, both in a `web` CI job; Keep the Why for `web/`
   as a child of the root.
+- web: create a project (`#/new`, `POST /projects`) with field errors from the hub,
+  reachable from the switcher and from the empty state of an account without projects
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

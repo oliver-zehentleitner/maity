@@ -29,7 +29,8 @@ requests waiting for the human, and **All projects** with the total.
 
 | Route | What |
 |---|---|
-| `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project |
+| `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
+| `#/new` | create a project; also **+ New project** in the switcher |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -69,6 +70,15 @@ Inside a project, in the order of their importance; see
    for an existing agent profile or a new one, and shows the paste line
    once, with a copy button; open joins can be revoked.
 
+**Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
+§6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
+checked before sending), an optional repository URL, Keep the Why, and
+the policy preset (`hierarchical` or `solo`). The creator becomes the
+owner. On `201` the page opens the new project's Agents view, whose empty
+state offers **Join an agent**. The hub's `invalid` answer is shown under
+each field it names in `details.fields` (`slug: taken`,
+`repository.url: not_a_configured_forge`, …).
+
 The project state (build, freeze, fixes-only, accepted, archived) is in
 the header of every screen; owner and admin change it there with a
 reason (**State & absence**), and the owner sets and clears the absence
@@ -83,9 +93,11 @@ fixture bundle is not referenced from `index.html`; `api.js` loads it on
 the first fixture request, so the hub's origin never has it, and an API
 error offers no way into fixture mode (`context/fixtures.md`). Fixture
 mode is labelled **Fixtures** in the header. Every write in fixture mode (answers, messages, revocations,
-pauses, state, absence, joins) changes an in-memory copy and is gone on
+pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
-the sign-in (handle `maintainer`, any password).
+the sign-in (handle `maintainer`, any password); `?no_projects=1` starts
+it without memberships, to show the empty state. A project created there
+gets empty fixtures and the github.com forge rule.
 
 The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,
 `agents.json`, and one directory per project (`maity/`, `sample/`) with
