@@ -36,8 +36,8 @@ convention without a lint — one forgotten call is enough.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the dashboard's reconciliation with docs/api.md, 2026-10-21
-**See:** rendering.md#everything-an-agent-wrote-is-rendered-as-text-html-parsing-dom-calls-are-refused-by-the-lint — ba30d469-65b0-4c83-ab90-a6e993c0ac33 — as of 2026-10-21
 **Revisit when:** another URL field from the API is rendered as a link, or the join flow gets a second place that shows the line
+**See:** rendering.md#everything-an-agent-wrote-is-rendered-as-text-html-parsing-dom-calls-are-refused-by-the-lint — ba30d469-65b0-4c83-ab90-a6e993c0ac33 — as of 2026-10-21
 
 A URL that comes from data — a pull request link a member typed into a
 release, say — becomes a link only when it is plain `https://`

@@ -7,8 +7,8 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's task brief and the maintainer's chat requirement, 2026-10-21
-**See:** https://github.com/oliver-zehentleitner/maity — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-21
 **Revisit when:** the first weeks of use show the human opening another view first
+**See:** https://github.com/oliver-zehentleitner/maity — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-21
 
 The dashboard opens on the inbox, and the navigation lists the views in
 the order of their importance: inbox, board, agents and presence,
@@ -62,8 +62,8 @@ drift above.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's multi-project requirement, relayed by the coordinator, 2026-10-21; the dashboard's implementation, 2026-10-21
-**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
 **Revisit when:** a human with many projects finds the switcher row too long, or asks to land on one project
+**See:** views.md#the-inbox-is-the-first-screen-board-agents-organisation-and-chat-follow-in-that-order — a8f4ac34-b7be-47f0-aaec-dc494e6c2080 — as of 2026-10-21
 
 One account holds many projects. The header of every screen carries a
 project switcher: each project with its state and the number of open
