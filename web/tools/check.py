@@ -6,7 +6,8 @@
 
 What is checked:
 
-- fixtures: every fixtures/**/*.json parses; fixtures/fixtures.js is the
+- fixtures: every project in me.json has its fixture files; every
+  fixtures/**/*.json parses; fixtures/fixtures.js is the
   current bundle of them (the page loads that file, since file:// cannot
   fetch JSON; see context/fixtures.md).
 - html: index.html is well-formed (balanced tags, void elements, quoted
@@ -77,7 +78,32 @@ def build_bundle():
     return BUNDLE_HEADER + '"use strict";\n\nwindow.MAITY_FIXTURES = ' + body + ";\n"
 
 
+# Every project in me.json answers every endpoint the views call.
+PROJECT_FIXTURES = ("project.json", "members.json", "requests.json", "tasks.json",
+                    "credentials.json", "conversations.json", "joins.json")
+TOP_FIXTURES = ("me.json", "auth-session.json", "agents.json")
+
+
+def check_fixture_set():
+    present = set(fixture_files())
+    for name in TOP_FIXTURES:
+        if name not in present:
+            finding(os.path.join(FIXTURES, name), 1, "missing fixture")
+    if "me.json" not in present:
+        return
+    try:
+        me = json.loads(read(os.path.join(FIXTURES, "me.json")))
+    except json.JSONDecodeError:
+        return
+    for project in me.get("projects", []):
+        for name in PROJECT_FIXTURES:
+            rel = project["slug"] + "/" + name
+            if rel not in present:
+                finding(os.path.join(FIXTURES, rel), 1, "missing fixture for project %s" % project["slug"])
+
+
 def check_fixtures(write):
+    check_fixture_set()
     bundle = build_bundle()
     if write:
         with open(BUNDLE, "w", encoding="utf-8") as f:
