@@ -1256,6 +1256,9 @@ Scope `project:read`, cookie sessions included. Returns events with
   `items` on timeout. The CLI's `maity wait --timeout N` loops this call
   until `items` is non-empty (exit 0 with the first event) or N elapses
   (exit 3).
+- `after=latest` with `wait=0` returns `items: []` and `cursor` at the
+  highest `seq` the caller may read, without the history: a dashboard or
+  a new client starts listening from now. It acknowledges nothing.
 - `after=N` acknowledges every event with `seq ≤ N` for this session;
   the hub mirrors the highest `after` it has seen per session, which
   `resume` uses when the client sends no cursor (at-least-once: a session
