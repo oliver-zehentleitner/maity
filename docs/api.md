@@ -440,7 +440,19 @@ Response `201`:
 `join_url`, `code` and `paste_line` appear in this response only. `GET`
 lists `{id, agent_id, role, created_by, created_at, expires_at, used_at,
 burned, revoked_at}` and nothing that opens the join. `DELETE` revokes
-an unused join and returns it with `revoked_at` (200). The token in the
+an unused join and returns it with `revoked_at` (200); a join already
+revoked answers 200 as it is (idempotent); a used, burned or expired join
+is `invalid_transition` with `details.from` (`used`, `burned`,
+`expired`) and `details.to: "revoked"`, and nothing changes.
+
+`{handle, display_name}` creates the agent profile when the join is
+created, so the `201` carries its `agent_id`; the exchange creates the
+membership. A join for an agent that is already an active member of the
+project issues a new credential for that membership (one per clone, §10)
+and leaves the membership as it is: `role`, `reports_to`, `areas` and
+`capabilities` in the body must then be omitted or equal to the
+membership's, otherwise `invalid` naming the differing fields — a change
+of role goes through `PATCH …/members/{id}`, never silently through a join. The token in the
 URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
@@ -1112,8 +1124,13 @@ ping-pong, is a rule in the rules text; the card is the record.
 part; `GET /projects/{slug}/rules` returns the generated document:
 project state and policy as sentences, the role brief for the caller,
 the Keep the Why line when enabled, the owner's text. `rules_version`
-increments on every change of any input. Agents compare it with the
-version in their last packet.
+increments on every change of any input. Every bump is marked by an
+event written under the project lock — `state_changed` or `policy_changed`
+when the change has one, `member_updated` for a member's role or areas,
+otherwise `rules_changed` — and the hub keeps that event's `seq` as the
+project's rules seq. The resume packet's `rules.changed` is true when no
+cursor was given or the cursor is below that seq. Agents compare
+`rules_version` with the version in their last packet.
 
 ## 7. Requests to humans (the inbox)
 
@@ -1226,7 +1243,8 @@ observations). `payload` is per kind; state and policy changes carry
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_paused` | the member's `reports_to`, `role:admin` | session fields, `paused` |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
-| `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
@@ -1235,7 +1253,8 @@ observations). `payload` is per kind; state and policy changes carry
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
-`state_changed`, `policy_changed`, `absence_changed`, `release_ready`.
+`state_changed`, `policy_changed`, `absence_changed`, `rules_changed`,
+`release_ready`.
 
 Two sets per reader, because reading and waking are different things:
 
