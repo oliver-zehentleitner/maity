@@ -118,6 +118,20 @@ autogenerate does not detect renames and writes nothing for data changes. Revisi
 name every constraint (the metadata's naming convention does that for
 tables defined in code). SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
-test suite migrates up and down on each engine.
+test suite migrates up and down on each engine. A revision spells out its
+column types instead of importing them from `maity_hub` (autogenerate
+writes `maity_hub.types.UtcDateTime()`; replace it as `0002` does), so
+that a later change to the application cannot change what an old
+revision creates.
+
+### Data model
+
+The tables are SQLAlchemy Core definitions in `src/maity_hub/tables.py`,
+one per entity of `docs/architecture.md` §3.6, with field names from
+`docs/api.md`; migration `0002` creates them. Ids come from
+`maity_hub.ids` (prefix and random part, never parsed), timestamps are
+`maity_hub.types.UtcDateTime` (aware UTC in Python), Markdown bodies use
+`MARKDOWN_TEXT` (`MEDIUMTEXT` on MySQL/MariaDB). The test suite checks on
+each engine that the migrations create exactly the tables in code.
 
 Why it is built this way: [`context/`](context/index.md).
