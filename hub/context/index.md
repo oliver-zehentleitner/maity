@@ -61,7 +61,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## R
 
 ## S
-- [serving.md](serving.md) — dashboard optional unless configured explicitly; local bind by default for plain Python and Compose
+- [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI
 
 ## T
 - [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL

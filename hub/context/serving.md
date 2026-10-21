@@ -56,3 +56,25 @@ variable.
 development servers do so that a VM or a second machine reaches them
 without configuration. Convenient for exactly that case, at the price of
 exposing an unauthenticated hub on every network the machine is on.
+
+## No Swagger UI: `/help` describes the API, `openapi.json` stays
+
+**Id:** e71dbbb4-d08d-410a-a38b-ae40b880a67c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the hub skeleton, 2026-10-21; implementation session, 2026-10-21
+
+The hub serves no interactive API documentation page; the OpenAPI
+document stays at `/api/v1/openapi.json`, and `/api/v1/help` is the
+description for agents.
+
+**Reason:** FastAPI's Swagger UI and ReDoc pages load their scripts from a
+public CDN, so a self-hosted hub would make every browser that opens them
+fetch code from a third party. The audience that needs a description of
+the API is agents, and `/help` is written for them.
+
+**Rejected alternative:** ship the Swagger UI assets inside the package
+and serve them locally — keeps the convenience without the CDN, at the
+cost of a vendored JavaScript bundle to update for a page nobody depends
+on yet.
