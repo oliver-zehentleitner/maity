@@ -1,5 +1,8 @@
-# The hub with PostgreSQL, for a local run:
-#   MAITY_DB_PASSWORD=<choose one> docker compose -f deploy/docker-compose.yml up --build
+# The hub with PostgreSQL, for a local run. Put the database password into
+# deploy/.env (never committed) and start from the repository root:
+#   echo 'MAITY_DB_PASSWORD=<choose one>' > deploy/.env
+#   docker compose -f deploy/docker-compose.yml up --build
+# The password goes into a URL: letters, digits and - _ . ~ only, or percent-encoded.
 # Migrations run in their own one-shot service before the hub starts; the hub
 # itself never migrates.
 
@@ -9,7 +12,7 @@ services:
     environment:
       POSTGRES_USER: maity
       POSTGRES_DB: maity
-      POSTGRES_PASSWORD: ${MAITY_DB_PASSWORD:?set MAITY_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${MAITY_DB_PASSWORD:?set MAITY_DB_PASSWORD in deploy/.env}
     volumes:
       - db:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +28,8 @@ services:
     image: maity-hub:local
     command: ["migrate"]
     environment: &hub-env
-      MAITY_DATABASE_URL: postgresql://maity:${MAITY_DB_PASSWORD:?set MAITY_DB_PASSWORD}@db/maity
+      MAITY_DATABASE_URL: postgresql://maity:${MAITY_DB_PASSWORD:?set MAITY_DB_PASSWORD in deploy/.env}@db/maity
+      # The address browsers and agents use; change it together with MAITY_PUBLISH.
       MAITY_PUBLIC_URL: ${MAITY_PUBLIC_URL:-http://localhost:8080}
     depends_on:
       db:
@@ -36,6 +40,15 @@ services:
     environment: *hub-env
     ports:
       - "${MAITY_PUBLISH:-127.0.0.1:8080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -4,3 +4,5 @@
 !hub/src
 !web
 **/__pycache__
+**/.*
+web/node_modules
