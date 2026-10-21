@@ -7,6 +7,7 @@ README, for what Keep the Why actually is.
 - canonical: https://github.com/oliver-zehentleitner/maity
 - root: web
 - parent: ..
+- dashboard-state: https://maity.dev/keep-the-why-dashboard/web/state.json
 - context: `context/`
 - init: complete
 - context-schema: 0.20.2
