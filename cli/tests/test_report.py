@@ -19,8 +19,8 @@ def test_matching_state_has_no_mismatches(clone: Path) -> None:
     facts = gitfacts.collect(clone)
     assert facts.branch == "work"
     assert facts.remote_head == facts.head
-    assert not facts.gh_available
     assert facts.pr is None
+    assert facts.pr_unknown_reason == "gh is not installed"
     assert gitfacts.mismatches(facts) == []
 
 
@@ -74,7 +74,7 @@ def test_pr_head_mismatch_is_refused(clone: Path, bin_dir: Path) -> None:
 def test_no_pr_for_branch(clone: Path, bin_dir: Path) -> None:
     fake_gh(bin_dir, "[]")
     facts = gitfacts.collect(clone)
-    assert facts.gh_available and facts.pr is None
+    assert facts.pr is None and facts.pr_unknown_reason is None
 
 
 def test_failing_gh_is_an_error_not_a_silent_none(clone: Path, bin_dir: Path) -> None:
@@ -87,17 +87,30 @@ def test_report_command_refuses_with_exit_4(
     clone: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_gh(bin_dir, pr_json("f" * 40, number=7))
-    assert cli.main(["report", "--task", "T-1"]) == cli.EXIT_REFUSED
+    assert cli.main(["report", "--task", "T-1", "--summary", "s"]) == cli.EXIT_REFUSED
     err = capsys.readouterr().err
     assert "report refused" in err and "#7" in err
 
 
-def test_report_command_prints_facts_when_they_agree(
-    clone: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    head = git(clone, "rev-parse", "HEAD")
-    fake_gh(bin_dir, pr_json(head))
-    code = cli.main(["report", "--task", "T-1"])
-    out = capsys.readouterr().out
-    assert head in out and "#12" in out
-    assert code == cli.EXIT_ERROR  # facts agree, but this clone has not joined
+def test_remote_off_github_is_unknown_without_asking_gh(clone: Path, bin_dir: Path) -> None:
+    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")
+    gitlab = "git@gitlab.example:acme/widget.git"
+    git(clone, "remote", "set-url", "origin", gitlab)
+    git(clone, "config", "--add", f"url.{clone.parent / 'remote.git'}.insteadOf", gitlab)
+    facts = gitfacts.collect(clone)
+    assert facts.pr is None
+    assert facts.pr_unknown_reason is not None and "gitlab.example" in facts.pr_unknown_reason
+    assert gitfacts.mismatches(facts) == []
+
+
+@pytest.mark.parametrize(
+    ("url", "host"),
+    [
+        ("https://github.com/a/b", "github.com"),
+        ("git@github.com:a/b.git", "github.com"),
+        ("ssh://git@gitlab.example:2222/a/b", "gitlab.example"),
+        ("/srv/git/b.git", None),
+    ],
+)
+def test_remote_host(url: str, host: str | None) -> None:
+    assert gitfacts.remote_host(url) == host

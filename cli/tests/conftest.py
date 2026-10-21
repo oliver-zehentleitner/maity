@@ -6,9 +6,11 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
+import fakehub
 import pytest
 
 GIT = shutil.which("git")
+GITHUB_URL = "https://github.com/acme/widget"
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -71,6 +73,9 @@ def clone(tmp_path: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     work = tmp_path / "work"
     git(tmp_path, "init", "--quiet", "--bare", "--initial-branch=main", str(remote))
     git(tmp_path, "clone", "--quiet", str(remote), str(work))
+    # The remote reads as GitHub (what gh is asked about); git itself is sent to the bare repo.
+    git(work, "remote", "set-url", "origin", GITHUB_URL)
+    git(work, "config", f"url.{remote}.insteadOf", GITHUB_URL)
     git(work, "switch", "--quiet", "-c", "work")
     (work / "a.txt").write_text("one\n")
     git(work, "add", "a.txt")
@@ -78,3 +83,19 @@ def clone(tmp_path: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     git(work, "push", "--quiet", "-u", "origin", "work")
     monkeypatch.chdir(work)
     yield work
+
+
+@pytest.fixture
+def fake() -> Iterator[fakehub.FakeHub]:
+    yield from fakehub.serve()
+
+
+@pytest.fixture
+def joined(clone: Path, fake: fakehub.FakeHub) -> Path:
+    """`clone`, joined to the fake hub as agt-b in project maity."""
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    state.write_credential(directory, state.Secret(fakehub.CREDENTIAL))
+    state.save_state(directory, {"hub": fake.url, "project": "maity", "member_id": "agt-b"})
+    return directory

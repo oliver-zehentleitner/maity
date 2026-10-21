@@ -39,7 +39,7 @@ def test_env_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_credential_is_written_private(tmp_path: Path) -> None:
     directory = tmp_path / "s"
-    path = state.write_credential(directory, "tok-123")
+    path = state.write_credential(directory, state.Secret("tok-123"))
     assert mode(directory) == 0o700
     assert mode(path) == 0o600
     assert state.read_credential(directory).reveal() == "tok-123"
@@ -47,23 +47,28 @@ def test_credential_is_written_private(tmp_path: Path) -> None:
 
 
 def test_credential_is_replaced_atomically(tmp_path: Path) -> None:
-    state.write_credential(tmp_path, "old")
-    state.write_credential(tmp_path, "new")
+    state.write_credential(tmp_path, state.Secret("old"))
+    state.write_credential(tmp_path, state.Secret("new"))
     assert state.read_credential(tmp_path).reveal() == "new"
 
 
 def test_loose_credential_is_refused(tmp_path: Path) -> None:
-    path = state.write_credential(tmp_path, "tok-123")
+    path = state.write_credential(tmp_path, state.Secret("tok-123"))
     os.chmod(path, 0o644)
     with pytest.raises(state.StateError, match="mode 0644") as info:
         state.read_credential(tmp_path)
     assert "tok-123" not in str(info.value)
 
 
-@pytest.mark.parametrize("value", ["", "  ", "a\nb"])
+@pytest.mark.parametrize("value", ["", "  ", "a\nb", "a b"])
 def test_unusable_credential_values_are_refused(tmp_path: Path, value: str) -> None:
     with pytest.raises(state.StateError):
-        state.write_credential(tmp_path, value)
+        state.write_credential(tmp_path, state.Secret(value))
+
+
+def test_credential_is_stored_without_newline(tmp_path: Path) -> None:
+    path = state.write_credential(tmp_path, state.Secret("mty1.a.b\n"))
+    assert path.read_bytes() == b"mty1.a.b"
 
 
 def test_missing_credential_names_the_fix(tmp_path: Path) -> None:

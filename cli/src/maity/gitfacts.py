@@ -8,8 +8,11 @@ is refused while that list is not empty.
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,8 +37,8 @@ class Facts:
     remote_branch: str | None
     remote_head: str | None
     dirty: bool
-    gh_available: bool
     pr: PullRequest | None
+    pr_unknown_reason: str | None = None
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -85,6 +88,28 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
 
 
+def remote_host(url: str) -> str | None:
+    """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path."""
+    if "://" in url:
+        return urllib.parse.urlsplit(url).hostname
+    match = re.match(r"^(?:[^@/]+@)?([^:/]+):", url)
+    return match.group(1) if match else None
+
+
+def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
+    """Why gh cannot say anything about this branch, or None when it can be asked."""
+    if shutil.which("gh") is None:
+        return "gh is not installed"
+    if remote is None:
+        return None
+    url = _git(cwd, "config", "--get", f"remote.{remote}.url") or ""  # as written, before insteadOf
+    host = remote_host(url)
+    known = {"github.com", os.environ.get("GH_HOST", "github.com")}
+    if host not in known:
+        return f"the remote {remote} is not on a GitHub host gh knows ({host or 'a local path'})"
+    return None
+
+
 def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
@@ -105,8 +130,8 @@ def collect(cwd: Path) -> Facts:
             line = proc.stdout.strip().splitlines()
             remote_head = line[0].split()[0] if line else None
 
-    gh_available = shutil.which("gh") is not None
-    pr = _pull_request(cwd, remote_branch or branch) if gh_available and branch else None
+    unknown = _forge_unknown(cwd, remote)
+    pr = _pull_request(cwd, remote_branch or branch) if unknown is None and branch else None
     return Facts(
         head=head,
         branch=branch,
@@ -114,8 +139,8 @@ def collect(cwd: Path) -> Facts:
         remote_branch=remote_branch,
         remote_head=remote_head,
         dirty=dirty,
-        gh_available=gh_available,
         pr=pr,
+        pr_unknown_reason=unknown,
     )
 
 

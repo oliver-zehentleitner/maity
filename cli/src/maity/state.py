@@ -125,13 +125,17 @@ def has_credential(state_dir: Path) -> bool:
     return credential_path(state_dir).is_file()
 
 
-def write_credential(state_dir: Path, value: str) -> Path:
-    """Store the session credential. Returns the path, never the value."""
-    value = value.strip()
-    if not value or "\n" in value:
-        raise StateError("refusing to store an empty or multi-line credential")
+def write_credential(state_dir: Path, value: Secret) -> Path:
+    """Store the session credential, byte for byte, without a trailing newline.
+
+    The same file the page-driven join writes with `curl -o` (docs/api.md §3.3), so a curl
+    config built from it with `cat` stays valid. Returns the path, never the value.
+    """
+    text = value.reveal().strip()
+    if not text or any(ch.isspace() for ch in text):
+        raise StateError("refusing to store an empty credential or one containing whitespace")
     path = credential_path(state_dir)
-    _atomic_write(path, value + "\n")
+    _atomic_write(path, text)
     return path
 
 
