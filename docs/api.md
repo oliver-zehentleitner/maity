@@ -1055,7 +1055,13 @@ with `releases:write` and:
   not `done`/`cancelled` at a time (`release_in_flight`).
 - `depends_on` lists the cards that ship in it; the PR list is computed
   from their reports.
-- `release.checklist` is seeded from `settings.release_checklist`.
+- `release.checklist` is seeded from `settings.release_checklist`. A
+  `PATCH` of `release.checklist` replaces the list: an item with a known
+  `id` keeps its tick, an item without `id` gets the next `chk-N`, an
+  unknown `id` is `invalid`. Ticking an item of a closed release is
+  `invalid_transition`; the checklist endpoint on a card that is not a
+  release is `not_found`. `version_exists` carries `details.release` (the
+  existing card's id).
 
 The `release` object on the card:
 
@@ -1124,7 +1130,8 @@ A task with `kind: contract` carries
 ```
 
 `arbiter` defaults to `policy.contract_arbiter`. Only the arbiter (or
-`tasks:admin`) moves `state` to `final` through `PATCH`; the change emits
+`tasks:admin`) moves `state` to `final` through `PATCH` — the arbiter may
+PATCH `contract.state` without being the card's holder or creator; the change emits
 `task_updated` to the watchers. One proposal to the arbiter, no peer
 ping-pong, is a rule in the rules text; the card is the record.
 
