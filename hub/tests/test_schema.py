@@ -71,7 +71,7 @@ def _project(conn: Connection) -> str:
     return project_id
 
 
-def _membership(conn: Connection, project_id: str, **principal: str | None) -> int:
+def _membership(conn: Connection, project_id: str, **principal: Any) -> int:
     result = conn.execute(
         insert(t.membership).values(
             project_id=project_id,
@@ -248,3 +248,168 @@ def test_ids_carry_their_prefix_and_differ() -> None:
     ids = {new_id("task") for _ in range(1000)}
     assert len(ids) == 1000
     assert all(i.startswith("tsk-") and len(i) == 16 for i in ids)
+
+
+def _agent(conn: Connection) -> str:
+    agent_id = new_id("agent")
+    conn.execute(
+        insert(t.agent_profile).values(
+            id=agent_id, owner_id=_human(conn), handle=agent_id, display_name="A", created_at=NOW
+        )
+    )
+    return agent_id
+
+
+def test_an_absent_json_value_is_sql_null(conn: Connection) -> None:
+    project_id = _project(conn)
+    owner = _membership(conn, project_id, human_id=_human(conn))
+    card_id = _card(conn, project_id, owner, report=None, checkpoint=None)
+    found = conn.execute(
+        select(t.card.c.id).where(t.card.c.report.is_(None), t.card.c.checkpoint.is_(None))
+    ).scalar()
+    assert found == card_id
+
+
+def test_a_revocation_reason_may_be_long(conn: Connection) -> None:
+    project_id = _project(conn)
+    member = _membership(conn, project_id, human_id=_human(conn))
+    reason = "r" * 2000
+    conn.execute(
+        insert(t.credential).values(
+            id=new_id("credential"),
+            membership_id=member,
+            verifier="0" * 64,
+            created_at=NOW,
+            revoked_reason=reason,
+        )
+    )
+    assert conn.execute(select(t.credential.c.revoked_reason)).scalar() == reason
+
+
+@pytest.mark.parametrize("table", ["membership", "card", "agent_session"])
+def test_a_marker_is_true_or_null_never_false(conn: Connection, table: str) -> None:
+    project_id = _project(conn)
+    with pytest.raises(CHECK_FAILED):
+        if table == "membership":
+            _membership(conn, project_id, human_id=_human(conn), active=False)
+        elif table == "card":
+            owner = _membership(conn, project_id, human_id=_human(conn))
+            _card(conn, project_id, owner, kind="release", release_in_flight=False)
+        else:
+            member = _membership(conn, project_id, human_id=_human(conn))
+            credential_id = new_id("credential")
+            conn.execute(
+                insert(t.credential).values(
+                    id=credential_id, membership_id=member, verifier="0" * 64, created_at=NOW
+                )
+            )
+            conn.execute(
+                insert(t.agent_session).values(
+                    id=new_id("session"),
+                    credential_id=credential_id,
+                    membership_id=member,
+                    started_at=NOW,
+                    last_seen_at=NOW,
+                    acknowledged_seq=0,
+                    live=False,
+                )
+            )
+
+
+def test_an_active_member_cannot_join_twice(conn: Connection) -> None:
+    project_id, agent_id = _project(conn), _agent(conn)
+    first = _membership(conn, project_id, agent_id=agent_id)
+    assert conn.execute(select(t.membership.c.active).where(t.membership.c.id == first)).scalar()
+    with pytest.raises(IntegrityError):
+        _membership(conn, project_id, agent_id=agent_id)
+
+
+def test_a_removed_membership_frees_its_place(conn: Connection) -> None:
+    project_id, agent_id = _project(conn), _agent(conn)
+    first = _membership(conn, project_id, agent_id=agent_id)
+    conn.execute(
+        update(t.membership).where(t.membership.c.id == first).values(active=None, removed_at=NOW)
+    )
+    second = _membership(conn, project_id, agent_id=agent_id)
+    assert second != first
+
+
+def test_a_join_link_names_an_agent(conn: Connection) -> None:
+    project_id = _project(conn)
+    with pytest.raises(CHECK_FAILED):
+        conn.execute(
+            insert(t.join_link).values(
+                id=new_id("join"),
+                project_id=project_id,
+                token_hash="a" * 64,
+                code_hash="b" * 64,
+                role="member",
+                areas=[],
+                capabilities=[],
+                created_by=_human(conn),
+                created_at=NOW,
+                expires_at=NOW,
+                failed_attempts=0,
+            )
+        )
+
+
+def test_a_card_does_not_depend_on_itself(conn: Connection) -> None:
+    project_id = _project(conn)
+    owner = _membership(conn, project_id, human_id=_human(conn))
+    card_id = _card(conn, project_id, owner)
+    with pytest.raises(CHECK_FAILED):
+        conn.execute(
+            insert(t.card_edge).values(from_card=card_id, to_card=card_id, kind="depends_on")
+        )
+
+
+@pytest.mark.parametrize(
+    ("to", "valid"),
+    [
+        ({"to_kind": "owner"}, True),
+        ({"to_kind": "role", "to_role": "admin"}, True),
+        ({"to_kind": "member", "to_member": "SELF"}, True),
+        ({"to_kind": "member"}, False),
+        ({"to_kind": "role"}, False),
+        ({"to_kind": "owner", "to_role": "admin"}, False),
+        ({"to_kind": "role", "to_role": "admin", "to_member": "SELF"}, False),
+    ],
+)
+def test_a_request_is_addressed_in_one_shape(
+    conn: Connection, to: dict[str, Any], valid: bool
+) -> None:
+    project_id = _project(conn)
+    asker = _membership(conn, project_id, human_id=_human(conn))
+    values = {k: (asker if v == "SELF" else v) for k, v in to.items()}
+    row: dict[str, Any] = {
+        "id": new_id("request"),
+        "project_id": project_id,
+        "class": "decision",
+        "title": "?",
+        "options": [],
+        "priority": "normal",
+        "asked_by": asker,
+        "while_open": "wait",
+        "status": "open",
+        "created_at": NOW,
+        **values,
+    }
+    if valid:
+        conn.execute(insert(t.request).values(row))
+    else:
+        with pytest.raises(CHECK_FAILED):
+            conn.execute(insert(t.request).values(row))
+
+
+def test_unique_text_is_exact_on_every_engine(conn: Connection) -> None:
+    project_id = _project(conn)
+    owner = _membership(conn, project_id, human_id=_human(conn))
+    for version in ("0.1.0-rc1", "0.1.0-RC1", "0.1.0-rç1"):
+        _card(conn, project_id, owner, kind="release", release_version=version)
+    for key in ("k" * 16, "K" * 16):
+        conn.execute(
+            insert(t.idempotency_key).values(
+                caller="crd-x", idem_key=key, body_hash="0" * 64, status_code=201, created_at=NOW
+            )
+        )

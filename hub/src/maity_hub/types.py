@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Dialect, Integer, Text
-from sqlalchemy.dialects import mysql
+from sqlalchemy import JSON, BigInteger, DateTime, Dialect, Integer, Text
+from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.types import TypeDecorator, TypeEngine
 
 # Microseconds on MySQL/MariaDB, whose DATETIME drops fractions by default.
@@ -17,6 +17,25 @@ TIMESTAMP_IMPL: TypeEngine[datetime] = DateTime().with_variant(
 # Markdown bodies are capped at 16 KiB characters (docs/api.md §1.7); MySQL's
 # TEXT holds 64 KiB bytes, too little for 16 Ki four-byte characters.
 MARKDOWN_TEXT: TypeEngine[str] = Text().with_variant(mysql.MEDIUMTEXT(), "mysql", "mariadb")
+
+# JSON values. An absent value is SQL NULL, never the JSON literal `null`, so
+# that `IS NULL` finds it; JSONB on PostgreSQL. MariaDB's JSON is a validated
+# LONGTEXT, MySQL's a native type; SQLite stores text.
+JSON_VALUE: TypeEngine[Any] = JSON(none_as_null=True).with_variant(
+    postgresql.JSONB(none_as_null=True), "postgresql"
+)
+
+
+# Table options for the MySQL family: utf8mb4 whatever the server's default,
+# and a binary collation, so that uniqueness and comparison are exact (case-
+# and accent-sensitive) as they are on PostgreSQL and SQLite.
+MYSQL_TABLE: dict[str, Any] = {
+    "mysql_charset": "utf8mb4",
+    "mysql_collate": "utf8mb4_bin",
+    # SQLAlchemy's MariaDB dialect reads its own prefix, not mysql_.
+    "mariadb_charset": "utf8mb4",
+    "mariadb_collate": "utf8mb4_bin",
+}
 
 # SQLite autoincrements only an INTEGER PRIMARY KEY.
 BIG_ID: TypeEngine[int] = BigInteger().with_variant(Integer(), "sqlite")
