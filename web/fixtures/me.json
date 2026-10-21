@@ -1,0 +1,25 @@
+{
+  "member": {
+    "id": "hum-maintainer",
+    "kind": "human",
+    "handle": "maintainer",
+    "display_name": "Maintainer"
+  },
+  "projects": [
+    {
+      "slug": "maity",
+      "name": "Maity",
+      "state": "build",
+      "role": "owner",
+      "open_requests": 3
+    },
+    {
+      "slug": "sample",
+      "name": "Sample shop",
+      "state": "freeze",
+      "role": "owner",
+      "open_requests": 1
+    }
+  ],
+  "server_time": "2026-10-21T13:42:00Z"
+}

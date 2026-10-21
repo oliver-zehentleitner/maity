@@ -1,7 +1,8 @@
 name: ci
 
-# The hub's checks: lint, types and tests on SQLite; the test suite against
-# PostgreSQL and MariaDB; the built wheel on Python 3.13; the image.
+# The dashboard's checks and smoke test; the hub's checks: lint, types and
+# tests on SQLite; the test suite against PostgreSQL and MariaDB; the built
+# wheel on Python 3.13; the image.
 on:
   push:
     branches: [main]
@@ -15,6 +16,19 @@ defaults:
     working-directory: hub
 
 jobs:
+  # The dashboard (web/, owned by Agent D): structure checks on the Python
+  # standard library, the behaviour smoke test on the runner's node binary.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 --version && node --version
+      - run: make check
+      - run: make smoke
+
   hub-sqlite:
     runs-on: ubuntu-latest
     steps:

@@ -34,3 +34,12 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   with a timeout; the agent skill in `cli/skill/maity/SKILL.md`.
 - ci: a `cli` job runs `make check` in `cli/` on Python 3.10 and 3.13.
 - docs: `docs/join-page.md`, the join page template the hub serves.
+- web: dashboard skeleton against fixtures — a project switcher with open
+  counts on every screen and an inbox across all projects; per project the
+  inbox, board, agents and presence, organisation tree, chat with owned
+  agents, sign-in and sign-out, project state and absence, pausing agents,
+  and the join line for a new agent, in the shapes of `docs/api.md`; a
+  fetch layer that reads fixtures on `file://` only and `/api/v1`
+  otherwise; `make check` on the Python standard library and `make smoke`
+  on a bare node binary, both in a `web` CI job; Keep the Why for `web/`
+  as a child of the root.

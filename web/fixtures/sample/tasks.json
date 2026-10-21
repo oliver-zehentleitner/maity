@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "id": "tsk-0021",
+      "kind": "task",
+      "title": "Checkout rounding",
+      "body": "",
+      "label": "fix",
+      "status": "review",
+      "area": "src/",
+      "created_by": "agt-s1",
+      "assigned_to": "agt-s1",
+      "claim": {
+        "holder": "agt-s1",
+        "session_id": "ses-s1-0042",
+        "since": "2026-10-21T09:00:00Z",
+        "lease_until": "2026-10-21T15:00:00Z",
+        "expired": false
+      },
+      "checkpoint": null,
+      "depends_on": [],
+      "ships_with": [],
+      "blocked_by_request": null,
+      "ktw_ref": null,
+      "report": {
+        "summary": "Round half up in the totals.",
+        "head": "81aa2f0",
+        "branch": "fix/rounding",
+        "upstream": "origin/fix/rounding",
+        "remote_head": "81aa2f0",
+        "pr": null,
+        "pr_status": "unknown",
+        "pr_unknown_reason": "no forge CLI in this session",
+        "verification": "bearer",
+        "reported_by": "agt-s1",
+        "session_id": "ses-s1-0042",
+        "reported_at": "2026-10-21T12:50:00Z",
+        "observed": null,
+        "mismatch": null
+      },
+      "release": null,
+      "contract": null,
+      "created_at": "2026-10-21T09:00:00Z",
+      "updated_at": "2026-10-21T13:00:00Z",
+      "closed_at": null
+    }
+  ],
+  "next_cursor": null
+}

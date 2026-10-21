@@ -1,0 +1,54 @@
+{
+  "agt-a": {
+    "items": [
+      {
+        "id": "evt-4201",
+        "seq": 4201,
+        "conversation_id": "agt-a",
+        "from": "hum-maintainer",
+        "to": "agt-a",
+        "body": "How far is the API contract?",
+        "sent_at": "2026-10-21T13:10:00Z",
+        "delivered_at": "2026-10-21T13:10:04Z"
+      },
+      {
+        "id": "evt-4202",
+        "seq": 4202,
+        "conversation_id": "agt-a",
+        "from": "agt-a",
+        "to": "hum-maintainer",
+        "body": "Endpoints for join, tasks and requests are drafted.\nMessages and presence follow this afternoon.",
+        "sent_at": "2026-10-21T13:12:30Z",
+        "delivered_at": "2026-10-21T13:12:30Z"
+      }
+    ],
+    "cursor": 4202
+  },
+  "agt-b": {
+    "items": [],
+    "cursor": null
+  },
+  "agt-c": {
+    "items": [],
+    "cursor": null
+  },
+  "agt-d": {
+    "items": [
+      {
+        "id": "evt-4203",
+        "seq": 4203,
+        "conversation_id": "agt-d",
+        "from": "hum-maintainer",
+        "to": "agt-d",
+        "body": "Keep the inbox usable on the phone.",
+        "sent_at": "2026-10-21T13:30:00Z",
+        "delivered_at": null
+      }
+    ],
+    "cursor": 4203
+  },
+  "agt-r": {
+    "items": [],
+    "cursor": null
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "slug": "sample",
+  "name": "Sample shop",
+  "state": "freeze",
+  "state_note": "Release 2.3 frozen; fixes only after the tag.",
+  "state_changed_at": "2026-10-20T16:00:00Z",
+  "repository": {
+    "url": "https://github.com/example/sample-shop",
+    "default_branch": "main",
+    "forge": "github",
+    "probe_configured": false
+  },
+  "keep_the_why": false,
+  "policy": {
+    "preset": "solo",
+    "claim_policy": "self-claim",
+    "done_authority": "holder",
+    "contract_arbiter": "hum-maintainer",
+    "tag_authority": "human",
+    "steward_writes": "cards_only",
+    "lease_seconds": 7200
+  },
+  "absence": {
+    "until": "2026-10-22T08:00:00Z",
+    "scope": "bug fixes may be released, features wait"
+  },
+  "settings": {
+    "release_checklist": [
+      "CHANGELOG has a section for this version",
+      "live version equals the tag"
+    ]
+  },
+  "rules_version": 3,
+  "created_at": "2026-09-02T10:00:00Z"
+}

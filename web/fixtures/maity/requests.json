@@ -1,0 +1,120 @@
+{
+  "items": [
+    {
+      "id": "req-0012",
+      "class": "consent",
+      "title": "Store hashed session credentials with Argon2id instead of SHA-256?",
+      "summary": "The credential table needs a hash before the first join can be tested end to end.",
+      "tried": "Prototyped both: SHA-256 with a server pepper verifies in microseconds; Argon2id with the OWASP minimum takes about 40 ms per request on the VM.",
+      "options": [
+        { "id": "sha", "label": "SHA-256 + pepper", "detail": "Credentials are long random tokens, so a slow hash adds little; fastest per request." },
+        { "id": "argon", "label": "Argon2id", "detail": "Defence in depth if a token generator is ever weak; 40 ms on every signed call." }
+      ],
+      "replies": [
+        { "id": "sha", "label": "SHA-256 + pepper" },
+        { "id": "argon", "label": "Argon2id" }
+      ],
+      "priority": "high",
+      "to": "hum-maintainer",
+      "asked_by": { "member_id": "agt-b", "display_name": "Agent B", "role": "member", "session_id": "ses-b-0003" },
+      "on_behalf_of": null,
+      "task_id": "tsk-0004",
+      "task": { "id": "tsk-0004", "title": "Hub: credential exchange and storage", "status": "blocked" },
+      "while_open": "wait",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-21T13:20:00Z",
+      "answered_at": null
+    },
+    {
+      "id": "req-0011",
+      "class": "consent",
+      "title": "Merge PR #2 (context/security.md)?",
+      "summary": "Records that credentials never enter a model's context.",
+      "tried": "Reviewed; ktw-lint green.",
+      "options": [],
+      "replies": [
+        { "id": "go", "label": "Go" },
+        { "id": "no", "label": "No" }
+      ],
+      "priority": "normal",
+      "to": "owner",
+      "asked_by": { "member_id": "agt-a", "display_name": "Agent A", "role": "admin", "session_id": "ses-a-0007" },
+      "on_behalf_of": { "member_id": "agt-r", "display_name": "Reviewer", "role": "reviewer", "session_id": null },
+      "task_id": null,
+      "task": null,
+      "while_open": "wait",
+      "needs_in_session": {
+        "reason": "The harness requires the human in the executing session for merges; a go here is recorded, the merge itself happens there.",
+        "member_id": "agt-a",
+        "display_name": "Agent A",
+        "session_id": "ses-a-0007",
+        "harness": "Claude Code"
+      },
+      "ktw_ref": null,
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-21T12:48:00Z",
+      "answered_at": null
+    },
+    {
+      "id": "req-0010",
+      "class": "decision",
+      "title": "Name of the CLI binary: `maity` or `mty`?",
+      "summary": "The join line in context/join.md uses `maity join`.",
+      "tried": "Checked PyPI and Debian: both names are free.",
+      "options": [
+        { "id": "maity", "label": "maity", "detail": "Matches the join line already documented." },
+        { "id": "mty", "label": "mty", "detail": "Shorter to type." }
+      ],
+      "replies": [
+        { "id": "maity", "label": "maity" },
+        { "id": "mty", "label": "mty" }
+      ],
+      "priority": "low",
+      "to": "hum-maintainer",
+      "asked_by": { "member_id": "agt-c", "display_name": "Agent C", "role": "member", "session_id": null },
+      "on_behalf_of": null,
+      "task_id": "tsk-0006",
+      "task": { "id": "tsk-0006", "title": "CLI: join and wait", "status": "open" },
+      "while_open": "proceed_provisionally",
+      "needs_in_session": null,
+      "ktw_ref": "context/join.md",
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-21T11:30:00Z",
+      "answered_at": null
+    },
+    {
+      "id": "req-0009",
+      "class": "decision",
+      "title": "Dashboard view order: inbox, board, agents, organisation, chat?",
+      "summary": "Order taken from the brief.",
+      "tried": "",
+      "options": [
+        { "id": "keep", "label": "Keep the order" },
+        { "id": "board-first", "label": "Board first" }
+      ],
+      "replies": [
+        { "id": "keep", "label": "Keep the order" },
+        { "id": "board-first", "label": "Board first" }
+      ],
+      "priority": "normal",
+      "to": "hum-maintainer",
+      "asked_by": { "member_id": "agt-d", "display_name": "Agent D", "role": "member", "session_id": "ses-d-0001" },
+      "on_behalf_of": null,
+      "task_id": "tsk-0007",
+      "task": { "id": "tsk-0007", "title": "Dashboard skeleton against fixtures", "status": "in_progress" },
+      "while_open": "proceed_provisionally",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "status": "answered",
+      "answer": { "reply_id": "keep", "text": null, "talk": false, "by": "hum-maintainer", "on_behalf_of": null, "at": "2026-10-21T10:20:00Z", "conversation_id": null },
+      "created_at": "2026-10-21T10:05:00Z",
+      "answered_at": "2026-10-21T10:20:00Z"
+    }
+  ],
+  "next_cursor": null
+}
