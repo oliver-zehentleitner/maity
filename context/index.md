@@ -23,6 +23,7 @@ Why Maity is built the way it is.
 ## 9
 
 ## A
+- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally
 
 ## B
 
