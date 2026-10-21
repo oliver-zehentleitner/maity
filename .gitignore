@@ -1,7 +1,7 @@
 # personal, never committed
-CLAUDE.md
-CLAUDE.local.md
-AGENTS.local.md
+/CLAUDE.md
+/CLAUDE.local.md
+/AGENTS.local.md
 .env
 .env.*
 

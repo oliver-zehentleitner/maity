@@ -51,7 +51,6 @@ Why Maity is built the way it is.
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
 
-
 ## O
 
 ## P
@@ -62,7 +61,6 @@ Why Maity is built the way it is.
 
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external
-
 
 ## T
 
