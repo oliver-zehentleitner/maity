@@ -23,11 +23,20 @@ def test_the_limit_and_the_retry_after() -> None:
     assert len(limiter) == 1  # `blocked` records nothing
 
 
-def test_stale_keys_are_forgotten() -> None:
-    limiter = Limiter(10, 0.01)
+def test_stale_keys_are_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [1000.0]
+
+    class Clock:  # the limiter's own view of time, nobody else's
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(10, 60)
     for i in range(1100):
         limiter.hit(f"address-{i}")
-    time.sleep(0.02)
+    assert len(limiter) > 1024  # all inside the window: nothing to forget
+    now[0] += 61
     limiter.hit("fresh")
     assert len(limiter) == 1
 
