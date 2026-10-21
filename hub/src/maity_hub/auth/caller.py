@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -106,7 +107,14 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
 # --- humans ----------------------------------------------------------------------
 
 
+def require_secure_transport(origin: Origin, allow_plain_http: bool) -> None:
+    """A credential or a cookie crosses plain HTTP only on loopback or with the flag (§2.5)."""
+    if not (origin.tls or origin.loopback or allow_plain_http):
+        raise ApiError(403, "insecure_transport", "credentials and cookies travel over TLS only")
+
+
 def _cookie(conn: Connection, facts: RequestFacts) -> Caller:
+    require_secure_transport(facts.origin, facts.allow_plain_http)
     if facts.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
     now = clock.now()
@@ -146,14 +154,14 @@ def session_expires_at(row: Any) -> datetime:
 
 
 def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> Caller:
-    if not (facts.origin.tls or facts.origin.loopback or facts.allow_plain_http):
-        raise ApiError(403, "insecure_transport", "a bearer credential is accepted over TLS only")
+    require_secure_transport(facts.origin, facts.allow_plain_http)
     presented = credentials.parse(value)
     if presented is None:
         raise unauthenticated()
     row = _credential(conn, presented.credential_id)
     if not credentials.secret_matches(presented.secret, row.verifier):
         raise unauthenticated()
+    _refuse_revoked(row)  # only now: the caller proved possession (§1.3)
     return _agent(conn, row, "bearer", renew)
 
 
@@ -161,10 +169,16 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     timestamp = facts.headers.get("maity-timestamp", "")
     nonce = facts.headers.get("maity-nonce", "")
     signature = facts.headers.get("maity-signature", "")
-    if not (timestamp.isdigit() and _nonce_shape(nonce) and signature):
-        raise ApiError(401, "signature_invalid", "the signature headers are incomplete")
+    if not (_timestamp_shape(timestamp) and _nonce_shape(nonce) and _hex64(signature)):
+        raise ApiError(401, "signature_invalid", "the signature headers are malformed")
     now = clock.now()
-    if abs(int(timestamp) - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS:
+    stamp = int(timestamp)
+    # Nonces are remembered in this process only: a request signed before the
+    # process started could be replayed now, so it is refused as skew (§2.2).
+    if (
+        abs(stamp - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS
+        or stamp < PROCESS_STARTED
+    ):
         raise ApiError(
             401,
             "timestamp_skew",
@@ -177,6 +191,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     )
     if not credentials.signature_matches(row.verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")
+    _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
     if not NONCES.first_use(credential_id, nonce):
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
@@ -184,6 +199,15 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
 
 
 NONCES = credentials.NonceWindow()
+PROCESS_STARTED = int(time.time())
+
+
+def _timestamp_shape(timestamp: str) -> bool:
+    return 0 < len(timestamp) <= 12 and timestamp.isascii() and timestamp.isdigit()
+
+
+def _hex64(signature: str) -> bool:
+    return len(signature) == 64 and all(c in "0123456789abcdefABCDEF" for c in signature)
 
 
 def _nonce_shape(nonce: str) -> bool:
@@ -211,6 +235,10 @@ def _credential(conn: Connection, credential_id: str) -> Any:
     ).first()
     if row is None:
         raise unauthenticated()
+    return row
+
+
+def _refuse_revoked(row: Any) -> None:
     if row.revoked_at is not None:
         raise ApiError(
             401,
@@ -218,7 +246,6 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             "this credential was revoked",
             {"reason": row.revoked_reason},
         )
-    return row
 
 
 def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:

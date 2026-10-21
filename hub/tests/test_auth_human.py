@@ -284,3 +284,57 @@ def test_a_wrong_current_password_counts_against_the_login_limit(
         "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
     )
     assert login.headers["Maity-Error"] == "rate_limited"  # the handle's limit is shared
+
+
+def test_login_over_plain_http_off_loopback_is_insecure_transport(
+    make_client: ClientFactory, owner: str
+) -> None:
+    response = make_client(base_url="http://hub.example").post(
+        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    )
+    assert response.status_code == 403
+    assert response.headers["Maity-Error"] == "insecure_transport"
+
+
+def test_login_over_plain_http_on_loopback_sets_cookies_without_secure(
+    make_client: ClientFactory, owner: str
+) -> None:
+    response = make_client(base_url="http://localhost:8080", peer="127.0.0.1").post(
+        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    )
+    assert response.status_code == 200
+    assert all("Secure" not in c for c in response.headers.get_list("set-cookie"))
+
+
+def test_a_cookie_sent_over_plain_http_off_loopback_is_refused(
+    make_client: ClientFactory, owner: str
+) -> None:
+    client = make_client()
+    _login(client)
+    plain = make_client(base_url="http://hub.example")
+    plain.cookies.set("maity_session", client.cookies["maity_session"], domain="hub.example")
+    assert plain.get("/api/v1/me").headers["Maity-Error"] == "insecure_transport"
+
+
+def test_secure_follows_the_scheme_even_with_the_plain_http_flag(
+    make_client: ClientFactory, owner: str
+) -> None:
+    response = make_client(allow_plain_http=True).post(
+        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    )
+    assert all("Secure" in c for c in response.headers.get_list("set-cookie"))
+
+
+def test_an_agent_credential_on_login_is_forbidden(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    project_id = factory.project(migrated)
+    agent = factory.agent(migrated, project_id, factory.human(migrated))
+    response = make_client().post(
+        "/api/v1/auth/login",
+        json={"handle": "x", "password": "y"},
+        headers={"Authorization": f"Bearer {agent.value}"},
+    )
+    assert response.status_code == 403
+    assert response.headers["Maity-Error"] == "forbidden"
+    assert "scope" not in response.json()["error"]["details"]

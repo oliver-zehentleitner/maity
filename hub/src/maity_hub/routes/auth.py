@@ -19,11 +19,12 @@ from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_COOKIE,
     Caller,
+    require_secure_transport,
     session_expires_at,
     session_id_hash,
 )
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, invalid, rate_limited, unauthenticated
+from maity_hub.errors import ApiError, forbidden, invalid, rate_limited, unauthenticated
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import human_member
 
@@ -48,7 +49,8 @@ class PasswordChange(Strict):
 
 
 def _set_cookies(response: JSONResponse, request: Request, session_id: str, csrf: str) -> None:
-    secure = not settings_of(request).allow_plain_http
+    # Secure follows the scheme the request actually arrived with (§2.5).
+    secure = origin_of(request).tls
     max_age = int(SESSION_ABSOLUTE.total_seconds())
     response.set_cookie(
         SESSION_COOKIE,
@@ -65,7 +67,7 @@ def _set_cookies(response: JSONResponse, request: Request, session_id: str, csrf
 
 
 def _clear_cookies(response: JSONResponse, request: Request) -> None:
-    secure = not settings_of(request).allow_plain_http
+    secure = origin_of(request).tls
     for name, httponly in ((SESSION_COOKIE, True), (CSRF_COOKIE, False)):
         response.delete_cookie(name, path="/", secure=secure, httponly=httponly, samesite="lax")
 
@@ -77,9 +79,12 @@ def _member(conn: Connection, human_id: str) -> dict[str, Any]:
 
 @router.post("/login")
 async def login(body: Login, request: Request) -> JSONResponse:
+    if request.headers.get("authorization"):
+        raise forbidden(message="this endpoint is for humans")
+    origin = origin_of(request)
+    require_secure_transport(origin, settings_of(request).allow_plain_http)
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site login")
-    origin = origin_of(request)
     for limiter, key in ((LOGIN_BY_ADDRESS, origin.address), (LOGIN_BY_HANDLE, body.handle)):
         wait = limiter.hit(key)
         if wait:

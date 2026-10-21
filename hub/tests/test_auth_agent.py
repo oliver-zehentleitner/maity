@@ -249,6 +249,16 @@ def test_a_non_ascii_nonce_is_not_base64url() -> None:
     assert _nonce_shape("A-z_0" * 5)
 
 
+def test_header_shapes_refuse_non_ascii_and_oversized_values() -> None:
+    from maity_hub.auth.caller import _hex64, _timestamp_shape
+
+    assert not _timestamp_shape("١٢٣")  # Arabic-Indic digits pass str.isdigit()
+    assert not _timestamp_shape("9" * 13)
+    assert _timestamp_shape("1792000000")
+    assert not _hex64("ä" * 64)
+    assert _hex64("aB" * 32)
+
+
 def test_a_nonce_of_22_and_of_128_characters_is_accepted(
     make_client: ClientFactory, agent: factory.Agent
 ) -> None:
@@ -292,6 +302,9 @@ def test_the_canonical_string_of_the_contract() -> None:
         (b"k", "k="),
         (b"q=a+b&p=%7e", "p=~&q=a%2Bb"),
         (b"x=%C3%BC", "x=%C3%BC"),
+        ("x=ü".encode(), "x=%C3%BC"),  # raw UTF-8 is encoded once
+        (b"x=%FF", "x=%FF"),  # not a valid UTF-8 byte, kept as it is
+        (b"x=%FE", "x=%FE"),
     ],
 )
 def test_query_canonicalisation(raw: bytes, canonical: str) -> None:
@@ -439,3 +452,78 @@ def _cidr(value: str) -> Any:
 
 def _json() -> dict[str, str]:
     return {"Content-Type": "application/json"}
+
+
+def test_distinct_raw_queries_never_share_a_canonical_form() -> None:
+    assert credentials.canonical_query(b"q=a+b") != credentials.canonical_query(b"q=a%20b")
+    assert credentials.canonical_query(b"x=%FF") != credentials.canonical_query(b"x=%FE")
+
+
+# --- review round: malformed headers, proof before "revoked", restarts -------------
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"Maity-Timestamp": "9" * 5000},
+        {"Maity-Timestamp": "١٢٣"},  # digits, but not ASCII ones
+        {"Maity-Signature": "g" * 64},
+        {"Maity-Signature": "ab" * 31},
+    ],
+)
+def test_malformed_signature_headers_are_signature_invalid_not_a_crash(
+    make_client: ClientFactory, agent: factory.Agent, override: dict[str, str]
+) -> None:
+    headers = signed(agent, "GET", "/api/v1/me") | override
+    try:
+        response = make_client().get("/api/v1/me", headers=headers)
+    except UnicodeEncodeError:
+        pytest.skip("the HTTP client cannot send this header")
+    assert response.status_code == 401
+    assert response.headers["Maity-Error"] == "signature_invalid"
+
+
+def test_a_request_signed_before_the_process_started_is_skew(
+    make_client: ClientFactory, agent: factory.Agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.auth import caller
+
+    monkeypatch.setattr(caller, "PROCESS_STARTED", int(clock.now().timestamp()) + 10)
+    response = make_client().get("/api/v1/me", headers=signed(agent, "GET", "/api/v1/me"))
+    assert response.headers["Maity-Error"] == "timestamp_skew"
+
+
+def _revoke(engine: Engine, agent: factory.Agent) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == agent.credential_id)
+            .values(revoked_at=clock.now(), revoked_reason="by_owner")
+        )
+
+
+def test_revoked_is_only_told_to_whoever_proves_possession(
+    make_client: ClientFactory, agent: factory.Agent, migrated: Engine
+) -> None:
+    _revoke(migrated, agent)
+    client = make_client()
+    guessed = f"mty1.{agent.credential_id}.{'C' * 43}"
+    no_proof = client.get("/api/v1/me", headers={"Authorization": f"Bearer {guessed}"})
+    assert no_proof.headers["Maity-Error"] == "unauthenticated"
+    forged = signed(agent, "GET", "/api/v1/me") | {"Maity-Signature": "0" * 64}
+    assert client.get("/api/v1/me", headers=forged).headers["Maity-Error"] == "signature_invalid"
+    signed_ok = client.get("/api/v1/me", headers=signed(agent, "GET", "/api/v1/me"))
+    assert signed_ok.headers["Maity-Error"] == "credential_revoked"
+    assert client.get("/api/v1/me", headers=bearer(agent)).headers["Maity-Error"] == (
+        "credential_revoked"
+    )
+
+
+def test_an_unknown_id_is_unauthenticated_on_both_paths(
+    make_client: ClientFactory, agent: factory.Agent
+) -> None:
+    headers = signed(agent, "GET", "/api/v1/me")
+    headers["Authorization"] = "Maity-HMAC crd-nobody"
+    assert make_client().get("/api/v1/me", headers=headers).headers["Maity-Error"] == (
+        "unauthenticated"
+    )

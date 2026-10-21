@@ -31,11 +31,14 @@ class Origin:
         return self.scheme == "https"
 
 
-def _header(scope: Scope, name: bytes) -> str | None:
+def _values(scope: Scope, name: bytes) -> list[str]:
+    """Every comma-separated value of every line of a header, in order: a proxy
+    that appends a second line must not leave the client's first line in charge."""
+    values: list[str] = []
     for key, value in scope.get("headers", []):
         if key.lower() == name:
-            return str(value.decode("latin-1"))
-    return None
+            values += [v.strip() for v in value.decode("latin-1").split(",") if v.strip()]
+    return values
 
 
 def _trusted(address: str, proxies: tuple[IPNetwork, ...]) -> bool:
@@ -52,16 +55,20 @@ def resolve(scope: Scope, proxies: tuple[IPNetwork, ...]) -> Origin:
     scheme = str(scope.get("scheme", "http"))
     if not _trusted(peer, proxies):
         return Origin(peer, scheme)
-    forwarded_proto = _header(scope, b"x-forwarded-proto")
-    forwarded_for = _header(scope, b"x-forwarded-for")
-    if forwarded_proto:
-        scheme = forwarded_proto.split(",")[0].strip().lower()
-    address = peer
-    if forwarded_for:
-        # Walk from the right past our own proxies; the first untrusted hop is the client.
-        hops = [hop.strip() for hop in forwarded_for.split(",") if hop.strip()]
-        for hop in reversed(hops):
-            address = hop
-            if not _trusted(hop, proxies):
-                break
+    hops = _values(scope, b"x-forwarded-for")
+    protos = [p.lower() for p in _values(scope, b"x-forwarded-proto")]
+    # Each proxy appends one hop and one scheme. Walk from the trusted end; the
+    # first hop that is not one of our proxies is the client, and the scheme it
+    # spoke is the one recorded at that same position, counted from the right.
+    address, depth = peer, 0
+    while depth < len(hops):
+        depth += 1
+        address = hops[-depth]
+        if not _trusted(address, proxies):
+            break
+    if protos and depth:
+        index = len(protos) - depth
+        scheme = protos[index] if 0 <= index < len(protos) else protos[0]
+    elif protos:
+        scheme = protos[-1]
     return Origin(address, scheme if scheme in ("http", "https") else "http")

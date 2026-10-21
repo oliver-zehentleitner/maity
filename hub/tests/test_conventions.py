@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+from fastapi import Request
 from sqlalchemy import Engine, select
+from starlette.routing import Mount
 
 from maity_hub import tables as t
 from tests import factory
@@ -177,3 +180,63 @@ def test_a_wrong_method_is_405_with_allow(make_client: ClientFactory) -> None:
     assert response.status_code == 405
     assert response.headers["Maity-Error"] == "method_not_allowed"
     assert response.headers["Allow"] == "GET"
+
+
+def test_a_body_full_of_fake_credentials_costs_one_bounded_lookup(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import event as sa_event
+
+    statements: list[str] = []
+    listener = lambda *args: statements.append(args[2])  # noqa: E731
+    sa_event.listen(migrated, "before_cursor_execute", listener)
+    try:
+        fakes = " ".join(f"mty1.crd-{i}.x" for i in range(6000))
+        response = make_client().post(
+            "/api/v1/auth/login", json={"handle": "x", "password": fakes[:60000]}
+        )
+    finally:
+        sa_event.remove(migrated, "before_cursor_execute", listener)
+    assert response.headers["Maity-Error"] == "credential_in_payload"
+    lookups = [s for s in statements if "FROM credential" in s]
+    assert len(lookups) == 1
+    assert lookups[0].count("?") + lookups[0].count("%(") <= 16
+
+
+def test_a_credential_in_the_decoded_query_is_refused(make_client: ClientFactory) -> None:
+    response = make_client().get("/api/v1/health?note=mty1%2Ecrd-x%2EAAAAAAAAAAAAAAAA")
+    assert response.headers["Maity-Error"] == "credential_in_payload"
+
+
+def test_a_plus_in_the_query_is_a_literal_plus(make_client: ClientFactory) -> None:
+    client = make_client()
+    app = client.app
+
+    @app.get("/api/v1/echo")  # type: ignore[attr-defined, untyped-decorator]
+    def echo(request: Request) -> dict[str, str]:
+        return dict(request.query_params)
+
+    app.router.routes.sort(key=lambda route: isinstance(route, Mount))  # type: ignore[attr-defined]
+    assert client.get("/api/v1/echo?q=a+b&s=a%20b&p=a%2Bb").json() == {
+        "q": "a+b",
+        "s": "a b",
+        "p": "a+b",
+    }
+
+
+def test_the_request_log_has_method_path_status_and_nothing_else(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        make_client().get("/api/v1/join/SECRET-TOKEN?code=Q7MD-3XPL", headers={"X-Thing": "hdr"})
+        make_client().get("/j/SECRET-TOKEN")
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+    assert lines[0] == "GET /api/v1/join/… 404"
+    assert lines[1].startswith("GET /j/… ")
+    assert not any("SECRET" in line or "Q7MD" in line or "hdr" in line for line in lines)
+
+
+def test_the_engine_hides_statement_parameters(migrated: Engine) -> None:
+    assert migrated.hide_parameters

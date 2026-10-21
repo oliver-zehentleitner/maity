@@ -19,27 +19,39 @@ from maity_hub.events import emit
 REASON = "leaked_in_payload"
 
 
+# A body full of credential-shaped strings is refused all the same; only this
+# many distinct ids are looked up, in one query, so it cannot cost thousands.
+MAX_IDS = 16
+
+
 def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[str]:
     """Revoke every verified credential in `found`; returns their ids."""
-    revoked = []
+    secrets_by_id: dict[str, set[str]] = {}
     for presented in found:
-        row = conn.execute(
-            select(
-                t.credential.c.id,
-                t.credential.c.verifier,
-                t.credential.c.revoked_at,
-                t.membership.c.id.label("membership_id"),
-                t.membership.c.project_id,
-                t.membership.c.agent_id,
-                t.agent_profile.c.owner_id,
-            )
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-            .where(t.credential.c.id == presented.credential_id)
-        ).first()
-        if row is None or row.revoked_at is not None:
+        if presented.credential_id in secrets_by_id or len(secrets_by_id) < MAX_IDS:
+            secrets_by_id.setdefault(presented.credential_id, set()).add(presented.secret)
+    if not secrets_by_id:
+        return []
+    rows = conn.execute(
+        select(
+            t.credential.c.id,
+            t.credential.c.verifier,
+            t.credential.c.revoked_at,
+            t.membership.c.project_id,
+            t.membership.c.agent_id,
+            t.agent_profile.c.owner_id,
+        )
+        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(t.credential.c.id.in_(sorted(secrets_by_id)))
+    ).all()
+    revoked = []
+    for row in rows:
+        if row.revoked_at is not None:
             continue
-        if not credentials.secret_matches(presented.secret, row.verifier):
+        if not any(
+            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
+        ):
             continue
         revoke(conn, row.id, REASON, by=None)
         payload = {"credential_id": row.id, "reason": REASON}

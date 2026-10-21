@@ -15,7 +15,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from urllib.parse import quote, unquote
+from urllib.parse import quote_from_bytes, unquote_to_bytes
 
 PREFIX = "mty1"
 PATTERN = re.compile(rb"\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
@@ -62,18 +62,21 @@ def secret_matches(secret: str, verifier_hex: str) -> bool:
     return hmac.compare_digest(verifier_of(secret), verifier_hex)
 
 
-def _rfc3986(text: str) -> str:
-    return quote(text, safe="-_.~")
+def _rfc3986(raw: bytes) -> str:
+    """Percent-decode to bytes and re-encode: on bytes, so that distinct raw
+    queries never meet in one canonical form (`%FF` stays `%FF`, a raw `+`
+    is `%2B`, raw UTF-8 is encoded once)."""
+    return quote_from_bytes(unquote_to_bytes(raw), safe="-_.~")
 
 
 def canonical_query(raw_query: bytes) -> str:
     """Pairs sorted bytewise by key, repeated keys in request order, RFC 3986 encoded."""
     pairs = []
-    for part in raw_query.decode("latin-1").split("&"):
+    for part in raw_query.split(b"&"):
         if not part:
             continue
-        key, _, value = part.partition("=")
-        pairs.append((_rfc3986(unquote(key)), _rfc3986(unquote(value))))
+        key, _, value = part.partition(b"=")
+        pairs.append((_rfc3986(key), _rfc3986(value)))
     pairs.sort(key=lambda pair: pair[0].encode("ascii"))  # stable: repeats keep their order
     return "&".join(f"{key}={value}" for key, value in pairs)
 
@@ -99,7 +102,9 @@ def sign(verifier_hex: str, canonical: str) -> str:
 
 
 def signature_matches(verifier_hex: str, canonical: str, signature: str) -> bool:
-    return hmac.compare_digest(sign(verifier_hex, canonical), signature.lower())
+    """Constant-time; `signature` must be ASCII hex, which the caller checked."""
+    expected = sign(verifier_hex, canonical).encode("ascii")
+    return hmac.compare_digest(expected, signature.lower().encode("ascii", "replace"))
 
 
 class NonceWindow:

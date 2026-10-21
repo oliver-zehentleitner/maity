@@ -29,7 +29,8 @@ CONNECT_TIMEOUT_SECONDS = 5
 
 
 def make_engine(url: str) -> Engine:
-    kwargs: dict[str, Any] = {"pool_pre_ping": True}
+    # hide_parameters: a failing statement's error never carries the values.
+    kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
     else:

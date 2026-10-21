@@ -9,19 +9,26 @@
 from __future__ import annotations
 
 import contextlib
+import logging
+import re
 from collections.abc import MutableMapping
 from typing import Any
+from urllib.parse import unquote_to_bytes
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, net
+from maity_hub import clock, events, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.errors import error_response
+
+log = logging.getLogger(__name__)
+# The hub's own request log; the server's access log is off (§1.1).
+access = logging.getLogger("maity_hub.access")
 
 BODY_CAP = 64 * 1024
 CSP = "default-src 'self'"
@@ -57,7 +64,13 @@ class HubMiddleware:
                 await _too_large(scope, receive, send)
                 return
 
-        found = credentials.find_all(body) + credentials.find_all(scope.get("query_string", b""))
+        raw_query: bytes = scope.get("query_string", b"")
+        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
+        found = (
+            credentials.find_all(body)
+            + credentials.find_all(raw_query)
+            + credentials.find_all(unquote_to_bytes(raw_query))
+        )
         if found:
             # Refused all the same when the database is down; a verified leak is
             # revoked on its next sighting.
@@ -69,9 +82,15 @@ class HubMiddleware:
                 "the request contains a string in the hub's credential format",
             )
             await response(scope, receive, send)
+            access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
             return
 
         scope["state"]["body"] = body
+        # A `+` in a query is a literal plus in this API (§2.2), but the query
+        # parser underneath reads it as a space; encoding it keeps both the
+        # parameters and the canonical query the same as the client meant.
+        scope["state"]["raw_query"] = raw_query
+        scope["query_string"] = raw_query.replace(b"+", b"%2B")
         replayed = False
 
         async def replay() -> Message:
@@ -81,11 +100,44 @@ class HubMiddleware:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
-        await self.app(scope, replay, send)
+        started = False
+
+        status = 500
+
+        async def tracking(message: Message) -> None:
+            nonlocal started, status
+            if message["type"] == "http.response.start":
+                started = True
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, replay, tracking)
+        except Exception:
+            # Anything unexpected still answers in the envelope with every header
+            # of §1.1; the message names no internals (§1.3).
+            log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
+            if started:
+                raise
+            response = error_response(500, "internal", "an unexpected failure")
+            await response(scope, receive, send)
+        finally:
+            access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
-        with self.engine.begin() as conn:
+        with events.transaction(self.engine) as conn:
             revoke_leaked(conn, found)
+
+
+_TOKEN_PATHS = (re.compile(r"^(/j/)[^/]+"), re.compile(r"^(/api/v1/join/)[^/]+"))
+
+
+def _logged_path(scope: Scope) -> str:
+    """The path for the log: never a query string, join tokens as `…` (§1.1)."""
+    path = str(scope.get("path", ""))
+    for pattern in _TOKEN_PATHS:
+        path = pattern.sub(r"\1…", path)
+    return path
 
 
 def _content_length(scope: Scope) -> int | None:
@@ -101,6 +153,7 @@ def _content_length(scope: Scope) -> int | None:
 async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
     response = error_response(413, "payload_too_large", "the body is over 64 KiB")
     await response(scope, receive, send)
+    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
 
 
 def _with_headers(send: Send) -> Send:

@@ -150,7 +150,7 @@ def _serve(settings: Settings) -> int:
         return _fail(str(error), EXIT_CONFIG)
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
-    uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=False)
+    uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=False, access_log=False)
     return 0
 
 
