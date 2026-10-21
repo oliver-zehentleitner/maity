@@ -70,3 +70,36 @@ the image without a checkout.
 - `alembic.ini` and `migrations/` beside the package, run with the
   `alembic` command — the Alembic default, but it needs the source tree at
   run time and a second tool in the operator's hands.
+
+## "At most one" as a True-or-NULL column under a unique constraint, not a partial index
+
+**Id:** 6f948103-e687-411e-a17f-22e7c6a5f1b8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the data model for the V1 contract)
+**Revisit when:** MySQL/MariaDB support is dropped, or one of these rules needs a condition a single marker column cannot express
+
+Two rules of the contract are "at most one row of a kind": one live
+session per credential, and one release card in flight per project. Each
+is a nullable boolean — `agent_session.live`, `card.release_in_flight` —
+set to true on the one row the rule is about and to NULL on every other,
+under a unique constraint with its scope (`credential_id, live`;
+`project_id, release_in_flight`). Ending a session or closing a release
+sets the marker back to NULL in the same statement.
+
+**Reason:** all three engines allow any number of NULLs in a unique
+constraint and refuse a second true, so the database enforces the rule
+under concurrent writers on every engine, with the constraint named and
+visible in the schema.
+
+**Rejected alternatives:**
+- A partial unique index (`WHERE ended_at IS NULL`) — the textbook
+  form on PostgreSQL and SQLite, but MySQL and MariaDB have no partial
+  indexes.
+- Checking in the application before the insert — races between two
+  requests, exactly the case the rule exists for.
+- A pointer column on the parent (`credential.session_id`) — enforces
+  "one" too, but makes the session and credential tables reference each
+  other, a circular foreign key that complicates every migration and
+  insert order.
