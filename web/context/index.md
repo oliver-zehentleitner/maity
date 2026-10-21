@@ -67,6 +67,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## U
 
 ## V
+- [views.md](views.md) — the inbox is the first screen, then board, agents, organisation, chat; the org tree is computed, never stored
 
 ## W
 
