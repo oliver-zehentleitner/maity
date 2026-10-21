@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import threading
 
 N, R, P = 2**15, 8, 1
 MIN_LENGTH = 12  # characters, no composition rules (docs/api.md §2.1)
@@ -23,10 +24,17 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
+# Each derivation holds 32 MiB; at most this many run at once, so a burst of
+# logins queues instead of exhausting memory.
+CONCURRENT = 4
+_SLOTS = threading.BoundedSemaphore(CONCURRENT)
+
+
 def _derive(password: str, salt: bytes, n: int, r: int, p: int) -> bytes:
-    return hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=MAXMEM, dklen=KEY_BYTES
-    )
+    with _SLOTS:
+        return hashlib.scrypt(
+            password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=MAXMEM, dklen=KEY_BYTES
+        )
 
 
 def hash_password(password: str) -> str:
