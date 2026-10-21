@@ -69,3 +69,28 @@ refusal on the machine costs one regular expression.
 simpler and still safe, since the leaked credential is revoked. But the
 secret has then already left the machine, and the agent finds out only
 when its next call fails with `credential_revoked`.
+
+## The CLI refuses every redirect instead of following one
+
+**Id:** 2a2ec278-6757-4daa-a979-4b858045d65c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR review of the CLI skeleton, 2026-10-21
+**Revisit when:** the hub, or a proxy in front of it, has a legitimate reason to redirect an API call
+
+All HTTP from `maity` goes through an opener whose redirect handler
+raises: a 3xx answer is an error that names the target (without userinfo
+or query), and nothing is sent to it.
+
+**Reason:** `urllib` follows redirects across hosts and from HTTPS down to
+HTTP, carrying `Authorization` and the signed headers with it. The hub
+never redirects an API call, so a redirect means a wrong URL or something
+in between that should not be trusted with the request. Refusing is
+simpler to get right than any rule about which redirects are safe.
+
+**Rejected alternative:** follow redirects but drop the authorization
+headers on a change of host or scheme. That still re-sends the request
+body and its idempotency key to an unknown target, and it turns a
+misconfigured hub URL into confusing `unauthenticated` errors instead of
+one clear message.
