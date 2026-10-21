@@ -29,3 +29,27 @@ maintainer because production sits on PostgreSQL and the hub should not
 dictate the database. Cost accepted: three engines in CI, and atomic
 claims written as portable conditional updates (`UPDATE … WHERE claimed_by
 IS NULL`) rather than engine-specific locking.
+
+## Runs on Kubernetes in production and starts locally with Docker or plain Python
+
+**Id:** 4713ab88-72a2-408b-9625-87345628eb5a
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-21
+
+Production is the maintainer's Kubernetes cluster, where the hub joins
+the existing deployment and management; the same hub starts on a
+developer machine with `docker compose up` or with plain Python and a
+local database, nothing else installed. The first dogfooding runs on a
+single VM and moves to the cluster as soon as the hub is usable. `docs/`
+describes every path — local Python, Docker Compose, Helm on Kubernetes —
+and keeps them current.
+
+**Reason:** the hub is used by its own maintainer before anyone else, in
+the environment he already runs; a self-hoster must be able to try it in
+minutes. One codebase in two shapes, both documented and both exercised,
+is the cheapest way to keep both true.
+
+**Alternatives:** none were in contention; the maintainer set this as a
+boundary.
