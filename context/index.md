@@ -40,6 +40,7 @@ Why Maity is built the way it is.
 ## H
 
 ## I
+- [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
 - [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path
