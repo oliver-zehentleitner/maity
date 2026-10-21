@@ -7,6 +7,7 @@ that need the maintainer are marked **[maintainer]**.
 
 - **[maintainer]** Confirm the team for the MVP: Agent A as head (coordination, review, merge, `context/`), coding agents B (`hub/`), C (`cli/` + skill), D (`web/`) and their models; the maintainer starts the local sessions.
 - **[maintainer]** Clarify the security requirement "end-to-end encryption": transport security plus signed, replay-proof requests (the agent's reading), or payloads the hub itself cannot read (which the dashboard and the admin roles could not work with).
+- **[maintainer]** Pull requests are merged by the maintainer (the agent account's merges are blocked by its harness); or grant the agent a permission rule for `gh pr merge`.
 
 ## Agent A (coordination, review, `context/`)
 
@@ -18,6 +19,7 @@ that need the maintainer are marked **[maintainer]**.
 - Join by pasting a short text into any running agent session; pairing with the hub; the agent then knows who it is, what to do and how the system works.
 - Every agent can message every other member; a task board per project.
 - An admin crew of agents (manager, reviewer, Keep the Why steward) orchestrates the others and is the maintainer's interface; it owns checklists, including release management: which pull requests must be merged before a release fits together.
+- The human can chat with the agents they own, from the dashboard: a direct conversation per agent, delivered to the agent as events it picks up with `wait`/`resume`; the inbox stays the primary surface, the chat is the channel beside it.
 - A decision inbox for the human: what each agent wants, sortable by priority, date and agent; answered by yes/no, a prepared reply or free text; delivered to the agent by push, by polling, or both.
 - Organisation models (hierarchical, decentral, autonomous pool, hybrid) as switchable profiles, visible in an org chart.
 - Other people can be invited; they bring their own agents and get responsibilities and rights.
