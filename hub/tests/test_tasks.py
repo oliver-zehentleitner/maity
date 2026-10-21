@@ -234,3 +234,28 @@ def _report(**overrides: Any) -> dict[str, Any]:
         "pr_unknown_reason": None,
     }
     return {**body, **overrides}
+
+
+def test_a_mirrored_edge_announces_the_other_card(owner: flow.Human, migrated: Engine) -> None:
+    a = task(owner)
+    before = owner.get(f"/projects/maity/tasks/{a['id']}").json()["updated_at"]
+    b = task(owner, ships_with=[a["id"]])
+    with migrated.connect() as conn:
+        updated = conn.execute(
+            select(t.event).where(t.event.c.kind == "task_updated", t.event.c.subject_id == a["id"])
+        ).one()
+    assert updated.payload["ships_with"] == [b["id"]]
+    assert owner.get(f"/projects/maity/tasks/{a['id']}").json()["updated_at"] >= before
+
+
+def test_an_edge_patch_that_changes_nothing_says_nothing(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    a, b = task(owner), task(owner)
+    owner.patch(f"/projects/maity/tasks/{a['id']}", {"depends_on": [b["id"]]})
+    owner.patch(f"/projects/maity/tasks/{a['id']}", {"depends_on": [b["id"]]})
+    with migrated.connect() as conn:
+        updates = conn.execute(
+            select(t.event).where(t.event.c.kind == "task_updated", t.event.c.subject_id == a["id"])
+        ).all()
+    assert len(updates) == 1

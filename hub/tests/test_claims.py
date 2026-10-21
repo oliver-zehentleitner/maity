@@ -315,19 +315,22 @@ def test_done_with_the_report_needs_done_authority_and_closed_dependencies(
 
 
 def test_review_goes_on_by_done_authority(owner: flow.Human, make_client: ClientFactory) -> None:
+    """Default preset: done authority is the reviewer's, holder or not (§6.4, PR #23)."""
     agent = flow.agent(make_client, owner)
     reviewer = flow.agent(make_client, owner, role="reviewer")
     card = task(owner)
     _claim(agent, card)
     agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
-    assert agent.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"}).status_code == 403
+    holder_done = agent.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
+    assert holder_done.status_code == 403
+    assert holder_done.json()["error"]["details"] == {"scope": "tasks:review"}
     rework = reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "in_progress"})
-    assert rework.status_code == 403  # a reviewer is neither holder, creator nor admin here
-    owner_rework = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "in_progress"})
-    assert owner_rework.json()["status"] == "in_progress"
+    assert rework.json()["status"] == "in_progress"
+    more = reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done", "title": "x"})
+    assert more.status_code == 403  # anything beyond the status stays the editors'
     agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
     assert (
-        owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"}).json()["status"]
+        reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"}).json()["status"]
         == "done"
     )
 
@@ -339,3 +342,104 @@ def test_a_card_may_be_reported_again(owner: flow.Human, make_client: ClientFact
     agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(summary="first"))
     again = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(summary="second"))
     assert again.json()["report"]["summary"] == "second"
+
+
+# --- review round: decisions under the lock, races, human leases ------------------------
+
+
+def test_a_claim_decides_from_the_project_as_locked(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state change committed while the claim waited for the lock wins (§6.5)."""
+    from sqlalchemy import update
+
+    from maity_hub import events
+    from maity_hub.routes import tasks
+
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    real = events.lock_project
+
+    def accepted_meanwhile(conn: Any, project_id: str) -> Any:
+        conn.execute(update(t.project).where(t.project.c.id == project_id).values(state="accepted"))
+        return real(conn, project_id)
+
+    monkeypatch.setattr(tasks, "lock_project", accepted_meanwhile)
+    response = _claim(agent, card)
+    assert response.status_code == 409
+    assert response.headers["Maity-Error"] == "project_closed"
+
+
+def test_crossing_dependencies_never_store_a_cycle(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    for _ in range(5):
+        a, b = task(owner), task(owner)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first, second = pool.map(
+                lambda pair: owner.patch(
+                    f"/projects/maity/tasks/{pair[0]['id']}", {"depends_on": [pair[1]["id"]]}
+                ),
+                [(a, b), (b, a)],
+            )
+        statuses = sorted([first.status_code, second.status_code])
+        assert statuses == [200, 400], statuses
+        with migrated.connect() as conn:
+            edges = conn.execute(
+                select(t.card_edge.c.from_card, t.card_edge.c.to_card).where(
+                    t.card_edge.c.from_card.in_([a["id"], b["id"]])
+                )
+            ).all()
+        assert len(edges) == 1
+
+
+def test_a_claim_racing_a_cancel_never_answers_500(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    for _ in range(5):
+        card = task(owner)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claim_future = pool.submit(_claim, agent, card)
+            cancel_future = pool.submit(
+                owner.patch, f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"}
+            )
+            claimed, cancelled = claim_future.result(), cancel_future.result()
+        assert claimed.status_code in (200, 409), claimed.text
+        assert cancelled.status_code == 200
+
+
+def test_a_human_holders_calls_renew_its_lease(owner: flow.Human) -> None:
+    card = task(owner)
+    _claim(owner, card)
+    _later(3600)
+    owner.get("/me")
+    claim = owner.get(f"/projects/maity/tasks/{card['id']}").json()["claim"]
+    expected = (clock.now() + timedelta(seconds=7200)).replace(microsecond=0)
+    assert flow_time(claim["lease_until"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "field"),
+    [
+        ("/tasks", {"title": "x", "assigned_to": "agt-nobody"}, "assigned_to"),
+        ("/tasks/{id}/claim", {"holder": "agt-nobody"}, "holder"),
+        ("/tasks/{id}/assign", {"assignee": "agt-nobody"}, "assignee"),
+    ],
+)
+def test_a_non_member_is_invalid(
+    owner: flow.Human, path: str, body: dict[str, Any], field: str
+) -> None:
+    card = task(owner)
+    response = owner.post("/projects/maity" + path.replace("{id}", card["id"]), body)
+    assert response.json()["error"]["details"]["fields"] == {field: "not_a_member"}
+
+
+def test_report_done_without_authority_names_the_scope(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    refused = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    assert refused.json()["error"]["details"] == {"scope": "tasks:review"}

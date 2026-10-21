@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -102,6 +103,20 @@ def load_task(conn: Connection, card_id: str) -> dict[str, Any]:
 idempotency.LOADERS["task"] = load_task
 
 
+def _locked(conn: Connection, mine: Membership) -> Membership:
+    """The caller's membership with the project row as read under the project lock."""
+    return replace(mine, project=lock_project(conn, mine.project.id))
+
+
+def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
+    """An active member's membership id; anyone else is `invalid` (§6.4)."""
+    try:
+        membership_id: int = member_row(conn, mine.project.id, principal).id
+    except ApiError:
+        raise invalid({field: "not_a_member"}) from None
+    return membership_id
+
+
 def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
@@ -149,6 +164,34 @@ def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any
     if state in REASON_STATES and not reason:
         raise invalid({"reason": "required"}, f"the project is in {state}: say why")
     return {"project_state": state, "reason": reason}
+
+
+def _touch_partners(conn: Connection, mine: Membership, caller: Caller, partners: set[str]) -> None:
+    """A mirrored `ships_with` edge changed these cards too: say so on them."""
+    for partner_id in sorted(partners):
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == partner_id)
+            .values(
+                updated_at=clock.now(),
+                changed_by_credential=caller.credential_id,
+                changed_via=caller.via,
+            )
+        )
+        partner = _card(conn, partner_id)
+        emit(
+            conn,
+            mine.project.id,
+            "task_updated",
+            audience(conn, partner),
+            {
+                "id": partner_id,
+                "ships_with": task_view(conn, partner)["ships_with"],
+                "project_state": mine.project.state,
+            },
+            actor=caller.actor(mine.id),
+            subject=("task", partner_id),
+        )
 
 
 def _verification(caller: Caller) -> str:
@@ -260,11 +303,12 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             raise invalid({"release" if body.release else "contract": "not_yet"})
         _check_label(body.label)
         _check_area(body.area)
+        mine = _locked(conn, mine)
         state = _require_open_project(mine, body.reason)
-        lock_project(conn, mine.project.id)
+        assigned: int | None
         if body.assigned_to is not None:
             mine.require("tasks:admin")
-            assigned = member_row(conn, mine.project.id, body.assigned_to).id
+            assigned = _member_id(conn, mine, body.assigned_to, "assigned_to")
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
@@ -290,7 +334,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             )
         )
         cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
-        cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
+        partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
+        _touch_partners(conn, mine, caller, partners)
         card = _card(conn, card_id)
         view = task_view(conn, card)
         emit(
@@ -316,9 +361,16 @@ def patch_task(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
-        lock_project(conn, mine.project.id)
+        mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
-        if not (cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")):
+        # A status-only move out of review is done authority's, whoever holds it (§6.4).
+        review_move = (
+            given == {"status"}
+            and card.status == "review"
+            and body.status in ("done", "in_progress")
+        )
+        editor = cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")
+        if not editor and not (review_move and cards.has_done_authority(mine, card)):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
         values: dict[str, Any] = {}
         for field in ("title", "body", "ktw_ref"):
@@ -333,12 +385,16 @@ def patch_task(
         if "assigned_to" in given:
             mine.require("tasks:admin")
             values["assigned_to"] = (
-                member_row(conn, mine.project.id, body.assigned_to).id if body.assigned_to else None
+                _member_id(conn, mine, body.assigned_to, "assigned_to")
+                if body.assigned_to
+                else None
             )
-        if body.depends_on is not None:
-            cards.set_depends_on(conn, mine.project.id, card.id, body.depends_on)
+        depends_changed = body.depends_on is not None and cards.set_depends_on(
+            conn, mine.project.id, card.id, body.depends_on
+        )
+        partners: set[str] = set()
         if body.ships_with is not None:
-            cards.set_ships_with(conn, mine.project.id, card.id, body.ships_with)
+            partners = cards.set_ships_with(conn, mine.project.id, card.id, body.ships_with)
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})
@@ -348,10 +404,8 @@ def patch_task(
             values["status"] = body.status
             if body.status in cards.CLOSED:
                 values["closed_at"] = clock.now()
-            elif card.status in cards.CLOSED:
-                values["closed_at"] = None
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
-        edges_changed = body.depends_on is not None or body.ships_with is not None
+        edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
             return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
         conn.execute(
@@ -367,10 +421,11 @@ def patch_task(
         card = _card(conn, card.id)
         view = task_view(conn, card)
         payload = {k: view[k] for k in changed if k in view}
-        if body.depends_on is not None:
+        if depends_changed:
             payload["depends_on"] = view["depends_on"]
-        if body.ships_with is not None:
+        if partners:
             payload["ships_with"] = view["ships_with"]
+        _touch_partners(conn, mine, caller, partners)
         emit(
             conn,
             mine.project.id,
@@ -395,14 +450,14 @@ def claim(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
+        mine = _locked(conn, mine)
         state = _require_open_project(mine, body.reason)
-        lock_project(conn, mine.project.id)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
         session_id = caller.session_id
         if body.holder is not None and body.holder != mine.principal_id:
             mine.require("tasks:admin")
-            holder_id = member_row(conn, mine.project.id, body.holder).id
+            holder_id = _member_id(conn, mine, body.holder, "holder")
             session_id = None  # the holder's next call moves it to its session
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -451,6 +506,8 @@ def claim(
 
 
 def _already_claimed(conn: Connection, card: Any) -> ApiError:
+    if card.claim_holder is None:  # not held after all: it left `open` some other way
+        return cards.invalid_transition(card.status, "in_progress")
     holder = principal_id(conn, card.claim_holder)
     expired = card.lease_until is not None and card.lease_until <= clock.now()
     return ApiError(
@@ -458,6 +515,15 @@ def _already_claimed(conn: Connection, card: Any) -> ApiError:
         "already_claimed",
         f"{card.id} is claimed by {holder}",
         {"holder": holder, "lease_until": clock.rfc3339(card.lease_until), "expired": expired},
+    )
+
+
+def _lease_active(card: Any) -> ApiError:
+    return ApiError(
+        409,
+        "lease_active",
+        "the holder's lease has not expired",
+        {"lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None},
     )
 
 
@@ -469,7 +535,7 @@ def _lease_expired(card: Any) -> bool:
 def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        lock_project(conn, mine.project.id)
+        mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
         if card.claim_holder is None:
             raise ApiError(409, "not_holder", "the card is not claimed")
@@ -484,9 +550,13 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
                 )
         old_holder = card.claim_holder
         now = clock.now()
-        conn.execute(
+        # Conditional: a renewal by the holder a moment ago must not be wiped.
+        still = [t.card.c.claim_holder == old_holder]
+        if not cards.holds(mine, card):
+            still.append(t.card.c.lease_until <= now)
+        released = conn.execute(
             update(t.card)
-            .where(t.card.c.id == card.id)
+            .where(t.card.c.id == card.id, *still)
             .values(
                 claim_holder=None,
                 claim_session_id=None,
@@ -499,6 +569,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
                 changed_via=caller.via,
             )
         )
+        if released.rowcount != 1:
+            raise _lease_active(_card(conn, card.id))
         card = _card(conn, card.id)
         emit(
             conn,
@@ -526,12 +598,9 @@ def assign(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:admin")
-        lock_project(conn, mine.project.id)
+        mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
-        try:
-            assignee = member_row(conn, mine.project.id, body.assignee).id
-        except ApiError:
-            raise invalid({"assignee": "not_a_member"}) from None
+        assignee = _member_id(conn, mine, body.assignee, "assignee")
         now = clock.now()
         values: dict[str, Any] = {"assigned_to": assignee}
         old_holder = card.claim_holder
@@ -550,9 +619,15 @@ def assign(
                 claim_since=now,
                 lease_until=now + timedelta(seconds=mine.project.lease_seconds),
             )
-        conn.execute(
+        moves_claim = "claim_holder" in values
+        still = (
+            [t.card.c.claim_holder == old_holder, t.card.c.lease_until <= now]
+            if moves_claim
+            else []
+        )
+        assigned = conn.execute(
             update(t.card)
-            .where(t.card.c.id == card.id)
+            .where(t.card.c.id == card.id, *still)
             .values(
                 **values,
                 updated_at=now,
@@ -560,12 +635,15 @@ def assign(
                 changed_via=caller.via,
             )
         )
+        if assigned.rowcount != 1:  # the holder renewed in the meantime
+            raise _lease_active(_card(conn, card.id))
+        old_assignee = card.assigned_to
         card = _card(conn, card.id)
         emit(
             conn,
             mine.project.id,
             "task_assigned",
-            audience(conn, card, old_holder),
+            audience(conn, card, old_holder, old_assignee),
             {
                 "assignee": principal_id(conn, assignee),
                 "holder": principal_id(conn, card.claim_holder),
@@ -600,7 +678,7 @@ def checkpoint(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        lock_project(conn, mine.project.id)
+        mine = _locked(conn, mine)
         card = _holder_card(conn, mine, card_id)
         now = clock.now()
         point = {
@@ -644,14 +722,16 @@ def report(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        lock_project(conn, mine.project.id)
+        mine = _locked(conn, mine)
         card = _holder_card(conn, mine, card_id)
         if card.status not in ("in_progress", "blocked", "review"):
             raise cards.invalid_transition(card.status, "review")
         if body.done:
             # Refused as a whole, nothing stored: the agent reports again without done.
             if not cards.has_done_authority(mine, card):
-                raise forbidden(message="done needs done authority; report without done")
+                raise forbidden(
+                    cards.authority_scope(mine), "done needs done authority; report without done"
+                )
             cards.refuse_open_dependencies(conn, card.id)
         now = clock.now()
         stored = {

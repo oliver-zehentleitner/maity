@@ -63,7 +63,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
         if has_done_authority(mine, card):
             return
         raise ApiError(
-            403, "forbidden", "this needs done authority", {"scope": _authority_scope(mine)}
+            403, "forbidden", "this needs done authority", {"scope": authority_scope(mine)}
         )
     if (current, wanted) == ("in_progress", "done") and mine.project.done_authority == "holder":
         if holds(mine, card):
@@ -72,7 +72,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
     raise invalid_transition(current, wanted)
 
 
-def _authority_scope(mine: Membership) -> str:
+def authority_scope(mine: Membership) -> str:
     return {"reviewer": "tasks:review", "admin": "tasks:admin"}.get(
         mine.project.done_authority, "tasks:write"
     )
@@ -128,8 +128,21 @@ def would_cycle(conn: Connection, card_id: str, depends_on: list[str]) -> bool:
     return False
 
 
-def set_depends_on(conn: Connection, project_id: str, card_id: str, ids: list[str]) -> None:
+def _edges(conn: Connection, card_id: str, kind: str) -> set[str]:
+    return set(
+        conn.execute(
+            select(t.card_edge.c.to_card).where(
+                t.card_edge.c.from_card == card_id, t.card_edge.c.kind == kind
+            )
+        ).scalars()
+    )
+
+
+def set_depends_on(conn: Connection, project_id: str, card_id: str, ids: list[str]) -> bool:
+    """Replace the card's dependencies; True when they changed."""
     ids = list(dict.fromkeys(ids))
+    if set(ids) == _edges(conn, card_id, "depends_on"):
+        return False
     if card_id in ids:
         raise invalid({"depends_on": "self"}, "a card cannot depend on itself")
     check_edge_targets(conn, project_id, "depends_on", ids)
@@ -144,11 +157,18 @@ def set_depends_on(conn: Connection, project_id: str, card_id: str, ids: list[st
         conn.execute(
             insert(t.card_edge).values(from_card=card_id, to_card=target, kind="depends_on")
         )
+    return True
 
 
-def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[str]) -> None:
-    """`ships_with` is symmetric: the hub mirrors every edge on the other card (§6.4)."""
+def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[str]) -> set[str]:
+    """`ships_with` is symmetric: the hub mirrors every edge on the other card (§6.4).
+
+    Returns the other cards whose `ships_with` changed with it.
+    """
     ids = list(dict.fromkeys(ids))
+    before = _edges(conn, card_id, "ships_with")
+    if set(ids) == before:
+        return set()
     if card_id in ids:
         raise invalid({"ships_with": "self"}, "a card cannot ship with itself")
     check_edge_targets(conn, project_id, "ships_with", ids)
@@ -157,6 +177,7 @@ def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[st
     for other in ids:
         for a, b in ((card_id, other), (other, card_id)):
             conn.execute(insert(t.card_edge).values(from_card=a, to_card=b, kind="ships_with"))
+    return before ^ set(ids)
 
 
 def area_owner(conn: Connection, project_id: str, area: str | None) -> int | None:

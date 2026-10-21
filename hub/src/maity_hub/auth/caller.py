@@ -100,7 +100,7 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
             return _signed(conn, facts, value.strip(), renew_leases)
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts)
+        return _cookie(conn, facts, renew_leases)
     raise unauthenticated()
 
 
@@ -113,7 +113,7 @@ def require_secure_transport(origin: Origin, allow_plain_http: bool) -> None:
         raise ApiError(403, "insecure_transport", "credentials and cookies travel over TLS only")
 
 
-def _cookie(conn: Connection, facts: RequestFacts) -> Caller:
+def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     require_secure_transport(facts.origin, facts.allow_plain_http)
     if facts.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
@@ -135,6 +135,22 @@ def _cookie(conn: Connection, facts: RequestFacts) -> Caller:
         .where(t.membership.c.human_id == row.human_id, t.membership.c.removed_at.is_(None))
         .values(last_seen_at=now)
     )
+    if renew:
+        # A human holder works in the dashboard; its calls renew its leases too (§6.5).
+        memberships = conn.execute(
+            select(t.membership.c.id, t.project.c.lease_seconds)
+            .join(t.project, t.project.c.id == t.membership.c.project_id)
+            .where(t.membership.c.human_id == row.human_id, t.membership.c.active.is_(True))
+        ).all()
+        for membership_id, lease in memberships:
+            conn.execute(
+                update(t.card)
+                .where(
+                    t.card.c.claim_holder == membership_id,
+                    t.card.c.status.notin_(CLOSED_STATUSES),
+                )
+                .values(lease_until=now + timedelta(seconds=lease))
+            )
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
 
 
