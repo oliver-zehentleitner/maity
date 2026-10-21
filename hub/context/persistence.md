@@ -7,12 +7,15 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's brief for the hub skeleton, 2026-10-21; implementation session, 2026-10-21
-**See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
 **Revisit when:** a part of the hub grows object graphs with identity and lazy relationships that Core queries make hard to read
+**See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
 
 The hub describes its tables with SQLAlchemy Core `Table` objects on one
 `MetaData` (`maity_hub.db.metadata`) and talks to the database with Core
-statements. There are no mapped classes, sessions or unit of work.
+statements. There are no mapped classes, sessions or unit of work. Core
+without the ORM was set by the coordinator's brief; the reason and the
+rejected alternative below are the implementation session's reading of
+why it fits the hub.
 
 **Reason:** the hub's writes are small and deliberate — an atomic claim is
 one conditional `UPDATE … WHERE claimed_by IS NULL` whose row count
@@ -42,10 +45,11 @@ Schema changes are Alembic revisions shipped inside the package
 migrate`. `maity-hub serve` compares the database's revision with the
 head and exits with a message naming `maity-hub migrate` when they
 differ; `/api/v1/health` answers 503 in the same case. Docker Compose
-runs a one-shot `migrate` service the hub waits for. Every revision must
-run and downgrade on PostgreSQL, SQLite and MySQL/MariaDB: `op.*`
-operations and SQLAlchemy types only, constraints named through the
-metadata's naming convention, SQLite in batch mode.
+runs a one-shot `migrate` service the hub waits for. Revisions are written
+to run and downgrade on all three engines; the rules for that are in
+`hub/README.md` ("Migrations"). That migrations are explicit came from the
+coordinator's brief; refusing to serve, the Compose service and shipping
+the migrations in the package were decided in the implementation session.
 
 **Reason:** a migration is a change to the production database and
 should happen when the operator decides, not as a side effect of a
