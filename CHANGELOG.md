@@ -68,6 +68,15 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   board; the atomic claim with leases, release, assign, the freeze and
   fixes-only reason; checkpoints and completion reports with
   `verification: signed|bearer`.
+- hub: requests to humans (`docs/api.md` §7) — the four classes with
+  options and computed replies, addressing by member, role or owner with
+  the defaults, consent only to and from answering roles, `on_behalf_of`,
+  `needs_in_session`; the inbox with its defaults, filters, three sorts and
+  paging, and `GET /requests` across projects; answers by `reply_id`, text
+  or `talk` with the answer rights, `self_answer`, `on_behalf_of`;
+  withdrawal; cards blocked while a request waits and restored after; the
+  resume packet's requests; the smoke script asks and answers on both
+  join paths.
 
 ### Fixed
 
