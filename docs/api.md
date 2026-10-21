@@ -1102,8 +1102,13 @@ The `release` object on the card:
   the forge (`source` stays; `state`, `checks`, `head_sha`, `merged_at`,
   `observed_at` are observed). Without it, typed and reported states are
   displayed as unverified and count for nothing.
-- `groups` are the `ships_with` groups among the shipped cards; a group
-  is complete when every PR of every card in it is merged.
+- `groups` are the connected `ships_with` components of the shipped
+  cards, followed over all edges — a partner that is not in `depends_on`
+  belongs to the group too; a group is complete when every card in it is
+  shipped by this release and every PR of every card in it is observed
+  merged. A partner outside `depends_on` therefore blocks as
+  `group_incomplete` with the whole group in `tasks` (the half-merged pair
+  this gate exists for).
 - `readiness.ready` is computed on every read from observed state only
   (`context/integrations.md`): all `depends_on` cards `done`, all
   `pull_requests` observed `merged`, all groups complete, all checklist
@@ -1115,7 +1120,12 @@ The `release` object on the card:
   `group_incomplete` (`tasks`), `checklist_open` (`item`). When `ready`
   flips to true the hub emits `release_ready` to everyone.
 - `done` on a release additionally requires `ready`
-  (`release_not_ready`). The hub never tags, pushes or merges; the
+  (`release_not_ready`), computed on the card as it will be stored: a
+  `PATCH` that changes `release` and `status` together is judged on the
+  new data. A closed release is a record of what shipped: `release.*`
+  and `depends_on` on it are `invalid_transition`. Members with
+  `releases:write` may `PATCH` `release.pull_requests_typed` and
+  `release.checklist` on any release, holder or not. The hub never tags, pushes or merges; the
   holder tags in its own session; `tag` is filled by the probe
   (`GET /probe?tag=`, the same shape) and is informational.
 - `GET /projects/{slug}/tasks?kind=release` lists releases; the current
@@ -1129,7 +1139,8 @@ A task with `kind: contract` carries
 { "contract": { "arbiter": "agt-a", "state": "proposed", "watchers": ["agt-d", "agt-g"] } }
 ```
 
-`arbiter` defaults to `policy.contract_arbiter`. Only the arbiter (or
+`arbiter` defaults to `policy.contract_arbiter`; naming another arbiter
+needs `tasks:admin`. Only the arbiter (or
 `tasks:admin`) moves `state` to `final` through `PATCH` — the arbiter may
 PATCH `contract.state` without being the card's holder or creator; the change emits
 `task_updated` to the watchers. One proposal to the arbiter, no peer
