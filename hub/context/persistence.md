@@ -271,3 +271,36 @@ between writers into a short wait instead of a 500.
 **Rejected alternative:** the default journal with retries in the
 application — more code in every write path for what SQLite offers as
 one pragma.
+
+## Concurrent writes touch rows in one order, and a deadlock is run again a few times
+
+**Id:** 308ec265-2ca6-463a-9006-6d149c5b0b79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-21 (the join slice; a CI failure on MariaDB, reproduced locally under load)
+**Revisit when:** a transient conflict still reaches a client as 503, or a second replica changes how often they happen
+
+Writes that run beside every authenticated call touch the agent's rows in
+the order the authentication side effects use: credential, membership,
+session, cards — the resume packet was reordered to match. Each whole
+transaction of authentication, resume, the join exchange and the
+idempotent writes runs through `maity_hub.db.retrying`: on a deadlock or
+serialisation failure (SQLSTATE `40001`, `40P01`, MySQL `1213`, `1205`) it
+is run again, at most four times, with a short randomised backoff.
+
+**Reason:** InnoDB answers a lock cycle between two transactions with a
+deadlock and rolls one back; under twelve concurrent resumes of one
+credential about 60 % failed with `40001` on MariaDB, while PostgreSQL had
+none. The reordering removes the cycle between authentication and resume
+(zero failures afterwards); the retry covers the cycles nobody has found
+yet, since InnoDB's next-key locks make them hard to rule out by reading.
+The error handler logs the driver's code (never its text) so that the
+next one is identifiable.
+
+**Rejected alternatives:**
+- Retries alone — reduced the failures to about 3 % under the same load,
+  but left the cause in place.
+- Locking the project row at the start of every authenticated call —
+  removes every cycle, but serialises all calls of a project, reads
+  included.
