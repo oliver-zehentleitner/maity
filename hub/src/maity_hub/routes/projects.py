@@ -1,0 +1,391 @@
+"""Projects, their state, policy, absence and rules (docs/api.md §6.1, §6.9)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse, Response
+from pydantic import Field
+from sqlalchemy import Connection, insert, select, update
+
+from maity_hub import clock, idempotency, policy, rules
+from maity_hub import tables as t
+from maity_hub.access import Membership, member_row, membership
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
+from maity_hub.errors import ApiError, forbidden, invalid
+from maity_hub.events import emit
+from maity_hub.ids import new_id
+from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
+from maity_hub.views import forge_of, member_view, principal_id, project_view
+
+router = APIRouter()
+
+BROADCAST = ["all"]
+
+
+class RepositoryIn(Strict):
+    url: str = Field(min_length=1, max_length=255)
+    default_branch: str = Field(default="main", min_length=1, max_length=255)
+
+
+class PolicyIn(Strict):
+    preset: str | None = None
+    claim_policy: str | None = None
+    done_authority: str | None = None
+    contract_arbiter: str | None = None
+    tag_authority: str | None = None
+    steward_writes: str | None = None
+    lease_seconds: int | None = None
+
+
+class AbsenceIn(Strict):
+    until: datetime
+    scope: str = Field(min_length=1, max_length=16384)
+
+
+class SettingsIn(Strict):
+    release_checklist: list[str] = Field(default_factory=list, max_length=50)
+
+
+class ProjectCreate(Strict):
+    slug: str = Field(pattern=SLUG_PATTERN)
+    name: str = title()
+    repository: RepositoryIn | None = None
+    keep_the_why: bool = False
+    policy: PolicyIn | None = None
+
+
+class ProjectPatch(Strict):
+    name: str | None = title(default=None)
+    repository: RepositoryIn | None = None
+    keep_the_why: bool | None = None
+    state: str | None = None
+    state_note: str | None = markdown(default=None)
+    policy: PolicyIn | None = None
+    absence: AbsenceIn | None = None
+    settings: SettingsIn | None = None
+    rules_markdown: str | None = markdown(default=None)
+    reason: str | None = Field(default=None, max_length=16384)
+
+
+def _load(conn: Connection, project_id: str) -> Any:
+    return conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+
+
+def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
+    if repository is None:
+        return {"repository_url": None, "repository_default_branch": None}
+    url = repository.url.rstrip("/")
+    if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
+        raise invalid(
+            {"repository.url": "not_a_configured_forge"},
+            "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
+        )
+    return {"repository_url": url, "repository_default_branch": repository.default_branch}
+
+
+def _apply_policy(
+    conn: Connection, project_id: str, current: dict[str, Any], change: PolicyIn, owner_id: str
+) -> dict[str, Any]:
+    proposed = dict(current)
+    if change.preset is not None:
+        if change.preset not in policy.PRESETS:
+            raise invalid({"policy.preset": "unknown"})
+        proposed = policy.filled(change.preset, owner_id)
+    errors: dict[str, str] = {}
+    for name, choices in policy.CHOICES.items():
+        value = getattr(change, name)
+        if value is not None:
+            if value not in choices:
+                errors[f"policy.{name}"] = "unknown"
+            proposed[name] = value
+    if change.lease_seconds is not None:
+        if not policy.LEASE_MIN <= change.lease_seconds <= policy.LEASE_MAX:
+            errors["policy.lease_seconds"] = "out_of_range"
+        proposed["lease_seconds"] = change.lease_seconds
+    if change.contract_arbiter is not None:
+        arbiter = change.contract_arbiter
+        if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
+            errors["policy.contract_arbiter"] = "not_a_member"
+        proposed["contract_arbiter"] = arbiter
+    if errors:
+        raise invalid(errors)
+    return proposed
+
+
+def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
+    try:
+        member_row(conn, project_id, principal)
+    except ApiError:  # not_found is the answer here, not an error
+        return False
+    return True
+
+
+def project_loader(settings: Any) -> idempotency.Loader:
+    def load(conn: Connection, project_id: str) -> dict[str, Any]:
+        return project_view(_load(conn, project_id), settings)
+
+    return load
+
+
+def _register(request: Request) -> None:
+    idempotency.LOADERS["project"] = project_loader(settings_of(request))
+
+
+@router.get("/projects")
+def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
+    settings = settings_of(request)
+    with engine_of(request).begin() as conn:
+        query = select(t.project).join(t.membership, t.membership.c.project_id == t.project.c.id)
+        if caller.kind == "agent":
+            query = query.where(t.membership.c.id == caller.membership_id)
+        else:
+            query = query.where(
+                t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
+            )
+        rows = conn.execute(query.order_by(t.project.c.slug)).all()
+        return JSONResponse(
+            {"items": [project_view(r, settings) for r in rows], "next_cursor": None}
+        )
+
+
+@router.post("/projects")
+def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
+    _register(request)
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        if conn.execute(select(t.project.c.id).where(t.project.c.slug == body.slug)).first():
+            raise invalid({"slug": "taken"}, "a project with this slug exists")
+        now = clock.now()
+        project_id = new_id("project")
+        filled = policy.filled("hierarchical", caller.principal_id)
+        conn.execute(
+            insert(t.project).values(
+                id=project_id,
+                slug=body.slug,
+                name=body.name,
+                state="build",
+                state_changed_at=now,
+                keep_the_why=body.keep_the_why,
+                **_repository_columns(body.repository),
+                **policy.columns(filled),
+                settings={"release_checklist": []},
+                rules_version=1,
+                created_at=now,
+            )
+        )
+        result = conn.execute(
+            insert(t.membership).values(
+                project_id=project_id,
+                human_id=caller.human_id,
+                role="owner",
+                areas=["/"],
+                capabilities=[],
+                joined_at=now,
+                last_seen_at=now,
+                changed_via=caller.via,
+            )
+        )
+        key = result.inserted_primary_key
+        assert key is not None
+        owner = int(key[0])
+        if body.policy is not None:
+            proposed = _apply_policy(conn, project_id, filled, body.policy, caller.principal_id)
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == project_id)
+                .values(**policy.columns(proposed))
+            )
+        member = conn.execute(select(t.membership).where(t.membership.c.id == owner)).one()
+        emit(
+            conn,
+            project_id,
+            "member_joined",
+            BROADCAST,
+            member_view(conn, member),
+            actor=caller.actor(owner),
+            subject=("member", caller.principal_id),
+        )
+        project = _load(conn, project_id)
+        return idempotency.Outcome(
+            201, "project", project_id, project_view(project, settings_of(request))
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.get("/projects/{slug}")
+def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("project:read")
+        return JSONResponse(project_view(mine.project, settings_of(request)))
+
+
+@router.patch("/projects/{slug}")
+def patch_project(
+    slug: str, body: ProjectPatch, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    _register(request)
+    given = body.model_fields_set
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        _authorise_patch(mine, given)
+        project = mine.project
+        actor = caller.actor(mine.id)
+        owner_id = _owner_id(conn, project.id)
+        values: dict[str, Any] = {}
+        rules_inputs_changed = False
+        if "name" in given and body.name is not None and body.name != project.name:
+            values["name"] = body.name
+            rules_inputs_changed = True
+        if "repository" in given:
+            values.update(_repository_columns(body.repository))
+        if "settings" in given and body.settings is not None:
+            values["settings"] = body.settings.model_dump()
+        new_policy = None
+        if "policy" in given and body.policy is not None:
+            new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)
+            if new_policy == policy.of(project):
+                new_policy = None
+        state_changes = "state" in given and body.state != project.state
+        if state_changes and body.state not in policy.STATES:
+            raise invalid({"state": "unknown"})
+        if (state_changes or new_policy is not None) and not body.reason:
+            raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
+        if values:
+            conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
+        if state_changes:
+            now = clock.now()
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == project.id)
+                .values(state=body.state, state_note=body.state_note, state_changed_at=now)
+            )
+            rules.bump(
+                conn,
+                project,
+                "state_changed",
+                BROADCAST,
+                {"old": project.state, "new": body.state, "reason": body.reason},
+                actor=actor,
+            )
+        elif "state_note" in given and body.state_note != project.state_note:
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == project.id)
+                .values(state_note=body.state_note)
+            )
+            rules_inputs_changed = True
+        if new_policy is not None:
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == project.id)
+                .values(**policy.columns(new_policy))
+            )
+            rules.bump(
+                conn,
+                project,
+                "policy_changed",
+                BROADCAST,
+                {"old": policy.of(project), "new": new_policy, "reason": body.reason},
+                actor=actor,
+            )
+        if "absence" in given:
+            new_absence = (
+                {"until": clock.rfc3339(body.absence.until), "scope": body.absence.scope}
+                if body.absence
+                else None
+            )
+            old = _absence(project)
+            if new_absence != old:
+                conn.execute(
+                    update(t.project)
+                    .where(t.project.c.id == project.id)
+                    .values(
+                        absence_until=body.absence.until if body.absence else None,
+                        absence_scope=body.absence.scope if body.absence else None,
+                    )
+                )
+                emit(
+                    conn,
+                    project.id,
+                    "absence_changed",
+                    BROADCAST,
+                    {"old": old, "new": new_absence, "reason": body.reason},
+                    actor=actor,
+                    subject=("project", project.slug),
+                )
+        for name in ("rules_markdown", "keep_the_why"):
+            new_value = getattr(body, name)
+            if name in given and new_value is not None and new_value != getattr(project, name):
+                conn.execute(
+                    update(t.project).where(t.project.c.id == project.id).values({name: new_value})
+                )
+                rules_inputs_changed = True
+        # The name, a note without a state change, the owner's text and the Keep the
+        # Why line are rules inputs without an event of their own: one rules_changed.
+        if rules_inputs_changed:
+            payload = {"reason": body.reason} if body.reason else {}
+            rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
+        return idempotency.Outcome(
+            200, "project", project.id, project_view(_load(conn, project.id), settings_of(request))
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _authorise_patch(mine: Membership, given: set[str]) -> None:
+    # The absence is written by the owner, the human it concerns, and nobody else (§6.1).
+    if "absence" in given and (mine.role != "owner" or mine.kind != "human"):
+        raise forbidden(message="the absence is set by the owner only")
+    if given - {"absence", "reason"}:
+        mine.require("project:admin")
+
+
+def _absence(project: Any) -> dict[str, Any] | None:
+    if project.absence_until is None:
+        return None
+    return {"until": clock.rfc3339(project.absence_until), "scope": project.absence_scope}
+
+
+def _owner_id(conn: Connection, project_id: str) -> str:
+    row = conn.execute(
+        select(t.membership.c.human_id)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.role == "owner",
+            t.membership.c.active.is_(True),
+        )
+        .order_by(t.membership.c.joined_at)
+    ).first()
+    if row is None:
+        raise RuntimeError("a project without an owner")
+    owner: str = row.human_id
+    return owner
+
+
+@router.get("/projects/{slug}/rules")
+def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("project:read")
+        text = rules.generate(mine.project, mine.role, arbiter_text(conn, mine.project))
+    return Response(
+        text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"ETag": f'"{mine.project.rules_version}"'},
+    )
+
+
+def arbiter_text(conn: Connection, project: Any) -> str:
+    if project.contract_arbiter == "role:admin":
+        return "the admin role"
+    try:
+        row = member_row(conn, project.id, project.contract_arbiter)
+    except ApiError:  # a former member: name the id
+        return f"`{project.contract_arbiter}`"
+    return f"`{principal_id(conn, row.id)}`"

@@ -53,3 +53,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   requests per project; `maity-hub owner create`; `/health` errors as the
   envelope (`database_unavailable`, `schema_outdated`); `500 internal` in the
   envelope; the hub's own request log without query strings or join tokens.
+- hub: projects with state, policy presets, absence and generated rules
+  (`rules_changed`), members with presence, pause and removal, agent
+  profiles, join links with the join page (Markdown, or HTML for a browser)
+  and the single-use exchange, the resume packet, `PATCH /me`, credentials
+  list and revoke (`docs/api.md` §3, §5.2, §5.3, §6.1–§6.3, §6.9, §10); a
+  join smoke script and CI job for the curl and the CLI path.

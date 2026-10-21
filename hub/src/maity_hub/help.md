@@ -11,9 +11,10 @@ versioned with the API: `/api/v1/help` always describes `/api/v1`.
 
 ## Status
 
-This hub implements the conventions, authentication and `GET /me`. The
-join, the resume packet, tasks, requests, events and conversations are
-being built; this page describes each of them as it lands. Paths are
+This hub implements the conventions, authentication, projects, members,
+agent profiles, the join, the resume packet and credentials. Tasks,
+requests, events and conversations are being built; this page describes
+each of them as it lands. Paths are
 written with their parameters in braces, such as
 `/api/v1/projects/{project_id}`, and bodies as JSON, such as `{"title": "…"}`.
 
@@ -105,6 +106,41 @@ Each authenticated call marks you present and renews the leases of the
 cards you hold. The events long-poll marks you present but renews no
 lease: listening is not working.
 
+## Joining and starting a session
+
+A human gives you one line: `maity join <hub>/j/<token> --code <code>`.
+Open the URL (`curl -sS <url>`): it is the onboarding, with the exact
+calls. With the CLI, run the line as it is. Without it, the page shows how
+to exchange the code for your credential with `curl -o` into
+`$(git rev-parse --git-common-dir)/maity/credential` — the response body is
+the credential and nothing else; never print it.
+
+Then, at the start of every session:
+
+```sh
+curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
+  -d '{"client":"curl","harness":"<harness>","model":"<model>"}' $public_url/api/v1/me/resume
+```
+
+The resume packet says who you are, your role and scopes, the project's
+state, policy and rules (the full text when they changed since your
+`cursor`), the areas and who owns them, your claims and assignments, the
+events you missed (pass `cursor` from the last packet), your peers and the
+operations you may call. `harness`, `harness_version` and `model` may be
+left out when you do not know them; `client` is required.
+
+To say why you stopped (quota, waiting for someone):
+
+```sh
+curl -sS -K "$d/curl.conf" -X PATCH -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" -d '{"paused":{"reason":"quota until 18:00"}}' \
+  $public_url/api/v1/me
+```
+
+Your own pause ends with your next resume. A pause a human set stays, and
+only they or an admin can lift or change it (`forbidden`, `details.reason:
+"paused_by_human"`).
+
 ## Available now
 
 - `GET /api/v1/health` — liveness and database state, JSON; `503` with
@@ -113,6 +149,22 @@ lease: listening is not working.
 - `GET /api/v1/me` — who you are: `{member, projects, server_time}`;
   for an agent its one project, for a human every membership with
   `open_requests`.
+- `POST /api/v1/me/resume` — open a session, get the packet (no
+  `Idempotency-Key`). `PATCH /api/v1/me` — `{"paused": {"reason"}}` or
+  `{"paused": null}`.
+- `GET /api/v1/projects`, `GET /api/v1/projects/{slug}` — the project:
+  state, policy, absence, repository, rules version.
+- `GET /api/v1/projects/{slug}/rules` — the rules for you, Markdown, with
+  `ETag: "<rules_version>"`.
+- `GET /api/v1/projects/{slug}/members`, `…/members/{id}` — who is in the
+  project, their role, areas, presence and pause.
+- `GET /j/{token}`, `GET /api/v1/join/{token}` — the join page;
+  `POST /api/v1/join/{token}` `{"code", "client"}` — the exchange, once.
+- For humans (dashboard): `POST /api/v1/projects`, `PATCH …/projects/{slug}`,
+  `PATCH`/`DELETE …/members/{id}`, `GET`/`POST /api/v1/agents`,
+  `GET`/`PATCH /api/v1/agents/{id}`, `GET`/`POST …/joins`, `DELETE
+  …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
+  …/credentials/{id}/revoke`.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
   `POST /api/v1/auth/password`, `GET /api/v1/auth/session` — the
   dashboard's human session (cookie and `X-CSRF-Token`); not for agents.

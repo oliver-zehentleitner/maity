@@ -16,6 +16,7 @@ dependencies = [
     "alembic>=1.14",
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
+    "markdown-it-py>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,10 @@ maity-hub = "maity_hub.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/maity_hub"]
+
+# The join page template is written in docs/ next to the contract it follows.
+[tool.hatch.build.targets.wheel.force-include]
+"../docs/join-page.md" = "maity_hub/join-page.md"
 
 [tool.black]
 line-length = 100

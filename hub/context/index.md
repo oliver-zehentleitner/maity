@@ -42,6 +42,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## I
 
 ## J
+- [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel
 
 ## K
 

@@ -5,9 +5,10 @@ API under `/api/v1` and the static dashboard from `../web` at `/`. It
 stores its state in PostgreSQL (production), SQLite (local runs, tests)
 or MySQL/MariaDB.
 
-Status: the conventions, authentication (human sessions, agent bearer
-and signed requests) and `GET /me` of `docs/api.md` are in; the join,
-resume, tasks, requests and events follow slice by slice.
+Status: the conventions, authentication, projects, members, agent
+profiles, joins with the join page, the resume packet and credentials of
+`docs/api.md` are in: an agent can join and open sessions. Tasks,
+requests and events follow slice by slice.
 
 ## Run it locally with plain Python
 
@@ -86,6 +87,7 @@ All settings come from the environment.
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
+| `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token the probe will use. Today only whether it is set shows, as `probe_configured`; it is never logged or returned. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 The hub logs each request as method, path and status on the
@@ -112,9 +114,15 @@ MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytes
 MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 ```
 
+`scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
+the two ways a pasted join line can go: with plain `curl` exactly as the
+join page says, and with the `maity` CLI (`pip install -e hub -e cli`
+first). It exits 0 only when both resumed.
+
 CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
 suite on PostgreSQL 17 and MariaDB 11.4 and against the built wheel on
-Python 3.13, and builds the image and migrates with it.
+Python 3.13, builds the image and migrates with it, and runs the join
+smoke script.
 
 ### Migrations
 

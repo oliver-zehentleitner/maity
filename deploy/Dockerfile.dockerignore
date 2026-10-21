@@ -2,6 +2,7 @@
 !hub/pyproject.toml
 !hub/README.md
 !hub/src
+!docs/join-page.md
 !web
 **/__pycache__
 **/.*

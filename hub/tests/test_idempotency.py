@@ -95,15 +95,6 @@ def client(make_client: ClientFactory) -> Iterator[TestClient]:
 
         return idempotency.run(engine, request, caller, action)
 
-    @app.post("/api/v1/me/resume")  # type: ignore[attr-defined, untyped-decorator]
-    def resume(request: Request, caller: AnyCaller) -> JSONResponse:
-        return idempotency.run(
-            engine_of(request),
-            request,
-            caller,
-            lambda _c: idempotency.Outcome(200, None, None, {"ok": True}),
-        )
-
     # Routes added after create_app sit behind the dashboard mount at "/"; move it last.
     routes = app.router.routes  # type: ignore[attr-defined]
     routes.sort(key=lambda route: isinstance(route, Mount))
@@ -180,7 +171,7 @@ def test_a_key_expires_after_24_hours(client: TestClient, agent: factory.Agent) 
 
 
 def test_resume_needs_no_key(client: TestClient, agent: factory.Agent) -> None:
-    response = client.post("/api/v1/me/resume", json={}, headers=_auth(agent))
+    response = client.post("/api/v1/me/resume", json={"client": "curl"}, headers=_auth(agent))
     assert response.status_code == 200
 
 

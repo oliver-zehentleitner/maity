@@ -1,0 +1,488 @@
+"""Joining a project: the join link, the join page and the exchange (docs/api.md §3).
+
+A human creates a join; the dashboard shows one paste line with the URL
+(128-bit token) and the code (60 bits). The URL answers the onboarding
+page, the exchange trades the code for a credential once. The hub stores
+only hashes of token and code; the credential is the response body and
+nothing else, so that a tool saves it straight to a file.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import html
+import re
+import secrets
+from datetime import timedelta
+from importlib.resources import files
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse, Response
+from markdown_it import MarkdownIt
+from pydantic import Field
+from sqlalchemy import Connection, insert, select, update
+from starlette.concurrency import run_in_threadpool
+
+from maity_hub import clock, events, idempotency
+from maity_hub import tables as t
+from maity_hub.access import membership
+from maity_hub.auth import credentials
+from maity_hub.auth.caller import require_secure_transport
+from maity_hub.db import retrying
+from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
+from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
+from maity_hub.events import Actor, emit, lock_project
+from maity_hub.ids import CROCKFORD, new_id
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
+from maity_hub.ratelimit import Limiter
+from maity_hub.routes.agents import create_profile
+from maity_hub.routes.members import validate_assignment
+from maity_hub.views import join_view, member_view, principal_id
+
+router = APIRouter()
+page_router = APIRouter()  # /j/{token}, outside the API prefix
+
+TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
+WRONG_CODES_BEFORE_BURN = 3
+EXCHANGE_BY_ADDRESS = Limiter(10, 60)
+_TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+
+class JoinAgent(Strict):
+    id: str | None = None
+    handle: str | None = title(default=None, pattern=HANDLE_PATTERN)
+    display_name: str | None = title(default=None)
+    git_identity: GitIdentity | None = None
+
+
+class JoinCreate(Strict):
+    agent: JoinAgent
+    role: str | None = None
+    reports_to: str | None = None
+    areas: list[str] | None = Field(default=None, max_length=50)
+    capabilities: list[str] | None = Field(default=None, max_length=20)
+    ttl_seconds: int = TTL_DEFAULT
+
+
+class Exchange(Strict):
+    code: str = Field(min_length=1, max_length=64)
+    client: str = Field(min_length=1, max_length=200)
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def new_code() -> str:
+    """60 random bits as Crockford base32 in groups of four: `Q7MD-3XPL-8ZWE`."""
+    raw = "".join(secrets.choice(CROCKFORD) for _ in range(12)).upper()
+    return "-".join(raw[i : i + 4] for i in range(0, 12, 4))
+
+
+def normalise_code(code: str) -> str:
+    """Crockford's reading: case-blind, `-` and spaces ignored, I and L are 1, O is 0."""
+    cleaned = re.sub(r"[\s-]", "", code.upper())
+    return cleaned.translate(str.maketrans("ILO", "110"))
+
+
+def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
+    row = conn.execute(select(t.join_link).where(t.join_link.c.id == join_id)).one()
+    return join_view(conn, row)
+
+
+idempotency.LOADERS["join"] = load_join
+
+
+# --- the join link (human) --------------------------------------------------------
+
+
+@router.post("/projects/{slug}/joins")
+def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCaller) -> JSONResponse:
+    if not TTL_MIN <= body.ttl_seconds <= TTL_MAX:
+        raise invalid({"ttl_seconds": "out_of_range"})
+    public_url = settings_of(request).public_url
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine.require("members:admin")
+        agent_id = _agent_for_join(conn, body.agent, caller.principal_id)
+        existing = conn.execute(
+            select(t.membership).where(
+                t.membership.c.project_id == mine.project.id,
+                t.membership.c.agent_id == agent_id,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        values = validate_assignment(
+            conn,
+            mine.project.id,
+            kind="agent",
+            role=body.role,
+            reports_to=body.reports_to,
+            areas=body.areas,
+            capabilities=body.capabilities,
+        )
+        if existing is not None:
+            # A second clone of a member: a new credential, the membership as it is.
+            # A role change goes through PATCH …/members/{id}, never through a join.
+            differing = {
+                k: "differs_from_membership" for k, v in values.items() if getattr(existing, k) != v
+            }
+            if differing:
+                raise invalid(differing, "the agent is a member; change its membership instead")
+            values = {
+                "role": existing.role,
+                "reports_to": existing.reports_to,
+                "areas": existing.areas,
+                "capabilities": existing.capabilities,
+            }
+        values.setdefault("role", "member")
+        values.setdefault("areas", [])
+        values.setdefault("capabilities", [])
+        token, code = secrets.token_urlsafe(16), new_code()
+        now = clock.now()
+        join_id = new_id("join")
+        conn.execute(
+            insert(t.join_link).values(
+                id=join_id,
+                project_id=mine.project.id,
+                token_hash=_hash(token),
+                code_hash=_hash(normalise_code(code)),
+                agent_id=agent_id,
+                role=values["role"],
+                reports_to=values.get("reports_to"),
+                areas=values["areas"],
+                capabilities=values["capabilities"],
+                created_by=caller.principal_id,
+                created_at=now,
+                expires_at=now + timedelta(seconds=body.ttl_seconds),
+                failed_attempts=0,
+            )
+        )
+        join_url = f"{public_url}/j/{token}"
+        return idempotency.Outcome(
+            201,
+            "join",
+            join_id,
+            {
+                "id": join_id,
+                "join_url": join_url,
+                "code": code,
+                "paste_line": f"maity join {join_url} --code {code}",
+                "agent_id": agent_id,
+                "project": mine.project.slug,
+                "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
+            },
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _agent_for_join(conn: Connection, agent: JoinAgent, owner_id: str) -> str:
+    if agent.id is not None:
+        if agent.handle is not None or agent.display_name is not None:
+            raise invalid({"agent": "id_or_handle"}, "name an agent by id, or create one")
+        owned = conn.execute(
+            select(t.agent_profile.c.id).where(
+                t.agent_profile.c.id == agent.id, t.agent_profile.c.owner_id == owner_id
+            )
+        ).first()
+        if owned is None:
+            raise invalid({"agent.id": "not_yours"}, "a join names one of your own agents")
+        return agent.id
+    if agent.handle is None or agent.display_name is None:
+        raise invalid(
+            {"agent": "id_or_handle"}, "name an agent by id, or give handle and display_name"
+        )
+    return create_profile(conn, owner_id, agent.handle, agent.display_name, agent.git_identity)
+
+
+@router.get("/projects/{slug}/joins")
+def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("members:admin")
+        rows = conn.execute(
+            select(t.join_link)
+            .where(t.join_link.c.project_id == mine.project.id)
+            .order_by(t.join_link.c.created_at.desc())
+        ).all()
+        return JSONResponse({"items": [join_view(conn, r) for r in rows], "next_cursor": None})
+
+
+@router.delete("/projects/{slug}/joins/{join_id}")
+def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine.require("members:admin")
+        row = conn.execute(
+            select(t.join_link).where(
+                t.join_link.c.id == join_id, t.join_link.c.project_id == mine.project.id
+            )
+        ).first()
+        if row is None:
+            raise not_found()
+        if row.revoked_at is None:
+            state = _spent(row)
+            if state is not None:
+                raise ApiError(
+                    409,
+                    "invalid_transition",
+                    f"a {state} join cannot be revoked",
+                    {"from": state, "to": "revoked"},
+                )
+            conn.execute(
+                update(t.join_link)
+                .where(t.join_link.c.id == join_id)
+                .values(revoked_at=clock.now())
+            )
+        return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _spent(row: Any) -> str | None:
+    if row.used_at is not None:
+        return "used"
+    if row.burned_at is not None:
+        return "burned"
+    if row.expires_at <= clock.now():
+        return "expired"
+    return None
+
+
+def _usable(conn: Connection, token: str) -> Any:
+    row = conn.execute(select(t.join_link).where(t.join_link.c.token_hash == _hash(token))).first()
+    if row is None or row.revoked_at is not None or _spent(row) is not None:
+        raise not_found()
+    return row
+
+
+# --- the join page --------------------------------------------------------------------
+
+
+def _template() -> str:
+    """docs/join-page.md: shipped in the wheel, read from the checkout otherwise."""
+    shipped = files("maity_hub") / "join-page.md"
+    if shipped.is_file():
+        text = shipped.read_text(encoding="utf-8")
+    else:
+        text = (Path(__file__).resolve().parents[4] / "docs" / "join-page.md").read_text(
+            encoding="utf-8"
+        )
+    return re.sub(r"\A\s*<!--.*?-->\s*", "", text, flags=re.S)
+
+
+_MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
+
+
+def _md(text: str) -> str:
+    """Text a human typed (a project name), safe inside the Markdown template."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+
+
+def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, str]:
+    """The page as Markdown, and its title."""
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    agent = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == row.agent_id)).one()
+    reports_to = principal_id(conn, row.reports_to)
+    if reports_to is not None:
+        boss = (
+            conn.execute(
+                select(t.agent_profile.c.handle).where(t.agent_profile.c.id == reports_to)
+            ).scalar()
+            or conn.execute(select(t.human.c.handle).where(t.human.c.id == reports_to)).scalar()
+        )
+        reports_to_text = f"`{boss}`"
+    else:
+        reports_to_text = "nobody"
+    values = {
+        "project_name": _md(project.name),
+        "project": project.slug,
+        "handle": agent.handle,
+        "role": row.role,
+        "areas": ", ".join(f"`{a}`" for a in row.areas) or "none",
+        "reports_to": reports_to_text,
+        "hub": hub,
+        "token": token,
+    }
+    text = _TEMPLATE_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), _template())
+    return text, f"Join {project.name} on Maity"
+
+
+_HTML = MarkdownIt("commonmark", {"html": False}).enable("table")
+
+
+def _html(markdown: str, title_text: str) -> str:
+    body = _HTML.render(markdown)
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>{html.escape(title_text)}</title>\n</head>\n<body>\n<main>\n{body}</main>\n"
+        "<footer><p>This page is documentation for the agent you are adding. "
+        'It has no form and performs no call. <a href="/">Open the dashboard</a>.</p>'
+        "</footer>\n</body>\n</html>\n"
+    )
+
+
+async def _page(token: str, request: Request) -> Response:
+    engine = engine_of(request)
+    hub = settings_of(request).public_url
+
+    def run() -> tuple[str, str]:
+        with engine.begin() as conn:
+            return render_page(conn, _usable(conn, token), token, hub)
+
+    markdown, title_text = await run_in_threadpool(run)
+    if "text/html" in request.headers.get("accept", ""):
+        return Response(_html(markdown, title_text), media_type="text/html; charset=utf-8")
+    return Response(markdown, media_type="text/markdown; charset=utf-8")
+
+
+@router.get("/join/{token}")
+async def join_page(token: str, request: Request) -> Response:
+    return await _page(token, request)
+
+
+@page_router.get("/j/{token}")
+async def short_join_page(token: str, request: Request) -> Response:
+    return await _page(token, request)
+
+
+# --- the exchange -------------------------------------------------------------------------
+
+
+@router.post("/join/{token}")
+async def exchange(token: str, body: Exchange, request: Request) -> Response:
+    origin = origin_of(request)
+    settings = settings_of(request)
+    # The answer is a credential: it travels like one (§2.5).
+    require_secure_transport(origin, settings.allow_plain_http)
+    if request.headers.get("authorization"):
+        raise forbidden(message="the exchange takes no credential")
+    wait = EXCHANGE_BY_ADDRESS.hit(origin.address)
+    if wait:
+        raise rate_limited(wait)
+    engine = engine_of(request)
+
+    def run() -> tuple[str, str, str, str] | None:
+        """The credential facts, or None for a wrong code (recorded and committed)."""
+        with events.transaction(engine) as conn:
+            row = _usable(conn, token)
+            # Take an attempt slot before comparing: one conditional UPDATE, so
+            # concurrent guesses cannot all read the same count (a lost update
+            # would let more than three codes be tried, or unburn a join).
+            now = clock.now()
+            slot = conn.execute(
+                update(t.join_link)
+                .where(
+                    t.join_link.c.id == row.id,
+                    t.join_link.c.failed_attempts < WRONG_CODES_BEFORE_BURN,
+                    t.join_link.c.used_at.is_(None),
+                    t.join_link.c.burned_at.is_(None),
+                    t.join_link.c.revoked_at.is_(None),
+                    t.join_link.c.expires_at > now,
+                )
+                .values(failed_attempts=t.join_link.c.failed_attempts + 1)
+            ).rowcount
+            if slot != 1:
+                raise not_found()
+            if secrets.compare_digest(_hash(normalise_code(body.code)), row.code_hash):
+                return _consume(conn, row, body.client)
+            conn.execute(
+                update(t.join_link)
+                .where(
+                    t.join_link.c.id == row.id,
+                    t.join_link.c.failed_attempts >= WRONG_CODES_BEFORE_BURN,
+                    t.join_link.c.burned_at.is_(None),
+                )
+                .values(burned_at=now)
+            )
+        return None
+
+    outcome = await run_in_threadpool(retrying, run)
+    if outcome is None:
+        raise ApiError(403, "code_invalid", "the code does not match this join")
+    value, credential_id, agent_id, project_slug = outcome
+    return Response(
+        value,
+        status_code=201,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Maity-Credential-Id": credential_id,
+            "Maity-Member-Id": agent_id,
+            "Maity-Project": project_slug,
+            "Maity-Hub": settings.public_url,
+        },
+    )
+
+
+def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str]:
+    # Serialise with every other write to the project: two first exchanges for
+    # one new agent must not both insert its membership.
+    lock_project(conn, row.project_id)
+    now = clock.now()
+    consumed = conn.execute(
+        update(t.join_link)
+        .where(
+            t.join_link.c.id == row.id,
+            t.join_link.c.used_at.is_(None),
+            t.join_link.c.burned_at.is_(None),
+            t.join_link.c.revoked_at.is_(None),
+        )
+        .values(used_at=now)
+    ).rowcount
+    if consumed != 1:  # a concurrent exchange won
+        raise not_found()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == row.project_id,
+            t.membership.c.agent_id == row.agent_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if member is None:
+        result = conn.execute(
+            insert(t.membership).values(
+                project_id=row.project_id,
+                agent_id=row.agent_id,
+                role=row.role,
+                reports_to=row.reports_to,
+                areas=row.areas,
+                capabilities=row.capabilities,
+                joined_at=now,
+            )
+        )
+        key = result.inserted_primary_key
+        assert key is not None
+        membership_id = int(key[0])
+    else:
+        membership_id = member.id
+    joined = member is None
+    credential_id = new_id("credential")
+    value, verifier = credentials.issue(credential_id)
+    conn.execute(
+        insert(t.credential).values(
+            id=credential_id,
+            membership_id=membership_id,
+            verifier=verifier,
+            join_id=row.id,
+            client=client,
+            created_at=now,
+        )
+    )
+    if joined:
+        new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+        emit(
+            conn,
+            row.project_id,
+            "member_joined",
+            ["all"],
+            member_view(conn, new),
+            actor=Actor(membership_id=membership_id, credential_id=credential_id),
+            subject=("member", row.agent_id),
+        )
+    return value, credential_id, row.agent_id, project.slug
