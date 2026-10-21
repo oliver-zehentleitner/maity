@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 
-from maity_hub import cards, clock, idempotency
+from maity_hub import cards, clock, idempotency, releases
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -33,6 +33,39 @@ SHA = re.compile(r"[0-9a-f]{7,64}")
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
+class ReleaseIn(Strict):
+    version: str = Field(min_length=1, max_length=64)
+
+
+class ContractIn(Strict):
+    arbiter: str | None = None
+    watchers: list[str] = Field(default_factory=list, max_length=50)
+
+
+class TypedPullRequestIn(Strict):
+    number: int = Field(ge=1, le=2**31)
+    state: Literal["open", "merged", "closed"] | None = None
+
+
+class ChecklistItemIn(Strict):
+    id: str | None = Field(default=None, max_length=32)
+    text: str = title()
+
+
+class ReleasePatchIn(Strict):
+    pull_requests_typed: list[TypedPullRequestIn] | None = Field(default=None, max_length=100)
+    checklist: list[ChecklistItemIn] | None = Field(default=None, max_length=50)
+
+
+class ContractPatchIn(Strict):
+    state: Literal["proposed", "final"] | None = None
+    watchers: list[str] | None = Field(default=None, max_length=50)
+
+
+class ChecklistTickIn(Strict):
+    done: bool
+
+
 class TaskCreate(Strict):
     title: str = title()
     body: str | None = markdown(default=None)
@@ -44,8 +77,8 @@ class TaskCreate(Strict):
     depends_on: list[str] = Field(default_factory=list, max_length=100)
     ships_with: list[str] = Field(default_factory=list, max_length=100)
     ktw_ref: str | None = Field(default=None, max_length=255)
-    release: dict[str, Any] | None = None
-    contract: dict[str, Any] | None = None
+    release: ReleaseIn | None = None
+    contract: ContractIn | None = None
     reason: str | None = markdown(default=None)
 
 
@@ -59,6 +92,8 @@ class TaskPatch(Strict):
     ships_with: list[str] | None = Field(default=None, max_length=100)
     ktw_ref: str | None = Field(default=None, max_length=255)
     assigned_to: str | None = None
+    release: ReleasePatchIn | None = None
+    contract: ContractPatchIn | None = None
 
 
 class ClaimIn(Strict):
@@ -143,7 +178,149 @@ def audience(conn: Connection, card: Any, *extra: int | None) -> list[str]:
         principal = principal_id(conn, membership_id)
         if principal and f"member:{principal}" not in members:
             members.append(f"member:{principal}")
+    for watcher in (card.contract or {}).get("watchers", []):  # contract cards (§6.8)
+        if f"member:{watcher}" not in members:
+            members.append(f"member:{watcher}")
     return members
+
+
+def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> dict[str, Any]:
+    """Columns of a new release card (§6.7): one version per project, one in flight."""
+    mine.require("releases:write")
+    if body is None:
+        raise invalid({"release.version": "required"})
+    if not releases.SEMVER.fullmatch(body.version):
+        raise invalid({"release.version": "not_semver"})
+    taken = conn.execute(
+        select(t.card.c.id).where(
+            t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version
+        )
+    ).first()
+    if taken is not None:
+        raise ApiError(
+            409, "version_exists", f"a release {body.version} exists", {"release": taken.id}
+        )
+    open_release = conn.execute(
+        select(t.card.c.id).where(
+            t.card.c.project_id == mine.project.id, t.card.c.release_in_flight.is_(True)
+        )
+    ).first()
+    if open_release is not None:
+        raise ApiError(
+            409,
+            "release_in_flight",
+            "another release is open; close or cancel it first",
+            {"release": open_release.id},
+        )
+    checklist = releases.seed_checklist((mine.project.settings or {}).get("release_checklist", []))
+    return {
+        "release_version": body.version,
+        "release_in_flight": True,
+        "release_data": {
+            "version": body.version,
+            "pull_requests_typed": [],
+            "checklist": checklist,
+            "ready_announced": False,
+        },
+    }
+
+
+def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[str, Any]:
+    arbiter = body.arbiter or mine.project.contract_arbiter
+    if arbiter != "role:admin":
+        _member_id(conn, mine, arbiter, "contract.arbiter")
+    watchers = list(dict.fromkeys(body.watchers))
+    for watcher in watchers:
+        _member_id(conn, mine, watcher, "contract.watchers")
+    return {"arbiter": arbiter, "state": "proposed", "watchers": watchers}
+
+
+def _is_arbiter(mine: Membership, contract: dict[str, Any]) -> bool:
+    arbiter = contract.get("arbiter")
+    if arbiter == "role:admin":
+        return mine.role == "admin"
+    return bool(arbiter == mine.principal_id)
+
+
+def _closing(card: Any) -> dict[str, Any]:
+    """Columns every close sets: blocked by nothing any more (§7), no release in flight."""
+    values: dict[str, Any] = {
+        "closed_at": clock.now(),
+        "status_before_block": None,
+        "blocked_by_request": None,
+    }
+    if card.kind == "release":
+        values["release_in_flight"] = None
+    return values
+
+
+def _refuse_unready(conn: Connection, card: Any) -> None:
+    if card.kind != "release":
+        return
+    readiness = releases.release_view(conn, card)["readiness"]
+    if not readiness["ready"]:
+        raise ApiError(
+            409,
+            "release_not_ready",
+            "the release is not ready; see details.blocking",
+            {"blocking": readiness["blocking"]},
+        )
+
+
+def _patched_release(mine: Membership, card: Any, body: ReleasePatchIn) -> dict[str, Any]:
+    if card.kind != "release":
+        raise invalid({"release": "releases_only"})
+    mine.require("releases:write")
+    data = dict(card.release_data or {})
+    if body.pull_requests_typed is not None:
+        typed: dict[int, dict[str, Any]] = {}
+        for pr in body.pull_requests_typed:
+            typed[pr.number] = {"number": pr.number, "state": pr.state}
+        data["pull_requests_typed"] = [typed[n] for n in sorted(typed)]
+    if body.checklist is not None:
+        # The list replaces the old one; an item keeps its tick when its id is given.
+        old = {item["id"]: item for item in data.get("checklist", [])}
+        numbers = [int(i.removeprefix("chk-")) for i in old if i.removeprefix("chk-").isdigit()]
+        next_number = max(numbers, default=0) + 1
+        checklist = []
+        for item in body.checklist:
+            if item.id is not None:
+                if item.id not in old:
+                    raise invalid({"release.checklist": f"unknown_item:{item.id}"})
+                checklist.append({**old[item.id], "text": item.text})
+            else:
+                checklist.append(
+                    {
+                        "id": f"chk-{next_number}",
+                        "text": item.text,
+                        "done": False,
+                        "by": None,
+                        "at": None,
+                    }
+                )
+                next_number += 1
+        if len({item["id"] for item in checklist}) != len(checklist):
+            raise invalid({"release.checklist": "duplicate_id"})
+        data["checklist"] = checklist
+    return data
+
+
+def _patched_contract(
+    conn: Connection, mine: Membership, card: Any, body: ContractPatchIn
+) -> dict[str, Any]:
+    if card.kind != "contract":
+        raise invalid({"contract": "contracts_only"})
+    contract = dict(card.contract or {})
+    if body.state is not None and body.state != contract.get("state"):
+        if not (_is_arbiter(mine, contract) or mine.may("tasks:admin")):
+            raise forbidden("tasks:admin", "only the arbiter moves a contract's state")
+        contract["state"] = body.state
+    if body.watchers is not None:
+        watchers = list(dict.fromkeys(body.watchers))
+        for watcher in watchers:
+            _member_id(conn, mine, watcher, "contract.watchers")
+        contract["watchers"] = watchers
+    return contract
 
 
 def _check_area(area: str | None) -> None:
@@ -291,20 +468,23 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
-        if body.kind in cards.KINDS_LATER:
-            raise invalid(
-                {"kind": "not_yet"}, "release and contract cards arrive with their own slice"
-            )
-        if body.kind not in cards.KINDS_NOW:
+        if body.kind not in cards.KINDS:
             raise invalid({"kind": "unknown"})
         if body.status not in cards.CREATE_STATUSES:
             raise invalid({"status": "proposed_or_open"})
-        if body.release is not None or body.contract is not None:
-            raise invalid({"release" if body.release else "contract": "not_yet"})
+        if body.release is not None and body.kind != "release":
+            raise invalid({"release": "releases_only"})
+        if body.contract is not None and body.kind != "contract":
+            raise invalid({"contract": "contracts_only"})
         _check_label(body.label)
         _check_area(body.area)
         mine = _locked(conn, mine)
         state = _require_open_project(mine, body.reason)
+        extra: dict[str, Any] = {}
+        if body.kind == "release":
+            extra = _new_release(conn, mine, body.release)
+        elif body.kind == "contract":
+            extra = {"contract": _new_contract(conn, mine, body.contract or ContractIn())}
         assigned: int | None
         if body.assigned_to is not None:
             mine.require("tasks:admin")
@@ -313,9 +493,10 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
         now = clock.now()
-        card_id = new_id("task")
+        card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
         conn.execute(
             insert(t.card).values(
+                **extra,
                 id=card_id,
                 project_id=mine.project.id,
                 kind=body.kind,
@@ -369,8 +550,20 @@ def patch_task(
             and card.status == "review"
             and body.status in ("done", "in_progress")
         )
+        # So is a state-only move of a contract card the arbiter's (§6.8).
+        arbiter_move = (
+            given == {"contract"}
+            and body.contract is not None
+            and body.contract.model_fields_set <= {"state"}
+            and card.kind == "contract"
+            and _is_arbiter(mine, card.contract or {})
+        )
         editor = cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")
-        if not editor and not (review_move and cards.has_done_authority(mine, card)):
+        if (
+            not editor
+            and not arbiter_move
+            and not (review_move and cards.has_done_authority(mine, card))
+        ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
         values: dict[str, Any] = {}
         for field in ("title", "body", "ktw_ref"):
@@ -389,6 +582,10 @@ def patch_task(
                 if body.assigned_to
                 else None
             )
+        if body.release is not None:
+            values["release_data"] = _patched_release(mine, card, body.release)
+        if body.contract is not None:
+            values["contract"] = _patched_contract(conn, mine, card, body.contract)
         depends_changed = body.depends_on is not None and cards.set_depends_on(
             conn, mine.project.id, card.id, body.depends_on
         )
@@ -401,12 +598,10 @@ def patch_task(
             cards.check_transition(mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
+                _refuse_unready(conn, card)
             values["status"] = body.status
             if body.status in cards.CLOSED:
-                values["closed_at"] = clock.now()
-                # A closed card is blocked by nothing any more (§7).
-                values["status_before_block"] = None
-                values["blocked_by_request"] = None
+                values.update(_closing(card))
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
@@ -428,6 +623,8 @@ def patch_task(
             payload["depends_on"] = view["depends_on"]
         if partners:
             payload["ships_with"] = view["ships_with"]
+        if "release_data" in changed:
+            payload["release"] = view["release"]
         _touch_partners(conn, mine, caller, partners)
         emit(
             conn,
@@ -438,7 +635,8 @@ def patch_task(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, view)
+        releases.recheck(conn, mine.project.id)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -737,6 +935,7 @@ def report(
                     cards.authority_scope(mine), "done needs done authority; report without done"
                 )
             cards.refuse_open_dependencies(conn, card.id)
+            _refuse_unready(conn, card)
         now = clock.now()
         stored = {
             "summary": body.summary,
@@ -757,9 +956,7 @@ def report(
         }
         values: dict[str, Any] = {"report": stored}
         if body.done:
-            values.update(
-                status="done", closed_at=now, status_before_block=None, blocked_by_request=None
-            )
+            values.update({**_closing(card), "status": "done", "closed_at": now})
         elif card.status == "blocked":
             values["status_before_block"] = "review"  # the answer restores review (§7)
         else:
@@ -787,7 +984,8 @@ def report(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        releases.recheck(conn, mine.project.id)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -807,3 +1005,66 @@ def _check_report(body: ReportIn) -> None:
         errors["pr_unknown_reason"] = "required"
     if errors:
         raise invalid(errors)
+
+
+# --- release checklist (§6.7) --------------------------------------------------------------
+
+
+@router.post("/projects/{slug}/tasks/{card_id}/checklist/{item_id}")
+def tick_checklist(
+    slug: str,
+    card_id: str,
+    item_id: str,
+    body: ChecklistTickIn,
+    request: Request,
+    caller: AnyCaller,
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = _locked(conn, mine)
+        card = _project_card(conn, mine, card_id)
+        if card.kind != "release":
+            raise not_found()
+        if not (cards.holds(mine, card) or mine.may("releases:write")):
+            raise forbidden("releases:write", "only the holder or a releaser ticks the checklist")
+        if card.status in cards.CLOSED:
+            raise cards.invalid_transition(card.status, card.status)
+        data = dict(card.release_data or {})
+        checklist = [dict(item) for item in data.get("checklist", [])]
+        item = next((i for i in checklist if i["id"] == item_id), None)
+        if item is None:
+            raise not_found()
+        if item["done"] == body.done:
+            return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        now = clock.now()
+        item.update(
+            done=body.done,
+            by=mine.principal_id if body.done else None,
+            at=clock.rfc3339(now) if body.done else None,
+        )
+        data["checklist"] = checklist
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(
+                release_data=data,
+                updated_at=now,
+                changed_by_credential=caller.credential_id,
+                changed_via=caller.via,
+            )
+        )
+        card = _card(conn, card.id)
+        view = task_view(conn, card)
+        emit(
+            conn,
+            mine.project.id,
+            "task_updated",
+            audience(conn, card),
+            {"id": card.id, "release": view["release"], "project_state": mine.project.state},
+            actor=caller.actor(mine.id),
+            subject=("task", card.id),
+        )
+        releases.recheck(conn, mine.project.id)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
+
+    return idempotency.run(engine_of(request), request, caller, action)

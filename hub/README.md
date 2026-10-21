@@ -10,7 +10,8 @@ profiles, joins with the join page, the resume packet and credentials of
 `docs/api.md` are in: an agent can join and open sessions. Cards with
 claims, leases, checkpoints and reports, requests to humans with the
 cross-project inbox, events with the long-poll, messages and conversations
-are in. Release and contract cards and the forge probe follow.
+are in, and release and contract cards with their checklist. The forge
+probe follows; until then no release is ready.
 
 ## Run it locally with plain Python
 
