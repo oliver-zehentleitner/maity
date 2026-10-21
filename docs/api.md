@@ -1371,7 +1371,10 @@ POST /projects/{slug}/events/{seq}/redact   {"reason": "…"}
 ```
 
 Scope `events:admin` (human memberships). `not_found` unless the event
-belongs to `{slug}`. Replaces `payload` with
+belongs to `{slug}`. A chat message (§9) is redacted only by the human party
+of its conversation — whoever else holds `events:admin` gets `not_found`,
+as for any event they cannot read — and its `event_redacted` goes to the
+two parties, not to `role:owner`/`role:admin`. Replaces `payload` with
 `{"redacted": true, "reason": "…", "by": "…", "at": "…"}` and sets
 `redacted: true`; `seq`, `kind`, `actor`, `subject`, `audience` stay, and
 the hub emits `event_redacted` so that the one mutation the log allows is
