@@ -77,6 +77,13 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   withdrawal; cards blocked while a request waits and restored after; the
   resume packet's requests; the smoke script asks and answers on both
   join paths.
+- hub: events (`docs/api.md` §8, §9) — reading with the cursor and its
+  acknowledgement, `after=latest`, the long-poll that waits in-process and
+  wakes on the readable events addressed to the reader, one long-poll per
+  credential with `superseded`, `listening` in presence; messages to
+  members, roles or all; redaction with its own event; the human's
+  conversations with its agents, with delivery and unread counts; the
+  smoke script waits and wakes on both join paths.
 
 ### Fixed
 
