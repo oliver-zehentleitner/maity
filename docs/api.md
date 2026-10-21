@@ -88,6 +88,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join code wrong (the join is burned after 3 wrong codes) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of, and for an event sequence number that belongs to another project |
+| 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
 | 409 | `not_holder` | checkpoint, report or release by a member that does not hold the task |
@@ -176,8 +177,8 @@ and the inbox bounded; what does not fit goes into the repository.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `POST /auth/login` `{handle, password}` | anyone | sets the cookies below; 200 `{"member": …}` or `unauthenticated` |
-| `POST /auth/logout` | human | ends the session; cookies cleared |
-| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human |
+| `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
+| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
 | `GET /auth/session` | human | the current session: `{member, csrf_token, expires_at}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
@@ -193,7 +194,10 @@ authenticates and the cookie is ignored; the CSRF rule applies whenever
 the cookie authenticated the call.
 
 Login is limited to 10 attempts per minute per source address and per
-handle (`rate_limited`). Passwords are stored with scrypt from the
+handle (`rate_limited`), and refuses `Sec-Fetch-Site: cross-site` like
+every cookie request. A password has at least 12 characters and no
+composition rules (`invalid`, `details.fields.new: "too_short"`). An
+agent credential on `/auth/*` is `forbidden` without `details.scope`. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
 call and 30 days after login regardless. Every call renews the human's
@@ -251,7 +255,7 @@ are never used, because they print the header; `-D -` and
 ```
 Authorization: Maity-HMAC <credential_id>
 Maity-Timestamp: 1792000000            Unix seconds, integer
-Maity-Nonce: <16+ random bytes, base64url or hex>
+Maity-Nonce: <22–128 characters of [A-Za-z0-9_-]: at least 16 random bytes, base64url>
 Maity-Signature: <hex HMAC-SHA256>
 ```
 
@@ -261,7 +265,7 @@ The canonical string, lines joined with `\n`, no trailing newline:
 MAITY-HMAC-V1
 <METHOD, upper case>
 <the request path as sent, including /api/v1, percent-encoded, no host>
-<query: pairs sorted bytewise by key, repeated keys in request order, each key=value RFC 3986 encoded, key= for an empty value, joined by &; empty line if none>
+<query: pairs sorted bytewise by key, repeated keys in request order, each key=value RFC 3986 encoded, key= for an empty value, joined by &; empty line if none. A `+` is a literal plus (RFC 3986), never a space: a space is `%20`>
 <Maity-Timestamp>
 <Maity-Nonce>
 <sha256 hex of the raw body bytes; of the empty body: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855>
