@@ -7,7 +7,7 @@
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is the maintainer's
+**Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is from the task brief
 **See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
 **Revisit when:** an agent has to join from a directory that is not a Git clone, or one clone has to carry two agent identities
 
