@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's brief for the hub skeleton, 2026-10-21; implementation session, 2026-10-21
-**See:** ../../context/architecture.md#database-agnostic-persistence-postgresql-in-production-sqlite-and-mysqlmariadb-supported — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
+**See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
 **Revisit when:** a part of the hub grows object graphs with identity and lazy relationships that Core queries make hard to read
 
 The hub describes its tables with SQLAlchemy Core `Table` objects on one

@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture)
-**See:** ../../context/architecture.md#database-agnostic-persistence-postgresql-in-production-sqlite-and-mysqlmariadb-supported — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
+**See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
 **Revisit when:** a user reports a difference between MySQL and MariaDB, or a query relies on behaviour the two engines implement differently
 
 CI has three jobs: `make check` (black, ruff, mypy strict, pytest) on
