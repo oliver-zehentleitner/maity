@@ -7,12 +7,14 @@ import json
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import cards, clock, idempotency, releases
 from maity_hub import tables as t
@@ -220,13 +222,28 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
             "version": body.version,
             "pull_requests_typed": [],
             "checklist": checklist,
+            "next_item": len(checklist) + 1,
             "ready_announced": False,
         },
     }
 
 
+def _release_conflict(error: IntegrityError, body: ReleaseIn | None) -> Exception:
+    text = str(error.orig)
+    version = body.version if body else None
+    if "release_in_flight" in text:
+        return ApiError(
+            409, "release_in_flight", "another release is open; close or cancel it first"
+        )
+    if "release_version" in text:
+        return ApiError(409, "version_exists", f"a release {version} exists")
+    return error
+
+
 def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[str, Any]:
     arbiter = body.arbiter or mine.project.contract_arbiter
+    if arbiter != mine.project.contract_arbiter:
+        mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "role:admin":
         _member_id(conn, mine, arbiter, "contract.arbiter")
     watchers = list(dict.fromkeys(body.watchers))
@@ -254,9 +271,18 @@ def _closing(card: Any) -> dict[str, Any]:
     return values
 
 
-def _refuse_unready(conn: Connection, card: Any) -> None:
+def _refuse_closed_release(card: Any) -> None:
+    """A closed release is the record of what shipped (§6.7)."""
+    if card.kind == "release" and card.status in cards.CLOSED:
+        raise cards.invalid_transition(card.status, card.status)
+
+
+def _refuse_unready(conn: Connection, card: Any, release_data: Any = None) -> None:
+    """`release_not_ready`, judged on the card as it will be stored."""
     if card.kind != "release":
         return
+    if release_data is not None:
+        card = SimpleNamespace(**{**card._mapping, "release_data": release_data})
     readiness = releases.release_view(conn, card)["readiness"]
     if not readiness["ready"]:
         raise ApiError(
@@ -271,6 +297,7 @@ def _patched_release(mine: Membership, card: Any, body: ReleasePatchIn) -> dict[
     if card.kind != "release":
         raise invalid({"release": "releases_only"})
     mine.require("releases:write")
+    _refuse_closed_release(card)
     data = dict(card.release_data or {})
     if body.pull_requests_typed is not None:
         typed: dict[int, dict[str, Any]] = {}
@@ -280,8 +307,8 @@ def _patched_release(mine: Membership, card: Any, body: ReleasePatchIn) -> dict[
     if body.checklist is not None:
         # The list replaces the old one; an item keeps its tick when its id is given.
         old = {item["id"]: item for item in data.get("checklist", [])}
-        numbers = [int(i.removeprefix("chk-")) for i in old if i.removeprefix("chk-").isdigit()]
-        next_number = max(numbers, default=0) + 1
+        # A counter, never max+1: a removed id is not given out again.
+        next_number = int(data["next_item"])
         checklist = []
         for item in body.checklist:
             if item.id is not None:
@@ -289,19 +316,11 @@ def _patched_release(mine: Membership, card: Any, body: ReleasePatchIn) -> dict[
                     raise invalid({"release.checklist": f"unknown_item:{item.id}"})
                 checklist.append({**old[item.id], "text": item.text})
             else:
-                checklist.append(
-                    {
-                        "id": f"chk-{next_number}",
-                        "text": item.text,
-                        "done": False,
-                        "by": None,
-                        "at": None,
-                    }
-                )
+                checklist.append(releases.checklist_item(next_number, item.text))
                 next_number += 1
         if len({item["id"] for item in checklist}) != len(checklist):
             raise invalid({"release.checklist": "duplicate_id"})
-        data["checklist"] = checklist
+        data["checklist"], data["next_item"] = checklist, next_number
     return data
 
 
@@ -494,26 +513,31 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             assigned = cards.area_owner(conn, mine.project.id, body.area)
         now = clock.now()
         card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
-        conn.execute(
-            insert(t.card).values(
-                **extra,
-                id=card_id,
-                project_id=mine.project.id,
-                kind=body.kind,
-                title=body.title,
-                body=body.body,
-                label=body.label,
-                status=body.status,
-                area=body.area,
-                created_by=mine.id,
-                assigned_to=assigned,
-                ktw_ref=body.ktw_ref,
-                changed_by_credential=caller.credential_id,
-                changed_via=caller.via,
-                created_at=now,
-                updated_at=now,
-            )
-        )
+        try:
+            # The pre-checks hold under the project lock; the constraints are the backstop.
+            with conn.begin_nested():
+                conn.execute(
+                    insert(t.card).values(
+                        **extra,
+                        id=card_id,
+                        project_id=mine.project.id,
+                        kind=body.kind,
+                        title=body.title,
+                        body=body.body,
+                        label=body.label,
+                        status=body.status,
+                        area=body.area,
+                        created_by=mine.id,
+                        assigned_to=assigned,
+                        ktw_ref=body.ktw_ref,
+                        changed_by_credential=caller.credential_id,
+                        changed_via=caller.via,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        except IntegrityError as error:
+            raise _release_conflict(error, body.release) from None
         cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
         partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
         _touch_partners(conn, mine, caller, partners)
@@ -528,6 +552,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             actor=caller.actor(mine.id),
             subject=("task", card_id),
         )
+        releases.recheck(conn, mine.project.id)  # a release may be ready from the start
         return idempotency.Outcome(201, "task", card_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -558,10 +583,15 @@ def patch_task(
             and card.kind == "contract"
             and _is_arbiter(mine, card.contract or {})
         )
+        # And the release fields are any releaser's, holder or not (§6.7).
+        release_edit = (
+            given == {"release"} and card.kind == "release" and mine.may("releases:write")
+        )
         editor = cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")
         if (
             not editor
             and not arbiter_move
+            and not release_edit
             and not (review_move and cards.has_done_authority(mine, card))
         ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
@@ -586,6 +616,8 @@ def patch_task(
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
             values["contract"] = _patched_contract(conn, mine, card, body.contract)
+        if body.depends_on is not None:
+            _refuse_closed_release(card)
         depends_changed = body.depends_on is not None and cards.set_depends_on(
             conn, mine.project.id, card.id, body.depends_on
         )
@@ -598,7 +630,7 @@ def patch_task(
             cards.check_transition(mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
-                _refuse_unready(conn, card)
+                _refuse_unready(conn, card, values.get("release_data"))
             values["status"] = body.status
             if body.status in cards.CLOSED:
                 values.update(_closing(card))

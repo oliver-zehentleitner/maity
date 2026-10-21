@@ -119,13 +119,16 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   and `deploy/helm/kind-smoke.sh` in CI.
 - hub: release and contract cards (`docs/api.md` §6.7, §6.8) — SemVer
   versions unique per project with one release in flight; the release
-  object with reported and typed pull requests, `ships_with` groups, the
+  object with reported and typed pull requests, `ships_with` groups
+  followed over all edges (a partner outside the release blocks), the
   checklist seeded from the project settings, edited by `PATCH` and ticked
   through its own endpoint; readiness computed from observed forge state
-  only, `false` with `probe_not_configured` until the probe exists, `done`
-  refused with `release_not_ready`, `release_ready` announced once per
-  turn to ready; contract cards with arbiter and watchers, `final` only by
-  the arbiter or an admin.
+  only and on the data as it will be stored, `false` with
+  `probe_not_configured` until the probe exists, `done` refused with
+  `release_not_ready`, `release_ready` announced once per turn to ready;
+  a closed release no longer edited; contract cards with arbiter and
+  watchers, another arbiter than the policy's named only by an admin,
+  `final` only by the arbiter or an admin.
 
 ### Fixed
 

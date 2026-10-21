@@ -125,7 +125,7 @@ grep -q "and you" "$work/curl-woke"
 human -X GET "$hub/api/v1/projects/smoke/conversations/$cli_agent/messages" \
     | json '"delivered: " + str(d["items"][-1]["delivered_at"] is not None)' | grep -q "delivered: True"
 
-step "releases and contracts: the curl agent holds a release, the cli agent proposes a contract"
+step "releases and contracts: the curl agent holds a release, the cli agent finalises a contract as its arbiter"
 human -o /dev/null -X PATCH -d '{"settings":{"release_checklist":["CHANGELOG has a section"]}}' \
     "$hub/api/v1/projects/smoke"
 rel="$(human -d '{"kind":"release","title":"0.1.0","release":{"version":"0.1.0"}}' \
@@ -137,13 +137,10 @@ curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H
     -d '{"done":true}' "$hub/api/v1/projects/smoke/tasks/$rel/checklist/chk-1" \
     | json '"release " + d["release"]["version"] + ": checklist done " + str(d["release"]["checklist"][0]["done"]) + ", blocking " + ",".join(b["reason"] for b in d["release"]["readiness"]["blocking"])' \
     | tee "$work/release" && grep -q "done True, blocking probe_not_configured$" "$work/release"
+ctr="$(printf '{"title":"Shape of /probe","kind":"contract","contract":{"arbiter":"%s","watchers":["%s"]}}' \
+    "$cli_agent" "$curl_agent" | human -d @- "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
 cd "$work/clone-cli"
-printf '{"title":"Shape of /probe","kind":"contract","contract":{"arbiter":"%s","watchers":["%s"]}}' \
-    "$curl_agent" "$cli_agent" | maity api POST /projects/smoke/tasks --json - >"$work/contract"
-ctr="$(json 'd["id"]' <"$work/contract")"
-cd "$work/clone-curl"
-curl -sS --fail -K "$d/curl.conf" -X PATCH -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
-    -d '{"contract":{"state":"final"}}' "$hub/api/v1/projects/smoke/tasks/$ctr" \
+printf '{"contract":{"state":"final"}}' | maity api PATCH "/projects/smoke/tasks/$ctr" --json - \
     | json '"contract " + d["id"] + " is " + d["contract"]["state"]' | tee "$work/final" && grep -q "is final$" "$work/final"
 
 step "human: both agents are members"

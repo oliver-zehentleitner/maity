@@ -181,18 +181,23 @@ A release is a card with `kind: release`, created with `releases:write`:
 project; one release is open at a time (`release_in_flight`). Its
 `release` object lists the pull requests from the shipped cards' reports
 and the typed ones (`PATCH` with `release.pull_requests_typed`), the
-`ships_with` groups, the checklist (seeded from the project settings,
+`ships_with` groups (a partner outside the release blocks its whole
+group), the checklist (seeded from the project settings,
 edited with `PATCH` `release.checklist`, ticked with
 `POST …/tasks/{id}/checklist/{item_id}` `{"done": true}` by the holder or
 `releases:write`) and `readiness`. Readiness counts only what the forge
 probe observed; without the probe it is `false` with
 `probe_not_configured`, and the release can be cancelled but not done
 (`release_not_ready` with `details.blocking`). When a release turns ready,
-everyone gets `release_ready`. The hub never tags; the holder does.
+everyone gets `release_ready`. A `PATCH` that sets `done` and changes
+`release` is judged on the new data. Anyone with `releases:write` edits
+the release fields, holder or not; a closed release is not edited any
+more (`invalid_transition`). The hub never tags; the holder does.
 
 A contract card (`kind: contract`) carries `{"contract": {"arbiter",
 "state", "watchers"}}`; the arbiter defaults to the project's
-`contract_arbiter`. Only the arbiter or an admin moves `state` to
+`contract_arbiter`; naming another arbiter needs `tasks:admin`. Only the
+arbiter or an admin moves `state` to
 `final`, and the watchers get the `task_updated`.
 
 ## Asking a human

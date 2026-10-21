@@ -14,6 +14,7 @@ from tests.conftest import ClientFactory
 
 REPO = {"url": "https://github.com/acme/maity", "default_branch": "main"}
 SHA = "d91e294c" + "0" * 32
+OTHER_SHA = "e" * 40
 RELEASE_KEYS = {
     "version",
     "pull_requests",
@@ -319,7 +320,18 @@ def test_only_the_arbiter_finalises_and_the_watchers_hear(
     arbiter = flow.agent(make_client, owner)
     watcher = flow.agent(make_client, owner)
     other = flow.agent(make_client, owner)
-    card = task(other, kind="contract", contract={"arbiter": arbiter.id, "watchers": [watcher.id]})
+    # Naming an arbiter other than the policy's is an admin's call.
+    named = {"arbiter": arbiter.id, "watchers": [watcher.id]}
+    self_named = other.post(
+        "/projects/maity/tasks",
+        {"title": "x", "kind": "contract", "contract": {"arbiter": other.id}},
+    )
+    assert (self_named.status_code, self_named.json()["error"]["details"]["scope"]) == (
+        403,
+        "tasks:admin",
+    )
+    assert task(other, kind="contract")["contract"]["arbiter"] == "role:admin"
+    card = task(owner, kind="contract", contract=named)
     path = f"/projects/maity/tasks/{card['id']}"
     refused = other.patch(path, {"contract": {"state": "final"}})
     assert refused.status_code == 403
@@ -340,3 +352,129 @@ def test_only_the_arbiter_finalises_and_the_watchers_hear(
         ).json()["contract"]["state"]
         == "final"
     )
+
+
+# --- review round on #30 ----------------------------------------------------------------------
+
+
+def _ready_project(owner: flow.Human) -> None:
+    response = owner.patch("/projects/maity", {"settings": {"release_checklist": []}})
+    assert response.status_code == 200, response.text
+
+
+def test_a_partner_outside_the_release_blocks_its_group(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _ready_project(owner)
+    first = task(owner)
+    second = task(owner, ships_with=[first["id"]])
+    _reported(migrated, first, 3)
+    _reported(migrated, second, 4)
+    _observe(migrated, 3)
+    _observe(migrated, 4, state="open")
+    _set(migrated, first, status="done")
+    card = release(owner, depends_on=[first["id"]])
+    group = sorted([first["id"], second["id"]])
+    view = _get(owner, card)["release"]
+    assert view["groups"] == [group]
+    assert view["readiness"]["blocking"] == [{"reason": "group_incomplete", "tasks": group}]
+    _set(migrated, card, status="review")
+    refused = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
+    assert refused.json()["error"]["code"] == "release_not_ready"
+    assert _events(migrated, "release_ready") == []
+
+
+def test_done_is_judged_on_the_data_as_it_will_be_stored(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _ready_project(owner)
+    card = release(owner)
+    assert _get(owner, card)["release"]["readiness"]["ready"] is True
+    _set(migrated, card, status="review")
+    path = f"/projects/maity/tasks/{card['id']}"
+    for change in (
+        {"checklist": [{"text": "one more thing"}]},
+        {"pull_requests_typed": [{"number": 99, "state": "merged"}]},
+    ):
+        refused = owner.patch(path, {"status": "done", "release": change})
+        assert refused.json()["error"]["code"] == "release_not_ready", change
+    assert _get(owner, card)["status"] == "review"
+
+
+def test_a_ready_release_is_announced_at_creation(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _ready_project(owner)
+    card = release(owner)
+    [announced] = _events(migrated, "release_ready")
+    assert announced.payload == {"release": card["id"], "version": "0.1.0"}
+
+
+def test_a_closed_release_is_the_record_of_what_shipped(owner: flow.Human) -> None:
+    card = release(owner)
+    shipped = task(owner)
+    owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"})
+    path = f"/projects/maity/tasks/{card['id']}"
+    changes: list[dict[str, Any]] = [
+        {"release": {"checklist": []}},
+        {"release": {"pull_requests_typed": [{"number": 1}]}},
+        {"depends_on": [shipped["id"]]},
+    ]
+    for change in changes:
+        response = owner.patch(path, change)
+        assert response.json()["error"]["code"] == "invalid_transition", change
+
+
+def test_a_releaser_edits_a_release_it_does_not_hold(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = release(owner)
+    path = f"/projects/maity/tasks/{card['id']}"
+    edited = reviewer.patch(path, {"release": {"pull_requests_typed": [{"number": 2}]}})
+    assert edited.status_code == 200, edited.text
+    assert reviewer.patch(path, {"title": "renamed"}).status_code == 403  # only release fields
+
+
+def test_an_observation_replaces_the_attested_state(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    card = release(owner)
+    owner.patch(
+        f"/projects/maity/tasks/{card['id']}",
+        {"release": {"pull_requests_typed": [{"number": 5, "state": "merged"}]}},
+    )
+    with migrated.begin() as conn:  # the forge said nothing about the state
+        project_id = conn.execute(select(t.project.c.id)).scalar()
+        conn.execute(
+            insert(t.forge_observation).values(
+                project_id=project_id, kind="pr", ref="5", observed_at=clock.now(), data={}
+            )
+        )
+    entry = _get(owner, card)["release"]["pull_requests"][0]
+    assert entry["state"] is None
+    assert {"reason": "pr_open", "pr": 5} in _blocking(owner, card)
+
+
+def test_a_short_head_is_compared_as_a_prefix_once_per_pr(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    first, second = task(owner), task(owner)
+    _reported(migrated, first, 7, head=SHA[:7])
+    _reported(migrated, second, 7, head=OTHER_SHA)
+    _observe(migrated, 7)
+    card = release(owner, depends_on=[first["id"], second["id"]])
+    mismatches = [b for b in _blocking(owner, card) if b["reason"] == "pr_mismatch"]
+    assert mismatches == [{"reason": "pr_mismatch", "pr": 7}]
+    _reported(migrated, second, 7, head=SHA)
+    assert not [b for b in _blocking(owner, card) if b["reason"] == "pr_mismatch"]
+
+
+def test_a_removed_checklist_id_is_never_given_out_again(owner: flow.Human) -> None:
+    card = release(owner)
+    path = f"/projects/maity/tasks/{card['id']}"
+    owner.patch(path, {"release": {"checklist": [{"id": "chk-1", "text": "keep"}]}})
+    added = owner.patch(
+        path, {"release": {"checklist": [{"id": "chk-1", "text": "keep"}, {"text": "new"}]}}
+    )
+    assert [i["id"] for i in added.json()["release"]["checklist"]] == ["chk-1", "chk-3"]
