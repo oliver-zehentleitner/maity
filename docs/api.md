@@ -42,6 +42,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The hub serves no third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
+- The hub writes its own request log: method, path and status, never a
+  query string or a header value, and the token segment of `/j/{token}`
+  and `/join/{token}` as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
   (`web/context/rendering.md`).
@@ -79,7 +82,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
-| 401 | `credential_revoked` | the credential was revoked |
+| 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid` |
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
@@ -105,6 +108,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
+| 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
@@ -133,7 +137,9 @@ one), `POST /auth/*` (humans). The key is unique per credential — a new
 session of the same credential replays the same key — and kept for
 24 hours:
 
-- A repeat with the same key and the same body returns the first call's
+- Only a successful first call (2xx) is stored; a call that ended in an
+  error changed nothing and may simply be repeated. A repeat with the same
+  key and the same body after a success returns the first call's
   status and resource (the hub stores the body hash, the status code and
   a reference to the resource, not the full response) with the header
   `Idempotent-Replayed: true`.
@@ -221,7 +227,8 @@ text exactly as it appears in the credential — nobody decodes the
 base64url. A credential is long-lived, revocable (§10) and never rotated
 silently.
 
-**The hub refuses any request body or query string in which the pattern
+**The hub refuses any request body or query string — the query matched
+both raw and percent-decoded — in which the pattern
 `\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
 from every caller. When the matched string is a real credential (the id
 exists and the secret verifies), the hub revokes it at once
@@ -291,7 +298,7 @@ first V1.x security item; asymmetric keys are the revisit condition
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
 nonce is unique per credential, remembered for 600 s, else `nonce_reused`;
-any other failure is `signature_invalid`. Signed requests need
+an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. A signed request whose `Maity-Timestamp` predates the hub process's start is `timestamp_skew`: the nonce memory is in-process, and this keeps a request captured before a restart from being replayed after it. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
 A completion report or checkpoint that arrives signed is recorded as
@@ -367,7 +374,9 @@ heartbeat endpoint.
 
 TLS is terminated by the operator's reverse proxy or ingress. The hub
 takes the scheme and the client address from `X-Forwarded-Proto` and
-`X-Forwarded-For` only when the socket peer is listed in
+`X-Forwarded-For` (all header lines joined with `,`, read from the trusted
+end; the scheme taken at the same hop as the address) only when the socket
+peer is listed in
 `MAITY_TRUSTED_PROXIES` (a comma-separated CIDR list; empty by default,
 so nothing is trusted and a forwarded header from an arbitrary client
 changes nothing). The Helm chart sets it to the ingress; the skeleton's
@@ -375,6 +384,11 @@ uvicorn `proxy_headers` default (loopback only) is replaced by this
 setting. The bearer-over-TLS rule (§2.2), the join rate limit per source
 address (§3.1) and the login limit (§2.1) all read the address and scheme
 decided this way.
+
+Without the flag, a login or any cookie-authenticated call over plain
+HTTP from a non-loopback address is `insecure_transport`, like a bearer
+credential. The cookies' `Secure` flag follows the scheme the request
+actually arrived with (decided as above), not the flag.
 
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
 plain HTTP from any address, for a hub that is reachable only on a
