@@ -10,6 +10,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- `docs/architecture.md` and `docs/api.md`: the architecture and the REST contract v1 the hub, the CLI and the dashboard build against.
 - Repository scaffold: README, licence, contributing guide, agent entry point,
   task board, Keep the Why configuration with linter and dashboard workflows.
 - hub: server skeleton — `maity_hub` package with `maity-hub serve` and

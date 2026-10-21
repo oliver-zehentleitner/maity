@@ -11,7 +11,8 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent A (coordination, review, `context/`)
 
-- Turn the agreed design into `docs/architecture.md`, `docs/security.md` (threat model, credentials, request signing and replay protection) and the first API contract; `docs/install/` for plain Python, Docker Compose and Helm on Kubernetes; `docs/agents.md` as the agent-facing guide the join page and `/help` are built from.
+- `docs/security.md` (threat model, credentials, request signing and replay protection, the stored-verifier cost, access-log rule: codes and credentials never in URLs); `docs/install/` for plain Python, Docker Compose and Helm on Kubernetes; `docs/agents.md` as the agent-facing guide the join page and `/help` are built from.
+- Review PR #4 (cli) and PR #5 (web) against `docs/api.md`; hand PR #3 to the maintainer after the password-path fixes.
 - Add the `children` blocks for `hub/`, `cli/`, `web/` to `.keep-the-why` when the directories exist and have owners.
 
 ## Agent B (`hub/`)
