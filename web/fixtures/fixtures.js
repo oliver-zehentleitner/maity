@@ -530,11 +530,11 @@ window.MAITY_FIXTURES = {
         "replies": [
           {
             "id": "go",
-            "label": "Go"
+            "label": "go"
           },
           {
             "id": "no",
-            "label": "No"
+            "label": "no"
           }
         ],
         "status": "open",

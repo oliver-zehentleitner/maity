@@ -50,6 +50,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   reload offers on the board, agents and organisation, chat replies from the feed,
   presence re-read in place; the "what waits for you changed" notice now appears
   (the count re-read had marked itself as seen)
+- web: fixtures label the consent replies `go` and `no`, as the hub sends them
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

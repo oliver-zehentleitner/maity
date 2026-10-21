@@ -36,8 +36,8 @@
       "tried": "Reviewed; ktw-lint green.",
       "options": [],
       "replies": [
-        { "id": "go", "label": "Go" },
-        { "id": "no", "label": "No" }
+        { "id": "go", "label": "go" },
+        { "id": "no", "label": "no" }
       ],
       "priority": "normal",
       "to": "owner",
