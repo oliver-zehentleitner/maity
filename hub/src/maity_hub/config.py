@@ -94,10 +94,12 @@ def normalize_database_url(url: str) -> str:
     """
     scheme, _, rest = url.partition("://")
     if not scheme.startswith("sqlite") and rest.count("@") > 1:
-        # An unencoded `@` in the password splits it: the tail would be taken
-        # for the host, the port or the database name and end up in messages.
+        # A second unencoded `@` (in the user, the password, the database or the
+        # query) splits the URL: a password's tail would be taken for the host,
+        # the port or the database name and end up in messages.
         raise ConfigError(
-            "MAITY_DATABASE_URL: a password containing '@' must be percent-encoded (%40)"
+            "MAITY_DATABASE_URL has an '@' that is not the one before the host: "
+            "an '@' in any part of the URL must be percent-encoded (%40)"
         )
     try:
         parsed = make_url(url)
