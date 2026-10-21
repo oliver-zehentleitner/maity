@@ -19,25 +19,38 @@ public site at maity.dev is `docs/index.html`, not this.
   readable `maity_csrf` cookie's value as `X-CSRF-Token` (double submit);
   a mismatch comes back as 403 `csrf_mismatch` and is shown as an error.
 
+## Projects and routes
+
+One account holds many projects. The header of every screen has a
+project switcher: each project with its state and the number of open
+requests waiting for the human, and **All projects** with the total.
+
+| Route | What |
+|---|---|
+| `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project |
+| `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
+| `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
+
 ## Views
 
-In the order of their importance; see `context/views.md` for why.
+Inside a project, in the order of their importance; see
+`context/views.md` for why.
 
-1. **Inbox** (`#/inbox`, the first screen): each agent's open requests,
+1. **Inbox** (`#/p/<slug>/inbox`, the first screen): each agent's open requests,
    sortable by priority, date and agent. The first open entry is expanded
    with its context (task, what the agent tried, the options it sees) and
    is answered with a prepared reply, free text, or "Neither — let's talk";
    answering opens the next one.
-2. **Board** (`#/board`): cards by status with claim holder, lease and
+2. **Board** (`#/p/<slug>/board`): cards by status with claim holder, lease and
    dependencies; releases are a card kind with their pull requests as the
    hub observed them, and a readiness line computed from that state.
-3. **Agents** (`#/agents`): profile, owner, role, reports-to, scopes,
+3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to, scopes,
    harness and model, live session, last seen, paused reason. Credentials
    are shown as id, creation date and last use with a revoke button,
    never their value.
-4. **Organisation** (`#/org`): an indented tree computed from
+4. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and scope ownership on every render.
-5. **Chat** (`#/chat/<agent-id>`): a direct conversation with an agent the
+5. **Chat** (`#/p/<slug>/chat/<agent-id>`): a direct conversation with an agent the
    human owns; reachable from inbox entries and agent cards.
 
 The project state (build, freeze, fixes-only, accepted, archived) is in
@@ -59,21 +72,23 @@ fixtures on its own, and fixture mode is labelled **Fixtures** in the
 header. Answers, chat messages and revocations in fixture mode change an
 in-memory copy and are gone on reload.
 
-The fixtures are in `fixtures/`, one JSON file per endpoint, shaped like
-the answer the views expect:
+The fixtures are in `fixtures/`: `me.json`, and one directory per project
+(`maity/`, `sample/`) with one JSON file per endpoint, shaped like the
+answer the views expect:
 
 | Endpoint (below `/api/v1`) | Fixture |
 |---|---|
-| `GET /me` | `me.json` |
-| `GET /projects/{slug}` | `project.json` |
-| `GET /projects/{slug}/members` | `members.json` |
-| `GET /projects/{slug}/requests` | `requests.json` |
-| `POST /projects/{slug}/requests/{id}/answer` | updates `requests.json` |
-| `GET /projects/{slug}/tasks` | `tasks.json` |
-| `GET /projects/{slug}/members/{id}/credentials` | `credentials.json`, keyed by member |
-| `POST /projects/{slug}/credentials/{id}/revoke` | updates `credentials.json` |
-| `GET /projects/{slug}/conversations/{agent-id}/messages` | `conversations.json`, keyed by agent |
-| `POST /projects/{slug}/conversations/{agent-id}/messages` | updates `conversations.json` |
+| `GET /me` (memberships with `open_requests`) | `me.json`; the counts are derived from the request fixtures |
+| `GET /requests?scope=all` | derived: the open requests of every project, each with `project` |
+| `GET /projects/{slug}` | `{slug}/project.json` |
+| `GET /projects/{slug}/members` | `{slug}/members.json` |
+| `GET /projects/{slug}/requests` | `{slug}/requests.json` |
+| `POST /projects/{slug}/requests/{id}/answer` | updates `{slug}/requests.json` |
+| `GET /projects/{slug}/tasks` | `{slug}/tasks.json` |
+| `GET /projects/{slug}/members/{id}/credentials` | `{slug}/credentials.json`, keyed by member |
+| `POST /projects/{slug}/credentials/{id}/revoke` | updates `{slug}/credentials.json` |
+| `GET /projects/{slug}/conversations/{agent-id}/messages` | `{slug}/conversations.json`, keyed by agent |
+| `POST /projects/{slug}/conversations/{agent-id}/messages` | updates `{slug}/conversations.json` |
 
 These are a proposal until `docs/api.md` exists; the two get reconciled
 then. Because a page loaded from `file://` cannot `fetch()` a local
@@ -92,8 +107,9 @@ bundle freshness; `index.html` structure (balanced tags, doctype, lang,
 charset, viewport, title, unique ids, labels, local references, every
 script loaded, no inline script, style or handler); JavaScript bracket
 balance and a lint that refuses `innerHTML` and the other HTML-parsing or
-code-evaluating calls (`context/rendering.md`), `var`, `console` and
-`debugger`; CSS brace balance and defined custom properties; whitespace.
+code-evaluating calls (`context/rendering.md`), the native
+`append`/`prepend` outside `js/dom.js` (it would insert the text "null"
+for a missing child), `var`, `console` and `debugger`; CSS brace balance and defined custom properties; whitespace.
 When a `node` binary happens to be on the PATH, each script also goes
 through `node --check`; it is not required, and the check says when it
 was skipped.
@@ -110,13 +126,13 @@ web/
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only
 ├── js/api.js         the fetch layer: fixtures or /api/v1
-├── js/app.js         header, navigation, router
-├── js/inbox.js       (1) inbox
+├── js/app.js         project switcher, header, navigation, router
+├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board.js       (2) board
 ├── js/agents.js      (3) agents and presence
 ├── js/org.js         (4) organisation tree
 ├── js/chat.js        (5) chat
-├── fixtures/         JSON per endpoint, plus the generated fixtures.js
+├── fixtures/         me.json, <slug>/ JSON per endpoint, generated fixtures.js
 ├── tools/check.py    make check
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
