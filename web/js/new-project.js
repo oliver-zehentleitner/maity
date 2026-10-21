@@ -1,0 +1,138 @@
+// Create a project (docs/api.md §6.1, POST /projects): slug, name, an
+// optional repository, Keep the Why, and the policy preset. The creator
+// becomes its owner; on 201 the page switches to the new project's Agents
+// view. The hub's `invalid` answer is shown next to the fields it names.
+// Also the empty state of a human without memberships.
+"use strict";
+
+window.Maity = window.Maity || {};
+
+(function (M) {
+  const { h, append, clear } = M.dom;
+
+  // docs/api.md, "Conventions": projects are addressed by this slug.
+  const SLUG_PATTERN = "[a-z0-9][a-z0-9-]{1,62}";
+  const SLUG = new RegExp("^" + SLUG_PATTERN + "$");
+
+  const PRESETS = [
+    ["hierarchical", "Hierarchical: reviewers move cards to done, admins arbitrate contracts"],
+    ["solo", "Solo: the holder moves its own card to done, the owner arbitrates"],
+  ];
+
+  // The hub's reasons, in words; any other reason is shown as it comes.
+  const REASONS = {
+    taken: "A project with this slug exists.",
+    string_pattern_mismatch: "Lower-case letters, digits and hyphens; 2 to 63 characters, not starting with a hyphen.",
+    string_too_short: "Required.",
+    string_too_long: "Too long.",
+    missing: "Required.",
+    not_a_configured_forge: "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.",
+    unknown: "Not a known value.",
+  };
+
+  // A slug proposed from the name until the slug field is typed in.
+  function slugFrom(name) {
+    return name.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").replace(/-+$/, "").slice(0, 63).replace(/-+$/, "");
+  }
+
+  M.views.newProject = async function (ctx, root) {
+    const field = (id, label, input, hint) => {
+      const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+      input.setAttribute("aria-describedby", id + "-error");
+      return { input, error, nodes: [h("label", { for: id }, label), input, hint ? h("p", { class: "hint" }, hint) : null, error] };
+    };
+
+    const name = field("project-name", "Name", h("input", { id: "project-name", required: true, maxlength: "200", autocomplete: "off" }));
+    const slug = field("project-slug", "Slug",
+      h("input", { id: "project-slug", required: true, pattern: SLUG_PATTERN, maxlength: "63", autocomplete: "off", spellcheck: "false" }),
+      "Used in links and by the CLI; it cannot be changed later.");
+    const repository = field("project-repository", "Repository (optional)",
+      h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
+    const ktw = h("input", { id: "project-ktw", type: "checkbox" });
+    const preset = field("project-preset", "Policy preset",
+      h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))));
+
+    let slugTyped = false;
+    slug.input.addEventListener("input", () => { slugTyped = slug.input.value !== ""; });
+    name.input.addEventListener("input", () => {
+      if (!slugTyped) slug.input.value = slugFrom(name.input.value);
+    });
+
+    // The hub's field names (details.fields) to the inputs they belong to.
+    const byField = { name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset };
+    const all = [name, slug, repository, preset];
+    const status = M.statusLine();
+
+    const showErrors = (fields) => {
+      all.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
+      const rest = [];
+      Object.keys(fields).forEach((key) => {
+        const reason = String(fields[key]);
+        const text = REASONS[reason] || reason;
+        const target = byField[key];
+        if (!target) { rest.push(key + ": " + text); return; }
+        target.error.textContent = text;
+        target.input.setAttribute("aria-invalid", "true");
+      });
+      const first = all.find((f) => f.input.getAttribute("aria-invalid") === "true");
+      if (first) first.input.focus();
+      return rest;
+    };
+
+    const form = h("form", {
+      class: "project-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const body = { slug: slug.input.value.trim(), name: name.input.value.trim() };
+        const local = {};
+        if (!body.name) local.name = "string_too_short";
+        if (!SLUG.test(body.slug)) local.slug = body.slug ? "string_pattern_mismatch" : "string_too_short";
+        if (Object.keys(local).length) { showErrors(local); status.done(); return; }
+        showErrors({});
+        const url = repository.input.value.trim();
+        if (url) body.repository = { url };
+        body.keep_the_why = ktw.checked;
+        body.policy = { preset: preset.input.value };
+        status.busy("Creating…");
+        submit.disabled = true;
+        try {
+          const created = await M.api.post("/projects", body);
+          status.done();
+          // A new project has nothing waiting yet; its next step is to
+          // join an agent, which the Agents view offers when it is empty.
+          window.location.hash = ctx.projectLink(created.slug, "agents");
+        } catch (err) {
+          submit.disabled = false;
+          const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;
+          if (fields) {
+            const rest = showErrors(fields);
+            if (rest.length) status.fail("Not created: ", { message: rest.join("; ") });
+            else status.done();
+          } else {
+            status.fail("Not created: ", err);
+          }
+        }
+      },
+    },
+    name.nodes, slug.nodes, repository.nodes,
+    h("label", { class: "check", for: "project-ktw" }, ktw, " Keep the Why: the project keeps its reasoning in context/"),
+    preset.nodes);
+    const submit = h("button", { type: "submit" }, "Create project");
+    append(form, submit, status.el);
+
+    append(root, h("h2", null, "Create a project"),
+      h("p", { class: "muted" }, "You become its owner. Agents join it afterwards, from its Join an agent view."),
+      form);
+    name.input.focus();
+  };
+
+  // A human with no membership yet: the one thing to do is create a project.
+  M.views.noProjects = function (ctx, root) {
+    append(clear(root), h("div", { class: "empty-state" },
+      h("h2", null, "No projects yet"),
+      h("p", null, "You are not a member of any project. Create one; you become its owner and can then join agents to it."),
+      h("p", null, h("a", { class: "button", href: "#/new" }, "Create a project"))));
+  };
+})(window.Maity);

@@ -26,6 +26,7 @@ class El extends Node_ {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
+  removeAttribute(k) { delete this.attrs[k]; }
   addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
   dispatch(t, extra) { const e = Object.assign({ target: this, preventDefault() {}, key: "" }, extra || {}); (this.listeners[t] || []).forEach((f) => f(e)); }
   click() { this.dispatch("click"); }
@@ -235,6 +236,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("login-handle").value = "maintainer"; byId("login-password").value = "wrong-but-nonempty";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign in returns to the dashboard");
+
+  // No memberships: the empty state, then creating a project.
+  let noProjects = true;
+  win.Maity.api.get = (p) => {
+    gets.push(p);
+    return p === "/me" && noProjects
+      ? realGet(p).then((m) => Object.assign({}, m, { projects: [] }))
+      : realGet(p);
+  };
+  await go("");
+  expect(win.location.hash === "#/all", "no project: the empty hash lands on #/all");
+  await tick();
+  expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
+  const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
+  expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
+  expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
+  await go("#/new");
+  expect(document.title === "New project · Maity" && byId("project-slug"), "create-project view");
+  byId("project-name").value = "Dogfood Hub"; byId("project-name").dispatch("input");
+  expect(byId("project-slug").value === "dogfood-hub", "slug proposed from the name");
+  const posts = [];
+  const realPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { posts.push([p, b]); return realPost(p, b); };
+  const fieldError = (id) => text(byId(id + "-error"));
+  byId("project-slug").value = "-Bad"; byId("project-slug").dispatch("input");
+  main.querySelector("form").dispatch("submit"); await tick();
+  expect(!posts.length && fieldError("project-slug").includes("Lower-case") && byId("project-slug").getAttribute("aria-invalid") === "true",
+    "a malformed slug is refused next to the field, nothing sent");
+  byId("project-slug").value = "maity";
+  byId("project-repository").value = "https://gitlab.example/a/b";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(fieldError("project-slug").includes("exists") && fieldError("project-repository").includes("forge"),
+    "the hub's invalid fields shown next to slug and repository");
+  byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
+  byId("project-ktw").checked = true; byId("project-preset").value = "solo";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  const sent = posts[posts.length - 1];
+  expect(sent[0] === "/projects" && JSON.stringify(sent[1]) === JSON.stringify({
+    slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" }, keep_the_why: true, policy: { preset: "solo" },
+  }), "POST /projects with the contract's body");
+  expect(!fieldError("project-slug") && !byId("project-slug").getAttribute("aria-invalid"), "errors cleared on resubmit");
+  noProjects = false;
+  win.onhashchange(); await tick(); await tick();
+  expect(win.location.hash === "#/p/dogfood/agents" && text(header).includes("Dogfood Hub") && text(header).includes("Build"),
+    "on 201 the page switches into the new project's Agents view");
+  expect(text(main).includes("No agents in this project yet") && main.querySelectorAll("a").some((a) => a.textContent === "Join an agent."),
+    "the new project offers to join an agent");
+  expect(chip("Dogfood Hub") && chip("Dogfood Hub").getAttribute("aria-current") === "page", "the new project is in the switcher");
+  win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
+  win.Maity.api.post = realPost;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

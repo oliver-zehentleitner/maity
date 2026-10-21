@@ -31,6 +31,8 @@ window.Maity = window.Maity || {};
   let store = null;
   // ?signed_out=1 starts fixture mode without a session, to show the login.
   let fixtureSignedIn = params.get("signed_out") !== "1";
+  // ?no_projects=1 starts it with no memberships, to show the empty state.
+  const fixtureNoProjects = params.get("no_projects") === "1";
 
   // The bundle is loaded on the first fixture request, never on an
   // http(s) origin (it is not referenced from index.html).
@@ -55,6 +57,7 @@ window.Maity = window.Maity || {};
       throw new ApiError("fixtures/fixtures.js is not loaded", 0, "");
     }
     store = JSON.parse(JSON.stringify(window.MAITY_FIXTURES));
+    if (fixtureNoProjects) store["me.json"].projects = [];
     return store;
   }
 
@@ -111,6 +114,21 @@ window.Maity = window.Maity || {};
     return (item) => wanted.includes(item.status);
   }
 
+  const SLUG = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
+  // The policy fields each preset fills (docs/api.md §6.1); a missing
+  // contract_arbiter is the owner.
+  const PRESETS = {
+    hierarchical: {
+      claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "role:admin",
+      tag_authority: "human", steward_writes: "cards_only", lease_seconds: 7200,
+    },
+    solo: {
+      claim_policy: "self-claim", done_authority: "holder", contract_arbiter: null,
+      tag_authority: "human", steward_writes: "cards_only", lease_seconds: 7200,
+    },
+  };
+
   // [method, pattern, handler(match, body, path, query)]. One row per
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
@@ -149,6 +167,45 @@ window.Maity = window.Maity || {};
         { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r))),
       next_cursor: null,
     })],
+    // The forge rule as the hub applies it, with github.com as the one
+    // configured forge.
+    ["POST", /^\/projects$/, (m, body, path) => {
+      const fields = {};
+      if (!SLUG.test(body.slug || "")) fields.slug = "string_pattern_mismatch";
+      else if (fixtures()[body.slug + "/project.json"]) fields.slug = "taken";
+      if (!body.name || !body.name.trim()) fields.name = "string_too_short";
+      const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
+      if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
+        fields["repository.url"] = "not_a_configured_forge";
+      }
+      const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
+      if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const owner = me().member;
+      const created = {
+        slug: body.slug, name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
+        repository: url === null ? null : {
+          url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
+        },
+        keep_the_why: Boolean(body.keep_the_why),
+        policy: Object.assign({}, PRESETS[preset], {
+          preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
+        }),
+        absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
+      };
+      const data = fixtures();
+      const empty = { items: [], next_cursor: null };
+      data[body.slug + "/project.json"] = created;
+      data[body.slug + "/members.json"] = { items: [Object.assign({}, owner, {
+        role: "owner", reports_to: null, areas: ["/"], capabilities: [], last_seen_at: nowIso(),
+        presence: "online", paused: null, joined_at: nowIso(),
+      })], next_cursor: null };
+      ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
+      data[body.slug + "/credentials.json"] = {};
+      data[body.slug + "/conversations.json"] = {};
+      me().projects.push({ slug: body.slug, name: body.name, state: "build", role: "owner", open_requests: 0 });
+      return created;
+    }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => project(m[1], path)],
     ["PATCH", /^\/projects\/([^/]+)$/, (m, body, path) => {
       const p = project(m[1], path);

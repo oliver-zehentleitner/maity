@@ -373,6 +373,17 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .joins { list-style: none; padding: 0; display: grid; gap: 6px; }
 .joins li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .joins button { margin-left: auto; padding: 2px 10px; }
+.project-form { display: grid; gap: 6px; max-width: 32rem; }
+.project-form label { font-size: 0.85rem; color: var(--muted); }
+.project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
+.project-form button { justify-self: start; margin-top: 6px; }
+.project-form .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
+.field-error:empty { display: none; }
+[aria-invalid="true"] { border-color: var(--bad); }
+.empty-state { max-width: 32rem; margin: 8vh auto 0; }
+a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
+.switcher .new-project { color: var(--muted); }
 .reply.later { color: var(--muted); }
 .notice:empty { display: none; }
 
