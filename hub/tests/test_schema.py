@@ -413,3 +413,18 @@ def test_unique_text_is_exact_on_every_engine(conn: Connection) -> None:
                 caller="crd-x", idem_key=key, body_hash="0" * 64, status_code=201, created_at=NOW
             )
         )
+
+
+def test_server_engines_read_committed(engine: Engine) -> None:
+    """hub/context/persistence.md: one isolation level on every server engine."""
+    from sqlalchemy import text
+
+    name = engine.dialect.name
+    if name == "sqlite":
+        pytest.skip("SQLite has one writer; BEGIN IMMEDIATE instead")
+    query = (
+        "SHOW transaction_isolation" if name == "postgresql" else "SELECT @@transaction_isolation"
+    )
+    with engine.connect() as conn:
+        level = str(conn.execute(text(query)).scalar()).replace("-", " ").lower()
+    assert level == "read committed"

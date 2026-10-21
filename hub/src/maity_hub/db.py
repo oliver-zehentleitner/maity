@@ -48,10 +48,26 @@ def make_engine(url: str) -> Engine:
     engine = create_engine(url, **kwargs)
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _sqlite_pragmas)
+        event.listen(engine, "begin", _sqlite_begin_immediate)
     return engine
 
 
+def _sqlite_begin_immediate(conn: Any) -> None:
+    """Every SQLite transaction takes the write lock at its start.
+
+    pysqlite would send BEGIN only at the first write, so the reads before it
+    ran unlocked, and `events.lock_project` serialised nothing; a transaction
+    that read first could not even upgrade to a write once another had
+    committed. SQLite has one writer anyway; this makes the hub wait for it
+    where the other engines wait for the project row.
+    """
+    conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
+    # The driver's own transaction handling off: SQLAlchemy's begin event
+    # issues BEGIN IMMEDIATE instead (_sqlite_begin_immediate).
+    dbapi_connection.isolation_level = None
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     # Readers do not block the writer and the writer waits instead of failing
