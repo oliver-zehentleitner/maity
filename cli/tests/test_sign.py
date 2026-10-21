@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 
+import fakehub
 import pytest
 
 from maity import sign
@@ -29,6 +30,39 @@ def test_canonical_string_follows_the_contract_line_by_line() -> None:
 def test_canonical_query_sorts_bytewise_and_keeps_repeats_in_order() -> None:
     pairs = [("wait", "55"), ("b", "2"), ("a", "z"), ("a", "y"), ("B", ""), ("q", "a b/ü")]
     assert sign.canonical_query(pairs) == "B=&a=z&a=y&b=2&q=a%20b%2F%C3%BC&wait=55"
+
+
+def test_canonical_query_sorts_by_the_encoded_key() -> None:
+    pairs = [("é", "1"), ("a", "2"), ("a b", "3"), ("a-b", "4")]
+    assert sign.canonical_query(pairs) == "%C3%A9=1&a=2&a%20b=3&a-b=4"
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [  # the hub's examples (PR #11): what the hub derives from the query string as sent
+        ("b=2&a=1", "a=1&b=2"),
+        ("a=2&a=1", "a=2&a=1"),
+        ("k", "k="),
+        ("q=a+b&p=%7e", "p=~&q=a%2Bb"),
+        ("x=%C3%BC", "x=%C3%BC"),
+    ],
+)
+def test_the_hub_rule_reproduces_the_hub_examples(raw: str, canonical: str) -> None:
+    assert fakehub.canonical_query(raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "pairs",
+    [
+        [("q", "a+b"), ("p", "~")],
+        [("é", "1"), ("a", "2"), ("a b", "3"), ("a-b", "4")],
+        [("x", "ü"), ("k", ""), ("a", "2"), ("a", "1")],
+        [("s", "open,review"), ("t", "a=b&c")],
+    ],
+)
+def test_what_the_cli_sends_is_what_the_hub_signs(pairs: list[tuple[str, str]]) -> None:
+    sent = sign.canonical_query(pairs)  # the CLI sends its canonical string as the query
+    assert fakehub.canonical_query(sent) == sent
 
 
 def test_empty_query_is_an_empty_line() -> None:

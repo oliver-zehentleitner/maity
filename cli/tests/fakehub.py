@@ -25,11 +25,18 @@ CODE = "Q7MD-3XPL-8ZWE"
 VERIFIER = hashlib.sha256(SECRET.encode()).digest()
 
 
+def canonical_query(raw_query: str) -> str:
+    """The hub's rule: split on '&' and the first '=', percent-decode ('+' stays '+', unlike
+    parse_qsl), re-encode with safe '-_.~', sort bytewise by the encoded key, keep repeats."""
+    enc = lambda s: urllib.parse.quote(urllib.parse.unquote(s), safe="-_.~")  # noqa: E731
+    pairs = [p.partition("=") for p in raw_query.split("&") if p]
+    encoded = [(enc(k), enc(v)) for k, _, v in pairs]
+    encoded.sort(key=lambda kv: kv[0])
+    return "&".join(f"{k}={v}" for k, v in encoded)
+
+
 def canonical(method: str, raw_path: str, raw_query: str, ts: str, nonce: str, body: bytes) -> str:
-    pairs = urllib.parse.parse_qsl(raw_query, keep_blank_values=True)
-    pairs.sort(key=lambda kv: kv[0].encode())
-    enc = lambda s: urllib.parse.quote(s, safe="-_.~")  # noqa: E731
-    query = "&".join(f"{enc(k)}={enc(v)}" for k, v in pairs)
+    query = canonical_query(raw_query)
     return "\n".join(
         ["MAITY-HMAC-V1", method, raw_path, query, ts, nonce, hashlib.sha256(body).hexdigest()]
     )

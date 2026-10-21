@@ -61,9 +61,10 @@ def _enc(text: str) -> str:
 
 
 def canonical_query(pairs: Sequence[tuple[str, str]]) -> str:
-    """Pairs sorted bytewise by key, repeated keys kept in request order, RFC 3986 encoded."""
-    ordered = sorted(pairs, key=lambda kv: kv[0].encode("utf-8"))  # sorted() is stable
-    return "&".join(f"{_enc(k)}={_enc(v)}" for k, v in ordered)
+    """Each key and value RFC 3986 encoded, pairs sorted bytewise by the encoded key, repeated
+    keys kept in request order (sorted() is stable), `key=` for an empty value."""
+    encoded = [(_enc(k), _enc(v)) for k, v in pairs]
+    return "&".join(f"{k}={v}" for k, v in sorted(encoded, key=lambda kv: kv[0]))
 
 
 def canonical_string(
