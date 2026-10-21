@@ -10,7 +10,7 @@ from sqlalchemy import Engine
 from maity_hub import API_VERSION, __version__
 from maity_hub.app import SchemaNotCurrentError, create_app
 from maity_hub.config import ConfigError, Settings
-from maity_hub.db import downgrade, migrate
+from maity_hub.db import downgrade, head_revision, migrate
 
 
 def test_health_reports_a_migrated_database(client: TestClient) -> None:
@@ -20,7 +20,8 @@ def test_health_reports_a_migrated_database(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["version"] == __version__
     assert body["api"] == API_VERSION
-    assert body["database"] == {"reachable": True, "revision": "0001", "head": "0001"}
+    head = head_revision(client.app.state.engine)  # type: ignore[attr-defined]
+    assert body["database"] == {"reachable": True, "revision": head, "head": head}
 
 
 def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engine: Engine) -> None:

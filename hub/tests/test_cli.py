@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,7 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0
-    assert "schema empty -> 0001" in capsys.readouterr().out
+    assert re.search(r"schema empty -> \d{4}$", capsys.readouterr().out.strip())
     assert Path("maity-hub.db").is_file()
 
 

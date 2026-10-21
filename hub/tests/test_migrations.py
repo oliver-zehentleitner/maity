@@ -26,7 +26,10 @@ def test_every_migration_downgrades(engine: Engine) -> None:
 def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)
+    head = head_revision(engine)
+    assert head is not None
+    following = f"{int(head) + 1:04d}"
     created = create_revision(engine, "add the task table", migrations)
-    assert created.name == "0002_add_the_task_table.py"
-    assert 'revision: str = "0002"' in created.read_text()
-    assert 'down_revision: str | None = "0001"' in created.read_text()
+    assert created.name == f"{following}_add_the_task_table.py"
+    assert f'revision: str = "{following}"' in created.read_text()
+    assert f'down_revision: str | None = "{head}"' in created.read_text()
