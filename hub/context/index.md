@@ -63,6 +63,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## Q
 
 ## R
+- [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
 
 ## S
 - [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI
