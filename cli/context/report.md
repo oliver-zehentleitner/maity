@@ -16,8 +16,10 @@ when gh is installed, and refuses (exit 4) while any of them disagree.
 It also refuses on uncommitted changes to tracked files, on a detached
 HEAD and on a branch without upstream. When gh is installed but fails —
 not logged in, no network — that is an error, not "no pull request";
-only a missing gh is reported as "pull request unknown". There is no
-flag to override a refusal.
+the pull request is reported as unknown (`pr_status: unknown`, with the
+reason) only when gh is not installed or the remote is not on a GitHub
+host gh knows. In that case gh is not asked at all, because it could not
+answer for that forge. There is no flag to override a refusal.
 
 **Reason:** the claims that went wrong repeatedly in the earlier
 multi-agent experiment were "merged", "pushed" and "green", typed by an
