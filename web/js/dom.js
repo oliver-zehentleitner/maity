@@ -26,15 +26,22 @@ window.Maity = window.Maity || {};
     return el;
   }
 
-  function append(el, child) {
-    if (child === null || child === undefined || child === false) return;
-    if (Array.isArray(child)) {
-      child.forEach((c) => append(el, c));
-    } else if (child instanceof Node) {
-      el.appendChild(child);
-    } else {
-      el.appendChild(document.createTextNode(String(child)));
+  // append(el, child, ...): skips null, undefined and false, flattens
+  // arrays, turns everything else into text. The native Element.append
+  // would insert "null" and stringify arrays, so the views use this one.
+  function append(el) {
+    for (let i = 1; i < arguments.length; i++) {
+      const child = arguments[i];
+      if (child === null || child === undefined || child === false) continue;
+      if (Array.isArray(child)) {
+        child.forEach((c) => append(el, c));
+      } else if (child instanceof Node) {
+        el.appendChild(child);
+      } else {
+        el.appendChild(document.createTextNode(String(child)));
+      }
     }
+    return el;
   }
 
   function clear(el) {

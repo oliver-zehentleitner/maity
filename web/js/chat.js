@@ -6,14 +6,14 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, formatTime } = M.dom;
+  const { h, append, formatTime } = M.dom;
 
   function picker(ctx, mine) {
     return h("div", null,
       h("h2", null, "Chat"),
       mine.length
         ? h("ul", { class: "chat-picker" }, mine.map((m) =>
-          h("li", null, h("a", { href: "#/chat/" + encodeURIComponent(m.id) }, m.display_name),
+          h("li", null, h("a", { href: ctx.link("chat", m.id) }, m.display_name),
             h("span", { class: "muted" }, " · " + m.role + (m.session ? " · live" : " · offline")))))
         : h("p", { class: "muted" }, "You own no agents in this project."));
   }
@@ -31,8 +31,8 @@ window.Maity = window.Maity || {};
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
     if (!agent) {
-      root.append(picker(ctx, mine));
-      if (args[0]) root.prepend(h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."));
+      append(root, picker(ctx, mine));
+      if (args[0]) root.insertBefore(h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."), root.firstChild);
       return;
     }
 
@@ -54,7 +54,7 @@ window.Maity = window.Maity || {};
         const msg = await M.api.post(ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages", { body });
         const empty = list.querySelector(".empty");
         if (empty) empty.remove();
-        list.append(message(ctx, msg));
+        append(list, message(ctx, msg));
         text.value = "";
         status.textContent = "";
       } catch (err) {
@@ -69,11 +69,11 @@ window.Maity = window.Maity || {};
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(e);
     });
 
-    root.append(
+    append(root,
       h("div", { class: "toolbar" },
         h("h2", null, "Chat with " + agent.display_name),
         h("span", { class: "muted" }, agent.session ? "live session " + agent.session.id : "no live session — delivered when it resumes"),
-        h("a", { href: "#/chat" }, "Other agents")),
+        h("a", { href: ctx.link("chat") }, "Other agents")),
       list,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),

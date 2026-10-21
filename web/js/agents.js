@@ -6,7 +6,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, formatAgo, formatTime } = M.dom;
+  const { h, append, formatAgo, formatTime } = M.dom;
 
   function presence(m) {
     if (m.paused) return { cls: "paused", label: "Paused" };
@@ -17,11 +17,11 @@ window.Maity = window.Maity || {};
   function credentials(ctx, m, list) {
     const box = h("div", { class: "credentials" }, h("h4", null, "Credentials"));
     if (!list.items.length) {
-      box.append(h("p", { class: "muted" }, "None."));
+      append(box, h("p", { class: "muted" }, "None."));
       return box;
     }
     const status = h("p", { class: "send-status", role: "status" });
-    box.append(h("ul", null, list.items.map((c) => h("li", null,
+    append(box, h("ul", null, list.items.map((c) => h("li", null,
       h("code", null, c.id),
       h("span", null, " created " + formatTime(c.created_at) + " · last used " + formatAgo(c.last_used_at)),
       h("button", {
@@ -48,7 +48,7 @@ window.Maity = window.Maity || {};
     const creds = await Promise.all(agents.map((m) =>
       M.api.get(ctx.base + "/members/" + encodeURIComponent(m.id) + "/credentials")));
 
-    root.append(h("h2", null, "Agents"),
+    append(root, h("h2", null, "Agents"),
       h("div", { class: "profiles" }, agents.map((m, i) => {
         const p = presence(m);
         const mine = m.owner_id === ctx.me.id;
@@ -72,7 +72,7 @@ window.Maity = window.Maity || {};
             ? h("p", { class: "flag" }, "Paused " + formatAgo(m.paused.since) + ": " + m.paused.reason)
             : null,
           credentials(ctx, m, creds[i]),
-          mine ? h("p", { class: "chat-link" }, h("a", { href: "#/chat/" + encodeURIComponent(m.id) }, "Chat")) : null);
+          mine ? h("p", { class: "chat-link" }, h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
       })));
   };
 })(window.Maity);

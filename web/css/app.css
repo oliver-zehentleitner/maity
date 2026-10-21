@@ -143,6 +143,27 @@ nav a {
 nav a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 nav .count { margin-left: 6px; color: var(--accent); }
 
+/* The project switcher: always visible, one chip per project. */
+.switcher { gap: 6px; padding-bottom: 2px; }
+
+.switcher a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.88rem;
+}
+
+.switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
+.switcher .count { margin-left: 0; }
+
+.state-dot-build { background: var(--accent); }
+.state-dot-freeze, .state-dot-fixes-only { background: var(--warn); }
+.state-dot-accepted { background: var(--ok); }
+.state-dot-archived { background: var(--muted); }
+
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 .error {
@@ -200,6 +221,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 .entry-head .title { font-weight: 600; flex: 1 1 16rem; }
 .entry-head .meta { color: var(--muted); font-size: 0.85rem; }
+
+.project-label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; }
 
 .prio-high { color: var(--high); }
 .prio-normal { color: var(--normal); }

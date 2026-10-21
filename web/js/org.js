@@ -5,7 +5,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h } = M.dom;
+  const { h, append } = M.dom;
 
   // "/" contains everything; "hub/" contains "hub/api/".
   function contains(outer, inner) {
@@ -79,7 +79,7 @@ window.Maity = window.Maity || {};
 
   M.views.org = async function (ctx, root) {
     const tree = buildTree(ctx.members);
-    root.append(h("h2", null, "Organisation"),
+    append(root, h("h2", null, "Organisation"),
       h("p", { class: "muted" }, "Model: " + (ctx.project.org_model || "—")
         + ". Computed from who reports to whom and who owns which scope."),
       h("ul", { class: "org-tree" }, tree.roots.map((m) => node(m, tree))));

@@ -6,7 +6,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, formatAgo, formatTime } = M.dom;
+  const { h, append, formatAgo, formatTime } = M.dom;
 
   const COLUMNS = [
     ["open", "Open"],
@@ -75,11 +75,11 @@ window.Maity = window.Maity || {};
       claimLine(ctx, c.claim),
       dependencies(c, byId),
       c.blocked_by_request
-        ? h("p", { class: "flag" }, "Waits for ", h("a", { href: "#/inbox" }, "your answer"), " (" + c.blocked_by_request + ")")
+        ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "your answer"), " (" + c.blocked_by_request + ")")
         : null);
     if (c.kind === "release") {
       const reasons = releaseReadiness(c, byId);
-      el.append(pullRequests(c),
+      append(el, pullRequests(c),
         reasons.length
           ? h("div", { class: "readiness not-ready" }, h("strong", null, "Not ready: "), reasons.join("; "))
           : h("div", { class: "readiness ready" }, h("strong", null, "Ready to tag")));
@@ -94,7 +94,7 @@ window.Maity = window.Maity || {};
     const known = new Set(COLUMNS.map(([s]) => s));
     const other = tasks.items.filter((t) => !known.has(t.status));
 
-    root.append(h("h2", null, "Board"),
+    append(root, h("h2", null, "Board"),
       h("div", { class: "columns" },
         COLUMNS.map(([status, label]) => {
           const cards = tasks.items.filter((t) => t.status === status);
