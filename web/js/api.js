@@ -1,7 +1,8 @@
-// The fetch layer. Answers from /api/v1/... (docs/api.md) or from the
-// fixtures in fixtures/ (bundled into fixtures/fixtures.js for file://).
-// The source is chosen once per page load and never changes on its own:
-// see context/fixtures.md.
+// The fetch layer. Answers from /api/v1/... (docs/api.md) or, on a page
+// opened from the file system only, from the fixtures in fixtures/
+// (bundled into fixtures/fixtures.js). On an http(s) origin there is no
+// way into fixture mode and the bundle is never loaded: see
+// context/fixtures.md.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -11,13 +12,7 @@ window.Maity = window.Maity || {};
 
   const params = new URLSearchParams(window.location.search);
 
-  function chooseSource() {
-    const forced = params.get("source");
-    if (forced === "fixtures" || forced === "api") return forced;
-    return window.location.protocol === "file:" ? "fixtures" : "api";
-  }
-
-  const source = chooseSource();
+  const source = window.location.protocol === "file:" ? "fixtures" : "api";
 
   class ApiError extends Error {
     constructor(message, status, path, code, details) {
@@ -36,6 +31,23 @@ window.Maity = window.Maity || {};
   let store = null;
   // ?signed_out=1 starts fixture mode without a session, to show the login.
   let fixtureSignedIn = params.get("signed_out") !== "1";
+
+  // The bundle is loaded on the first fixture request, never on an
+  // http(s) origin (it is not referenced from index.html).
+  let loading = null;
+  function loadFixtures() {
+    if (window.MAITY_FIXTURES) return Promise.resolve();
+    if (!loading) {
+      loading = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "fixtures/fixtures.js";
+        script.addEventListener("load", () => resolve());
+        script.addEventListener("error", () => reject(new ApiError("fixtures/fixtures.js could not be loaded", 0, "")));
+        document.head.appendChild(script);
+      });
+    }
+    return loading;
+  }
 
   function fixtures() {
     if (store) return store;
@@ -250,11 +262,12 @@ window.Maity = window.Maity || {};
         next_cursor: null,
       };
     }],
-    ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path) => {
+    ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);
+      const after = Number(query.get("after") || 0);
       conv.items.forEach((x) => { x.seen_by_human = true; });
       return {
-        items: conv.items.map((x) => {
+        items: conv.items.filter((x) => x.seq > after).map((x) => {
           const copy = Object.assign({}, x);
           delete copy.seen_by_human;
           return copy;
@@ -278,7 +291,7 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const path = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    return Promise.resolve().then(() => {
+    return loadFixtures().then(() => {
       if (!fixtureSignedIn && !path.startsWith("/auth/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
