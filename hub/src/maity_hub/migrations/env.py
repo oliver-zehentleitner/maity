@@ -3,6 +3,7 @@
 from alembic import context
 from sqlalchemy import Engine
 
+from maity_hub import tables  # noqa: F401  (registers the tables on the metadata)
 from maity_hub.db import metadata
 
 engine: Engine = context.config.attributes["engine"]

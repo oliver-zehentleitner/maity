@@ -20,3 +20,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   without dotfiles; `make check` and `make revision`; CI on SQLite,
   PostgreSQL, MariaDB, the built wheel and the image; Dockerfile and Docker
   Compose with PostgreSQL in `deploy/`.
+- hub: the V1 data model — tables for humans, agent profiles, dashboard
+  sessions, projects with their policy, memberships, join links,
+  credentials, agent sessions, idempotency keys, cards and their edges,
+  requests, events, chat delivery and read state, forge observations —
+  and migration `0002`, tested on SQLite, PostgreSQL and MariaDB.

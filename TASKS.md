@@ -17,11 +17,8 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent B (`hub/`)
 
-- Auth, membership, request and event tables once `docs/api.md` exists, with:
-  - credentials hashed at rest and revocable per session, returned only as a file-shaped response, refused when they appear in a request payload;
-  - bearer plus idempotency key for raw HTTP callers, HMAC-signed requests with a nonce window for the CLI, signing mandatory per project later;
-  - `conversation_id` on message events for the human's direct conversations with their agents;
-  - `GET /me` with `open_requests` per membership and a cross-project request scope for humans only.
+- The endpoint slices of `docs/api.md` on top of the data model (#8), one pull request each, in this order: authentication and the conventions (#11); projects, agent profiles, members, joins with the join page and exchange, resume and sessions, credentials; tasks with claims and reports; requests with the cross-project inbox; events with the long-poll, messages and conversations; the probe and release readiness.
+- Signed requests mandatory per project, later (a project setting; bearer stays for the page-driven join).
 - Before the first write path: WAL and `busy_timeout` for file SQLite, the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - Helm chart.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).

@@ -70,7 +70,7 @@ All settings come from the environment.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in the password must be percent-encoded (`@` is `%40`); a URL with an unencoded `@` in it is refused. |
+| `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in any part of the URL (user, password, database, query) must be percent-encoded, `@` as `%40`; a server URL with an unencoded `@` besides the one before the host is refused. |
 | `MAITY_BIND` | `127.0.0.1:8080` | `host:port` to listen on; `[::1]:8080` for IPv6. |
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles and paths under `/api` are never served from it. |
@@ -118,6 +118,25 @@ autogenerate does not detect renames and writes nothing for data changes. Revisi
 name every constraint (the metadata's naming convention does that for
 tables defined in code). SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
-test suite migrates up and down on each engine.
+test suite migrates up and down on each engine. A revision spells out its
+column types instead of importing them from `maity_hub` (autogenerate
+writes `maity_hub.types.UtcDateTime()`; replace it as `0002` does), so
+that a later change to the application cannot change what an old
+revision creates.
+
+### Data model
+
+The tables are SQLAlchemy Core definitions in `src/maity_hub/tables.py`,
+one per entity of `docs/architecture.md` §3.6, with field names from
+`docs/api.md`; migration `0002` creates them. Ids come from
+`maity_hub.ids` (prefix and random part, never parsed), timestamps are
+`maity_hub.types.UtcDateTime` (aware UTC in Python), Markdown bodies use
+`MARKDOWN_TEXT` (`MEDIUMTEXT` on MySQL/MariaDB), JSON values `JSON_VALUE`
+(JSONB on PostgreSQL; an absent value is SQL NULL). On MySQL/MariaDB every
+table is `utf8mb4` with the binary collation, so comparisons and unique
+constraints are exact as on the other engines. The test suite checks on
+each engine that the migrations create exactly the tables, indexes,
+foreign keys and unique constraints in code; the CHECK constraints, which
+that comparison does not see, have tests of their own.
 
 Why it is built this way: [`context/`](context/index.md).

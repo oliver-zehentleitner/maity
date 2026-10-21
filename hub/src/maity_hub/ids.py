@@ -1,0 +1,29 @@
+"""Opaque ids: a readable prefix and 12 random Crockford base32 characters.
+
+Clients never parse them (docs/api.md §1.1); the prefix only helps a human
+reading a log. 60 random bits keep collisions out of reach for one
+instance; the primary key catches the impossible case.
+"""
+
+from __future__ import annotations
+
+import secrets
+
+CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
+
+PREFIXES = {
+    "human": "hum",
+    "agent": "agt",
+    "project": "prj",
+    "join": "join",
+    "credential": "crd",
+    "session": "ses",
+    "task": "tsk",
+    "release": "rel",
+    "contract": "ctr",
+    "request": "req",
+}
+
+
+def new_id(entity: str) -> str:
+    return f"{PREFIXES[entity]}-{''.join(secrets.choice(CROCKFORD) for _ in range(12))}"
