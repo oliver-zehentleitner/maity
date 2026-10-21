@@ -58,6 +58,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 ## Q
 
 ## R
+- [report.md](report.md) — why `maity report` refuses on any mismatch between git, the remote and the pull request, with no override
 
 ## S
 
