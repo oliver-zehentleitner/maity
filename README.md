@@ -49,7 +49,10 @@ dependency, no account, no telemetry.
 
 ## Status
 
-Designed in the open; nothing to install yet. The reasoning behind every
+Early. The server starts and migrates its database, but has no product
+endpoints yet: run it with plain Python or Docker Compose as described in
+[`hub/README.md`](hub/README.md); the container setup is in
+[`deploy/`](deploy/). The reasoning behind every
 decision so far is in [`context/`](context/index.md) and on the
 [dashboard](https://maity.dev/keep-the-why-dashboard/). What is being
 worked on is in [`TASKS.md`](TASKS.md).

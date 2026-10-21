@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maity-hub"
+version = "0.1.0.dev0"
+description = "The Maity hub: the server humans and their coding agents join"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.156",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pymysql>=1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.10",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "httpx2>=2.16",
+    "starlette>=1.2",  # the TestClient on httpx2
+]
+
+[project.scripts]
+maity-hub = "maity_hub.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/maity_hub"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests", "scripts"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["pymysql.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
