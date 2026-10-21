@@ -44,6 +44,12 @@ window.Maity = window.Maity || {};
     return el;
   }
 
+  // A link target from data (a forge URL a member typed, say) is used only
+  // when it is plain https; anything else, javascript: included, is no link.
+  function safeUrl(url) {
+    return typeof url === "string" && /^https:\/\/[^\s]+$/i.test(url) ? url : null;
+  }
+
   function clear(el) {
     while (el.firstChild) el.removeChild(el.firstChild);
     return el;
@@ -72,5 +78,5 @@ window.Maity = window.Maity || {};
     return formatTime(iso);
   }
 
-  M.dom = { h, append, clear, formatTime, formatAgo };
+  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo };
 })(window.Maity);

@@ -1,4 +1,4 @@
-// (4) Organisation: an indented tree computed from reports_to and scope
+// (4) Organisation: an indented tree computed from reports_to and area
 // ownership on every render; nothing chart-shaped is stored or fetched.
 "use strict";
 
@@ -14,14 +14,14 @@ window.Maity = window.Maity || {};
     return inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
   }
 
-  // The member owning the narrowest scope that contains one of m's scopes.
-  function scopeParent(m, members) {
+  // The member owning the narrowest area that contains one of m's areas.
+  function areaParent(m, members) {
     let best = null;
     let bestLen = -1;
     members.forEach((other) => {
       if (other.id === m.id) return;
-      other.scopes.forEach((outer) => {
-        if (m.scopes.some((inner) => contains(outer, inner)) && outer.length > bestLen) {
+      other.areas.forEach((outer) => {
+        if (m.areas.some((inner) => contains(outer, inner)) && outer.length > bestLen) {
           best = other;
           bestLen = outer.length;
         }
@@ -38,8 +38,8 @@ window.Maity = window.Maity || {};
       if (m.reports_to && byId[m.reports_to]) {
         parentOf[m.id] = { id: m.reports_to, via: "reports_to" };
       } else {
-        const p = scopeParent(m, members);
-        if (p) parentOf[m.id] = { id: p.id, via: "scope" };
+        const p = areaParent(m, members);
+        if (p) parentOf[m.id] = { id: p.id, via: "area" };
       }
     });
     // A cycle in the data would hang the recursion; break it at the member
@@ -66,22 +66,21 @@ window.Maity = window.Maity || {};
   function node(m, tree) {
     const kids = tree.children[m.id] || [];
     const link = tree.parentOf[m.id];
-    const state = m.paused ? "paused" : (m.session ? "live" : "offline");
     return h("li", null,
       h("div", { class: "org-node" },
-        h("span", { class: "dot " + (m.kind === "human" ? "human" : state), "aria-hidden": "true" }),
+        h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
         h("strong", null, m.display_name),
         h("span", { class: "role" }, m.role),
-        m.scopes.length ? h("span", { class: "scope" }, m.scopes.join(", ")) : null,
-        link && link.via === "scope" ? h("span", { class: "muted" }, "(by scope)") : null),
+        m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
+        link && link.via === "area" ? h("span", { class: "muted" }, "(by area)") : null),
       kids.length ? h("ul", null, kids.map((k) => node(k, tree))) : null);
   }
 
   M.views.org = async function (ctx, root) {
     const tree = buildTree(ctx.members);
     append(root, h("h2", null, "Organisation"),
-      h("p", { class: "muted" }, "Model: " + (ctx.project.org_model || "—")
-        + ". Computed from who reports to whom and who owns which scope."),
+      h("p", { class: "muted" }, "Policy: " + ctx.project.policy.preset
+        + ". Computed from who reports to whom and who owns which area."),
       h("ul", { class: "org-tree" }, tree.roots.map((m) => node(m, tree))));
   };
 

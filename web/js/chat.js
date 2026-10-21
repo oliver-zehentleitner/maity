@@ -1,20 +1,27 @@
 // (5) Chat: a direct conversation with an agent the human owns. Messages
-// go out as events the agent picks up; the inbox stays the primary
-// surface.
+// are events the agent picks up with wait or resume (docs/api.md §9); the
+// inbox stays the primary surface.
 "use strict";
 
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, formatTime } = M.dom;
+  const { h, append, formatTime, formatAgo } = M.dom;
 
-  function picker(ctx, mine) {
+  async function picker(ctx, mine) {
+    const list = await M.api.getAll(ctx.base + "/conversations");
+    const byAgent = {};
+    list.items.forEach((c) => { byAgent[c.agent_id] = c; });
     return h("div", null,
       h("h2", null, "Chat"),
       mine.length
-        ? h("ul", { class: "chat-picker" }, mine.map((m) =>
-          h("li", null, h("a", { href: ctx.link("chat", m.id) }, m.display_name),
-            h("span", { class: "muted" }, " · " + m.role + (m.session ? " · live" : " · offline")))))
+        ? h("ul", { class: "chat-picker" }, mine.map((m) => {
+          const c = byAgent[m.id];
+          return h("li", null, h("a", { href: ctx.link("chat", m.id) }, m.display_name),
+            c && c.unread ? h("span", { class: "count", "aria-label": c.unread + " unread" }, String(c.unread)) : null,
+            h("span", { class: "muted" }, " · " + m.role + " · " + m.presence
+              + (c && c.last_message_at ? " · last message " + formatAgo(c.last_message_at) : "")));
+        }))
         : h("p", { class: "muted" }, "You own no agents in this project."));
   }
 
@@ -24,23 +31,24 @@ window.Maity = window.Maity || {};
       h("p", { class: "pre" }, msg.body),
       h("span", { class: "meta" },
         (own ? "" : ctx.nameOf(msg.from) + " · ") + formatTime(msg.sent_at)
-        + (own ? (msg.delivered_at ? " · delivered" : " · waiting for the agent") : "")));
+        + (own ? (msg.delivered_at ? " · reached a session" : " · not picked up yet") : "")));
   }
 
   M.views.chat = async function (ctx, root, args) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
     if (!agent) {
-      append(root, picker(ctx, mine));
-      if (args[0]) root.insertBefore(h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."), root.firstChild);
+      if (args[0]) append(root, h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."));
+      append(root, await picker(ctx, mine));
       return;
     }
 
-    const conv = await M.api.get(ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages");
+    const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
+    const conv = await M.api.get(path);
     const list = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map((m) => message(ctx, m)) : h("li", { class: "empty" }, "No messages yet."));
     const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
-    const status = h("p", { class: "send-status", role: "status" });
+    const status = M.statusLine();
     const button = h("button", { type: "submit" }, "Send");
 
     async function send(e) {
@@ -48,18 +56,16 @@ window.Maity = window.Maity || {};
       const body = text.value.trim();
       if (!body) { text.focus(); return; }
       button.disabled = true;
-      status.textContent = "Sending…";
-      status.className = "send-status";
+      status.busy("Sending…");
       try {
-        const msg = await M.api.post(ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages", { body });
+        const msg = await M.api.post(path, { body });
         const empty = list.querySelector(".empty");
         if (empty) empty.remove();
         append(list, message(ctx, msg));
         text.value = "";
-        status.textContent = "";
+        status.done();
       } catch (err) {
-        status.textContent = "Not sent: " + err.message;
-        status.className = "send-status failed";
+        status.fail("Not sent: ", err);
       } finally {
         button.disabled = false;
       }
@@ -72,11 +78,13 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" },
         h("h2", null, "Chat with " + agent.display_name),
-        h("span", { class: "muted" }, agent.session ? "live session " + agent.session.id : "no live session — delivered when it resumes"),
+        h("span", { class: "muted" }, agent.session
+          ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
+          : "no session — picked up when it resumes"),
         h("a", { href: ctx.link("chat") }, "Other agents")),
       list,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
-        text, button, status));
+        text, button, status.el));
   };
 })(window.Maity);
