@@ -14,6 +14,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
 from maity_hub.deps import AgentCaller, engine_of, settings_of
+from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
@@ -76,6 +77,9 @@ def resume(body: ResumeIn, request: Request, caller: AgentCaller) -> JSONRespons
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
+        # Serialise with other writes to the project: two resumes of one
+        # credential must not both open its live session.
+        events.lock_project(conn, mine.project.id)
         now = clock.now()
         previous = conn.execute(
             select(t.agent_session)
@@ -287,6 +291,14 @@ def operations(project: Any, role: str) -> list[str]:
 def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _own_membership(conn, caller)
+        if mine.row.paused_since is not None and mine.row.paused_by != caller.agent_id:
+            # A human's pause is lifted or replaced by members:admin only (§5.3).
+            raise ApiError(
+                403,
+                "forbidden",
+                "a human paused you; only they or an admin can change it",
+                {"reason": "paused_by_human"},
+            )
         set_paused(conn, mine, mine.row, body.paused.reason if body.paused else None, caller)
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 

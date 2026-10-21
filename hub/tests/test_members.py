@@ -287,3 +287,33 @@ def test_only_the_owner_of_the_agent_or_credentials_admin_manage_credentials(
     assert refused.json()["error"]["details"] == {"scope": "credentials:admin"}
     foreign = owner.post("/projects/maity/credentials/crd-nobody/revoke", {})
     assert foreign.headers["Maity-Error"] == "not_found"
+
+
+def test_an_agent_cannot_lift_or_replace_a_humans_pause(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "stop"}})
+    for body in ({"paused": None}, {"paused": {"reason": "mine now"}}):
+        response = agent.patch("/me", body)
+        assert response.status_code == 403
+        assert response.json()["error"]["details"] == {"reason": "paused_by_human"}
+    assert owner.get(f"/projects/maity/members/{agent.id}").json()["paused"]["reason"] == "stop"
+
+
+def test_a_human_member_cannot_be_paused(owner: flow.Human) -> None:
+    response = owner.patch(f"/projects/maity/members/{owner.id}", {"paused": {"reason": "x"}})
+    assert response.json()["error"]["details"]["fields"] == {"paused": "agents_only"}
+
+
+def test_removing_twice_answers_the_removed_member(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    first = owner.delete(f"/projects/maity/members/{agent.id}")
+    second = owner.delete(f"/projects/maity/members/{agent.id}")
+    assert second.status_code == 200 and second.json() == first.json()
+    items = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
+    assert [(c["id"], c["revoked_reason"]) for c in items] == [
+        (agent.credential_id, "member_removed")
+    ]

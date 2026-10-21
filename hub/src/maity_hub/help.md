@@ -137,7 +137,9 @@ curl -sS -K "$d/curl.conf" -X PATCH -H 'Content-Type: application/json' \
   $public_url/api/v1/me
 ```
 
-Your own pause ends with your next resume; a pause a human set stays.
+Your own pause ends with your next resume. A pause a human set stays, and
+only they or an admin can lift or change it (`forbidden`, `details.reason:
+"paused_by_human"`).
 
 ## Available now
 

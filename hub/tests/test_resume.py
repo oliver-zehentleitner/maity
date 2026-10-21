@@ -215,3 +215,19 @@ def test_claims_and_assignments_come_with_the_packet(
     assert [c["id"] for c in packet["claims"]] == [held]
     assert packet["claims"][0]["claim"]["session_id"] == packet["session"]["id"]  # inherited
     assert [c["id"] for c in packet["assigned"]] == [assigned]
+
+
+def test_concurrent_resumes_of_one_credential_leave_one_live_session(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    agent = flow.agent(make_client, owner)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        statuses = list(pool.map(lambda _: agent.resume().status_code, range(6)))
+    assert statuses == [200] * 6
+    with migrated.connect() as conn:
+        live = conn.execute(
+            select(t.agent_session.c.id).where(t.agent_session.c.live.is_(True))
+        ).all()
+    assert len(live) == 1

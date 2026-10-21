@@ -70,6 +70,22 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     return Membership(project, row, caller.kind)
 
 
+def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:
+    """The active membership, else the most recently removed one: a removed member
+    stays addressable for a repeated DELETE and its credentials (§6.2, §10)."""
+    row = conn.execute(
+        select(t.membership)
+        .where(
+            t.membership.c.project_id == project_id,
+            (t.membership.c.agent_id == principal_id) | (t.membership.c.human_id == principal_id),
+        )
+        .order_by(t.membership.c.active.is_(True).desc(), t.membership.c.joined_at.desc())
+    ).first()
+    if row is None:
+        raise not_found()
+    return row
+
+
 def member_row(conn: Connection, project_id: str, principal_id: str) -> Any:
     """The active membership of a principal (`hum-…` or `agt-…`) in a project."""
     row = conn.execute(
