@@ -30,3 +30,30 @@ synthesis recommended from the refused-relay incidents. Rejected because
 it routes every such question to the human's inbox and makes the admin
 crew a relay again; the incidents were about missing role information,
 not about agents being unfit to hold it.
+
+## Policies, not unbreakable rights: a trust model among members whose accounts are scoped correctly
+
+**Id:** e7997c84-b165-4a99-8777-0dd3b26218f7
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-21
+
+The hub enforces a small set on the server — authentication, project
+isolation, scopes, atomic claims, append-only events — and treats
+everything else as policy: a capability such as "may tag a release" is
+granted per membership with a click, and the system assumes members do
+not try to circumvent it. The hard limits sit where they belong, in the
+accounts the agents act with (forge permissions, deploy credentials),
+assigned so that an agent without the right cannot tag or deploy in the
+first place.
+
+**Reason:** the hub coordinates people and their own agents; it is not a
+sandbox and cannot be one, since the sessions run elsewhere. Unbreakable
+enforcement in a coordination layer would duplicate the forge's and the
+cluster's access control, badly. The members have every reason to
+cooperate; the hub makes rights visible and auditable, the platforms make
+them hard.
+
+**Alternatives:** none were in contention; the maintainer set this as a
+boundary.
