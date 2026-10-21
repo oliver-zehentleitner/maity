@@ -15,8 +15,9 @@ FROM python:3.12-slim
 RUN useradd --system --uid 10001 --home-dir /app maity \
     && mkdir -p /app/data && chown maity /app/data
 WORKDIR /app
-COPY --from=build /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+# Installed from the build stage through a bind mount, so no layer keeps the wheels.
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-cache-dir /wheels/*.whl
 COPY --from=build /src/web /app/web
 USER maity
 ENV MAITY_BIND=0.0.0.0:8080 \
