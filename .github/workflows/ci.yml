@@ -1,0 +1,73 @@
+name: ci
+
+# The hub's checks: lint, types and tests on SQLite, then the test suite
+# against PostgreSQL and MariaDB, the two server databases the hub supports.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: hub
+
+jobs:
+  hub-sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: make check
+
+  hub-postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: maity
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: maity
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maity" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+    env:
+      MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: make test
+
+  hub-mariadb:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_USER: maity
+          MARIADB_PASSWORD: ci-only
+          MARIADB_DATABASE: maity
+          MARIADB_RANDOM_ROOT_PASSWORD: "1"
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: make test
