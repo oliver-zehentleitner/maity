@@ -19,11 +19,17 @@ brought, not run — the hub never starts or owns an agent process.
 - Before starting work and before opening a pull request: fetch `main` and
   read `context/index.md` and the topics you touch. A decision recorded there
   was argued once already; propose a change to it, do not silently revert it.
-- Documentation is part of the change: README, CHANGELOG under
-  `[Unreleased]`, `docs/` and `context/` are updated in the same pull request
-  as the code they describe. A `context/` entry is committed right after it is
+- Documentation is part of the change: README, the changelog entry,
+  `docs/` and `context/` are updated in the same pull request as the code
+  they describe. A `context/` entry is committed right after it is
   written, in its own commit, so that its Git timestamp is the moment the
   reasoning was recorded.
+- The changelog entry is one new file in `changelog.d/` per pull request
+  (`changelog.d/<branch-topic>.md`, Keep a Changelog headings with `- `
+  bullets; format in `changelog.d/README.md`, checked by
+  `python3 tools/changelog.py check`). Never edit `CHANGELOG.md` directly;
+  only a release does, with `tools/changelog.py release`. Where a tool or
+  skill says to add a line under `[Unreleased]`, it goes into that file.
 - Language: code, comments, commits, docs and `context/` in English.
 - Secrets never enter the repository.
 

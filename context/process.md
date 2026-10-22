@@ -71,3 +71,33 @@ second pair of eyes. Whether and how the hub tracks an agent's
 environment is an open decision with the maintainer.
 
 **Alternatives:** unknown — open until that decision.
+
+## Changelog entries are one file per pull request in changelog.d/, folded into CHANGELOG.md at release
+
+**Id:** b1258d90-a82b-48a1-9c5f-7ee4eb1295f9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22, via the inbox
+**Revisit when:** GitHub runs checks on pull requests with merge conflicts, or the team shrinks to one pull request open at a time
+
+A pull request adds its changelog entry as a new file in `changelog.d/`
+and never edits `CHANGELOG.md`; `tools/changelog.py release` folds the
+files into a version section of `CHANGELOG.md` (Keep a Changelog format
+unchanged) and deletes them. CI validates the files. The format is in
+`changelog.d/README.md`.
+
+**Reason:** every pull request added lines under `[Unreleased]` in the one
+file, so each merge put nearly every other open pull request into
+conflict, and GitHub runs no CI on a pull request with conflicts — agents
+spent rounds rebasing only to get their checks to run. Separate files
+cannot conflict.
+
+**Rejected alternative:** `merge=union` for `CHANGELOG.md` in
+`.gitattributes`. Not relied on: whether GitHub's server-side merge and
+its conflict check honour merge attributes could not be confirmed (the
+reports found say it did not), and a union merge would place
+concurrent lines without regard to the headings they belong under.
+
+**Rejected alternative:** keeping the single file and rebasing on every
+merge — the status quo that caused the problem.
