@@ -810,10 +810,22 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(entry).to_have_attribute("aria-current", "page")
     run.maity(alpha, "say", "human", "Hello from the agent.")
     expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    # Markdown as the agent writes it: strong, inline code, a fenced block with Copy; raw HTML as text.
+    run.maity(alpha, "say", "human", "**Done**: see `make check`.\n\n```sh\nmake smoke\n```\n<b>not bold</b>")
+    last = page.locator("ol.messages li.msg.in").last
+    expect(last.locator(".md strong")).to_have_text("Done")
+    expect(last.locator(".md p code").first).to_have_text("make check")
+    expect(last.locator(".md pre code")).to_have_text("make smoke")
+    # Each Copy is named after its block, so several in one chat stay apart.
+    expect(last.get_by_role("button", name=re.compile(r"^Copy Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last.get_by_role("region", name=re.compile(r"^Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last).to_contain_text("<b>not bold</b>")
+    expect(last.locator("b")).to_have_count(0)
     # The preview needs the hub's last_message (docs/api.md §9); without it, none.
     listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/conversations").json()
     if any("last_message" in c for c in listed["items"]):
-        expect(entry.locator(".preview")).to_have_text("Hello from the agent.")
+        # The newest message: the Markdown one, its source as text.
+        expect(entry.locator(".preview")).to_contain_text("**Done**: see `make check`.")
     else:
         expect(entry.locator(".preview")).to_have_count(0)
     wait = run.wait_start(alpha)

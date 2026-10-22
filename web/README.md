@@ -170,7 +170,12 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. A chat is shaped
+   back; opening a chat there moves the focus to its heading. Messages
+   are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
+   headings as strong lines, lists, quotes, fenced code with its language
+   and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
+   `https`; raw HTML stays visible as text. **Quote** under a message puts
+   it into the composer as a quote. A chat is shaped
    for several participants (title, their avatars), for group chats to
    come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
@@ -595,6 +600,7 @@ web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only; https-only links
+├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu)
 ├── js/mentions.js    the @ picker

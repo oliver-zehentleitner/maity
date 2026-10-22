@@ -68,8 +68,13 @@ window.Maity = window.Maity || {};
 
   // A link target from data (a forge URL a member typed, say) is used only
   // when it is plain https; anything else, javascript: included, is no link.
+  // Plain https only: no whitespace, no control, bidi or zero-width
+  // characters (a link that reads one way and goes another), and no user
+  // info before the host (https://bank.example@evil.example).
+  const HIDDEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
   function safeUrl(url) {
-    return typeof url === "string" && /^https:\/\/[^\s]+$/i.test(url) ? url : null;
+    if (typeof url !== "string" || !/^https:\/\/[^\s]+$/i.test(url) || HIDDEN.test(url)) return null;
+    return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
   function clear(el) {
