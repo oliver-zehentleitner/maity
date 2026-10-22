@@ -761,7 +761,9 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
         "Not ready: the hub observes nothing for this project (no forge probe)"
     )
     expect(card).to_contain_text("it can be cancelled but not marked done")
-    expect(card.locator(".groups")).to_contain_text(f"{card_id} (in progress) + {partner['id']}")
+    # The hub lists a group's ids sorted; random ids decide the order.
+    expect(card.locator(".groups")).to_contain_text(f"{card_id} (in progress)")
+    expect(card.locator(".groups")).to_contain_text(f"{partner['id']} (open)")
     expect(card).to_contain_text("Tag v0.1.0: not observed")
     view = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]
     assert view["readiness"] == {"ready": False, "blocking": [{"reason": "probe_not_configured"}]}
