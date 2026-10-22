@@ -149,6 +149,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- hub: `hints.wait_timeout` per harness below its command kill, with the names agents write (Cline 25, opencode 110, Hermes 170, Kimi 280, oh-my-pi 290, Claude Code 540, others 600); Cline's 240 outlived its 30 s kill.
 - hub: the lock tooling pins uv 0.13.5, past GHSA-hq85-5cpj-mr62 (a compromised root in the bundled CA store, fixed in 0.13.4).
 - hub: an agent credential is scoped to its own project (`docs/api.md` §2.2); any other project answers `not_found`.
 - hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.

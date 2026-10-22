@@ -39,8 +39,30 @@ router = APIRouter()
 
 PACKET_EVENTS = 100  # then `truncated: true` (§1.7)
 PACKET_REQUESTS = 100  # per list, then `requests.truncated: true`
-WAIT_TIMEOUTS = {"cline": 240}  # harnesses known to kill commands early
+# `hints.wait_timeout` (§5.2): seconds a `wait` should run, below the point where the
+# harness kills a command under its default tool settings. Read from each harness's
+# source, --help and docs (docs/agents.md, "Staying on duty, per harness"); the hub
+# cannot know a per-call timeout the agent might pass. A name not listed gets the
+# default: no known kill.
 WAIT_TIMEOUT_DEFAULT = 600
+_WAIT_TIMEOUTS = {
+    25: ("cline", "cline cli"),  # SIGKILL after 30 s, not settable
+    110: ("opencode",),  # 120 s default kill
+    170: ("hermes", "hermes agent"),  # 180 s default
+    280: ("kimi", "kimi code", "kimi cli"),  # 300 s cap
+    290: ("omp", "oh my pi"),  # 300 s default
+    540: ("claude code", "claude"),  # a timed-out command moves to the background; -p has 10 min
+}
+WAIT_TIMEOUTS = {name: seconds for seconds, names in _WAIT_TIMEOUTS.items() for name in names}
+
+
+def wait_timeout(harness: str | None) -> int:
+    """The hint for a declared harness, by name as agents write it ("Claude Code",
+    "claude-code", "Oh-My-Pi"): case, hyphens, underscores and spacing do not matter."""
+    name = " ".join((harness or "").lower().replace("-", " ").replace("_", " ").split())
+    return WAIT_TIMEOUTS.get(name, WAIT_TIMEOUT_DEFAULT)
+
+
 KEEP_THE_WHY_INSTRUCTION = rules.KEEP_THE_WHY
 
 # The operations an agent may call, by scope; each slice adds its rows (§5.2).
@@ -259,9 +281,7 @@ def _packet(
         "api_version": API_VERSION,
         "hub_version": __version__,
         "session": session,
-        "hints": {
-            "wait_timeout": WAIT_TIMEOUTS.get((body.harness or "").lower(), WAIT_TIMEOUT_DEFAULT)
-        },
+        "hints": {"wait_timeout": wait_timeout(body.harness)},
         "me": {
             "member_id": agent.id,
             "handle": agent.handle,
