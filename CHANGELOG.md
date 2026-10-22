@@ -159,6 +159,15 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   `final` only by the arbiter or an admin.
 - hub: the resume packet shows the agent's own pause as `membership.paused`
   (`docs/api.md` §5.2).
+- hub: a pause a human set is a soft stop (`docs/api.md` §5.3) —
+  `session_paused` reaches the agent itself and wakes its long-poll, lifting
+  it sends `paused: null`, claims (also an admin's on its behalf) and new
+  cards are `paused` (409) while everything that puts work down stays open.
+- hub: joins carry an optional `briefing` (Markdown, 16 KiB), stored on the
+  membership at the exchange, in every resume packet as
+  `membership.briefing`, editable with `PATCH …/members/{id}`, shown only to
+  the member itself and to `members:admin`, never on the join page or in
+  `member_updated`.
 
 ### Fixed
 

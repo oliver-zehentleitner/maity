@@ -51,6 +51,7 @@ def test_the_member_view_has_the_contract_shape(
         "presence",
         "paused",
         "joined_at",
+        "briefing",  # the owner holds members:admin
     }
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (
@@ -144,7 +145,8 @@ def test_a_pause_set_by_a_human_tells_reports_to_and_admins(
     assert (paused["reason"], paused["by"]) == ("quota", owner.id)
     assert response.json()["presence"] == "paused"
     event = _last(migrated, "session_paused")
-    assert event.audience == [f"member:{owner.id}", "role:admin"]
+    # The member itself first: its long-poll wakes (§5.3).
+    assert event.audience == [f"member:{agent.id}", f"member:{owner.id}", "role:admin"]
     agent.resume()  # a human's pause survives the agent's resume
     assert owner.get(f"/projects/maity/members/{agent.id}").json()["paused"]["reason"] == "quota"
     cleared = owner.patch(f"/projects/maity/members/{agent.id}", {"paused": None})

@@ -63,6 +63,7 @@ def test_the_packet_has_every_part_of_the_contract(
         "capabilities": [],
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
+        "briefing": None,
     }
     assert packet["project"]["slug"] == "maity" and packet["project"]["keep_the_why"] is True
     assert packet["keep_the_why"]["enabled"] is True

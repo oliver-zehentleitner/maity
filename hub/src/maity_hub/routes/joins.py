@@ -35,7 +35,7 @@ from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import CROCKFORD, new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
@@ -63,6 +63,9 @@ class JoinCreate(Strict):
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
+    # What the human tells this agent about its job; in the resume packet, never on
+    # the join page, which whoever holds the URL can read (§3.1).
+    briefing: str | None = markdown(default=None)
     ttl_seconds: int = TTL_DEFAULT
 
 
@@ -155,6 +158,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 reports_to=values.get("reports_to"),
                 areas=values["areas"],
                 capabilities=values["capabilities"],
+                briefing=body.briefing or None,
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
@@ -453,6 +457,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 reports_to=row.reports_to,
                 areas=row.areas,
                 capabilities=row.capabilities,
+                briefing=row.briefing,
                 joined_at=now,
             )
         )

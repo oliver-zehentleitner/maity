@@ -131,8 +131,11 @@ def latest_session(conn: Connection, membership_id: int) -> Any:
     ).first()
 
 
-def member_view(conn: Connection, row: Any) -> dict[str, Any]:
-    """The member view of §6.2: the principal, the membership, the live session."""
+def member_view(conn: Connection, row: Any, *, briefing: bool = False) -> dict[str, Any]:
+    """The member view of §6.2: the principal, the membership, the live session.
+
+    `briefing` only for the member itself and for `members:admin` (§6.2), never in
+    an event that goes to everyone; the caller decides."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     if row.agent_id is not None:
@@ -181,7 +184,14 @@ def member_view(conn: Connection, row: Any) -> dict[str, Any]:
     )
     if row.removed_at is not None:
         view["removed_at"] = ts(row.removed_at)
+    if briefing:
+        view["briefing"] = row.briefing
     return view
+
+
+def human_paused(row: Any) -> bool:
+    """Paused by someone other than the member itself: the soft stop of §5.3."""
+    return row.paused_since is not None and row.paused_by != (row.agent_id or row.human_id)
 
 
 def agent_view(conn: Connection, row: Any) -> dict[str, Any]:
