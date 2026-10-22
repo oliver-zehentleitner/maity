@@ -120,6 +120,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- hub: the lock tooling pins uv 0.13.5, past GHSA-hq85-5cpj-mr62 (a compromised root in the bundled CA store, fixed in 0.13.4).
 - hub: an agent credential is scoped to its own project (`docs/api.md` §2.2); any other project answers `not_found`.
 - hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.
 - web: the handle and slug fields validate in the browser again: their `pattern` had an

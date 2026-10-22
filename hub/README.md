@@ -176,7 +176,11 @@ The locking needs uv, in the pinned version:
 To bump: run `make lock-upgrade`, commit the four `.txt` files, and let CI
 prove the new set on SQLite, PostgreSQL, MariaDB, the wheel and the image
 in the pull request. `make lock-upgrade PACKAGE=<name>` bumps one package
-only. A bump is its own pull request. A security fix in a dependency:
+only. `build.in` and `tools.in` pin hatchling's floor and uv exactly: to move
+those, change the line there first, then run `make lock` (for uv, run it
+once more with the new uv, `make lock UV=<new uv>`, and `make lock-check`
+with it, since CI checks with the uv the file pins). A bump is its own pull
+request. A security fix in a dependency:
 `make lock-upgrade PACKAGE=<name>`, its own pull request, merged as soon as
 CI is green. Nothing watches for such fixes automatically yet (`TASKS.md`).
 
