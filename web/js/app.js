@@ -481,41 +481,65 @@ window.Maity = window.Maity || {};
     const absence = ctx.scope === "project" ? ctx.project.absence : null;
     let panelOpen = false;
     const panelSlot = h("div");
-    const toggle = ctx.scope === "project" && (ctx.canAdmin || ctx.isOwner)
-      ? h("button", {
-        type: "button",
-        class: "small",
-        "aria-expanded": "false",
-        "aria-controls": "project-panel",
-        onclick: (e) => {
-          panelOpen = !panelOpen;
-          e.target.setAttribute("aria-expanded", String(panelOpen));
-          clear(panelSlot);
-          if (panelOpen) append(panelSlot, projectPanel(ctx));
-        },
-      }, "Project settings")
-      : null;
+    const mayConfigure = ctx.scope === "project" && (ctx.canAdmin || ctx.isOwner);
+    // The project's settings panel opens under the header, from the gear menu.
+    function togglePanel() {
+      panelOpen = !panelOpen;
+      clear(panelSlot);
+      if (panelOpen) {
+        append(panelSlot, projectPanel(ctx));
+        const first = panelSlot.querySelector("select, input, button");
+        if (first) first.focus();
+      }
+    }
+    // Settings: this project's (with the rights for it) and the hub's.
+    const settings = M.menuButton({
+      label: "Settings",
+      class: "settings-menu",
+      face: M.icons.gear(18),
+      items: () => [
+        mayConfigure ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
+        { label: "Runners", href: "#/runners" },
+        ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
+      ].filter(Boolean),
+    });
+    // The human: their picture, the account, signing out.
+    const profile = M.menuButton({
+      label: "Your profile: " + ctx.me.display_name,
+      class: "profile-menu",
+      face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
+      items: () => [
+        { label: "Profile", href: "#/account" },
+        { label: "Avatar", disabled: true, why: "coming soon" },
+        { label: "Change password", href: "#/account" },
+        { label: "Linked accounts", disabled: true, why: "later" },
+        { separator: true },
+        { label: "Sign out", onSelect: logout },
+      ],
+    });
     append(header,
       h("div", { class: "bar" },
         h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
-          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name),
-            stateBadge(ctx.project.state, ctx.project.state_note), toggle]
+          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, ctx.me.display_name,
-          // The instance admin (docs/api.md §16) also sees the hub's users.
-          ctx.me.instance_admin
-            ? h("a", { href: "#/admin/users", class: "small-link", "aria-current": ctx.scope === "admin-users" ? "page" : null }, "Users")
-            : null,
-          h("a", { href: "#/account", class: "small-link", "aria-current": ctx.scope === "account" ? "page" : null }, "Account"),
-          h("button", { type: "button", class: "small", onclick: logout }, "Sign out"))),
-      switcher(ctx),
+        h("span", { class: "me" }, settings.el, profile.el)),
+      // The projects, and at their right, apart, this project's state and
+      // the owner's absence with the settings that change them.
+      h("div", { class: "switcher-row" },
+        switcher(ctx),
+        ctx.scope === "project"
+          ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
+            stateBadge(ctx.project.state, ctx.project.state_note),
+            absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
+          : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
+      // The time is in the block above; what holds meanwhile, here.
       absence
-        ? h("p", { class: "flag absence" }, "Away until " + formatTime(absence.until) + " — " + absence.scope)
+        ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
       panelSlot,
       ctx.scope === "project"
@@ -527,7 +551,7 @@ window.Maity = window.Maity || {};
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // After an image was uploaded or removed, the panel opens again to say so.
-    if (toggle && imagesNote) toggle.click();
+    if (mayConfigure && imagesNote) togglePanel();
   }
 
   // ---- context ------------------------------------------------------------

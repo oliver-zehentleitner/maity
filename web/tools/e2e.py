@@ -357,6 +357,12 @@ def watch_page(run: Run, page: Page) -> None:
     page.on("requestfailed", request_failed)
 
 
+def project_settings(page: Page) -> None:
+    """Opens or closes the Project settings panel, through the header's gear menu."""
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    page.get_by_role("menuitem", name=re.compile(r"^(Close project settings|Project settings)$")).click()
+
+
 def no_problems(run: Run, where: str) -> None:
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
@@ -895,21 +901,43 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     run.step("state and absence: the owner freezes the project; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/e2e-alpha/events", after="latest", wait=0)["cursor"]
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#state-select").select_option("freeze")
     page.locator("#state-note").fill("e2e freeze: fixes only")
     page.locator("#state-reason").fill("e2e: release candidate")
     page.get_by_role("button", name="Change state", exact=True).click()
     expect(page.locator("header .state")).to_have_text("Freeze")
     expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#absence-until").fill("2030-01-02T10:00")
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
-    expect(page.locator("header .absence")).to_contain_text(
+    expect(page.locator("header .project-state .away")).to_contain_text(
         re.compile(r"Away until Jan 2, 2030, 10:00")
     )
+    # The state block sits at the projects' right, in their row, behind a separator;
+    # on a phone it goes under them, and nothing scrolls sideways.
+    chips = page.locator("header nav.switcher").bounding_box()
+    block = page.locator("header .project-state").bounding_box()
+    assert block["x"] >= chips["x"] + chips["width"] and abs(block["y"] - chips["y"]) < chips["height"], (chips, block)
+    page.set_viewport_size({"width": 360, "height": 780})
+    block = page.locator("header .project-state").bounding_box()
+    assert block["x"] >= 0 and block["x"] + block["width"] <= 361, block
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the header is {width[0]} px wide at {width[1]} px"
+    # The profile menu at 360 px: on screen, closed by Escape, the focus back on its button.
+    profile = page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: "))
+    profile.click()
+    menu = page.get_by_role("menu", name=re.compile(r"^Your profile: "))
+    expect(menu).to_be_visible()
+    box = menu.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 361, f"the profile menu leaves the screen: {box}"
+    run.a11y(page, "header, profile menu open")
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    expect(profile).to_be_focused()
+    page.set_viewport_size({"width": 1280, "height": 900})
     # The switcher's state dot: frozen Alpha differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
@@ -937,10 +965,10 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         "freeze",
         "e2e: release candidate",
     ), change
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.get_by_role("button", name="I am back", exact=True).click()
     expect(page.locator("header .absence")).to_have_count(0)
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#state-select").select_option("build")
     page.locator("#state-reason").fill("e2e: back to building")
     page.get_by_role("button", name="Change state", exact=True).click()
@@ -972,16 +1000,16 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
         run.step("images: this hub has no logos yet, so the dashboard draws monograms")
         expect(chip.locator(".project-mark.monogram")).to_have_text("EA")
         expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
-        page.get_by_role("button", name="Project settings", exact=True).click()
+        project_settings(page)
         expect(page.locator("#state-select")).to_be_visible()
         expect(page.locator("#upload-logo")).to_have_count(0)
-        page.get_by_role("button", name="Project settings", exact=True).click()
+        project_settings(page)
         return
     run.step("images: the owner uploads a logo and a banner, then removes the logo")
     expect(chip.locator(".project-mark.monogram")).to_have_text(
         "EA"
     )  # no repository, no forge image
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#upload-logo").set_input_files(
         files=[{"name": "notes.txt", "mimeType": "image/png", "buffer": b"not an image at all"}]
     )
@@ -1034,12 +1062,12 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     assert shown["logo"]["source"] == "uploaded" and shown["banner"]["source"] == "uploaded", shown
     run.shot(page, "logo-and-banner")
     run.a11y(page, "inbox with a logo and a banner")
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     run.a11y(page, "project settings with images")
     page.get_by_role("button", name="Remove the uploaded logo", exact=True).click()
     expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
     expect(page.locator("#project-panel")).to_contain_text("Uploaded logo removed")
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
 
@@ -1427,10 +1455,10 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
         # Agents, not the inbox: the next step reaches the inbox through its tab.
         page.goto(f"{run.base}/#/p/e2e-alpha/agents")
-        page.get_by_role("button", name="Project settings", exact=True).click()
+        project_settings(page)
         expect(page.locator("#state-select")).to_be_visible()
         expect(page.locator("#signing-select")).to_have_count(0)
-        page.get_by_role("button", name="Project settings", exact=True).click()
+        project_settings(page)
         return
     run.step(
         "signing: an agent calls with a bearer token; the switch names it before requiring signing"
@@ -1439,7 +1467,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 200, status
     page.goto(f"{run.base}/#/p/e2e-alpha/agents")
     expect(page.locator("main section.view-agents")).to_contain_text("(bearer token)")
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#signing-select").select_option("required")
     impact = page.locator(".signing-impact")
     expect(impact).to_contain_text("would be refused (signature_required)")
@@ -1455,7 +1483,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 403 and body["error"]["code"] == "signature_required", (status, body)
     run.maity(alpha, "resume")  # the CLI signs, so it still works
     run.a11y(page, "agents, signing required")
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    project_settings(page)
     page.locator("#signing-select").select_option("optional")
     page.locator("#signing-reason").fill("e2e: back to optional")
     page.get_by_role("button", name="Change signing", exact=True).click()
@@ -1468,14 +1496,16 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 def users_step(run: Run, page: Page) -> None:
     """Users of this hub (docs/api.md §16.1), where the hub names an instance admin."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
-    link = page.locator("header .me").get_by_role("link", name="Users", exact=True)
+    page.goto(f"{run.base}/#/all")
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    link = page.get_by_role("menuitem", name="Users of this hub", exact=True)
     if "instance_admin" not in me:
         run.step("users: this hub names no instance admin yet, so there is no Users link")
         expect(link).to_have_count(0)
+        page.keyboard.press("Escape")
         return
     run.step("users: the instance admin lists the hub's humans")
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
-    page.goto(f"{run.base}/#/all")
     link.click()
     expect(page).to_have_url(re.compile(r"#/admin/users$"))
     owner = page.locator("table.users tbody tr", has_text="(you)")
@@ -1531,7 +1561,8 @@ def change_password(run: Run, page: Page) -> None:
     expect(second.locator("header .me")).to_contain_text("Owner")
 
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.locator("header .me").get_by_role("link", name="Account", exact=True).click()
+    page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+    page.get_by_role("menuitem", name="Change password", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/account$"))
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
@@ -1554,7 +1585,8 @@ def change_password(run: Run, page: Page) -> None:
     expect(second.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
     other.close()
 
-    page.get_by_role("button", name="Sign out", exact=True).click()
+    page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+    page.get_by_role("menuitem", name="Sign out", exact=True).click()
     page.locator("#login-handle").fill(OWNER)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
