@@ -2360,7 +2360,7 @@ post does not lose the upload.
 | `GET /projects/{slug}/attachments/{id}` | whoever can read the message (below); the uploader while pending | the attachment's metadata, JSON |
 | `GET /projects/{slug}/attachments/{id}/content` | as `GET` | the bytes, with the headers below |
 | `GET /projects/{slug}/attachments?status=pending` | the caller's own pending uploads; a human with `members:admin` every member's | metadata only, oldest first, paged (§1.4); `uploaded_by=<member id>` narrows it; another member's upload shows only `id`, `uploaded_by`, `size`, `uploaded_at` and `expires_at`, never its name or type (below) |
-| `DELETE /projects/{slug}/attachments/{id}` | the uploader; for a chat message a human who is a participant of the chat now; for a project message a human with `members:admin`; for a pending upload its uploader or a human with `members:admin` | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted` |
+| `DELETE /projects/{slug}/attachments/{id}` | the uploader; for a chat message a human who is a participant of the chat now; for a project message a human with `members:admin`; for a pending upload its uploader or a human with `members:admin` | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted`; another member's pending upload: answered with the listing's fields only (below) |
 
 A runner credential gets `not_found` on all of them, as on every
 `/projects/*` route (§1.3, §15.1). A paused agent
@@ -2594,7 +2594,11 @@ payload is not rewritten — the log is append-only and keeps the name,
 size and type; whoever needs the name gone redacts the message (§8.5).
 A pending attachment may be deleted by its uploader, or by a human with
 `members:admin` (above), the same way; it leaves no tombstone and emits
-nothing.
+nothing. When a human with `members:admin` deletes another member's
+pending upload, the `200` answer carries the same fields as the listing
+(`id`, `uploaded_by`, `size`, `uploaded_at`, `expires_at`; `name`,
+`type`, `kind`, `sha256`, `width` and `height` `null`), so the delete
+does not show what the listing hides.
 
 **Retention.** The bytes go with the message and with the project:
 
