@@ -143,6 +143,40 @@ refuse — every refusal would be a round trip and a surprise. Filters as
 query parameters to the hub — the board already holds every card of the
 window, so filtering there is instant and needs no new contract.
 
+## Cards are placed within a column by a Place menu and by dragging over a card, and the order changes only once the hub answered
+
+**Id:** 3785a685-e976-400f-b088-9321804d29fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
+**See:** views.md#cards-move-by-a-move-menu-and-by-dragging-only-where-the-hubs-transition-table-allows-nothing-is-drag-only — c285771a-0b3a-4867-b66b-a1c7faa837de — as of 2026-10-22
+
+The board draws each column in the hub's card order (§6.4). With
+`tasks:admin` an open card has a **Place** menu next to **Move**, built
+the same way: a select with only the moves its place allows (Move up,
+Move down, To the top, To the bottom) and one button. A pointer can drag
+the card over another card of its column instead; the pointer's half of
+that card decides above or below, and a marker shows it while dragging.
+Either way the page sends one `POST …/move` and shows the new order only
+from the board read after the hub's answer. When a `not_found` or
+`invalid` comes back, the board is read again: if the card and its
+neighbour are still where they were, the hub has no endpoint; otherwise
+the neighbour moved meanwhile. Done and cancelled cards are not placed.
+
+**Reason:** the menu gives the keyboard and the phone the same way the
+pointer has, as for Move. Waiting for the hub keeps the board from
+showing an order the hub refused or changed, because the hub may rank
+other cards of the column as well. Reading the board again after a
+refusal is the only way to tell a race from a missing endpoint.
+
+**Rejected alternative:** four buttons per card. They add four tab stops
+to every card on a long board, and the menu already says which moves
+exist. Reordering at once and rolling back on a refusal: a card that
+jumps and then jumps back is worse than a short wait, and the card's
+brief asks for the order only after the answer.
+
 ## A membership is edited in one form and sent as one PATCH of what changed; a reports-to circle is refused before it is sent
 
 **Id:** ae257555-b3a4-4ba7-add3-1ab051c1f621
