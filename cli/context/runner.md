@@ -592,23 +592,31 @@ now held to a plain clone's entries as well.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
 **Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
-environment the runner gives the harness. Git then ignores a
-`.git/commondir` the agent wrote from inside its sandbox. That covers
-the harness's own git calls, which run outside the sandbox, and any
-other git started from the session. Codex's profile reads nothing under
-the workspaces root but its own clone, nothing in the runner's state
-directory, and none of the logins and keys in the agents' home. Claude
-Code's sandbox gets the same read denies except the workspaces root, so
-it still reads other clones. Both keep the clone's own credential
-readable from the sandbox, because the agent's `maity` needs it (for
-Claude Code, `maity` runs outside the sandbox). The forge login stays
-readable, because pushing needs it. The runner runs git in a clone only
-to clone into a missing directory and in `gc`; a test pins that.
+environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. Git then ignores
+a `.git/commondir` the agent wrote from inside its sandbox, and does not
+run a program from a nested repository the agent registered as a
+submodule (whose configuration the pin does not reach). That covers the
+harness's own git calls, which run outside the sandbox, and any other git
+started from the session. `maity`'s own git carries the same settings on
+its command line whatever its environment, because for Claude Code
+`maity` runs outside the sandbox. Codex's profile reads nothing under
+the workspaces root but its own clone, nothing in the runner's state and
+configuration, and none of a list of logins and keys in the agents'
+home. Claude Code's sandbox gets the same read denies except the
+workspaces root, plus the credential of every other clone that exists
+when the agent starts. A clone made later stays readable to it until its
+next start. Both keep the clone's own credential readable, because the
+agent's `maity` needs it. The forge login stays readable, because pushing
+needs it. opencode's `grep` and `glob` are off: opencode checks them
+against the pattern typed, not the path searched. maity and the runner
+run git only through `proc.GIT`, a clone into a missing directory, and
+`gc`'s pinned read; a test pins that.
 
 **Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
 `.git`, so the directory has to stay writable, and an agent that can
@@ -622,7 +630,10 @@ hub), the operator's ssh keys and the model login, and could send them
 to an allowed host. For Claude Code the workspaces root is left
 readable: re-opening the clone inside it with `allowRead` may re-open
 the clone's credential as well, and that order could not be checked
-without a model run.
+without a model run. Denying each other clone's credential by name at
+the start avoids the question, at the cost of clones made later. The
+home list is a list: the README says that any other secret in the
+agents' home stays readable.
 
 **Rejected alternatives:**
 - A read-only `.git` with write access to `objects`, `refs` and the
@@ -634,3 +645,7 @@ without a model run.
   fix already moved away from.
 - Hiding the whole home from Codex: the agent's `maity`, `git` and
   toolchains are often installed there.
+- `--ignore-submodules=all` on `maity`'s own `git status`: it also hides
+  a newly staged submodule, so `report` would miss a change. The
+  configuration setting keeps git out of the submodule and still shows
+  the staged gitlink.
