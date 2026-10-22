@@ -1032,7 +1032,9 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=10) as response:
-        return response.status, dict(response.headers), response.read().decode()
+        # Header names in lower case: HTTP names are case-insensitive.
+        headers = {k.lower(): v for k, v in response.headers.items()}
+        return response.status, headers, response.read().decode()
 
 
 def runners_step(run: Run, page: Page) -> None:
@@ -1065,7 +1067,7 @@ def runners_step(run: Run, page: Page) -> None:
     run.a11y(page, "runners, pairing")
     status, headers, credential = pair_exchange(run, pair_line)
     assert status == 201 and credential.startswith("mty1.rcrd-"), (status, credential[:12])
-    assert headers.get("Maity-Runner-Id", "").startswith("rnr-"), headers
+    assert headers.get("maity-runner-id", "").startswith("rnr-"), headers
     # The panel's 30-s re-read sees the runner paired; it is offline until it serves.
     expect(page.locator(".pair-wait")).to_contain_text(
         "e2e-runner is paired", timeout=COUNTS_MS + 15_000
@@ -1073,7 +1075,7 @@ def runners_step(run: Run, page: Page) -> None:
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-runner"))
     expect(card).to_contain_text("offline, never connected")
     expect(card).to_contain_text("It has not reported what it can do yet")
-    first_credential = headers["Maity-Credential-Id"]
+    first_credential = headers["maity-credential-id"]
     expect(card).to_contain_text(first_credential)
     run.a11y(page, "runners, one paired")
     card.locator("input[id^=runner-name-]").fill("e2e-renamed")
@@ -1084,11 +1086,11 @@ def runners_step(run: Run, page: Page) -> None:
     expect(page.locator(".pair-steps")).to_contain_text("Keep your existing configuration")
     repair = page.locator(".pair-steps pre.paste-line").nth(1).inner_text()
     status, headers2, _ = pair_exchange(run, repair)
-    assert status == 201 and headers2["Maity-Runner-Id"] == headers["Maity-Runner-Id"], headers2
+    assert status == 201 and headers2["maity-runner-id"] == headers["maity-runner-id"], headers2
     page.goto(f"{run.base}/#/all")
     page.goto(f"{run.base}/#/runners")
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
-    expect(card).to_contain_text(headers2["Maity-Credential-Id"])  # the old one was replaced
+    expect(card).to_contain_text(headers2["maity-credential-id"])  # the old one was replaced
     page.once("dialog", lambda d: d.accept())
     card.get_by_role("button", name="Revoke", exact=True).click()
     expect(card).to_contain_text("revoked")
