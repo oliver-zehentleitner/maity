@@ -384,3 +384,37 @@ search, and a mention could sit in either. A dialog for the new chat:
 the page has no dialogs, and a pane route keeps the browser's
 navigation. Loading the whole history on opening: it would bring back
 the backlog the window keeps out.
+
+## Reading along from outside a project is its own route on the chat view, found through one's agents; the blind removal sits in Project settings
+
+**Id:** fe785529-88da-47be-927b-4b13924f2b46
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2 (an owner outside the project) and §8.5 (blind removal); the coordinator's card for group chats part 2 (tsk-vz8e024wehde), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub offers such an owner a list of its readable projects, sends it events, or the accounts design gives humans a place for projects they are not in
+**See:** views.md#group-chats-live-in-the-chat-views-own-two-panes-the-hub-says-which-kind-a-chat-is-and-the-history-before-one-joined-is-read-on-demand — 46abbbf3-40b9-4802-a22f-1a85293a9b8f — as of 2026-10-23
+
+An owner whose agent is in a project the owner is not in reads that
+agent's group chats at `#/observe/<slug>`. The page is the chat view
+itself, run in a context without a project: no header, no member list,
+no events. The projects come from the agents' memberships
+(`GET /agents`), and everything waiting (`#/all`) names them. Names in
+those chats are the hub's handles, except for one's own agents.
+
+An owner or admin removes a reported message of a closed group chat by
+its number in Project settings, without reading it. The human party of
+a direct chat removes a message there as in a group chat.
+
+**Reason:** §9.2 lets such an owner read those chats and nothing else.
+Every other read of the project is `not_found`, so a project view with
+its header would only fail; a context that asks for nothing else keeps
+the page inside what the hub answers. The memberships are the only
+place the human learns of such a project. The blind removal has no chat
+to start from, because nobody who can open the chat is left, so it
+belongs with the project's other admin tools.
+
+**Rejected alternative:** these projects in the project switcher, like
+one's own. They would promise inbox, board and members, none of which
+the hub answers. A removal form inside the closed chat: the admin cannot
+open that chat.
