@@ -39,7 +39,10 @@ example; any cluster with the same pieces works.
   the hub. A managed database with TLS is the usual case.
 - **A CNI that enforces NetworkPolicy** (Calico or Cilium do), or
   `networkPolicy.enabled: false` and the same restriction made some other
-  way.
+  way. The default policy admits the controller's namespace. Traffic from a
+  node address (a NodePort or LoadBalancer Service, or a controller on
+  `hostNetwork`) matches no namespace and is dropped. Add an `ipBlock` for
+  the nodes' addresses to `networkPolicy.from`, or disable the policy.
 - **The cluster's pod network**, for `config.trustedProxies`:
   `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'` lists each
   node's share of it; use the range that covers them all.

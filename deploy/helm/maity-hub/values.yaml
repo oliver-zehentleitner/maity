@@ -141,6 +141,10 @@ networkPolicy:
   # NetworkPolicy peers (`from` entries). The default is the namespace of an
   # ingress controller installed as `ingress-nginx`; change it to yours, and
   # add the namespaces of in-cluster clients of a hub without an Ingress.
+  # Traffic that arrives from a node address matches no namespace: with a
+  # NodePort or LoadBalancer Service, or a controller on hostNetwork, the
+  # default leaves the hub unreachable. Add an `ipBlock` with the nodes'
+  # addresses, or disable the policy and restrict access another way.
   from:
     - namespaceSelector:
         matchLabels:
