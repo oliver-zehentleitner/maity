@@ -118,6 +118,15 @@ state offers **Join an agent**. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
 `repository.url: not_a_configured_forge`, …).
 
+**Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
+same panel for owner and admin, where the hub's policy has the field:
+optional or required, with a reason. Before it becomes required, the
+panel reads every agent's credentials and lists those last used as a
+bearer token (`last_used_via`, §10): they would be refused with
+`signature_required` until they sign, and the switch then needs an
+explicit confirmation. The Agents view shows on each credential how it
+was last used, signed or as a bearer token.
+
 The project state (build, freeze, fixes-only, accepted, archived) is in
 the header of every screen; owner and admin change it there with a
 reason (**State & absence**), and the owner sets and clears the absence
@@ -278,7 +287,13 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     owner and both typed PRs. Cancelled, the release moves to Cancelled as
     a frozen record without any editing, and the hub refuses an edit
     (`invalid_transition`);
-13. at phone width (390 px) the inbox, board, agents, organisation and join
+13. **Signing**, where the hub has `policy.signing`: the agent makes one
+    call with its bare bearer credential; the Agents view shows it, and the
+    switch to required lists the agent and refuses to send without the
+    confirmation; once required, the bearer call answers 403
+    `signature_required` while the CLI's signed calls go on; then back to
+    optional. Without the field, no switch is offered;
+14. at phone width (390 px) the inbox, board, agents, organisation and join
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither

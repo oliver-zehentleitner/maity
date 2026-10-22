@@ -14,7 +14,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, clear, formatTime } = M.dom;
+  const { h, append, clear, formatTime, formatAgo } = M.dom;
 
   // watch: the event kinds that change what the view shows; one arriving
   // from someone else offers a reload. The inbox follows the open counts,
@@ -170,6 +170,8 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
+    // Offered where the hub knows the field (docs/api.md §6.1).
+    if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
     if (ctx.isOwner) {
       const a = ctx.project.absence;
       const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
@@ -192,6 +194,91 @@ window.Maity = window.Maity || {};
     }
     append(panel, status.el);
     return panel;
+  }
+
+  // policy.signing (docs/api.md §2.2, §6.1, §10). Before it becomes
+  // required, the form lists the agents whose credentials were last used
+  // as a bearer token: they would be refused until they sign, and the
+  // switch then needs an explicit confirmation.
+  function signingForm(ctx, save) {
+    const current = ctx.project.policy.signing;
+    const select = h("select", { id: "signing-select" },
+      [["optional", "Optional: bearer or signed"], ["required", "Required: signed calls only"]].map(([v, l]) =>
+        h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "signing-reason", required: true, placeholder: "Why it changes (logged)" });
+    const impact = h("div", { class: "signing-impact", "aria-live": "polite" });
+    const confirmBox = h("input", { id: "signing-confirm", type: "checkbox" });
+    let needsConfirm = false;
+    let check = 0;
+
+    async function showImpact() {
+      const seq = ++check;
+      clear(impact);
+      needsConfirm = false;
+      if (select.value !== "required" || current === "required") return;
+      append(impact, h("p", { class: "muted" }, "Checking which agents still call with a bearer token…"));
+      const agents = ctx.members.filter((m) => m.kind === "agent");
+      let rows;
+      try {
+        rows = await Promise.all(agents.map(async (m) => {
+          const creds = await M.api.getAll(ctx.base + "/members/" + encodeURIComponent(m.id) + "/credentials");
+          return { m, creds: creds.items.filter((c) => !c.revoked_at) };
+        }));
+      } catch (err) {
+        if (seq !== check) return;
+        clear(impact);
+        needsConfirm = true;
+        append(impact, M.errorBox(err),
+          h("p", { class: "flag" }, "Which agents would be cut off could not be read."),
+          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Require signing anyway"));
+        return;
+      }
+      if (seq !== check) return;
+      clear(impact);
+      const bearer = [];
+      const unused = [];
+      rows.forEach(({ m, creds }) => creds.forEach((c) => {
+        if (c.last_used_via === "bearer") bearer.push({ m, c });
+        else if (!c.last_used_via) unused.push({ m, c });
+      }));
+      if (!bearer.length) {
+        append(impact, h("p", { class: "muted" }, "No agent's credential was last used as a bearer token; none is cut off."));
+      } else {
+        needsConfirm = true;
+        append(impact, h("div", { class: "flag" },
+          h("p", null, bearer.length === 1 ? "This agent calls with a bearer token and would be refused (signature_required) until it signs:"
+            : "These agents call with a bearer token and would be refused (signature_required) until they sign:"),
+          h("ul", null, bearer.map(({ m, c }) => h("li", null, m.display_name + " · ",
+            h("code", null, c.id), " · last used " + formatAgo(c.last_used_at) + " as a bearer token"))),
+          h("p", null, "Signing is what the maity CLI does; an agent without it installs it and runs maity resume."),
+          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Cut them off until they sign")));
+      }
+      if (unused.length) {
+        append(impact, h("p", { class: "muted" }, unused.length + " credential" + (unused.length === 1 ? " has" : "s have")
+          + " not been used yet (" + unused.map(({ m }) => m.display_name).join(", ") + "); from the switch on, it must sign from its first call."));
+      }
+    }
+    select.addEventListener("change", showImpact);
+
+    const form = h("form", {
+      class: "inline-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        if (select.value === "required" && needsConfirm && !confirmBox.checked) { confirmBox.focus(); return; }
+        save({ policy: { signing: select.value }, reason: reason.value.trim() }, "Signing");
+      },
+    },
+    h("h3", null, "Agent signing"),
+    h("p", { class: "hint" }, "Required refuses every agent call made with the bare bearer credential (curl, the join page's plain path); "
+      + "the maity CLI signs its calls. Humans in the dashboard are not affected."),
+    h("label", { for: "signing-select" }, "Signing"), select,
+    impact,
+    h("label", { for: "signing-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Change signing"));
+    return form;
   }
 
   // ---- header -------------------------------------------------------------

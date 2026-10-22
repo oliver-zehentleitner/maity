@@ -48,6 +48,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -706,6 +707,7 @@ def scenario(run: Run, page: Page) -> None:
 
     chat_pause_state(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
+    signing_step(run, page, alpha, agent_id)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -1028,6 +1030,72 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     assert "invalid_transition" in out, out
     run.shot(page, "release-cancelled")
     no_problems(run, "release cancelled")
+
+
+def bearer_get(run: Run, clone: Path, path: str) -> tuple[int, dict]:
+    """One call with the clone's credential as a bare bearer token, as curl would make it."""
+    common = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        cwd=clone,
+        env=CLEAN_ENV,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    secret = (clone / common / "maity" / "credential").read_text().strip()
+    request = urllib.request.Request(
+        run.base + "/api/v1" + path, headers={"Authorization": "Bearer " + secret}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as err:
+        return err.code, json.loads(err.read() or b"{}")
+
+
+def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
+    """policy.signing (docs/api.md §2.2, §6.1) where the hub knows it."""
+    project = run.api(alpha, "GET", "/projects/e2e-alpha")
+    if "signing" not in (project.get("policy") or {}):
+        run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
+        # Agents, not the inbox: the next step reaches the inbox through its tab.
+        page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+        page.get_by_role("button", name="State & absence", exact=True).click()
+        expect(page.locator("#state-select")).to_be_visible()
+        expect(page.locator("#signing-select")).to_have_count(0)
+        page.get_by_role("button", name="State & absence", exact=True).click()
+        return
+    run.step(
+        "signing: an agent calls with a bearer token; the switch names it before requiring signing"
+    )
+    status, _ = bearer_get(run, alpha, "/me")
+    assert status == 200, status
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    expect(page.locator("main section.view-agents")).to_contain_text("(bearer token)")
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.locator("#signing-select").select_option("required")
+    impact = page.locator(".signing-impact")
+    expect(impact).to_contain_text("would be refused (signature_required)")
+    expect(impact).to_contain_text("E2E Agent")
+    page.locator("#signing-reason").fill("e2e: every agent runs the CLI")
+    page.get_by_role("button", name="Change signing", exact=True).click()
+    expect(page.locator("#signing-confirm")).to_be_focused()  # not sent unconfirmed
+    page.locator("#signing-confirm").check()
+    page.get_by_role("button", name="Change signing", exact=True).click()
+    expect(page.locator("#project-panel")).to_have_count(0)  # saved: the page re-rendered
+    assert run.api(alpha, "GET", "/projects/e2e-alpha")["policy"]["signing"] == "required"
+    status, body = bearer_get(run, alpha, "/me")
+    assert status == 403 and body["error"]["code"] == "signature_required", (status, body)
+    run.maity(alpha, "resume")  # the CLI signs, so it still works
+    run.a11y(page, "agents, signing required")
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.locator("#signing-select").select_option("optional")
+    page.locator("#signing-reason").fill("e2e: back to optional")
+    page.get_by_role("button", name="Change signing", exact=True).click()
+    expect(page.locator("#project-panel")).to_have_count(0)
+    status, _ = bearer_get(run, alpha, "/me")
+    assert status == 200, status
+    no_problems(run, "signing")
 
 
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:

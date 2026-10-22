@@ -355,6 +355,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .flag .hint { display: block; margin-top: 4px; }
 .briefing { margin-top: 10px; }
+.inline-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.signing-impact ul { margin: 4px 0; padding-left: 18px; }
 .briefing h4 { margin: 0 0 4px; }
 .briefing .pre { margin: 0 0 6px; max-height: 12rem; overflow: auto; }
 .briefing-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }

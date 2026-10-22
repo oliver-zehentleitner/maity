@@ -528,6 +528,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header).includes("Away until") && text(header).includes("fixes only"), "absence set");
 
+  // policy.signing: before required, the agents a bearer token would cut off.
+  const sigPatches = [];
+  const realPatch4 = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { sigPatches.push([p, b]); return realPatch4(p, b); };
+  btn(header, "State & absence").click(); await tick();
+  const sigSel = byId("signing-select");
+  expect(sigSel && sigSel.value === "optional", "signing: the switch shows the project's policy");
+  sigSel.value = "required"; sigSel.dispatch("change"); await tick(); await tick(); await tick();
+  const impact = header.querySelector(".signing-impact");
+  expect(text(impact).includes("This agent calls with a bearer token and would be refused (signature_required) until it signs") && text(impact).includes("Agent B · crd-b-0003")
+    && !text(impact).includes("crd-d-0001") && !text(impact).includes("crd-c-0002") && !text(impact).includes("Agent A ·"),
+    "signing: the agents last using a bearer token are listed, revoked and signed ones are not");
+  expect(text(impact).includes("1 credential has not been used yet (Agent C)"), "signing: unused credentials are named");
+  byId("signing-reason").value = "all agents run the CLI now";
+  byId("signing-select").parentNode.dispatch("submit"); await tick();
+  expect(!sigPatches.length, "signing: required is not sent while bearer agents are listed and not confirmed");
+  byId("signing-confirm").checked = true;
+  byId("signing-select").parentNode.dispatch("submit"); await tick(); await tick();
+  expect(sigPatches.length === 1 && sigPatches[0][0] === "/projects/maity"
+    && JSON.stringify(sigPatches[0][1]) === JSON.stringify({ policy: { signing: "required" }, reason: "all agents run the CLI now" }),
+    "signing: confirmed, the PATCH carries the policy field and the reason");
+  btn(header, "State & absence").click(); await tick();
+  expect(byId("signing-select").value === "required", "signing: the switch reads required after the change");
+  byId("signing-select").value = "optional"; byId("signing-select").dispatch("change"); await tick();
+  expect(!text(header.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
+  byId("signing-reason").value = "back to optional";
+  byId("signing-select").parentNode.dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(sigPatches[1][1]) === JSON.stringify({ policy: { signing: "optional" }, reason: "back to optional" }), "signing: back to optional is sent");
+  win.Maity.api.patch = realPatch4;
+  await go("#/p/sample/inbox");
+  btn(header, "State & absence").click(); await tick();
+  expect(byId("state-select") && !byId("signing-select"), "signing: no switch where the hub has no signing policy");
+  btn(header, "State & absence").click(); await tick();
+  await go("#/p/maity/agents");
+  expect(text(main).includes("(signed)") && text(main).includes("(bearer token)"), "credentials: how each was last used");
+  await go("#/p/maity/inbox");
+
   // sign out, sign in
   btn(header, "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
