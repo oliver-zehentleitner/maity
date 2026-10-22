@@ -5,8 +5,8 @@
 **Id:** 4e1208f1-4ca9-45ad-9005-3327b2638a0c
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the maintainer's decision, 2026-10-22, with the contract owner's rulings of 2026-10-22; contract in `docs/api.md` (card links, import, edit history, notes)
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22, with the contract owner's rulings of 2026-10-22 and the contract owner's confirmation, the same day, of the remaining decisions and of the reason for ruling 2; contract in `docs/api.md` (card links, import, edit history, notes)
 **Revisit when:** a second forge is probed, a note needs to be edited or withdrawn by its author, or the holder of a card needs to resolve notes on it
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
@@ -48,8 +48,11 @@ same reason the release gate is (`integrations.md`).
   show whatever was typed as if it were the forge's state.
 - Members other than holder, creator and admins changing the card's text
   directly: notes carry the remark, an editor works it in.
-- The holder resolving notes on its card: ruled out by the contract
-  owner; the reason was not stated with the ruling (unknown).
+- The holder resolving notes on its card: a note is feedback to the
+  holder on their own work; if the holder could close it, the reviewed
+  party would decide alone whether the feedback was dealt with. The
+  holder answers in the card or a report, and the note's creator or a
+  human resolves it.
 
 ## A card's edit history can be redacted by a human
 
@@ -63,8 +66,10 @@ same reason the release gate is (`integrations.md`).
 
 A human with `events:admin` redacts a single history entry the way an
 event is redacted: its before, after and diff become a tombstone, who
-and when and which field stay. The credential check covers the history
-as it covers bodies.
+and when and which field stay. The same field values in the
+`task_created` or `task_updated` event of that write are redacted with
+it, the same mechanism as a note's redaction. The credential check
+covers the history as it covers bodies.
 
 **Reason:** the credential check recognises only the hub's own format.
 A forge token, a password or a customer's data pasted into a card body
@@ -75,6 +80,9 @@ for a secret that got in anyway; the history needs the same.
 **Rejected alternatives:**
 - A history that is never edited, relying on the credential check: it
   misses every secret that is not the hub's own.
+- Redacting only the history entry: the task events carry the new
+  values of every changed field except `body`, so a secret in a title,
+  a label or a link would stay readable in `GET /events`.
 
 ## Agents may fill at most 150 of a card's 200 notes
 
