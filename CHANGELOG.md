@@ -122,6 +122,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   shown once, a starter configuration of only the keys without a default and the steps
   that make it start; rename, re-pair,
   revoke, remove with the agents still running on it
+- web: **Project → Runners** (`#/p/<slug>/runners`, owner and admin): the runners allowed in
+  the project in plain words, allow one of your own, detach with a confirmation naming the
+  agents it stops; says where a runner's own configuration leaves the project out
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

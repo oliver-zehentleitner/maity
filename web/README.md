@@ -122,6 +122,18 @@ Inside a project, in the order of their importance; see
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
    string from an export is text; a link is used only when it is plain
    `https`.
+8. **Runners** (`#/p/<slug>/runners`, owner and admin, `docs/api.md`
+   §15.4): the runners allowed to start agents for this project, by name,
+   each in the words of the Runners view (presence, what it runs on, its
+   tools, who can see what) with when it was allowed and how many agents
+   it runs here. A revoked runner says it starts nothing until it is
+   paired again; one whose own configuration does not list the project
+   says it starts nothing here, whatever the hub allows. **Allow it here**
+   attaches one of the human's own runners not yet attached
+   (`POST /projects/{slug}/runners`; one attached meanwhile is said, not a
+   failure); **Detach** asks first, naming the agents whose placements
+   the hub then closes and the runner stops. Without runners, the view
+   points to pairing one; a hub without attachments (404) is said so.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -381,12 +393,16 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
     credential; revoke; remove with nothing left running. Only a hub
-    that answers 404 on `GET /runners` skips this step;
+    that answers 404 on `GET /runners` skips this step. Before the
+    revoke, in **Project → Runners**: the runner (allowed while pairing,
+    then detached, where the hub can) is allowed in the project and
+    detached again, each detach confirmed with "Nothing runs on it
+    here."; a hub without attachments has to say so in the tab;
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
 17. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
-    views, each reached through its tab, and the Runners view load without an error, none of
+    and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
@@ -444,6 +460,7 @@ web/
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
+├── js/project-runners.js  Project → Runners: allow and detach
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

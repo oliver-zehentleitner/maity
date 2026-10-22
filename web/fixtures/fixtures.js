@@ -1490,6 +1490,29 @@ window.MAITY_FIXTURES = {
     ]
   },
   "runners.json": {
+    "active_placements": {
+      "rnr-0002": {
+        "maity": 1
+      }
+    },
+    "attachments": [
+      {
+        "attached_at": "2026-10-22T13:31:05Z",
+        "attached_by": "hum-maintainer",
+        "detached_at": null,
+        "id": "ratt-0001",
+        "project": "maity",
+        "runner_id": "rnr-0002"
+      },
+      {
+        "attached_at": "2026-10-20T09:12:00Z",
+        "attached_by": "hum-maintainer",
+        "detached_at": null,
+        "id": "ratt-0002",
+        "project": "maity",
+        "runner_id": "rnr-0004"
+      }
+    ],
     "items": [
       {
         "capabilities": {

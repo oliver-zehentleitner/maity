@@ -26,6 +26,8 @@ window.Maity = window.Maity || {};
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     { route: "join", label: "Join an agent", admin: true },
+    // The account-level view is views.runners; this one is the project's.
+    { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
   ];
@@ -734,7 +736,7 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "new", "account", "runners"].includes(where.scope)
-      || (item && own(M.views, item.route) && offered(ctx, item));
+      || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
     if (["all", "new", "account", "runners"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = where.route;
@@ -751,7 +753,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
       } else if (known) {
-        await M.views[item.route](ctx, root, where.args);
+        await M.views[item.view || item.route](ctx, root, where.args);
       } else {
         append(root, h("p", null, "No such view. ", h("a", { href: "#/all" }, "Go to everything waiting for you.")));
       }
