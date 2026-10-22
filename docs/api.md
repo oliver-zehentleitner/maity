@@ -2167,7 +2167,7 @@ POST /api/v1/projects/maity/placements
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH` approves a proposed creation |
+| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
 | the owner of the agent profile | `desired` and restart on that profile's placement |
 | an agent with `agents:propose` | propose a placement for an **existing** membership (never a new profile, never a role, area or briefing), propose a change of spec; stop, start, restart and delete existing placements of the project |
 | everyone else | nothing: `forbidden` |
@@ -2205,7 +2205,7 @@ it, settles it in the same transaction:
 | `go` | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
 | withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
-| the human with the right acts (their own action is their consent) | their `PATCH` approves it: `approval.status: approved` with the `PATCH` applied, the request answered `go` in their name; `placement_updated` reaches the runner | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
+| the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
 Who may answer is the rule for every consent request (§2.3): holders of
 `requests:answer` — the owner, `admin` and `proxy` roles, agents
