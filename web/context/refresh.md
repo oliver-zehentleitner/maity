@@ -16,7 +16,10 @@ page. An event from someone else of a kind the view shows offers a
 reload instead of replacing the view; a request event re-reads `/me` at
 once; a chat event of the open conversation fetches its new messages.
 Presence emits no event, so the Agents view re-reads it every 30 seconds
-and updates it in place. `/me` is still read every 15 seconds for the
+and updates it in place; the chat's list of conversations re-reads
+`/conversations` on every chat event in the feed and, together with
+`/members` for presence, every 30 seconds, one read at a time (a refresh
+asked for during a read runs once more after it). `/me` is still read every 15 seconds for the
 counts of every project, which no single project's feed carries.
 
 **Reason:** `wait=0` returns the readable set, which for an owner or

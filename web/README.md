@@ -93,9 +93,24 @@ Inside a project, in the order of their importance; see
    are visible.
 4. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
-5. **Chat** (`#/p/<slug>/chat/<agent-id>`): a direct conversation with an
-   agent the human owns, with unread counts in the list; reachable from
-   inbox entries and agent cards. The human's own messages say "not
+5. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
+   like a messenger. On the left the human's chats, one per agent they own
+   in the project, newest first: avatar, name, presence, the time and a
+   preview of the last message (where the hub sends `last_message`; "You:"
+   for one's own, a removed one said as such), the unread count. On the
+   right the open chat, chosen by the URL; the list stays beside it, marks
+   it and re-reads itself on chat events and every 30 s (presence). An
+   unsent message is kept per chat while switching in this tab and shown
+   in the list as a draft (not in the open chat's own row); drafts end
+   with signing out. The open chat fills the screen below the header
+   (the visual viewport, so a phone's keyboard counts): its history
+   scrolls, the composer stays at the bottom, and a new message keeps the
+   history at its end unless the human scrolled up. A redraw of the list
+   keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
+   list is one screen and the chat another, with **← Conversations**
+   back; opening a chat there moves the focus to its heading. A chat is shaped
+   for several participants (title, their avatars), for group chats to
+   come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the

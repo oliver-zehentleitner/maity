@@ -135,6 +135,7 @@ window.Maity = window.Maity || {};
     try {
       await M.api.post("/auth/logout");
     } finally {
+      if (M.clearChatDrafts) M.clearChatDrafts();
       window.location.hash = "";
       render();
     }

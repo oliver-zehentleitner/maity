@@ -784,8 +784,17 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("main section.view-chat").get_by_role("link", name=re.compile("E2E Agent")).click()
     expect(page).to_have_url(re.compile(rf"#/p/e2e-alpha/chat/{agent_id}$"))
     expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+    # The list stays beside the open chat and follows it.
+    entry = page.locator(".chat-list a.conv", has_text="E2E Agent")
+    expect(entry).to_have_attribute("aria-current", "page")
     run.maity(alpha, "say", "human", "Hello from the agent.")
     expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    # The preview needs the hub's last_message (docs/api.md §9); without it, none.
+    listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/conversations").json()
+    if any("last_message" in c for c in listed["items"]):
+        expect(entry.locator(".preview")).to_have_text("Hello from the agent.")
+    else:
+        expect(entry.locator(".preview")).to_have_count(0)
     wait = run.wait_start(alpha)
     page.locator("#chat-text").fill("Hello back from the owner.")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
@@ -803,6 +812,42 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(out_msg).to_contain_text("not picked up yet")
     run.maity(alpha, "resume")
     expect(out_msg).to_contain_text("reached a session")
+    # The composer stays at the bottom: a growing history scrolls, it does not move.
+    compose = page.locator("form.compose")
+    before = compose.bounding_box()
+    for n in range(12):
+        run.maity(alpha, "say", "human", f"Line {n} of a longer history.")
+    expect(page.locator("ol.messages li.msg.in").last).to_contain_text("Line 11 of a longer history.")
+    after = compose.bounding_box()
+    assert abs(after["y"] - before["y"]) < 1 and abs(after["height"] - before["height"]) < 1, (before, after)
+    history = page.evaluate(
+        "(() => { const m = document.querySelector('ol.messages');"
+        " return [m.scrollHeight > m.clientHeight, m.scrollHeight - m.scrollTop - m.clientHeight]; })()"
+    )
+    assert history[0] and history[1] < 48, f"the history does not scroll or is not at its end: {history}"
+    run.shot(page, "chat-long")
+    # On a phone the list is one screen and the chat another.
+    def fits(where: str) -> None:
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert width[0] <= width[1], f"{where} is {width[0]} px wide at {width[1]} px"
+
+    for phone in (390, 360):
+        page.set_viewport_size({"width": phone, "height": 780})
+        expect(page.locator(".chat-list-pane")).to_be_hidden()
+        page.get_by_role("link", name="← Conversations", exact=True).click()
+        expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/chat$"))
+        expect(entry).to_be_visible()
+        fits(f"the chat list at {phone} px")
+        run.shot(page, f"phone-{phone}-chat-list")
+        entry.click()
+        heading = page.get_by_role("heading", name="Chat with E2E Agent", exact=True)
+        expect(heading).to_be_focused()
+        expect(page.locator(".chat-list-pane")).to_be_hidden()
+        fits(f"the chat at {phone} px")
+        box = compose.bounding_box()
+        assert box["y"] + box["height"] <= 780 + 1, f"the composer is below the screen at {phone} px: {box}"
+        run.shot(page, f"phone-{phone}-chat")
+    page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "chat")
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
