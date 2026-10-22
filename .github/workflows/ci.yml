@@ -29,6 +29,30 @@ jobs:
       - run: make check
       - run: make smoke
 
+  # The dashboard in headless Chromium against a real hub on SQLite, with the
+  # maity CLI as the agent (web/tools/e2e.py). The screenshots of every step
+  # are uploaded, also when a step fails.
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e hub -e cli playwright==1.64.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python web/tools/e2e.py --artifacts e2e-screenshots
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-e2e-screenshots
+          path: e2e-screenshots
+          if-no-files-found: ignore
+
   hub-sqlite:
     runs-on: ubuntu-latest
     steps:
