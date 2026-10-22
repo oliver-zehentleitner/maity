@@ -413,11 +413,16 @@ project's own harness configuration is never loaded:
   workspace profile, makes the clone's `.git` writable, sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
   Codex's model endpoints and a repository's `network` list only. The
-  operator's own login (`~/.codex/auth.json`) is linked in.
+  operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
+  is linked in. The clone is marked untrusted, so a `.codex/config.toml`
+  in the repository is not loaded. Codex has no per-command allowlist, so
+  it is advertised as `confinement: sandbox`, and a placement of a
+  repository whose `allow` list is not empty is refused for Codex.
 - **opencode** runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools, `maity *`, `git *` and the repository's `allow` list; deny
-  `webfetch` and directories outside the clone. `AGENTS.md` is named as
+  file tools (except on `.git/maity`), `maity *`, named `git` subcommands
+  and the repository's `allow` list; deny `webfetch` and directories
+  outside the clone. `AGENTS.md` is named as
   an instruction.
 
 `stub` (no model, for tests) runs as before.

@@ -16,6 +16,7 @@ could widen the grant, bring hooks or plugins, and change with a `git checkout`.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -191,6 +192,9 @@ def codex_config(ctx: Context) -> str:
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n\n'
+        # The clone's own .codex/config.toml would override this profile; an untrusted
+        # project's configuration layers are not loaded.
+        f'[projects.{json.dumps(str(ctx.clone))}]\ntrust_level = "untrusted"\n\n'
         "[features]\nnetwork_proxy = true\n\n"
         '[permissions.maity]\nextends = ":workspace"\n\n'
         "[permissions.maity.filesystem]\n"
@@ -205,7 +209,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     home = ctx.agent_dir / "codex-home"
     home.mkdir(mode=0o700, exist_ok=True)
     state.write_file(home / "config.toml", codex_config(ctx))
-    login = Path.home() / ".codex" / "auth.json"
+    login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
     link = home / "auth.json"
     if login.is_file() and not link.exists():
         # The operator's own login, linked so that a token refresh lands in the original.
@@ -228,16 +232,19 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
 def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
-    bash = {"*": "deny", "maity *": "allow", "git *": "allow"}
-    for cmd in ctx.grant.allow:
+    bash = {"*": "deny", "maity *": "allow"}
+    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *ctx.grant.allow):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
+    bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins
+    secret = f"{ctx.clone}/.git/maity/*"
+    files = {"*": "allow", secret: "deny"}  # the clone's credential, in neither direction
     return {
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            "read": "allow", "glob": "allow", "grep": "allow", "list": "allow",
-            "edit": "allow",
+            "read": files, "glob": "allow", "grep": "allow", "list": "allow",
+            "edit": files,
             "bash": bash,
             "webfetch": "deny",
             "external_directory": "deny",

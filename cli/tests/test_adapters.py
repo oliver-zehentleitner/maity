@@ -215,6 +215,7 @@ def test_codex_config(tmp_path: Path) -> None:
                   grant=config.RepositoryGrant(network=("pypi.org",)))  # fmt: skip
     found = config.require_tomllib().loads(adapters.codex_config(ctx))
     assert found["approval_policy"] == "never" and found["default_permissions"] == "maity"
+    assert found["projects"][str(ctx.clone)]["trust_level"] == "untrusted"  # no .codex/ layers
     assert found["permissions"]["maity"]["extends"] == ":workspace"
     assert found["permissions"]["maity"]["filesystem"] == {str(ctx.clone / ".git"): "write"}
     domains = found["permissions"]["maity"]["network"]["domains"]
@@ -223,15 +224,15 @@ def test_codex_config(tmp_path: Path) -> None:
 
 def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
-    (home / ".codex").mkdir(parents=True)
-    (home / ".codex" / "auth.json").write_text("{}")
-    monkeypatch.setenv("HOME", str(home))
+    (home / "codex").mkdir(parents=True)
+    (home / "codex" / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(home / "codex"))  # the operator's own, wherever it is
     ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex",
                   placement={**PLACEMENT, "mode": "supervised", "model": "gpt-5.5"})  # fmt: skip
     launch = adapters.launch(ctx)
     codex_home = Path(launch.env["CODEX_HOME"])
     assert codex_home.parent == ctx.agent_dir
-    assert (codex_home / "auth.json").resolve() == (home / ".codex" / "auth.json").resolve()
+    assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()
     spec = json.loads(Path(launch.argv[-1]).read_text())
     assert spec["first"][:4] == ["/usr/bin/codex", "exec", "-C", str(ctx.clone)]
@@ -249,6 +250,11 @@ def test_opencode_launch(tmp_path: Path) -> None:
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
+    assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
+    assert list(rules["bash"])[-1] in adapters.GIT_DENIED  # denies last: the last match wins
+    secret = f"{ctx.clone}/.git/maity/*"
+    for tool in ("read", "edit"):
+        assert rules[tool] == {"*": "allow", secret: "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
     assert settings["instructions"] == [str(ctx.clone / "AGENTS.md")]
 
@@ -259,3 +265,12 @@ def test_opencode_supervised(tmp_path: Path) -> None:
     spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
     assert spec["first"][:4] == ["/usr/bin/opencode", "run", "--dir", str(ctx.clone)]
     assert "--continue" in spec["again"] and "--continue" not in spec["first"]
+
+
+def test_codex_is_advertised_as_sandbox_confined() -> None:
+    from maity.runner import capabilities
+
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
+    assert entry["confinement"] == "sandbox" and entry["sandbox"] == "on"
+    assert capabilities.sandbox_available(codex)

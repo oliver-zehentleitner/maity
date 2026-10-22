@@ -1176,3 +1176,15 @@ def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.Mo
     sup.records["plc-0003"].retry_at = None
     settle(sup)  # the hub has not cleared `rejoin` yet
     assert len(calls) == 1 and len(backend.started) == 2
+
+
+def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    sup.cfg = replace(
+        sup.cfg,
+        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
+            allow=("make test",))},
+    )  # fmt: skip
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert states(reports) == [("failed", "harness_refused", None)]
