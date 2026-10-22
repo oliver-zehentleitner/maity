@@ -3225,8 +3225,10 @@ chat's former human participants; everyone else who reads the message
 (the remaining agents, the owners reading along) sees `reason: null`.
 Agents and observers stay as above.
 Because the admin cannot see what the number names, the body may carry
-`"expect": "closed_chat_message"`. The hub first runs every check of
-this section as without `expect`: `not_found` unless the event belongs to
+`"expect": "closed_chat_message"`, its one value. Any other value answers
+`invalid` (`details.fields.expect: "unknown"`) before anything else is
+checked, so it says nothing about the event. Otherwise the hub first runs
+every check of this section as without `expect`: `not_found` unless the event belongs to
 `{slug}` and the caller could read or blind-redact it, `forbidden` where
 this section says so. Only an event the caller could otherwise redact is
 compared with `expect`: a message of a closed group chat of `{slug}` is
@@ -4483,7 +4485,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
 | POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
-| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind) | 8.5 |
+| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
 | GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{slug}/conversations` | human | 9.2 |
 | GET, PATCH | `/projects/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |

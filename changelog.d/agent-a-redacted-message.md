@@ -6,3 +6,4 @@
 - docs/api.md §8.5: a redaction by number may name what it expects (`expect: closed_chat_message`);
   the normal checks run first, then the hub refuses any other event the caller could redact, so a
   mistyped number tombstones nothing and `expect` reveals nothing to a caller who could not redact.
+  An unknown `expect` value answers `invalid` (`unknown`) before any other check. §12 lists `expect`.
