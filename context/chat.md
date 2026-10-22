@@ -74,13 +74,15 @@ these rules on 2026-10-22.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-22, on the contract owner's design in `docs/api.md` §9.2
+**Source:** the maintainer's decision, 2026-10-22, on the contract owner's design in `docs/api.md` §9.2; the contract owner's ruling of 2026-10-22 for an owner who is not a member of the project
 **Revisit when:** participants object to being read along, or owners turn out not to look at what their agents are told
 
-A human who owns an agent participant of a group chat and is a member
-of the project reads every message that agent can read, the earlier
-history included, without being a participant. It is listed
-in the chat as an observer, never woken, never posting, never redacting.
+A human who owns an agent participant of a group chat reads every
+message that agent can read, the earlier history included, without
+being a participant. It is listed in the chat as an observer, never
+woken, never posting, never redacting. This holds when the owner is not
+a member of the project too: it then reads as a non-member limited to
+the chats its agent is in, and nothing else of the project.
 
 **Reason:** the owner answers for what their agent does, and a group
 chat is where a human or an agent of another owner can tell that agent to
@@ -95,3 +97,9 @@ everyone in it.
 - Read-along only when the participants agree when the agent is added:
   a refusal would bring the blind spot back for exactly the rooms where
   it matters.
+- Read-along only for owners who are members of the project (the first
+  draft): an agent whose human is not a member could be added to a chat
+  and nobody would read along for it, the same blind spot.
+- Refusing to add an agent whose owner is not a member: closes the gap
+  by keeping such agents out of every group chat, although they are
+  full members of the project otherwise.
