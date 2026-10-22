@@ -331,7 +331,8 @@ def redact(
         ).first()
         if row is None:
             raise not_found()
-        audience = ["role:owner", "role:admin"]
+        # The tombstone's event reaches whoever could read the event, never more (§8.5).
+        audience = list(row.audience or [])
         if row.conversation_id is not None:
             # A chat is redacted only by its human party; to anyone else it does not
             # exist, and the tombstone's event goes to the two parties (§8.5).

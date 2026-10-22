@@ -1872,7 +1872,9 @@ field.
 What it cannot see: one member whose credential was used from a second
 place resumes under the same member and closes its predecessor, so it
 never shows as two members sharing anything; a declared id is only as
-honest as the client that sends it.
+honest as the client that sends it. A `shared_environment_detected` the
+reader may not read leaves a gap in the `seq` it sees, which tells it only
+that some event it may not read exists (§8.2).
 
 | Endpoint | Scope | Body |
 |---|---|---|
@@ -4279,6 +4281,9 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 ### 8.2 Kinds, audience, who reads what
 
+`seq` is project-wide: a gap tells a reader only that some event it may
+not read exists, never its kind, audience or content.
+
 | Kind | Audience | Payload |
 |---|---|---|
 | `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
@@ -4316,7 +4321,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
-| `event_redacted` | `role:owner`, `role:admin`; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
+| `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | holder of the affected card, `role:admin` | the observation |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -4502,7 +4507,8 @@ blind redaction in a closed group chat needs `members:admin`.
 `not_found` unless the event belongs to `{slug}`. A chat message (§9) is redacted only by the human party
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
-two parties, not to `role:owner`/`role:admin`. A group-chat message is
+two parties. Every other `event_redacted` goes to the redacted event's own
+audience, never wider. A group-chat message is
 redacted by any human who is a participant now and could read the
 message — its author when the author is one, and any other human in the
 chat, without `events:admin`: whoever sees a secret in the room can take

@@ -111,7 +111,7 @@ def test_redaction_replaces_the_payload_and_is_itself_recorded(
     assert body["audience"] == leaked["audience"]
     with migrated.connect() as conn:
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
-    assert tomb.audience == ["role:owner", "role:admin"]
+    assert tomb.audience == leaked["audience"]  # the event's own, never wider (§8.5)
     assert tomb.payload == {"seq": leaked["seq"], "reason": "a secret"}
     again = owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "twice"})
     assert again.json()["payload"]["reason"] == "a secret"  # the first tombstone stands

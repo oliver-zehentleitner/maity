@@ -21,7 +21,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 
-ID = re.compile(r"[hw]-[0-9a-f]{12}")
+ID = re.compile(r"^[hw]-[0-9a-f]{12}$")  # anchored: pydantic searches, it does not match
 LEVELS = ("home", "workspace")  # weakest first
 QUIET = timedelta(minutes=10)
 
@@ -94,7 +94,11 @@ def views(
 
 def refresh(conn: Connection, project_id: str, membership_id: int) -> None:
     """Bring the overlaps of one member up to date after its sessions changed: a
-    resume, a revocation, a removal. Announces what started or rose."""
+    resume, a revocation, a removal. Announces what started or rose. Under the project
+    lock, so two members' changes cannot both read the pair before either writes it."""
+    from maity_hub.events import lock_project
+
+    lock_project(conn, project_id)
     now = clock.now()
     current = shared(conn, project_id).get(membership_id, {})
     known = {

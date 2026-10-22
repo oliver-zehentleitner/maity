@@ -10,7 +10,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 HOME, OTHER_HOME = "h-0123456789ab", "h-ba9876543210"
@@ -48,7 +48,15 @@ def sharing(owner: flow.Human, agent: flow.Agent) -> Any:
 
 @pytest.mark.parametrize(
     "environment",
-    [{"home": "h-0123"}, {"workspace": "x-0123456789ab"}, {"home": "H-0123456789AB"}, {"os": "x"}],
+    [
+        {"home": "h-0123"},
+        {"workspace": "x-0123456789ab"},
+        {"home": "H-0123456789AB"},
+        {"os": "x"},
+        {"home": "xh-0123456789abq"},  # an id inside a longer string
+        {"workspace": "a" * 100 + WORK + "b" * 100},
+        {"home": HOME + "\n"},
+    ],
 )
 def test_a_malformed_environment_is_invalid(
     owner: flow.Human, make_client: ClientFactory, environment: dict[str, str]
@@ -168,3 +176,30 @@ def _order(engine: Engine) -> Any:
         rows = conn.execute(select(t.membership.c.id, t.membership.c.agent_id)).all()
     position = {r.agent_id: r.id for r in rows if r.agent_id}
     return lambda member_id: position[member_id]
+
+
+def test_a_human_admin_is_in_the_audience(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    admin_id = factory.human(migrated, "second")
+    factory.membership(migrated, project_id, role="admin", human_id=admin_id)
+    a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    resume(a, HOME, WORK)
+    resume(b, HOME, WORK)
+    [event] = detected(migrated)
+    assert event.audience == sorted([f"member:{owner.id}", f"member:{admin_id}"])
+
+
+def test_removing_a_member_ends_its_sharing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    resume(a, HOME, WORK)
+    resume(b, HOME, WORK)
+    assert owner.delete(f"/projects/maity/members/{b.id}").status_code == 200
+    assert sharing(owner, a) == []
+    with migrated.connect() as conn:
+        [row] = conn.execute(select(t.environment_overlap)).all()
+    assert row.quiet_since is not None

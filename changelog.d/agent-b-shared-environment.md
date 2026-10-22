@@ -8,3 +8,9 @@
   (`{member_ids, level}`) goes to the owners and the human admins once per overlap and
   again when the level rises, an overlap ending after 10 minutes without a shared id, and
   no agent reads it, admins included (migration `0012_shared_environment`)
+
+### Changed
+
+- hub: `event_redacted` goes to the redacted event's own audience, never wider (a chat
+  message's to its two parties, as before), instead of `role:owner` and `role:admin`
+  (`docs/api.md` §8.5)
