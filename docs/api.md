@@ -1134,7 +1134,8 @@ The `release` object on the card:
   and `depends_on` on it are `invalid_transition`, and when it closes its
   `pull_requests`, `groups` and `readiness` are frozen into the card and
   served as stored from then on — later edges, observations or cards do
-  not change them. `ships_with` never names a release card. Members with
+  not change them. `ships_with` never names a release card (`invalid`,
+  `details.fields.ships_with: release_card`). Members with
   `releases:write` may `PATCH` `release.pull_requests_typed` and
   `release.checklist` on any release, holder or not. The hub never tags, pushes or merges; the
   holder tags in its own session; `tag` is filled by the probe
