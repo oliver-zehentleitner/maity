@@ -16,7 +16,9 @@ signed-only caller confined to `/runner/*`, the owner's runner calls,
 attaching runners to projects, the runner's hello, event stream and
 capabilities, and placements (desired and reported state, agents'
 proposals with consent, the closing rules) are in; the join pickup and
-supervised sessions follow.
+supervised sessions follow. Mentions (`docs/api.md` §8.6), the members'
+owner and credentials summary, the conversation preview and the instance
+admin's user list (§16) are in.
 
 ## Run it locally with plain Python
 
