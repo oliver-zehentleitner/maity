@@ -998,11 +998,13 @@ def fixture_views(run: Run, browser) -> None:
         ):
             page.goto(f"{index}{query}#/p/maity/why")
             expect(page.locator("main section.view-why")).to_contain_text(says)
+            assert not errors, errors  # the page's own errors, before axe runs
             run.shot(page, f"fixtures-{name}")
             run.a11y(page, f"fixtures: {name}")
+            # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
+            errors.clear()
     finally:
         context.close()
-    assert not errors, errors
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:
