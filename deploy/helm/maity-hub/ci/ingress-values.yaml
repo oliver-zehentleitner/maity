@@ -1,4 +1,5 @@
-# Everything on: Ingress with TLS through cert-manager, the forge token, a digest.
+# Everything on: Ingress with TLS through cert-manager and a join host, the forge token,
+# a digest.
 image:
   repository: ghcr.io/example/maity-hub
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -15,6 +16,7 @@ ingress:
   enabled: true
   className: nginx
   host: maity.example.org
+  joinHost: join.maity.example.org
   annotations:
     # Merged with the chart's long-poll defaults, which stay.
     cert-manager.io/cluster-issuer: letsencrypt

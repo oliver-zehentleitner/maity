@@ -35,6 +35,7 @@ REQUEST_KEYS = {
     "created_at",
     "answered_at",
     "placement",
+    "mentions",
 }
 
 
@@ -343,6 +344,7 @@ def test_an_answer_is_recorded_and_delivered_with_the_whole_request(
         "on_behalf_of": None,
         "at": None,
         "conversation_id": None,
+        "mentions": [],
     }
     event = _events(migrated, "request_answered")[-1]
     assert event.audience == [f"member:{agent.id}"]

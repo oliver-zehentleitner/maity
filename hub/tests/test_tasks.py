@@ -33,6 +33,7 @@ TASK_KEYS = {
     "created_at",
     "updated_at",
     "closed_at",
+    "mentions",
 }
 
 

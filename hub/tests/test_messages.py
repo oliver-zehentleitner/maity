@@ -51,6 +51,7 @@ def test_a_message_is_an_event_to_its_addressees_and_its_sender(
         "body": "the contract is unclear",
         "conversation_id": None,
         "task_id": card["id"],
+        "mentions": [],
     }
     assert event["actor"]["member_id"] == agent.id
     assert event["subject"] == {"type": "task", "id": card["id"]}
@@ -150,6 +151,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "body",
         "sent_at",
         "delivered_at",
+        "mentions",
     }
     assert (message["from"], message["to"], message["conversation_id"]) == (
         owner.id,

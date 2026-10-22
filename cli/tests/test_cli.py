@@ -363,6 +363,23 @@ def test_report_sends_the_facts(
     }
 
 
+def test_report_after_the_merge_deleted_the_branch(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clone = joined.parent.parent
+    head = git(clone, "rev-parse", "HEAD")
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    fake_gh(
+        bin_dir,
+        json.dumps([{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12"}]),
+    )
+    fake.routes[("POST", "/api/v1/projects/maity/tasks/T/report")] = lambda s: (200, {})
+    assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK
+    body = fake.signed()[-1].json()
+    assert body["remote_head"] == body["head"] == head  # the merged pull request's head
+    assert body["pr"]["state"] == "merged" and body["pr"]["head"] == head
+
+
 def test_report_without_gh_says_unknown(joined: Path, fake: fakehub.FakeHub) -> None:
     fake.routes[("POST", "/api/v1/projects/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK

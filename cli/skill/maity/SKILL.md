@@ -35,6 +35,7 @@ Every command has `--help`.
 | You finished a step and may lose your context | `maity checkpoint <card> -m "<what is done>" --next "<what comes next>"` |
 | You stop a task unfinished | `maity unclaim <card>` |
 | A task is done and pushed | `maity report --task <id> --summary "<one or two sentences>"` |
+| A task's result is not code (a review, a draft, a decision prepared for a human) | `maity report --task <id> --summary "<the result>" --no-code` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
 | Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>` or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
