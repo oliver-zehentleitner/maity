@@ -118,7 +118,10 @@ Inside a project, in the order of their importance; see
    and can still park its work and talk. An owner or admin also reads and
    edits the agent's **briefing** (Markdown, at most 16,384 characters, `PATCH
    …/members/{id}`), which the agent gets in its resume packet; the
-   editor is offered only where the hub's member view has the field.
+   editor is offered only where the hub's member view has the field. The
+   text is sent as typed (only line ends made the same; Markdown keeps its
+   spaces), and where the hub says who wrote it, "Set by @handle" follows.
+   This is the one briefing editor; Members → Manage links here.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
@@ -129,8 +132,19 @@ Inside a project, in the order of their importance; see
    owner and whether they are paused (by whom, why). Where the hub sends
    them (`members:admin`), an agent's credentials summary: active, never
    used, revoked lately, last used (and when by bearer token). With
-   `members:admin` each row has **Manage**: change the role (owner only for
-   a human), pause an agent with a reason or clear its pause, and **Remove
+   `members:admin` each row has **Manage**: one form for what §6.2 lets an
+   admin change — the role (owner only for a human), whom the member
+   reports to (nobody or another member; a circle is refused before it is
+   sent, as the hub's `cycle` refusal is worded), its areas (repository
+   paths, comma separated, never with `..`) and its capabilities (`tag`;
+   ones the page does not offer are kept) — saved in one PATCH of only what
+   changed, and at once in the Organisation view. Each field says its own
+   error; edits not yet saved survive any redraw (the presence refresh, an
+   action in another row) and are dropped by **Done**; a drafted boss who
+   has left since is dropped and said, never sent as nobody; a change that
+   waits for a human's go (the hub's 202 with a consent request) says so,
+   is not called saved, and the form shows the hub's state again; pause an
+   agent with a reason or clear its pause; and **Remove
    from the project** after a confirmation that says what it does; the
    hub's `last_owner` refusal is said in words, and a write that went
    through is said as done even when the re-read after it fails. The
@@ -156,7 +170,12 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. A chat is shaped
+   back; opening a chat there moves the focus to its heading. Messages
+   are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
+   headings as strong lines, lists, quotes, fenced code with its language
+   and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
+   `https`; raw HTML stays visible as text. **Quote** under a message puts
+   it into the composer as a quote. A chat is shaped
    for several participants (title, their avatars), for group chats to
    come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
@@ -346,7 +365,10 @@ mode is labelled **Fixtures** in the header. Every write in fixture mode (answer
 pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
 the sign-in (handle `maintainer`, any password); `?no_projects=1` starts
-it without memberships, to show the empty state. A project created there
+it without memberships, to show the empty state; `?as=<member id>` makes
+the mock take membership changes as coming from that member, to show how
+the hub answers an admin agent (`docs/api.md` §2.3 ᵃ: a reviewer's role or
+pause and any removal answer 202 with a consent request to the owner). A project created there
 gets empty fixtures and the github.com forge rule.
 
 The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,
@@ -487,7 +509,10 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     `resume` packet carries it; where it does not, no editor is offered.
     **Members**: the owner in the humans table, the agent in the agents
     table (credentials only where the hub sends them); the agent's role
-    changed to reviewer and back through **Manage**;
+    changed to reviewer and back through **Manage**; the agent put under
+    the owner, which the Organisation view shows at once; the owner put
+    under the agent refused as a circle before it is sent; reports-to set
+    back to nobody;
 11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
@@ -575,6 +600,7 @@ web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only; https-only links
+├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu)
 ├── js/mentions.js    the @ picker

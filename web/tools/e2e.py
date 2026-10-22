@@ -810,10 +810,22 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(entry).to_have_attribute("aria-current", "page")
     run.maity(alpha, "say", "human", "Hello from the agent.")
     expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    # Markdown as the agent writes it: strong, inline code, a fenced block with Copy; raw HTML as text.
+    run.maity(alpha, "say", "human", "**Done**: see `make check`.\n\n```sh\nmake smoke\n```\n<b>not bold</b>")
+    last = page.locator("ol.messages li.msg.in").last
+    expect(last.locator(".md strong")).to_have_text("Done")
+    expect(last.locator(".md p code").first).to_have_text("make check")
+    expect(last.locator(".md pre code")).to_have_text("make smoke")
+    # Each Copy is named after its block, so several in one chat stay apart.
+    expect(last.get_by_role("button", name=re.compile(r"^Copy Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last.get_by_role("region", name=re.compile(r"^Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last).to_contain_text("<b>not bold</b>")
+    expect(last.locator("b")).to_have_count(0)
     # The preview needs the hub's last_message (docs/api.md §9); without it, none.
     listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/conversations").json()
     if any("last_message" in c for c in listed["items"]):
-        expect(entry.locator(".preview")).to_have_text("Hello from the agent.")
+        # The newest message: the Markdown one, its source as text.
+        expect(entry.locator(".preview")).to_contain_text("**Done**: see `make check`.")
     else:
         expect(entry.locator(".preview")).to_have_count(0)
     wait = run.wait_start(alpha)
@@ -1627,13 +1639,32 @@ def members_step(run: Run, page: Page) -> None:
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
-    manage.locator("select").select_option("reviewer")
-    manage.get_by_role("button", name="Change role", exact=True).click()
+    manage.locator("select").first.select_option("reviewer")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("reviewer")
     run.shot(page, "members")
-    manage.locator("select").select_option("member")
-    manage.get_by_role("button", name="Change role", exact=True).click()
+    manage.locator("select").first.select_option("member")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("member")
+    # Reports to: the agent under the owner, at once in the organisation.
+    manage.locator("select").nth(1).select_option(label="Owner (@owner)")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    page.locator("nav.views").get_by_role("link", name="Organisation", exact=True).click()
+    owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
+    expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
+    page.locator("nav.views").get_by_role("link", name="Members", exact=True).click()
+    # The owner reporting to the agent would close a circle: refused before it is sent.
+    humans.get_by_role("button", name="Manage Owner").click()
+    owner_manage = page.locator("tr.member-manage")
+    owner_manage.locator("select").nth(1).select_option(label="E2E Agent (@e2e-agent)")
+    owner_manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("That would close a circle")
+    humans.get_by_role("button", name="Done managing Owner").click()
+    row.get_by_role("button", name="Manage E2E Agent").click()
+    manage.locator("select").nth(1).select_option("")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.
     page.set_viewport_size({"width": 360, "height": 780})
     for button in (row.get_by_role("button", name=re.compile("^(Manage|Done managing) E2E Agent$")),

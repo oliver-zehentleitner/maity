@@ -145,12 +145,39 @@ window.Maity = window.Maity || {};
   const metaText = (ctx, msg, own) => (own ? "" : ctx.nameOf(msg.from) + " · ") + formatTime(msg.sent_at)
     + (own ? (msg.delivered_at ? " · reached a session" : " · not picked up yet") : "");
 
-  function message(ctx, msg, pending) {
+  // A message: its body as Markdown (js/markdown.js, text nodes only), and
+  // a Quote button that puts it into the composer as a quote.
+  function message(ctx, msg, pending, onQuote) {
     const own = msg.from === ctx.me.id;
     const meta = h("span", { class: "meta" }, metaText(ctx, msg, own));
     if (own && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = metaText(ctx, fresh, true); });
-    return h("li", { class: "msg " + (own ? "out" : "in") }, h("p", { class: "pre" }, msg.body), meta);
+    return h("li", { class: "msg " + (own ? "out" : "in") },
+      h("div", { class: "md" }, M.markdown(msg.body)), meta,
+      onQuote ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null);
   }
+
+  // The quote of a message, as Markdown: each line behind "> ", the sender first.
+  // A text with its fenced blocks and code spans blanked out, as the hub
+  // reads it for mentions (docs/api.md §8.6).
+  function withoutCode(value) {
+    const out = [];
+    let fence = null;
+    for (const line of value.split("\n")) {
+      const open = /^(`{3,}|~{3,})/.exec(line);
+      if (fence) {
+        if (open && open[1][0] === fence[0] && open[1].length >= fence.length && !line.slice(open[1].length).trim()) fence = null;
+        out.push("");
+      } else if (open) {
+        fence = open[1];
+        out.push("");
+      } else {
+        out.push(line);
+      }
+    }
+    return out.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, " ");
+  }
+
+  const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + msg.body.split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
   // The chat fills the screen below the header, so that only its history
   // scrolls and the composer stays at the bottom; the visual viewport
@@ -206,7 +233,7 @@ window.Maity = window.Maity || {};
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
-      conv.items.length ? conv.items.map((m) => message(ctx, m, pending)) : h("li", { class: "empty" }, "No messages yet."));
+      conv.items.length ? conv.items.map((m) => message(ctx, m, pending, quote)) : h("li", { class: "empty" }, "No messages yet."));
     const pollStatus = M.statusLine();
 
     let checking = false;
@@ -243,7 +270,7 @@ window.Maity = window.Maity || {};
       const follow = own || atBottom(messages);
       const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
-      append(messages, message(ctx, msg, pending));
+      append(messages, message(ctx, msg, pending, quote));
       if (follow) messages.scrollTop = messages.scrollHeight;
       if (msg.seq > cursor) cursor = msg.seq;
     }
@@ -263,6 +290,14 @@ window.Maity = window.Maity || {};
         pollStatus.fail("New messages could not be fetched: ", err);
       }
     });
+    // Quote: the message goes into the composer as a quote, before what is there.
+    function quote(msg) {
+      text.value = quoteOf(ctx, msg) + text.value;
+      drafts.set(key, text.value);
+      hintMention();
+      text.focus();
+      if (text.setSelectionRange) text.setSelectionRange(text.value.length, text.value.length);
+    }
     const key = ctx.slug + "/" + agent.id;
     const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
     text.value = drafts.get(key) || "";
@@ -270,9 +305,10 @@ window.Maity = window.Maity || {};
     // When one is being written, the page says so and offers a project
     // message with it, where it would reach the member.
     const mentionHint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
-    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]+)/;
+    // What the hub would take as a mention (§8.6): nothing inside code.
+    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/;
     function hintMention() {
-      const found = MENTIONED.exec(text.value);
+      const found = MENTIONED.exec(withoutCode(text.value));
       clear(mentionHint);
       mentionHint.hidden = !found;
       if (!found) return;

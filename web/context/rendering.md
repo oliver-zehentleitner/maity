@@ -41,7 +41,10 @@ convention without a lint — one forgotten call is enough.
 
 A URL that comes from data — a pull request link a member typed into a
 release, say — becomes a link only when it is plain `https://`
-(`Maity.dom.safeUrl`); anything else is shown as text. The paste line a
+(`Maity.dom.safeUrl`); anything else is shown as text. Since 2026-10-22
+that also excludes a URL with user info before the host
+(`https://bank.example@evil.example`) and one with control, bidi or
+zero-width characters: each reads as one address and goes to another. The paste line a
 join returns, with its single-use code, is kept in the join view's own
 variables only: it is not stored in the page's storage, not put into the
 URL, not logged, and leaving the view drops it.
@@ -94,3 +97,37 @@ CSSOM instead of a `style` attribute keeps working under a strict CSP.
 "Agent B" and "Agent Builder" look the same. A hash-coloured `style`
 attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
 picture from a third-party avatar service — it would send member ids out.
+
+## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
+
+**Id:** 854c8122-770c-4c80-be9f-0ce9c90c0d2e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** messages need tables, images or nested lists, or another view wants Markdown beyond what the renderer covers
+
+A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
+with their line breaks, headings (a line of strong text, not a page
+heading), lists (a numbered one keeps its first number; nested lists are
+flattened), quotes (nested at most eight deep, deeper shown as written,
+so a message of thousands of `>` cannot exhaust the stack), fenced code
+(backticks or tildes, up to three spaces in, any info string whose first
+word is the language) with a Copy button and a warning when the code
+holds invisible bidi or zero-width characters, inline code (matching
+backtick runs), strong and em, and links only where the target is plain
+`https`; a link whose text looks like another address also says where
+it goes. Every piece of text becomes a text node; raw HTML stays visible as
+text, and anything not understood is shown as written. Quote puts a
+message into the composer as `>` lines, which the renderer draws as a
+quote.
+
+**Reason:** what people paste into a chat with an agent is code, commands
+and short lists; a dozen rules cover that. Building nodes keeps the rule
+that nothing from data becomes markup (the entries above), so no
+sanitiser has to be trusted.
+
+**Rejected alternative:** a Markdown library that produces HTML plus a
+sanitiser — a dependency from a CDN, and the safety of the page would
+rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
+before — code and lists from agents were unreadable.

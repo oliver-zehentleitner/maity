@@ -165,7 +165,8 @@ reports them; that describes the machine, not how the agent runs.
 
 **Id:** 5ed066bf-d571-489f-902c-1097d3a6b6e8
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5d71ccda-d931-460f-aa82-1438221cf2c9
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
 **Revisit when:** the harness adapters (R5) are in; then this case no longer exists
@@ -585,6 +586,35 @@ now held to a plain clone's entries as well.
   kept as a second line, not as the rule.
 - Reading the credential in the runner to ask the hub: a second holder
   of every agent's credential.
+
+## A placement for a harness this runner does not run is refused with a reason
+
+**Id:** 5d71ccda-d931-460f-aa82-1438221cf2c9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22
+**See:** runner.md — 62bcf506-caed-470c-a094-9bea4217b440 — as of 2026-10-22
+**Revisit when:** the configuration accepts a harness without an adapter in this version, or a contract code for "not in this version" is added to §15.7
+
+A placement whose harness is not in this runner's configuration, opencode
+included (the configuration refuses it), is reported as
+`failed`/`harness_refused`; a mode or model the configuration does not
+list is `harness_refused` with `mode_unsupported` or `model_unsupported`.
+Every harness the configuration accepts has an adapter, so the earlier
+"logged, not reported" case for a harness without one cannot arise; the
+supervisor keeps that check only as a guard. A start that fails in tmux
+counts as a quick exit and ends in `exited`, and in `crash_loop` after
+the cap, with the cause in the log.
+
+**Reason:** `harness_refused` means "not allowed by the runner's
+configuration" (§15.7), and that is now exactly the case. The human sees
+the real cause and can pick another runner or tool, instead of a
+placement that waits for something this runner will never do.
+
+**Rejected alternative:** keeping such a placement pending without a
+report, as while the adapters were missing: it would wait forever on a
+runner that refuses the harness by configuration.
 
 ## Sandboxed agents: git redirects are pinned, other clones and secrets unreadable
 

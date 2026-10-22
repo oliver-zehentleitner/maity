@@ -114,6 +114,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             reports_to=body.reports_to,
             areas=body.areas,
             capabilities=body.capabilities,
+            member=existing.id if existing is not None else None,
         )
         if existing is not None:
             # A second clone of a member: a new credential, the membership as it is.
