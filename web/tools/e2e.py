@@ -409,7 +409,17 @@ def scenario(run: Run, page: Page) -> None:
     run.shot(page, "join-line")
     alpha = run.clone("clone-alpha")
     out = run.maity(
-        alpha, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
+        alpha,
+        "join",
+        url,
+        "--code",
+        code,
+        "--harness",
+        "e2e",
+        "--model",
+        "none",
+        "--no-pointer",
+        "--json",
     )
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
@@ -571,7 +581,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
     expect(switcher.locator(".count")).to_have_count(0)
     run.shot(page, "all-answered")
-    replies = run.maity(beta, "resume")
+    replies = run.maity(beta, "resume", "--json")
     got = json.loads(replies)["requests"]["answered_since_cursor"]
     assert [r.get("answer", {}).get("reply_id") for r in got] == ["go"], got
     no_problems(run, "all projects")
@@ -623,7 +633,7 @@ def scenario(run: Run, page: Page) -> None:
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     tabs = page.locator("nav.views")
-    owner_id = json.loads(run.maity(alpha, "resume"))["me"]["owner"]["id"]
+    owner_id = json.loads(run.maity(alpha, "resume", "--json"))["me"]["owner"]["id"]
 
     run.step("chat: the agent writes with maity say human, the owner answers in the dashboard")
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
@@ -711,7 +721,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     })""")
     assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
     run.shot(page, "freeze-absence")
-    project = json.loads(run.maity(alpha, "resume"))["project"]
+    project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
     assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
         project
@@ -735,7 +745,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("#state-reason").fill("e2e: back to building")
     page.get_by_role("button", name="Change state", exact=True).click()
     expect(page.locator("header .state")).to_have_text("Build")
-    project = json.loads(run.maity(alpha, "resume"))["project"]
+    project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     assert project["state"] == "build" and project["absence"] is None, project
     no_problems(run, "state and absence")
 

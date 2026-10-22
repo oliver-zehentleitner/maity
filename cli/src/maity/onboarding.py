@@ -27,9 +27,10 @@ MAX_BODY_LINES = 40
 MAX_BODY_CHARS = 4000
 MAX_EVENTS_CHARS = 64 * 1024
 
-# Characters a terminal acts on rather than shows. Kept: newline (handled by quote/inline)
-# and tab (it can only move right).
-_BIDI = {0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)}
+# Characters a terminal acts on rather than shows, plus the Unicode line and paragraph
+# separators, which some readers break lines on. Kept: newline (handled by quote/inline) and
+# tab (it can only move right).
+_BIDI = {0x061C, 0x200E, 0x200F, 0x2028, 0x2029, *range(0x202A, 0x202F), *range(0x2066, 0x206A)}
 
 
 def _visible(ch: str) -> str:

