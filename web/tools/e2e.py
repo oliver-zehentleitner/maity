@@ -824,7 +824,8 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     # The preview needs the hub's last_message (docs/api.md §9); without it, none.
     listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/conversations").json()
     if any("last_message" in c for c in listed["items"]):
-        expect(entry.locator(".preview")).to_have_text("Hello from the agent.")
+        # The newest message: the Markdown one, its source as text.
+        expect(entry.locator(".preview")).to_contain_text("**Done**: see `make check`.")
     else:
         expect(entry.locator(".preview")).to_have_count(0)
     wait = run.wait_start(alpha)
