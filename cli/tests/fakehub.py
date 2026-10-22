@@ -196,7 +196,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "session": {"id": "ses-b-0004"},
                         "hints": {"wait_timeout": 120},
                         "events": {"after": 0, "items": [], "cursor": 4231},
-                        "me": {"member_id": "agt-b"},
+                        "me": {"member_id": "agt-b", "owner": {"id": "hum-1", "handle": "m"}},
                     },
                 )
             if path == "/api/v1/projects/maity/events":

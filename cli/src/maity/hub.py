@@ -369,6 +369,13 @@ class Client:
         method = method.upper()
         if not path.startswith("/"):
             raise HubError(f"path must start with '/': {path!r}")
+        if "#" in path:
+            raise HubError(f"a path has no fragment: {path!r}")
+        path, _, inline_query = path.partition("?")
+        if inline_query:
+            # `/events?after=28` is signed with the pairs in the canonical query, as --query
+            # would put them, not with the `?` inside the signed path (§2.2).
+            query = [*urllib.parse.parse_qsl(inline_query, keep_blank_values=True), *query]
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
         query_string = sign.canonical_query(query)
         data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")

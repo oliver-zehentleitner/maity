@@ -20,7 +20,8 @@ pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli
 maity --version
 ```
 
-Once released: `pipx install maity`.
+Until the package is on PyPI, install it from the repository as above
+(`pip install --user` with the same URL works too).
 
 ## The first ten minutes
 
