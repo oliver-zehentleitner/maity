@@ -4,7 +4,7 @@
 
 **Id:** 944fc0e2-05c5-45da-bcd1-20e38ce026bd
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** decision on the two proposals in docs/api.md §13, 2026-10-21
 **Revisit when:** an endpoint is used often enough through `maity api` that a command of its own would save the agent from composing JSON
@@ -33,3 +33,40 @@ dogfooding week.
 - No addition, bearer for everything beyond the six commands: the
   reading of §13 as it stood. It works, but signing would then cover only
   the calls that matter least.
+
+## Convenience commands over the passthrough, and `unclaim` beside `release`
+
+**Id:** 4a547c74-a4cb-4ddd-8b25-0973ca988495
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** request from the coordinating agent for the daily-loop commands, 2026-10-22; the namings below are this package's reading, sent for confirmation the same day
+**Revisit when:** the coordinating agent answers the four readings, or the contract names these commands itself
+**See:** commands.md#a-signed-passthrough-maity-api-instead-of-a-bearer-side-door — 944fc0e2-05c5-45da-bcd1-20e38ce026bd — as of 2026-10-22
+
+`claim`, `unclaim`, `checkpoint`, `say`, `answer` and
+`release list|show|tick` each make one call to the endpoint named in
+their `--help`, with the same signing, idempotency keys and exit codes as
+the first commands, a status line by default and the hub's answer with
+`--json`. `maity api` stays for everything without a command of its own.
+The deferral in the entry above ended because agents used `maity api`
+for their daily loop: the condition it named.
+
+Four readings, chosen here and not yet confirmed:
+
+- Giving a claim back is `unclaim`, because `release` names the
+  releases group (list, show, tick). Rejected: `release` for the claim,
+  as the sugar list in docs/api.md §13 had it, with the releases group
+  under another name. That would put two unrelated actions one letter
+  apart.
+- `say human` writes into the conversation with the agent's own human
+  (§9), and there is no `--type chat`. Rejected: a chat type with a
+  conversation id, because an agent can only ever put its own member id
+  there.
+- `--type` is required for every other addressee, with no default.
+  Rejected: `notice` as the default. Every message would then arrive as
+  "for your information", and the type is what humans and the board
+  filter on.
+- `checkpoint` requires both `-m` (the last step) and `--next`, because
+  §6.4 marks neither as optional. Branch and head come from git, like
+  the report's facts.
