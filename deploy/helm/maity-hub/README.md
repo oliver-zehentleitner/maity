@@ -30,7 +30,8 @@ example; any cluster with the same pieces works.
   addresses") and must not buffer responses (see "Ingress controllers").
 - **TLS for the host name:** cert-manager with a ClusterIssuer (the example
   calls it `letsencrypt`), or a TLS Secret you create yourself under the
-  name in `ingress.tls.secretName`.
+  name in `ingress.tls.secretName`. With `ingress.joinHost`, the
+  certificate must cover that host name too.
 - **A DNS record** for the host name, pointing at the controller's load
   balancer.
 - **A registry** the cluster can pull from, and a docker-registry Secret
@@ -171,6 +172,7 @@ silently ignored. These are the values that matter:
 | `config.dashboard` | `true` | serve the dashboard; `false` serves the API only |
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
+| `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate (a Secret of your own must cover it), and the hub routes between the hosts; it must differ from `ingress.host` and needs the Ingress enabled (with your own Ingress, set `MAITY_JOIN_URL` through `extraEnv`) |
 | `ingress.annotations` | ingress-nginx long-poll settings | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |

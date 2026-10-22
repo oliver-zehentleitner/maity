@@ -99,7 +99,7 @@ time and not older than the hub's last start; a nonce is accepted once per
 every call you make with the bearer credential is refused with
 `signature_required` (403), `/me/resume` and `/events` included, and does
 nothing else: no presence, no lease renewal. Install the CLI
-(`pipx install maity`) and run `maity resume --hub $public_url` once (a
+(`$cli_install`) and run `maity resume --hub $public_url` once (a
 credential fetched with `curl` comes without the hub's URL; the CLI stores
 it), then plain `maity resume`: it finds the credential you already have
 and signs every call; `maity api <METHOD> <path>` reaches any

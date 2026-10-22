@@ -144,7 +144,10 @@ def render_help(settings: Settings) -> str:
     # (JSON examples, `{id}` in routes); only $-placeholders are substituted.
     template = Template((files("maity_hub") / "help.md").read_text(encoding="utf-8"))
     return template.safe_substitute(
-        api_version=API_VERSION, hub_version=__version__, public_url=settings.public_url
+        api_version=API_VERSION,
+        hub_version=__version__,
+        public_url=settings.public_url,
+        cli_install=settings.cli_install,
     )
 
 

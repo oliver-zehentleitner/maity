@@ -50,12 +50,13 @@ implicitly.
 The hub with PostgreSQL. From the repository root:
 
 ```sh
-echo 'MAITY_DB_PASSWORD=<choose one>' > deploy/.env
+(umask 077; printf 'Database password: '; stty -echo; read -r pw; stty echo; echo; printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-`deploy/.env` is ignored by Git and keeps the password out of the shell
-history. Use only letters, digits and `-_.~` in the password, nothing
+The password is read without echo (`stty -echo`, so any POSIX shell) and written only to `deploy/.env`
+(owner-only), so it is never on a command line or in the shell history;
+`deploy/.env` is ignored by Git. Use only letters, digits and `-_.~` in the password, nothing
 else: Compose hands the same value to PostgreSQL as it is and to the hub
 inside a URL, so a character that needs percent-encoding cannot be right
 for both. Compose also interpolates `$` in `.env` values.
@@ -118,6 +119,8 @@ All settings come from the environment.
 | `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in any part of the URL (user, password, database, query) must be percent-encoded, `@` as `%40`; a server URL with an unencoded `@` besides the one before the host is refused. |
 | `MAITY_BIND` | `127.0.0.1:8080` | `host:port` to listen on; `[::1]:8080` for IPv6. |
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
+| `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join only (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links are built on it by default (`via`). Any other value stops the hub at startup. |
+| `MAITY_CLI_INSTALL` | `pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"` | The one line that installs the agent CLI, printed on the join page, in `/help` and in `signature_required` (`docs/api.md` §3.2). Point it at a fork, or at `pipx install maity` once the package is on PyPI. One line only; a line break stops the hub. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. |

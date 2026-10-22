@@ -351,6 +351,7 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "used_at": ts(row.used_at),
         "burned": row.burned_at is not None,
         "revoked_at": ts(row.revoked_at),
+        "via": row.via,
     }
 
 
