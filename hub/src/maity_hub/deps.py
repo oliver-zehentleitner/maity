@@ -132,8 +132,17 @@ async def agent_caller(request: Request) -> Caller:
     return caller
 
 
+async def runner_caller(request: Request) -> Caller:
+    """`/runner/*` is the runner's alone (§15.1); the long-poll renews nothing either way."""
+    caller = await current_caller(request)
+    if caller.kind != "runner":
+        raise forbidden(message="this endpoint is for runner credentials")
+    return caller
+
+
 # Annotated forms for route signatures.
 AnyCaller = Annotated[Caller, Depends(current_caller)]
 HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
 EventsCaller = Annotated[Caller, Depends(events_caller)]
+RunnerCaller = Annotated[Caller, Depends(runner_caller)]

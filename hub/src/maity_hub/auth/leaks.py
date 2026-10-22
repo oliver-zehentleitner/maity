@@ -16,6 +16,7 @@ from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import is_runner_credential
 from maity_hub.events import emit
+from maity_hub.runners import attached_project_ids, human_actor
 
 REASON = "leaked_in_payload"
 
@@ -122,15 +123,39 @@ def _revoke_leaked_runners(
 def revoke_runner_credential(
     conn: Connection, credential_id: str, reason: str | None, by: str | None
 ) -> bool:
-    """Revoke a runner credential; False when it was revoked already."""
-    return (
-        conn.execute(
-            update(t.runner_credential)
-            .where(
-                t.runner_credential.c.id == credential_id,
-                t.runner_credential.c.revoked_at.is_(None),
-            )
-            .values(revoked_at=clock.now(), revoked_by=by, revoked_reason=reason, live=None)
-        ).rowcount
-        == 1
+    """Revoke a runner credential and end its live session; False when it was revoked
+    already. Every project the runner is attached to learns it from its own
+    `runner_credential_revoked` (§15.10); the runner's long-poll ends on its next pass."""
+    now = clock.now()
+    revoked = conn.execute(
+        update(t.runner_credential)
+        .where(
+            t.runner_credential.c.id == credential_id,
+            t.runner_credential.c.revoked_at.is_(None),
+        )
+        .values(revoked_at=now, revoked_by=by, revoked_reason=reason, live=None)
+    ).rowcount
+    if revoked != 1:
+        return False
+    conn.execute(
+        update(t.runner_session)
+        .where(
+            t.runner_session.c.credential_id == credential_id,
+            t.runner_session.c.live.is_(True),
+        )
+        .values(live=None, ended_at=now)
     )
+    runner_id = conn.execute(
+        select(t.runner_credential.c.runner_id).where(t.runner_credential.c.id == credential_id)
+    ).scalar_one()
+    for project_id in attached_project_ids(conn, runner_id):
+        emit(
+            conn,
+            project_id,
+            "runner_credential_revoked",
+            ["role:owner"],
+            {"runner_id": runner_id, "credential_id": credential_id, "reason": reason},
+            actor=human_actor(conn, project_id, by),
+            subject=("runner", runner_id),
+        )
+    return True

@@ -63,7 +63,7 @@ idempotency.LOADERS["event"] = idempotency.plain(load_event)
 SEQ_MAX = 2**63 - 1  # BIGINT
 
 
-def _parse_after(raw: str | None) -> int | Literal["latest"]:
+def parse_after(raw: str | None) -> int | Literal["latest"]:
     if raw is None:
         return 0
     if raw == "latest":
@@ -73,14 +73,18 @@ def _parse_after(raw: str | None) -> int | Literal["latest"]:
     return int(raw)
 
 
-@router.get("/projects/{slug}/events")
-async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSONResponse:
-    wait = wait_of(request)
-    after_param = _parse_after(request.query_params.get("after"))
+def parse_limit(request: Request) -> int:
     raw_limit = request.query_params.get("limit", str(PAGE_DEFAULT))
     if not raw_limit.isdigit() or not 1 <= int(raw_limit) <= PAGE_MAX:
         raise invalid({"limit": "out_of_range"})
-    limit = int(raw_limit)
+    return int(raw_limit)
+
+
+@router.get("/projects/{slug}/events")
+async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSONResponse:
+    wait = wait_of(request)
+    after_param = parse_after(request.query_params.get("after"))
+    limit = parse_limit(request)
     engine = engine_of(request)
 
     def start() -> tuple[Membership, int]:
@@ -97,7 +101,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     mine, after = await run_in_threadpool(start)
     if after_param == "latest" and wait == 0:
         # From now on, without the history; acknowledges nothing (§8.3).
-        return _answer([], after, superseded=False)
+        return answer([], after, superseded=False)
 
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
         with engine.begin() as conn:
@@ -116,7 +120,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
 
     if wait == 0:
         items, cursor = await run_in_threadpool(read, False, after)
-        return _answer(items, cursor, superseded=False)
+        return answer(items, cursor, superseded=False)
 
     waiter = longpoll.Waiter(
         key=caller.credential_id or f"session:{caller.human_session}",
@@ -132,26 +136,26 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if waiter.superseded:
                 # Nothing read, nothing delivered, the cursor where it was: the wait that
                 # took over owns what came in (§8.3).
-                return _answer([], after, superseded=True)
+                return answer([], after, superseded=True)
             if await request.is_disconnected():
-                return _answer([], since, superseded=False)
+                return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
             items, cursor = await run_in_threadpool(read, True, since)
             if waiter.superseded:
-                return _answer([], after, superseded=True)
+                return answer([], after, superseded=True)
             if items:
-                return _answer(items, cursor, superseded=False)
+                return answer(items, cursor, superseded=False)
             since = cursor  # nothing there wakes us: the next pass starts behind it
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                return _answer([], cursor, superseded=False)
+                return answer([], cursor, superseded=False)
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
         longpoll.registry.leave(waiter)
 
 
-def _answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
+def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
     return JSONResponse(
         {
             "items": items,

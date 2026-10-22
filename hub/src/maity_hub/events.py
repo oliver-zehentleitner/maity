@@ -10,12 +10,12 @@ must find the row.
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Connection, Engine, insert, select
+from sqlalchemy import ColumnElement, Connection, Engine, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
@@ -26,12 +26,13 @@ _PENDING = "maity_pending_events"
 
 @dataclass(frozen=True)
 class Actor:
-    membership_id: int
+    membership_id: int | None  # null for a runner, which is no member (§15.10)
     session_id: str | None = None
     credential_id: str | None = None
     via: str | None = None  # signed, bearer, cookie
     harness: str | None = None
     model: str | None = None
+    runner_id: str | None = None
 
 
 class Notifier:
@@ -119,6 +120,7 @@ def emit(
             actor_via=actor.via if actor else None,
             actor_harness=actor.harness if actor else None,
             actor_model=actor.model if actor else None,
+            actor_runner_id=actor.runner_id if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
             audience=audience,
@@ -163,23 +165,61 @@ def read(
     conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
 ) -> tuple[list[Any], int, bool]:
     """Readable events after `after`, oldest first: (rows, highest seq examined, truncated)."""
+    return _scan(
+        conn,
+        t.event.c.project_id == project_id,
+        lambda row: readable_by(row, membership, principal),
+        after,
+        limit,
+    )
+
+
+def _scan(
+    conn: Connection,
+    scope: ColumnElement[bool],
+    readable: Callable[[Any], bool],
+    after: int,
+    limit: int,
+) -> tuple[list[Any], int, bool]:
     found: list[Any] = []
     examined = after
     while True:
         batch = conn.execute(
             select(t.event)
-            .where(t.event.c.project_id == project_id, t.event.c.seq > examined)
+            .where(scope, t.event.c.seq > examined)
             .order_by(t.event.c.seq)
             .limit(500)
         ).all()
         for row in batch:
-            if readable_by(row, membership, principal):
+            if readable(row):
                 if len(found) == limit:
                     return found, found[-1].seq, True
                 found.append(row)
             examined = row.seq
         if len(batch) < 500:
             return found, examined, False
+
+
+def runner_reads(row: Any, runner_id: str) -> bool:
+    """§15.8: addressed to the runner by audience, and not caused by the runner itself;
+    `all` never reaches a runner."""
+    return f"runner:{runner_id}" in (row.audience or []) and row.actor_runner_id != runner_id
+
+
+def read_for_runner(
+    conn: Connection, project_ids: Sequence[str], runner_id: str, after: int, limit: int
+) -> tuple[list[Any], int]:
+    """The runner's events after `after` over its projects: (rows, highest seq examined)."""
+    if not project_ids:
+        return [], after
+    rows, examined, _ = _scan(
+        conn,
+        t.event.c.project_id.in_(project_ids),
+        lambda row: runner_reads(row, runner_id),
+        after,
+        limit,
+    )
+    return rows, examined
 
 
 def wakes(row: Any, membership: Any, principal: str) -> bool:
@@ -210,19 +250,31 @@ def read_waking(
 
 def highest_readable(conn: Connection, project_id: str, membership: Any, principal: str) -> int:
     """`after=latest`: the highest seq this reader may read, or 0."""
-    query = (
-        select(t.event)
-        .where(t.event.c.project_id == project_id)
-        .order_by(t.event.c.seq.desc())
-        .limit(500)
+    return _highest(
+        conn,
+        t.event.c.project_id == project_id,
+        lambda row: readable_by(row, membership, principal),
     )
+
+
+def highest_for_runner(conn: Connection, project_ids: Sequence[str], runner_id: str) -> int:
+    """The runner's `after=latest` and the cursor of its hello packet (§15.8)."""
+    if not project_ids:
+        return 0
+    return _highest(
+        conn, t.event.c.project_id.in_(project_ids), lambda row: runner_reads(row, runner_id)
+    )
+
+
+def _highest(conn: Connection, scope: ColumnElement[bool], readable: Callable[[Any], bool]) -> int:
+    query = select(t.event).where(scope).order_by(t.event.c.seq.desc()).limit(500)
     before = None
     while True:
         batch = conn.execute(
             query.where(t.event.c.seq < before) if before is not None else query
         ).all()
         for row in batch:
-            if readable_by(row, membership, principal):
+            if readable(row):
                 seq: int = row.seq
                 return seq
         if len(batch) < 500:

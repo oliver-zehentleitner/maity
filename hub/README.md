@@ -12,8 +12,9 @@ claims, leases, checkpoints and reports, requests to humans with the
 cross-project inbox, events with the long-poll, messages and conversations
 are in, and release and contract cards with their checklist, and the
 forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
-signed-only caller confined to `/runner/*`, and the owner's runner calls
-are in; attachments, placements and the runner's own endpoints follow.
+signed-only caller confined to `/runner/*`, the owner's runner calls,
+attaching runners to projects, and the runner's hello, event stream and
+capabilities are in; placements and the join pickup follow.
 
 ## Run it locally with plain Python
 

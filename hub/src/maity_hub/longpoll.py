@@ -19,11 +19,14 @@ from maity_hub import events, listening
 @dataclass(eq=False)
 class Waiter:
     key: str
-    project_id: str
+    project_id: str | None
     session_id: str | None
     loop: asyncio.AbstractEventLoop
     event: asyncio.Event = field(default_factory=asyncio.Event)
     superseded: bool = False
+    # A runner's waiter reads several projects (docs/api.md §15.8); the reader
+    # replaces the set on every pass, an assignment the notifier reads atomically.
+    project_ids: frozenset[str] = frozenset()
 
     def wake(self) -> None:
         self.loop.call_soon_threadsafe(self.event.set)
@@ -53,7 +56,11 @@ class Registry:
 
     def notify(self, project_id: str, _seq: int) -> None:
         with self._lock:
-            waiting = [w for w in self._by_key.values() if w.project_id == project_id]
+            waiting = [
+                w
+                for w in self._by_key.values()
+                if w.project_id == project_id or project_id in w.project_ids
+            ]
         for waiter in waiting:
             waiter.wake()
 
