@@ -913,7 +913,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("message-body").value = "@agent-a @agent-b";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
   expect(text(main).includes("Not sent: too many mentions: at most 10 members"), "message: the hub's mention cap, in words");
+  // While it is on its way the fields are held; the confirmation speaks of what was sent, and
+  // what was typed meanwhile stays.
+  let releasePost = null;
+  win.Maity.api.post = (p, b) => new Promise((r) => { releasePost = () => r(mPost0(p, b)); });
+  byId("message-to").value = "agt-b"; byId("message-body").value = "First, @agent-b.";
+  main.querySelector("form.message-form").dispatch("submit"); await tick();
+  expect(byId("message-to").disabled && byId("message-body").disabled && btn(main, "Send").disabled, "message: the fields are held while it is sent");
+  byId("message-to").value = "all"; byId("message-body").value = "A second thought";
+  releasePost(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Sent to Agent B; mentioned and notified: Agent B.") && byId("message-body").value === "A second thought"
+    && !byId("message-body").disabled, "message: the confirmation names what was sent; a draft typed meanwhile is kept");
   win.Maity.api.post = mPost0;
+  expect(byId("message-to").querySelectorAll("option").some((o) => o.attrs.value === "role:owner"), "message: the owner is a role to write to");
+  let badRole = null;
+  try { await mPost0("/projects/maity/events", { kind: "message", type: "notice", to: "role:wizard", body: "x" }); } catch (err) { badRole = err; }
+  let chatNoConv = null;
+  try { await mPost0("/projects/maity/events", { kind: "message", type: "chat", to: "agt-a", body: "x" }); } catch (err) { chatNoConv = err; }
+  expect(badRole && badRole.details.fields.to && chatNoConv && chatNoConv.details.fields.conversation_id === "missing", "message: the mock refuses an unknown role and a chat without its conversation");
   // Opened from a chat with the @name in it.
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");

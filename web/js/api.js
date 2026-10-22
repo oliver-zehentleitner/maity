@@ -463,7 +463,10 @@ window.Maity = window.Maity || {};
       if (!body.body || !String(body.body).trim()) errors.body = "missing";
       if ("mentions" in body) errors.mentions = "read_only";
       const members = file(m[1], "members.json", path).items;
-      if (!(body.to === "all" || /^role:[a-z]+$/.test(body.to || "") || members.some((x) => x.id === body.to))) errors.to = "not_a_member";
+      const roles = ["owner", "admin", "reviewer", "member", "proxy"];
+      if (!(body.to === "all" || (/^role:/.test(body.to || "") && roles.includes(body.to.slice(5))) || members.some((x) => x.id === body.to))) errors.to = "not_a_member";
+      // A chat names its conversation and goes to its two parties only (§8.4).
+      if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];

@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
     ["review_result", "A review's result"],
     ["interface_change", "An interface changes"],
   ];
-  const ROLES = ["admin", "reviewer", "member", "proxy"];
+  const ROLES = ["owner", "admin", "reviewer", "member", "proxy"];
   const CLOSED = new Set(["done", "cancelled"]);
   const BODY_CHARS = 16 * 1024;
 
@@ -61,23 +61,26 @@ window.Maity = window.Maity || {};
         const text = body.value.trim();
         if (!text) { status.fail("Not sent: ", { message: "the message is empty" }); body.focus(); return; }
         if ([...text].length > BODY_CHARS) { status.fail("Not sent: ", { message: "the message is longer than 16,384 characters" }); body.focus(); return; }
+        // What is sent is what the confirmation speaks of: the fields are
+        // held while it is on its way, so nothing typed meanwhile is lost.
         const message = { kind: "message", type: type.value, to: to.value, body: text };
         if (card.value) message.task_id = card.value;
-        send.disabled = true;
+        const fields = [to, type, card, body, send];
+        fields.forEach((f) => { f.disabled = true; });
         status.busy("Sending…");
         try {
           const event = await M.api.post(ctx.base + "/events", message);
           const mentioned = ((event.payload && event.payload.mentions) || []).map((x) => ctx.nameOf(x.member_id));
-          body.value = "";
+          if (body.value.trim() === text) body.value = "";
           status.done();
-          const whom = to.value === "all" ? "everyone" : to.value.startsWith("role:") ? "every " + to.value.slice(5) : ctx.nameOf(to.value);
+          const whom = message.to === "all" ? "everyone" : message.to.startsWith("role:") ? "every " + message.to.slice(5) : ctx.nameOf(message.to);
           append(clear(result), h("p", { class: "ok" }, "Sent to " + whom
             + (mentioned.length ? "; mentioned and notified: " + [...new Set(mentioned)].join(", ") : "") + "."));
-          body.focus();
         } catch (err) {
           status.fail("Not sent: ", said(err));
         } finally {
-          send.disabled = false;
+          fields.forEach((f) => { f.disabled = false; });
+          body.focus();
         }
       },
     },
@@ -88,7 +91,7 @@ window.Maity = window.Maity || {};
     // With the @ picker where the page has it; the hub resolves, not the page.
     M.mentionPicker ? M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id) : null,
     h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "
-      + "at most 10 members per message."),
+      + "at most 10 members per message. An unsent message is not kept when you leave this view."),
     h("div", { class: "actions" }, send),
     status.el);
 
@@ -98,5 +101,12 @@ window.Maity = window.Maity || {};
       form, result);
     // Once the router has put the view into the page.
     window.setTimeout(() => body.focus(), 0);
+    // Leaving the page with an unsent message asks first; going to another
+    // view of the dashboard keeps nothing, so the hint says so.
+    const unsent = (e) => {
+      if (!body.isConnected && body.isConnected !== undefined) { window.removeEventListener("beforeunload", unsent); return; }
+      if (body.value.trim()) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", unsent);
   };
 })(window.Maity);
