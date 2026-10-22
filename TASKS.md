@@ -42,4 +42,5 @@ that need the maintainer are marked **[maintainer]**.
 - The Keep the Why steward may write `context/` entries itself or open cards for the owners; owner preferred, self when needed, configurable per project.
 - Invitations for further humans come after the first dogfooding week (the maintainer starts alone).
 - Requests from agents are signed and replay-proof (nonce, timestamp, idempotency key on state-changing calls); credentials hashed at rest, revocable per session.
+- Idea for later: a private repository or a Keep the Why export the hub cannot reach (private repo without token access, a state.json on an internal network) — the hub asks an agent of the project that has access, or goes through a proxy into that network, instead of reading it itself.
 - Idea to design: the project's Keep the Why dashboard export (`state.json`, the static page) shown inside the Maity dashboard as a read-only panel — counts on the project card, the page embedded, entries waiting for confirmation surfaced in the inbox; the hub reads the published export and never touches `context/`. Generalise to a panel plugin interface only if a second panel appears.
