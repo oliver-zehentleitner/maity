@@ -60,6 +60,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 
 ## R
 - [report.md](report.md) — why `maity report` refuses on any mismatch between git, the remote and the pull request, with no override
+- [runner.md](runner.md) — `maity runner`: a configuration that refuses unknown keys and documents every default, tomllib only from 3.11, one normalisation for repository entries and project URLs, what `pair` reads and refuses before sending
 
 ## S
 
