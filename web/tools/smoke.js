@@ -667,8 +667,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelector("textarea").value === "half a thought", "chat: the draft is back in its chat");
   expect(!text(conv("Agent A")).includes("Draft:"), "chat: the open chat's draft is in its composer, not in its row");
-  expect(conv("Agent D").getAttribute("aria-label").startsWith("Agent D, online, last message ") && conv("Agent D").getAttribute("aria-label").includes(", You: Keep the inbox"),
-    "chat: a row's accessible name has its parts apart");
+  expect(!conv("Agent D").getAttribute("aria-label") && /^AD ?Agent D, .+, online: You: Keep the inbox/.test(text(conv("Agent D"))),
+    "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;

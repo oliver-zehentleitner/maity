@@ -73,21 +73,21 @@ window.Maity = window.Maity || {};
     const unread = current ? 0 : chat.unread;
     const sub = sublines(ctx, chat, current);
     const when = chat.last_message_at ? formatAgo(chat.last_message_at) : "";
-    // One readable name for the row, instead of its parts run together.
-    const label = [chat.title, sub.who, unread ? unread + " unread" : null, when ? "last message " + when : null, sub.line]
-      .filter(Boolean).join(", ");
+    // The row's name is its text, in the order it shows; hidden separators
+    // keep the parts apart for a screen reader (no aria-label: it would
+    // have to repeat the visible text word for word).
+    const apart = (t) => h("span", { class: "visually-hidden" }, t);
     return h("li", null, h("a", {
       href: ctx.link("chat", chat.id),
       class: "conv" + (current ? " current" : "") + (unread ? " unread" : ""),
       "aria-current": current ? "page" : null,
-      "aria-label": label,
     },
     avatars(chat),
     h("span", { class: "conv-title" }, chat.title),
-    h("span", { class: "conv-time" }, when),
-    unread ? h("span", { class: "count" }, String(unread)) : null,
-    h("span", { class: "conv-sub" }, sub.who),
-    sub.line ? h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line) : null));
+    when ? [apart(", "), h("span", { class: "conv-time" }, when)] : null,
+    unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
+    apart(", "), h("span", { class: "conv-sub" }, sub.who),
+    sub.line ? [apart(": "), h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line)] : null));
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
