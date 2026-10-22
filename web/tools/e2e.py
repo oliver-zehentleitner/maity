@@ -53,6 +53,10 @@ TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
 COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
 WAIT_S = 60  # the agent's `maity wait`
 
+# The caller's own MAITY_* settings (a state dir, a forge token) never reach
+# the throwaway hub or the scratch clones.
+CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("MAITY_")}
+
 
 class Run:
     def __init__(self, artifacts: Path, work: Path, base: str):
@@ -68,7 +72,8 @@ class Run:
     def shot(self, page: Page, name: str) -> None:
         self.shots += 1
         path = self.artifacts / f"{self.shots:02d}-{name}.png"
-        page.screenshot(path=str(path), full_page=True)
+        # The artifacts are public: the join line (URL and code) is painted over.
+        page.screenshot(path=str(path), full_page=True, mask=[page.locator(".paste-line")])
         print(f"   screenshot {path.name}", flush=True)
 
     # The agent side: the maity CLI in one scratch clone per project.
@@ -77,14 +82,17 @@ class Run:
             ["maity", *args],
             check=False,
             cwd=clone,
+            env=CLEAN_ENV,
             input=stdin,
             capture_output=True,
             text=True,
             timeout=120,
         )
         if done.returncode != 0:
+            # A join code is single-use, but it still stays out of the log.
+            shown = ["***" if i and args[i - 1] == "--code" else a for i, a in enumerate(args)]
             raise AssertionError(
-                f"maity {' '.join(args)} exited {done.returncode}:\n{done.stdout}{done.stderr}"
+                f"maity {' '.join(shown)} exited {done.returncode}:\n{done.stdout}{done.stderr}"
             )
         return done.stdout
 
@@ -97,7 +105,7 @@ class Run:
 
     def clone(self, name: str) -> Path:
         path = self.work / name
-        subprocess.run(["git", "init", "-q", str(path)], check=True)
+        subprocess.run(["git", "init", "-q", str(path)], check=True, env=CLEAN_ENV)
         return path
 
 
@@ -107,40 +115,70 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def start_hub(work: Path, port: int) -> subprocess.Popen:
+def port_taken(port: int) -> bool:
+    with socket.socket() as s:
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            return True
+        return False
+
+
+def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
+    """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
     env = dict(
-        os.environ,
+        CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
         MAITY_BIND=f"127.0.0.1:{port}",
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
     )
-    subprocess.run(["maity-hub", "migrate"], env=env, check=True, capture_output=True)
-    subprocess.run(
-        ["maity-hub", "owner", "create", "--handle", OWNER, "--display-name", "Owner"],
-        env=env,
-        input=OWNER_PASSWORD + "\n",
-        text=True,
-        check=True,
-        capture_output=True,
-    )
-    with open(work / "serve.log", "w") as log:  # the hub keeps its own copy of the descriptor
+    log_path = logs / "hub.log"
+    with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
+        for args, stdin in (
+            (["migrate"], None),
+            (
+                ["owner", "create", "--handle", OWNER, "--display-name", "Owner"],
+                OWNER_PASSWORD + "\n",
+            ),
+        ):
+            log.write(f"$ maity-hub {' '.join(args)}\n")
+            log.flush()
+            done = subprocess.run(
+                ["maity-hub", *args],
+                env=env,
+                input=stdin,
+                text=True,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if done.returncode != 0:
+                raise SystemExit(f"e2e: maity-hub {args[0]} failed:\n" + log_path.read_text())
+        log.write("$ maity-hub serve\n")
+        log.flush()
         hub = subprocess.Popen(
             ["maity-hub", "serve"], env=env, stdout=log, stderr=subprocess.STDOUT
         )
-    for _ in range(100):
-        try:
-            urllib.request.urlopen(base + "/api/v1/health", timeout=1)
-            return hub
-        except OSError:
-            if hub.poll() is not None:
-                break
-            time.sleep(0.2)
+    try:
+        for _ in range(100):
+            try:
+                urllib.request.urlopen(base + "/api/v1/health", timeout=1)
+            except OSError:
+                if hub.poll() is not None:
+                    break
+                time.sleep(0.2)
+                continue
+            # Answered, but by this hub? Another server on --port would also answer.
+            if hub.poll() is None:
+                return hub
+            break
+    except BaseException:  # Ctrl-C while waiting: the hub must not outlive the script
+        stop_hub(hub)
+        raise
     stop_hub(hub)
-    raise SystemExit(
-        "e2e: the hub did not come up; see serve.log:\n" + (work / "serve.log").read_text()
-    )
+    raise SystemExit("e2e: the hub did not come up:\n" + log_path.read_text())
 
 
 def stop_hub(hub: subprocess.Popen) -> None:
@@ -156,9 +194,15 @@ def stop_hub(hub: subprocess.Popen) -> None:
 def watch_page(run: Run, page: Page) -> None:
     def console(msg) -> None:
         # Chromium logs every answer of 400 or more as "Failed to load
-        # resource"; those are judged by response() below, by their path.
-        if msg.type == "error" and not msg.text.startswith("Failed to load resource"):
+        # resource: the server responded with a status of …"; those are judged
+        # by response() below, by their path. Network errors are not.
+        if msg.type == "error" and "the server responded with a status of" not in msg.text:
             run.problems.append(f"console error: {msg.text}")
+
+    def request_failed(req) -> None:
+        # A navigation or a re-render may cancel a request the page no longer needs.
+        if req.failure != "net::ERR_ABORTED":
+            run.problems.append(f"{req.method} {req.url} failed: {req.failure}")
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
@@ -171,6 +215,7 @@ def watch_page(run: Run, page: Page) -> None:
     page.on("console", console)
     page.on("pageerror", lambda err: run.problems.append(f"page error: {err}"))
     page.on("response", response)
+    page.on("requestfailed", request_failed)
 
 
 def no_problems(run: Run, where: str) -> None:
@@ -203,9 +248,20 @@ def join_line(run: Run, page: Page, slug: str, handle: str | None) -> tuple[str,
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
     expect(page.locator("ul.joins li").first).to_contain_text("E2E Agent as member")
+    if handle:
+        # The new profile is offered and selected at once, without a reload.
+        expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
     words = shlex.split(line.inner_text())
     assert words[:2] == ["maity", "join"] and words[3] == "--code", words
     return words[2], words[4]
+
+
+# The number of line boxes of each matching element's text.
+ONE_LINE_JS = """sel => Array.from(document.querySelectorAll(sel)).map(el => {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  return new Set(Array.from(range.getClientRects()).map(r => Math.round(r.top))).size;
+})"""
 
 
 def board_card(page: Page, title: str):
@@ -225,16 +281,18 @@ def main() -> int:
         if not shutil.which(tool):
             raise SystemExit(f"e2e: {tool} is not on PATH")
 
-    work = Path(tempfile.mkdtemp(prefix="maity-e2e-"))
-    artifacts = args.artifacts or work / "artifacts"
-    artifacts.mkdir(parents=True, exist_ok=True)
     port = args.port or free_port()
     if port == 8090:
         raise SystemExit("e2e: 8090 is the dogfood hub's port; pick another")
+    if port_taken(port):
+        raise SystemExit(f"e2e: something already listens on 127.0.0.1:{port}; pick another port")
+    work = Path(tempfile.mkdtemp(prefix="maity-e2e-"))
+    artifacts = args.artifacts or work / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
     base = f"http://127.0.0.1:{port}"
     run = Run(artifacts, work, base)
     run.step(f"hub on {base}, SQLite in {work}")
-    hub = start_hub(work, port)
+    hub = start_hub(work, artifacts, port)
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=not args.headed)
@@ -249,7 +307,7 @@ def main() -> int:
                 browser.close()
     except Exception:
         print(
-            f"\ne2e: FAILED; screenshots in {artifacts}, hub log in {work / 'serve.log'}",
+            f"\ne2e: FAILED; screenshots and hub.log in {artifacts}",
             file=sys.stderr,
         )
         raise
@@ -292,7 +350,11 @@ def scenario(run: Run, page: Page) -> None:
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
     page.locator("nav.views").get_by_role("link", name="Agents", exact=True).click()
-    expect(page.get_by_text("E2E Agent").first).to_be_visible()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/agents$"))
+    agents = page.locator("main section.view-agents")
+    expect(agents).to_contain_text("@e2e-agent")
+    expect(agents).to_contain_text("member")
+    expect(agents).to_contain_text("Online")
     run.shot(page, "agent-joined")
     no_problems(run, "join")
 
@@ -471,6 +533,11 @@ def scenario(run: Run, page: Page) -> None:
         expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
+        # Revoke keeps its label on one line: one line box for its text.
+        lines = page.evaluate(ONE_LINE_JS, ".credentials button, .joins button")
+        assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
+        if view == "agents":
+            assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
     no_problems(run, "phone width")
 

@@ -269,11 +269,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-x";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(byId("join-agent").value === "agt-x", "after creating, the select keeps the joined profile");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(text(main).includes("revoked"), "open join revoked");
+  // A join for a new profile: the list names it and the select offers it, without a reload.
+  const agentSel = byId("join-agent"); agentSel.value = ""; agentSel.dispatch("change");
+  byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
+  const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
+  expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
+    "a new profile is offered and selected after its join is created");
+  expect(main.querySelectorAll(".joins li")[0].textContent.includes("Agent New as member"), "the joins list names the new profile");
   await go("#/p/maity/inbox");
   expect(!text(main).includes("FIXTURE"), "the line is gone after leaving the view");
   // count polling: a change offers a reload instead of replacing the list

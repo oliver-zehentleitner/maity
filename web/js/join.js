@@ -93,19 +93,26 @@ window.Maity = window.Maity || {};
           ttl_seconds: Number(ttl.value),
         };
         status.busy("Creating…");
+        let j;
         try {
-          const j = await M.api.post(ctx.base + "/joins", body);
-          status.done();
-          showLine(j);
-          // A new profile is named in the list and offered in the select.
-          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
-          profileOptions();
-          agentSelect.value = j.agent_id;
-          newFields.hidden = agentSelect.value !== "";
-          drawJoins(joins);
+          j = await M.api.post(ctx.base + "/joins", body);
         } catch (err) {
           status.fail("No join created: ", err);
+          return;
         }
+        status.done();
+        showLine(j);
+        // A new profile is named in the list and offered in the select.
+        try {
+          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        } catch (err) {
+          status.fail("Join created; the list could not be re-read: ", err);
+          return;
+        }
+        profileOptions();
+        agentSelect.value = j.agent_id;
+        newFields.hidden = agentSelect.value !== "";
+        drawJoins(joins);
       },
     },
     h("label", { for: "join-agent" }, "Agent"), agentSelect,

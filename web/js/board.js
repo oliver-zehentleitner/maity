@@ -133,7 +133,7 @@ window.Maity = window.Maity || {};
       edges("Ships with", c.ships_with, byId),
       c.blocked_by_request
         ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "an answer"), " (",
-          h("span", { class: "id" }, c.blocked_by_request), ")")
+          h("span", { class: "request-id" }, c.blocked_by_request), ")")
         : null,
       c.contract
         ? h("p", { class: "muted" }, "Contract " + c.contract.state + ", arbiter " + ctx.nameOf(c.contract.arbiter))

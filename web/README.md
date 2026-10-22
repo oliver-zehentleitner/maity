@@ -210,18 +210,23 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    and answers them there, one in free text, one with `go`; the agent's
    `maity resume` sees that answer.
 9. at phone width (390 px) the inbox, board, agents, organisation and join
-   views load without an error and none of them scrolls sideways.
+   views, each reached through its tab, load without an error, none of
+   them scrolls sideways, and every Revoke label stays on one line.
 
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
-default a temp directory, kept). Any console error, page error or API
-answer of 400 or more fails the run, except the 401 of the signed-out
-session check. The hub is the one process the script starts, and it is
-stopped by its own PID; port 8090 is refused. Option `--headed` shows
-the browser, `--port` fixes the port.
+default a temp directory, kept), with the join line painted over; the
+hub's output (`migrate`, `owner create`, `serve`) goes to `hub.log` next
+to them. Any console error, page error, failed request (other than one
+the page cancelled) or API answer of 400 or more fails the run, except
+the 401 of the signed-out session check. The hub is the one process the
+script starts, and it is stopped by its own PID, also on Ctrl-C; port
+8090 is refused, and a port that another server already answers on is
+refused too. The caller's own `MAITY_*` variables are dropped for the hub
+and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
 
 CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`, with
-`playwright install --with-deps chromium`, and uploads the screenshots as
-the workflow artifact `web-e2e-screenshots`, also when a step fails.
+`playwright install --with-deps --only-shell chromium`, and uploads the
+screenshots and `hub.log` as the workflow artifact `web-e2e-screenshots`, also when a step fails.
 
 ## Layout
 

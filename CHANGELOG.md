@@ -102,3 +102,5 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   offers it in the agent select, instead of showing its id until the view is reloaded
 - web: at phone width a credential's or join's Revoke button keeps its label on one line,
   and a credential's id, client and dates wrap as one text beside it
+- web: a request id on a blocked card no longer breaks at its hyphen
+- web: a join whose list cannot be re-read afterwards says it was created, not "No join created"

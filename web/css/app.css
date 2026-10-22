@@ -272,7 +272,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 .card header, .profile header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .card-id, .handle { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
-.id { white-space: nowrap; }
+.request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
 .card-release { border-left: 3px solid var(--accent); }
 .badge.release { color: var(--accent); }
