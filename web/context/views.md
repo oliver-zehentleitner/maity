@@ -366,8 +366,11 @@ to the direct chat before anything is sent. Renaming, adding and
 removing people sit behind a disclosure, for the creator and admins
 only. Removing a message asks for a reason in the browser's own prompt,
 as the page already asks with the browser's confirm before anything
-destructive. An owner who reads along gets no events, so the view
-re-reads every 30 seconds.
+destructive; the hub requires the reason, so an empty one is asked for
+again. A removed message is recognised by its `null` body. Changes to
+the chat, someone else's included, are drawn in place, and a removal
+reaches the open chat through `event_redacted`. No message wakes an
+owner who reads along, so the view re-reads every 30 seconds.
 
 **Reason:** one list is one place to look for "where was that said",
 and the chat view's sizing, drafts, quoting and Markdown work for both
