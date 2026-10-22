@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, idempotency, policy, rules
+from maity_hub import clock, idempotency, policy, releases, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
@@ -258,6 +258,8 @@ def patch_project(
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
+        if "repository" in given:
+            releases.recheck(conn, project.id)  # whether the probe can observe it changed
         if state_changes:
             now = clock.now()
             conn.execute(

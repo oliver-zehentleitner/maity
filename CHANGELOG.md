@@ -120,6 +120,20 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   refuses unknown keys, refusals for an Ingress without trusted proxies and
   for plain HTTP outside the cluster, `helm test`; `deploy/helm/check.sh`
   and `deploy/helm/kind-smoke.sh` in CI.
+- hub: release and contract cards (`docs/api.md` §6.7, §6.8) — SemVer
+  versions unique per project with one release in flight; the release
+  object with reported and typed pull requests, `ships_with` groups
+  followed over all edges (a partner outside the release blocks), the
+  checklist seeded from the project settings, edited by `PATCH` and ticked
+  through its own endpoint; readiness computed from observed forge state
+  only and on the data as it will be stored, `false` with
+  `probe_not_configured` without a forge token, `done` refused with
+  `release_not_ready`, `release_ready` announced once per turn to ready,
+  also by the write that closes it; a closed release is a record, not
+  edited and with its pull requests, groups and readiness frozen at the
+  close; `ships_with` never names a release card; contract cards with arbiter and
+  watchers, another arbiter than the policy's named only by an admin,
+  `final` only by the arbiter or an admin.
 
 ### Fixed
 

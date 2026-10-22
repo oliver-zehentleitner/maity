@@ -21,6 +21,7 @@ from maity_hub import (
     API_VERSION,
     __version__,
     errors,
+    forge,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
 )
 from maity_hub.config import ConfigError, Settings
@@ -70,6 +71,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    forge.configure(settings.forge_github_token)
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)

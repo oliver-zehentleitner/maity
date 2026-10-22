@@ -71,7 +71,8 @@ def test_a_card_has_the_contract_shape(owner: flow.Human, migrated: Engine) -> N
     [
         ({"label": "bug"}, {"label": "unknown"}),
         ({"kind": "epic"}, {"kind": "unknown"}),
-        ({"kind": "release"}, {"kind": "not_yet"}),
+        ({"kind": "release"}, {"release.version": "required"}),
+        ({"release": {"version": "1.0.0"}}, {"release": "releases_only"}),
         ({"status": "in_progress"}, {"status": "proposed_or_open"}),
         ({"area": "hub/`x"}, {"area": "invalid_path"}),
         ({"depends_on": ["tsk-nope"]}, {"depends_on": "unknown_task"}),

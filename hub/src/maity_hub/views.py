@@ -7,13 +7,12 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, policy
+from maity_hub import clock, forge, policy
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
-FORGES = {"github.com": "github"}  # host -> forge kind; the probe's hosts (§11)
 
 
 def ts(moment: datetime | None) -> str | None:
@@ -43,18 +42,16 @@ def git_identity(row: Any) -> dict[str, str] | None:
 def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
-    forge = forge_of(project.repository_url)
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
-        "forge": forge,
-        "probe_configured": forge == "github" and settings.forge_github_token is not None,
+        "forge": forge_of(project.repository_url),
+        "probe_configured": forge.configured_for(project.repository_url),
     }
 
 
 def forge_of(url: str) -> str | None:
-    host = url.split("://", 1)[-1].split("/", 1)[0].lower()
-    return FORGES.get(host)
+    return forge.kind_of(url)
 
 
 def absence(project: Any) -> dict[str, Any] | None:
@@ -239,6 +236,14 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
     }
 
 
+def _release(conn: Connection, row: Any) -> dict[str, Any] | None:
+    if row.kind != "release":
+        return None
+    from maity_hub.releases import release_view
+
+    return release_view(conn, row)
+
+
 def task_view(conn: Connection, row: Any) -> dict[str, Any]:
     """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
     edges = conn.execute(
@@ -270,7 +275,7 @@ def task_view(conn: Connection, row: Any) -> dict[str, Any]:
         "blocked_by_request": row.blocked_by_request,
         "ktw_ref": row.ktw_ref,
         "report": row.report,
-        "release": row.release_data,
+        "release": _release(conn, row),
         "contract": row.contract,
         "created_at": ts(row.created_at),
         "updated_at": ts(row.updated_at),
