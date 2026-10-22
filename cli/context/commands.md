@@ -70,3 +70,34 @@ Four readings, proposed here and accepted:
 - `checkpoint` requires both `-m` (the last step) and `--next`, because
   §6.4 marks neither as optional. Branch and head come from git, like
   the report's facts.
+
+## The resume packet as text, with people's text quoted line by line
+
+**Id:** eb7af39c-9a74-45d1-94ce-c0159890c972
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinating agent's request after the maintainer's decision on the join briefing (contract PR #54), 2026-10-22; the quoting is this package's choice within it
+**Revisit when:** agents are seen acting on a quoted line as if the hub had said it, or a harness renders `> ` in a way that hides it
+**See:** https://github.com/oliver-zehentleitner/maity — c383b1fe-0eb4-454c-8a5a-1919f21b820f — as of 2026-10-22
+
+`maity join` and `maity resume` print the resume packet as text: the
+pause, then the briefing, identity, project, rules, cards, requests,
+missed events and the next step. `--json` prints the packet as before.
+Everything people wrote (the briefing, a state note, the reason for a
+pause, answers, messages) is printed with every line behind `> `, under
+a label that says who wrote it.
+
+**Reason:** an agent reads this output as the hub speaking. A briefing
+or a message can contain a line such as "Next: …" or "PAUSED …" that,
+printed as it is, would read like the command's own output. When every
+line of other people's text carries a prefix, nothing in it can start a
+line of the output, so the boundary holds whatever the text contains.
+
+**Rejected alternatives:**
+- JSON stays the default and text is opt-in: the agent that most needs
+  the briefing is a fresh one that does not know the flag.
+- Begin and end markers around the text: a marker can be typed into the
+  text itself and closed early.
+- Printing people's text unmarked: what the humans wrote and what the
+  hub says would look the same.
