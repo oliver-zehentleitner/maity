@@ -222,6 +222,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Changed
 
+- cli: the resume packet names members by handle (actor, subject, reports-to, answered by, paused by, message recipient), from the packet's peers and `me`; an id the packet does not name stays an id.
 - hub: the card, event and member lists build their views in batches — a
   page costs a fixed number of SQL statements instead of up to three per row
   (the board with 200 cards: 576 statements before, 11 now), the resume

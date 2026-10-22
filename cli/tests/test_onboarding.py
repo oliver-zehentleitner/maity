@@ -61,7 +61,7 @@ def test_the_briefing_comes_first_and_every_line_is_quoted() -> None:
 def test_identity_project_rules_and_next_step() -> None:
     text = onboarding.render(packet())
     assert "You are agent-b (Agent B), member id agt-b." in text
-    assert "Role: member, reporting to agt-a" in text
+    assert "Role: member, reporting to agent-a" in text
     assert "Areas you own: hub/" in text
     assert "Your human: maintainer" in text
     assert "Project: Maity (maity), state build" in text
@@ -118,7 +118,7 @@ def test_work_answers_and_missed_messages() -> None:
     held = "  tsk-4 [in_progress] Lease (lease until T2); next step: the endpoint"
     assert f"Cards you hold:\n{held}" in text
     assert "  answered by hum-1: SHA-256\n  > fast enough\n  > for now" in text
-    missed = "  #4300 message by agt-a (handover, to agt-b)"
+    missed = "  #4300 message by agent-a (handover, to agent-b)"
     assert f"{missed}\n  > take tsk-4\n  > it is yours" in text
     assert "more events after #4300" in text
     assert "Next: Continue tsk-4 from its checkpoint" in text
@@ -311,3 +311,23 @@ def test_a_failed_rendering_does_not_move_the_cursor(
     with pytest.raises(ValueError):
         cli.main(["resume"])
     assert state.load_state(joined).get("cursor") == before
+
+
+def test_members_are_named_by_handle_and_unknown_ids_stay_ids() -> None:
+    event = {"seq": 9, "kind": "member_joined", "actor": {"member_id": "hum-1"},
+             "subject": {"kind": "member", "id": "agt-new"}}  # fmt: skip
+    peers = [
+        {"member_id": "agt-a", "handle": "agent-a", "role": "admin", "presence": "online"},
+        {"member_id": "hum-1", "handle": "maintainer", "role": "owner", "presence": "away"},
+    ]
+    text = onboarding.render(
+        packet(peers=peers, events={"items": [event], "cursor": 9, "truncated": False})
+    )
+    assert "  #9 member_joined by maintainer on agt-new" in text
+    assert "reporting to agent-a" in text
+
+
+def test_a_handle_is_still_cleaned() -> None:
+    peers = [{"member_id": "agt-a", "handle": "evil\x1b[2Jname", "role": "admin"}]
+    text = onboarding.render(packet(peers=peers))
+    assert "\x1b" not in text and "reporting to evil" in text

@@ -97,7 +97,22 @@ def _items(data: Any) -> list[dict[str, Any]]:
     return [i for i in data if isinstance(i, dict)] if isinstance(data, list) else []
 
 
-def _who(packet: dict[str, Any]) -> list[str]:
+def _names(packet: dict[str, Any]) -> dict[str, str]:
+    """member id → handle, from the peers and this member itself: a human reads names."""
+    found: dict[str, str] = {}
+    for member in [*_items(packet.get("peers")), _dict(packet.get("me"))]:
+        member_id, handle = member.get("member_id"), member.get("handle")
+        if isinstance(member_id, str) and isinstance(handle, str) and handle:
+            found[member_id] = handle
+    return found
+
+
+def _name(value: Any, names: dict[str, str]) -> str:
+    """A member's handle when the packet names it, else the value as it is (an id)."""
+    return inline(names.get(value, value) if isinstance(value, str) else value)
+
+
+def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
     handle = inline(me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
@@ -108,7 +123,7 @@ def _who(packet: dict[str, Any]) -> list[str]:
     if ms.get("role"):
         role = f"Role: {inline(ms['role'])}"
         if ms.get("reports_to"):
-            role += f", reporting to {inline(ms['reports_to'])}"
+            role += f", reporting to {_name(ms['reports_to'], names)}"
         lines.append(role)
     areas = ms.get("areas")
     if isinstance(areas, list) and areas:
@@ -150,7 +165,7 @@ def _card(card: dict[str, Any]) -> str:
     return line
 
 
-def _request(req: dict[str, Any], answering: bool = False) -> list[str]:
+def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False) -> list[str]:
     lines = [f"  {inline(req.get('id'))} ({inline(req.get('class'))}): {inline(req.get('title'))}"]
     if answering:
         if req.get("summary"):
@@ -164,7 +179,7 @@ def _request(req: dict[str, Any], answering: bool = False) -> list[str]:
         return lines
     reply = answer.get("reply_id")
     label = next((r.get("label") for r in _items(req.get("replies")) if r.get("id") == reply), None)
-    by = f"  answered by {inline(answer.get('by') or '?')}"
+    by = f"  answered by {_name(answer.get('by') or '?', names)}"
     lines.append(by + (f": {inline(label or reply)}" if reply else ""))
     if answer.get("talk"):
         lines.append(
@@ -180,30 +195,30 @@ def _read_more(slug: str, after: Any) -> str:
     return f"`maity api GET /projects/{slug}/events --query after={inline(after)}`"
 
 
-def _event(event: dict[str, Any], slug: str) -> list[str]:
+def _event(event: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
     actor = get(event, "actor", "member_id") or "the hub"
     subject = get(event, "subject", "id")
     seq = event.get("seq")
-    head = f"  #{inline(seq)} {inline(event.get('kind'))} by {inline(actor)}"
+    head = f"  #{inline(seq)} {inline(event.get('kind'))} by {_name(actor, names)}"
     if subject:
-        head += f" on {inline(subject)}"
+        head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":
         return [head]
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))
-    head += f" ({inline(payload.get('type'))}, to {inline(payload.get('to'))})"
+    head += f" ({inline(payload.get('type'))}, to {_name(payload.get('to'), names)})"
     after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
     pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
     return [head, *("  " + q for q in _capped(payload.get("body") or "", pointer))]
 
 
-def _events(packet: dict[str, Any], slug: str) -> list[str]:
+def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
     events = _dict(packet.get("events"))
     lines: list[str] = []
     size, last = 0, None
     for event in _items(events.get("items")):
-        block = _event(event, slug)
+        block = _event(event, slug, names)
         cost = sum(len(line) + 1 for line in block)
         if lines and size + cost > MAX_EVENTS_CHARS:
             return [*lines, f"  … more events after #{inline(last)}: {_read_more(slug, last)}"]
@@ -234,13 +249,14 @@ def render(packet: Any, first: bool = False) -> str:
     packet = _dict(packet)
     out: list[str] = []
     ms = _dict(packet.get("membership"))
+    names = _names(packet)
     slug = inline(get(packet, "project", "slug") or "<slug>")
     paused = ms.get("paused")
     if isinstance(paused, dict):
         out += [
-            f"PAUSED by {inline(paused.get('by'))} since {inline(paused.get('since'))}. You get "
-            "no new work: claims and new cards are refused. Checkpoint, report, unclaim, ask, "
-            "answer, say, the chat, resume and wait still work. The reason:",
+            f"PAUSED by {_name(paused.get('by'), names)} since {inline(paused.get('since'))}. "
+            "You get no new work: claims and new cards are refused. Checkpoint, report, "
+            "unclaim, ask, answer, say, the chat, resume and wait still work. The reason:",
             *quote(paused.get("reason") or ""),
             "",
         ]
@@ -253,7 +269,7 @@ def render(packet: Any, first: bool = False) -> str:
         ]
     elif first:
         out += ["No briefing was given with this join; your work comes from the board.", ""]
-    out += _who(packet)
+    out += _who(packet, names)
     out += _project(packet)
     rules = _dict(packet.get("rules"))
     if rules.get("markdown"):
@@ -271,14 +287,21 @@ def render(packet: Any, first: bool = False) -> str:
         ("Assigned to you, not claimed yet:", [_card(c) for c in _items(packet.get("assigned"))]),
         (
             "Answered since your last session:",
-            [ln for r in _items(reqs.get("answered_since_cursor")) for ln in _request(r)],
+            [ln for r in _items(reqs.get("answered_since_cursor")) for ln in _request(r, names)],
         ),
-        ("Your open requests:", [ln for r in _items(reqs.get("mine_open")) for ln in _request(r)]),
+        (
+            "Your open requests:",
+            [ln for r in _items(reqs.get("mine_open")) for ln in _request(r, names)],
+        ),
         (
             "Requests you may answer (`maity answer <id> --reply <reply>` or `--text`):",
-            [ln for r in _items(reqs.get("to_answer")) for ln in _request(r, answering=True)],
+            [
+                ln
+                for r in _items(reqs.get("to_answer"))
+                for ln in _request(r, names, answering=True)
+            ],
         ),
-        ("Events since your last session:", _events(packet, slug)),
+        ("Events since your last session:", _events(packet, slug, names)),
     ]
     for title, lines in sections:
         if lines:
