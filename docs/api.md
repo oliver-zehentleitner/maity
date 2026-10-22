@@ -3456,7 +3456,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `hot_loop` | `crash_loop` in `supervised` mode |
-| `mode_unsupported`, `model_unsupported` | `harness_refused` |
+| `mode_unsupported`, `model_unsupported`, `target_unknown` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made) |
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
