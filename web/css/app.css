@@ -274,6 +274,14 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
 .free-text button { justify-self: end; }
+/* The @ picker under its text field; a stored mention as a member link. */
+.mention-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 24rem; }
+.mention-list[hidden] { display: none; }
+.mention-option { padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+.mention-option.active { background: var(--surface-2); outline: 1px solid var(--accent); }
+.mention-handle { font-weight: 600; }
+a.mention { font-weight: 600; text-decoration: none; }
+a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .chat-link { margin: 10px 0 0; }
 
 /* ---- board ---------------------------------------------------------- */

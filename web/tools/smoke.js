@@ -192,6 +192,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
   expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Neither — let's talk", "no", "go"]),
     "the replies at the right edge: Later and talk first, the primary one last");
+  // A request's stored mention links to the member; the @ picker in its free text.
+  const hashHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Name of the CLI binary"));
+  if (hashHead.attrs["aria-expanded"] !== "true") { hashHead.click(); await tick(); }
+  const hashEntry = main.querySelector(".current");
+  const triedLink = hashEntry.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-b");
+  expect(triedLink && triedLink.getAttribute("href") === "#/p/maity/members/agt-b", "mentions: a request's tried links its stored mention");
+  const freeText = hashEntry.querySelector(".free-text textarea");
+  const pickList = hashEntry.querySelector(".mention-list");
+  const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
+  freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-c", "@agent-d"])
+    && freeText.getAttribute("aria-expanded") === "true" && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
+    "mentions: @ offers the project's members by handle " + JSON.stringify(options()));
+  freeText.dispatch("keydown", { key: "ArrowDown" }); freeText.dispatch("keydown", { key: "Enter" }); await tick();
+  expect(freeText.value === "Ask @agent-b " && pickList.hidden && freeText.getAttribute("aria-expanded") === "false", "mentions: arrow and Enter put the handle in");
+  freeText.value = "mail me@age"; freeText.dispatch("input"); await tick();
+  expect(pickList.hidden, "mentions: an @ inside a word offers nothing");
+  freeText.value = "`@age"; freeText.dispatch("input"); await tick();
+  expect(pickList.hidden, "mentions: nothing inside inline code");
+  freeText.value = "@m"; freeText.dispatch("input"); await tick();
+  expect(pickList.hidden, "mentions: the writer is not offered");
+  freeText.value = "@r"; freeText.dispatch("input"); await tick();
+  freeText.dispatch("keydown", { key: "Escape" }); await tick();
+  expect(pickList.hidden && freeText.value === "@r", "mentions: Escape closes, the text stays");
+  freeText.value = "";
   expect(main.querySelectorAll("button").every((b) => !/reply-/.test(b.className)), "no reply id becomes a class");
   expect(text(c2).includes("Needs you in the session") && text(c2).includes("ses-a-0007"), "needs_in_session with member and session");
   btn(c2, "Neither — let's talk").click(); await tick(); await tick();
@@ -218,6 +243,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   await go("#/p/maity/board");
   expect(!main.querySelector(".error"), "board renders");
+  // Mentions (docs/api.md §8.6): stored ones become member links, nothing typed does.
+  const reportMention = main.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-d");
+  expect(reportMention && reportMention.getAttribute("href") === "#/p/maity/members/agt-d", "mentions: a report's stored mention links to the member");
+  const wm = (t, ms, f) => win.Maity.dom.withMentions(t, ms, f || "body", (id) => "#/m/" + id);
+  const linkOf = (nodes) => nodes.filter((n) => typeof n !== "string");
+  const emoji = wm("\u{1F642} hi @agent-b!", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 5, length: 8 }]);
+  expect(linkOf(emoji).length === 1 && linkOf(emoji)[0].textContent === "@agent-b" && emoji[emoji.length - 1] === "!",
+    "mentions: offsets count code points, not UTF-16 units");
+  expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
+    "mentions: a stored mention whose text does not match stays text");
+  expect(!linkOf(wm("hi @agent-b", [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 3, length: 8 }])).length
+    && !linkOf(wm("hi @agent-b", [])).length, "mentions: only this field's stored mentions, never a typed @");
+  expect(wm("a @x @y", [{ member_id: "x", handle: "x", field: "body", offset: 2, length: 2 }, { member_id: "y", handle: "y", field: "body", offset: 5, length: 2 }])
+    .map((n) => (typeof n === "string" ? n : "[" + n.textContent + "]")).join("") === "a [@x] [@y]", "mentions: several in one text, in order");
   ["Proposed", "Cancelled", "Context round", "Contract"].forEach((s) => expect(text(main).includes(s), "board shows " + s));
   expect(text(main).includes("Release 0.1.0") && text(main).includes("Not ready:") && text(main).includes("checklist item chk-2 is open"), "release readiness from the hub");
   const relCard = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.1.0"));

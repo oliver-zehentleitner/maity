@@ -315,6 +315,17 @@ never sends a mentions list. The @ picker is there where the page has it.
 An empty message, or one over 16,384 characters, is not sent; the hub's
 mention cap and rate are said in words.
 
+**Mentions** (`docs/api.md` §8.6). Where the dashboard shows a text the
+hub scans — a request's summary, what it tried and the answer's text,
+a report's summary — each mention the hub stored for that field is a
+link to the member (`#/p/<slug>/members/<id>`), taken from the text at
+its offset (code points) only where it reads `@` and the stored handle;
+nothing typed becomes a link. The **@ picker** in the inbox's free text
+offers the project's members by handle (`GET …/members`, read on the
+first `@`), never the writer: arrow keys choose, Enter or Tab puts
+`@handle ` in, Escape closes; an `@` inside a word or in inline code
+offers nothing. The picker only helps to type; the hub resolves.
+
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
 Later, "Neither — let's talk", the replies with the primary one last;
@@ -565,6 +576,7 @@ web/
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu)
+├── js/mentions.js    the @ picker
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all
