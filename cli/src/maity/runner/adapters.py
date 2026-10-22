@@ -122,7 +122,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
-    deny = [f"{tool}(/{ws}/.git/maity/**)" for tool in ("Read", "Edit", "Write")]
+    # Agents commit through git and never edit .git: its config and hooks would turn an
+    # allowed `git status` into anything. The credential is not readable through Read.
+    deny = [f"{tool}(/{ws}/.git/**)" for tool in ("Edit", "Write")]
+    deny += [f"Read(/{ws}/.git/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     settings: dict[str, Any] = {
         "permissions": {"allow": allow, "deny": deny, "defaultMode": "dontAsk"},
@@ -135,6 +138,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             "autoAllowBashIfSandboxed": False,  # the allowlist above still decides
             "network": {"allowedDomains": sorted({*ctx.hosts, *ctx.grant.network}),
                         "strictAllowlist": True},
+            # Repository code run by an allowed build or test command cannot read or replace
+            # the clone's credential; `maity` alone, which signs with it, runs outside.
+            "filesystem": {"denyRead": [f"{ws}/.git/maity"], "denyWrite": [f"{ws}/.git/maity"]},
+            "excludedCommands": ["maity *"],
         }  # fmt: skip
     return settings
 

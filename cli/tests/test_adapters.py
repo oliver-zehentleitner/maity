@@ -52,7 +52,8 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert "Bash(git -c *)" in deny and "Bash(git * --no-index*)" in deny
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
-    assert f"Read(/{ws}/.git/maity/**)" in deny and f"Write(/{ws}/.git/maity/**)" in deny
+    assert f"Read(/{ws}/.git/maity/**)" in deny
+    assert f"Edit(/{ws}/.git/**)" in deny and f"Write(/{ws}/.git/**)" in deny  # config, hooks
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
     assert "sandbox" not in settings
@@ -62,6 +63,9 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["enabled"] and strict["failIfUnavailable"]
     assert strict["allowUnsandboxedCommands"] is False
     assert strict["autoAllowBashIfSandboxed"] is False  # the allowlist still decides
+    assert strict["filesystem"]["denyRead"][0].endswith("/.git/maity")
+    assert strict["filesystem"]["denyWrite"] == strict["filesystem"]["denyRead"]
+    assert strict["excludedCommands"] == ["maity *"]  # it alone reads the credential
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],
         "strictAllowlist": True,
