@@ -85,19 +85,20 @@ def hub_base(url: str) -> str:
 
 def join_target(url: str) -> str:
     """Where `maity join` sends the exchange, from the URL's shape (docs/api.md §13): a
-    `/j/<token>` or `/api/v1/join/<token>` URL → `POST /api/v1/join/<token>` on that host; a
+    `/join/<token>`, `/j/<token>` or `/api/v1/join/<token>` URL → `POST /api/v1/join/<token>` on
+    that host; a
     URL whose path is one segment (a join host, §1.1) → `POST` to that same URL."""
     base = hub_base(url)
     path = urllib.parse.urlsplit(url.strip()).path.rstrip("/")
-    for prefix in ("/j/", f"{API}/join/"):
+    for prefix in ("/join/", "/j/", f"{API}/join/"):
         token = path[len(prefix) :]
         if path.startswith(prefix) and token and "/" not in token:
             return f"{base}{API}/join/{segment(urllib.parse.unquote(token))}"
     token = path[1:]
-    if token and "/" not in token and token not in ("j", "r", "api"):  # a truncated hub URL
+    if token and "/" not in token and token not in ("j", "join", "r", "api"):  # a truncated hub URL
         return f"{base}/{segment(urllib.parse.unquote(token))}"
     raise HubError(
-        f"not a join URL (expected https://<hub>/j/<token> or https://<join host>/<token>): "
+        f"not a join URL (expected https://<hub>/join/<token> or https://<join host>/<token>): "
         f"{safe_url(url)}"
     )
 

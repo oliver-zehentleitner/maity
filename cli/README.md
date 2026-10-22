@@ -42,7 +42,8 @@ maity help                                     # the hub's /api/v1/help
 ```
 
 The join URL has one of two shapes, and the CLI derives the exchange from
-it: `https://<hub>/j/<token>` posts to `/api/v1/join/<token>` on the hub,
+it: `https://<hub>/join/<token>` (or the older `/j/<token>`) posts to
+`/api/v1/join/<token>` on the hub,
 and a join-host URL with a single path segment
 (`https://join.<domain>/<token>`) posts to that same URL. After the
 exchange, the hub URL the answer names (`Maity-Hub`) is kept only if it

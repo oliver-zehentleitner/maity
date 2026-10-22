@@ -100,6 +100,7 @@ def test_hub_base_refuses(url: str) -> None:
     ("url", "target"),
     [
         ("https://h/j/9fK2", "https://h/api/v1/join/9fK2"),
+        ("https://h/join/9fK2", "https://h/api/v1/join/9fK2"),
         ("https://h/api/v1/join/9fK2/", "https://h/api/v1/join/9fK2"),
         ("https://join.h.example/9fK2", "https://join.h.example/9fK2"),
         ("https://join.h.example/9fK2/?x=1#y", "https://join.h.example/9fK2"),
@@ -110,7 +111,15 @@ def test_join_target(url: str, target: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["https://h/", "https://h", "https://h/j/", "https://h/j/a/b", "https://h/x/a"]
+    "url",
+    [
+        "https://h/",
+        "https://h",
+        "https://h/j/",
+        "https://h/join/",
+        "https://h/j/a/b",
+        "https://h/x/a",
+    ],
 )
 def test_join_target_refuses(url: str) -> None:
     with pytest.raises(hub.HubError):
