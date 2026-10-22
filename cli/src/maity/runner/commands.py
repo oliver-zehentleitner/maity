@@ -88,13 +88,14 @@ def cmd_pair(args: argparse.Namespace) -> int:
         created = True
     _preflight(state_dir, path if created else None)
     result = hub.pair_exchange(base, token, code)
+    hub_url = hub.accept_hub(args.url, result.hub)  # before anything is kept
     # The credential first: once the exchange is done, the enrollment is spent, and the
     # credential is the one thing that cannot be had again.
     stored = state.write_credential(state_dir, result.credential)
     state.save_state(
         state_dir,
         {
-            "hub": hub.hub_base(result.hub) if result.hub else base,
+            "hub": hub_url,
             "runner_id": result.runner_id,
             "credential_id": result.credential_id,
         },
@@ -108,11 +109,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
     )
     if created:
         try:
-            state.write_file(path, starter_config(base))
+            state.write_file(path, starter_config(hub_url))
         except OSError as exc:
             print(
                 f"could not write {path} ({exc.strerror}); the credential is stored. Write the "
-                f"configuration by hand, starting with:\n{starter_config(base)}",
+                f"configuration by hand, starting with:\n{starter_config(hub_url)}",
                 file=sys.stderr,
             )
             return 1

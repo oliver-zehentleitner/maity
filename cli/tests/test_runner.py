@@ -246,6 +246,16 @@ def test_pair_without_configuration_writes_one_and_never_prints_the_credential(
     assert not (state_dir / state.STATE_FILE).exists()
 
 
+def test_pair_refuses_a_hub_url_off_the_pair_host(
+    home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.hub_header = "https://evil.example"
+    code = cli.main(["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE])
+    assert code == cli.EXIT_ERROR
+    assert "nothing was stored" in capsys.readouterr().err
+    assert not (home / ".config").exists() and not (home / ".local").exists()
+
+
 def test_pair_reads_the_code_from_stdin(
     home: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:

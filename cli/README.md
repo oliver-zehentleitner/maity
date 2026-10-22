@@ -41,6 +41,16 @@ maity report --task tsk-0004 --summary "Adds the lease to claims"
 maity help                                     # the hub's /api/v1/help
 ```
 
+The join URL has one of two shapes, and the CLI derives the exchange from
+it: `https://<hub>/join/<token>` (or the older `/j/<token>`) posts to
+`/api/v1/join/<token>` on the hub,
+and a join-host URL with a single path segment
+(`https://join.<domain>/<token>`) posts to that same URL. After the
+exchange, the hub URL the answer names (`Maity-Hub`) is kept only if it
+is HTTPS (plain HTTP only on loopback) and on the join URL's host or its
+parent domain; otherwise `join` exits 1 and keeps nothing, and the human
+creates a new join line. `maity runner pair` checks the same way.
+
 A run against the test hub of this package (`tests/fakehub.py`), with a
 resume packet shaped like a real hub's:
 

@@ -94,3 +94,38 @@ headers on a change of host or scheme. That still re-sends the request
 body and its idempotency key to an unknown target, and it turns a
 misconfigured hub URL into confusing `unauthenticated` errors instead of
 one clear message.
+
+## The hub URL from an exchange may only be the given host or its direct parent
+
+**Id:** 1489833b-8fea-4acb-83b1-7e604ff64bc6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §13 (the contract's rule), and the CLI's reading of "parent domain" in the implementation, 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — a749f1eb-f54f-4549-8113-2abee4e2d666 — as of 2026-10-22
+**Revisit when:** a deployment needs its join host more than one level below the public host
+
+`maity join` and `maity runner pair` keep the `Maity-Hub` header only
+when its host equals the join or pair URL's host, or is that host minus
+its first label and still contains a dot (`join.maity.team` →
+`maity.team`). Grandparents and a single-label parent (`team`) are refused.
+The single-segment join-host shape is not taken for `j`, `join`, `r` or `api`, so a
+truncated hub URL is an error instead of an exchange. Hosts are compared after IDNA
+encoding with one trailing dot dropped; an address literal has no parent
+and must match exactly. The port is not compared, and a public suffix
+(`join.co.uk` → `co.uk`) passes like any other parent: the contract asks
+for the parent domain, and the CLI carries no public-suffix list.
+
+**Reason:** the header decides where every later signed request and the
+credential go, and the join host is the surface that is most exposed
+(rule set at the edge, no session). Restricting the claim to the host
+itself or one level up covers the `join.<domain>` layout the contract
+describes and nothing wider; each extra level would let a host under a
+shared suffix name a sibling's parent.
+
+**Rejected alternatives:**
+- Any ancestor domain: `a.b.example` could name `example`, which on a
+  shared hosting suffix belongs to someone else.
+- Trusting the header outright, as before the join host existed: a
+  compromised or spoofed join host could move the credential to a hub of
+  its choice.

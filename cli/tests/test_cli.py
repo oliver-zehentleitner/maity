@@ -89,25 +89,89 @@ def test_hub_base(url: str, base: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["http://hub.example", "ftp://hub.example", "hub.example", "https://u:p@hub.example"]
-)
+    "url",
+    [
+        "http://hub.example", "ftp://hub.example", "hub.example", "https://u:p@hub.example",
+        "https://[x", "https://hub.example:abc", "https://hub.example:99999",
+    ],
+)  # fmt: skip
 def test_hub_base_refuses(url: str) -> None:
     with pytest.raises(hub.HubError):
         hub.hub_base(url)
 
 
 @pytest.mark.parametrize(
-    ("url", "token"),
-    [("https://h/j/9fK2", "9fK2"), ("https://h/api/v1/join/9fK2/", "9fK2")],
+    ("url", "target"),
+    [
+        ("https://h/j/9fK2", "https://h/api/v1/join/9fK2"),
+        ("https://h/join/9fK2", "https://h/api/v1/join/9fK2"),
+        ("https://h/api/v1/join/9fK2/", "https://h/api/v1/join/9fK2"),
+        ("https://join.h.example/9fK2", "https://join.h.example/9fK2"),
+        ("https://join.h.example/9fK2/?x=1#y", "https://join.h.example/9fK2"),
+    ],
 )
-def test_join_token(url: str, token: str) -> None:
-    assert hub.join_token(url) == token
+def test_join_target(url: str, target: str) -> None:
+    assert hub.join_target(url) == target
 
 
-@pytest.mark.parametrize("url", ["https://h/", "https://h/j/", "https://h/j/a/b", "https://h/x/a"])
-def test_join_token_refuses(url: str) -> None:
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://h/",
+        "https://h",
+        "https://h/j/",
+        "https://h/join/",
+        "https://h/j/a/b",
+        "https://h/x/a",
+    ],
+)
+def test_join_target_refuses(url: str) -> None:
     with pytest.raises(hub.HubError):
-        hub.join_token(url)
+        hub.join_target(url)
+
+
+@pytest.mark.parametrize(
+    ("given", "header", "kept"),
+    [
+        ("https://join.maity.team/t", "https://maity.team", "https://maity.team"),
+        ("https://maity.team/j/t", "https://maity.team/", "https://maity.team"),
+        ("https://maity.team/j/t", None, "https://maity.team"),
+        ("https://join.maity.team/t", "https://join.maity.team", "https://join.maity.team"),
+        ("http://127.0.0.1:8/j/t", "http://127.0.0.1:9", "http://127.0.0.1:9"),
+        ("https://maity.team./j/t", "https://maity.team", "https://maity.team"),
+        (
+            "https://join.bücher.example/t",
+            "https://xn--bcher-kva.example",
+            "https://xn--bcher-kva.example",
+        ),
+    ],
+)
+def test_accept_hub(given: str, header: str | None, kept: str) -> None:
+    assert hub.accept_hub(given, header) == kept
+
+
+@pytest.mark.parametrize(
+    ("given", "header"),
+    [
+        ("https://join.maity.team/t", "https://evil.example"),
+        ("https://join.maity.team/t", "http://maity.team"),  # plain HTTP off loopback
+        ("https://join.maity.team/t", "https://u:p@maity.team"),
+        ("https://join.maity.team/t", "https://team"),  # a parent without a dot
+        ("https://a.join.maity.team/t", "https://maity.team"),  # grandparent
+        ("https://maity.team/j/t", "https://join.maity.team"),  # a child, not a parent
+        ("https://maity.team/j/t", "https://maity.team.evil.example"),
+        ("https://maity.team/j/t", "not a url"),
+        ("http://127.0.0.1:8/j/t", "https://0.0.1"),  # an address has no parent
+        ("https://10.0.0.200/j/t", "https://0.0.200"),
+        ("https://maity.team/j/t", "https://[x"),
+        ("https://maity.team/j/t", "https://maity.team:abc"),
+        ("https://maity.team/j/t", "https://maity.team.."),
+        ("https://x\u3002join.maity.team/t", "https://maity.team"),  # 。 splits labels too
+    ],
+)
+def test_accept_hub_refuses(given: str, header: str) -> None:
+    with pytest.raises(hub.HubError, match="nothing was stored"):
+        hub.accept_hub(given, header)
 
 
 # --- join ---------------------------------------------------------------------------------
@@ -134,6 +198,35 @@ def test_join_stores_the_credential_and_never_prints_it(
     assert resume.json()["model"] == "m-1"
     assert "idempotency-key" not in resume.headers
     assert pointer.BEGIN in (clone / "AGENTS.md").read_text()
+
+
+def test_join_on_a_join_host_posts_to_the_same_url(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = cli.main(["join", f"{fake.url}/{fakehub.TOKEN}", "--code", fakehub.CODE])
+    assert code == cli.EXIT_OK, output(capsys)
+    assert [s.path for s in fake.seen if s.method == "POST"][0] == f"/{fakehub.TOKEN}"
+    assert state.load_state(state.resolve_state_dir())["hub"] == fake.url
+
+
+@pytest.mark.parametrize(
+    "header", ["https://evil.example", "http://127.0.0.1.evil.example", "ftp://127.0.0.1"]
+)
+def test_join_refuses_a_hub_url_off_the_join_host_and_keeps_nothing(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], header: str
+) -> None:
+    fake.hub_header = header
+    code = cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE])
+    assert code == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "nothing was stored" in err and fakehub.SECRET not in err
+    directory = state.resolve_state_dir()
+    assert not state.has_credential(directory)
+    assert state.load_state(directory) == {}
+    assert (
+        not (clone / "AGENTS.md").exists() or pointer.BEGIN not in (clone / "AGENTS.md").read_text()
+    )
+    assert fake.signed() == []
 
 
 def test_join_with_a_wrong_code_writes_nothing(
@@ -421,7 +514,7 @@ def test_help_refuses_a_redirect(fake: fakehub.FakeHub) -> None:
     "url", ["ftp://user:hunter2@hub.example/x", "https://user:hunter2@hub.example/j/t"]
 )
 def test_userinfo_is_never_echoed(url: str) -> None:
-    for call in (hub.hub_base, hub.join_token):
+    for call in (hub.hub_base, hub.join_target):
         try:
             call(url)
         except hub.HubError as exc:

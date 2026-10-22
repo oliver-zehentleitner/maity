@@ -147,8 +147,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
 
 
 def cmd_join(args: argparse.Namespace) -> int:
-    base = hub.hub_base(args.url)
-    token = hub.join_token(args.url)
+    target = hub.join_target(args.url)
     if not args.code.strip():
         raise UsageError("the join code is empty")
     directory = state.resolve_state_dir()
@@ -159,12 +158,13 @@ def cmd_join(args: argparse.Namespace) -> int:
             "before joining again"
         )
         return EXIT_ERROR
-    result = hub.exchange(base, token, args.code.strip())
+    result = hub.exchange(target, args.code.strip())
+    base = hub.accept_hub(args.url, result.hub)  # before anything is kept
     path = state.write_credential(directory, result.credential)
     state.save_state(
         directory,
         {
-            "hub": hub.hub_base(result.hub) if result.hub else base,
+            "hub": base,
             "project": result.project,
             "member_id": result.member_id,
             "credential_id": result.credential_id,

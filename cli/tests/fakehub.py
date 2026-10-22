@@ -69,6 +69,7 @@ class FakeHub:
     skew_once: bool = False
     join_used: bool = False
     pair_used: bool = False
+    hub_header: str | None = None  # Maity-Hub answered by the exchanges; None: the hub's URL
     routes: dict[tuple[str, str], Callable[[Seen], tuple[int, Any]]] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
 
@@ -162,11 +163,11 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "Maity-Credential-Id": RUNNER_CREDENTIAL_ID,
                         "Maity-Runner-Id": "rnr-0002",
                         "Maity-Attached": "maity, sample",
-                        "Maity-Hub": hub.url,
+                        "Maity-Hub": hub.hub_header or hub.url,
                         "Maity-Signing": "required",
                     },
                 )
-            if path == f"/api/v1/join/{TOKEN}" and self.command == "POST":
+            if path in (f"/api/v1/join/{TOKEN}", f"/{TOKEN}") and self.command == "POST":
                 if hub.join_used:
                     return self._error(404, "not_found")
                 if seen.json().get("code") != CODE:
@@ -179,7 +180,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "Maity-Credential-Id": CREDENTIAL_ID,
                         "Maity-Member-Id": "agt-b",
                         "Maity-Project": "maity",
-                        "Maity-Hub": hub.url,
+                        "Maity-Hub": hub.hub_header or hub.url,
                     },
                 )
             if not self._verify(seen):
