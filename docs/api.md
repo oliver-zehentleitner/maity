@@ -1199,7 +1199,7 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
-| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
+| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
@@ -2175,6 +2175,9 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
   `a/@b` are no mention); the character after the run is the end of the
   text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
+  Both classes are ASCII only: any other character, a letter outside
+  ASCII or a combining mark included, is a boundary, so `@agent-bé`
+  and `@agent-b` followed by U+0301 mention `agent-b`.
 - **Not in code.** Inside an inline code span (backticks, as CommonMark
   pairs them) or a fenced code block (a line starting with three or
   more backticks or tildes, to its closing fence or the end of the text)
@@ -2199,6 +2202,11 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   `rate_limited` with `Retry-After` and stores nothing. A self-mention,
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
+  "Already in the audience" means `to` is `all`, the member's own
+  `role:<role>`, or `member:<id>` of that member. Such a mention still
+  adds `member:<id>` to the audience, so the member's own feed and filters
+  show it as addressed to them, but it wakes no one who was not already
+  woken and costs the writer nothing.
 
 **Stored shape**, on the object, oldest offset first:
 
