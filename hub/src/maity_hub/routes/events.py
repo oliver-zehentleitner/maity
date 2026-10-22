@@ -262,7 +262,7 @@ def post_message(
                 "all" in audience or f"member:{m}" in audience or f"role:{roles[m]}" in audience
             )
         ]
-        mentions.PINGS.charge(mine.id, len(pinged))
+        mentions.charge(conn, mine.id, len(pinged))
         audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in named)]))
     payload = {
         "type": body.type,

@@ -5,17 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import mentions
+from maity_hub import events, mentions
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests.conftest import ClientFactory
-
-
-@pytest.fixture(autouse=True)
-def _fresh_pings() -> None:
-    mentions.PINGS.reset()
 
 
 @pytest.fixture
@@ -52,6 +48,11 @@ def agent_named(
         ("~~~\n@agent-b", []),
         ("` unmatched @agent-b", ["agent-b"]),
         ("\\@agent-b", ["agent-b"]),
+        # Only \n ends a line: a fence after \x0b, \x85 or U+2028 opens nothing.
+        ("x\u2028```\n@agent-b", ["agent-b"]),
+        ("x\x85~~~\n@agent-b", ["agent-b"]),
+        ("x\x0b```\n@agent-b", ["agent-b"]),
+        ("```\r\n@agent-b\r\n```\r\n@agent-c", ["agent-c"]),
     ],
 )
 def test_the_rule(text: str, handles: list[str]) -> None:
@@ -120,6 +121,45 @@ def test_pings_are_rate_limited(make_client: ClientFactory, owner: flow.Human) -
     limited = say(agent, to=owner.id, body="@agent-c")
     assert limited.status_code == 429 and int(limited.headers["Retry-After"]) > 0
     assert say(agent, to="all", body="@agent-c").status_code == 201  # `all` reaches it already
+
+
+def test_a_write_that_does_not_commit_gives_its_pings_back(migrated: Engine) -> None:
+    with pytest.raises(RuntimeError), events.transaction(migrated) as conn:
+        mentions.charge(conn, 7, mentions.PINGS_PER_WINDOW)
+        raise RuntimeError("a later failure")
+    with events.transaction(migrated) as conn:
+        mentions.charge(conn, 7, mentions.PINGS_PER_WINDOW)  # the whole budget is there
+    with pytest.raises(ApiError), events.transaction(migrated) as conn:
+        mentions.charge(conn, 7, 1)
+
+
+def test_retry_after_waits_for_room_for_every_ping(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = agent_named(make_client, owner, "agent-a")
+    for handle in ("agent-c", "agent-d"):
+        agent_named(make_client, owner, handle)
+    for _ in range(29):
+        assert say(agent, to=owner.id, body="@agent-c").status_code == 201
+    limited = say(agent, to=owner.id, body="@agent-c @agent-d")
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) == 600  # all 29 were sent just now
+
+
+def test_a_chat_refuses_mentions_as_read_only(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = agent_named(make_client, owner, "agent-a")
+    response = owner.post(
+        f"/projects/maity/conversations/{agent.id}/messages", {"body": "x", "mentions": []}
+    )
+    assert response.json()["error"]["details"]["fields"] == {"mentions": "read_only"}
+
+
+def test_many_code_spans_in_a_long_text_pair_as_commonmark_does() -> None:
+    # 3000 single backticks: pairs (0,1), (2,3), …; the handle after each closer is text.
+    text = "x " + "` @agent-b " * 3000 + "``"  # the `` at the end closes nothing
+    assert len(mentions.candidates(text)) == 1500
 
 
 # --- cards, reports, requests --------------------------------------------------------------
@@ -220,4 +260,11 @@ def test_the_instance_admin_and_the_user_list(
     rest = owner.get(f"/admin/users?limit=1&cursor={page['next_cursor']}").json()
     assert [u["handle"] for u in rest["items"]] == ["someone"]
     assert [u["handle"] for u in owner.get("/admin/users?q=SOME").json()["items"]] == ["someone"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human).where(t.human.c.handle == "someone").values(display_name="Jörg 100%")
+        )
+    for q, handles in [("JÖRG", ["someone"]), ("%", ["someone"]), ("_", []), ("0%", ["someone"])]:
+        found = owner.get("/admin/users", params={"q": q}).json()["items"]
+        assert [u["handle"] for u in found] == handles, q
     assert owner.get("/admin/users?disabled=true").json()["items"] == []

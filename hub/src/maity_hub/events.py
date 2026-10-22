@@ -22,6 +22,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 
 _PENDING = "maity_pending_events"
+_UNDO = "maity_undo_on_rollback"
 
 
 @dataclass(frozen=True)
@@ -75,14 +76,31 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     announcement waits until `begin()` has returned cleanly.
     """
     pending: list[tuple[str, int]] = []
-    with engine.begin() as conn:
-        conn.info[_PENDING] = pending
-        try:
-            yield conn
-        finally:
-            conn.info.pop(_PENDING, None)
+    undo: list[Callable[[], None]] = []
+    try:
+        with engine.begin() as conn:
+            conn.info[_PENDING] = pending
+            conn.info[_UNDO] = undo
+            try:
+                yield conn
+            finally:
+                conn.info.pop(_PENDING, None)
+                conn.info.pop(_UNDO, None)
+    except BaseException:
+        for step in reversed(undo):
+            step()
+        raise
     for project_id, seq in pending:
         notifier.notify(project_id, seq)
+
+
+def on_rollback(conn: Connection, step: Callable[[], None]) -> None:
+    """Run `step` when the caller's `transaction` does not commit: in-process state
+    (a rate charged) must not outlive a write that never happened."""
+    undo = conn.info.get(_UNDO)
+    if undo is None:
+        raise RuntimeError("events.on_rollback outside events.transaction()")
+    undo.append(step)
 
 
 def lock_project(conn: Connection, project_id: str) -> Any:

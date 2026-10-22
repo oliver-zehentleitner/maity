@@ -707,7 +707,7 @@ def _ping(
     new = [m for m in mentions.members(found) if m not in known and m != mine.principal_id]
     if not new:
         return
-    mentions.PINGS.charge(mine.id, len(new))
+    mentions.charge(conn, mine.id, len(new))
     emit(
         conn,
         mine.project.id,

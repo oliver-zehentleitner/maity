@@ -20,7 +20,7 @@ from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, not_found
-from maity_hub.models import Strict, markdown
+from maity_hub.models import Written, markdown
 from maity_hub.routes.events import MessageIn, chat_parties, post_message
 from maity_hub.views import principal_id, ts
 
@@ -29,7 +29,10 @@ router = APIRouter()
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
-class ChatIn(Strict):
+class ChatIn(Written):
+    """A chat message: never resolved for mentions (§8.6), but a client's `mentions`
+    is `read_only` here as on every other text the hub would scan."""
+
     body: str = markdown(min_length=1)
 
 

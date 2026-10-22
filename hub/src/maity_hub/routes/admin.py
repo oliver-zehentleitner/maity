@@ -35,17 +35,23 @@ def list_users(
         if disabled is True:  # no account is disabled before the accounts design (§16.1)
             return JSONResponse({"items": [], "next_cursor": None})
         query = select(t.human)
-        if q is not None:
-            needle = f"%{q.lower()}%"
-            query = query.where(
-                func.lower(t.human.c.handle).like(needle)
-                | func.lower(t.human.c.display_name).like(needle)
-            )
         if cursor is not None:
             if not cursor:
                 raise invalid({"cursor": "invalid"})
             query = query.where(t.human.c.handle > cursor)
-        rows = conn.execute(query.order_by(t.human.c.handle).limit(limit + 1)).all()
+        query = query.order_by(t.human.c.handle)
+        if q is None:
+            rows = conn.execute(query.limit(limit + 1)).all()
+        else:
+            # Matched here, not with LIKE: no wildcard in `q` to escape, and the same
+            # case folding on every database (SQLite's lower() is ASCII only). An
+            # instance's humans are few; the whole list is read.
+            needle = q.casefold()
+            rows = [
+                row
+                for row in conn.execute(query).all()
+                if needle in row.handle.casefold() or needle in row.display_name.casefold()
+            ][: limit + 1]
         page = rows[:limit]
         ids = [r.id for r in page]
         memberships = _counts(
