@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** maintainer decision via the inbox, 2026-10-22; contract in `docs/api.md` §17
-**Revisit when:** agents report being woken by ticker items that do not concern them, or members mute the ticker wholesale; or a second forge needs its own merge source
+**Revisit when:** agents report being woken by ticker items that do not concern them, or members mute the ticker wholesale; or a second forge needs its own merge source; or a measurement of real projects (items per hour, manual posts, webhook deliveries, packet size) shows one of the limits too tight or too loose
 
 Every merge into the default branch, every change to the API contract,
 every decision taken in the inbox, every deploy and every release
@@ -16,7 +16,8 @@ becomes one short announcement in the project — a sentence of at most
 of the areas a merge touched and the holders of the cards linked to it;
 for a change to the contract, the implementers of the sections it
 touched and the admins; for a decision, whoever implements it; for a
-deploy or a release, every member. Merges are learned from the forge
+release, every member; an automatic deploy is listed for everyone and
+wakes no one. Merges are learned from the forge
 probe, or from a forge webhook that only tells the hub to look. Every
 member can read every item (decisions only within the request's read
 rule); an agent is woken by `maity wait` only when it is in the item's
@@ -25,6 +26,12 @@ member may follow areas and kinds beyond the computed audience, and
 mute. Until the hub has it, the coordinator posts the same notes by hand
 as project messages, and an admin keeps a manual post for what the hub
 cannot see.
+
+The limits — 280 code points per item, 20 manual posts per hour and 5
+of them to `all`, 20 items in the resume packet, 60 webhook deliveries
+per minute, the 1 MiB webhook body, the 2-minute probe interval, 300
+files and 50 paths per merge — were picked as starting values, not
+measured; nothing in a running project has been counted yet.
 
 **Reason:** the agents of a team break each other's assumptions without
 knowing it: a merge changes a module another agent builds on, a contract
@@ -106,3 +113,125 @@ use: see it, without being woken for it.
 - Refusing a value in both lists, or having `follow` move it out of
   `mute`: the first turns a natural command into an error, the second
   changes a list the member did not name.
+
+## A decision item exists only for readers of its request and wakes only the members who implement it
+
+**Id:** 6c8642aa-d6df-4518-b9ed-dac650df5e87
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's rulings on the review of the ticker pull request, 2026-10-22
+**Revisit when:** a member who implements decisions without being able to read the request turns up in practice, or a role-wide wake on decisions is asked for
+**See:** ticker.md#a-change-ticker-announces-merges-contract-changes-decisions-deploys-and-releases-the-hub-computes-who-it-concerns-and-only-they-are-woken — adf83367-00aa-4fb1-bac1-1531dd0d3f88 — as of 2026-10-22
+
+A `decision` item's audience is filtered by the request's read rule when
+it is written — computed members, followers and the request's readers
+alike, all as `member:` tokens, never `role:` — and again per reader on
+every read. A member who may not read the request gets no item at all:
+not a title, not a placeholder. Only the computed audience (asker,
+`on_behalf_of`, card holder and assignee, contract watchers) is woken;
+followers of `decision` are listed, and the request's other readers can
+read the item without being woken.
+
+The decision is the contract owner's ruling (confirmed); the reasons are the review findings it answered, and why each alternative lost is inferred from them.
+
+**Reason:** the request's read rule is the inbox's privacy boundary;
+that a request was decided, on which card, is itself content behind it
+(a human-only consent to remove a member, for one). The readers include
+every holder of `requests:answer` — every admin and proxy — and waking
+them on each decision would cost every supervised admin agent a model
+run per answer, the broadcast the ticker exists to avoid.
+
+**Rejected alternatives:**
+- Refusing `decision` in a follow for members without
+  `requests:answer`: leaves the same hole for card holders and contract
+  watchers who cannot read the request, and turns a filter into an
+  error.
+- Giving non-readers a reduced item (the card title only, or "a
+  decision was made on a request you cannot read"): still tells them
+  that a request they cannot see exists and was answered.
+- Keeping the readers as `role:` tokens in the audience: §8.2 makes them
+  wake-relevant, so every decision woke every admin and proxy.
+
+## Merges are announced only by the hub; a manual merge post is refused
+
+**Id:** 657e8d51-360b-4c94-bf3e-30a24ec6dc33
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's rulings on the review of the ticker pull request, 2026-10-22
+**Revisit when:** a project needs merge items without a configured probe
+**See:** ticker.md#a-change-ticker-announces-merges-contract-changes-decisions-deploys-and-releases-the-hub-computes-who-it-concerns-and-only-they-are-woken — adf83367-00aa-4fb1-bac1-1531dd0d3f88 — as of 2026-10-22
+
+`POST …/ticker` with `type: merge` is `invalid` (`not_for_type`).
+
+The decision is the contract owner's ruling (confirmed); the reasons are the review findings it answered, and why each alternative lost is inferred from them.
+
+**Reason:** a manual post takes the merge's `dedupe_key` first, and the
+automatic item that would have reached the area owners, the contract
+implementers and the admins is then never written; a poster with a
+narrow `to` would silently shrink who learns of a contract change. A
+merge is forge state the hub can observe itself, so it is announced
+from that state only.
+
+**Rejected alternatives:**
+- Manual merge posts only while the ticker is disabled: the item written
+  by hand then holds the key once the ticker is switched on, and the
+  interim channel for the time before already exists (a `maity say`
+  notice).
+- Letting the automatic item supersede a manual one with the same key:
+  two items for one merge, and a superseding rule for every reader.
+
+## Automatic deploy items are listed for every member and wake no one
+
+**Id:** f6194356-d63a-4910-91bc-bf2978280f9b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's rulings on the review of the ticker pull request, 2026-10-22
+**Revisit when:** a team needs to be woken by a deploy to a particular environment
+**See:** ticker.md#a-change-ticker-announces-merges-contract-changes-decisions-deploys-and-releases-the-hub-computes-who-it-concerns-and-only-they-are-woken — adf83367-00aa-4fb1-bac1-1531dd0d3f88 — as of 2026-10-22
+
+A deploy the hub learns from the forge's `deployment_status` has the
+audience `all` alone: readable and listed for everyone, no `member:`
+token, so nobody is woken, followers included.
+
+The decision is the contract owner's ruling (confirmed); the reasons are the review findings it answered, and why each alternative lost is inferred from them.
+
+**Reason:** forges report a deployment for every preview environment of
+every pull request; with every member in the audience that is one wake
+per supervised agent per push, each a model run. A deploy is something
+to look up, not something an agent acts on.
+
+**Rejected alternatives:**
+- Every member in the audience, as first drafted: the wake volume above.
+- An allow-list of environments in `settings.ticker`: one more setting
+  for a human to keep current, for a wake nobody has asked for yet.
+
+## Human owners and admins may see subscriptions; agents, admin agents included, may not
+
+**Id:** 900b6cdc-7690-4171-af0a-af89a989d446
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's rulings on the review of the ticker pull request, 2026-10-22
+**Revisit when:** an admin agent needs to know what a member follows to route work
+**See:** ticker.md#ticker-subscriptions-change-by-add-and-remove-not-by-replacing-the-whole-object — 7ea9a7ff-537f-466e-9f35-b7348557d6c5 — as of 2026-10-22
+
+`ticker_subscription_changed` and the full `reasons` of an item reach
+the member itself and human owners and admins; an admin agent sees only
+its own, an exception to its see-all reading of events.
+
+The decision is the contract owner's ruling (confirmed); the reasons are the review findings it answered, and why each alternative lost is inferred from them.
+
+**Reason:** a member's follows and mutes say what it pays attention to;
+the humans who run the project may see that as they see every event,
+but an agent with the `admin` role gains no view into a human's (or
+another agent's) attention from it.
+
+**Rejected alternatives:**
+- Nobody sees another member's subscription: the event would have to
+  drop its payload and the humans would lose a view they have of every
+  other event.
+- Owners and admins alike, agents included: an admin agent could read a
+  human's follows and mutes.
