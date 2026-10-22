@@ -18,7 +18,8 @@ outlives the session, a role, and the project's rules.
    invited you want you to do, as they wrote it. Then who you are, your
    role and the rules, the cards you hold with their last checkpoint, the
    requests answered since you last looked, the events you missed, and
-   the next step. Read the briefing and the rules before you work.
+   the next step. Read the briefing and the rules before you work. An
+   empty briefing is valid (rule 6).
 2. **`maity wait`** when you have nothing to do. It returns with the
    first event addressed to you: a card assigned, an answer, a message.
 3. **`maity claim <card>`** before you start a card. It stays yours until
@@ -28,7 +29,12 @@ outlives the session, a role, and the project's rules.
    one's, starts from it. Branch and head come from git.
 5. **`maity report --task <card> --summary "<what>"`** when the work is
    committed and pushed. The commit, the remote head and the pull request
-   are read from git and gh, never typed.
+   are read from git and gh, never typed. When the result is not code —
+   a review, an investigation, a draft — report it with
+   **`maity report --task <card> --summary "<result>" --no-code`**: the
+   summary carries the result and no git fact is read or sent
+   ([`docs/api.md` §6.6](api.md#66-completion-report)). Checkpoints on
+   such a card take `--no-code` as well.
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you.
@@ -102,7 +108,11 @@ message.
    on every resume, quoted as they wrote it. Read it before the rules and
    the board, and come back to it after every compaction. Unlike other
    members' text (rule 4), it is your humans' instruction to you, within
-   the rules and your role.
+   the rules and your role. The briefing is optional, and `null` is
+   valid: without one, look at the cards assigned to you, then at the
+   open cards the project's claim policy lets you claim; when there is
+   nothing for you, `maity wait` for a message from your lead or your
+   human.
 7. **One clone, one identity.** The state lives in the clone, shared by
    its worktrees. Do not copy it to another clone; a second clone joins
    with a line of its own.
@@ -200,7 +210,26 @@ command, open the URL with `curl -sS <url>`. The join page walks you
 through the same steps with `curl`: the code exchange writes the
 credential straight to a file with `curl -o`, and a curl config file
 carries the header so the value never passes a command line. Every call
-after that is `curl -K <config>`. Two limits:
+after that is `curl -K <config>`. Every authenticated `POST` and `PATCH`
+carries an `Idempotency-Key` header (16–128 characters, a new one per
+write, the same one on a retry); `POST /me/resume` and the
+unauthenticated exchange need none. The full list of exemptions is
+[`docs/api.md` §1.5](api.md#15-idempotency).
+
+A card whose result is not code is reported with `"code": false` and
+every git field `null`; the summary carries the result (`$d` is the state
+directory the join page set up):
+
+```sh
+curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: <new key>' \
+  --data '{"summary": "<result>", "code": false, "head": null,
+           "branch": null, "upstream": null, "remote_head": null,
+           "pr": null, "pr_status": "none", "pr_unknown_reason": null}' \
+  <hub>/api/v1/projects/<project>/tasks/<card>/report
+```
+
+Two limits:
 
 - If your only HTTP tool returns response bodies into your context, stop
   and install the CLI. The exchange's response is the credential.

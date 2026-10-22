@@ -7,8 +7,11 @@ contributors and for the agents that work on or with the hub.
 
 Status: design, 2026-10-21. The hub, CLI and dashboard exist as skeletons
 (`hub/`, `cli/`, `web/`); the API contract in `docs/api.md` is the
-binding shape of every field and endpoint named here, and the security
-document in `docs/security.md` follows both. Where a decision is recorded
+binding shape of every field and endpoint named here. A separate
+security document is planned (`TASKS.md`) and does not exist yet; until
+it does, the security design is §4 and §5 here, the wire rules are
+`docs/api.md` §1.5 and §2, and the recorded rationale is
+`context/security.md`. Where a decision is recorded
 in `context/` it is named by file; everything else comes from the design
 work that preceded the skeletons and is recorded in `context/` as it
 lands in code. Nothing here is a promise about schedule.
@@ -167,7 +170,9 @@ same profile inherits the claim on resume; another profile takes over
 only after expiry and reassignment by an admin. There is no dispatcher
 and no automatic release: quota pauses last hours, and an auto-released
 claim mid-pause is the failure the inheritance rule exists to avoid.
-Expired leases are simply visible and claimable.
+An expired lease is visible on the board, and the card becomes eligible
+for reassignment: a claim on it still answers `already_claimed` until the
+holder releases it or an admin assigns it (`docs/api.md` §6.5).
 
 Cards are created at hand-out and closed from the completion report, so
 the board is fed as a side effect of work — a board that needs hand
@@ -322,10 +327,11 @@ human pastes the line into any running agent session.
   non-secret state (hub URL, project, identity, cursor) next to it, then
   runs `resume` and prints the packet. It refuses a clone that already
   holds a credential, plain HTTP to anything but loopback, and a URL with
-  credentials in it. The pointer block it writes into `AGENTS.md` and,
-  where the repository uses one, `CLAUDE.md` says that the repository is a
-  Maity project and that a session runs `maity resume` at its start; it
-  contains no URL to fetch and follow, and no secret. Whether that block is
+  credentials in it. The pointer block it prints — and writes into
+  `AGENTS.md` and, where the repository uses one, `CLAUDE.md` only when
+  given `--pointer` — says that the repository is a Maity project and
+  that a session runs `maity resume` at its start; it contains no URL to
+  fetch and follow, and no secret. Whether that block is
   committed is the repository's choice.
 - **Page-driven path.** Joining must work with nothing installed
   (`context/join.md`): `GET` on the join URL answers an agent, or `curl`,
@@ -405,7 +411,8 @@ changes state records the credential id it was made with.
 
 - **Bearer** (the page-driven path): `Authorization: Bearer <credential>`
   over TLS; the hub hashes and compares in constant time. State-changing
-  calls carry an idempotency key, unique per credential so that a new
+  calls carry an idempotency key (the exemptions are listed in
+  `docs/api.md` §1.5), unique per credential so that a new
   session can safely retry; a repeated call answers with the current
   state of its subject, not a stored response.
 - **Signed** (the CLI): an HMAC over method, path, query, timestamp,
@@ -427,8 +434,8 @@ changes state records the credential id it was made with.
   column with a key from the hub's environment (the CLI's scheme is
   unchanged by it); asymmetric keys — the CLI holding a private key, the
   hub only a public one — would remove the tension entirely at the price
-  of a signing primitive the standard library lacks, and `docs/security.md`
-  records them as the revisit condition.
+  of a signing primitive the standard library lacks; §13 records them as
+  the revisit condition.
 - **Revocation** is per credential, in the dashboard, effective on the
   next call. The hub refuses any request body or query string that
   contains a string in its credential format; when the string is a real
