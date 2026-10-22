@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
@@ -177,6 +178,16 @@ window.Maity = window.Maity || {};
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     card.updated_at = nowIso();
     return card;
+  }
+
+  let attachSerial = 0;
+  const activeAttachments = (slug) => runnersFile().attachments
+    .filter((a) => a.project === slug && !a.detached_at)
+    .sort((x, y) => runnerOf(x.runner_id, "").name.localeCompare(runnerOf(y.runner_id, "").name));
+  function attachmentView(a) {
+    const counts = (runnersFile().active_placements || {})[a.runner_id] || {};
+    return { id: a.id, runner: runnerOf(a.runner_id, ""), project: a.project, attached_by: a.attached_by,
+      attached_at: a.attached_at, detached_at: a.detached_at, active_placements: a.detached_at ? 0 : counts[a.project] || 0 };
   }
 
   // A release card that may still change: closed ones are a record.
@@ -416,8 +427,39 @@ window.Maity = window.Maity || {};
         r.credential_state = "revoked";
         r.removed_at = nowIso();
         r.projects = [];
+        runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
       return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+    }],
+    // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
+    ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: activeAttachments(m[1]).map(attachmentView), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      const r = runnersFile().items.find((x) => x.id === body.runner_id && !x.removed_at);
+      if (!r || r.owner_id !== me().member.id) fail(400, "invalid", "attach one of your own runners", path, { fields: { runner_id: "not_yours" } });
+      const open = activeAttachments(m[1]).find((a) => a.runner_id === r.id);
+      if (open) fail(409, "already_attached", "the runner is attached already", path, { attachment: attachmentView(open) });
+      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: m[1],
+        attached_by: me().member.id, attached_at: nowIso(), detached_at: null };
+      runnersFile().attachments.push(a);
+      r.projects = (r.projects || []).concat(m[1]);
+      return attachmentView(a);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/runners\/([^/]+)$/, (m, body, path) => {
+      const all = runnersFile().attachments.filter((x) => x.project === m[1] && x.runner_id === m[2]);
+      if (!all.length) fail(404, "not_found", "the runner was never attached here", path);
+      const a = all.find((x) => !x.detached_at) || all[all.length - 1];
+      if (!a.detached_at) {
+        a.detached_at = nowIso();
+        const r = runnerOf(m[2], path);
+        r.projects = (r.projects || []).filter((s) => s !== m[1]);
+        const counts = (runnersFile().active_placements || {})[r.id];
+        if (counts) delete counts[m[1]];
+      }
+      return attachmentView(a);
     }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
@@ -501,6 +543,21 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if ("repository" in body) {
+        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
+        if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
+        }
+        const same = p.repository && p.repository.url === url;
+        // What the repository had, kept by its URL, comes back with it: the
+        // export follows the repository, and a new one has not been read yet.
+        if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
+        const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
+        p.repository = back ? back.repository
+          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
+      }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
         if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
@@ -573,6 +630,49 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.11 the overview: counts per column (closed ones after closed_after),
+    // open requests as this caller would list them, the latest reports.
+    ["GET", /^\/projects\/([^/]+)\/overview$/, (m, body, path, query) => {
+      const after = query.get("closed_after");
+      if (after !== null && Number.isNaN(Date.parse(after))) fail(400, "invalid", "closed_after is no time", path, { fields: { closed_after: "invalid" } });
+      const limit = query.get("limit") === null ? 10 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) fail(400, "invalid", "limit is 1 to 50", path, { fields: { limit: "invalid" } });
+      const cards = file(m[1], "tasks.json", path).items;
+      const counts = { proposed: 0, open: 0, in_progress: 0, blocked: 0, review: 0, done: 0, cancelled: 0 };
+      cards.forEach((t) => {
+        const closed = t.status === "done" || t.status === "cancelled";
+        if (closed && after && Date.parse(t.closed_at || t.updated_at) <= Date.parse(after)) return;
+        if (t.status in counts) counts[t.status] += 1;
+      });
+      const meId = me().member.id;
+      const role = roleIn(m[1]);
+      const answers = ["owner", "admin", "proxy"].includes(role);
+      const mine = (r) => r.to === meId || r.to === role;
+      const open = openFor(m[1]).filter((r) => answers || mine(r) || (r.asked_by && r.asked_by.member_id === meId));
+      const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
+      open.forEach((r) => { if (r.priority in byPriority) byPriority[r.priority] += 1; });
+      // A removed reporter keeps its handle and name (§6.2's removed member view).
+      const mlist = file(m[1], "members.json", path);
+      const members = mlist.items.concat(mlist.removed || []);
+      const who = (id) => { const x = members.find((mm) => mm.id === id); return { member_id: id, handle: x ? x.handle : id, display_name: x ? x.display_name : id, avatar_url: x ? x.avatar_url || null : null }; };
+      const reports = cards.filter((t) => t.report && t.report.reported_at)
+        .sort((a, b) => (a.report.reported_at < b.report.reported_at ? 1 : -1)).slice(0, limit)
+        .map((t) => {
+          const r = t.report;
+          const code = r.code !== false;
+          return { task: { id: t.id, title: t.title, status: t.status, kind: t.kind, label: t.label || null },
+            reported_by: who(r.reported_by), reported_at: r.reported_at, code, verification: r.verification || null,
+            pr: code && r.pr_status === "found" && r.pr ? { number: r.pr.number, url: r.pr.url } : null,
+            pr_state: r.observed ? r.observed.pr_state || null : null, observed_at: r.observed ? r.observed.observed_at || null : null,
+            // null until the probe has looked (§6.6), never "no mismatch".
+            mismatch: r.observed ? !!r.mismatch : null };
+        });
+      return { server_time: nowIso(),
+        board: { counts, closed_after: after },
+        requests: { open: open.length, to_me: open.filter(mine).length, by_priority: byPriority,
+          oldest_open_at: open.length ? open.map((r) => r.created_at).sort()[0] : null },
+        reports };
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path, query) => {
       const keep = statusFilter(query, "all");

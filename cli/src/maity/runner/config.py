@@ -10,6 +10,7 @@ file, and the hub cannot widen it. Every default is listed by `maity runner chec
 from __future__ import annotations
 
 import os
+import pwd
 import re
 import tomllib
 import urllib.parse
@@ -70,7 +71,8 @@ class Limits:
 @dataclass(frozen=True)
 class Local:
     workspaces: Path
-    tmux_socket: Path  # tmux -S; default <state_dir>/tmux.sock
+    tmux_socket: Path  # tmux -S; default <agent_files>/tmux.sock
+    agent_files: Path = Path()  # tmux.conf, logs, harness files: the agents' side
     layout: str = "single"
     agent_user: str | None = None
     agent_path: str | None = None  # None: the service's own PATH at start
@@ -275,11 +277,19 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         agent_user = local_in.get("agent_user", str, None)
         if layout == "agent_user" and not agent_user:
             problems.append('backend.local.agent_user: required with layout = "agent_user"')
+        # The agents' side lives where the agents' user can reach it: the runner's state
+        # directory in the single layout, the agent user's home in the agent_user layout.
+        agent_files = (
+            home_of(agent_user) / ".maity-runner"
+            if layout == "agent_user" and agent_user
+            else state_dir
+        )
         local = Local(
             workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
             tmux_socket=Path(
-                local_in.get("tmux_socket", str, str(state_dir / "tmux.sock"), check=_absolute)
+                local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
+            agent_files=agent_files,
             layout=layout,
             agent_user=agent_user,
             agent_path=local_in.get("agent_path", str, None),
@@ -399,14 +409,21 @@ def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
 
 
+def home_of(user: str) -> Path:
+    """A user's home directory; `/home/<user>` when this host does not know the user (the
+    check reports that separately)."""
+    try:
+        return Path(pwd.getpwnam(user).pw_dir)
+    except KeyError:
+        return Path("/home") / user
+
+
 def unsupported(cfg: Config) -> list[str]:
     """What the configuration asks for that this version does not do yet. `check` reports
     each as an error and `serve` refuses to start, rather than running agents with less
     isolation or fewer limits than the operator wrote down."""
     found: list[str] = []
     if cfg.local is not None:
-        if cfg.local.layout == "agent_user":
-            found.append('backend.local.layout = "agent_user" is not supported yet (R7)')
         if cfg.local.memory_max is not None:
             found.append("backend.local.memory_max is not enforced yet; remove it or wait for it")
         if cfg.local.cpu_quota is not None:

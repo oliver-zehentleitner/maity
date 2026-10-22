@@ -41,7 +41,7 @@ stay on screen.
 
 | Route | What |
 |---|---|
-| `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
+| `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
@@ -180,7 +180,15 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. Messages
+   back; opening a chat there moves the focus to its heading. The history
+   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   sender's messages within five minutes grouped (the agent's picture and
+   name only on the first), and a "New messages" line before what was
+   unread when the chat was opened; scrolled up, a **Newest** button (with
+   the count of what arrived meanwhile; arriving messages leave the view
+   where it is) goes back to the end and puts the focus in the composer.
+   An unread count that cannot be read is said. An empty chat
+   says that the agent reads it at its next wait or resume. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
    headings as strong lines, lists, quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
@@ -224,6 +232,54 @@ Inside a project, in the order of their importance; see
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
    string from an export is text; a link is used only when it is plain
    `https`.
+9. **Runners** (`#/p/<slug>/runners`, owner and admin, `docs/api.md`
+   §15.4): the runners allowed to start agents for this project, by name,
+   each in the words of the Runners view (presence, what it runs on, its
+   tools, who can see what) with when it was allowed and how many agents
+   it runs here. A revoked runner says it starts nothing until it is
+   paired again, one never paired (attached through an enrollment) that it
+   starts nothing until it is; one whose own configuration does not list
+   the project says it starts nothing here, whatever the hub allows.
+   **Allow it here** attaches one of the human's own runners not yet
+   attached (`POST /projects/{slug}/runners`; one attached meanwhile is
+   said, not a failure); **Detach** asks first, naming the agents whose
+   placements the hub then closes and the runner stops, counted when it is
+   pressed. After either, the status line has the focus and says what
+   happened. The 30-second refresh redraws only what changed and keeps the
+   focus on the same control (in the **Allow** form too, when it is rebuilt
+   for a new runner) and the runner chosen there. Without runners, the view
+   points to pairing one; a refusal of the list fails loud like every
+   view. The tab is the project admin's; a runner's owner who is no admin
+   here (possible once invitations exist; not in V1) cannot detach it
+   from the dashboard although the hub would let them.
+10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
+    the second, next to the inbox): the project at a glance.
+    - Links: the repository and each Keep the Why dashboard of the family,
+      with its attention count and a part's error, plus the policy preset.
+      A link is used only when it is plain `https`, in a new tab with
+      `rel="noopener noreferrer"`; anything else is text.
+    - Members by role, with how many are humans, agents and online.
+    - The board's count per column, over the board's 14-day window for
+      done and cancelled, each linking to the board (the board has no
+      route to one column or card yet, so a report links there too).
+    - Open requests, those for oneself and by priority, linking to the
+      inbox.
+    - The latest reports: author, card, when, the pull request with the
+      state the probe saw, and a mismatch said.
+
+    Links and members come from what the header already read. The counts
+    come from `GET …/overview`, which is read again on `task_*`,
+    `request_*` and `probe_observed` and redrawn in place, with no Reload;
+    for a viewer who is neither owner nor admin (in few events' audiences)
+    also every 60 seconds and when the tab comes back. Triggers during a
+    read give one more read after it; the focus stays on the same link. A
+    family cut at the hub's limit and a failed Keep the Why read are said.
+    Each part has its empty state. Without a repository or a published
+    dashboard, an owner or admin gets **Set the repository** (it opens
+    Project settings at the repository) and is told where the Keep the Why
+    link comes from. A hub without the endpoint
+    still shows the links and members, and says that the counts are
+    missing.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -324,6 +380,15 @@ at most 1 MiB; the type is read from the file's first bytes, as the hub
 reads it, and sent as the raw body) and removes an upload, after which
 the forge's image applies again. A hub without the fields offers no
 upload and the dashboard draws monograms.
+
+**Repository** (`docs/api.md` §6.1) is in the same panel, for an owner
+or a human admin (`project:admin` is held by humans only). It shows the
+project's repository URL and changes it with `PATCH /projects/{slug}`
+(`repository: {url}`); an empty field removes it (`repository: null`).
+The page accepts only `https://<host>/<owner>/<name>`, drops a trailing
+slash, and says the hub's `not_a_configured_forge` at the field. A
+change or a removal is confirmed first, because the probe, the Keep the
+Why dashboard and the runners' new clones all follow the repository.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
@@ -575,12 +640,16 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
     credential; revoke; remove with nothing left running. Only a hub
-    that answers 404 on `GET /runners` skips this step;
+    that answers 404 on `GET /runners` skips this step. Before the
+    revoke, in **Project → Runners**: the runner (allowed while pairing,
+    then detached, where the hub can) is allowed in the project and
+    detached again, each detach confirmed with "Nothing runs on it
+    here."; a hub without attachments has to say so in the tab;
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
 17. at phone width (390 px) the inbox, board, agents, members, organisation, join and (where offered) Why
-    views, each reached through its tab, and the Runners view load without an error, none of
+    and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
@@ -642,10 +711,12 @@ web/
 ├── js/chat.js        (6) chat
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
+├── js/overview.js    (10) overview: the project at a glance
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
+├── js/project-runners.js  Project → Runners: allow and detach
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

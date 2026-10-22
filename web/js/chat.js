@@ -146,17 +146,57 @@ window.Maity = window.Maity || {};
     + (own ? (msg.delivered_at ? " · reached a session" : " · not picked up yet") : "");
 
   // A message: its body as Markdown (js/markdown.js, text nodes only), and
-  // a Quote button that puts it into the composer as a quote.
-  function message(ctx, msg, pending, onQuote) {
+  // a Quote button that puts it into the composer as a quote. grouped: it
+  // follows the same sender's within GROUP_MS, so it shows neither the
+  // picture nor the name again.
+  function message(ctx, msg, pending, grouped, onQuote) {
     const own = msg.from === ctx.me.id;
-    const meta = h("span", { class: "meta" }, metaText(ctx, msg, own));
-    if (own && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = metaText(ctx, fresh, true); });
-    return h("li", { class: "msg " + (own ? "out" : "in") },
-      h("div", { class: "md" }, M.markdown(msg.body)), meta,
-      onQuote ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null);
+    // A grouped message says when, not again who.
+    const said = (m) => (grouped
+      ? formatTime(m.sent_at) + (own ? (m.delivered_at ? " · reached a session" : " · not picked up yet") : "")
+      : metaText(ctx, m, own));
+    const meta = h("span", { class: "meta" }, said(msg));
+    if (own && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = said(fresh); });
+    const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
+    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
+      !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
+      h("div", { class: "msg-body" }, h("div", { class: "md" }, M.markdown(msg.body)), meta,
+        onQuote ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null));
   }
 
-  // The quote of a message, as Markdown: each line behind "> ", the sender first.
+  // Messages of one sender this close together are one group.
+  const GROUP_MS = 5 * 60 * 1000;
+  // The history is read to its end in pages of this size (the hub's maximum).
+  const HISTORY_PAGE = 200;
+  const dayOf = (iso) => { const d = new Date(iso); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
+  function dayLabel(iso, now) {
+    const d = new Date(iso);
+    const today = new Date(now);
+    const yesterday = new Date(now - 86400000);
+    if (dayOf(iso) === dayOf(today.toISOString())) return "Today";
+    if (dayOf(iso) === dayOf(yesterday.toISOString())) return "Yesterday";
+    return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  }
+
+  // The history as it is drawn: day separators, groups, and once the line
+  // before the first message that was unread when the chat was opened.
+  function timeline(ctx, pending, firstUnread, onQuote) {
+    let last = null;
+    return (msg) => {
+      const out = [];
+      if (!last || dayOf(last.sent_at) !== dayOf(msg.sent_at)) {
+        out.push(h("li", { class: "day" }, h("span", null, dayLabel(msg.sent_at, Date.now()))));
+        last = null;
+      }
+      if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, "New messages")));
+      const grouped = !!last && last.from === msg.from && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
+        && !(firstUnread && msg.seq === firstUnread);
+      out.push(message(ctx, msg, pending, grouped, onQuote));
+      last = msg;
+      return out;
+    };
+  }
+
   // A text with its fenced blocks and code spans blanked out, as the hub
   // reads it for mentions (docs/api.md §8.6).
   function withoutCode(value) {
@@ -177,6 +217,7 @@ window.Maity = window.Maity || {};
     return out.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, " ");
   }
 
+  // The quote of a message, as Markdown: each line behind "> ", the sender first.
   const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + msg.body.split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
   // The chat fills the screen below the header, so that only its history
@@ -225,16 +266,52 @@ window.Maity = window.Maity || {};
     append(layout, pane);
 
     const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
-    const conv = await M.api.get(path);
+    // How many of the agent's messages were unread, before reading marks them
+    // read. A message arriving between this read and the messages' shifts the
+    // line by one; a failed read draws no line and says so below.
+    let unreadFailed = null;
+    const before = await M.api.getAll(ctx.base + "/conversations").catch((err) => { unreadFailed = err; return { items: [] }; });
+    const unreadBefore = ((before.items.find((c) => c.agent_id === agent.id) || {}).unread) || 0;
+    // The whole history, oldest first, page by page (docs/api.md §9): the
+    // first page is the oldest, and what is unread is at the end.
+    const conv = await M.api.get(path + "?limit=" + HISTORY_PAGE);
+    for (let page = conv; page.items.length === HISTORY_PAGE;) {
+      page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + HISTORY_PAGE);
+      conv.items.push(...page.items);
+      if (page.cursor) conv.cursor = page.cursor;
+    }
+    const theirs = conv.items.filter((m) => m.from === agent.id);
+    const firstUnread = unreadBefore && theirs.length >= unreadBefore ? theirs[theirs.length - unreadBefore].seq : null;
     // Read after the messages, so that this conversation's unread is gone.
     await list.refresh(false);
     let cursor = conv.cursor || 0;
     const shown = new Set(conv.items.map((m) => m.seq));
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
+    const draw = timeline(ctx, pending, firstUnread, quote);
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
-      conv.items.length ? conv.items.map((m) => message(ctx, m, pending, quote)) : h("li", { class: "empty" }, "No messages yet."));
+      conv.items.length ? conv.items.map(draw)
+        : h("li", { class: "empty" }, h("p", null, "No messages yet."),
+          h("p", { class: "muted" }, agent.display_name + " reads what you write here at its next wait or resume.")));
+    // Back to the newest, when the human has scrolled up; with what came meanwhile.
+    let unseen = 0;
+    const jump = h("button", { type: "button", class: "small jump-latest", hidden: true, onclick: () => {
+      messages.scrollTop = messages.scrollHeight;
+      unseen = 0;
+      // The button goes away: the focus goes to the composer, not to the page's start.
+      text.focus();
+      jump.hidden = true;
+    } }, "Newest");
+    jump.hidden = true;
+    const showJump = () => {
+      const away = !atBottom(messages);
+      jump.hidden = !away;
+      jump.textContent = unseen ? unseen + " new · Newest" : "Newest";
+      if (!away) unseen = 0;
+    };
+    messages.addEventListener("scroll", showJump);
     const pollStatus = M.statusLine();
+    if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
 
     let checking = false;
     async function checkDelivery() {
@@ -270,8 +347,9 @@ window.Maity = window.Maity || {};
       const follow = own || atBottom(messages);
       const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
-      append(messages, message(ctx, msg, pending, quote));
+      append(messages, draw(msg));
       if (follow) messages.scrollTop = messages.scrollHeight;
+      else { unseen += 1; showJump(); }
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
@@ -281,7 +359,8 @@ window.Maity = window.Maity || {};
       if (!events.some(mentions)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
-        fresh.items.forEach(add);
+        // Someone else's message never pulls a reader who scrolled up down.
+        fresh.items.forEach((m) => add(m, m.from === ctx.me.id));
         if (fresh.cursor && fresh.cursor > cursor) cursor = fresh.cursor;
         pollStatus.done();
         // The list read on the same event may predate this read.
@@ -357,6 +436,7 @@ window.Maity = window.Maity || {};
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
           : "no session — picked up when it resumes")),
       messages,
+      jump,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),

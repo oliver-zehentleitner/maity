@@ -214,3 +214,133 @@ newer hub added.
 role and a reports-to change that belong together would land as two
 writes, and a failure in between leaves half a change. Sending every
 field every time — a stale form would overwrite a change made meanwhile.
+
+## The chat's history: days apart, a sender's run grouped, and the line before what was unread when it opened
+
+**Id:** abe93ad2-1a75-4abc-a5d0-70e074d17335
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's chat feedback relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub gives a conversation a read marker of its own (then the line comes from it), or group chats need another grouping
+
+The open chat draws its history with a separator per day ("Today",
+"Yesterday", else the date), groups a sender's messages that follow
+within five minutes (the picture and name only on the first), and puts a
+"New messages" line before the first of the agent's messages that were
+unread when the chat was opened. The history is read to its end, in
+pages of 200, because the hub returns the oldest page first and the
+unread messages are at the end. A button back to the newest shows when
+the human has scrolled up, with the count of what arrived meanwhile;
+someone else's message never moves the view, and the button hands the
+focus to the composer when it goes. An unread count that cannot be read
+draws no line and is said.
+
+**Reason:** the hub marks a conversation read when its messages are
+returned (docs/api.md §9), so the unread count has to be read from the
+conversation list before the messages are; that count is "the agent's
+last n messages", which is where the line goes. Five minutes keeps a
+burst of an agent's replies together without merging separate exchanges.
+
+**Rejected alternative:** a "new" line kept from the last visit in this
+browser — it would disagree with the unread count the list shows, and
+another device would never see it. Grouping by a fixed number of
+messages — a long pause would hide that the agent came back later.
+
+## Project → Runners is the project admin's tab; refreshes redraw in place, and a missing list fails loud
+
+**Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+
+The tab is offered to owner and admin only (`members:admin`), although
+the hub also lets a runner's owner detach it. In V1 the only human is
+the owner, so nobody is left out yet. Allowing is the hub's grant; the
+runner checks its own `[limits] projects` again. A runner the hub allows
+but whose configuration does not list the project is therefore warned
+about: it starts nothing here.
+
+Presence and placements send no events, so the view re-reads every 30
+seconds. A card is redrawn only when its data changed, the focus stays
+on the same control, and the Allow form is rebuilt only when the set of
+free runners changes, keeping the runner chosen. Detach reads the count
+of agents again before it asks. A 404 on the list is an error like any
+other: the dashboard ships with its hub, which has attachments.
+
+**Reason:** a redraw every 30 seconds that rebuilds the form takes the
+choice and the focus away from someone using a keyboard or a screen
+reader, and an Enter after it could allow the wrong runner. A 404 that
+reads as "not yet" would hide a broken route now that the hub has it.
+
+**Rejected alternative:** the tab for every member, with Detach where
+the hub allows it. In V1 that only adds a view nobody else can use, and
+an Allow nobody but the admin may send. Treating a 404 as an older hub:
+that was right before the hub had attachments, and today it only
+covers a regression.
+
+## In the cross-project inbox, the project's badge is a link beside the entry, and its name starts the entry's own name
+
+**Id:** e356660d-570b-47ec-9ba1-70b5bad4224d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback that entries of all projects were hard to tell apart, relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the entry head is no longer one button, or the cross-project view gets a layout of its own per project
+
+Every entry of `#/all` has its project's badge (logo or monogram, name,
+state) before it, as a link to the project's inbox; the entry's head
+button starts with the project's name, visually hidden, so that the
+button's own name says which project it is. A project filter and an
+optional grouping by project (sections in the switcher's order, each a
+heading with its own list) sit in the toolbar; both are kept only for
+this tab's session and apply to `#/all` only, never to a project's own
+inbox. The entry opened first and the one opened after an answer follow
+the order on screen, filter and grouping included.
+
+**Reason:** a link may not sit inside a button, and the head is a button
+(it opens the entry); so the badge stands beside it. A screen reader
+moving by buttons would then miss the project, hence the hidden prefix.
+
+**Rejected alternative:** the badge inside the button, as before — it
+cannot be a link there, and its place after the priority read as just
+another label. An `aria-label` on the button — it would have to repeat
+the visible text word for word (axe label-content-name-mismatch).
+
+## The overview is the second tab, redrawn in place, and its counts failing leaves the rest standing
+
+**Id:** e585b67d-8a1a-4e68-8ea7-814ec4fbc251
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the overview contract (docs/api.md §6.11, PR #189) and its contract owner's rulings, 2026-10-22; the coordinator's card for the view (tsk-hha96xyqcpdd), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the overview gains merges from the change ticker (#180) or releases, or the inbox stops being the landing page
+
+`#/p/<slug>/overview` gets the tab right after **Inbox**, while the inbox
+stays the landing page. The view is five parts: links, members, board
+counts, open requests and the latest reports. Links and members come
+from what the header already holds. The counts come from one
+`GET …/overview` with the board's window, read again on `task_*`,
+`request_*` and `probe_observed` and redrawn in place, with no Reload
+offer. A viewer who is neither owner nor admin is in few of those
+events' audiences (§8.2), so for them the view also re-reads every 60
+seconds and when the tab comes back. A trigger that arrives during a
+read causes one more read after it, and a redraw puts the focus back on
+the same link. If that call fails, links and members still show, and the place
+of the counts says why they are missing.
+
+**Reason:** the inbox is where the human acts. The overview is where
+they look first after a while away, so it sits next to the inbox
+without replacing it. A summary is not read line by line, so redrawing
+it does not pull text away from a reader, which is why the contract
+asks for it in place. Links and members do not depend on the new call,
+so one missing endpoint should not blank the page.
+
+**Rejected alternative:** the overview as the landing page. The contract
+keeps the inbox there, and what waits for an answer matters more than a
+summary. The board's "changed, Reload" notice would interrupt nothing
+worth protecting here. One error for the whole view: it hides what the
+page already has.
