@@ -118,7 +118,11 @@ ends it with 0. The unit sets `KillMode=process`.
 revoked, or whose hub refuses its capabilities, only produces a log loop.
 Failing loudly once tells the operator what to fix. A superseded stream
 means a second `serve` holds the same credential; restarting both would
-make them supersede each other forever. The agents run in a tmux server
+make them supersede each other forever. On one host a lock on the state
+directory refuses the second service at its start, so the running one
+keeps the stream. A state directory the service cannot write ends it with
+78 too, so a unit pointed at the wrong path does not restart every ten
+seconds. The agents run in a tmux server
 the runner started, inside the unit's cgroup, so systemd's default
 `KillMode=control-group` would end every agent on a service restart. The
 design keeps agents running across runner restarts and hub outages, so
@@ -131,6 +135,8 @@ only the runner's own process may be signalled.
   the stream from each other in turn.
 - Leaving `KillMode` at its default: a `systemctl restart` for an
   upgrade would end every agent mid-work.
+- `PrivateTmp` in the unit: with the agents outliving the service, the
+  next start would replace their `/tmp` under them.
 
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
