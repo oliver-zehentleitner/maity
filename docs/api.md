@@ -85,7 +85,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/join/{token}`,
-  `/join/{token}`, `/r/{token}` and `/runners/pair/{token}`, and the single
+  `/join/{token}`, `/r/{token}`, `/runners/pair/{token}`,
+  `/mail/verify/{token}` and `/mail/unsubscribe/{token}` (§17.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
@@ -161,6 +162,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
+| 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send — and the instance has no complete SMTP setting (§16.2) |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
@@ -239,6 +241,12 @@ the hub records it on the session.
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
 | Mention pings by one membership | 30 per 10 minutes (§8.6) |
 | `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
+| `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days (§17.2) |
+| `POST /me/notifications/read` | 200 `ids` (§17.3) |
+| Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§17.5) |
+| Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
+| Admin test sends | 5 per hour per instance admin (§16.3) |
+| Address verification mails | 3 per hour and 10 per day per human (§17.4) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -475,6 +483,9 @@ include the scope. No call made with an agent credential may:
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
 - archive or delete a project;
+- read or change a human's notification settings, mark a human's
+  notifications read, or read or change the instance's mail settings
+  (§16.2, §17);
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests` (§6.1) — or the rules text (`rules_markdown`).
@@ -885,7 +896,8 @@ For an agent exactly one project, with `owner_id` on `member` and no
 `false`, §16), so the dashboard shows the admin area only to the instance
 admin; an agent's `member` has no such field. `member` carries
 `avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
-answer and on an interval.
+answer and on an interval; the badges, the bell and the tab title read
+`GET /me/notifications` (§17.2).
 
 ### 5.2 `POST /me/resume` — the resume packet
 
@@ -2749,6 +2761,13 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
 | GET | `/admin/users` | `instance:admin`, human only | 16 |
+| GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
+| POST | `/admin/settings/mail/test` | `instance:admin`, human only | 16.3 |
+| GET | `/me/notifications` | human | 17.2 |
+| POST | `/me/notifications/read` | human | 17.3 |
+| GET, PATCH | `/me/notification-settings` | human | 17.4 |
+| POST | `/me/notification-settings/email/verify` | human | 17.4 |
+| GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 17.6 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
@@ -2776,7 +2795,9 @@ by its member or the agent's owner, decoded and encoded again as PNG,
 §6.10), the Keep the Why family's
 path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
-`instance:admin` for `/admin/*` (§16); for runners (§15):
+`instance:admin` for `/admin/*` (§16), notifications derived from the
+reader's readable set at read and at send time and the SMTP password
+never stored or returned (§16.2, §17); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
@@ -3703,7 +3724,8 @@ environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
 does to its agents in projects whose policy says `inherit` (§15.3,
 §6.1). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
-§2.5, `MAITY_CLI_INSTALL` §3.2).
+§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_SMTP_*` and
+`MAITY_MAIL_SIGNING_KEY` §16.2).
 
 ### 16.1 `GET /admin/users`
 
@@ -3753,3 +3775,387 @@ runner credential is `forbidden`. The humans of the instance, paged
 The name of the path follows this contract; the accounts design's draft
 lists the same read as `/admin/humans` (pending the accounts design,
 which takes this name or keeps both).
+
+### 16.2 Mail settings
+
+The hub sends mail for two things only: the notifications of §17 and
+the verification of a human's address (§17.4). It speaks SMTP to one
+server the operator provides; there is no other transport.
+
+**Where each value lives.** The password lives in the environment and
+nowhere else: the hub reads it at startup, never writes it to the
+database, never returns it from any endpoint, never logs it and never
+puts it in an error's `message` or `details`. Every other value may come
+from the environment or be set by the instance admin through `PATCH`;
+a value set in the environment wins, is shown with `source: "env"`, and
+a `PATCH` of it is `invalid` with `details.fields.<field>:
+"set_by_environment"`.
+
+| Environment | Field | Meaning |
+|---|---|---|
+| `MAITY_SMTP_HOST` | `host` | the SMTP server's host name |
+| `MAITY_SMTP_PORT` | `port` | default 587 for `starttls`, 465 for `implicit`, 25 for `none` |
+| `MAITY_SMTP_TLS` | `tls` | `starttls` (default), `implicit`, or `none` — `none` only for a host that is a loopback address or the name `localhost` (a relay on the same machine or in the same pod); for any other host it is `invalid` and stops the hub at startup when set in the environment. Certificates are always verified against the system store, or against `MAITY_SMTP_CA_FILE` when set; there is no switch to skip verification |
+| `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS |
+| `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | environment only; read-only `{set, source}` in the answer |
+| `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:` |
+| `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
+| `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | every mail the instance sends, all humans together; default 500; over it, immediate mails wait for the next hour like a digest (§17.5) |
+| — | `enabled` | `false` stops every notification mail and every verification mail without losing the settings; the test send still works |
+| `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §17.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
+
+In the Helm chart the password and the signing key come from a Secret
+by reference, as the database URL does (`mail.smtp.existingSecret` with
+the keys `smtp-password` and `mail-signing-key`), and the other values
+from `config.mail.*`; they never pass through the chart's values.
+
+```
+GET /admin/settings/mail
+```
+
+Scope `instance:admin`, human only (§16.1):
+
+```json
+{
+  "enabled": true,
+  "complete": true,
+  "missing": [],
+  "host":     { "value": "smtp.example.org", "source": "env" },
+  "port":     { "value": 587, "source": "default" },
+  "tls":      { "value": "starttls", "source": "default" },
+  "username": { "value": "maity@example.org", "source": "env" },
+  "password": { "set": true, "source": "env" },
+  "from":     { "value": { "address": "maity@example.org", "name": "Maity" }, "source": "admin" },
+  "reply_to": { "value": null, "source": "default" },
+  "max_per_hour": { "value": 500, "source": "default" },
+  "signing_key": { "set": true },
+  "last_test": { "at": "2026-10-22T14:02:11Z", "ok": true, "stage": null, "smtp_code": 250 },
+  "sent_last_hour": 12
+}
+```
+
+`source` is `env`, `admin` (set through `PATCH`, stored in the
+database) or `default`. `complete` is `true` when host, from and the
+signing key are there and, with a username, a password; `missing` names
+what is not. `password` and `signing_key` never carry a value, a
+length, a hash or a hint — only whether one is set.
+
+```
+PATCH /admin/settings/mail
+```
+
+Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
+`port`, `tls`, `username`, `from`, `reply_to`, `max_per_hour`; `null`
+returns a field to its default. `password` or `signing_key` in the body
+is `invalid` with `details.fields.password: "environment_only"` (the
+value is not echoed and not logged). Answers the `GET` shape. A change
+of `host`, `port`, `tls`, `username` or `from` clears `last_test`. The
+change is not an event (there is no project to put it in); the accounts
+design's instance audit log records it (pending).
+
+### 16.3 Test send
+
+```
+POST /admin/settings/mail/test   {"to": "admin@example.org"}
+```
+
+Scope `instance:admin`, human only. Sends one fixed plain-text mail
+("Maity test mail from <public URL>", no other content) with the current
+settings, synchronously, with a 20-second limit. `to` is optional and
+defaults to the admin's own verified address (§17.4); without either it
+is `invalid` (`details.fields.to: "required"`). It runs whether
+`enabled` is `true` or not, and is `mail_not_configured` when `complete`
+is `false`. Five per hour per instance admin (`rate_limited`).
+
+```json
+{ "ok": false, "stage": "auth", "smtp_code": 535,
+  "detail": "5.7.8 Authentication credentials invalid", "at": "2026-10-22T14:02:11Z" }
+```
+
+`stage` is `null` on success, or where it stopped: `resolve`,
+`connect`, `tls`, `auth`, `mail_from`, `rcpt_to`, `data`, `timeout`.
+`detail` is the server's reply line, cut at 200 characters, with
+anything that equals the username or the password replaced by `…`;
+never a stack trace. The result is stored as `last_test`. A failed
+test is a `200` with `ok: false`: the call itself worked.
+
+## 17. Notifications for humans
+
+The maintainer's decision of 2026-10-22: humans are told when something
+waits for them, in three stages that build on each other — badges and a
+bell in the dashboard, browser notifications, and mail. Agents are not
+part of this: they keep events and `wait` (§8.3). Every endpoint here is
+for a human's cookie session; an agent credential is `forbidden` with
+`details.reason: humans_only` (§2.3), a runner credential `forbidden`.
+
+### 17.1 What a notification is
+
+A notification is not stored content. It is a view the hub derives,
+when it is read or sent, from events the human may read (§8.2), plus a
+read flag per human. A notification never says more than its event
+lets the reader read: the hub checks the readable set at the moment of
+every read and of every mail, so a membership that ended, a chat the
+human left, an event that was redacted (§8.5) or a request that is no
+longer addressed to them drops out, and a redacted event shows as
+`redacted: true` without a title.
+
+| `kind` | From | Who gets it | Title (the hub composes it; no body) |
+|---|---|---|---|
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
+| `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
+| `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
+| `card` — the change ticker | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card where the human is creator, assignee, holder or in `contract.watchers` (§6.8); never `task_checkpoint` | those; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
+| `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
+| `jour_fixe` | reserved: the jour-fixe report has no contract yet; until it has one this kind exists in the settings and produces nothing | — | — |
+| `system` | the hub about the human's own mail delivery (§17.7) | the human | `Mail to <address> disabled after 3 failures` |
+
+A human's own actions never notify them. One event gives at most one
+notification per human: when it qualifies under two kinds, `mention`
+wins over `card` and `chat`, `inbox` over everything.
+
+### 17.2 `GET /me/notifications`
+
+Human only. The counts for the badges and the newest items for the
+bell, across every project the human is a member of.
+
+| Query | Meaning |
+|---|---|
+| `limit` | 0–50, default 20; `0` answers the counts only |
+| `cursor` | §1.4, older items |
+| `unread` | `true`: unread items only |
+| `kind`, `project` | filters; comma lists |
+| `after` | a `seq`: only items with a higher `seq`, oldest first — for the browser notifications (§17.8) |
+| `wait` | 0–55 with `after`: hold the request until an item newer than `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+
+```json
+{
+  "counts": { "inbox": 3, "chat": 2, "mention": 1, "card": 4, "agent": 0, "jour_fixe": 0, "system": 0, "total": 10 },
+  "items": [
+    { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
+      "project": { "slug": "maity", "name": "Maity" },
+      "actor": { "member_id": "agt-a", "display_name": "Agent A", "avatar_url": "/api/v1/avatars/agt-a?v=1c2d" },
+      "title": "Agent A in agent-a",
+      "target": { "type": "conversation", "id": "agt-a" },
+      "url": "https://maity.team/#/p/maity/chat/agt-a",
+      "read": false, "redacted": false },
+    { "id": "ntf-4231", "seq": 4231, "kind": "card", "at": "2026-10-22T12:41:12Z",
+      "project": { "slug": "maity", "name": "Maity" },
+      "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
+      "title": "tsk-0004 Hub: credential exchange and storage: status review",
+      "reason": "creator",
+      "target": { "type": "task", "id": "tsk-0004" },
+      "url": "https://maity.team/#/p/maity/board?task=tsk-0004",
+      "read": true, "redacted": false }
+  ],
+  "next_cursor": null,
+  "server_time": "2026-10-22T13:10:05Z"
+}
+```
+
+- **Counts.** `inbox` is the number of open requests addressed to the
+  human across projects — the sum of `open_requests` in `/me` (§5.1); it
+  falls when a request is answered or withdrawn, not when its
+  notification is read. `chat` is the sum of `unread` over the human's
+  conversations (§9; group chats with #153), the same number the chat
+  list shows. `mention`, `card`, `agent`, `jour_fixe` and `system` count
+  the unread items of that kind. `total` is the sum; the dashboard shows
+  it in the tab title as `(10) maity` and nothing when it is `0`.
+- **Items.** Newest first, one per event, the last 30 days; older ones
+  count as read and are not listed. `id` is `ntf-<seq>`. `title` is
+  composed from fields the human may read, at most 200 characters, text
+  only (rendered as text, `web/context/rendering.md`); it never carries
+  a request's `summary`, a card's `body`, a report, a checkpoint or a
+  message body. `reason` (on `card`) says which relation qualified:
+  `creator`, `assignee`, `holder`, `watcher`. `target` is the object the
+  item links to — `request`, `task`, `conversation`, `placement` — and
+  `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
+  dashboard owns its routes, the hub builds the URL from the target.
+- **Read.** An item is read when it was marked (§17.3) or, for `chat`
+  and a `mention` in a chat, when the conversation has been read past its
+  `seq` (§9) — one read mark, the chat's own.
+
+### 17.3 `POST /me/notifications/read`
+
+Human only, CSRF as every cookie `POST`. Exactly one of:
+
+- `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
+  has no item for is ignored, not an error (the item may have dropped
+  out, §17.1).
+- `{"up_to": 4237, "kind"?: "card", "project"?: "maity"}` — every item
+  with `seq ≤ up_to`, optionally of one kind or one project ("mark all
+  read").
+
+Marking a `chat` item read moves that conversation's read mark to the
+item's `seq`, never backwards — the same as reading the conversation
+(§9); an observer has no chat items and moves no mark. `inbox` items are
+marked read, the open requests stay open. Answers `200` with the counts
+of §17.2. No event: reading is not news to anyone.
+
+### 17.4 `GET`, `PATCH /me/notification-settings`
+
+Human only. The settings belong to the account and follow it to every
+device; the browser's own permission is per browser and is not stored.
+
+```json
+{
+  "kinds": ["inbox", "chat", "mention", "card", "agent", "jour_fixe"],
+  "browser": {
+    "enabled": true,
+    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "jour_fixe": true },
+    "content": { "chat": false, "mention": false }
+  },
+  "email": {
+    "address": "maintainer@example.org",
+    "address_status": "verified",
+    "verified_at": "2026-10-22T09:12:00Z",
+    "pending_address": null,
+    "language": "en",
+    "timezone": "Europe/Vienna",
+    "kinds": {
+      "inbox":     { "mode": "immediate" },
+      "chat":      { "mode": "hourly", "content": false },
+      "mention":   { "mode": "immediate", "content": false },
+      "card":      { "mode": "daily" },
+      "agent":     { "mode": "immediate" },
+      "jour_fixe": { "mode": "daily" }
+    },
+    "daily_at": "08:00",
+    "quiet_hours": { "from": "22:00", "to": "07:00" },
+    "hard_failures": 0,
+    "disabled_at": null
+  },
+  "mail_available": true
+}
+```
+
+- **`browser`.** `enabled` is the account's wish; the dashboard asks the
+  browser's permission once, when the human turns it on, and shows the
+  browser's answer beside the switch. `kinds` per kind on or off.
+  `content` (`chat`, `mention`; default `false`) puts the message's
+  first 120 characters into the browser notification, which the
+  operating system may show on a locked screen; without it the
+  notification carries the title only.
+- **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
+  puts it in `pending_address` and sends a verification mail with a
+  link (§17.6), valid for 24 hours; the verified address in `address`
+  keeps receiving until the new one is verified. `address_status`:
+  `none`, `pending` (an address, never verified), `verified`,
+  `disabled` (§17.7). Setting the address again, also the same one,
+  sends a new link and voids the old one. `null` removes the address and
+  stops all mail. `mail_not_configured` when the instance has no
+  complete mail setting (§16.2); `mail_available` says so beforehand,
+  and the dashboard hides the mail part when it is `false`. The address
+  is the human's; no endpoint shows it to anyone else (§16.1's admin
+  list does not carry it).
+- **`POST /me/notification-settings/email/verify` `{"token"}`** — the
+  same as the link's confirmation (§17.6), for a dashboard that receives
+  the token from the link while logged in.
+- **`email.kinds.<kind>.mode`.** `immediate` (sent within about two
+  minutes, skipped if the item was read in the dashboard first),
+  `hourly` (one mail at the full hour with every unread item of the
+  kinds set to `hourly`), `daily` (one mail at `daily_at` in
+  `timezone`), or `off`. Default for a new address: `inbox`, `mention`,
+  `agent` `immediate`; `chat` `hourly`; `card`, `jour_fixe` `daily`.
+- **`content`** on `chat` and `mention` (default `false`): with `true`
+  the mail carries the message text for this kind; without it the mail
+  never contains a chat body (§17.5).
+- **`quiet_hours`.** `null`, or `from`/`to` as `HH:MM` in `timezone`
+  (crossing midnight allowed). Nothing is sent during them; what fell
+  due is sent as one mail when they end.
+- **`language`.** `en` or `de`; the language of the mails and of the
+  link pages (§17.6). `timezone` is an IANA name; the dashboard
+  proposes the browser's.
+- `PATCH` takes any subset of `browser` and `email` (`address`,
+  `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`); the
+  read-only fields (`address_status`, `verified_at`, `pending_address`,
+  `hard_failures`, `disabled_at`, `mail_available`, `kinds` at the top)
+  in a body are `invalid` with `read_only`. Answers the `GET` shape.
+
+### 17.5 What a mail contains
+
+Plain text only, UTF-8, no HTML, no images, no tracking.
+
+- **Subject:** `[Maity] <project>: <title>` for one item; `[Maity] 7
+  updates` for a digest.
+- **Body:** per item its title, the project, the time in the human's
+  timezone and its `url`; a digest lists up to 50 items, grouped by
+  project, then "and N more" with a link to the dashboard. Then one line
+  per kind in the mail: "Stop these mails: <unsubscribe link>", and the
+  link to the settings.
+- **Never in a mail:** a credential or any part of one, a join or
+  pairing code or link, a request's `summary`, `tried` or options, a
+  card's `body`, a report, a checkpoint, a briefing, the rules text, and
+  a message body — except a `chat` or `mention` message text when
+  `content` is `true` for that kind, cut at 500 characters. A redacted
+  event never reaches a mail; if it is redacted after the mail was
+  sent, the mail is beyond reach and the redaction cannot follow it.
+- **Headers:** `List-Unsubscribe: <https://…/mail/unsubscribe/{token}>`
+  and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058),
+  for the mail's kind (a digest of several kinds: the first kind's
+  link; every kind's link in the body); `Auto-Submitted: auto-generated`.
+- **Rate.** At most 10 immediate mails per hour per human; past that the
+  items of the hour go out as one mail at the hour's end. The instance's
+  `max_per_hour` (§16.2) holds every mail beyond it for the next hour.
+- **Freshness.** Every item is checked against the readable set and its
+  read flag when the mail is built, not when the event happened (§17.1).
+  A digest with nothing left is not sent.
+
+### 17.6 Links in mails
+
+Two pages outside the API, on the public host only (a join host answers
+them with its `302`, §1.1), unauthenticated — the token is the
+authority — with no cookie set or read:
+
+| Path | `GET` | `POST` |
+|---|---|---|
+| `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
+| `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
+
+A `GET` never changes anything: mail scanners open links before the
+human does. A token is the base64url of `{human id, purpose, kind or
+address, epoch}` plus an HMAC-SHA-256 over it with
+`MAITY_MAIL_SIGNING_KEY`; the hub stores no unsubscribe token. A verify
+token also carries its expiry (24 hours) and is single-use; an
+unsubscribe token stays valid until the human's `epoch` moves, which
+happens when the address changes or is removed. An invalid, expired
+or used token is a page that says the link no longer works, with
+`not_found` as status, never which of the reasons applies. Both pages
+are rendered in the human's `language`, carry the headers of §1.1, and
+the request log masks the token as `…`.
+
+### 17.7 Delivery failures
+
+Minimal by design: the hub reads the SMTP answer of its own sending and
+nothing else; it reads no mailbox and processes no bounce or complaint
+mail.
+
+- A temporary failure (`4xx`, or no connection) is retried with backoff
+  for up to 24 hours, then dropped; it counts as nothing.
+- A permanent failure at `RCPT TO` or `DATA` (`5xx`) is a hard failure
+  of the address. After 3 hard failures in a row (a delivered mail resets
+  the count) the address goes to `address_status: disabled`, no further
+  mail is sent to it, and the human gets a `system` notification in the
+  dashboard. Setting the address again (§17.4) and verifying it enables
+  it.
+- A failure of the instance's own setting (connection, TLS, `AUTH`)
+  counts against no human: it is a retry, and the admin's `last_test`
+  and `sent_last_hour` show it (§16.2).
+- Complaints are handled by the unsubscribe link in every mail and in
+  its headers (§17.6).
+
+### 17.8 The dashboard's part
+
+- **Stage 1 — badges and the bell.** The dashboard reads `GET
+  /me/notifications?limit=0` for the counts (instead of summing `/me`)
+  and shows them on the inbox, the chat list and the bell; the tab
+  title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
+  each linking to its `url`, unread ones marked, with "mark all read".
+- **Stage 2 — browser notifications.** While a dashboard tab is open,
+  also in the background, it long-polls `GET /me/notifications?after=<seq>&wait=55`
+  and shows each new item of a kind the human switched on through the
+  Notification API, with the item's `id` as `tag` so that two open tabs
+  show it once; a click focuses the tab and opens the `url`. There is no
+  push without an open tab: Web Push needs a service worker and a
+  third-party push service, which this stage does not add.
+- **Stage 3 — mail.** The settings page edits §17.4; the admin area of
+  the instance admin edits §16.2 and offers the test send (§16.3).

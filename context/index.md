@@ -54,6 +54,7 @@ Why Maity is built the way it is.
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
+- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read
 
 ## O
 
