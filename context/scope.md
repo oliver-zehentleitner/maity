@@ -135,7 +135,7 @@ boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator
+**Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator; contract change in `docs/api.md` (`spawn_consent_by`)
 **Revisit when:** the admin and the admin agent agree on a start policy
 **See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — cd93203d-f56f-4860-8cc8-7564db18ae7e — as of 2026-10-22
@@ -143,7 +143,11 @@ boundary.
 Starting an agent through a runner needs the maintainer's go. Which
 starts may go ahead without it is a policy the human admin and the admin
 agent are to agree; until they have, and wherever no policy says
-otherwise, the default is the human's go.
+otherwise, the default is the human's go. The contract carries it as the
+project policy `spawn_consent_by`: `human` (the default) lets only humans
+answer a placement's consent request, `role` opens it to the roles that
+hold `requests:answer`; the proposer never answers its own proposal, and
+only a human with `members:admin` sets the policy.
 
 **Reason:** the maintainer's decision; the reason was not stated.
 
