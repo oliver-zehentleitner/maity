@@ -162,10 +162,14 @@ window.Maity = window.Maity || {};
     return b;
   }
 
+  // The command that writes the configuration. set -C: an existing one is
+  // never overwritten, the shell says so; umask 077: the file decides what
+  // agents may touch, so only its owner may change it.
+  const writeCommand = (config) => "mkdir -p ~/.config/maity-runner && (set -C; umask 077; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF";
+
   // The panel that makes a pairing end in a runner that starts.
   function pairSteps(enrollment, config, onHide) {
-    // set -C: an existing configuration is never overwritten; the shell says so.
-    const heredoc = "mkdir -p ~/.config/maity-runner && (set -C; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF";
+    const heredoc = config && writeCommand(config);
     return h("div", { class: "pair-steps flag", "aria-live": "polite" },
       h("p", null, h("strong", null, "On the machine that should run agents, in a terminal there (not in an agent session):")),
       h("ol", null,
@@ -400,4 +404,5 @@ window.Maity = window.Maity || {};
   };
 
   M.runnerStarterConfig = starterConfig;
+  M.runnerConfigCommand = writeCommand;
 })(window.Maity);

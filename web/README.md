@@ -150,7 +150,8 @@ expired), then `maity runner check` and `maity runner serve`. The
 configuration holds only the keys without a default: this pairing's hub
 URL, the chosen projects and their repositories, the local backend's
 layout and Claude Code's modes and models; no secret. Its "copy as a
-command" form never overwrites an existing file (`set -C`). The panel
+command" form never overwrites an existing file (`set -C`) and writes
+it owner-only (`umask 077`). The panel
 says when the runner has paired (for a re-pair: when its credential is a
 new one) and when it is online (the view re-reads every 30 s). Open pairings are listed and
 revocable. Each runner can be renamed, re-paired (a new line for the same
@@ -275,7 +276,19 @@ fails while the bundle is stale.
 ```sh
 make check   # structure, Python standard library only
 make smoke   # behaviour, needs a node binary (no packages)
+make starter-configs   # the Runners view's configurations through maity runner check
 ```
+
+`make starter-configs` runs `tools/starter_configs.py`: the starter
+configurations the Runners view generates for one project, two (one
+repository URL with `.git`, one with a host in capitals), a project
+without a repository and none, each written by the page's own "copy as a
+command" into a throwaway HOME under umask 002. The file has to be
+exactly the configuration, owner-only, not overwritten by a second run,
+and loaded by `maity runner check --offline` without a word about the
+file; what check says about the machine is ignored. It needs `node`,
+`bash` and `maity` from `cli/` (Python 3.11+); CI runs it in the
+`web-e2e` job, where the CLI is installed.
 
 `make smoke` runs `tools/smoke.js`: the page's scripts against a minimal
 DOM shim, walking every view in fixture mode and against a fake hub in
@@ -447,6 +460,8 @@ web/
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke
+├── tools/starter-configs.js  the starter configurations, as JSON
+├── tools/starter_configs.py  make starter-configs
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```

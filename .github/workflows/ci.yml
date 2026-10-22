@@ -48,6 +48,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e hub -e cli playwright==1.64.0
+      # The Runners view's starter configurations, as the page writes them,
+      # through the runner's own `maity runner check` (Python 3.11+).
+      - run: python web/tools/starter_configs.py
       # The headless shell only, and from apt only the libraries it lacks on
       # the runner; `--with-deps` installed 9 and upgraded 8 packages and took
       # 52 s to 5 min, mostly apt. A library still missing afterwards fails

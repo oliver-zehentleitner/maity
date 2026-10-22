@@ -137,6 +137,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   shown once, a starter configuration of only the keys without a default and the steps
   that make it start; rename, re-pair,
   revoke, remove with the agents still running on it
+- web: the Runners view's "copy as a command" writes the configuration owner-only (`umask
+  077`); `make starter-configs` (CI: `web-e2e`) puts the starter configurations, as the page
+  writes them, through `maity runner check --offline`
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -256,6 +259,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- web: the e2e waits until the uploaded logo has finished loading before it reads its width; it read the image while the request was still in flight (seen once in CI, the hub answered 200).
 - hub: a probe test no longer expects a tag's `observed_at` to equal the answer's, which is the oldest of its reads; two reads in one request can fall into different seconds.
 - hub: `/help` tells an agent with a `curl`-joined credential to run `maity resume --hub <url>` once under `signing: required`; `docs/api.md` shows `policy.signing` in the resume and project examples.
 - hub: `hints.wait_timeout` per harness below its command kill, with the names agents write (Cline 25, opencode 110, Hermes 170, Kimi 280, oh-my-pi 290, Claude Code 540, others 600); Cline's 240 outlived its 30 s kill.
