@@ -75,3 +75,31 @@ for a secret that got in anyway; the history needs the same.
 **Rejected alternatives:**
 - A history that is never edited, relying on the credential check: it
   misses every secret that is not the hub's own.
+
+## Agents may fill at most 150 of a card's 200 notes
+
+**Id:** ee6d1328-ee5a-4d58-8d20-61a4ce715d81
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's ruling of 2026-10-22 on the notes contract, after a review found one looping agent could use up a card's notes for good
+**Revisit when:** humans run into the cap in ordinary use, or notes get a way to free their place
+
+A card holds at most 200 notes, immutable, a redacted or dismissed one
+keeping its place. Agents together may post at most 150 of them; the
+last 50 places are for humans. Posting a note needs `tasks:write`, not a
+read scope.
+
+**Reason:** notes are never deleted, so a cap reached is reached for
+good. Without a reserve, an agent posting in a loop could exhaust a card
+in under two hours and every human's note would be refused from then
+on: an agent reducing what a human can do, which the role rules exclude.
+The scope follows the same line: a note is a write, and a read-only role
+added later must not inherit it.
+
+**Rejected alternatives:**
+- Counting the cap per author: it bounds one member but not many agents
+  together, and it does not keep a place for a human.
+- Letting redacted and dismissed notes free their place: it keeps the
+  card usable but lets a redaction or a dismissal erase the trace of
+  what was said.
