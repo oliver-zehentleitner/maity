@@ -10,6 +10,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- hub: runners, first slice (`docs/api.md` §15.1–15.3) — enrollments (paged) and the pairing exchange (`POST /runners/pair/{token}`, single use, burned after three wrong codes, rate limited, the join's transport rule), re-pairing, `GET`/`PATCH`/`DELETE /runners/{id}` and `POST /runners/{id}/revoke`; runner credentials (`rcrd-…`) sign every call, are refused as bearer with `signature_required`, reach `/runner/*` only (`not_found` on project routes, `forbidden` elsewhere), and are revoked when found in a payload; the request log masks `/r/…` and `/runners/pair/…`. `attach` in an enrollment is refused until attachments exist.
 - `docs/architecture.md` and `docs/api.md`: the architecture and the REST contract v1 the hub, the CLI and the dashboard build against.
 - Repository scaffold: README, licence, contributing guide, agent entry point,
   task board, Keep the Why configuration with linter and dashboard workflows.

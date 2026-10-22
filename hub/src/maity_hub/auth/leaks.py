@@ -14,6 +14,7 @@ from sqlalchemy import Connection, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials
+from maity_hub.auth.caller import is_runner_credential
 from maity_hub.events import emit
 
 REASON = "leaked_in_payload"
@@ -32,6 +33,8 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             secrets_by_id.setdefault(presented.credential_id, set()).add(presented.secret)
     if not secrets_by_id:
         return []
+    runner_ids = sorted(i for i in secrets_by_id if is_runner_credential(i))
+    revoked = _revoke_leaked_runners(conn, runner_ids, secrets_by_id)
     rows = conn.execute(
         select(
             t.credential.c.id,
@@ -43,9 +46,8 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
         )
         .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-        .where(t.credential.c.id.in_(sorted(secrets_by_id)))
+        .where(t.credential.c.id.in_(sorted(set(secrets_by_id) - set(runner_ids))))
     ).all()
-    revoked = []
     for row in rows:
         if row.revoked_at is not None:
             continue
@@ -88,4 +90,47 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
         update(t.agent_session)
         .where(t.agent_session.c.credential_id == credential_id, t.agent_session.c.live.is_(True))
         .values(live=None, ended_at=now)
+    )
+
+
+def _revoke_leaked_runners(
+    conn: Connection, ids: list[str], secrets_by_id: dict[str, set[str]]
+) -> list[str]:
+    """A runner credential is revoked like an agent's (§15.1)."""
+    if not ids:
+        return []
+    rows = conn.execute(
+        select(
+            t.runner_credential.c.id,
+            t.runner_credential.c.verifier,
+            t.runner_credential.c.revoked_at,
+        ).where(t.runner_credential.c.id.in_(ids))
+    ).all()
+    revoked = []
+    for row in rows:
+        if row.revoked_at is not None:
+            continue
+        if not any(
+            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
+        ):
+            continue
+        revoke_runner_credential(conn, row.id, REASON, by=None)
+        revoked.append(row.id)
+    return revoked
+
+
+def revoke_runner_credential(
+    conn: Connection, credential_id: str, reason: str | None, by: str | None
+) -> bool:
+    """Revoke a runner credential; False when it was revoked already."""
+    return (
+        conn.execute(
+            update(t.runner_credential)
+            .where(
+                t.runner_credential.c.id == credential_id,
+                t.runner_credential.c.revoked_at.is_(None),
+            )
+            .values(revoked_at=clock.now(), revoked_by=by, revoked_reason=reason, live=None)
+        ).rowcount
+        == 1
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import Engine, insert
 
@@ -73,6 +73,16 @@ def membership(engine: Engine, project_id: str, role: str = "owner", **principal
         key = result.inserted_primary_key
         assert key is not None
         return int(key[0])
+
+
+class Credentialed(Protocol):
+    """Anything that holds a credential: an agent here, a paired runner elsewhere."""
+
+    @property
+    def credential_id(self) -> str: ...
+
+    @property
+    def value(self) -> str: ...
 
 
 @dataclass(frozen=True)

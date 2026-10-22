@@ -129,11 +129,16 @@ class HubMiddleware:
             revoke_leaked(conn, found)
 
 
-_TOKEN_PATHS = (re.compile(r"^(/j/)[^/]+"), re.compile(r"^(/api/v1/join/)[^/]+"))
+_TOKEN_PATHS = (
+    re.compile(r"^(/j/)[^/]+"),
+    re.compile(r"^(/api/v1/join/)[^/]+"),
+    re.compile(r"^(/r/)[^/]+"),
+    re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
+)
 
 
 def _logged_path(scope: Scope) -> str:
-    """The path for the log: never a query string, join tokens as `…` (§1.1)."""
+    """The path for the log: never a query string, join and pairing tokens as `…` (§1.1)."""
     path = str(scope.get("path", ""))
     for pattern in _TOKEN_PATHS:
         path = pattern.sub(r"\1…", path)

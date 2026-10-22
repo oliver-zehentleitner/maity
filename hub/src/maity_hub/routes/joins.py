@@ -9,10 +9,8 @@ nothing else, so that a tool saves it straight to a file.
 
 from __future__ import annotations
 
-import hashlib
 import html
 import re
-import secrets
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
@@ -30,11 +28,12 @@ from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import require_secure_transport
+from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project
-from maity_hub.ids import CROCKFORD, new_id
+from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
@@ -72,22 +71,6 @@ class JoinCreate(Strict):
 class Exchange(Strict):
     code: str = Field(min_length=1, max_length=64)
     client: str = Field(min_length=1, max_length=200)
-
-
-def _hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def new_code() -> str:
-    """60 random bits as Crockford base32 in groups of four: `Q7MD-3XPL-8ZWE`."""
-    raw = "".join(secrets.choice(CROCKFORD) for _ in range(12)).upper()
-    return "-".join(raw[i : i + 4] for i in range(0, 12, 4))
-
-
-def normalise_code(code: str) -> str:
-    """Crockford's reading: case-blind, `-` and spaces ignored, I and L are 1, O is 0."""
-    cleaned = re.sub(r"[\s-]", "", code.upper())
-    return cleaned.translate(str.maketrans("ILO", "110"))
 
 
 def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
@@ -146,15 +129,15 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         values.setdefault("role", "member")
         values.setdefault("areas", [])
         values.setdefault("capabilities", [])
-        token, code = secrets.token_urlsafe(16), new_code()
+        token, code = new_token(), new_code()
         now = clock.now()
         join_id = new_id("join")
         conn.execute(
             insert(t.join_link).values(
                 id=join_id,
                 project_id=mine.project.id,
-                token_hash=_hash(token),
-                code_hash=_hash(normalise_code(code)),
+                token_hash=digest(token),
+                code_hash=digest(normalise_code(code)),
                 agent_id=agent_id,
                 role=values["role"],
                 reports_to=values.get("reports_to"),
@@ -260,7 +243,7 @@ def _spent(row: Any) -> str | None:
 
 
 def _usable(conn: Connection, token: str) -> Any:
-    row = conn.execute(select(t.join_link).where(t.join_link.c.token_hash == _hash(token))).first()
+    row = conn.execute(select(t.join_link).where(t.join_link.c.token_hash == digest(token))).first()
     if row is None or row.revoked_at is not None or _spent(row) is not None:
         raise not_found()
     return row
@@ -424,7 +407,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             ).rowcount
             if slot != 1:
                 raise not_found()
-            if secrets.compare_digest(_hash(normalise_code(body.code)), row.code_hash):
+            if code_matches(body.code, row.code_hash):
                 return _consume(conn, row, body.client)
             conn.execute(
                 update(t.join_link)

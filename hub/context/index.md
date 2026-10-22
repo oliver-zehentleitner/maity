@@ -23,7 +23,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## 9
 
 ## A
-- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs
+- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs
 
 ## B
 

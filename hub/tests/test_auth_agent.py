@@ -34,7 +34,7 @@ def bearer(agent: factory.Agent) -> dict[str, str]:
 
 
 def signed(
-    agent: factory.Agent,
+    agent: factory.Credentialed,
     method: str,
     path: str,
     query: str = "",

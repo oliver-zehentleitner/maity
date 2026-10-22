@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import json
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -16,7 +14,7 @@ from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import cards, clock, idempotency, releases
+from maity_hub import cards, clock, idempotency, paging, releases
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -414,19 +412,6 @@ def _verification(caller: Caller) -> str:
 # --- the board -------------------------------------------------------------------
 
 
-def _cursor(updated_at: datetime, card_id: str) -> str:
-    raw = json.dumps([updated_at.isoformat(), card_id])
-    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
-
-
-def _uncursor(text: str) -> tuple[datetime, str]:
-    try:
-        iso, card_id = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
-        return datetime.fromisoformat(iso), str(card_id)
-    except (ValueError, TypeError):
-        raise invalid({"cursor": "invalid"}) from None
-
-
 @router.get("/projects/{slug}/tasks")
 def list_tasks(
     slug: str,
@@ -475,7 +460,7 @@ def list_tasks(
                 or_(t.card.c.closed_at.is_(None), t.card.c.closed_at > closed_after)
             )
         if cursor is not None:
-            after_at, after_id = _uncursor(cursor)
+            after_at, after_id = paging.uncursor(cursor)
             query = query.where(
                 or_(
                     t.card.c.updated_at < after_at,
@@ -486,7 +471,7 @@ def list_tasks(
             query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc()).limit(limit + 1)
         ).all()
         page = rows[:limit]
-        next_cursor = _cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
+        next_cursor = paging.cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
         return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
 
 
