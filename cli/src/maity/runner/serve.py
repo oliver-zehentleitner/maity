@@ -19,6 +19,7 @@ import os
 import random
 import signal
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, sign, state
-from . import capabilities, config
+from . import capabilities, config, supervisor
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
 POLL_WAIT = 55
@@ -91,6 +92,7 @@ class Service:
     client: hub.Client
     advertised: dict[str, Any]
     reconcile: Callable[[list[dict[str, Any]]], None] = lambda placements: None
+    actual: Callable[[], list[dict[str, Any]]] = lambda: []
     sleep: Callable[[float], None] = time.sleep
     monotonic: Callable[[], float] = time.monotonic
     rand: Callable[[], float] = random.random
@@ -99,6 +101,7 @@ class Service:
     placements: list[dict[str, Any]] = field(default_factory=list)
     last_read: float = 0.0
     connected: bool = False
+    supervisor: supervisor.Supervisor | None = None
 
     # --- one connection --------------------------------------------------------------------
 
@@ -106,7 +109,7 @@ class Service:
         packet = self.client.call(
             "POST",
             "/runner/hello",
-            body={"client": hub.CLIENT, "capabilities": self.advertised, "actual": []},
+            body={"client": hub.CLIENT, "capabilities": self.advertised, "actual": self.actual()},
         )
         runner = packet.get("runner") if isinstance(packet, dict) else None
         self.session_id = runner.get("session_id") if isinstance(runner, dict) else None
@@ -276,7 +279,13 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     for harness_id, found in probes.items():
         if not found.available:
             log(f"harness {harness_id} is advertised as unavailable ({found.reason})")
-    return Service(cfg, hub.Client(base, key), capabilities.build(cfg, probes))
+    service = Service(cfg, hub.Client(base, key), capabilities.build(cfg, probes))
+    if cfg.local is not None:
+        # Its own client: reports go out while the connection thread sits in a long-poll.
+        local = supervisor.build(cfg, hub.Client(base, key), log, probes)
+        service.reconcile, service.actual = local.update, local.actual
+        service.supervisor = local
+    return service
 
 
 def serve(config_path: Path) -> int:
@@ -294,6 +303,11 @@ def serve(config_path: Path) -> int:
         log(f"cannot start: {exc}")
         return EXIT_CONFIG
     log(f"serving {hub.safe_url(cfg.hub_url)} from {config_path}")
+    stopping = threading.Event()
+    if service.supervisor is not None:
+        threading.Thread(
+            target=service.supervisor.run, args=(stopping,), daemon=True, name="maity-supervisor"
+        ).start()
     with stop_on_signals():
         try:
             return service.run()
@@ -306,4 +320,5 @@ def serve(config_path: Path) -> int:
             log("stopped by signal; agents keep running")
             return 0
         finally:
+            stopping.set()
             lock.close()

@@ -321,6 +321,35 @@ maity runner serve            # in the foreground; as a service: `maity runner u
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
 
+With `[backend] kind = "local"` the service supervises the agents itself.
+Every five seconds it compares the placements with the sessions of its
+own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
+otherwise) and then starts, restarts, stops, adopts or ends sessions:
+
+- **Clean environment.** The tmux server starts under `env -i` with only
+  `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
+  `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+- **Clones.** Each clone is `<workspaces>/<project>/<clone>`, recorded in
+  `<state_dir>/workspaces.json`. The runner runs `git clone` only into a
+  missing directory and never runs git in an existing clone; it parses
+  `.git/config` instead.
+- **Restarts.** A process that exits is restarted after `10 s × 2^n`
+  (±20 %, at most `restart.max`). Five exits within 60 s of their start
+  inside 30 minutes end the placement as `failed`/`crash_loop` until its
+  generation moves.
+- **Stops.** A stop waits `stop_grace_seconds` (capped by
+  `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
+- **Adoption and orphans.** After a runner restart, a live session of a
+  known placement is adopted, not restarted. A session whose placement
+  is gone ends after `stop_grace_max`.
+- **Reports.** Each placement gets one report per change, with the next
+  `seq`, written to `<state_dir>/actual.json` before it is sent.
+
+This slice starts the `stub` harness only (no model, for tests: it exits
+with `exit_code` after `run_seconds`). It starts it only in a clone that
+already holds the agent's credential. The join from the runner and the
+real harness adapters come next.
+
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the
 service as a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked
