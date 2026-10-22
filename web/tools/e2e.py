@@ -1057,6 +1057,16 @@ def runners_step(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
     steps = page.locator(".pair-steps")
     expect(steps).to_contain_text("maity runner pair")
+    # A hub before attachments (§15.4) refuses `attach` with 400; the page pairs
+    # without it and says so. That refusal is then expected, not a failure.
+    if (
+        page.locator(".pair-panel")
+        .get_by_text("cannot allow the runner in projects while pairing yet")
+        .count()
+    ):
+        run.problems = [
+            p for p in run.problems if p != "POST /api/v1/runners/enrollments answered 400"
+        ]
     config = page.locator(".runner-config").inner_text()
     assert f'url = "{run.base}"' in config and '"e2e-alpha"' in config and '"e2e-beta"' in config, (
         config
