@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 KINDS = ("logo", "banner")
 CAP = 1024 * 1024
 FRESH = timedelta(hours=6)
+INTERVAL = 600.0  # seconds between the worker's sweeps
 # The forge's image hosts (§11.2): an image URL on any other host is no image.
 IMAGE_HOSTS = {
     "logo": "avatars.githubusercontent.com",
@@ -262,6 +264,57 @@ def read_forge(reader: forge.Forge, repository: str, kind: str) -> tuple[bytes, 
     return None if url is None else _download(url, kind)
 
 
+# In-process state about failed reads (reset by tests): a GET that finds nothing stored
+# reads through once per (project, kind) at a time and not again for NEGATIVE seconds
+# after a failure; the worker backs off per (project, kind) after failures.
+NEGATIVE = 60.0
+BACKOFF_MAX = FRESH.total_seconds()
+_unavailable_until: dict[tuple[str, str], float] = {}
+_failures: dict[tuple[str, str], tuple[int, float]] = {}  # (count, next try)
+_flights: dict[tuple[str, str], threading.Lock] = {}
+_guard = threading.Lock()
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def reset() -> None:
+    with _guard:
+        _unavailable_until.clear()
+        _failures.clear()
+        _flights.clear()
+
+
+def _flight(key: tuple[str, str]) -> threading.Lock:
+    with _guard:
+        return _flights.setdefault(key, threading.Lock())
+
+
+def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
+    """A GET found nothing stored: read the forge once, whoever else asks meanwhile waits
+    for that read, and after a failure answer False for NEGATIVE seconds without reading."""
+    key = (project_id, kind)
+    if _unavailable_until.get(key, 0.0) > _now():
+        return False
+    with _flight(key):
+        with engine.begin() as conn:
+            if forge_row(conn, project_id, kind) is not None:
+                return True  # answered while this request waited
+        if _unavailable_until.get(key, 0.0) > _now():
+            return False
+        answered = refresh(engine, reader, project_id, kind)
+        if not answered:
+            _unavailable_until[key] = _now() + NEGATIVE
+        return answered
+
+
+def _failed(key: tuple[str, str]) -> None:
+    count = _failures.get(key, (0, 0.0))[0] + 1
+    delay = min(INTERVAL * 2 ** (count - 1), BACKOFF_MAX)
+    _failures[key] = (count, _now() + delay)
+
+
 def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
     """Read the forge's image and store the answer. A failure keeps what is stored and
     returns False; an answer, image or none, replaces it and returns True."""
@@ -275,7 +328,9 @@ def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> 
     try:
         found = read_forge(reader, repository, kind)
     except Unavailable:
+        _failed((project_id, kind))
         return False
+    _failures.pop((project_id, kind), None)
     with events.transaction(engine) as conn:
         events.lock_project(conn, project_id)
         still = conn.execute(
@@ -313,18 +368,17 @@ def stale(conn: Connection) -> list[tuple[str, str]]:
         ).all()
     }
     due = clock.now() - FRESH
+    now = _now()
     found = []
     for project in projects:
         if forge.kind_of(project.repository_url) != "github":
             continue
         for kind in KINDS:
             at = checked.get((project.id, kind))
-            if at is None or at < due:
+            backing_off = _failures.get((project.id, kind), (0, 0.0))[1] > now
+            if (at is None or at < due) and not backing_off:
                 found.append((project.id, kind))
     return found
-
-
-INTERVAL = 600.0  # seconds between sweeps
 
 
 class Worker:

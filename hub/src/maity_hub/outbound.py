@@ -17,10 +17,12 @@ host comes from data or from the forge's answers.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import ipaddress
 import socket
 import ssl
+import threading
 import time
 import urllib.parse
 import zlib
@@ -37,6 +39,10 @@ CHUNK = 64 * 1024
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 _NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
+# The low 32 bits of these are an IPv4 address: IPv4-compatible (::/96, deprecated) and
+# IPv4-translated (RFC 2765). `ipaddress` unwraps neither.
+_WRAPPED_V4 = (ipaddress.ip_network("::/96"), ipaddress.ip_network("::ffff:0:0:0/96"))
+_SITE_LOCAL = ipaddress.ip_network("fec0::/10")  # deprecated, still local, and `is_global`
 
 
 class Refused(Exception):
@@ -67,7 +73,7 @@ def _embedded(ip: IPAddress) -> ipaddress.IPv4Address | None:
         return ip.sixtofour
     if ip.teredo is not None:
         return ip.teredo[1]
-    if any(ip in net for net in _NAT64):
+    if any(ip in net for net in (*_NAT64, *_WRAPPED_V4)):
         return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return None
 
@@ -75,7 +81,7 @@ def _embedded(ip: IPAddress) -> ipaddress.IPv4Address | None:
 def routable(ip: IPAddress) -> bool:
     """Globally routable, and so is every IPv4 address it wraps. Python's `is_global`
     counts multicast and the NAT64 prefix as global; neither may be read from."""
-    if not ip.is_global or ip.is_multicast:
+    if not ip.is_global or ip.is_multicast or ip in _SITE_LOCAL:
         return False
     inner = _embedded(ip)
     return inner is None or routable(inner)
@@ -147,9 +153,7 @@ def _decoder(encoding: str) -> zlib._Decompress | None:
         return None
     if encoding in ("gzip", "x-gzip"):
         return zlib.decompressobj(16 + zlib.MAX_WBITS)
-    if encoding == "deflate":
-        return zlib.decompressobj()
-    raise Refused("unavailable")  # a coding the hub did not ask for
+    raise Refused("unavailable")  # a coding the hub did not ask for: it asks for gzip only
 
 
 def _body(response: http.client.HTTPResponse, cap: int, deadline: float, sock: Any) -> bytes:
@@ -228,8 +232,15 @@ def _one(
     if remaining <= 0:
         raise Refused("timeout")
     connection = _Connection(host, address, timeout=remaining)
+    # A per-recv timeout is no total deadline: a server that drips its headers a byte at
+    # a time would keep the read open. The watchdog closes the socket at the deadline.
+    watchdog = threading.Timer(remaining, _expire, (connection,))
+    watchdog.daemon = True
+    watchdog.start()
     try:
         connection.request(method, path, body=body, headers=dict(headers))
+        if connection.sock is not None:
+            connection.sock.settimeout(max(deadline - time.monotonic(), 0.001))
         response = connection.getresponse()
         if response.status in (301, 302, 303, 307, 308):
             location = response.getheader("Location")
@@ -243,7 +254,20 @@ def _one(
         raise
     except TimeoutError:
         raise Refused("timeout") from None
-    except (OSError, ssl.SSLError, http.client.HTTPException, zlib.error):
+    except (OSError, ssl.SSLError, http.client.HTTPException, zlib.error, ValueError):
+        if time.monotonic() >= deadline:
+            raise Refused("timeout") from None
         raise Refused("unavailable") from None
     finally:
+        watchdog.cancel()
         connection.close()
+
+
+def _expire(connection: http.client.HTTPConnection) -> None:
+    """The deadline passed: close the socket under whatever read is blocked on it."""
+    sock = connection.sock
+    if sock is not None:
+        with contextlib.suppress(OSError):
+            sock.shutdown(socket.SHUT_RDWR)
+        with contextlib.suppress(OSError):
+            sock.close()

@@ -56,7 +56,7 @@ def _get(kind: str) -> Callable[..., Response]:
             checked = images.forge_row(conn, project.id, kind) is not None
         if image is None and not checked and forge.kind_of(project.repository_url) == "github":
             # Nothing stored yet: the one read-through; later refreshes are the worker's.
-            answered = images.refresh(engine, reader_of(request), project.id, kind)
+            answered = images.read_through(engine, reader_of(request), project.id, kind)
             with engine.begin() as conn:
                 image = images.current(conn, project.id, kind)
             if image is None and not answered:
