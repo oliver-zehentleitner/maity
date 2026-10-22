@@ -667,6 +667,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
+    # The switcher's state dot: frozen Alpha differs from Beta, which builds.
+    dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
+      const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.startsWith(name));
+      return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
+    })""")
+    assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
     run.shot(page, "freeze-absence")
     project = json.loads(run.maity(alpha, "resume"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
