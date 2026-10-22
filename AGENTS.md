@@ -36,3 +36,9 @@ first request is about, load the skill: in Claude Code, invoke the
 `keep-the-why` skill (Skill tool); in any other agent, read
 `.claude/skills/keep-the-why/SKILL.md` and follow it, including the
 `references/*.md` files it points to for the situation at hand.
+The skill is not vendored in this repository. If your agent has no
+installed copy, install it once with
+`npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why`
+(it lands in `.claude/skills/keep-the-why/` or your agent's skills
+directory), or read it at
+https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why.
