@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "id": "att-0901", "name": "exchange.log", "size": 4210, "type": "text/plain", "kind": "file", "sha256": "fixture", "width": null, "height": null,
+      "uploaded_by": "agt-b", "uploaded_at": "2026-10-22T10:29:00Z", "expires_at": null,
+      "message_seq": 6005, "deleted_at": null, "deleted_by": null, "deleted_reason": null }
+  ]
+}
