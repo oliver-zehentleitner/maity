@@ -380,7 +380,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Pair: the name is checked first; the line is shown once, with the starter configuration.
   byId("pair-name").value = "New Laptop";
   main.querySelector("form.pair-form").dispatch("submit"); await tick();
-  expect(!rWrites.length && text(main).includes("lower-case letters, digits and hyphens"), "runners: a bad name is refused before sending");
+  expect(!rWrites.length && text(main).includes("No pairing line: the name: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."), "runners: a bad name is refused before sending");
+  expect(text(main.querySelector("form.pair-form")).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("pair-name").getAttribute("aria-describedby") === "pair-name-rule",
+    "runners: the name's rule is said up front");
   byId("pair-name").value = "new-laptop";
   main.querySelector("form.pair-form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(JSON.stringify(rWrites[0]) === JSON.stringify(["POST", "/runners/enrollments", { name: "new-laptop", ttl_seconds: 900, attach: ["maity", "sample"] }]),
@@ -688,6 +690,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("revoked"), "open join revoked");
   // A join for a new profile: the list names it and the select offers it, without a reload.
   const agentSel = byId("join-agent"); agentSel.value = ""; agentSel.dispatch("change");
+  expect(text(main).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("join-handle").getAttribute("aria-describedby") === "join-handle-rule",
+    "the handle's rule is said up front, tied to its field");
+  const joinsBefore = main.querySelectorAll(".joins li").length;
+  byId("join-handle").value = "Agent_New";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(main.querySelectorAll(".joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
+    "a handle against the rule is refused before sending, with the rule");
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
@@ -869,7 +878,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const fieldError = (id) => text(byId(id + "-error"));
   byId("project-slug").value = "-Bad"; byId("project-slug").dispatch("input");
   main.querySelector("form").dispatch("submit"); await tick();
-  expect(!posts.length && fieldError("project-slug").includes("Lower-case") && byId("project-slug").getAttribute("aria-invalid") === "true",
+  expect(text(main).includes("Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit. Used in links") && byId("project-slug").getAttribute("aria-describedby") === "project-slug-hint project-slug-error",
+    "create: the slug's rule is said up front, tied to its field");
+  expect(!posts.length && fieldError("project-slug") === "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." && byId("project-slug").getAttribute("aria-invalid") === "true",
     "a malformed slug is refused next to the field, nothing sent");
   byId("project-slug").value = "maity";
   byId("project-repository").value = "https://gitlab.example/a/b";

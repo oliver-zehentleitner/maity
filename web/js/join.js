@@ -35,10 +35,12 @@ window.Maity = window.Maity || {};
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
     profileOptions();
-    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9\\-]{1,30}" });
+    const HANDLE = M.dom.NAME_RULES.handle;
+    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: HANDLE.pattern,
+      maxlength: "31", autocomplete: "off", spellcheck: "false", "aria-describedby": "join-handle-rule" });
     const display = h("input", { id: "join-display", placeholder: "display name" });
     const newFields = h("div", { class: "new-agent", hidden: true },
-      h("label", { for: "join-handle" }, "Handle"), handle,
+      h("label", { for: "join-handle" }, "Handle"), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       h("label", { for: "join-display" }, "Display name"), display);
     agentSelect.addEventListener("change", () => { newFields.hidden = agentSelect.value !== ""; });
     if (!profiles.items.length) newFields.hidden = false;
@@ -94,6 +96,11 @@ window.Maity = window.Maity || {};
           agent = { id: agentSelect.value };
         } else {
           if (!handle.value.trim()) { handle.focus(); return; }
+          if (!HANDLE.test.test(handle.value.trim())) {
+            status.fail("No join created: ", { message: "the handle: " + HANDLE.text });
+            handle.focus();
+            return;
+          }
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
         const text = briefing.value.trim();

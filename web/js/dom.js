@@ -100,5 +100,14 @@ window.Maity = window.Maity || {};
     return formatTime(iso);
   }
 
-  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo };
+  // The hub's rules for a typed handle or slug (hub/src/maity_hub/models.py),
+  // said up front where one is typed, and again when one breaks them.
+  const NAME_RULES = {
+    handle: { pattern: "[a-z0-9][a-z0-9\\-]{1,30}", test: /^[a-z0-9][a-z0-9-]{1,30}$/,
+      text: "Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit." },
+    slug: { pattern: "[a-z0-9][a-z0-9\\-]{1,62}", test: /^[a-z0-9][a-z0-9-]{1,62}$/,
+      text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
+  };
+
+  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES };
 })(window.Maity);
