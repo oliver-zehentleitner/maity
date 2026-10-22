@@ -27,7 +27,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 ## B
 
 ## C
-- [commands.md](commands.md) — the command surface: a signed passthrough `maity api`, `--tried` on `ask`, the convenience commands (`unclaim` beside `release`), and the resume packet as text with people's text quoted; `join` prints the pointer block instead of writing it
+- [commands.md](commands.md) — the command surface: a signed passthrough `maity api`, `--tried` on `ask`, the convenience commands (`unclaim` beside `release`), and the resume packet as text with people's text quoted; `join` prints the pointer block instead of writing it; `wait --batch` for bursts, no client-side event filter
 - [credentials.md](credentials.md) — where the session credential and local state live (the clone's Git directory, never the home); outgoing requests checked for credential-shaped strings; redirects refused; the hub URL from an exchange only on the given host or its direct parent
 
 ## D
