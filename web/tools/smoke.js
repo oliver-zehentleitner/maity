@@ -1630,6 +1630,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "logo: without logos on /me, the project views are read and the logo still shows");
   win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
+  // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the forge.
+  const repoPatches = [];
+  const repoRealPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if ("repository" in b) repoPatches.push(b); return repoRealPatch(p, b); };
+  await go("#/p/maity/inbox"); await projectSettings();
+  const repoIn = () => byId("repo-url");
+  const repoSave = async () => { header.querySelector("form.repository-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  expect(repoIn() && repoIn().value === "https://github.com/oliver-zehentleitner/maity", "repository: Project settings shows the project's repository");
+  repoIn().value = "http://github.com/a/b"; await repoSave();
+  expect(!repoPatches.length && text(byId("repo-url-error")).startsWith("Must be https://") && repoIn().getAttribute("aria-invalid") === "true",
+    "repository: anything but an https forge URL is refused at its field, nothing sent");
+  repoIn().value = "https://gitlab.com/a/b"; await repoSave();
+  expect(repoPatches.length === 1 && text(byId("repo-url-error")).startsWith("Must be https://"), "repository: the hub's not_a_configured_forge is said at the field");
+  let repoAsked = null;
+  win.confirm = (q) => { repoAsked = q; return true; };
+  repoIn().value = "https://github.com/acme/widget/"; await repoSave();
+  const repoNow = (await win.Maity.api.get("/projects/maity")).repository;
+  expect(JSON.stringify(repoPatches[1]) === JSON.stringify({ repository: { url: "https://github.com/acme/widget" } }) && repoNow.url === "https://github.com/acme/widget"
+    && /^Change the repository to https:\/\/github\.com\/acme\/widget\?/.test(repoAsked), "repository: a change asks first, then is sent without the trailing slash");
+  await projectSettings();
+  repoIn().value = ""; await repoSave();
+  expect(JSON.stringify(repoPatches[2]) === JSON.stringify({ repository: null }) && (await win.Maity.api.get("/projects/maity")).repository === null
+    && repoAsked.startsWith("Remove the repository?"), "repository: emptied, it is removed after asking");
+  win.confirm = () => true;
+  await repoRealPatch("/projects/maity", { repository: { url: "https://github.com/oliver-zehentleitner/maity" } });
+  win.Maity.api.patch = repoRealPatch;
   // Account: change the password (docs/api.md §2.1).
   // The profile menu: the avatar, the account, what is still to come, signing out (js/menu.js).
   const profileButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: "));

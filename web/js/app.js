@@ -148,6 +148,54 @@ window.Maity = window.Maity || {};
 
   // State (owner and admin, with a reason) and absence (owner only), as
   // PATCH /projects/{slug}.
+  // The hub's rule for a repository URL (§6.1), as the create view says it too.
+  const FORGE_RULE = "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.";
+  M.FORGE_RULE = FORGE_RULE;
+
+  // The repository (§6.1, project:admin, humans only): where the probe, the
+  // Keep the Why dashboard and the runners' clones look. https only here;
+  // the hub checks the forge host. Changing or removing it asks first.
+  function repositoryForm(ctx) {
+    const current = ctx.project.repository && ctx.project.repository.url;
+    const status = statusLine();
+    const input = h("input", { id: "repo-url", type: "url", placeholder: "https://github.com/owner/name",
+      autocomplete: "off", spellcheck: "false", "aria-describedby": "repo-url-hint repo-url-error" });
+    input.value = current || "";
+    const error = h("p", { class: "field-error", id: "repo-url-error", role: "alert" });
+    const fail = (text) => { error.textContent = text; input.setAttribute("aria-invalid", "true"); input.focus(); };
+    return h("form", {
+      class: "inline-form repository-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        input.removeAttribute("aria-invalid");
+        const url = input.value.trim().replace(/\/+$/, "");
+        if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(FORGE_RULE); return; }
+        if (current && !window.confirm(url
+          ? "Change the repository to " + url + "? The probe, the Keep the Why dashboard and new clones of runners follow it."
+          : "Remove the repository? The probe and the Keep the Why dashboard stop, and runners cannot clone for this project.")) return;
+        status.busy("Saving…");
+        try {
+          await M.api.patch(ctx.base, { repository: url ? { url } : null });
+          render();
+        } catch (err) {
+          const fields = err.code === "invalid" && err.details && err.details.fields;
+          const why = fields && (fields["repository.url"] || fields.repository);
+          if (why) { status.done(); fail(why === "not_a_configured_forge" ? FORGE_RULE : String(why)); }
+          else status.fail("Repository not saved: ", err);
+        }
+      },
+    },
+    h("h2", { class: "panel-title", id: "repo-heading" }, "Repository"),
+    h("label", { for: "repo-url" }, "URL"), input,
+    h("p", { class: "hint", id: "repo-url-hint" }, "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it."),
+    error,
+    h("button", { type: "submit" }, "Save repository"),
+    status.el);
+  }
+
   function projectPanel(ctx) {
     const status = statusLine();
     const save = async (body, label) => {
@@ -180,6 +228,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
+    if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).
     if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
     if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
