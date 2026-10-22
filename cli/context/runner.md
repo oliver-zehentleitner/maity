@@ -544,9 +544,11 @@ workspace's credential is revoked by running that clone's own `maity`
 (`python -I -m maity api GET /me` with the clone's state directory). It
 asks the hub which placements are active and keeps every clone one of
 them names. git runs in a clone only when `.git` holds nothing but a
-plain clone's top-level entries (so no `commondir`, `config.worktree` or
-submodules, and nothing in `info/` but `exclude`) and `.git/config` holds
-nothing but a plain clone's keys (core basics, origin, branch tracking,
+plain clone's top-level entries, each a file or a directory as git
+makes it (so no `commondir`, `config.worktree`, submodules or object
+alternates, nothing in `info/` but `exclude`, and no symlink anywhere,
+since git follows them past every check) and `.git/config`, at most
+64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
 user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
 to the clone, without the operator's `GIT_*` environment or git
 configuration. Otherwise, and whenever git
