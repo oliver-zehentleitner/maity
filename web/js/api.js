@@ -619,6 +619,33 @@ window.Maity = window.Maity || {};
       card.updated_at = nowIso();
       return card;
     }],
+    // §6.4 card order: the card placed within its status column, under the
+    // project's lock; the mock gives the whole column fresh ranks, as the
+    // hub may at any time.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/move$/, (m, body, path) => {
+      if (!tasksAdmin(m[1])) fail(403, "forbidden", "ordering needs tasks:admin", path, { scope: "tasks:admin" });
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const all = file(m[1], "tasks.json", path).items;
+      const card = all.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      const key = ["before", "after", "to"].filter((k) => k in body);
+      if (key.length !== 1 || (key[0] === "to" && !["top", "bottom"].includes(body.to))) fail(400, "invalid", "one of before, after or to", path, { fields: { body: "invalid" } });
+      const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+      const order = (a, b) => (a.rank && b.rank ? cmp(a.rank, b.rank) || cmp(a.id, b.id) : a.rank || b.rank ? (a.rank ? -1 : 1)
+        : cmp(a.created_at || "", b.created_at || "") || cmp(a.id, b.id));
+      const column = all.filter((x) => x.status === card.status && x !== card).sort(order);
+      let at = body.to === "top" ? 0 : column.length;
+      if (key[0] !== "to") {
+        const near = all.find((x) => x.id === body[key[0]]);
+        if (!near) fail(404, "not_found", "no such card", path);
+        if (near === card || near.status !== card.status) fail(400, "invalid", "not a neighbour in this column", path, { fields: { [key[0]]: "invalid" } });
+        at = column.indexOf(near) + (key[0] === "after" ? 1 : 0);
+      }
+      column.splice(at, 0, card);
+      column.forEach((x, i) => { x.rank = "r" + String((i + 1) * 16).padStart(6, "0"); });
+      card.updated_at = nowIso();
+      return card;
+    }],
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/checklist\/([^/]+)$/, (m, body, path) => {
       const card = releaseCard(m[1], m[2], path);
       const item = card.release.checklist.find((i) => i.id === m[3]);

@@ -104,7 +104,17 @@ Inside a project, in the order of their importance; see
    creator of an open card. A pointer can drag the card instead: the
    columns it may go to are marked while dragging and the others
    dimmed; a drop on one of those is refused in words and sends nothing.
-   There is no order within a column. With `tasks:admin` a card can be
+   Within a column the cards stand in the hub's order (`docs/api.md`
+   §6.4: by `rank`, then the unranked ones by `created_at`, then by id).
+   With `tasks:admin` (an owner or admin) an open card can be placed: a
+   **Place** menu (Move up, Move down, To the top, To the bottom, as its
+   place allows) or dragging it over another card of its column, above or
+   below that card by the pointer's half; it sends `POST …/move` with
+   `before`, `after` or `to`, and the board shows the new order once the
+   hub answered, never before. A neighbour that moved or left meanwhile
+   (`not_found`, `invalid`) has the board read again and said; a hub
+   without the endpoint is said as such. Done and cancelled cards keep
+   their order. With `tasks:admin` a card can be
    assigned or reassigned (`POST …/assign`; a live lease is said, not
    taken over). The hub's refusals (`invalid_transition`,
    `dependencies_open`, …) are said in words; after a move the board is

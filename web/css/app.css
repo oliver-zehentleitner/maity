@@ -342,12 +342,15 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .release-edit { margin-top: 6px; }
 /* Managing cards: the actions at the card's foot, the drop targets while dragging. */
 .card-actions { display: grid; gap: 6px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
-.card-move, .card-assign { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
-.card-move label, .card-assign label { font-size: 0.8rem; color: var(--muted); margin-inline-end: auto; }
-.card-move select, .card-assign select { flex: 1 1 8rem; min-width: 0; }
+.card-move, .card-order, .card-assign { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.card-move label, .card-order label, .card-assign label { font-size: 0.8rem; color: var(--muted); margin-inline-end: auto; }
+.card-move select, .card-order select, .card-assign select { flex: 1 1 8rem; min-width: 0; }
 .card.movable { cursor: grab; }
 .column.drop-ok { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .column.drop-over { background: var(--surface-2); }
+/* Where a card dragged within its column lands: above or below this one. */
+.card.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+.card.drop-after { box-shadow: 0 3px 0 var(--accent); }
 .column.drop-refused { opacity: 0.45; }
 .board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
 .board-filter label { font-size: 0.85rem; color: var(--muted); }
