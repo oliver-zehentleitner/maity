@@ -181,8 +181,9 @@ def test_join_stores_the_credential_and_never_prints_it(
     clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code = cli.main(
-        ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--model", "m-1"]
-    )
+        ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--model", "m-1",
+         "--pointer"]
+    )  # fmt: skip
     out = output(capsys)
     assert code == cli.EXIT_OK, out
     assert fakehub.SECRET not in out
@@ -523,3 +524,22 @@ def test_userinfo_is_never_echoed(url: str) -> None:
 
 def test_safe_url_drops_userinfo_and_query() -> None:
     assert hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/t"
+
+
+@pytest.mark.parametrize(
+    ("given", "header"),
+    [
+        ("https://x.0.0.1/j/t", "https://0.0.1"),  # an address is never a parent
+        ("https://maity.team/j/t", "https://maity.team:0"),
+    ],
+)
+def test_accept_hub_refuses_more(given: str, header: str) -> None:
+    with pytest.raises(hub.HubError):
+        hub.accept_hub(given, header)
+
+
+def test_accept_hub_stores_the_normalised_url() -> None:
+    assert hub.accept_hub("https://join.maity.team/t", "https://MAITY.team./") == (
+        "https://maity.team"
+    )
+    assert hub.accept_hub("http://[::1]:8/j/t", "http://[::1]:9") == "http://[::1]:9"

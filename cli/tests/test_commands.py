@@ -558,3 +558,68 @@ def test_report_no_code_reads_and_sends_no_git_facts(
     assert body["code"] is False and body["pr_status"] == "none"
     assert all(body[k] is None for k in ("head", "branch", "upstream", "remote_head", "pr"))
     assert "(no code)" in capsys.readouterr().out
+
+
+def test_wait_batch_prints_every_pending_event_and_moves_the_cursor_past_them(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.events += [{"seq": n, "kind": "task_claimed"} for n in (11, 12, 13)]
+    assert cli.main(["wait", "--timeout", "5", "--batch"]) == cli.EXIT_OK
+    printed = json.loads(capsys.readouterr().out)
+    assert [e["seq"] for e in printed] == [11, 12, 13]
+    assert state.load_state(joined)["cursor"] == 13
+
+
+def test_wait_without_batch_still_prints_one_event(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.events += [{"seq": n, "kind": "task_claimed"} for n in (11, 12)]
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out)["seq"] == 11
+    assert state.load_state(joined)["cursor"] == 11
+
+
+def test_checkpoint_warns_on_a_detached_head(
+    joined: Path, clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+        200, {"id": "tsk-1"}
+    )  # fmt: skip
+    git(clone, "checkout", "-q", "--detach")
+    assert cli.main(["checkpoint", "tsk-1", "-m", "a", "--next", "b"]) == cli.EXIT_OK
+    assert "HEAD is detached" in capsys.readouterr().err
+    assert "branch" not in fake.signed()[-1].json()
+
+
+def test_checkpoint_warns_when_the_branch_changed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/maity/tasks/tsk-1")] = lambda seen: (
+        200, {"id": "tsk-1", "checkpoint": {"branch": "agent-b/other"}}
+    )  # fmt: skip
+    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+        200, {"id": "tsk-1"}
+    )  # fmt: skip
+    assert cli.main(["checkpoint", "tsk-1", "-m", "a", "--next", "b"]) == cli.EXIT_OK
+    assert "last checkpoint was on agent-b/other" in capsys.readouterr().err
+
+
+def test_checkpoint_no_code_sends_no_git_facts(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+        200, {"id": "tsk-1"}
+    )  # fmt: skip
+    code = cli.main(["checkpoint", "tsk-1", "-m", "draft", "--next", "review", "--no-code"])
+    assert code == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"last_step": "draft", "next_step": "review"}
+
+
+def test_join_offers_the_pointer_block_instead_of_writing_it(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity import pointer
+
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    assert not (clone / "AGENTS.md").exists()
+    assert pointer.BEGIN in capsys.readouterr().err

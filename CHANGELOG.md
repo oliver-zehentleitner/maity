@@ -227,6 +227,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Changed
 
+- cli: `maity join` no longer writes into the repository unasked: it prints the pointer block for `AGENTS.md`, and `--pointer` writes it (`--no-pointer` is accepted and is the default).
+- cli: `maity checkpoint` warns on a detached HEAD and on a branch other than the card's last checkpoint's; `--no-code` sends no git facts. `maity wait --batch` prints every pending event (at most 50) as one JSON array and moves the cursor past them.
+- cli: the resume text treats handles that differ only in case, surrounding space or invisible characters as shared and shows ids for them; a peer without a member id shows no empty brackets. The hub URL from an exchange is stored lowercase and IDNA-encoded; port 0 and a numeric "parent" are refused.
+
 - cli: the resume packet names members by handle (actor, subject, reports-to, answered by, paused by, message recipient), from the packet's peers and `me`; an id the packet does not name stays an id, and so does a member whose handle is shared, shaped like an id or `all`; the Members line keeps each id (`agent-a [agt-a]`) for `say` and `ask --to`.
 - hub: the card, event and member lists build their views in batches — a
   page costs a fixed number of SQL statements instead of up to three per row

@@ -79,9 +79,11 @@ def hub_base(url: str) -> str:
     """
     try:
         parts = urllib.parse.urlsplit(url.strip())
-        parts.port  # noqa: B018 - raises ValueError on a port that is not a number in range
+        port = parts.port  # raises ValueError on a port that is not a number in range
     except ValueError:
         raise HubError(f"not a hub URL: {safe_url(url)}") from None
+    if port == 0:
+        raise HubError(f"not a hub URL: {safe_url(url)}")
     if parts.username or parts.password:
         raise HubError("refusing a URL with credentials in it")
     if parts.scheme not in ("https", "http") or not parts.hostname:
@@ -127,13 +129,20 @@ def accept_hub(given: str, header: str | None) -> str:
             "code is used: ask for a new one"
         ) from None
     host, other = _host(base), _host(claimed)
-    if other is None or host is None or not (other == host or other == _parent(host)):
+    if (
+        other is None
+        or host is None
+        or not (other == host or (not _is_address(other) and other == _parent(host)))
+    ):
         raise HubError(
             f"the exchange on {host} named {safe_url(claimed)} as the hub, which is neither "
             "that host nor its parent domain; nothing was stored. The code is used: ask for a "
             "new one"
         )
-    return claimed
+    # Stored the way it is compared: lowercase, IDNA-encoded, no trailing dot.
+    parts = urllib.parse.urlsplit(claimed)
+    shown = f"[{other}]" if ":" in other else other
+    return f"{parts.scheme}://{shown}" + (f":{parts.port}" if parts.port else "")
 
 
 def _host(url: str) -> str | None:
@@ -152,6 +161,17 @@ def _host(url: str) -> str | None:
     except UnicodeError:
         return None
     return encoded if encoded and ".." not in encoded and not encoded.endswith(".") else None
+
+
+def _is_address(host: str) -> bool:
+    """An IP literal, or a name the resolver would read as one (`0.0.1`, `0x7f.1`): no
+    top-level domain is numeric."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        last = host.rsplit(".", 1)[-1]
+        return last.isdigit() or last.startswith("0x")
 
 
 def _parent(host: str) -> str | None:

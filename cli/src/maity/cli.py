@@ -175,11 +175,20 @@ def cmd_join(args: argparse.Namespace) -> int:
         f"stored in {path} (mode 0600, not printed)",
         file=sys.stderr,
     )
-    if not args.no_pointer:
+    if args.pointer:
         root = pointer.repo_root(Path.cwd())
         if root is not None:
             for changed in pointer.write(root):
                 print(f"wrote the Maity pointer block into {changed}", file=sys.stderr)
+    else:
+        # AGENTS.md is usually tracked: writing into it unasked dirties the clone, and the
+        # next `git add -A` commits it. The block is offered instead (`--pointer` writes it).
+        print(
+            "So that a new session resumes on its own, add this to AGENTS.md (or join with "
+            "--pointer to have it written):\n" + pointer.BLOCK,
+            file=sys.stderr,
+            end="",
+        )
     try:
         return _resume(Session(), args, first=True)
     except hub.HubError as exc:
@@ -192,6 +201,9 @@ def cmd_join(args: argparse.Namespace) -> int:
 
 def cmd_resume(args: argparse.Namespace) -> int:
     return _resume(Session(args.hub), args)
+
+
+BATCH_MAX = 50
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
@@ -226,15 +238,16 @@ def cmd_wait(args: argparse.Namespace) -> int:
         if page.get("superseded"):
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED
-        items = page.get("items") or []
+        items = [e for e in page.get("items") or [] if isinstance(e, dict)]
         if items:
-            event = items[0]
-            session.data["cursor"] = event.get("seq", cursor)
+            taken = items[:BATCH_MAX] if args.batch else items[:1]
+            session.data["cursor"] = taken[-1].get("seq", cursor)
             session.save()
-            note = _pause_note(event, session.data.get("member_id"))
-            if note:
-                _err(note)
-            _print_json(event)
+            for event in taken:
+                note = _pause_note(event, session.data.get("member_id"))
+                if note:
+                    _err(note)
+            _print_json(taken if args.batch else taken[0])
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
@@ -402,11 +415,31 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
         "next_step": _text(args.next, "--next"),
     }
     session = Session()
+    path = session.project_path("tasks", args.card, "checkpoint")
+    if args.no_code:
+        task = session.client.call("POST", path, body=body)
+        return _done(args, task, f"checkpoint on {args.card} (no code)")
     head, branch = gitfacts.position(Path.cwd())
     body["head"] = head
-    if branch is not None:
+    if branch is None:
+        _err(
+            "warning: HEAD is detached, so this checkpoint names no branch; run it from the "
+            "checkout the work is on (a worktree works), or use --no-code for a card that "
+            "is not code"
+        )
+    else:
         body["branch"] = branch
-    path = session.project_path("tasks", args.card, "checkpoint")
+        try:  # only for the warning: a card this call cannot read still gets its checkpoint
+            before = session.client.call("GET", session.project_path("tasks", args.card))
+        except hub.HubError:
+            before = None
+        earlier = onboarding.get(before, "checkpoint", "branch")
+        if isinstance(earlier, str) and earlier != branch:
+            _err(
+                f"warning: the card's last checkpoint was on {onboarding.inline(earlier)}, "
+                f"this one is on {onboarding.inline(branch)}; check you are in the right "
+                "checkout"
+            )
     task = session.client.call("POST", path, body=body)
     where = f"at {head[:12]} on {branch or 'a detached HEAD'}"
     return _done(args, task, f"checkpoint on {args.card} {where}")
@@ -602,7 +635,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("url", help="the join URL from the pasted line")
     p.add_argument("--code", required=True, help="the single-use join code from the pasted line")
-    p.add_argument("--no-pointer", action="store_true", help="do not touch AGENTS.md or CLAUDE.md")
+    p.add_argument(
+        "--pointer",
+        action="store_true",
+        help="write the Maity pointer block into AGENTS.md (and CLAUDE.md); otherwise it is "
+        "printed for you to add",
+    )
+    p.add_argument("--no-pointer", action="store_true", help=argparse.SUPPRESS)  # the default
     _session_args(p)
     p.add_argument("--json", action="store_true", help="print the resume packet as JSON")
     p.set_defaults(handler=cmd_join)
@@ -639,6 +678,12 @@ def build_parser() -> argparse.ArgumentParser:
             "seconds to wait, never exceeded even when the hub stops answering "
             "(default: the resume packet's hint for this harness, else 600)"
         ),
+    )
+    p.add_argument(
+        "--batch",
+        action="store_true",
+        help=f"print every pending event (at most {BATCH_MAX}) as one JSON array, not the first "
+        "one alone: one wake for a burst",
     )
     p.set_defaults(handler=cmd_wait)
 
@@ -723,13 +768,17 @@ def build_parser() -> argparse.ArgumentParser:
         "checkpoint",
         "record where the work on a card stands, for the next session",
         "Record the last and the next step on a card you hold. The branch and the head commit "
-        "come from git, not from you. The next session reads it from the resume packet.",
+        "come from git, not from you; a detached HEAD, or a branch other than the card's last "
+        "checkpoint's, is warned about. The next session reads it from the resume packet.",
     )
     p.add_argument("card", type=_id, help="the card id")
     p.add_argument(
         "-m", "--last", dest="message", metavar="LAST", required=True, help="the step just finished"
     )
     p.add_argument("--next", required=True, help="the step to take next")
+    p.add_argument(
+        "--no-code", action="store_true", help="the card is not code: no branch or head is sent"
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_checkpoint)
 
