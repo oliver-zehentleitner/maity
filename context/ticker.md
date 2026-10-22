@@ -45,3 +45,64 @@ own, while the item stays readable for anyone who looks.
   leaves the human to relay every change by hand, which is the role the
   ticker takes over. Humans get their notifications on top
   (`notifications.md`, when it lands), not instead.
+
+## `maity wait` prints ticker items as JSON like every other event; only the listing renders text
+
+**Id:** d2586a57-22c6-4472-a584-610aaf366a30
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's ruling on the implementer read of the ticker pull request, 2026-10-22
+**Revisit when:** a human-readable mode for `maity wait` is asked for on its own merits
+**See:** ticker.md#a-change-ticker-announces-merges-contract-changes-decisions-deploys-and-releases-the-hub-computes-who-it-concerns-and-only-they-are-woken — adf83367-00aa-4fb1-bac1-1531dd0d3f88 — as of 2026-10-22
+
+A ticker item reaches `maity wait` as an ordinary event of kind
+`ticker`, in the same JSON as every other event, alone or in the
+`--batch` array. Only `maity ticker` and the ticker section of
+`maity resume` print items as text.
+
+**Reason:** `wait`'s output is parsed — by the supervised loop, which
+reads `seq` from it, by harnesses and by agents' own scripts — and under
+`--batch` it is a JSON array, where a text line has no place. A ticker
+item is one more `kind` to those parsers, nothing more.
+
+**Rejected alternatives:**
+- Print a ticker item as one text line by default, JSON behind
+  `--json` (the first draft): breaks every parser on the first item.
+- A separate `--text` mode for `wait`: a second output format for the
+  one command whose output is a machine interface, for no reader who
+  could not run `maity ticker` instead.
+- Text only in a summary on stderr: a second channel to keep consistent,
+  for the same absent reader.
+
+## Ticker subscriptions change by add and remove, not by replacing the whole object
+
+**Id:** 7ea9a7ff-537f-466e-9f35-b7348557d6c5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's answers to the implementer read of the ticker pull request, 2026-10-22
+**Revisit when:** the dashboard needs to set a whole subscription at once, or a member's subscription grows past the per-list cap in practice
+
+`PATCH …/ticker/subscription` takes `add` and `remove` per list and
+applies them in one transaction; there is no `PUT`. A value may sit in
+`follow` and `mute` at once: the mute wins for waking, the follow still
+lists the item for the member.
+
+**Reason:** `follow` and `mute` are one-value changes. Sent as a
+read-then-replace, two sessions of the same member changing the
+subscription at once lose one change, and every CLI call costs a read
+first; add and remove carry no such race and need no precondition.
+Allowing both lists to hold a value keeps the commands literal — `follow`
+never silently unmutes — and gives the overlap a meaning a member can
+use: see it, without being woken for it.
+
+**Rejected alternatives:**
+- `PUT` of the whole object after a `GET` (the first draft), accepting
+  the lost update as rare: rare is not never, and the fix is no more
+  complex than the race.
+- `PUT` with `If-Match` or `updated_at` as a precondition: keeps the
+  extra read and adds a retry path to every client.
+- Refusing a value in both lists, or having `follow` move it out of
+  `mute`: the first turns a natural command into an error, the second
+  changes a list the member did not name.
