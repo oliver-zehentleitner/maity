@@ -425,6 +425,7 @@ def scenario(run: Run, page: Page) -> None:
         entry = page.locator("li.entry.current")
         expect(entry).to_be_visible()
         expect(page.get_by_text("What waits for you changed")).to_have_count(0)
+        expect(page.locator("main .notice[role=status]")).to_contain_text("1 new request.")
         expect(page.locator("nav.switcher a", has_text="E2E Alpha").locator(".count")).to_have_text(
             "1"
         )
