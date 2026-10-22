@@ -2454,6 +2454,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : atAll2(p));
   await go("#/p/maity/chat/agt-b"); await go("#/p/maity/message"); await go("#/p/maity/chat/agt-b");
   expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub without them is asked once, nothing offered");
+  // Project settings then asks no more either.
+  let atAskedAll = 0;
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
+  await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  expect(atAskedAll === 0 && text(header.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
+  await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
   await go("#/p/maity/inbox");

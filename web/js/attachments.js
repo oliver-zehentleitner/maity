@@ -245,11 +245,13 @@ window.Maity = window.Maity || {};
       ctx.project.attachments ? h("p", { class: "muted" }, "Stored: " + sizeOf(ctx.project.attachments.used) + " of " + sizeOf(ctx.project.attachments.quota) + ".") : null,
       list, status.el);
     async function load() {
+      const none = () => { clear(list); append(list, h("li", { class: "muted" }, "This hub keeps no files yet.")); };
+      if (hubWithout) { none(); return; }
       let items;
       try {
         items = (await M.api.getAll(ctx.base + "/attachments?status=pending")).items;
       } catch (err) {
-        if (err.status === 404) { clear(list); append(list, h("li", { class: "muted" }, "This hub keeps no files yet.")); return; }
+        if (err.status === 404 || err.status === 405) { hubWithout = true; none(); return; }
         status.fail("Could not read them: ", err);
         return;
       }
