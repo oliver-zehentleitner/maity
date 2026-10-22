@@ -50,7 +50,8 @@ STATUSES = ("open", "claimed", "in_progress", "review", "done", "blocked")
 
 
 def seed(engine: Engine, cards: int, members: int, events: int) -> str:
-    """A project with an owner, members - 1 agents, cards with claims and edges, events."""
+    """A project with an owner, members - 1 agents, cards with claims and edges, events,
+    and releases: one open, and one closed per ten cards (frozen, every second tagged)."""
     rng = random.Random(7)
     owner_id = factory.human(engine, "owner")
     project_id = factory.project(engine, "measure")
@@ -108,7 +109,49 @@ def seed(engine: Engine, cards: int, members: int, events: int) -> str:
                 for _ in range(events)
             ],
         )
+    _releases(engine, project_id, owner, cards // 10)
     return project_id
+
+
+def _releases(engine: Engine, project_id: str, owner: int, closed: int) -> None:
+    now = clock.now()
+    factory.card(
+        engine,
+        project_id,
+        owner,
+        title="Release 1.0.0",
+        kind="release",
+        status="open",
+        release_version="1.0.0",
+        release_in_flight=True,
+        release_data={"version": "1.0.0", "checklist": [], "pull_requests_typed": []},
+    )
+    frozen = {"pull_requests": [], "groups": [], "readiness": {"ready": True, "blocking": []}}
+    for n in range(closed):
+        version = f"0.{n + 1}.0"
+        factory.card(
+            engine,
+            project_id,
+            owner,
+            title=f"Release {version}",
+            kind="release",
+            status="done",
+            closed_at=now,
+            release_version=version,
+            release_data={"version": version, "checklist": [], "frozen": frozen},
+            updated_at=now - timedelta(days=1, seconds=n),
+        )
+        if n % 2 == 0:
+            with engine.begin() as conn:
+                conn.execute(
+                    insert(t.forge_observation).values(
+                        project_id=project_id,
+                        kind="tag",
+                        ref=f"v{version}",
+                        observed_at=now,
+                        data={"name": f"v{version}", "sha": "a" * 40, "found": True},
+                    )
+                )
 
 
 @contextlib.contextmanager
