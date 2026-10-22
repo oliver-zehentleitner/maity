@@ -3166,7 +3166,7 @@ them. Status reports are not messages: the board shows status. Returns
 ### 8.5 Redaction
 
 ```
-POST /projects/{slug}/events/{seq}/redact   {"reason": "…"}
+POST /projects/{slug}/events/{seq}/redact   {"reason": "…", "expect"?: "closed_chat_message"}
 ```
 
 Scope `events:admin` (human memberships), with two exceptions below: a
@@ -3196,6 +3196,12 @@ one redaction that needs `members:admin` rather than `events:admin`. A
 blind redaction answers `200` with `{"seq": …, "redacted": true}` only,
 never the event: its `actor` and `audience` would tell the admin who
 wrote in the chat and who was in it, which it could not read before.
+Because the admin cannot see what the number names, the body may carry
+`"expect": "closed_chat_message"`: the hub then redacts only when `seq`
+is a message of a closed group chat of `{slug}`, and answers anything
+else with `invalid` (`details.fields.expect: "mismatch"`) and changes
+nothing, so a mistyped number never tombstones another event. A client
+that offers redaction by number always sends it.
 Its `event_redacted` then goes
 to the remaining participants, every former human participant and, for
 an admin's redaction, that admin. When an admin redacted, the `reason`,
