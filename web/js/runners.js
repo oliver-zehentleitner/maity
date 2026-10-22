@@ -305,9 +305,10 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", onclick: () => clear(panel) }, "Hide")));
     }
 
-    function showPairing(enrollment, config, waiting) {
+    function showPairing(enrollment, config, waiting, note) {
       waitingFor = waiting;
       clear(panel);
+      if (note) append(panel, h("p", { class: "flag" }, note));
       append(panel, pairSteps(enrollment, config, () => { waitingFor = null; clear(panel); }));
     }
 
@@ -329,8 +330,18 @@ window.Maity = window.Maity || {};
           if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name is lower-case letters, digits and hyphens, 2 to 31 characters" }); name.focus(); return; }
           const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.slug);
           const chosen = adminProjects.filter((p) => attach.includes(p.slug));
-          act("Creating the pairing line", () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach }),
-            (enr) => showPairing(enr, starterConfig(hubUrl, chosen.length ? chosen : adminProjects), { name: n }));
+          // A hub before attachments (docs/api.md §15.4) refuses `attach`: pair
+          // without it, and say where the runner is allowed instead.
+          let note = null;
+          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach })
+            .catch((err) => {
+              const f = err.code === "invalid" && err.details && err.details.fields;
+              if (!attach.length || !f || f.attach !== "not_supported_yet") throw err;
+              note = "This hub cannot allow the runner in projects while pairing yet; allow it in each project's Runners tab once it can.";
+              return M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value) });
+            });
+          act("Creating the pairing line", create,
+            (enr) => showPairing(enr, starterConfig(hubUrl, chosen.length ? chosen : adminProjects), { name: n }, note));
         },
       },
       h("h3", null, "Pair a runner"),
