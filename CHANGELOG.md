@@ -137,6 +137,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   shown once, a starter configuration of only the keys without a default and the steps
   that make it start; rename, re-pair,
   revoke, remove with the agents still running on it
+- web: the Runners view's "copy as a command" writes the configuration owner-only (`umask
+  077`); `make starter-configs` (CI: `web-e2e`) puts the starter configurations, as the page
+  writes them, through `maity runner check --offline`
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
