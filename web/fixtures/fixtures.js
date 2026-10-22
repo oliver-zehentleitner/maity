@@ -999,6 +999,7 @@ window.MAITY_FIXTURES = {
           "pull_requests": [
             {
               "checks": "success",
+              "found": true,
               "head_sha": "e3fcd8b",
               "merged_at": "2026-10-21T12:25:00Z",
               "number": 1,
@@ -1011,6 +1012,7 @@ window.MAITY_FIXTURES = {
             },
             {
               "checks": "success",
+              "found": true,
               "head_sha": "d91e294",
               "merged_at": null,
               "number": 2,
@@ -1023,6 +1025,7 @@ window.MAITY_FIXTURES = {
             },
             {
               "checks": "pending",
+              "found": true,
               "head_sha": "5c1e0aa",
               "merged_at": null,
               "number": 3,
@@ -1032,6 +1035,32 @@ window.MAITY_FIXTURES = {
               "task_id": "tsk-0005",
               "title": "hub: skeleton",
               "url": "https://github.com/oliver-zehentleitner/maity/pull/3"
+            },
+            {
+              "checks": null,
+              "found": false,
+              "head_sha": null,
+              "merged_at": null,
+              "number": 4,
+              "observed_at": "2026-10-21T13:35:00Z",
+              "source": "typed",
+              "state": null,
+              "task_id": null,
+              "title": null,
+              "url": null
+            },
+            {
+              "checks": null,
+              "found": null,
+              "head_sha": null,
+              "merged_at": null,
+              "number": 5,
+              "observed_at": null,
+              "source": "typed",
+              "state": "merged",
+              "task_id": null,
+              "title": null,
+              "url": null
             }
           ],
           "pull_requests_typed": [
@@ -1041,6 +1070,13 @@ window.MAITY_FIXTURES = {
             },
             {
               "number": 2
+            },
+            {
+              "number": 4
+            },
+            {
+              "number": 5,
+              "state": "merged"
             }
           ],
           "readiness": {
@@ -1068,6 +1104,14 @@ window.MAITY_FIXTURES = {
               {
                 "pr": 3,
                 "reason": "pr_open"
+              },
+              {
+                "pr": 4,
+                "reason": "pr_not_found"
+              },
+              {
+                "pr": 5,
+                "reason": "pr_unverified"
               },
               {
                 "reason": "group_incomplete",
@@ -1334,9 +1378,133 @@ window.MAITY_FIXTURES = {
           "upstream": "origin/fix/rounding",
           "verification": "bearer"
         },
-        "ships_with": [],
+        "ships_with": [
+          "tsk-0022"
+        ],
         "status": "review",
         "title": "Checkout rounding",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "src/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": null,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-s1",
+        "depends_on": [],
+        "id": "tsk-0022",
+        "kind": "task",
+        "ktw_ref": null,
+        "label": "fix",
+        "report": null,
+        "ships_with": [
+          "tsk-0021"
+        ],
+        "status": "done",
+        "title": "Checkout totals in the receipt",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "src/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": null,
+        "contract": {
+          "arbiter": "hum-maintainer",
+          "state": "final",
+          "watchers": [
+            "agt-s1"
+          ]
+        },
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-s1",
+        "depends_on": [],
+        "id": "ctr-0001",
+        "kind": "contract",
+        "ktw_ref": null,
+        "label": null,
+        "report": null,
+        "ships_with": [],
+        "status": "open",
+        "title": "Contract: receipt fields",
+        "updated_at": "2026-10-21T13:00:00Z"
+      },
+      {
+        "area": "/",
+        "assigned_to": null,
+        "blocked_by_request": null,
+        "body": "",
+        "checkpoint": null,
+        "claim": null,
+        "closed_at": "2026-10-21T16:00:00Z",
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "agt-s1",
+        "depends_on": [
+          "tsk-0021"
+        ],
+        "id": "rel-0002",
+        "kind": "release",
+        "ktw_ref": null,
+        "label": null,
+        "release": {
+          "checklist": [
+            {
+              "at": null,
+              "by": null,
+              "done": false,
+              "id": "chk-1",
+              "text": "CHANGELOG has a section for this version"
+            }
+          ],
+          "groups": [
+            [
+              "tsk-0021",
+              "tsk-0022"
+            ]
+          ],
+          "pull_requests": [
+            {
+              "checks": null,
+              "found": null,
+              "head_sha": null,
+              "merged_at": null,
+              "number": 12,
+              "observed_at": null,
+              "source": "typed",
+              "state": "merged",
+              "task_id": null,
+              "title": null,
+              "url": null
+            }
+          ],
+          "pull_requests_typed": [
+            {
+              "number": 12,
+              "state": "merged"
+            }
+          ],
+          "readiness": {
+            "blocking": [
+              {
+                "reason": "probe_not_configured"
+              }
+            ],
+            "ready": false
+          },
+          "tag": null,
+          "version": "0.3.0"
+        },
+        "report": null,
+        "ships_with": [],
+        "status": "cancelled",
+        "title": "0.3.0 — checkout fixes",
         "updated_at": "2026-10-21T13:00:00Z"
       }
     ],

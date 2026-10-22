@@ -304,11 +304,13 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prs th, .prs td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border); }
 .pr-merged, .checks-success { color: var(--ok); }
 .pr-open, .checks-pending { color: var(--warn); }
-.pr-closed, .checks-failure { color: var(--bad); }
+.pr-closed, .checks-failure, .pr-missing { color: var(--bad); }
+.pr-unverified { color: var(--muted); font-style: italic; }
 
 .readiness { margin-top: 8px; font-size: 0.88rem; }
 .readiness.ready { color: var(--ok); }
 .readiness.not-ready { color: var(--warn); }
+.readiness ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* ---- agents --------------------------------------------------------- */
 

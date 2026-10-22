@@ -68,6 +68,11 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   the join line says where to paste it, the board's subtitle says that open cards are
   all shown, a tab row wider than the screen fades where more tabs are, and an inbox
   with nothing open on screen reloads on its own when a request arrives
+- web: release cards against the hub's §6.7: a typed or reported PR state is shown as an
+  unverified claim, a PR the forge does not have as such (`found`, `pr_not_found`), the
+  `ships_with` groups, every readiness reason in words, an honest note when the project
+  has no forge probe, a closed release as its frozen record; contract cards show their
+  watchers
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

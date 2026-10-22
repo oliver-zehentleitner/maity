@@ -270,22 +270,31 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     expect(page.locator("header .project")).to_have_text(name)
 
 
-def join_line(run: Run, page: Page, slug: str, handle: str | None) -> tuple[str, str]:
+def join_line(
+    run: Run,
+    page: Page,
+    slug: str,
+    handle: str | None,
+    display: str = "E2E Agent",
+    role: str = "member",
+) -> tuple[str, str]:
     """Create a join line in the Join view; a new profile when handle is given."""
     page.locator("nav.views").get_by_role("link", name="Join an agent", exact=True).click()
     expect(page).to_have_url(re.compile(rf"#/p/{slug}/join$"))
     if handle:
+        page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()
         page.locator("#join-handle").fill(handle)
-        page.locator("#join-display").fill("E2E Agent")
+        page.locator("#join-display").fill(display)
     else:
         # The existing profile is preselected.
         expect(page.locator("#join-agent")).not_to_have_value("")
+    page.locator("#join-role").select_option(role)
     page.locator("#join-areas").fill("web/")
     page.get_by_role("button", name="Create join line", exact=True).click()
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
-    expect(page.locator("ul.joins li").first).to_contain_text("E2E Agent as member")
+    expect(page.locator("ul.joins li").first).to_contain_text(f"{display} as {role}")
     if handle:
         # The new profile is offered and selected at once, without a reload.
         expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
@@ -564,6 +573,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     chat_pause_state(run, page, alpha, agent_id)
+    release_contract(run, page, alpha, agent_id, task["id"])
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -692,6 +702,79 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     project = json.loads(run.maity(alpha, "resume"))["project"]
     assert project["state"] == "build" and project["absence"] is None, project
     no_problems(run, "state and absence")
+
+
+def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
+    tabs = page.locator("nav.views")
+
+    run.step("release: a reviewer joins and opens a release; the hub has no forge probe here")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    url, code = join_line(run, page, "e2e-alpha", "e2e-reviewer", "E2E Reviewer", "reviewer")
+    rev = run.clone("clone-reviewer")
+    run.maity(
+        rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
+    )
+    partner = run.api(
+        rev,
+        "POST",
+        "/projects/e2e-alpha/tasks",
+        {"title": "E2E partner", "area": "web/", "ships_with": [card_id]},
+    )
+    rel = run.api(
+        rev,
+        "POST",
+        "/projects/e2e-alpha/tasks",
+        {
+            "kind": "release",
+            "title": "0.1.0 — e2e",
+            "area": "/",
+            "release": {"version": "0.1.0"},
+            "depends_on": [card_id, partner["id"]],
+        },
+    )
+    run.api(
+        rev,
+        "PATCH",
+        f"/projects/e2e-alpha/tasks/{rel['id']}",
+        {"release": {"pull_requests_typed": [{"number": 7, "state": "merged"}]}},
+    )
+    contract = run.api(
+        rev,
+        "POST",
+        "/projects/e2e-alpha/tasks",
+        {"kind": "contract", "title": "E2E contract", "contract": {"watchers": [agent_id]}},
+    )
+    print(f"   release {rel['id']}, partner {partner['id']}, contract {contract['id']}")
+    tabs.get_by_role("link", name="Board", exact=True).click()
+    card = page.locator("article.card", has=page.get_by_role("heading", name="0.1.0 — e2e"))
+    expect(card).to_contain_text("Release 0.1.0")
+    row = card.locator("tr", has_text="#7")
+    expect(row).to_contain_text("unverified · typed as merged")  # a claim, not a fact
+    expect(row.locator(".pr-merged")).to_have_count(0)
+    expect(card.locator(".readiness")).to_contain_text(
+        "Not ready: the hub observes nothing for this project (no forge probe)"
+    )
+    expect(card).to_contain_text("it can be cancelled but not marked done")
+    expect(card.locator(".groups")).to_contain_text(f"{card_id} (in progress) + {partner['id']}")
+    expect(card).to_contain_text("Tag v0.1.0: not observed")
+    view = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]
+    assert view["readiness"] == {"ready": False, "blocking": [{"reason": "probe_not_configured"}]}
+    assert view["pull_requests"][0]["observed_at"] is None, view
+    ctr = page.locator("article.card", has=page.get_by_role("heading", name="E2E contract"))
+    expect(ctr).to_contain_text("watched by E2E Agent")
+    expect(ctr).to_contain_text("Contract proposed · arbiter ")
+    run.shot(page, "release-open")
+    no_problems(run, "release open")
+
+    run.step("release: cancelled, it is shown as the record frozen at its close")
+    run.api(rev, "PATCH", f"/projects/e2e-alpha/tasks/{rel['id']}", {"status": "cancelled"})
+    page.reload()
+    card = page.locator("article.card", has=page.get_by_role("heading", name="0.1.0 — e2e"))
+    expect(page.get_by_role("region", name="Cancelled")).to_contain_text("0.1.0 — e2e")
+    expect(card).to_contain_text("Closed: this is the record frozen when it closed")
+    expect(card).not_to_contain_text("it can be cancelled but not marked done")
+    run.shot(page, "release-cancelled")
+    no_problems(run, "release cancelled")
 
 
 if __name__ == "__main__":

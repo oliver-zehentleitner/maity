@@ -26,16 +26,23 @@ window.Maity = window.Maity || {};
 
   const status = (s) => s.replace("_", " ");
 
-  function blockingText(b) {
+  // The hub's reasons (docs/api.md §6.7), in words; any other reason is
+  // shown as it comes, with its details.
+  function blockingText(b, byId) {
+    const card = (id) => id + (byId[id] ? " (" + byId[id].title + ")" : "");
     switch (b.reason) {
-      case "probe_not_configured": return "no forge probe for this project";
-      case "task_open": return b.task + " is not done";
+      case "probe_not_configured": return "the hub observes nothing for this project (no forge probe)";
+      case "task_open": return card(b.task) + " is not done";
       case "pr_open": return "#" + b.pr + " is not merged";
-      case "pr_unverified": return "#" + b.pr + " is not observed yet";
-      case "pr_mismatch": return "#" + b.pr + " head differs from the report";
-      case "group_incomplete": return "group " + b.tasks.join(" + ") + " is incomplete";
+      case "pr_unverified": return "#" + b.pr + " is not observed yet; what was typed or reported counts for nothing";
+      case "pr_not_found": return "#" + b.pr + " is not on the forge (a mistyped number, or a moved repository)";
+      case "pr_mismatch": return "#" + b.pr + ": the observed head differs from the reported one";
+      case "group_incomplete": return "the group " + b.tasks.join(" + ") + " does not ship complete";
       case "checklist_open": return "checklist item " + b.item + " is open";
-      default: return b.reason;
+      default: {
+        const details = Object.keys(b).filter((k) => k !== "reason").map((k) => k + " " + JSON.stringify(b[k]));
+        return b.reason + (details.length ? " (" + details.join(", ") + ")" : "");
+      }
     }
   }
 
@@ -87,9 +94,21 @@ window.Maity = window.Maity || {};
       r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null);
   }
 
+  // One pull request as the hub has it. Only what the forge probe observed
+  // is a fact; a typed or reported state is shown as a claim beside
+  // "unverified" (docs/api.md §6.7).
+  function prState(pr) {
+    if (pr.found === false) return h("td", { class: "pr-missing" }, "not on the forge");
+    if (!pr.observed_at) {
+      return h("td", { class: "pr-unverified" }, "unverified",
+        pr.state ? h("span", { class: "muted" }, " · " + pr.source + " as " + pr.state) : null);
+    }
+    return h("td", { class: "pr-" + pr.state }, pr.state || "—");
+  }
+
   function pullRequests(rel) {
     const prs = rel.pull_requests || [];
-    if (!prs.length) return h("p", { class: "muted" }, "No pull requests yet.");
+    if (!prs.length) return h("p", { class: "muted" }, "No pull requests yet: they come from the shipped cards' reports, or are typed in.");
     return h("table", { class: "prs" },
       h("thead", null, h("tr", null,
         h("th", { scope: "col" }, "PR"), h("th", { scope: "col" }, "State"),
@@ -97,24 +116,56 @@ window.Maity = window.Maity || {};
       h("tbody", null, prs.map((pr) => h("tr", null,
         h("td", null, safeUrl(pr.url) ? h("a", { href: safeUrl(pr.url), rel: "noopener noreferrer" }, "#" + pr.number) : "#" + pr.number,
           " " + (pr.title || ""), h("span", { class: "muted" }, " · " + pr.source + (pr.task_id ? " by " + pr.task_id : ""))),
-        h("td", { class: "pr-" + pr.state }, pr.state),
-        h("td", { class: "checks-" + pr.checks }, pr.checks || "—"),
-        h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : "not observed")))));
+        prState(pr),
+        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? pr.checks : "—"),
+        h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : "never")))));
   }
 
-  function release(rel) {
+  // The connected ships_with components: they ship together or not at all.
+  function shipGroups(rel, byId) {
+    const groups = rel.groups || [];
+    if (!groups.length) return null;
+    const incomplete = new Set(((rel.readiness || {}).blocking || [])
+      .filter((b) => b.reason === "group_incomplete").map((b) => (b.tasks || []).join(" ")));
+    return h("div", { class: "deps groups" },
+      h("span", { class: "label" }, "Ship together"),
+      h("ul", null, groups.map((g) => h("li", { class: incomplete.has(g.join(" ")) ? "unmet" : "met" },
+        g.map((id) => id + (byId[id] ? " (" + status(byId[id].status) + ")" : " (not in this release)")).join(" + ")))));
+  }
+
+  function tagLine(rel) {
+    const name = rel.tag ? rel.tag.name : "v" + rel.version;
+    if (!rel.tag || !rel.tag.observed_at) return h("p", { class: "muted" }, "Tag " + name + ": not observed");
+    return h("p", { class: "muted" }, "Tag " + name + ": "
+      + (rel.tag.found ? "on the forge" + (rel.tag.sha ? " @ " + rel.tag.sha : "") : "not on the forge")
+      + " · " + formatAgo(rel.tag.observed_at));
+  }
+
+  function release(ctx, c, byId) {
+    const rel = c.release;
     const r = rel.readiness || { ready: false, blocking: [] };
+    const closed = c.status === "done" || c.status === "cancelled";
+    const noProbe = r.blocking.some((b) => b.reason === "probe_not_configured");
     return [
+      closed ? h("p", { class: "muted" }, "Closed: this is the record frozen when it closed; later changes do not alter it.") : null,
       pullRequests(rel),
+      shipGroups(rel, byId),
       rel.checklist && rel.checklist.length
         ? h("ul", { class: "checklist" }, rel.checklist.map((item) =>
-          h("li", { class: item.done ? "met" : "unmet" }, (item.done ? "✓ " : "○ ") + item.text)))
+          h("li", { class: item.done ? "met" : "unmet" }, (item.done ? "✓ " : "○ ") + item.text,
+            item.done && item.by ? h("span", { class: "muted" }, " · " + ctx.nameOf(item.by) + (item.at ? " " + formatAgo(item.at) : "")) : null)))
         : null,
       r.ready
-        ? h("div", { class: "readiness ready" }, h("strong", null, "Ready to tag"))
+        ? h("div", { class: "readiness ready" }, h("strong", null, "Ready to tag"),
+          h("span", null, " — every shipped card is done and every pull request observed merged."))
         : h("div", { class: "readiness not-ready" }, h("strong", null, "Not ready: "),
-          r.blocking.map(blockingText).join("; ")),
-      rel.tag ? h("p", { class: "muted" }, "Tag " + rel.tag.name + ": " + (rel.tag.found ? "found" : "not found")) : null,
+          h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId))))),
+      noProbe && !closed
+        ? h("p", { class: "flag" }, "Without a forge probe the hub cannot see this project's pull requests or tag, "
+          + "so it never calls the release ready, and it can be cancelled but not marked done. The probe needs "
+          + "the project's repository on a forge the hub has a token for.")
+        : null,
+      tagLine(rel),
     ];
   }
 
@@ -136,11 +187,12 @@ window.Maity = window.Maity || {};
           h("span", { class: "request-id" }, c.blocked_by_request), ")")
         : null,
       c.contract
-        ? h("p", { class: "muted" }, "Contract " + c.contract.state + ", arbiter " + ctx.nameOf(c.contract.arbiter))
+        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter " + ctx.nameOf(c.contract.arbiter)
+          + ((c.contract.watchers || []).length ? " · watched by " + c.contract.watchers.map(ctx.nameOf).join(", ") : ""))
         : null,
       checkpoint(c),
       report(c),
-      c.kind === "release" ? release(c.release) : null);
+      c.kind === "release" && c.release ? release(ctx, c, byId) : null);
   }
 
   M.views.board = async function (ctx, root) {
