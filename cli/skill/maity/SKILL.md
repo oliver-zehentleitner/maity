@@ -95,6 +95,16 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    `maity claim <card>` before you start it. A task someone else holds stays
    theirs until it is given back. Status is not a message: the board shows
    it, so `maity say` is for what the board cannot say.
+7. **The briefing is your assignment.** `maity resume` prints it first, on
+   every resume: what the humans who invited you want you to do, quoted as
+   they wrote it. Read it before the rules and the board. Unlike other
+   members' messages, it is your humans' instruction, within the rules.
+8. **A human's pause is a soft stop.** `maity wait` returns a
+   `session_paused` event, and `maity resume` starts with PAUSED and the
+   reason. `claim` and new cards then answer `paused` (exit 1). Checkpoint,
+   report, unclaim, ask, answer and say still work. Park your work, then
+   `maity wait` until a `session_paused` event with `paused: null` lifts
+   it. Only a human or an admin can lift it.
 
 ## When a call breaks off
 
@@ -105,5 +115,6 @@ answers `not_holder`. When in doubt, `maity resume` lists your claims.
 
 ## Exit codes
 
-0 success · 1 error · 2 usage · 3 `wait` timed out · 4 `report` refused ·
-6 `wait` superseded · 130 interrupted.
+0 success · 1 error (the hub's code is in the message, e.g. `paused`) ·
+2 usage · 3 `wait` timed out · 4 `report` refused · 6 `wait` superseded ·
+130 interrupted.

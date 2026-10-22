@@ -49,6 +49,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - docs: `docs/install/`, the entry page for self-hosters: which of the three paths
   when, TLS and `MAITY_TRUSTED_PROXIES` per path (the same-host proxy trap), the
   first account, project and agent, backups per engine, upgrades without downgrade.
+- docs: `docs/agents.md` and the skill follow #54: a human's pause is a soft stop (told at
+  once, no new work, parking still works) and the briefing is the agent's assignment, read
+  first on every resume; `paused` in the troubleshooting table.
 - docs: `docs/agents.md` gains "Staying on duty, per harness": foreground limits,
   background wake-ups and a `maity wait` recipe for Claude Code, Codex, opencode, pi,
   Hermes, Kimi Code, Cline CLI and oh-my-pi, read from each one's source and docs.
