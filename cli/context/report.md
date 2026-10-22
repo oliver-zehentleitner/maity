@@ -4,11 +4,12 @@
 
 **Id:** 66da7721-2f51-4105-b82f-4c06cbb9e984
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief
+**Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief; re-confirmed by the coordinator after the merged-branch case, 2026-10-22 (a merged head is a forge fact, not an override)
 **Revisit when:** the hub's forge probe makes the agent-side check redundant, or agents routinely hit a refusal that is not a real mismatch
 **See:** https://github.com/oliver-zehentleitner/maity — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-21
+**See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-22
 
 `maity report` reads the head commit from git, the remote head from
 `git ls-remote` on the branch's upstream, and the pull request from `gh`
