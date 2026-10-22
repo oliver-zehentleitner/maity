@@ -96,6 +96,44 @@ class Run:
             )
         return done.stdout
 
+    def maity_refused(self, clone: Path, *args: str, stdin: str | None = None) -> str:
+        """Run a maity command that must fail; returns what it printed."""
+        done = subprocess.run(
+            ["maity", *args],
+            check=False,
+            cwd=clone,
+            env=CLEAN_ENV,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert done.returncode != 0, f"maity {' '.join(args)} was expected to fail:\n{done.stdout}"
+        return done.stdout + done.stderr
+
+    def wait_start(self, clone: Path) -> subprocess.Popen:
+        """The agent's `maity wait`, started after its own events (resume first)."""
+        self.maity(clone, "resume")
+        return subprocess.Popen(
+            ["maity", "wait", "--timeout", str(WAIT_S)],
+            cwd=clone,
+            env=CLEAN_ENV,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    @staticmethod
+    def wait_event(wait: subprocess.Popen) -> dict:
+        try:
+            out, err = wait.communicate(timeout=WAIT_S + 15)
+        finally:
+            if wait.poll() is None:
+                wait.kill()
+                wait.wait()
+        assert wait.returncode == 0, f"maity wait exited {wait.returncode}: {out}{err}"
+        return json.loads(out)
+
     def api(self, clone: Path, method: str, path: str, body: object | None = None) -> dict:
         args = ["api", method, path]
         if body is not None:
@@ -525,6 +563,8 @@ def scenario(run: Run, page: Page) -> None:
     assert [r.get("answer", {}).get("reply_id") for r in got] == ["go"], got
     no_problems(run, "all projects")
 
+    chat_pause_state(run, page, alpha, agent_id)
+
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -559,6 +599,93 @@ def scenario(run: Run, page: Page) -> None:
             assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
     no_problems(run, "phone width")
+
+
+def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
+    tabs = page.locator("nav.views")
+    owner_id = json.loads(run.maity(alpha, "resume"))["me"]["owner"]["id"]
+
+    run.step("chat: the agent writes with maity say human, the owner answers in the dashboard")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    tabs.get_by_role("link", name="Chat", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/chat$"))
+    page.locator("main section.view-chat").get_by_role("link", name=re.compile("E2E Agent")).click()
+    expect(page).to_have_url(re.compile(rf"#/p/e2e-alpha/chat/{agent_id}$"))
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+    run.maity(alpha, "say", "human", "Hello from the agent.")
+    expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    wait = run.wait_start(alpha)
+    page.locator("#chat-text").fill("Hello back from the owner.")
+    page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator("ol.messages li.msg.out")).to_contain_text("Hello back from the owner.")
+    run.shot(page, "chat")
+    event = run.wait_event(wait)
+    print(f"   maity wait woke on {event.get('kind')}: {(event.get('payload') or {}).get('body')}")
+    assert event.get("kind") == "message", event
+    assert event["payload"].get("body") == "Hello back from the owner.", event
+    assert event["payload"].get("conversation_id") == agent_id, event
+    page.reload()
+    expect(page.locator("ol.messages li.msg.out").last).to_contain_text("reached a session")
+    no_problems(run, "chat")
+
+    run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
+    tabs.get_by_role("link", name="Agents", exact=True).click()
+    agents = page.locator("main section.view-agents")
+    agents.locator(f"#pause-{agent_id}").fill("e2e: hold on")
+    agents.locator("form.pause").get_by_role("button", name="Pause", exact=True).click()
+    expect(agents).to_contain_text("by Owner: e2e: hold on")
+    expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
+    run.shot(page, "paused")
+    out = run.maity_refused(alpha, "api", "--json", "-", "PATCH", "/me", stdin='{"paused": null}')
+    assert "forbidden" in out and "a human paused you" in out, out
+    run.maity(alpha, "resume")  # a resume clears the agent's own pause, never a human's
+    me = next(
+        m
+        for m in run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
+        if m["id"] == agent_id
+    )
+    assert (me.get("paused") or {}).get("by") == owner_id, me
+    assert me["paused"]["reason"] == "e2e: hold on", me
+    page.reload()
+    expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
+    agents.get_by_role("button", name="Clear pause", exact=True).click()
+    expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
+    run.api(alpha, "PATCH", "/me", {"paused": {"reason": "e2e: out of quota"}})
+    run.api(alpha, "PATCH", "/me", {"paused": None})  # its own pause, it may lift
+    no_problems(run, "pause")
+
+    run.step("state and absence: the owner freezes the project; the agent's resume shows it")
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.locator("#state-select").select_option("freeze")
+    page.locator("#state-note").fill("e2e freeze: fixes only")
+    page.locator("#state-reason").fill("e2e: release candidate")
+    page.get_by_role("button", name="Change state", exact=True).click()
+    expect(page.locator("header .state")).to_have_text("Freeze")
+    expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.locator("#absence-until").fill("2030-01-02T10:00")
+    page.locator("#absence-scope").fill("e2e: the admins decide merges")
+    page.get_by_role("button", name="Set absence", exact=True).click()
+    expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
+    run.shot(page, "freeze-absence")
+    project = json.loads(run.maity(alpha, "resume"))["project"]
+    print(f"   resume: state {project['state']}, absence {project['absence']}")
+    assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
+        project
+    )
+    assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
+    assert project["absence"]["until"].startswith("2030-01-02"), project
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="I am back", exact=True).click()
+    expect(page.locator("header .absence")).to_have_count(0)
+    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.locator("#state-select").select_option("build")
+    page.locator("#state-reason").fill("e2e: back to building")
+    page.get_by_role("button", name="Change state", exact=True).click()
+    expect(page.locator("header .state")).to_have_text("Build")
+    project = json.loads(run.maity(alpha, "resume"))["project"]
+    assert project["state"] == "build" and project["absence"] is None, project
+    no_problems(run, "state and absence")
 
 
 if __name__ == "__main__":
