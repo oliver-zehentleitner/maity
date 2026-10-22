@@ -19,6 +19,9 @@
   --flag-bg: #fff6dd;
   --error-bg: #fde8e7;
   --out-bg: #dbe9ff;
+  /* The generated avatar: its hue comes from the member, the lightness from the theme. */
+  --avatar-bg: #e6e9ed;
+  --avatar-l: 40%;
   --radius: 8px;
   --gap: 16px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -44,10 +47,18 @@
     --flag-bg: #2d2610;
     --error-bg: #3a1716;
     --out-bg: #1b3050;
+    --avatar-bg: #2a3138;
+    --avatar-l: 66%;
   }
 }
 
 * { box-sizing: border-box; }
+
+/* A member's picture (js/avatar.js). */
+.avatar-svg { --avatar-h: 210; display: inline-block; vertical-align: middle; flex: none; }
+.avatar-svg .avatar-bg { fill: var(--avatar-bg); }
+.avatar-svg .avatar-on { fill: hsl(var(--avatar-h) 60% var(--avatar-l)); }
+.avatar-img { display: inline-block; vertical-align: middle; border-radius: 4px; object-fit: cover; flex: none; }
 
 html { -webkit-text-size-adjust: 100%; }
 

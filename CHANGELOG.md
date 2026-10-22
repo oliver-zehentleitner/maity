@@ -10,6 +10,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- web: **avatars** — a picture for every member, generated from its id (a mirrored identicon
+  and a hue, the same on every client), readable in both themes; an `avatar_url` the page may
+  load wins; on the agents' cards and in the organisation
 - cli: `maity report --no-code` (`docs/api.md` §6.6, #116) — a card whose result is not code is reported with `code: false`, the summary carrying the result; no git fact is read or sent, so it works from any clone state.
 - web: **Users of this hub** (`#/admin/users`) for the instance admin — the humans of the
   instance with counts and times, searchable and filterable, paged by the hub's cursor;

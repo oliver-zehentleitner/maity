@@ -23,7 +23,7 @@ class Node_ {
 }
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
 class El extends Node_ {
-  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = {}; }
+  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
   removeAttribute(k) { delete this.attrs[k]; }
@@ -67,6 +67,7 @@ const main = new El("main"); main.id = "main";
 const docListeners = {};
 const document = {
   createElement: (t) => new El(t),
+  createElementNS: (ns, t) => new El(t),
   createTextNode: (t) => new Text_(t),
   head,
   getElementById: (id) => ({ header, main })[id],
@@ -622,6 +623,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(labels.length > 0 && labels.every((l) => l.textContent === "Away"), "presence re-read in place");
   expect(main.querySelector("form.pause") === pauseBefore, "the presence refresh keeps the forms");
   win.Maity.api.get = realGet3;
+
+  // Avatars: generated from the member id, the same on every client.
+  const AV = win.Maity.avatar;
+  expect(JSON.stringify(AV.cells("agt-a")) === '[[0,0],[4,0],[2,0],[1,1],[3,1],[0,2],[4,2],[1,2],[3,2],[2,2],[0,3],[4,3],[2,3],[0,4],[4,4]]'
+    && AV.hueOf("agt-a") === 340 && AV.hueOf("agt-b") === 153, "avatars: a fixed id gives a fixed picture (FNV-1a), on every client");
+  const mirrored = (id) => AV.cells(id).every(([c, r]) => AV.cells(id).some(([c2, r2]) => c2 === 4 - c && r2 === r));
+  expect(["agt-a", "agt-b", "hum-maintainer", "", "?", "\u{1F642}"].every((id) => mirrored(id) && AV.cells(id).length > 0 && AV.hueOf(id) >= 0 && AV.hueOf(id) < 360)
+    && JSON.stringify(AV.cells("agt-a")) !== JSON.stringify(AV.cells("agt-b")), "avatars: mirrored, never empty, different ids differ");
+  const pic = AV({ id: "agt-a" }, 28);
+  expect(pic.tagName === "SVG" && pic.attrs["aria-hidden"] === "true" && pic.attrs.width === "28" && pic.style["--avatar-h"] === "340"
+    && pic.querySelectorAll("rect").length === 16, "avatars: an SVG of nodes, decorative, its hue as a custom property");
+  expect(AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" }).tagName === "SVG", "avatars: a picture the page may not load falls back to the generated one");
+  expect(AV({ id: "agt-a", avatar_url: "/api/v1/projects/maity/logo?v=1" }).tagName === "IMG", "avatars: a picture the page may load wins");
+  await go("#/p/maity/agents");
+  const profA = main.querySelectorAll("article.profile").find((a) => a.getAttribute("aria-label") === "Agent A");
+  expect(profA.querySelector("header").querySelector("svg") && profA.querySelector("header").querySelector("svg").style["--avatar-h"] === "340", "avatars: on the agent's card");
+  await go("#/p/maity/org");
+  expect(main.querySelectorAll(".org-node svg").length === main.querySelectorAll(".org-node").length, "avatars: in the organisation, one per member");
 
   await go("#/p/maity/chat");
   expect(main.querySelectorAll(".chat-picker li").length === 5, "chat picker lists own agents");

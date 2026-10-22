@@ -198,6 +198,7 @@ window.Maity = window.Maity || {};
         live[m.id] = p;
         return h("article", { class: "profile", "aria-label": m.display_name },
           h("header", null,
+            M.avatar(m, 28),
             p.dot,
             h("h3", null, m.display_name),
             h("span", { class: "handle" }, "@" + m.handle),
