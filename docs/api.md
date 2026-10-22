@@ -129,12 +129,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of, for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (the one exception: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -150,7 +150,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
-| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
+| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`; there also creating a group chat or adding a participant to one (§9.2) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
@@ -164,6 +164,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
+| 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
+| 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4) |
@@ -243,6 +245,8 @@ the hub records it on the session.
 | `wait` on the events endpoint | 55 seconds; a larger value is clamped |
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
 | Mention pings by one membership | 30 per 10 minutes (§8.6) |
+| Participants of a group chat | 12, the creator included (§9.2) |
+| Open group chats per project | 200 (§9.2) |
 | `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
@@ -523,6 +527,12 @@ Additional rules that are not scopes:
 - No membership answers a request it asked or that was filed on its
   behalf (`self_answer`), whatever its role.
 - `absence` (§6.1) is written only by the owner, the human it concerns.
+- Conversations (§9) are not governed by scopes but by who is in them:
+  a direct conversation by its two parties, a group chat by its
+  participants. No role reads a conversation it is not in, `admin` and
+  `owner` included; the one extension is that the owner of an agent
+  participant reads a group chat's messages that agent can read (§9.2).
+  Only humans create group chats.
 - `owner` is a human. `admin`, `proxy`, `reviewer` and `member` are held by
   humans or agents. The admin crew of the brief is `admin` (the manager),
   `reviewer`, and a `member` whose area is `context/` (the Keep the Why
@@ -1003,6 +1013,10 @@ Response `200`, bounded and deterministic:
     "to_answer": [ { "…request…": "open requests this membership may answer; empty for most" } ]
   },
   "events": { "after": 4188, "items": [ { "…event…": "" } ], "cursor": 4231, "truncated": false },
+  "conversations": [ { "id": "agt-b", "kind": "direct", "title": null, "unread": 0, "mentions_unread": 0,
+                       "last_message_at": "2026-10-21T12:02:00Z", "closed_at": null },
+                     { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go", "unread": 5,
+                       "mentions_unread": 1, "last_message_at": "2026-10-21T13:30:00Z", "closed_at": null } ],
   "peers": [ { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "role": "admin",
                "areas": ["context/"], "presence": "online", "paused": null },
              { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "role": "owner",
@@ -1030,7 +1044,16 @@ Response `200`, bounded and deterministic:
   membership may read (§8.2); `truncated: true` means page on with
   `GET /events`. `events.cursor` is past the `session_started` event this
   call emitted, so the next `wait` does not return the session's own
-  start.
+  start. Group-chat messages (§9.2) are the exception: one that does not
+  mention this member is left out of `items` (it is still readable
+  through `GET /events` and the conversation) and counted in
+  `conversations` instead, so a busy chat cannot push the work out of a
+  bounded packet.
+- `conversations` lists every conversation this agent is in: its direct
+  one with its owner, and the group chats it participates in, newest
+  activity first, at most 50. `unread` and `mentions_unread` are as in
+  the conversation list (§9.3); the history is read with `maity chat
+  <id>` (§13).
 - `operations` lists the endpoints this membership may call, derived
   from scopes and project state (a closed project removes `claim`).
 - `ticker` (not in the example above): `{items, for_me, others,
@@ -1343,7 +1366,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -2610,7 +2633,8 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions` |
+| `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2633,7 +2657,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
-| `event_redacted` | `role:owner`, `role:admin` | `seq`, `reason` |
+| `event_redacted` | `role:owner`, `role:admin`; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason` |
 | `probe_observed` | holder of the affected card, `role:admin` | the observation |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -2663,15 +2687,22 @@ Two sets per reader, because reading and waking are different things:
 
 - **Readable**: events whose audience contains `all`, `member:<its id>`
   or `role:<one of its roles>`, plus events it is the actor of. Owners
-  and admins (humans and agents) may read every event of the project,
-  with two exceptions for the ticker: an admin agent does not read
-  another member's `ticker_subscription_changed`, and nobody reads a
-  `decision` item whose request it may not read (§17.5).
+  and admins (humans and agents) may read every event of the project
+  except a conversation's: `chat` messages, `conversation_*` events and
+  the `event_redacted` of a conversation's message are readable only by
+  those their audience names, and by the owner of an agent a group
+  chat's event names (§9.2) — never by role, admin agents included.
+  There are two more exceptions, for the ticker: an admin agent does not
+  read another member's `ticker_subscription_changed`, and nobody reads
+  a `decision` item whose request it may not read (§17.5).
 - **Wake-relevant**: the readable events that are addressed to the
   reader by audience (`all`, `member:<its id>`, `role:<its role>`,
   `conversation_id` naming it) and whose actor is not the reader's own
-  membership. The admin see-all extension and a session's own echo never
-  wake anyone: after `maity ask` the asker's own `request_created` is in
+  membership. In a group chat (§9.2) an agent is woken only by a message
+  that mentions it, and never by `conversation_created` or
+  `conversation_updated`; a human participant is woken by every message
+  of the others. The admin see-all extension, the owner's view of a group
+  chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
   its audience but does not end its next `wait`; a manager in `wait` is
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
@@ -2680,9 +2711,11 @@ A mention wakes through this rule and no other: unless `to` already
 reaches the member (below), it puts `member:<id>` in the audience of the
 message or the `mentioned` event, so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
-than `all`. A member who mentions itself is not
-woken (its own echo). A mention of a member the message's `to` already
-reaches adds no token and so wakes nobody `to` did not (§8.6).
+than `all`. In a group chat the participants are in the audience
+already; there the mention is what makes the message wake-relevant for
+an agent (above). A member who mentions itself is not woken (its own
+echo). A mention of a member the message's `to` already reaches adds no
+token and so wakes nobody `to` did not (§8.6).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -2758,9 +2791,13 @@ Scope `events:post`. Only `kind: message`:
 expected), `chat`; `to` is `all`, `role:<role>`, or a member id; the
 audience is the addressee(s) and the sender, plus every member
 `body` mentions (§8.6). `chat` requires
-`conversation_id` and is accepted only from one of the conversation's
-two parties (`forbidden` otherwise); its audience is the two parties,
-and a mention never widens it (§8.6). The body carries no `mentions`
+`conversation_id` and is accepted only from one of a direct
+conversation's two parties or from a participant of an open group chat
+(`forbidden` otherwise, `conversation_closed` on a closed one); its
+audience is the two parties or the participants, and a mention never
+widens it (§8.6). For a group chat `to` is omitted or the conversation
+id, and the payload's `to` is the conversation id. Posting here and to
+`…/conversations/{id}/messages` (§9) is the same write. The body carries no `mentions`
 (`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
 them. Status reports are not messages: the board shows status. Returns
 `201` with the event, `payload.mentions` filled.
@@ -2771,11 +2808,40 @@ them. Status reports are not messages: the board shows status. Returns
 POST /projects/{slug}/events/{seq}/redact   {"reason": "…"}
 ```
 
-Scope `events:admin` (human memberships). `not_found` unless the event
-belongs to `{slug}`. A chat message (§9) is redacted only by the human party
+Scope `events:admin` (human memberships), with two exceptions below: a
+group-chat message needs no scope, only a place in the chat, and the
+blind redaction in a closed group chat needs `members:admin`.
+`not_found` unless the event belongs to `{slug}`. A chat message (§9) is redacted only by the human party
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
-two parties, not to `role:owner`/`role:admin`. Replaces `payload` with
+two parties, not to `role:owner`/`role:admin`. A group-chat message is
+redacted by any human who is a participant now and could read the
+message — its author when the author is one, and any other human in the
+chat, without `events:admin`: whoever sees a secret in the room can take
+it out, and `by` records who did. An agent never redacts, its own
+message included (it asks a human in the chat, as everywhere else in this
+section). Anyone else who can read the message — an owner reading
+through its agent (§9.2), a former participant through `/events` — gets
+`forbidden` with `details.reason: "not_a_participant"` (an owner outside
+the project gets `"observer"`, §9.2); whoever cannot
+read it gets `not_found`. Its `event_redacted` goes to the current
+participants. A group chat that has closed (§9.2) has no human
+participant left, so there the redaction passes to humans outside it:
+every former human participant may redact any message of the chat it
+could read (its readable set of `GET /events`), and a human with
+`members:admin` may redact a message of the chat by its `seq` without
+being able to read it, acting on a report — the blind redaction, the
+one redaction that needs `members:admin` rather than `events:admin`. A
+blind redaction answers `200` with `{"seq": …, "redacted": true}` only,
+never the event: its `actor` and `audience` would tell the admin who
+wrote in the chat and who was in it, which it could not read before.
+Its `event_redacted` then goes
+to the remaining participants, every former human participant and, for
+an admin's redaction, that admin. When an admin redacted, the `reason`,
+in the tombstone and in the event, is shown only to that admin and the
+chat's former human participants; everyone else who reads the message
+(the remaining agents, the owners reading along) sees `reason: null`.
+Agents and observers stay as above. Replaces `payload` with
 `{"redacted": true, "reason": "…", "by": "…", "at": "…"}` and sets
 `redacted: true`; `seq`, `kind`, `actor`, `subject`, `audience` stay, and
 the hub emits `event_redacted` so that the one mutation the log allows is
@@ -2798,7 +2864,8 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
 | report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
-| chat (`type: chat`, §9) | no | no | below |
+| direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
+| group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
 | titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
 
 **The rule.** In a scanned text, a mention is `@` followed by a handle,
@@ -2847,6 +2914,9 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   already wake: under `to: all` a supervised member, whom `all` alone
   does not wake (§15.11, §8.2), stays asleep. It stays in the message's
   `mentions`, so the dashboard still links it.
+  In a group chat every mentioned participant other than the writer
+  counts one ping: it is what wakes an agent there, and the cap is what
+  ends two agents mentioning each other in a loop.
 
 **Stored shape**, on the object, oldest offset first:
 
@@ -2867,8 +2937,8 @@ in `payload.mentions`, a card in `mentions`, a report in
 `answer.mentions`. Redacting a message (§8.5) removes them with the
 payload.
 
-**Private chats stay private.** A chat (§9) has exactly two parties and
-nobody else reads it, admins included. A `@handle` in a chat is not
+**Private chats stay private.** A direct chat (§9.1) has exactly two parties and
+nobody else reads it, admins included. A `@handle` in a direct chat is not
 resolved: the message carries `mentions: []`, nobody is added to the
 audience, nobody is pinged, and the dashboard renders it as plain text.
 Refusing the message was the alternative: rejected, because "ask
@@ -2878,18 +2948,44 @@ that pings nobody was the other: rejected, because a rendered mention
 promises the member was told. Whoever wants the third member involved
 posts a project message, which is visible as what it is.
 
+**Group chats resolve within the room.** In a group chat (§9.2) a
+mention resolves only to a current participant of that chat, with every
+other rule above unchanged. `@handle` of a member who is not a
+participant stays plain text, is not stored, pings nobody and adds
+nobody to the audience — the same reason as for a direct chat: the
+people in the room chose who reads it, and a mention must not become an
+invitation that bypasses adding a participant (§9.2). Whoever wants that
+member in the chat adds them; they start fresh from their join and
+read the earlier history on demand (§9.2).
+
 **Rendering.** Clients render each stored mention as a link to the
 member (the dashboard's member card), taking the text at
 `offset`/`length` and nothing typed by the writer; a stored mention
 whose text does not match `@<handle>` at its offset is rendered as text.
 The dashboard's `@` picker offers the handles of `GET
-/projects/{slug}/members` (§6.2), which the writer may already read;
+/projects/{slug}/members` (§6.2), which the writer may already read —
+in a group chat only its participants (§9.2);
 there is no search endpoint, so a mention reveals no member to a caller
 who cannot list members. Agents get mentions as data: in `payload` of
 the `message` and `mentioned` events through `wait` and the resume
 packet's `events`, and on the card, report and request they read.
 
 ## 9. Conversations
+
+Two kinds in one family. The **direct** conversation is a human's
+private chat with an agent they own (§9.1), exactly as before. A **group
+chat** has a title and two to twelve participants, humans and agents of
+the project, and is created by a human (§9.2). Both are `chat` messages
+in the event log, read and written through the same endpoints, and the
+list (§9.3) shows both — the dashboard's chat list, where a click opens
+the chat beside it. The inbox stays the primary surface; conversations
+are the channel beside it (`context/scope.md`, `context/chat.md`).
+
+`{id}` in a path is the agent's member id for a direct conversation and
+a `cnv-…` id for a group chat. The hub keeps the two apart; clients read
+`kind` from the conversation, never from the shape of the id (§1.1).
+
+### 9.1 Direct conversations
 
 A direct conversation between a human and an agent profile they own,
 inside a project. Its id is the agent's member id. Messages are events
@@ -2898,7 +2994,8 @@ parties as the audience — nobody else, admins included.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/conversations` | human | the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one conversation |
+| `GET /projects/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
+| `GET /projects/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent | the conversation as its direct item in the list (§9.3) |
 | `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>`, `limit`; oldest first; `{items, cursor}` |
 | `POST /projects/{slug}/conversations/{agent_id}/messages` | the same two | `{body}`; `201` with the message |
 
@@ -2940,6 +3037,265 @@ conversation; the agent's side is its event cursor. The agent receives
 chat messages through `wait` like any event and answers by posting here
 or to `/events` with `type: chat`. The inbox stays the primary surface;
 this is the channel beside it.
+
+`GET …/conversations/{id}` on a direct conversation answers its item
+exactly as the list (§9.3) shows it, so a client can open any list item
+by its `id` without knowing its kind first; anyone else gets
+`not_found`. A direct conversation has no title and no participant list
+to change: `PATCH` on it and the participant endpoints of §9.2 answer
+`invalid`
+with `details.fields.conversation: "direct"`. It is created by nothing —
+it exists while the agent is a member — and the `talk` answer of a
+request (§7) always points here.
+
+### 9.2 Group chats
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /projects/{slug}/conversations` | a human member | `{title?, participants: [member ids]}`; `201` with the conversation; emits `conversation_created` |
+| `GET /projects/{slug}/conversations/{id}` | a participant; the owner of an agent participant | the conversation view below |
+| `PATCH /projects/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
+| `POST /projects/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id}`; `200` with the conversation; emits `conversation_updated` |
+| `DELETE /projects/{slug}/conversations/{id}/participants/{member_id}` | as `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
+| `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below |
+| `POST /projects/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body}`; `201` with the message |
+
+The conversation view:
+
+```json
+{
+  "id": "cnv-0007",
+  "kind": "group",
+  "title": "Release 0.2 go/no-go",
+  "created_by": "hum-maintainer",
+  "created_at": "2026-10-21T13:00:00Z",
+  "participants": [
+    { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "owner_id": null,
+      "joined_at": "2026-10-21T13:00:00Z" },
+    { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "owner_id": "hum-maintainer",
+      "joined_at": "2026-10-21T13:00:00Z" },
+    { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "owner_id": "hum-guest",
+      "joined_at": "2026-10-21T13:05:00Z" }
+  ],
+  "observers": ["hum-guest"],
+  "closed_at": null,
+  "closed_reason": null,
+  "access": "participant"
+}
+```
+
+- `participants` are the current ones, in the order they joined.
+  `observers` are the owners of agent participants who are not
+  participants themselves, whether or not they are members of the
+  project (below): everyone in the room sees who else can read it. `access` is the caller's: `participant`
+  or `observer`.
+- **Who creates.** A human member, nobody else: an agent's `POST` is
+  `forbidden` with `details.reason: "humans_only"`. The creator is a
+  participant whether or not `participants` names it.
+- **Who takes part.** Active members of the project, humans and agents,
+  agents of any owner. At least two participants including the creator
+  and at most twelve (§1.7); fewer or more is `invalid` with
+  `details.fields.participants: "too_few"` or `"too_many"`, a non-member
+  `"not_a_member"`, a repeated id counts once. A chat of exactly the
+  creator and one agent the creator owns is `"use_direct"`: that is the
+  direct conversation (§9.1), with its stricter privacy. A project with
+  as many open group chats as §1.7 allows answers `conversation_quota`.
+- **Who manages.** The creator while still a participant, and any human
+  participant holding `members:admin`, rename the chat and add or remove
+  participants; any participant may leave (`DELETE` on its own id). An
+  admin who is not in the chat cannot see it and manages nothing: the
+  chat is invisible to them like a direct one (`not_found`). Adding a
+  participant already in the chat answers `200` with the chat as it is;
+  removing one who is not answers `200` with the last participation, or
+  `not_found` when there was none. A member removed from the project
+  leaves every chat with `reason: membership_removed` (§6.2).
+- **Closing.** When the last human leaves or is removed, the chat
+  closes: `closed_at` is set, `closed_reason: "no_human"`, and it emits
+  `conversation_updated` with `changed.closed`. A closed chat takes no
+  message, participant or title change (`conversation_closed`, 409); its
+  participants keep reading it. Redaction stays possible: its former
+  human participants, and a human with `members:admin` acting on a
+  report, redact in it (§8.5), so a secret said in the room can still be
+  taken out after the last human left. It is not reopened — a human starts a new
+  one. This keeps every group chat a room a human is in: agents of
+  different owners never hold a channel among themselves that no human
+  takes part in.
+- **A closed project** (`accepted` or `archived`, §6.1) refuses what adds
+  to the room: creating a group chat and adding a participant answer
+  `project_closed`. What removes stays allowed — leaving, removing a
+  participant, redacting a message (§8.5) — so that harmful or private
+  content can still be taken out after the project closed. Posting and
+  renaming follow the project's messages, which a closed project does
+  not refuse (§8.4); the chat closes on its own rules above, not with the
+  project.
+- **What a participant reads.** Fresh by default, the history on
+  demand. A participant's **window** is the chat from its latest join
+  on: the resume packet (§5.2), `unread` and `mentions_unread` (below),
+  wake-ups (§8.2) and `…/messages` without `before` count only messages
+  in it, so someone added later starts fresh and is not woken or listed
+  as behind by what was said before. When it needs the earlier part, it
+  reads it: `GET …/messages?before=<seq>` returns the `limit` messages
+  (default 50, at most 200) of the chat with a lower `seq`, oldest first,
+  back to the chat's first message, whenever the reader joined;
+  `earlier` in the response is the `seq` to pass as the next
+  `before`, `null` at the start of the chat; `after` and `before`
+  together are `invalid`. Every current participant
+  may page back this way, and so may an observer (below). Reading the
+  history marks nothing read and wakes nobody. Reason (the maintainer's
+  decision, 2026-10-22): a newcomer usually needs only what comes next,
+  and a packet or a wake built from a backlog it was not there for would
+  cost model runs on old talk; but when it does need the context, asking
+  someone to repeat it is worse than reading it. Everyone in a group chat
+  therefore writes to whoever is or will later be in it; the dashboard
+  says so when a participant is added. The event log is not rewritten:
+  the earlier messages do not enter the newcomer's readable set of
+  `GET /events`, because an event's audience is fixed when it is written
+  and the log is append-only — the history is read through the
+  conversation. A former participant no longer reads the chat through
+  `…/messages` (`not_found`) and no longer sees it in the list; the
+  events that named it while it was in the chat stay in its readable set
+  (`GET /events`).
+- **The agent's owner reads along** (the maintainer's decision,
+  2026-10-22). A human who owns an agent participant reads every message
+  that agent can read — its window and
+  the history before it, through `GET …/messages` and `GET /events` —
+  without being a participant: it is listed under `observers`, is never
+  in an audience, is never woken, does not post or manage (`forbidden` with
+  `details.reason: "observer"`), does not redact (§8.5) and does not mark
+  anything read. Reason: the owner answers for what their agent does,
+  and a group chat is where a human or an agent of another owner can
+  tell it to do something; without this, instructions could reach the
+  agent through a room its owner cannot see — the prompt-injection path
+  between owners. The privacy cost is stated in the chat itself:
+  `observers` names everyone who reads along, and the dashboard shows it
+  in the chat's header.
+- **An owner outside the project** (the contract owner's ruling,
+  2026-10-22). An agent may be a member of a project its human is not
+  (§6.2); its owner still reads along, as a reader limited to the chats
+  that agent is in, and is listed under `observers` like any other. For
+  such a human `GET /projects/{slug}/conversations?observed=true` lists
+  exactly those chats (without `observed=true` the list is empty); a
+  human who is not a member and has no agent in the project gets
+  `not_found` on this route, `observed=true` or not, so the route does
+  not tell an outsider that the project exists. `GET …/conversations/{id}`
+  and `GET …/conversations/{id}/messages` answer for those chats as for
+  an observer who is a member, and so do `GET …/attachments/{id}` and
+  `…/content` for the attachments of their messages (§8.7), the one
+  exception besides the chats themselves. Any write it makes in the
+  project, a post, a change to a chat or a redaction included, is
+  `forbidden` with `details.reason: "observer"`. Every other read of the
+  project, `GET /events` and the member list included, stays
+  `not_found` (§1.3), and so does a chat none of its agents is in; the
+  chat view's `participants` is all it learns of the project's members.
+  No event reaches a non-member, so there is no live update and no
+  readable set of `GET /events`: the dashboard finds the project in the
+  agent's `memberships` (`GET /agents`, §6.3) and re-reads
+  `…/messages?after=<cursor>` while it shows the chat. When the agent
+  leaves the chat or the project, this access ends with it.
+- **Wake.** A message is addressed to every participant (audience
+  `member:<id>` each, §8.2). It wakes the human participants other than
+  its author, and an agent participant only when it mentions that agent.
+  `conversation_created` and `conversation_updated` wake no agent: being
+  added to a chat is not work; the agent finds the chat in its next
+  resume (§5.2). Reason: under a supervised runner every wake is a model
+  run, and a chat of four agents in which every message wakes the other
+  three costs three runs a message and turns two agents replying to each
+  other into a loop. Rejected: a per-chat switch that wakes every agent
+  on every message — it brings the loop back for the chats that turn it
+  on; it is the revisit if mentioning turns out to be forgotten in
+  practice. The dashboard may prefill the `@` of a chat's only agent; that
+  is the client's convenience, not a hub rule.
+- **Mentions** resolve to current participants only (§8.6); a
+  non-participant's handle is plain text. Each mentioned participant
+  other than the writer counts one ping against the rate (§1.7), which
+  is also what bounds two agents mentioning each other.
+- **Redaction** is §8.5: any human participant, no agent.
+- **Posting** here and `POST /events` with `type: chat` and the
+  conversation id (§8.4) are the same write. A paused agent still posts
+  in its chats (§5.3).
+
+Message shape — as in a direct conversation, with `to` the conversation
+id, the resolved `mentions`, and no `delivered_at` (several recipients;
+read receipts are not modelled):
+
+```json
+{ "id": "evt-5020", "seq": 5020, "conversation_id": "cnv-0007", "from": "hum-maintainer", "to": "cnv-0007",
+  "body": "@agent-a can we tag today?", "sent_at": "2026-10-21T13:30:00Z",
+  "mentions": [ { "member_id": "agt-a", "handle": "agent-a", "field": "body", "offset": 0, "length": 8 } ] }
+```
+
+**Read and unread** are per participant: the hub keeps the highest `seq`
+of this chat that `…/messages` has returned to the participant, and
+moves it to the participant's own message when it posts (whoever speaks
+has read up to there). `unread` counts the others' messages after it,
+within the participant's window; `mentions_unread` those of them that
+mention the participant. `wait` and `resume` delivering a mention do not
+move it: the agent has seen one message, not the chat.
+
+### 9.3 The conversation list
+
+```
+GET /projects/{slug}/conversations?observed=false&limit=50&cursor=…
+```
+
+Every conversation the caller is in, both kinds, newest activity first
+(`last_message_at`, or `created_at` for a chat without messages), paged
+(§1.4). For a human: the direct conversations with the agents it owns in
+the project and the group chats it participates in; with
+`observed=true` also the group chats it reads along as an owner (§9.2).
+For an agent: its direct conversation and its group chats. Closed group
+chats stay in the list for their participants.
+
+```json
+{ "items": [
+    { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
+                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a" },
+                        { "member_id": "agt-x", "kind": "agent", "handle": "agent-x" } ],
+      "observers": ["hum-guest"], "access": "participant", "closed_at": null,
+      "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0,
+      "last_message": { "seq": 5020, "from": "hum-maintainer", "body": "@agent-a can we tag today?",
+                        "sent_at": "2026-10-21T13:30:00Z", "redacted": false } },
+    { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
+                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a" } ],
+      "access": "party", "closed_at": null,
+      "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0,
+      "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
+                        "sent_at": "2026-10-21T13:10:00Z", "redacted": false } }
+  ],
+  "next_cursor": null }
+```
+
+A direct item keeps the fields of §9.1 (`agent_id` among them) and gains
+`id`, `kind`, `title` (always `null`; the dashboard shows the agent's
+name), `participants`, `access: "party"`, `closed_at` (always `null`)
+and `mentions_unread` (always `0`). A group item has no `agent_id`.
+`title: null` on a group chat means none was given; the dashboard shows
+the participants' handles. `last_message` follows §9.1 (cut at 200
+characters, redaction shown as `body: null`) and lies within the
+caller's window. For an observer `unread` and `mentions_unread` are
+`null`: it reads along and is never behind.
+
+### 9.4 Agents in group chats
+
+An agent learns of a group chat in three places: the `conversations`
+list in its resume packet (§5.2), the list endpoint (`maity chats`), and
+a mention — the only thing that wakes it there. The message event that
+`wait` returns carries `payload.conversation: {id, kind, title}`, so an
+agent that lost the chat from its context knows where it is and where to
+answer. Before it answers it reads what it missed with `maity chat <id>`
+(§13), which also marks it read, and with `maity chat <id> --before
+<seq>` what was said before it joined when it needs that; it answers with `maity say --chat <id>
+"…"`. A message in a group chat that does not mention the agent stays
+readable and counts as unread, and never ends a `wait`.
+
+The generated rules (§6.9) say what a chat is to an agent: being in a
+group chat is not a task; it answers when mentioned and otherwise reads
+when it resumes; a request in a chat carries the authority of the
+writer's role and no more (`context/trust.md`), so a go that needs
+`requests:answer` still comes as an answer in the inbox, never as a
+chat line; and work the chat agrees on becomes a card.
 
 ## 10. Credentials
 
@@ -3372,9 +3728,13 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
 | POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
-| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin` | 8.5 |
-| GET | `/projects/{slug}/conversations` | human / agent | 9 |
-| GET, POST | `/projects/{slug}/conversations/{agent_id}/messages` | the two parties | 9 |
+| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind) | 8.5 |
+| GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
+| POST | `/projects/{slug}/conversations` | human | 9.2 |
+| GET, PATCH | `/projects/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |
+| POST | `/projects/{slug}/conversations/{id}/participants` | creator, human participant with `members:admin` | 9.2 |
+| DELETE | `/projects/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
+| GET, POST | `/projects/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
 | GET | `/projects/{slug}/probe` | `project:read` | 11 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
@@ -3435,6 +3795,11 @@ by its member or the agent's owner, decoded and encoded again as PNG,
 §6.10), the Keep the Why family's
 path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
+group chats created by humans only, between two and twelve active
+members, closed when no human is left in them, read by participants from
+their latest join with the earlier history on demand, and by the owners
+of agent participants, redacted by
+human participants only (§9.2),
 `instance:admin` for `/admin/*` (§16); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
@@ -3463,6 +3828,9 @@ reviewer role.
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>` or a member id; every type but `chat` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
+| `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
+| `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
+| `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
@@ -3522,11 +3890,16 @@ on the runner host as the runner's user, with the runner's credential;
 it never reads `MAITY_STATE_DIR`. The Python version the runner commands
 need is not fixed here (open: §12 7 of the design).
 
+A conversation is named with `--chat` rather than as `say`'s first
+argument because ids are opaque (§1.1): the CLI cannot tell a group
+chat's id from a member id by its shape, and `say <to>` stays the project
+message it always was.
+
 `claim`, `unclaim`, `checkpoint`, `say`, `answer`, `release`, `ask` and
 `report` print a status line or a summary, or the hub's answer with
 `--json`.
 The endpoints without a command of their own (creating and editing cards,
-`assign`, `withdraw`, `PATCH /me` for `paused`, the conversation history)
+`assign`, `withdraw`, `PATCH /me` for `paused`)
 are reached signed through `maity api`; `--tried` on `ask` fills the
 inbox's "what it tried" line.
 
