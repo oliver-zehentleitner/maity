@@ -56,6 +56,7 @@ class El extends Node_ {
   dispatch(t, extra) { const e = Object.assign({ target: this, preventDefault() {}, key: "" }, extra || {}); (this.listeners[t] || []).forEach((f) => f(e)); }
   click() { this.dispatch("click"); }
   focus() {}
+  contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
   matches(sel) {
     return sel.split(",").some((s) => {
       s = s.trim();
@@ -90,6 +91,7 @@ const document = {
   getElementById: (id) => ({ header, main })[id],
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
   addEventListener: (t, f) => { docListeners[t] = f; },
+  removeEventListener: (t, f) => { if (docListeners[t] === f) delete docListeners[t]; },
   title: "",
   cookie: "",
 };
@@ -130,6 +132,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
+  // The gear menu in the header, and its "Project settings" item, which opens and closes the panel.
+  const gearButton = () => header.querySelectorAll("button").find((b) => b.getAttribute("aria-label") === "Settings");
+  const projectSettings = async () => {
+    gearButton().click(); await tick();
+    header.querySelectorAll(".menu-item").find((el) => /^(Close project settings|Project settings)$/.test(el.textContent)).click(); await tick();
+  };
   const byId = (id) => main.all().find((e) => e.id === id) || header.all().find((e) => e.id === id);
   // A browser compiles `pattern` as ^(?:…)$ with the v flag and ignores one that does not compile.
   const badPatterns = () => main.all().filter((e) => e.attrs.pattern !== undefined).filter((e) => {
@@ -172,11 +180,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Maity"), "sort by project");
 
   await go("#/p/maity/inbox");
-  expect(text(header).includes("Build") && text(header).includes("Fixtures") && text(header).includes("Sign out"), "project header: state, fixtures label, sign out");
+  expect(text(header).includes("Build") && text(header).includes("Fixtures") && header.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")), "project header: state, fixtures label, sign out");
   expect(chip("Maity").getAttribute("aria-current") === "page", "switcher marks the current project");
   const sRow = header.querySelector(".switcher-row");
   expect(sRow && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "project-state"
-    && sRow.childNodes[1].querySelector(".state") && btn(sRow.childNodes[1], "Project settings") && !header.querySelector(".bar .state"),
+    && sRow.childNodes[1].querySelector(".state") && !header.querySelector(".bar .state"),
     "header: the state and the settings sit at the projects' right, apart, not in the top bar");
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · reviewer"), "consent without options, on_behalf_of shown");
@@ -378,8 +386,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
-  const usersLink = header.querySelectorAll("a").find((a) => a.textContent === "Users");
-  expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: a header link for the instance admin");
+  gearButton().click(); await tick();
+  expect(JSON.stringify(header.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Users of this hub"])
+    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has this project's settings, the runners and, for the instance admin, the users");
+  const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Users of this hub");
+  expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: in the settings menu for the instance admin");
+  gearButton().click(); await tick();
   await go("#/admin/users"); await tick();
   const userRows = () => main.querySelectorAll("table.users tbody tr");
   const userNames = () => userRows().map((tr) => tr.querySelector(".user-name").textContent);
@@ -931,13 +943,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "the quiet reload says \"1 new request.\" in the status notice");
   // The same with the Project settings panel open and typed in: no reload, the offer instead.
   win.Maity.api.get = realGet2; await go("#/p/maity/board"); await go("#/p/maity/inbox");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   byId("state-reason").value = "typed, not sent";
   win.Maity.api.get = bump("maity");
   await fireIntervals(); await tick(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
     "with the Project settings panel open the empty list is not reloaded; the panel and its text stay");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   // An open entry on screen: the change is offered as a reload instead.
   win.Maity.api.get = realGet2;
   await go("#/p/sample/inbox");
@@ -1038,7 +1050,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".notice .flag"), "no notice while nothing changed");
 
   // state and absence
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   const sel = byId("state-select"); sel.value = "freeze";
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
@@ -1050,7 +1062,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header).includes("Freeze"), "state changed to freeze");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
@@ -1059,7 +1071,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sigPatches = [];
   const realPatch4 = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { sigPatches.push([p, b]); return realPatch4(p, b); };
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   const sigSel = byId("signing-select");
   expect(sigSel && sigSel.value === "optional", "signing: the switch shows the project's policy");
   sigSel.value = "required"; sigSel.dispatch("change"); await tick(); await tick(); await tick();
@@ -1076,7 +1088,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(sigPatches.length === 1 && sigPatches[0][0] === "/projects/maity"
     && JSON.stringify(sigPatches[0][1]) === JSON.stringify({ policy: { signing: "required" }, reason: "all agents run the CLI now" }),
     "signing: confirmed, the PATCH carries the policy field and the reason");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   expect(byId("signing-select").value === "required", "signing: the switch reads required after the change");
   byId("signing-select").value = "optional"; byId("signing-select").dispatch("change"); await tick();
   expect(!text(header.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
@@ -1085,9 +1097,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(sigPatches[1][1]) === JSON.stringify({ policy: { signing: "optional" }, reason: "back to optional" }), "signing: back to optional is sent");
   win.Maity.api.patch = realPatch4;
   await go("#/p/sample/inbox");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   expect(byId("state-select") && !byId("signing-select"), "signing: no switch where the hub has no signing policy");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   await go("#/p/maity/agents");
   expect(text(main).includes("(signed)") && text(main).includes("(bearer token)"), "credentials: how each was last used");
   await go("#/p/maity/inbox");
@@ -1115,7 +1127,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const WEBP = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50];
   const SVG = [0x3c, 0x73, 0x76, 0x67, 0x20, 0x78, 0x6d, 0x6c, 0x6e, 0x73, 0x3d, 0x22];
   const pick = async (id, file) => { const i = byId(id); i.files = [file]; i.dispatch("change"); for (let k = 0; k < 6; k++) await tick(); };
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   expect(header.querySelector(".images") && text(header.querySelector(".images")).includes("from the repository's forge")
     && text(header.querySelector(".images")).includes("uploaded here") && byId("upload-logo"), "images: what shows now and where it comes from");
   await pick("upload-logo", fakeFile(SVG, 0, "image/svg+xml"));
@@ -1133,7 +1145,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(imgPuts[1]) === JSON.stringify(["DELETE", "/projects/maity/logo"]) && header.querySelector(".bar .project-mark").getAttribute("src") === "fixtures/maity/logo.png",
     "images: removed, the forge's logo applies again");
   expect(text(header).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
-  btn(header, "Project settings").click(); await tick();
+  await projectSettings(); await tick();
   // A hub before /me's logo: the switcher falls back to GET /projects.
   const realGet7 = win.Maity.api.get;
   const fallbackGets = [];
@@ -1144,8 +1156,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // Account: change the password (docs/api.md §2.1).
-  const accountLink = header.querySelectorAll("a").find((a) => a.textContent === "Account");
-  expect(accountLink && accountLink.getAttribute("href") === "#/account", "the header links to the account");
+  // The profile menu: the avatar, the account, what is still to come, signing out (js/menu.js).
+  const profileButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: "));
+  const pb = profileButton();
+  expect(pb && pb.attrs["aria-haspopup"] === "menu" && pb.attrs["aria-expanded"] === "false" && pb.querySelector("svg") && text(pb).includes("Maintainer"),
+    "header: the profile is a menu button with the avatar and the name");
+  const mProto = Object.getPrototypeOf(main);
+  const mFocus = mProto.focus;
+  mProto.focus = function () { document.activeElement = this; };
+  pb.click(); await tick();
+  const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
+  const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Avatar · coming soon", "Change password", "Linked accounts · later", "Sign out"])
+    && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
+  pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].attrs["aria-disabled"] === "true", "header: arrows move through the items; one still to come is disabled");
+  pMenu.dispatch("keydown", { key: "End" });
+  expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
+  pMenu.dispatch("keydown", { key: "Escape" });
+  expect(pMenu.hidden && pb.attrs["aria-expanded"] === "false" && document.activeElement === pb, "header: Escape closes the menu and gives the focus back to its button");
+  pb.dispatch("keydown", { key: "ArrowUp" });
+  expect(!pMenu.hidden && text(document.activeElement) === "Sign out", "header: ArrowUp on the button opens the menu at its last item");
+  pMenu.dispatch("keydown", { key: "Escape" });
+  mProto.focus = mFocus; document.activeElement = undefined;
+  pb.click(); await tick();
+  const accountLink = pMenu.querySelectorAll("a.menu-item").find((a) => a.textContent === "Profile");
+  expect(accountLink && accountLink.getAttribute("href") === "#/account", "the profile menu links to the account");
+  pb.click(); await tick();
   await go("#/account");
   expect(document.title === "Your account · Maity" && text(main).includes("@maintainer") && byId("password-current"), "the account view");
   const pwPosts = [];
@@ -1171,7 +1208,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = realPost5;
 
   // sign out, sign in
-  btn(header, "Sign out").click(); await tick(); await tick();
+  profileButton().click(); await tick();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();

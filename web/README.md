@@ -26,9 +26,18 @@ public site at maity.dev is `docs/index.html`, not this.
 One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
-project, the project's state, the owner's absence ("Away until …") and
-**Project settings** sit at the switcher's right, behind a separator, in
-the same row; on a narrow screen they go under it.
+project, the project's state and the owner's absence ("Away until …")
+sit at the switcher's right, behind a separator, in the same row; on a
+narrow screen they go under it. At the top right are two menus, each a
+real button (`aria-haspopup`, `aria-expanded`): a **gear** with this
+project's **Project settings** (for an owner or admin; it opens the panel
+under the header), **Runners** and, for the instance admin, **Users of
+this hub**; and the **profile**, the human's avatar and name, with
+**Profile**, **Avatar** (coming soon), **Change password**, **Linked
+accounts** (later) and **Sign out**. Arrow keys, Home and End move in a
+menu; Escape closes it and puts the focus back on its button; Tab or a
+click elsewhere closes it. On a phone the name is left out and the menus
+stay on screen.
 
 | Route | What |
 |---|---|
@@ -524,6 +533,7 @@ web/
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/avatar.js     generated member pictures (identicons)
+├── js/menu.js       the header's menus (a button and its menu)
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all

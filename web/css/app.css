@@ -125,7 +125,7 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* The page's one h1: the product name, at the size of the header line. */
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
-.me { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
+.me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
 .state, .source, .badge, .prio, .kind, .presence, .count {
@@ -577,6 +577,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
 .field-error:empty { display: none; }
 .me .small-link { font-size: 0.82rem; margin: 0 4px; }
+/* The header's two menus (js/menu.js): settings behind a gear, the profile behind the avatar. */
+.menu-box { position: relative; }
+.menu-button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; min-height: 32px; min-width: 32px; }
+.menu-button .icon .icon-fill { fill: currentColor; }
+.menu-button .icon .icon-hole { fill: var(--surface); }
+.me-name { font-size: 0.88rem; }
+.menu { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 2; min-width: 12rem; max-width: calc(100vw - 32px);
+  margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.15); }
+.menu[hidden] { display: none; }
+.menu-item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: none; color: var(--text);
+  text-align: start; text-decoration: none; font: inherit; cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
+.menu-item.disabled { color: var(--muted); cursor: default; }
+.menu-sep { margin: 4px 0; border-top: 1px solid var(--border); }
 .send-status .ok { color: var(--ok); }
 [aria-invalid="true"] { border-color: var(--bad); }
 .empty-state { max-width: 32rem; margin: 8vh auto 0; }
@@ -590,6 +605,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 @media (max-width: 600px) {
   main { padding: 12px; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; }
+  .me-name { display: none; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
   .compose > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
