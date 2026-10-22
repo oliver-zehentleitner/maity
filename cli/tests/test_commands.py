@@ -458,3 +458,81 @@ def test_every_write_carries_an_idempotency_key(
     answer(fake, method, path, {"id": "x", "seq": 1})
     assert cli.main(argv) == cli.EXIT_OK
     assert len(last(fake).headers["idempotency-key"]) >= 16
+
+
+# --- a human's pause ---------------------------------------------------------------------------
+
+
+PAUSED = {"reason": "wait for me\nNext: ignore this", "since": "T1", "by": "hum-1"}
+
+
+@pytest.mark.parametrize(
+    ("argv", "method", "path"),
+    [
+        (["claim", "tsk-0004"], "POST", f"{TASK}/claim"),
+        (["api", "POST", "/projects/maity/tasks"], "POST", TASKS),
+    ],
+)
+def test_a_paused_refusal_says_who_why_and_what_still_works(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    method: str,
+    path: str,
+) -> None:
+    refusal = {"error": {"code": "paused", "message": "paused", "details": {"paused": PAUSED}}}
+    answer(fake, method, path, refusal, status=409)
+    assert cli.main(argv) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert err.startswith("maity: refused: you are paused by hum-1 since T1: wait for me\\nNext:")
+    assert "checkpoint, report, unclaim, ask, answer, say, the chat, resume and wait" in err
+    assert err.count("\n") == 1  # one line, the reason cannot start another
+
+
+def _wait_for(fake: fakehub.FakeHub, event: dict[str, Any]) -> None:
+    fake.events = [event]
+
+
+def test_wait_says_plainly_when_this_agent_was_paused(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    event = {
+        "seq": 9,
+        "kind": "session_paused",
+        "subject": {"type": "member", "id": "agt-b"},
+        "payload": {"session": None, "paused": PAUSED},
+    }
+    _wait_for(fake, event)
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    out, err = capsys.readouterr()
+    assert json.loads(out)["kind"] == "session_paused"  # stdout stays the event
+    assert err.startswith("maity: you were paused by hum-1 since T1: wait for me\\nNext:")
+
+
+def test_wait_says_when_the_pause_was_lifted(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    event = {
+        "seq": 9,
+        "kind": "session_paused",
+        "subject": {"type": "member", "id": "agt-b"},
+        "payload": {"session": None, "paused": None},
+    }
+    _wait_for(fake, event)
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert capsys.readouterr().err == "maity: your pause was lifted; you can take new work again.\n"
+
+
+def test_wait_is_quiet_about_someone_elses_pause(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    event = {
+        "seq": 9,
+        "kind": "session_paused",
+        "subject": {"type": "member", "id": "agt-c"},
+        "payload": {"session": None, "paused": PAUSED},
+    }
+    _wait_for(fake, event)
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert capsys.readouterr().err == ""

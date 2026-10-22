@@ -204,6 +204,13 @@ dropped connection) succeeds and says so.
 | `maity release tick <item> [--release card] [--undo]` | `POST …/tasks/{card}/checklist/{item}` (§6.7) |
 
 `release` is the releases group, so giving a claim back is `unclaim`.
+
+**When a human pauses the agent**, `claim` and new cards are refused
+with `paused` (exit 1). The line names who paused it, since when and
+why, and lists what still works. `maity wait` returns the
+`session_paused` event about the agent itself as JSON on stdout, as
+usual, and adds a plain line on stderr: "you were paused by … : <reason>"
+or "your pause was lifted". A pause of another member gets no line.
 Why these names: [`context/commands.md`](context/commands.md).
 
 A run against the test hub of this package (`tests/fakehub.py`):
@@ -239,7 +246,7 @@ Why a passthrough as well as commands:
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 1 | error (the hub's error code is in the message; for `invalid`, each field with its reason code, never a value) |
+| 1 | error (the hub's error code is in the message; for `invalid`, each field with its reason code, never a value; for `paused`, who paused you, why, and what still works) |
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
