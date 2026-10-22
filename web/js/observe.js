@@ -69,8 +69,8 @@ window.Maity = window.Maity || {};
       role: null,
       canAdmin: false,
       isOwner: false,
-      // Someone who has left the chat is no longer among its participants.
-      nameOf: (id) => names[id] || "a former participant",
+      // Someone not among the chat's participants: who left, or an admin's removal.
+      nameOf: (id) => names[id] || "someone not in the chat",
       link: (route, id) => link(slug, route === "chat" ? id : null),
       // No event reaches a non-member: the views re-read on their own timers.
       onEvents: () => {},

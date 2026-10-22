@@ -134,6 +134,8 @@ window.Maity = window.Maity || {};
       all.push(...page.items);
     }
     let cursor = all.length ? all[all.length - 1].seq : (first.cursor || 0);
+    // The messages read with Show earlier messages, kept across a re-read.
+    const earlierRead = new Set();
     await list.refresh(false);
     const theirs = all.filter((m) => m.from !== ctx.me.id);
     const firstUnread = !observer && unreadBefore && theirs.length >= unreadBefore ? theirs[theirs.length - unreadBefore].seq : null;
@@ -194,7 +196,9 @@ window.Maity = window.Maity || {};
           button.disabled = true;
           try {
             const page = await M.api.get(path + "?before=" + encodeURIComponent(earlier) + "&limit=" + EARLIER_PAGE);
-            all.unshift(...page.items.filter((m) => !all.some((x) => x.seq === m.seq)));
+            const older = page.items.filter((m) => !all.some((x) => x.seq === m.seq));
+            older.forEach((m) => earlierRead.add(m.seq));
+            all.unshift(...older);
             earlier = page.earlier === undefined ? null : page.earlier;
             redraw();
             drawEarlier();
@@ -411,14 +415,25 @@ window.Maity = window.Maity || {};
     if (observer && ctx.outsider) {
       ctx.every(30000, async () => {
         try {
-          const fresh = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
+          // The whole window, to its end, as the opening read has it.
+          const first = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
+          const fresh = first.items.slice();
+          for (let page = first; page.items.length === parts.HISTORY_PAGE;) {
+            page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + parts.HISTORY_PAGE);
+            fresh.push(...page.items);
+          }
           // What was read before the window (Show earlier messages) stays.
-          const before = fresh.items.length ? all.filter((m) => m.seq < fresh.items[0].seq) : all.slice();
-          all.splice(0, all.length, ...before, ...fresh.items);
-          if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);
-          const top = messages.scrollTop;
-          redraw();
-          messages.scrollTop = top;
+          const before = all.filter((m) => earlierRead.has(m.seq) && !fresh.some((x) => x.seq === m.seq));
+          const next = before.concat(fresh);
+          // Drawn again only on a change: the list is a live region.
+          const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
+          if (sig(next) !== sig(all)) {
+            all.splice(0, all.length, ...next);
+            if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);
+            const top = messages.scrollTop;
+            redraw();
+            messages.scrollTop = top;
+          }
           pollStatus.done();
         } catch (err) {
           if (err.status === 404) pollStatus.fail("You no longer read this chat: ", { message: "your agent left it, or left the project" });

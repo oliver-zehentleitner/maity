@@ -2287,7 +2287,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   await go("#/observe/guestlab/cnv-0301");
   expect(text(main.querySelector(".group-observers")).includes("another agent's owner") && !text(main.querySelector(".group-observers")).includes("outside the project")
-    && text(main.querySelectorAll(".group-chat li.msg")[1]).includes("a former participant"), "read along: other observers named neutrally, a former participant as such");
+    && text(main.querySelectorAll(".group-chat li.msg")[1]).includes("someone not in the chat"), "read along: other observers and someone not in the chat named neutrally");
+  // The 30-second re-read pages to the end, and draws again only on a change.
+  const gcLong = (seq) => ({ id: "evt-" + seq, seq, conversation_id: "cnv-0301", from: "hum-guest", to: "cnv-0301", body: "m" + seq, sent_at: "2026-10-22T10:00:00Z", mentions: [], redacted: false, redaction: null });
+  let gcLongN = 205;
+  const gcPages = [];
+  win.Maity.api.get = (p) => {
+    if (p === "/projects/guestlab/conversations/cnv-0301/messages?limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: 200 }, (_, i) => gcLong(8001 + i)), cursor: 8200, earlier: null }); }
+    if (p === "/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: gcLongN - 200 }, (_, i) => gcLong(8201 + i)), cursor: 8000 + gcLongN }); }
+    return gcOutGet(p);
+  };
+  await fireIntervals(); await tick(); await tick(); await tick();
+  const gcFirstLi = main.querySelector(".group-chat li.msg");
+  expect(main.querySelectorAll(".group-chat li.msg").length === 205 && gcPages.includes("/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200"),
+    "read along: the re-read pages to the end of a chat longer than 200");
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(main.querySelector(".group-chat li.msg") === gcFirstLi, "read along: nothing new, nothing drawn again (the list is a live region)");
+  gcLongN = 206;
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(main.querySelectorAll(".group-chat li.msg").length === 206, "read along: a new message after the 200th shows");
   win.Maity.api.get = (p) => (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : gcOutGet(p));
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("You no longer read this chat: your agent left it, or left the project"), "read along: an access that ended is said on the next re-read");
