@@ -28,7 +28,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
-- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card
+- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
 
 ## D
 
