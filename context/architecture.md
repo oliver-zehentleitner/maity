@@ -63,6 +63,7 @@ boundary.
 **Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator
 **Revisit when:** a supported agent host cannot provide Python 3.11
 **See:** https://github.com/oliver-zehentleitner/maity — f2a34d72-f074-474c-87bb-2d8c6bccd60e — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908 — as of 2026-10-22
 
 Every Maity component requires at least Python 3.11 — the CLI on agent
 hosts included, where `maity runner` and the rest of the command used to

@@ -135,7 +135,12 @@ window.MAITY_FIXTURES = {
         "git_identity": null,
         "handle": "spare",
         "id": "agt-x",
-        "memberships": [],
+        "memberships": [
+          {
+            "project": "guestlab",
+            "role": "member"
+          }
+        ],
         "owner_id": "hum-maintainer"
       }
     ],
@@ -150,6 +155,89 @@ window.MAITY_FIXTURES = {
       "id": "hum-maintainer",
       "kind": "human"
     }
+  },
+  "guestlab/conversations.json": {},
+  "guestlab/group-chats.json": {
+    "cnv-0301": {
+      "items": [
+        {
+          "body": "@spare please take over the lab notes.",
+          "conversation_id": "cnv-0301",
+          "from": "hum-guest",
+          "id": "evt-7001",
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "spare",
+              "length": 6,
+              "member_id": "agt-x",
+              "offset": 0
+            }
+          ],
+          "sent_at": "2026-10-22T09:01:00Z",
+          "seq": 7001,
+          "to": "cnv-0301"
+        }
+      ],
+      "read": {},
+      "view": {
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-22T09:00:00Z",
+        "created_by": "hum-guest",
+        "id": "cnv-0301",
+        "kind": "group",
+        "participants": [
+          {
+            "handle": "guest",
+            "joined_at": "2026-10-22T09:00:00Z",
+            "joined_seq": 0,
+            "kind": "human",
+            "member_id": "hum-guest",
+            "owner_id": null
+          },
+          {
+            "handle": "spare",
+            "joined_at": "2026-10-22T09:00:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-x",
+            "owner_id": "hum-maintainer"
+          }
+        ],
+        "title": "Lab handover"
+      }
+    }
+  },
+  "guestlab/members.json": {
+    "items": [
+      {
+        "areas": [],
+        "capabilities": [],
+        "display_name": "Guest Lead",
+        "handle": "guest",
+        "id": "hum-guest",
+        "joined_at": "2026-10-20T09:00:00Z",
+        "kind": "human",
+        "presence": "online",
+        "reports_to": null,
+        "role": "owner"
+      },
+      {
+        "areas": [],
+        "capabilities": [],
+        "display_name": "Spare",
+        "handle": "spare",
+        "id": "agt-x",
+        "joined_at": "2026-10-21T08:00:00Z",
+        "kind": "agent",
+        "owner_id": "hum-maintainer",
+        "presence": "offline",
+        "reports_to": "hum-guest",
+        "role": "member"
+      }
+    ],
+    "next_cursor": null
   },
   "maity/conversations.json": {
     "agt-a": {
@@ -294,6 +382,116 @@ window.MAITY_FIXTURES = {
     "agt-r": {
       "items": [],
       "next_cursor": null
+    }
+  },
+  "maity/group-chats.json": {
+    "cnv-0007": {
+      "items": [
+        {
+          "body": "Where do we stand for 0.2?",
+          "conversation_id": "cnv-0007",
+          "from": "hum-maintainer",
+          "id": "evt-5010",
+          "mentions": [],
+          "sent_at": "2026-10-21T13:20:00Z",
+          "seq": 5010,
+          "to": "cnv-0007"
+        },
+        {
+          "body": "Contract is final; the hub side needs the release card.",
+          "conversation_id": "cnv-0007",
+          "from": "agt-a",
+          "id": "evt-5015",
+          "mentions": [],
+          "sent_at": "2026-10-21T13:25:00Z",
+          "seq": 5015,
+          "to": "cnv-0007"
+        },
+        {
+          "body": "@maintainer the tag can go today.",
+          "conversation_id": "cnv-0007",
+          "from": "agt-b",
+          "id": "evt-5020",
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "maintainer",
+              "length": 11,
+              "member_id": "hum-maintainer",
+              "offset": 0
+            }
+          ],
+          "sent_at": "2026-10-21T13:30:00Z",
+          "seq": 5020,
+          "to": "cnv-0007"
+        }
+      ],
+      "read": {
+        "hum-maintainer": 5015
+      },
+      "view": {
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:00:00Z",
+        "created_by": "hum-maintainer",
+        "id": "cnv-0007",
+        "kind": "group",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "joined_at": "2026-10-21T13:00:00Z",
+            "joined_seq": 0,
+            "kind": "human",
+            "member_id": "hum-maintainer",
+            "owner_id": null
+          },
+          {
+            "handle": "agent-a",
+            "joined_at": "2026-10-21T13:00:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-a",
+            "owner_id": "hum-maintainer"
+          },
+          {
+            "handle": "agent-b",
+            "joined_at": "2026-10-21T13:05:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-b",
+            "owner_id": "hum-maintainer"
+          }
+        ],
+        "title": "Release 0.2 go/no-go"
+      }
+    },
+    "cnv-0011": {
+      "former": [
+        "hum-ops"
+      ],
+      "items": [
+        {
+          "body": "the deploy key is …",
+          "conversation_id": "cnv-0011",
+          "from": "hum-ops",
+          "id": "evt-4990",
+          "mentions": [],
+          "sent_at": "2026-10-20T11:00:00Z",
+          "seq": 4990,
+          "to": "cnv-0011"
+        }
+      ],
+      "read": {},
+      "view": {
+        "closed_at": "2026-10-20T12:00:00Z",
+        "closed_reason": "no_human",
+        "created_at": "2026-10-20T10:00:00Z",
+        "created_by": "hum-ops",
+        "id": "cnv-0011",
+        "kind": "group",
+        "participants": [],
+        "title": "Closed after the handover"
+      }
     }
   },
   "maity/joins.json": {
@@ -1603,6 +1801,29 @@ window.MAITY_FIXTURES = {
     ]
   },
   "runners.json": {
+    "active_placements": {
+      "rnr-0002": {
+        "maity": 1
+      }
+    },
+    "attachments": [
+      {
+        "attached_at": "2026-10-22T13:31:05Z",
+        "attached_by": "hum-maintainer",
+        "detached_at": null,
+        "id": "ratt-0001",
+        "project": "maity",
+        "runner_id": "rnr-0002"
+      },
+      {
+        "attached_at": "2026-10-20T09:12:00Z",
+        "attached_by": "hum-maintainer",
+        "detached_at": null,
+        "id": "ratt-0002",
+        "project": "maity",
+        "runner_id": "rnr-0004"
+      }
+    ],
     "items": [
       {
         "capabilities": {

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import placements as pl
 from maity_hub import tables as t
@@ -745,3 +745,19 @@ def test_the_owners_stop_on_a_pending_proposal_turns_it_down(
     assert (stopped.json()["active"], stopped.json()["closed_reason"]) == (False, "withdrawn")
     request = setup.owner.get(f"/projects/maity/requests/{_request_of(body)}").json()
     assert request["status"] == "withdrawn"
+
+
+def test_removing_the_boss_clears_a_new_profiles_stored_reports_to(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    boss = flow.agent(make_client, setup.owner)
+    body = placed(
+        setup,
+        agent={"handle": "agent-n", "display_name": "Agent N"},
+        reports_to=boss.id,
+    )
+    assert setup.owner.delete(f"/projects/maity/members/{boss.id}").status_code == 200
+    with setup.engine.connect() as conn:
+        row = conn.execute(select(t.placement).where(t.placement.c.id == body["id"])).one()
+    assert row.new_profile["reports_to"] is None
+    assert get(setup, body["id"])["generation"] == body["generation"]  # nothing to re-read

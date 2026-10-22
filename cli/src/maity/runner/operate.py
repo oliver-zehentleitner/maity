@@ -8,8 +8,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import shutil
-import stat
 import subprocess
 import sys
 import time
@@ -18,6 +16,7 @@ from typing import Any
 
 from .. import hub, onboarding, state
 from . import config, serve, supervisor, workspace
+from .asuser import RUNNER, AsUser
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
@@ -34,8 +33,6 @@ GIT_ALLOWED = re.compile(
     r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
     r"|user\.(name|email))$"
 )
-# What a clone's `.git` holds at its top level. Anything else may change where git reads its
-# configuration from (`commondir`, `config.worktree`) and is refused rather than understood.
 # What a clone's `.git` holds at its top level, and of which type (a file, or a directory).
 # Anything else may change where git reads its configuration from (`commondir`,
 # `config.worktree`) and is refused rather than understood.
@@ -88,10 +85,20 @@ def _placement_id(cfg: config.Config, which: str) -> str:
 # --- logs ------------------------------------------------------------------------------------
 
 
+def _as_user(cfg: config.Config) -> AsUser:
+    local = cfg.local
+    return AsUser(local.agent_user if local and local.layout == "agent_user" else None)
+
+
 def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
+    """The log is written by the tmux server, which is the agents' user's in the agent_user
+    layout, so it is read as that user."""
+    if cfg.local is None:
+        raise Refused("logs are the local backend's")
     pid = _placement_id(cfg, args.which)
-    path = cfg.state_dir / supervisor.LOGS / f"{pid}.log"
-    if not path.is_file():
+    path = cfg.local.agent_files / supervisor.LOGS / f"{pid}.log"
+    as_user = _as_user(cfg)
+    if not as_user.exists(path, "-f"):
         raise Refused(f"no log for {pid} in {path.parent}")
     # A terminal acts on escape sequences the agent printed (an OSC 52 writes the operator's
     # clipboard): shown, not executed, unless --raw.
@@ -104,15 +111,15 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
             sys.stdout.write(onboarding.clean(chunk.decode("utf-8", errors="replace")))
         sys.stdout.flush()
 
-    with path.open("rb") as fh:
-        emit(fh.read())
-        while args.follow:
-            chunk = fh.read()
-            if chunk:
-                emit(chunk)
-            else:
-                time.sleep(FOLLOW_EVERY)
-    return 0
+    shown = 0
+    while True:
+        data = as_user.read(path, shown)  # only what is new: the agent sets the log's size
+        if data:
+            emit(data)
+            shown += len(data)
+        if not args.follow:
+            return 0
+        time.sleep(FOLLOW_EVERY)
 
 
 # --- approve ---------------------------------------------------------------------------------
@@ -173,40 +180,42 @@ def _stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
 # --- gc --revoked ----------------------------------------------------------------------------
 
 
-def credential_revoked(place: workspace.Workspace) -> bool:
+def credential_revoked(place: workspace.Workspace, as_user: AsUser = RUNNER) -> bool:
     """Whether the hub refuses the clone's credential as revoked, asked by the agent's own
-    CLI (the runner never holds the credential) and isolated from the clone's modules. Any
-    other answer, or none, is "not known to be revoked"."""
-    if not place.credential.is_file():
+    CLI as the agents' user (the runner never holds the credential), isolated from the
+    clone's modules. Any other answer, or none, is "not known to be revoked"."""
+    if not as_user.exists(place.credential, "-f"):
         return False
-    env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
-    env[state.STATE_DIR_ENV] = str(place.credential.parent)
+    command = [sys.executable, "-I", "-m", "maity", "api", "GET", "/me"]
     try:
-        done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
-            [sys.executable, "-I", "-m", "maity", "api", "GET", "/me"],
-            cwd=Path.home(), env=env, capture_output=True, text=True, timeout=60, check=False,
-        )  # fmt: skip
+        if as_user.user:
+            done = as_user.run(command, env={state.STATE_DIR_ENV: str(place.credential.parent)})
+        else:
+            env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
+            env[state.STATE_DIR_ENV] = str(place.credential.parent)
+            done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+                command, cwd=Path.home(), env=env, capture_output=True, text=True, timeout=60,
+                check=False,
+            )  # fmt: skip
     except subprocess.TimeoutExpired:
         return False
     return done.returncode != 0 and REVOKED.search(done.stderr) is not None
 
 
-def not_inspectable(path: Path) -> str | None:
+def not_inspectable(path: Path, as_user: AsUser = RUNNER) -> str | None:
     """Why git must not run in this clone, or None. git runs programs named in its
     configuration (filter drivers, gpg.program, fsmonitor, pagers, aliases) and reads
     `.git/info/attributes`, submodules' own configuration and wherever `.git/commondir`
     points; the agent wrote all of them. Only a `.git` made of a plain clone's entries, with a
     configuration made of a plain clone's keys, is read."""
     dot_git = path / ".git"
-    if dot_git.is_symlink() or not dot_git.is_dir():
+    if as_user.exists(dot_git, "-L") or not as_user.exists(dot_git, "-d"):
         return "its .git is not a plain directory"
     try:
-        reason = _not_a_plain_git_dir(dot_git)
-        if reason is None and (dot_git / "config").lstat().st_size > CONFIG_MAX:
-            reason = f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"
+        reason = _not_a_plain_git_dir(as_user.tree(dot_git))
         if reason is not None:
             return reason
-        text = (dot_git / "config").read_text(encoding="utf-8")
+        text = as_user.read(dot_git / "config").decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return "its .git/config cannot be read"
     section = ""
@@ -224,41 +233,37 @@ def not_inspectable(path: Path) -> str | None:
     return None
 
 
-def _not_a_plain_git_dir(dot_git: Path) -> str | None:
-    """Why `dot_git` is not laid out like a plain clone's, or None: an entry git does not
-    create, an entry of the wrong type, another object store, or a symlink anywhere (git
+def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> str | None:
+    """Why a `.git` with these entries (path inside it, type, size) is not laid out like a
+    plain clone's, or None: an entry git does not create, an entry of the wrong type,
+    another object store, a configuration over CONFIG_MAX, or a symlink anywhere (git
     follows them, so a link would put any file in the place of one that was checked)."""
-    for entry in dot_git.iterdir():
-        mode = entry.lstat().st_mode
-        expected = stat.S_ISREG if entry.name in GIT_FILES else stat.S_ISDIR
-        if entry.name not in GIT_FILES | GIT_DIRS or not expected(mode):
-            return f".git/{onboarding.inline(entry.name)} is not a plain clone's"
-    for entry in (dot_git / "info").iterdir() if (dot_git / "info").is_dir() else ():
-        if entry.name not in INFO_FILES:
-            return f".git/info/{onboarding.inline(entry.name)} is not a plain clone's"
-    for name in ALTERNATES:
-        if os.path.lexists(dot_git / name):
-            return f".git/{name} exists"
-    for root, dirs, files in os.walk(dot_git):  # os.walk does not descend into links
-        for name in dirs + files:
-            if os.path.islink(os.path.join(root, name)):
-                where = os.path.relpath(os.path.join(root, name), dot_git)
-                return f".git/{onboarding.inline(where)} is a symlink"
+    for where, kind, size in sorted(entries):
+        top, _, rest = where.partition("/")
+        if kind == "l":
+            return f".git/{onboarding.inline(where)} is a symlink"
+        if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
+            return f".git/{onboarding.inline(where)} is not a plain clone's"
+        if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
+            return f".git/{onboarding.inline(where)} is not a plain clone's"
+        if where in ALTERNATES:
+            return f".git/{where} exists"
+        if where == "config" and size > CONFIG_MAX:
+            return f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"
     return None
 
 
-def unsaved_work(path: Path) -> list[str] | None:
+def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
     """Uncommitted files and commits on no remote, or None when git could not tell: then
     nothing may be removed. Neither the operator's own git configuration nor the clone's
     hooks, filters, signatures or submodules take part."""
-    # The operator's GIT_* would point git elsewhere or hide files; the repository is pinned,
-    # so a broken one fails instead of git walking up to a parent repository.
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    env.update(
-        GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_DIR=str(path / ".git"),
-        GIT_COMMON_DIR=str(path / ".git"), GIT_WORK_TREE=str(path),
-        GIT_CEILING_DIRECTORIES=str(path.parent),
-    )  # fmt: skip
+    # The repository is pinned, so a broken one fails instead of git walking up to a parent
+    # repository; the operator's GIT_* would point git elsewhere or hide files.
+    env = {
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_DIR": str(path / ".git"),
+        "GIT_COMMON_DIR": str(path / ".git"), "GIT_WORK_TREE": str(path),
+        "GIT_CEILING_DIRECTORIES": str(path.parent),
+    }  # fmt: skip
     lines: list[str] = []
     for command in (
         [*SAFE_GIT, "-C", str(path), "status", "--porcelain", "--ignore-submodules=all"],
@@ -266,9 +271,14 @@ def unsaved_work(path: Path) -> list[str] | None:
          "--not", "--remotes"],
     ):  # fmt: skip
         try:
-            done = subprocess.run(  # noqa: S603 - fixed argv, a path the runner recorded
-                command, env=env, capture_output=True, text=True, timeout=60, check=False
-            )
+            if as_user.user:  # sudo starts from an empty environment
+                done = as_user.run(command, env=env)
+            else:
+                own = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+                done = subprocess.run(  # noqa: S603 - fixed argv, a path the runner recorded
+                    command, env={**own, **env}, capture_output=True, text=True, timeout=60,
+                    check=False,
+                )  # fmt: skip
         except subprocess.TimeoutExpired:
             return None
         if done.returncode != 0:
@@ -348,19 +358,22 @@ def _collect(
     if not isinstance(record, dict):
         return False
     path = Path(path_text)
+    as_user = _as_user(cfg)
     try:
         expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
     except workspace.Refused:
         return False
-    if str(expected.path) != path_text or path.is_symlink() or not path.is_dir():
+    if str(expected.path) != path_text or as_user.exists(path, "-L"):
         return False  # a record pointing anywhere else is never followed
+    if not as_user.exists(path, "-d"):
+        return False
     if (expected.project, expected.clone) in pairs or record.get("agent") in agents:
         return False  # a placement uses it, or will
-    if not credential_revoked(expected):
+    if not credential_revoked(expected, as_user):
         return False
     print(f"{path}  agent {onboarding.inline(record.get('agent'))}  credential revoked")
-    reason = not_inspectable(path)
-    work = None if reason else unsaved_work(path)
+    reason = not_inspectable(path, as_user)
+    work = None if reason else unsaved_work(path, as_user)
     if reason or work is None:
         print(f"  not inspected ({reason or 'git failed'}); not removed")
         return False
@@ -369,7 +382,7 @@ def _collect(
     if not remove:
         return False
     try:
-        shutil.rmtree(path)
+        as_user.remove_tree(path)
     except OSError as exc:
         print(f"  not removed: {exc}")
         return False
@@ -390,11 +403,11 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
         place = workspace.locate(cfg.local.workspaces, project, clone)
     except workspace.Refused:
         raise Refused(f"not <project>/<clone>: {onboarding.inline(args.where)}") from None
-    if not (place.path / ".git").is_dir():
+    if not _as_user(cfg).exists(place.path / ".git", "-d"):
         raise Refused(f"{place.path} is not a clone")
     if str(place.path) in workspace.records(cfg.state_dir) and not args.force:
         raise Refused(f"{place.path} is recorded already; --force to record it again")
     workspace.record(cfg.state_dir, place, args.agent, args.placement or "")
-    origin = workspace.origin(place.path)
+    origin = workspace.origin(place.path, _as_user(cfg))
     print(f"recorded {place.path} for {onboarding.inline(args.agent)} (origin {origin})")
     return 0

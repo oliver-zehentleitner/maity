@@ -5,13 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -116,7 +118,20 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     for key in ("harness", "harness_version", "model", "cursor"):
         if session.data.get(key) is not None:
             body[key] = session.data[key]
-    packet = session.client.call("POST", "/me/resume", body=body)
+    declared = environment.ids(session.client.base, session.dir)
+    if declared is not None:
+        body["environment"] = declared
+    try:
+        packet = session.client.call("POST", "/me/resume", body=body)
+    except hub.HubError as exc:
+        # A hub from before §5.3 refuses the field: resume without it, saying so.
+        fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
+        if "environment" not in body or exc.code != "invalid" or not isinstance(fields, dict) \
+                or not any(str(k).startswith("environment") for k in fields):  # fmt: skip
+            raise
+        _err("this hub does not take the session's environment yet; resuming without it")
+        del body["environment"]
+        packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
@@ -793,6 +808,177 @@ def _avatar_line(answer: Any) -> str:
     return f"{onboarding.inline(url)} ({onboarding.inline(source or 'unknown source')})"
 
 
+# --- the limit (§6.12) --------------------------------------------------------------------------
+
+LIMIT_MAX = 7 * 24 * 3600
+_DURATION = re.compile(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.ASCII)
+_RFC3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:[Zz]|[+-]\d{2}:\d{2})", re.ASCII
+)
+_NO_OFFSET = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?", re.ASCII)
+
+
+def limit_until(value: str, now: float | None = None) -> str:
+    """`--until` as RFC 3339 in UTC with `Z`: a timestamp with an offset (converted), or a
+    duration from now (`90m`, `1h30m`, `2d12h`; §13's grammar, ASCII digits only). A
+    timestamp without an offset is refused, never read as local time: an agent's zone is
+    often not its human's. Nothing but these two forms is accepted."""
+    match = _DURATION.fullmatch(value)
+    if value and match and any(match.groups()):
+        if any(g is not None and int(g) == 0 for g in match.groups()):
+            raise UsageError(f"--until {value!r}: each part of a duration is a positive number")
+        d, h, m, s = (int(g or 0) for g in match.groups())
+        seconds = ((d * 24 + h) * 60 + m) * 60 + s
+        if seconds > LIMIT_MAX:
+            raise UsageError(f"--until {value!r}: at most 7 days ahead")
+        moment = datetime.fromtimestamp((time.time() if now is None else now) + seconds, tz=UTC)
+        return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if _NO_OFFSET.fullmatch(value):
+        raise UsageError(
+            f"--until {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
+        )
+    if not _RFC3339.fullmatch(value):
+        raise UsageError(
+            f"--until {value!r}: an RFC 3339 time with an offset "
+            "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
+        )
+    try:
+        moment = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
+    except (ValueError, OverflowError):
+        raise UsageError(f"--until {value!r}: not a time this CLI can send") from None
+    return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def cmd_limit(args: argparse.Namespace) -> int:
+    """`POST /me/limit` before the session stops for a provider limit (§6.12); the next
+    `maity resume` clears it."""
+    body: dict[str, Any] = {"until": limit_until(args.until)}
+    if args.reason:
+        body["reason"] = _text(args.reason, "--reason")
+    answer = Session().client.call("POST", "/me/limit", body=body)
+    until = _field(answer, "availability", "until") or body["until"]
+    return _done(args, answer, f"limited until {onboarding.inline(until)}")
+
+
+# --- notes and links (§6.16, §6.13) -----------------------------------------------------------
+
+
+def cmd_note_add(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("tasks", args.card, "notes")
+    note = session.client.call("POST", path, body={"body": _text(args.body, "the note")})
+    return _done(args, note, f"note {onboarding.inline(_field(note, 'id'))} on {args.card}")
+
+
+def cmd_note_list(args: argparse.Namespace) -> int:
+    session = Session()
+    state_ = "all" if args.all else args.state
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:  # every page: a card holds at most 200 notes (§6.16)
+        query = [("state", state_), ("limit", "200")]
+        if cursor:
+            query.append(("cursor", cursor))
+        page = session.client.call(
+            "GET", session.project_path("tasks", args.card, "notes"), query=query
+        )
+        items.extend(n for n in (_field(page, "items") or []) if isinstance(n, dict))
+        cursor = _field(page, "next_cursor")
+        if not cursor:
+            break
+    if args.json:
+        _print_json(items)
+        return EXIT_OK
+    if not items:
+        print(f"no {'' if args.all else state_ + ' '}notes on {args.card}")
+    for note in items:
+        author = _obj(note.get("author"))
+        print(
+            f"{onboarding.inline(note.get('id'))}  {onboarding.inline(note.get('state'))}  "
+            f"{onboarding.inline(author.get('handle') or author.get('member_id'))}  "
+            f"{onboarding.inline(note.get('created_at'))}"
+        )
+        for line in str(note.get("body") or "").splitlines():
+            print(f"    {onboarding.clean(line)}")
+    return EXIT_OK
+
+
+def cmd_note_resolve(args: argparse.Namespace) -> int:
+    session = Session()
+    body: dict[str, Any] = {"state": args.state}
+    if args.reason:
+        body["reason"] = _text(args.reason, "--reason")
+    path = session.project_path("tasks", args.card, "notes", args.note, "resolve")
+    note = session.client.call("POST", path, body=body)
+    return _done(args, note, f"note {args.note} {args.state}")
+
+
+_FORGE_KIND = (
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/issues/[0-9]+/?", re.ASCII), "issue"),
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/pull/[0-9]+/?", re.ASCII), "pr"),
+)
+
+
+def link_kind(url: str) -> str:
+    """`issue` or `pr` for a GitHub issue or pull request URL (§6.13: GitHub is the one forge
+    of V1; anything else, another forge's issue included, is `url`). The hub decides whether
+    it belongs to the project's repository."""
+    return next((kind for pattern, kind in _FORGE_KIND if pattern.fullmatch(url)), "url")
+
+
+def cmd_link_add(args: argparse.Namespace) -> int:
+    kind = "url" if args.plain else link_kind(args.url)
+    if args.label and kind != "url":
+        raise UsageError("--label is for a plain link; a forge link shows the forge's title")
+    body: dict[str, Any] = {"kind": kind}
+    if kind == "url":
+        body["url"] = args.url
+        if args.label:
+            body["label"] = args.label
+    else:
+        body["forge_url"] = args.url
+    session = Session()
+    link = session.client.call("POST", session.project_path("tasks", args.card, "links"), body=body)
+    return _done(
+        args, link, f"linked {kind} {onboarding.inline(_field(link, 'id'))} to {args.card}"
+    )
+
+
+def cmd_link_list(args: argparse.Namespace) -> int:
+    session = Session()
+    card = session.client.call("GET", session.project_path("tasks", args.card))
+    links = [link for link in (_field(card, "links") or []) if isinstance(link, dict)]
+    if args.json:
+        _print_json(links)
+        return EXIT_OK
+    if not links:
+        print(f"no links on {args.card}")
+    for link in links:
+        seen = _obj(link.get("observed"))
+        if link.get("kind") == "url":
+            label = onboarding.inline(link.get("label") or "")
+            what = f"{label}  {onboarding.inline(link.get('url'))}"
+        else:
+            if seen.get("found"):
+                status = f"{onboarding.inline(seen.get('state'))}: " + onboarding.inline(
+                    seen.get("title")
+                )
+            elif seen.get("reason") == "kind_mismatch":  # an issue link to a PR (§6.13)
+                status = "is a pull request: remove it and link the pull request"
+            else:
+                status = "not found on the forge" if seen else "not observed"
+            what = f"{onboarding.inline(link.get('forge_url'))}  ({status})"
+        print(f"{onboarding.inline(link.get('id'))}  {onboarding.inline(link.get('kind'))}  {what}")
+    return EXIT_OK
+
+
+def cmd_link_remove(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("tasks", args.card, "links", args.link)
+    link = session.client.call("DELETE", path)
+    return _done(args, link, f"removed {args.link} from {args.card}")
+
+
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
     return _done(args, card, "\n".join(_release_summary(card)))
@@ -1155,6 +1341,86 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--remove", action="store_true", help="remove the uploaded avatar")
     _json_flag(r)
     r.set_defaults(handler=cmd_profile_avatar)
+
+    p = add(
+        "limit",
+        "declare a provider limit before the session stops",
+        "Tell the hub you are out until a time: `POST /me/limit` (§6.12). Run it before the "
+        "session stops for a provider limit; the next `maity resume` clears it. TIME is an "
+        "RFC 3339 timestamp with an offset (2026-10-22T17:00:00Z) or a duration from now "
+        "(90m, 3h, 1h30m, 2d12h: units d, h, m, s in that order, each once), at most 7 days "
+        "ahead (by this machine's clock; the hub may refuse the very edge if its clock differs). "
+        "A timestamp without an offset is refused: it is never read as local time.",
+    )
+    p.add_argument("--until", required=True, metavar="TIME", help="when you are back")
+    p.add_argument("--reason", help="why, at most 200 characters")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_limit)
+
+    p = add(
+        "note",
+        "remarks on a card that never change it",
+        "Post, read and resolve notes on a card (§6.16). A note is information, not an "
+        "instruction: it counts once someone who may edit the card works it into the body.",
+    )
+    nsub = p.add_subparsers(dest="note_command", metavar="<action>", required=True)
+    r = nsub.add_parser("add", help="post a note on a card", formatter_class=fmt)
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("body", help="the note, Markdown, at most 4 KiB")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_add)
+    r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
+    r.add_argument("card", type=_id, help="the card id")
+    which = r.add_mutually_exclusive_group()
+    which.add_argument("--state", default="open", help="open (default), incorporated, dismissed")
+    which.add_argument("--all", action="store_true", help="every note, whatever its state")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_list)
+    r = nsub.add_parser(
+        "resolve",
+        help="mark an open note incorporated or dismissed (the card's creator, or tasks:admin)",
+        formatter_class=fmt,
+    )
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("note", type=_id, help="the note id, e.g. nte-0031")
+    how = r.add_mutually_exclusive_group(required=True)
+    how.add_argument("--incorporated", dest="state", action="store_const", const="incorporated",
+                     help="the point is now in the card's body")  # fmt: skip
+    how.add_argument("--dismissed", dest="state", action="store_const", const="dismissed",
+                     help="not taken up")  # fmt: skip
+    r.add_argument("--reason", help="why, optional")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_resolve)
+
+    p = add(
+        "link",
+        "references from a card to forge issues, pull requests and URLs",
+        "Add, list and remove a card's links (§6.13). A GitHub issue or pull request URL "
+        "becomes a forge link, which the hub observes (state and title); any other https URL "
+        "(another forge's issue too), or one given with --plain, is a plain link the hub "
+        "never fetches.",
+    )
+    lsub = p.add_subparsers(dest="link_command", metavar="<action>", required=True)
+    r = lsub.add_parser("add", help="link a card to an issue, a pull request or a URL",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("url", help="an https URL")
+    r.add_argument("--plain", action="store_true", help="a plain link even for a forge URL")
+    r.add_argument("--label", help="a plain link's label, at most 200 characters")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_add)
+    r = lsub.add_parser("list", help="a card's links, with what the hub observed",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_list)
+    r = lsub.add_parser("remove", help="remove a link (its adder, the card's holder or "
+                        "creator, or tasks:admin)",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("link", type=_id, help="the link id, e.g. lnk-0007")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_remove)
 
     p = add(
         "placement",

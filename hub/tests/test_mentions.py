@@ -85,6 +85,19 @@ def test_a_message_mention_joins_the_audience(
     ]
 
 
+@pytest.mark.parametrize("to", ["all", "role:reviewer", "self"])
+def test_a_mention_covered_by_to_adds_no_member_token(
+    make_client: ClientFactory, owner: flow.Human, to: str
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    named = agent_named(make_client, owner, "agent-c", role="reviewer")
+    addressed = named.id if to == "self" else to
+    event = say(writer, to=addressed, body="cc @agent-c").json()
+    assert [m["member_id"] for m in event["payload"]["mentions"]] == [named.id]
+    target = {"all": "all", "role:reviewer": "role:reviewer", "self": f"member:{named.id}"}[to]
+    assert event["audience"] == [target, f"member:{writer.id}"]  # the sender reads its own
+
+
 def test_a_chat_is_never_resolved(make_client: ClientFactory, owner: flow.Human) -> None:
     agent = agent_named(make_client, owner, "agent-a")
     other = agent_named(make_client, owner, "agent-c")
@@ -134,16 +147,23 @@ def test_a_write_that_does_not_commit_gives_its_pings_back(migrated: Engine) -> 
 
 
 def test_retry_after_waits_for_room_for_every_ping(
-    make_client: ClientFactory, owner: flow.Human
+    make_client: ClientFactory, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     agent = agent_named(make_client, owner, "agent-a")
     for handle in ("agent-c", "agent-d"):
         agent_named(make_client, owner, handle)
+
+    class Frozen:  # the limiter's clock only: a second boundary would make it 599
+        @staticmethod
+        def monotonic() -> float:
+            return 1000.0
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Frozen)
     for _ in range(29):
         assert say(agent, to=owner.id, body="@agent-c").status_code == 201
     limited = say(agent, to=owner.id, body="@agent-c @agent-d")
     assert limited.status_code == 429
-    assert int(limited.headers["Retry-After"]) == 600  # all 29 were sent just now
+    assert int(limited.headers["Retry-After"]) == 600  # all 29 were sent at this instant
 
 
 def test_a_chat_refuses_mentions_as_read_only(

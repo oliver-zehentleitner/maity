@@ -15,15 +15,18 @@ records across runner restarts; the sessions themselves are found again through 
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
+import shlex
+import stat
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +34,7 @@ from typing import Any
 
 from .. import __version__, hub, onboarding, state
 from . import adapters, capabilities, config, loop, restart, workspace
+from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
@@ -45,25 +49,33 @@ class Retry(Exception):
     """A step that may succeed on the next tick (a pickup whose answer was lost)."""
 
 
-def run_join(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tuple[bool, str | None]:
+def run_join(
+    place: workspace.Workspace, url: str, code: str, cwd: Path, as_user: AsUser = RUNNER
+) -> tuple[bool, str | None]:
     """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not;
     None when the CLI's error has no code in §15.7's list).
 
     `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
     finds it without running git in a clone the agent can write (§5.3). Python runs isolated
     (`-I`) from a directory outside the clone, so no module in the repository is imported
-    by the process that reads the code. Its output is never logged: an error names the join
+    by the process that reads the code. In the agent_user layout it runs as the agents'
+    user, who then owns the credential. Its output is never logged: an error names the join
     URL, and with it the token."""
-    env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
-    env[state.STATE_DIR_ENV] = str(place.credential.parent)
+    if as_user.user:  # sudo resets the environment: pass only what the join needs
+        env = {state.STATE_DIR_ENV: str(place.credential.parent)}
+        cwd = Path("/")
+    else:
+        env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
+        env[state.STATE_DIR_ENV] = str(place.credential.parent)
     command = [
         sys.executable, "-I", "-m", "maity", "join", "--join-file", "-", "--no-resume",
         "--no-pointer", "--client", f"maity-runner/{__version__}",
     ]  # fmt: skip
     try:
         done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
-            command, cwd=cwd, env=env, input=f"{url}\n{code}\n", capture_output=True,
-            text=True, timeout=JOIN_TIMEOUT, check=False,
+            as_user.argv(command, env) if as_user.user else command,
+            cwd=cwd, env=None if as_user.user else env, input=f"{url}\n{code}\n",
+            capture_output=True, text=True, timeout=JOIN_TIMEOUT, check=False,
         )  # fmt: skip
     except subprocess.TimeoutExpired:
         return False, "network"
@@ -82,6 +94,9 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
+LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
+LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
+LIMIT_BYTES = 512
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -149,6 +164,7 @@ class Record:
     pending: dict[str, Any] | None = None
     waiting: str | None = None  # why nothing is done yet, logged once (join: R4, adapter: R5)
     joined_generation: int | None = None  # the generation this runner last joined for
+    limits_unknown: int = 0  # provider limits in a row without a reset time (§15.7 backoff)
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -158,7 +174,7 @@ class Record:
             self.since = now
         self.state, self.reason = state_, reason
         self.detail = fields.pop("detail", None)
-        if state_ not in ("exited", "failed", "stopped"):
+        if state_ not in ("exited", "failed", "stopped", "rate_limited"):
             self.exit_code = None
         for name, value in fields.items():
             setattr(self, name, value)
@@ -249,6 +265,13 @@ class Supervisor:
             labelled = {s.placement: s for s in sessions.values() if s.placement}
             starting = sum(1 for t in self.tasks.values() if t.is_alive())
             alive = sum(1 for s in sessions.values() if not s.dead) + starting
+            # A rate-limited placement keeps its slot until it starts again (§15.7).
+            alive += sum(
+                1
+                for p in desired
+                if p.get("desired") == "running"
+                and getattr(self.records.get(p["id"]), "state", None) == "rate_limited"
+            )
             for placement in desired:
                 name = session_name(placement["project"], placement["workspace"]["clone"])
                 mine = labelled.get(placement["id"])
@@ -294,6 +317,7 @@ class Supervisor:
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
+            rec.limits_unknown = 0
 
         if p.get("desired") == "stopped":
             if mine is not None and not mine.dead:
@@ -322,7 +346,7 @@ class Supervisor:
                 unconfined = (
                     harness is not None
                     and harness.id == "claude-code"
-                    and not capabilities.sandbox_available(harness, self.agent_path())
+                    and not capabilities.sandbox_available(harness, self.agent_path(), self.as_user)
                 )
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
@@ -336,7 +360,8 @@ class Supervisor:
         if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
             rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
             return 0
-        if alive >= self.cfg.limits.max_agents:
+        # A restart at retry_at takes the slot it kept: it never waits for capacity (§15.7).
+        if alive - (rec.state == "rate_limited") >= self.cfg.limits.max_agents:
             rec.enter(now, "pending", "capacity")
             return 0
         return self._launch(p, rec, now)
@@ -368,8 +393,15 @@ class Supervisor:
             rec.enter(now, "failed", "agent_credential_revoked", exit_code=code, retry_at=None)
             return
         if code == loop.EXIT_HOT_LOOP:
+            rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
             return
+        if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
+            if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
+                rec.limits_unknown = 0  # a clean run since the last limit: a new row
+            self._rate_limited(rec, now)
+            return
+        rec.limits_unknown = 0
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
@@ -378,6 +410,59 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _rate_limited(self, rec: Record, now: float) -> None:
+        """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
+        the fixed backoff, 15 minutes, doubling with each limit in a row up to 2 hours; the
+        loop says by its exit code (23) when a run ended cleanly since its start, which
+        starts the row over, as any other end of a run does. A reset time the harness names
+        is not used until a real run shows where to read it (`reset_unknown` until then)."""
+        pid = next((p for p, r in self.records.items() if r is rec), "")
+        code = self._limit_exit_code(pid)
+        rec.limits_unknown += 1
+        backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
+        retry_at = now + backoff
+        rec.enter(now, "rate_limited", "quota", detail="reset_unknown", retry_at=retry_at,
+                  exit_code=code)  # fmt: skip
+        self.log(f"{pid}: the harness stopped for its provider's limit; again at {stamp(retry_at)}")
+
+    def _limit_file(self, pid: str) -> Path:
+        assert self.cfg.local is not None  # noqa: S101 - the local backend's supervisor
+        return self.cfg.local.agent_files / "agents" / pid / adapters.LIMIT_FILE
+
+    def _clear_limit_file(self, pid: str) -> None:
+        path = self._limit_file(pid)
+        if self.as_user.user:
+            self.as_user.run(["rm", "-f", "--", str(path)])
+        else:
+            path.unlink(missing_ok=True)
+
+    def _limit_exit_code(self, pid: str) -> int | None:
+        """The harness's exit code from the loop's `limit.json`. The file is on the agents'
+        side, which may have written or replaced it: a regular file only, never followed
+        through a link, at most LIMIT_BYTES, and nothing but a plain exit code taken."""
+        path, as_user = self._limit_file(pid), self.as_user
+        try:
+            if as_user.user:
+                # Opened without following a link and without blocking on a FIFO, so a file
+                # swapped after any check cannot hold the read.
+                done = as_user.run(["dd", f"if={path}", f"bs={LIMIT_BYTES}", "count=1",
+                                    "iflag=nofollow,nonblock", "status=none"])  # fmt: skip
+                raw = done.stdout if done.returncode == 0 else ""
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    if not stat.S_ISREG(os.fstat(fd).st_mode):
+                        return None
+                    raw = os.read(fd, LIMIT_BYTES).decode("utf-8", errors="replace")
+                finally:
+                    os.close(fd)
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
+            return None
+        code = data.get("exit_code") if isinstance(data, dict) else None
+        valid = isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 255
+        return code if valid else None
 
     # --- starting --------------------------------------------------------------------------
 
@@ -404,7 +489,7 @@ class Supervisor:
         if harness.id == "codex" and grant.allow:
             return ("harness_refused", None)  # Codex cannot honour a command allowlist
         if harness.require_sandbox and not capabilities.sandbox_available(
-            harness, self.agent_path()
+            harness, self.agent_path(), self.as_user
         ):
             return ("harness_refused", None)  # the operator asked for no run without it
         return None
@@ -438,13 +523,13 @@ class Supervisor:
         repository = p["workspace"].get("repository") or ""
         if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join
             workspace.rebind(self.cfg.state_dir, place, agent["handle"], agent["id"])
-        if place.path.exists():
+        if self.as_user.exists(place.path):
             try:  # an existing directory that is not this agent's comes before its credential
-                workspace.inspect(self.cfg, place, repository, owner, p["id"])
+                workspace.inspect(self.cfg, place, repository, owner, p["id"], self.as_user)
             except workspace.Refused as refused_:
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
-        has_credential = place.credential.is_file()
+        has_credential = self.as_user.exists(place.credential, "-f")
         # `rejoin` stays set until the hub sees the new credential; one rejoin per generation.
         rejoin = bool(p.get("rejoin")) and rec.joined_generation != p["generation"]
         join = rejoin or (not has_credential and not agent.get("credential_expected"))
@@ -453,7 +538,7 @@ class Supervisor:
             return 0
         if join and self.client is None:
             return 0
-        retrying = rec.state == "exited"
+        retrying = rec.state in ("exited", "rate_limited")
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
@@ -487,13 +572,13 @@ class Supervisor:
                 return
             workspace.prepare(
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
-                p["workspace"].get("branch"),
+                p["workspace"].get("branch"), self.as_user,
             )  # fmt: skip
             if join:
                 self._join(p, place, owner, rejoin)
                 with self.lock:
                     rec.joined_generation = p["generation"]
-            if workspace.stale_index_lock(place.path):
+            if workspace.stale_index_lock(place.path, as_user=self.as_user):
                 with self.lock:
                     rec.detail = "stale_index_lock"
             if not self._wants(p["id"], p["generation"]):  # the clone took a while
@@ -501,6 +586,7 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             launch = adapters.launch(self._context(p, harness, place))
+            self._clear_limit_file(p["id"])  # only the loop of this run may leave one
             self.backend.start(name, place.path, launch.argv, launch.env, p["id"], p["generation"])
         except workspace.Refused as refused:
             with self.lock:
@@ -526,7 +612,7 @@ class Supervisor:
                 else:
                     rec.enter(now, "exited", crashes=decision.crashes, retry_at=decision.retry_at)
             return
-        hint = f"tmux -S {self.backend.socket} attach -t {name}"
+        hint = attach_hint(self.backend.socket, name, self.as_user)
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
@@ -540,8 +626,11 @@ class Supervisor:
         the code go to the child on stdin, never on a command line or into a log; the
         credential is written by the agent-side CLI, so the runner never holds it."""
         assert self.client is not None  # noqa: S101 - _launch checks it
-        if rejoin:
-            place.credential.unlink(missing_ok=True)  # only a rejoin removes a credential
+        if rejoin:  # only a rejoin removes a credential
+            if self.as_user.user:
+                self.as_user.run(["rm", "-f", "--", str(place.credential)])
+            else:
+                place.credential.unlink(missing_ok=True)
         try:
             pickup = self.client.call(
                 "POST",
@@ -556,12 +645,16 @@ class Supervisor:
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
             raise workspace.Refused("join_failed")
-        joined, why = run_join(place, url, code, self.cfg.state_dir)
+        joined, why = run_join(place, url, code, self.cfg.state_dir, self.as_user)
         if not joined:
             raise workspace.Refused("join_failed", why)
         try:
-            member = state.load_state(place.credential.parent).get("member_id")
-        except state.StateError as exc:  # joined; only the record keeps the handle a while
+            if self.as_user.user:
+                found = json.loads(self.as_user.read(place.credential.parent / state.STATE_FILE))
+                member = found.get("member_id") if isinstance(found, dict) else None
+            else:
+                member = state.load_state(place.credential.parent).get("member_id")
+        except (state.StateError, OSError, ValueError) as exc:  # joined; the record catches up
             self.log(f"{place.path.name}: joined, but its state cannot be read: {exc}")
             return
         if isinstance(member, str) and member != owner:
@@ -570,10 +663,26 @@ class Supervisor:
     def _context(
         self, p: dict[str, Any], harness: config.Harness, place: workspace.Workspace
     ) -> adapters.Context:
-        agent_dir = self.cfg.state_dir / "agents" / p["id"]
-        agent_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        assert self.cfg.local is not None  # noqa: S101 - the local backend's supervisor
+        agent_dir = self.cfg.local.agent_files / "agents" / p["id"]
+        self.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = self.probes.get(harness.id)
+        workspaces = self.cfg.local.workspaces
+        # The agents' side, as the agents' user sees it: its home, its files (tmux socket,
+        # every agent's log and settings) and the clones it owns.
+        home = config.home_of(self.as_user.user) if self.as_user.user else Path.home()
+        try:
+            others = other_credentials(workspaces, place.path, self.as_user)
+        except workspace.Refused:
+            self.log(f"{p['id']}: not every clone under {workspaces} could be listed; not "
+                     "starting an agent whose sandbox might read another's credential")  # fmt: skip
+            raise
+        private = private_paths(
+            self.cfg.state_dir, home, place.path,
+            others,
+            (self.cfg.path, self.cfg.local.agent_files),
+        )  # fmt: skip
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -582,7 +691,7 @@ class Supervisor:
             agent_dir=agent_dir,
             grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
             restart=self.cfg.limits.restart,
-            sandbox=capabilities.sandbox_available(harness, self.agent_path()),
+            sandbox=capabilities.sandbox_available(harness, self.agent_path(), self.as_user),
             hosts=tuple(
                 h
                 for h in (
@@ -591,7 +700,15 @@ class Supervisor:
                 )
                 if h
             ),
+            private=private,
+            workspaces=workspaces.resolve() if workspaces else None,
+            as_user=self.as_user,
         )
+
+    @property
+    def as_user(self) -> AsUser:
+        local = self.cfg.local
+        return AsUser(local.agent_user if local and local.layout == "agent_user" else None)
 
     def agent_path(self) -> str:
         """The PATH the agents get: where their sandbox tools must be found."""
@@ -653,9 +770,13 @@ class Supervisor:
             "state": rec.state,
             "reason": rec.reason,
             "detail": rec.detail,
-            "exit_code": rec.exit_code if rec.state in ("exited", "failed", "stopped") else None,
+            "exit_code": (
+                rec.exit_code
+                if rec.state in ("exited", "failed", "stopped", "rate_limited")
+                else None
+            ),
             "restarts": rec.restarts,
-            "retry_at": stamp(rec.retry_at) if rec.state == "exited" else None,
+            "retry_at": stamp(rec.retry_at) if rec.state in ("exited", "rate_limited") else None,
             "crash_count": len(rec.crashes) if counting else None,
             "crash_window_seconds": window if counting else None,
             "deadline_at": stamp(rec.deadline_at) if rec.state == "stopping" else None,
@@ -695,15 +816,85 @@ class Supervisor:
                     rec.acked, rec.pending = pending["key"], None
 
 
+# In the agents' home: logins and keys a sandboxed command never needs. A list, so not every
+# secret a home can hold; the README says so. The forge login (gh) is not among them:
+# pushing needs it, and the agents share the operator's in the single layout.
+HOME_SECRETS = (
+    ".ssh", ".gnupg", ".codex", ".claude", ".claude.json", ".git-credentials", ".netrc",
+    ".config/maity-runner", ".local/state/maity-runner", ".aws", ".azure", ".config/gcloud",
+    ".kube", ".docker", ".local/share/opencode", ".config/opencode",
+)  # fmt: skip
+
+
+def private_paths(
+    state_dir: Path, home: Path, clone: Path, others: Sequence[Path] = (),
+    extra: Sequence[Path] = (),
+) -> tuple[Path, ...]:  # fmt: skip
+    """What no sandboxed command may read: the runner's state, the secrets in the agents'
+    home, other clones' credentials (`others`) and `extra` (the runner's configuration, the
+    agents' own files). A path that contains the clone is left out: it would hide the
+    clone itself."""
+    clone = clone.resolve()
+    found = [state_dir.resolve(), *(home / name for name in HOME_SECRETS), *others]
+    found += [path.resolve() for path in extra]
+    return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
+
+
+def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
+    """The credential directories of the other clones under `workspaces` as they stand now
+    (a clone made later is covered from the agent's next start), listed as the agents' user,
+    who owns them and may be the only one able to list them. A listing that is not complete
+    fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
+    the sandbox would start without its deny."""
+    root = workspaces.resolve()
+    refused = workspace.Refused("harness_refused")
+    if not as_user.user:
+        found: list[Path] = []
+        try:
+            for project in root.iterdir() if root.is_dir() else ():
+                if project.is_dir() and not project.is_symlink():
+                    found += [d / ".git" / "maity" for d in project.iterdir()
+                              if (d / ".git" / "maity").is_dir()]  # fmt: skip
+        except OSError as exc:
+            raise refused from exc
+    elif not as_user.exists(root, "-d"):
+        found = []  # no clone yet: nothing to hide
+    else:
+        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "4", "-type", "d",
+                            "-path", "*/.git/maity", "-print0"])  # fmt: skip
+        if done.returncode != 0:  # some directory could not be read: the list may be short
+            raise refused
+        found = [Path(p) for p in done.stdout.split("\0") if p]
+    own = clone.resolve() / ".git" / "maity"
+    return sorted(p for p in found if p != own)
+
+
+def attach_hint(socket: Path, name: str, as_user: AsUser) -> str:
+    """How the runner's owner attaches to a session: through sudo where the socket is the
+    agents' user's. Every word quoted."""
+    attach = ["tmux", "-S", str(socket), "attach", "-t", name]
+    if as_user.user:
+        attach = ["sudo", "-u", as_user.user, *attach]
+    return shlex.join(attach)
+
+
+def agents_user(cfg: config.Config) -> AsUser:
+    """Who runs the agents' commands on this machine: their user in the agent_user layout."""
+    local = cfg.local
+    return AsUser(local.agent_user if local and local.layout == "agent_user" else None)
+
+
 def local_backend(cfg: config.Config) -> Tmux:
     """The tmux server of `cfg`'s local backend (also for `stop-all`, without the hub)."""
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
+    as_user = AsUser(cfg.local.agent_user if cfg.local.layout == "agent_user" else None)
     return Tmux(
         socket=cfg.local.tmux_socket,
-        conf=cfg.state_dir / "tmux.conf",
-        home=os.environ.get("HOME", ""),
+        conf=cfg.local.agent_files / "tmux.conf",
+        home=str(as_user.home()) if as_user.user else os.environ.get("HOME", ""),
         agent_path=capabilities.agent_path(cfg, os.environ.get("PATH", "")),
-        logs=cfg.state_dir / LOGS,
+        logs=cfg.local.agent_files / LOGS,
+        as_user=as_user,
     )
 
 

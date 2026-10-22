@@ -6,7 +6,7 @@
     { "id": "agt-d", "handle": "agent-d", "display_name": "Agent D", "owner_id": "hum-maintainer", "git_identity": null, "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "2026-10-21T12:58:00Z" },
     { "id": "agt-r", "handle": "reviewer", "display_name": "Reviewer", "owner_id": "hum-maintainer", "git_identity": null, "memberships": [ { "project": "maity", "role": "reviewer" } ], "created_at": "2026-10-20T17:58:00Z" },
     { "id": "agt-s1", "handle": "shop-dev", "display_name": "Shop Dev", "owner_id": "hum-maintainer", "git_identity": null, "memberships": [ { "project": "sample", "role": "member" } ], "created_at": "2026-10-21T08:28:00Z" },
-    { "id": "agt-x", "handle": "spare", "display_name": "Spare", "owner_id": "hum-maintainer", "git_identity": null, "memberships": [], "created_at": "2026-10-19T12:00:00Z" }
+    { "id": "agt-x", "handle": "spare", "display_name": "Spare", "owner_id": "hum-maintainer", "git_identity": null, "memberships": [ { "project": "guestlab", "role": "member" } ], "created_at": "2026-10-19T12:00:00Z" }
   ],
   "next_cursor": null
 }
