@@ -288,8 +288,7 @@ the reason a limit counts neither as a crash nor toward the restart cap.
 
 **Id:** f24d2d25-9d94-49cc-89b6-1f2388baad66
 **Type:** decision
-**Status:** superseded
-**Superseded by:** 0b6dd0cc-0be3-4e8a-bf18-66e5a957fcd7
+**Status:** active
 **Evidence:** inferred
 **Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
 **Revisit when:** agents' provider limits routinely last longer than a day, or an owner needs an absence longer than 90 days
@@ -343,50 +342,3 @@ reading is inferred from the review finding it answered.
 - Show the reason everywhere (the draft): the exposure above.
 - Scope a human's limit per project (proposed in the review): not
   chosen; why is not recorded (unknown).
-
-## A limit extends a card's lease once per 7 days, never beyond one lease the humans set
-
-**Id:** 0b6dd0cc-0be3-4e8a-bf18-66e5a957fcd7
-**Type:** decision
-**Type:** constraint
-**Status:** active
-**Evidence:** inferred
-**Source:** the owner's ruling on the review of the contract-notes pull request, 2026-10-23; contract in `docs/api.md` §6.12
-**Revisit when:** a limit's extension keeps a card from a human who wanted to release or assign it, or agents' provider limits routinely outlast one lease
-**See:** trust.md#a-declared-limit-holds-a-members-cards-for-at-most-24-hours-and-an-absence-ends-within-90-days — f24d2d25-9d94-49cc-89b6-1f2388baad66 — as of 2026-10-23
-**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
-
-A declared limit extends each lease the member holds to the earlier of
-the limit's end plus the grace and one `policy.lease_seconds` from the
-moment of the extension — so never more than 24 hours — and does so at
-most once per card in any rolling 7 days. Clearing a limit and declaring
-it again, a new limit in the same outage, or a new outage resets
-nothing. An extension never shortens a lease.
-
-This tightens the 24-hour bound of the earlier entry, which reset with
-every new outage, and replaces it. The earlier entry's other half stays
-as it was: the owner's `absence.until` is at most 90 days ahead, so an
-absence cannot hold the project's cover open without end. The rule is the owner's ruling; why each alternative
-lost is inferred from the review.
-
-**Reason:** the review showed that an agent could clear and re-declare
-its limit twice a day and keep its cards under a lease of 24 hours at a
-time, indefinitely, while the humans had set `lease_seconds` to as
-little as ten minutes — the hold a limit is never to become. That is the
-`Revisit when` of the outage entry ("a limit is used to hold cards
-against a human"); it was considered, and this rule is the answer to it:
-a limit gives at most one lease of the length the humans chose, once per
-card per week, so it never holds a card longer than a call would and
-never repeatedly.
-
-**Rejected alternatives:**
-- A fresh 24 hours per outage, accepted because calls renew leases
-  anyway (this entry's first version): wrong when `lease_seconds` is
-  shorter than a day; the re-declaration loop overrides the humans'
-  setting.
-- Continue the previous outage's budget when a new one starts within a
-  window: still a per-member budget an agent can wait out, and a second
-  timer to explain.
-- Let a human with `tasks:admin` release or assign over an extended
-  lease: rejected before (see the earlier entry); bounding the extension
-  keeps one lease rule for everyone.

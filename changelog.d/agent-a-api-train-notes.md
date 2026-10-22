@@ -1,9 +1,6 @@
 ### Changed
 
-- docs/api.md §6.12: a limit never holds a card against the humans — it extends a card's lease to
-  the earlier of `until` + grace and one `policy.lease_seconds`, at most once per card per rolling
-  7 days (clearing and declaring again resets nothing), and never shortens a lease; `show_reason_in`
-  from an agent is `invalid`.
+- docs/api.md §6.12: `show_reason_in` from an agent is `invalid`.
 - docs/api.md §6.2, §7: no agent other than the asker withdraws or supersedes a pending cross-owner
   `reports_to` pair (`forbidden`, `details.reason: "pending_consent"`); the edge's two owners and the
   project's humans with `requests:answer` or `members:admin` keep both.
@@ -11,10 +8,12 @@
   that names it — `policy.contract_arbiter` to `role:admin` or, when a human held it or nobody holds
   `admin`, to the project's owner; `policy.coordinator` to `role:admin`;
   `policy.coordinator_substitute` to `null`; an open contract card's `contract.arbiter` to the
-  project's arbiter; its entries in other members' `substitutes` removed — with the events addressed
-  to the project's human owners and admins as well.
-- docs/api.md §17.4: requests to the forge webhook that do not verify are limited to 60 per minute
-  per project and source address and never set `last_result` (`signature` and `too_large` are no
+  project's arbiter, or to the project's owner when a human held it; its entries in other members'
+  `substitutes` removed — with the events addressed to the project's human owners and admins as
+  well.
+- docs/api.md §17.4: a webhook request for an unknown project or one without a secret is refused
+  before the body is read; other requests that do not verify are limited to 60 per minute per
+  project and source address and never set `last_result` (`signature` and `too_large` are no
   longer values).
 - docs/api.md §17.3, §17.5, §17.6: a manual post's tokens resolve to `member:` tokens with `why:
   "addressed"` and `wake: true`; a manual `to: all` wakes every member through their own tokens; a

@@ -2096,7 +2096,7 @@ chosen in passing, and never a reason to refuse the removal:
 | `policy.contract_arbiter` | held by an agent: `role:admin`, the value that names no single member, when the project has an active member with the role `admin`; held by a human, or no such member: the project's owner — the member id of the human holding `owner` (with several, the one who joined first). A seat a human held never lands on an agent this way, as cover never moves it to one (§6.12) | `policy_changed` |
 | `policy.coordinator` | `role:admin`, its default (§6.1); with no agent admin that means no coordinator gate, as §6.1 says | `policy_changed` |
 | `policy.coordinator_substitute` | `null`, its default | `policy_changed` |
-| `contract.arbiter` of a contract card that is not `done` or `cancelled` (§6.8) | the project's `policy.contract_arbiter`, after the reset above — the card's default | `task_updated` per card, `fields: ["contract"]` |
+| `contract.arbiter` of a contract card that is not `done` or `cancelled` (§6.8) | held by an agent: the project's `policy.contract_arbiter`, after the reset above — the card's default; held by a human: the project's owner, as for the policy seat — never `role:admin`, so a card a human arbitrated never passes to an agent | `task_updated` per card, `fields: ["contract"]` |
 | an entry of another member's `availability_policy.substitutes` (§6.12) | removed from the list; a `substitute` policy whose list ends up empty becomes `wait`, since an empty list with `substitute` is `invalid` | `member_updated` per member, `changed: ["availability_policy"]` |
 
 One `policy_changed` carries every policy field the removal reset (`old`,
@@ -3110,26 +3110,13 @@ ends when it returns. Under either policy the hub emits
 when a limit is stored (`POST /me/limit`, a runner's `rate_limited`
 report) or the owner sets an `absence` with an `until`, under either
 policy and before any grace has passed, so a lease that would run out
-within the grace is kept. A limit never holds a card against the
-humans' lever, so the extension is bounded three ways:
-
-- **Length.** Each lease the member holds is extended to the earlier of
-  `until` + `grace_minutes` and the moment of the extension plus
-  `policy.lease_seconds` — one lease of the length the humans set, and
-  so never more than 24 hours (`lease_seconds` is at most 86400, §6.1).
-  A limit never makes a lease longer than a call by the holder would.
-- **Once per card per rolling 7 days.** A card whose lease a limit
-  extended within the last 7 days is not extended by a limit again,
-  whatever happened in between: a new limit in the same outage, a limit
-  cleared (`{"until": null}`) and declared again, a new outage, a claim
-  released and taken again by the same member. The hub keeps the time of
-  the last extension on the card. Its lease then runs as any other
-  (§6.5).
-- **Never shorter.** An extension never shortens a lease: a lease whose
-  `lease_until` is already later keeps it, and a later limit — shorter
-  or longer — leaves the leases as the earlier one extended them.
-
-Past that point the lease runs out as usual (§6.5), and an admin's
+within the grace is kept. Each lease the member holds is then extended to
+`until` + `grace_minutes`, but never past 24 hours after the outage
+started: a declared limit keeps the member's cards for at most 24 hours.
+A new limit within the same outage moves the extension to its own
+`until` + grace under the same bound, counted from the outage's start,
+never from the new limit, so a limit cannot be renewed into a longer
+hold. Past that point the lease runs out as usual (§6.5), and an admin's
 `release` or `assign` is no longer `lease_active`. For `paused` and
 `offline` no lease is extended.
 
@@ -6788,18 +6775,20 @@ POST /api/v1/projects/{slug}/forge/webhook
   interval. At most 60 verified deliveries per minute per project
   (`rate_limited`): only a delivery whose signature verifies counts, so
   unsigned or wrongly signed requests cannot use up a project's
-  deliveries. Those are limited on their own, per project and source
-  address (the client address of §2.5): at most 60 requests per minute
-  that do not verify — no or a wrong signature, a project without
-  a secret or none at all, a body over the cap. Beyond that the hub
-  answers `rate_limited` with `Retry-After` before it reads the body, so
-  junk cannot make it read a megabyte per attempt without bound. The
-  limit is per project because forges deliver from shared address
-  pools: one project's failing deliveries must not refuse another
-  project's verified ones from the same address. A request for a project
-  that does not exist counts against that path as against any other, so
-  the answer still tells nobody whether a project exists. A
-  request that does not verify never sets `last_result` (below): anyone
+  deliveries. A request for a project that does not exist, or for one
+  without a webhook secret, is answered `webhook_signature` at once,
+  before the hub reads the body or counts it anywhere: there is no
+  secret to check, so no body is worth reading, and an unknown slug gets
+  no bucket of its own (the answer is the same as for a wrong signature,
+  so it still tells nobody whether a project exists). The other requests
+  that do not verify — no or a wrong signature, a body over the cap —
+  are limited per project and source address (the client address of
+  §2.5): at most 60 per minute. Beyond that the hub answers
+  `rate_limited` with `Retry-After` before it reads the body, so junk
+  cannot make it read a megabyte per attempt without bound. The limit is
+  per project because forges deliver from shared address pools: one
+  project's failing deliveries must not refuse another project's
+  verified ones from the same address. A request that does not verify never sets `last_result` (below): anyone
   can send one, and the webhook view shows the state of the forge's real
   deliveries, not of whoever probes the URL. The answer is `202` with
   `{}` once the signature verifies; the forge's delivery id is kept as
