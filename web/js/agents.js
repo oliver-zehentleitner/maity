@@ -24,6 +24,10 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // How a credential was last used (docs/api.md §10): what signing:
+  // required would refuse is the bearer kind.
+  const VIA = { signed: "(signed)", bearer: "(bearer token)" };
+
   function credentials(ctx, m, list) {
     const box = h("div", { class: "credentials" }, h("h4", null, "Credentials"));
     if (!list.items.length) {
@@ -41,7 +45,8 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "muted" }, " · revoked " + formatTime(c.revoked_at) + " by " + ctx.nameOf(c.revoked_by)
             + (c.revoked_reason ? " (" + c.revoked_reason + ")" : ""))
           : (c.resumed_at
-            ? h("span", null, " · last used " + formatAgo(c.last_used_at))
+            ? h("span", null, " · last used " + formatAgo(c.last_used_at)
+              + (c.last_used_via ? " " + (VIA[c.last_used_via] || "(" + c.last_used_via + ")") : ""))
             : h("span", { class: "never" }, " · never resumed"))),
       c.revoked_at
         ? null

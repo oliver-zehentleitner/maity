@@ -97,6 +97,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   items, edit the checklist, and the typed pull requests
 - web: the browser test checks every view with axe-core at 1280 and 390 px and in the
   dark scheme, and fails on serious or critical findings
+- web: owner and admin switch `policy.signing` in the project panel; before requiring it,
+  the panel lists the agents whose credentials were last used as a bearer token and asks
+  for confirmation; each credential shows how it was last used
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

@@ -231,6 +231,14 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if ("policy" in body) {
+        // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
+        if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
+        if ("signing" in body.policy && !["optional", "required"].includes(body.policy.signing)) {
+          fail(400, "invalid", "unknown signing value", path, { fields: { "policy.signing": "unknown" } });
+        }
+        p.policy = Object.assign({}, p.policy, body.policy);
+      }
       return p;
     }],
     // Fixture mode has no other writers: the log stays empty and the head
