@@ -810,7 +810,7 @@ reason — the logged exemption. There is no gate on labels.
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
-| `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` |
+| `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
