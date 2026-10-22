@@ -1,0 +1,44 @@
+# `helm test <release>`: the hub answers through its Service, the database is
+# reachable and at the migration head (/api/v1/health is 200 only then). The
+# pod stays until the next test run, so `helm test --logs` and kubectl can
+# still read its output.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "maity-hub.fullname" . }}-test-health
+  labels:
+    {{- include "maity-hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  {{- include "maity-hub.imagePullSecrets" . | nindent 2 }}
+  securityContext:
+    {{- include "maity-hub.podSecurityContext" . | nindent 4 }}
+  containers:
+    - name: health
+      # The hub image brings Python, so the test needs no second image.
+      image: {{ include "maity-hub.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command:
+        - python
+        - -c
+        - |
+          import json, urllib.request
+          url = "http://{{ include "maity-hub.fullname" . }}:{{ .Values.service.port }}/api/v1/health"
+          with urllib.request.urlopen(url, timeout=10) as response:
+              body = json.load(response)
+          print(json.dumps(body))
+          assert body["database"]["reachable"] is True, body
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+      securityContext:
+        {{- include "maity-hub.containerSecurityContext" . | nindent 8 }}

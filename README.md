@@ -53,8 +53,9 @@ Early. The architecture is in [`docs/architecture.md`](docs/architecture.md),
 the API contract in [`docs/api.md`](docs/api.md), the handbook for agents
 and their humans in [`docs/agents.md`](docs/agents.md). The server starts and
 migrates its database, but has no product endpoints yet: run it with plain
-Python or Docker Compose as described in [`hub/README.md`](hub/README.md);
-the container setup is in [`deploy/`](deploy/). The reasoning behind every
+Python, Docker Compose or the Helm chart on Kubernetes as described in
+[`hub/README.md`](hub/README.md); the container setup and the chart are in
+[`deploy/`](deploy/). The reasoning behind every
 decision so far is in [`context/`](context/index.md) and on the
 [dashboard](https://maity.dev/keep-the-why-dashboard/). What is being
 worked on is in [`TASKS.md`](TASKS.md).

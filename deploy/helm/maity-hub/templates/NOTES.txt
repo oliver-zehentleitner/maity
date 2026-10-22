@@ -1,0 +1,26 @@
+The Maity hub ({{ include "maity-hub.image" . }}) is installed as {{ include "maity-hub.fullname" . }} in {{ .Release.Namespace }}.
+Public URL: {{ include "maity-hub.publicUrl" . }}
+{{- if .Values.migrate.enabled }}
+
+The Job {{ include "maity-hub.fullname" . }}-migrate runs `maity-hub migrate` before
+every install and upgrade; its log:
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "maity-hub.fullname" . }}-migrate
+{{- else }}
+
+migrate.enabled is off: run `maity-hub migrate` against the database before
+every upgrade; the hub refuses to serve an outdated schema.
+{{- end }}
+
+Check it:
+  helm -n {{ .Release.Namespace }} test {{ .Release.Name }}
+
+Create the first human account (the password is read from standard input,
+never from the command line):
+  kubectl -n {{ .Release.Namespace }} exec -i deploy/{{ include "maity-hub.fullname" . }} -- \
+    maity-hub owner create --handle <handle> --display-name '<Your Name>' < password-file
+{{- if not .Values.forge.github.existingSecret }}
+
+No forge token is configured. Once the hub version in use has the forge probe,
+it answers probe_not_configured and no release can become ready; set
+forge.github.existingSecret to enable it.
+{{- end }}

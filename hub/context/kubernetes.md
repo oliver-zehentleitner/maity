@@ -1,0 +1,152 @@
+# Kubernetes
+
+## One pod, replaced with Recreate; no replica count in the chart
+
+**Id:** 5e42eb26-9883-49e2-89c0-9fe4e6517c62
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart)
+**See:** events.md — 6310ef59-6010-4fa5-95d5-30f20bc00117 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 4713ab88-72a2-408b-9625-87345628eb5a — as of 2026-10-22
+**Revisit when:** the long-poll ownership, the nonce window and the probe sweep move to the database, so that a second process is safe
+
+The chart (`deploy/helm/maity-hub`) runs exactly one hub pod with the
+`Recreate` strategy: on an upgrade the old pod stops before the new one
+starts. `replicas` is fixed in the template, not a value, and the values
+schema refuses unknown keys, so `replicaCount: 2` fails at install time
+instead of starting a second process.
+
+**Reason:** the long-poll notifier, "one long-poll per session", the
+request-signing nonce window, the login and join rate limits and the probe
+worker all live in the process (docs/architecture.md §8). Two pods at once,
+even for the seconds of a rolling update, would let a signed request be
+replayed against the other pod and split the limits. An upgrade costs a few
+seconds without a hub; clients already re-poll and retry.
+
+**Rejected alternatives:**
+- `RollingUpdate` (the Deployment default, also with `maxSurge: 1`):
+  no gap during an upgrade, but the old and the new pod overlap.
+- A `replicaCount` value defaulting to 1: the usual chart shape, but it
+  offers a setting the hub does not support yet.
+
+## Migrations as a pre-install/pre-upgrade hook Job, not an init container
+
+**Id:** eced7109-a606-4549-b2f2-962e7436f8a8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart)
+**See:** persistence.md — ce7a3627-d04d-4708-bac9-ed0c7d64cfe4 — as of 2026-10-22
+**See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+**Revisit when:** the chart is deployed by a tool that does not run Helm hooks
+
+`maity-hub migrate` runs as a Job with the Helm hook
+`pre-install,pre-upgrade`, before the Deployment is changed. A failing Job
+fails the install or upgrade and leaves the Deployment as it was. The Job
+stays after it succeeds, until the next upgrade replaces it, so its log can
+still be read. `migrate.enabled: false` leaves the migration to the operator.
+
+**Reason:** with `Recreate` the old pod is already gone when a new pod's
+init container would run, so a failed migration in an init container means
+no hub until someone intervenes. A hook Job fails while the old hub still
+serves. It also runs once per release, not on every pod restart or
+reschedule.
+
+**Rejected alternatives:**
+- An init container running `maity-hub migrate`: no Helm hooks needed, but
+  it migrates on every pod start and turns a failed migration into an
+  outage.
+- Migrating only by hand: it stays possible through `migrate.enabled`, but
+  as the default every upgrade would need a step outside Helm.
+
+## Readiness on /api/v1/health, liveness on /api/v1/help
+
+**Id:** c391bbda-dd25-4fc3-8284-db5438f788f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart)
+**Revisit when:** the hub gets an endpoint meant for liveness
+
+Readiness and `helm test` use `/api/v1/health`, which answers 503 while the
+database is unreachable or not at the migration head. Liveness and startup
+use `/api/v1/help`, which answers from the process alone.
+
+**Reason:** a database outage should take the pod out of the Service, not
+restart it. A restart cannot fix the database, and it drops every open
+long-poll. An endpoint without the database still shows whether the event
+loop answers, which a TCP check would not.
+
+**Rejected alternatives:**
+- `/api/v1/health` for liveness too: restarts the hub in a loop for as long
+  as the database is down.
+- A TCP socket check for liveness: passes even when the event loop no
+  longer answers.
+
+## The Ingress is a plain networking.k8s.io/v1 Ingress; ingress-nginx annotations are only defaults
+
+**Id:** adc362f5-08ef-41e0-ab34-05f07cd5fa26
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart's review)
+**Revisit when:** the maintainer's cluster moves to a controller that serves only Gateway API, or a second controller's annotations become defaults
+
+The chart's Ingress is a plain `networking.k8s.io/v1` object that any
+controller serves through `ingress.className`. Its default annotations
+carry the long-poll settings for ingress-nginx: 75 s read and send
+timeouts, buffering off. They merge with the operator's annotations and can
+each be set to null. The chart README says that upstream ingress-nginx has
+been retired since March 2026, with no further releases or security fixes,
+and that a new cluster should use a maintained controller with its own
+equivalents of the three settings.
+
+**Reason:** the hub needs only what every Ingress controller offers, plus
+two properties of the long-poll: at least 55 s per request, and an
+unbuffered response. Naming one controller's settings as defaults gives
+the common case a working install. A plain Ingress keeps every controller
+open, including the one the maintainer's cluster runs.
+
+**Rejected alternatives:**
+- A Gateway API `HTTPRoute` instead of the Ingress: the direction of the
+  ecosystem, but not every cluster has the Gateway CRDs, and the
+  long-poll timeouts are policy attachments that differ per
+  implementation. It is the revisit, not the default.
+- No default annotations at all: neutral, but every ingress-nginx install
+  would buffer the long-poll and cut it at 60 s until someone notices.
+
+## A hub serves only on its own schema head; rollback is not a downgrade
+
+**Id:** cc9f37de-1684-41f1-b090-a2dc344a3673
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart's review)
+**See:** persistence.md — ce7a3627-d04d-4708-bac9-ed0c7d64cfe4 — as of 2026-10-22
+**See:** kubernetes.md — eced7109-a606-4549-b2f2-962e7436f8a8 — as of 2026-10-22
+**Revisit when:** a migration has to run while the old version keeps serving (expand/contract migrations), or `maity-hub` gets a downgrade command
+
+A hub process serves only when the database is at exactly the migration
+head of its own version. There are three consequences on Kubernetes.
+- **During an upgrade:** once the hook Job has migrated, the old pod's
+  readiness fails with `schema_outdated`, so an upgrade with a migration
+  is unavailable for the migration plus the new pod's start.
+- **Rollback:** `helm rollback` runs no migration (the hook is
+  `pre-install,pre-upgrade` only) and `maity-hub` has no downgrade
+  command, so a rollback to a version with an older schema head starts a
+  hub that refuses to serve and crash-loops. The chart README says to
+  roll back only to a version with the same schema head and otherwise to
+  fix forward.
+- **Helm's timeout:** the Job's deadline (300 s by default) stays under
+  the `--timeout` the README's commands pass (10 m), so a Job that
+  outlived Helm cannot still migrate under the old pod after Helm
+  reported the failure.
+
+**Reason:** this follows from serving only on the current schema
+(persistence.md). Writing it down here keeps the upgrade and rollback
+instructions honest about what Helm can and cannot undo.
+
+**Alternatives:** none were in contention for this chart. Expand/contract
+migrations, where old and new versions both run on the new schema, would
+lift the rule. They are the revisit, not something V1 needs with one pod.

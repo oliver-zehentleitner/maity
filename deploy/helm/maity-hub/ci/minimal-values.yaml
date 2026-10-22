@@ -1,0 +1,8 @@
+# The least an install needs: an image, the database Secret and the public URL.
+image:
+  repository: maity-hub
+  tag: ci
+database:
+  existingSecret: maity-hub-database
+config:
+  publicUrl: https://maity.example.org

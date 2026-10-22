@@ -1,0 +1,34 @@
+{{- if .Values.networkPolicy.enabled }}
+# Only the peers in networkPolicy.from (by default the ingress controller's
+# namespace) and this release's `helm test` pod may open connections to the
+# hub. The hub believes X-Forwarded-For from the whole trusted-proxy range,
+# usually the cluster's pod network; without this policy any pod in any
+# namespace could reach it and claim to be any client. Kubelet probes and
+# `kubectl port-forward` are not pod-to-pod traffic and are not affected on
+# the common CNIs. The CNI must enforce NetworkPolicy for this to take effect.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "maity-hub.fullname" . }}
+  labels:
+    {{- include "maity-hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hub
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "maity-hub.hubSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "maity-hub.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: test
+        {{- with .Values.networkPolicy.from }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: http
+          protocol: TCP
+{{- end }}
