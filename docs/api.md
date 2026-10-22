@@ -496,8 +496,9 @@ Additional rules that are not scopes:
   answered by that member or by members holding that role — for the
   classes `decision`, `contract` and `info`. A `consent` request is
   answerable only by holders of `requests:answer`, whatever `to` says —
-  except the consent for a cross-owner `reports_to` (§6.2), which only
-  the human it is addressed to answers, member of the project or not.
+  except the two consents for a cross-owner `reports_to` (§6.2), each
+  of which only the owner it is addressed to answers, member of the
+  project or not.
 - No membership answers a request it asked or that was filed on its
   behalf (`self_answer`), whatever its role.
 - `absence` (§6.1) is written only by the owner, the human it concerns.
@@ -1325,28 +1326,39 @@ who is not the subordinate's owner. A human's `reports_to` is never
 cross-owner (humans have no owner), and an edge to the subordinate's
 own human or to another agent of that human never is.
 
-- **Who consents.** The human who gains a subordinate from another
-  owner: for an agent boss, the boss's owner; for a human boss, that
-  human. Only that human answers the request — not `owner`, not a
-  holder of `requests:answer`, not a proxy (`forbidden`, `details.reason:
+- **Who consents.** Both owners of the edge: the human who gains a
+  subordinate from another owner (for an agent boss, the boss's owner;
+  for a human boss, that human) and the subordinate's owner. Each answers
+  only the request addressed to them — not `owner`, not a holder of
+  `requests:answer`, not a proxy (`forbidden`, `details.reason:
   "addressee_only"`), never an agent (`forbidden`, `details.reason:
   humans_only`), and never the asker (`self_answer`). This is an
   exception to the `consent` rules of §2.3 and §7.
-- **Own consent.** When the caller who sets the edge is that human (a
-  `PATCH` with `members:admin`, typically the project owner placing
-  another human's agent under themselves), the edge is set at once:
-  their action is their consent, as for placements (§15.6).
-- **The request.** Otherwise the edge does not take effect at once. The
-  hub files, in the same transaction, a `consent` request: `asked_by`
-  the caller, `to` the consenting human's id, replies `go`/`no`,
-  `while_open: wait`, `task_id` null, title `Take <handle> of <owner
-  handle> as a report of <boss handle>`, and a `summary` that names the
-  project, the subordinate and its owner, and says what the edge does
-  and does not do (below), including that the subordinate's owner can
-  end it at any time. `go` (only `reply_id: go`; anything else settles
-  as `no`, as in §15.6) sets the edge in the consenting human's name as
-  approver and the asker's as actor, with one `member_updated`; `no` or
-  withdrawal changes nothing.
+- **Own consent.** When the caller who sets the edge is one of the two
+  owners, that owner's action is their consent, as for placements
+  (§15.6): only the other owner is asked. A `PATCH` by the boss's side
+  (typically the project owner placing another human's agent under
+  themselves, with `members:admin`) files the request to the
+  subordinate's owner; one by the subordinate's owner files the request
+  to the boss's side. A caller who is neither (another human with
+  `members:admin`, or an admin agent) files both.
+- **The requests.** The edge does not take effect at once. The hub
+  files, in the same transaction, one `consent` request per owner still
+  to consent: `asked_by` the caller, `to` that human's id, replies
+  `go`/`no`, `while_open: wait`, `task_id` null. The boss's side gets the
+  title `Take <handle> of <owner handle> as a report of <boss handle>`,
+  the subordinate's owner `Let <handle> report to <boss handle> of
+  <boss owner handle>`. Each `summary` names the project, the
+  subordinate, both owners, whether the other owner's consent is still
+  open (with that request's id), and says what the edge does and does
+  not do (below), including that the subordinate's owner can end it at
+  any time. A `go` (only `reply_id: go`; anything else settles as `no`,
+  as in §15.6) records that owner's consent; the edge is set at the
+  `go` that leaves no request of the pair open, in the name of the
+  consenting human(s) as approvers and the asker's as actor, with one
+  `member_updated`. A `no` on either request withdraws the other
+  (`reason: "refused"`) and changes nothing; so does a withdrawal of
+  either.
 - **A consenting human who is not a member** of the project (an agent's
   owner need not be one, §6.2 `owner`) receives the request in their own
   cross-project inbox (`GET /requests`), with `project` as for every
@@ -1356,26 +1368,31 @@ own human or to another agent of that human never is.
   event reaches them (`request_created` goes to `member:` audiences
   only). The summary therefore carries everything the decision needs.
 - **`PATCH`.** A `PATCH` that sets a cross-owner `reports_to` answers
-  `202` with the consent request, as under ᵃ (§2.3); the other fields
+  `202` with the consent request, as under ᵃ (§2.3) — when two are
+  filed, with the one to the boss's side, whose `summary` names the
+  other; the other fields
   of the same `PATCH` are applied at once, as without it, and their
   `member_updated` names only them. When an admin agent's `PATCH` also
   needs ᵃ's consent (§2.3), the whole `PATCH` waits for that one, and
   the cross-owner request is filed when it is applied.
-- **Pending.** `reports_to` keeps its current value while the request is
-  open; nothing else in the member view shows it. A further `PATCH` of
-  that member's `reports_to` withdraws the open request (`reason:
-  "superseded"`) and is handled on its own: applied at once, or a new
-  request. Removing either member withdraws it (`reason:
-  "member_removed"`). The cycle check runs again at `go`, against the
-  members as they are then: a `go` that would now close a cycle is
-  `invalid` with `details.fields.reports_to: "cycle"`, nothing changes,
-  and the request stays open for a `no` or a withdrawal. Withdrawal is
-  open to the asker, to holders of `requests:answer` and to the
-  subordinate's owner.
+- **Pending.** `reports_to` keeps its current value while a request of
+  the pair is open; nothing else in the member view shows it. The rules
+  apply to the pair as one: a further `PATCH` of that member's
+  `reports_to` withdraws every open request of it (`reason:
+  "superseded"`) and is handled on its own: applied at once, or new
+  requests. Removing either member withdraws them (`reason:
+  "member_removed"`). The cycle check runs again at the `go` that would
+  set the edge, against the members as they are then: such a `go` that
+  would now close a cycle is `invalid` with `details.fields.reports_to:
+  "cycle"`, nothing changes, and the request stays open for a `no` or a
+  withdrawal. Withdrawal of either request is open to the asker, to
+  holders of `requests:answer` and to the subordinate's owner, and
+  withdraws the other as well.
 - **Joins and placements.** A join (§3.1) or a new-profile placement
   (§15.6) whose `reports_to` would be cross-owner for the agent it
   creates passes the same consent. Its creator owns the profile, so the
-  consenting human is always someone else: the membership is created by
+  creation is the subordinate's owner's consent and only the boss's side
+  is asked: the membership is created by
   the exchange or the first pickup with `reports_to: null`, and the hub
   files the request at that moment, `asked_by` the join's or placement's
   creator. The resume packet carries `reports_to: null` until `go`, and
@@ -3436,7 +3453,8 @@ POST /api/v1/projects/maity/placements
   `reports_to`, `areas`, `capabilities` and `briefing` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
   (§15.9). A cross-owner `reports_to` is applied at `go` of its own
-  consent request, filed at the first pickup (§6.2, "Across owners");
+  consent request to the boss's side (the creator owns the profile, so
+  its consent is the creation), filed at the first pickup (§6.2, "Across owners");
   that request is separate from the placement's approval. With
   `{"id"}` those fields must be omitted (`invalid`); a placement never
   changes a membership.
