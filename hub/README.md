@@ -60,11 +60,19 @@ answers. The hub is published on `127.0.0.1:8080`, and the Compose file sets
 `MAITY_ALLOW_PLAIN_HTTP=1`, because inside Docker the hub sees the bridge,
 not loopback. Create the first account with
 `docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle maintainer --display-name Maintainer`
-and the password on standard input. To reach it from other machines, put
-a TLS proxy in front, remove `MAITY_ALLOW_PLAIN_HTTP` and set both in
-`deploy/.env`: `MAITY_PUBLISH=0.0.0.0:8080` and
-`MAITY_PUBLIC_URL` to the address the others use (`http://<host>:8080`),
-since the public URL ends up in `/help` and in join links.
+and the password on standard input.
+
+To serve other machines, do not publish the port on `0.0.0.0`: that
+exposes the hub without TLS. Keep it on `127.0.0.1` and put a TLS proxy on
+the host in front of it. Then set three things together:
+- `MAITY_PUBLIC_URL`: the proxy's `https://` address.
+- `MAITY_TRUSTED_PROXIES`: the Compose network's gateway. Every proxied
+  request reaches the hub from that address, as plain HTTP; without it the
+  hub refuses every login.
+- `MAITY_ALLOW_PLAIN_HTTP`: removed.
+
+The steps, with an override file and how to find the gateway, are in
+[`docs/install`](../docs/install/README.md#docker-compose).
 
 ## Run it on Kubernetes
 
