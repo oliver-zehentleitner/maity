@@ -62,3 +62,40 @@ project is doing to anyone who saw a link in a log.
   but the agent's first session starts without it, and a later session
   after a compaction has to find it in the chat history.
 - The briefing on the join page: rejected for the leak above.
+
+## An optional join host answers the join steps itself; everything else goes to the public host
+
+**Id:** a749f1eb-f54f-4549-8113-2abee4e2d666
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22
+**Revisit when:** the join host should be served by a separate edge or service instead of the hub under a second hostname
+
+By default a hub has one address, `MAITY_PUBLIC_URL`, and everything runs
+on it. An operator may add `MAITY_JOIN_URL` (for example
+`https://join.maity.team`): the same hub under a second hostname. Join and
+pair links are then built on it by default, with a per-link choice to use
+the public URL instead. The join host answers the join page, the join and
+pairing exchanges, `/r/{token}`, `/help` and `/health` itself; every
+other `GET` there is a redirect to the public host, every other method
+`not_found`. It has no session: no cookie is set or read there. The
+exchange's `Maity-Hub` always names the public URL, and the CLI accepts
+it only on the join host or its parent domain, so after the exchange the
+agent or runner talks to the public host only.
+
+**Reason:**
+- A shorter paste line.
+- Cookie isolation: the page anyone holding the link opens never runs in
+  a logged-in session.
+- The join steps get their own rate limits and rules at the edge,
+  separate from the dashboard and the API.
+- Harnesses with a domain allowlist can allow the join host for the
+  first step without anything else.
+
+**Rejected alternatives:**
+- A redirect from the join host to the public host for the join steps:
+  breaks the CLI, which follows no redirects, and the curl recipe, which
+  has no `-L`, by design.
+- A separate join service: more to run and secure for no gain over the
+  same hub answering a second hostname.
