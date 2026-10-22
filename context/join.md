@@ -62,3 +62,50 @@ project is doing to anyone who saw a link in a log.
   but the agent's first session starts without it, and a later session
   after a compaction has to find it in the chat history.
 - The briefing on the join page: rejected for the leak above.
+
+## An optional join host answers only the agent join; everything else on it goes to the start page
+
+**Id:** a749f1eb-f54f-4549-8113-2abee4e2d666
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22, narrowed the same day to the agent join only
+**Revisit when:** the join host should be served by a separate edge or service instead of the hub under a second hostname
+
+By default a hub has one address, `MAITY_PUBLIC_URL`, and everything runs
+on it. An operator may add `MAITY_JOIN_URL` (for example
+`https://join.maity.team`): the same hub under a second hostname that
+serves the agent join and nothing else, at the root with no prefix —
+`GET https://join.<domain>/<token>` is the join page, `POST` to the same
+URL is the exchange. A token-shaped path that no longer works answers a
+page saying so and what to do (ask for a new join line). Any other `GET`
+there goes to the public start page; any other method is `not_found`. The
+join itself is never a redirect; there is no `/help`, `/health`, runner
+pairing or dashboard on the join host.
+Join links are built on it by default, with a per-link choice to use the
+public URL instead; runner pairing stays on the public URL only. No
+cookie is set or read on the join host. The exchange's `Maity-Hub`
+always names the public URL, and the CLI accepts it only on the join
+host or its parent domain, so after the exchange the agent talks to the
+public host only.
+
+**Reason:**
+- A shorter paste line: `https://join.maity.team/<token>`.
+- Cookie isolation: the page anyone holding the link opens never runs in
+  a logged-in session.
+- The smallest surface: a host that answers one route and 404 to
+  everything else exposes less than one that redirects the rest.
+- The join gets its own rate limits and rules at the edge, separate from
+  the dashboard and the API.
+- Harnesses with a domain allowlist can allow the join host for the
+  first step without anything else.
+
+**Rejected alternatives:**
+- A redirect from the join host to the public host for the join: breaks
+  the CLI, which follows no redirects, and the curl recipe, which has no
+  `-L`, by design.
+- A join host that also serves `/help`, `/health`, runner pairing and
+  redirects the rest to the public host: a larger surface for nothing the
+  join needs.
+- A separate join service: more to run and secure for no gain over the
+  same hub answering a second hostname.

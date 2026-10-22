@@ -24,6 +24,41 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 
 - Every endpoint lives under `/api/v1`. The dashboard is served at `/`,
   the join page at `/j/{token}`; neither is part of the API surface.
+- Hosts. The hub is reached under `MAITY_PUBLIC_URL`, and by default under
+  nothing else: join links, pair links, `/help` and every `Maity-Hub`
+  header name it. Optionally the operator sets `MAITY_JOIN_URL` (for
+  example `https://join.maity.team`): the same hub under a second
+  hostname, not a separate service, for the agent join and nothing else.
+  The value is `https`, has no path, and its host differs from the public
+  URL's; any other value stops the hub at startup. The hub tells the
+  hosts apart by the request's `Host` header (`X-Forwarded-Host` is not
+  read). On the join host the join lives at the root, one path segment,
+  no prefix:
+
+  | Method | Path | Same as |
+  |---|---|---|
+  | GET | `/{token}` | `GET /j/{token}`, with its content negotiation (§3.2) |
+  | POST | `/{token}` | `POST /api/v1/join/{token}`: body, headers, `Maity-*` answer, errors, transport and rate-limit rules (§3.3) |
+
+  A path that has the shape of a join token (one segment in the token's
+  alphabet and length, §3.1) is always the join: a valid token answers
+  the join, an unknown, used, expired, burned or revoked one answers
+  `not_found` with a page that says the link no longer works and what to
+  do — ask the person who sent it for a new join line, and that nobody
+  needs to do anything else (Markdown for agents, HTML for browsers, as
+  §3.2; it never says which of the reasons applies). Any other `GET` on
+  the join host — `/`, `/j/…`, `/api/v1/…` including `/help` and
+  `/health`, the runner pairing (which stays on the public URL only,
+  §15.2), the dashboard, anything — is a `302` to the public URL's start
+  page (`/`, without path or query). Any other method is `not_found`.
+  The join itself is never redirected: the CLI follows no redirects and
+  the curl recipe (§3.3) has no `-L`. The join host has no session: the hub sets no
+  cookie there and reads none (§2.1), so the join page never runs in a
+  logged-in context. The rate limit is the exchange's, counted per source
+  address across both hosts; the request log masks the token segment of
+  `/{token}` on the join host as `…` like the others. Whether a new join
+  link uses the join host is chosen per link (`via`, §3.1); the default is
+  the join host when one is configured.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
   the join exchange response (`text/plain`) and a project's logo and
@@ -48,7 +83,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/j/{token}`,
-  `/join/{token}`, `/r/{token}` and `/runners/pair/{token}` as `…`. The server's default access log is off.
+  `/join/{token}`, `/r/{token}` and `/runners/pair/{token}`, and the single
+segment of a join-host path (above), as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
   (`web/context/rendering.md`).
@@ -209,7 +245,7 @@ and the inbox bounded; what does not fit goes into the repository.
 | `POST /auth/login` `{handle, password}` | anyone | sets the cookies below; 200 `{"member": …}` or `unauthenticated` |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
-| `GET /auth/session` | human | the current session: `{member, csrf_token, expires_at}` |
+| `GET /auth/session` | human | the current session: `{member, csrf_token, expires_at, join_url}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
 `maity_csrf` (`Secure; SameSite=Lax; Path=/`, readable by the page). The
@@ -222,6 +258,16 @@ also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`. When
 a request carries both a cookie and an `Authorization` header, the header
 authenticates and the cookie is ignored; the CSRF rule applies whenever
 the cookie authenticated the call.
+
+The cookies belong to the public host only: they carry no `Domain`
+attribute, so a browser never sends them to a join host (§1.1), even one
+under the public host's domain. On the join host the hub sets no cookie,
+reads none and checks no CSRF token; a cookie or an `Authorization`
+header presented there is ignored, as on every unauthenticated surface,
+and changes no answer (a credential in a body or query string is still
+`credential_in_payload`, §2.2). `GET /auth/session` also returns
+`join_url`: the configured join URL, or `null` — the dashboard shows the
+"join link via <join host>" choice only when it is set.
 
 Login is limited to 10 attempts per minute per source address and per
 handle (`rate_limited`), and refuses `Sec-Fetch-Site: cross-site` like
@@ -445,6 +491,15 @@ publishes the port on loopback only, and the hub logs a warning at
 startup. A hub that agents reach over a network runs behind TLS and
 without the flag.
 
+A join host (§1.1) goes through the same rules: the same trusted proxies,
+the same scheme and address decision, `insecure_transport` for the
+exchange over plain HTTP. The Helm chart's `ingress.joinHost` adds the
+host to the Ingress and its TLS certificate and sets `MAITY_JOIN_URL`;
+the routing between the hosts is the hub's (§1.1), so the Ingress sends
+the whole host to the hub. A reverse proxy may in addition restrict the
+join host to `GET` and `POST` on a single path segment at the edge; the
+live `maity.team` restricts its join host in Traefik.
+
 ## 3. Join
 
 ### 3.1 The join link (human)
@@ -465,7 +520,8 @@ without the flag.
   "areas": ["hub/"],
   "capabilities": [],
   "briefing": "You are the hub's second pair of eyes: …",
-  "ttl_seconds": 900
+  "ttl_seconds": 900,
+  "via": "join"
 }
 ```
 
@@ -478,23 +534,34 @@ know beyond the rules. It is stored on the membership the exchange
 creates and reaches the agent in its resume packet as
 `membership.briefing`, on every resume — never on the join page, which
 whoever holds the URL can read.
+`via` (optional) picks the host the link is built on: `"join"` (the join
+host, §1.1) or `"public"` (`MAITY_PUBLIC_URL`). It defaults to `"join"`
+when a join host is configured and to `"public"` otherwise; `"join"`
+without a join host is `invalid` with `details.fields.via: "no_join_host"`.
+The dashboard's join dialog shows it as a checkbox "join link via <join
+host>", on by default, only when a join host is configured.
 Response `201`:
 
 ```json
 {
   "id": "join-0007",
-  "join_url": "https://maity.team/j/9fK2…",
+  "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
-  "paste_line": "maity join https://maity.team/j/9fK2… --code Q7MD-3XPL-8ZWE",
+  "paste_line": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
   "agent_id": "agt-b",
   "project": "maity",
+  "via": "join",
   "expires_at": "2026-10-21T14:00:00Z"
 }
 ```
 
-`join_url`, `code` and `paste_line` appear in this response only. `GET`
-lists `{id, agent_id, role, created_by, created_at, expires_at, used_at,
-burned, revoked_at}` and nothing that opens the join. `DELETE` revokes
+`join_url` and `paste_line` follow `via`: on the join host the URL is
+`https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
+without a join host it is `https://maity.team/j/9fK2…` as before. The
+token is valid in both shapes whatever `via` says. `join_url`, `code` and `paste_line`
+appear in this response only. `GET` lists `{id, agent_id, role,
+created_by, created_at, expires_at, used_at, burned, revoked_at, via}`
+and nothing that opens the join. `DELETE` revokes
 an unused join and returns it with `revoked_at` (200); a join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
 is `invalid_transition` with `details.from` (`used`, `burned`,
@@ -526,7 +593,11 @@ Unauthenticated. Both paths serve the same document. `Accept: text/html`
 dashboard — documentation only, no form, nothing on that page performs
 the exchange, so a credential is never displayed on a screen; anything
 else gets `text/markdown`. An unknown, used, expired or revoked token is
-`not_found` on both. The document never contains the code.
+`not_found` on both. The document never contains the code. On the join
+host the page is `GET https://join.<domain>/{token}` (§1.1) and the same
+document; its exchange call is `POST` to that same URL, and every URL
+after it — `/me/resume`, `/help`, the dashboard link — is on the public
+URL, so the agent talks to the public host from the exchange on.
 
 The Markdown is the onboarding for the first ten minutes and is written
 for an agent that has never heard of Maity and has no tool installed:
@@ -611,7 +682,11 @@ the agent uses a directory of its own and sets `MAITY_STATE_DIR` to it,
 the CLI's rule.
 
 The non-secret facts travel in headers; everything else comes from the
-resume packet. The join is consumed on the first successful exchange; a
+resume packet. On the join host the exchange is `POST
+https://join.<domain>/{token}` with the same body and the same answer
+(§1.1), and the recipe's URL is that one. `Maity-Hub` is always the
+public URL, from either host: every later call goes there, and the CLI
+checks the value before it keeps anything (§13). The join is consumed on the first successful exchange; a
 second call with the same token is `not_found`. Errors: `insecure_transport`
 (403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
 code is not consumed), `code_invalid`
@@ -2063,6 +2138,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
 
+The index is the public host's. A join host (§1.1) answers `GET` and
+`POST /{token}` at its root, the join page and the join exchange, and
+`not_found` to everything else.
+
 What the hub enforces, as one list: authentication and project
 isolation (`not_found` across projects, agents cannot enumerate), scopes
 per membership (the administrative scopes on human memberships only),
@@ -2120,6 +2199,23 @@ Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
 `Idempotency-Key` except `POST /me/resume`, `POST /join/{token}`, `POST
 /runners/pair/{token}`, and the runner's `hello`, `status` and `join`
 (§1.5).
+
+**Where `maity join` sends the exchange.** The CLI derives it from the
+URL's shape: a `/j/{token}` URL (or `/api/v1/join/{token}`) → `POST
+/api/v1/join/{token}` on that host; a URL whose path is one segment (a
+join-host URL, §1.1) → `POST` to that same URL. Anything else is not a
+join URL (exit 1).
+
+**The hub URL from an exchange.** `maity join` and `maity runner pair`
+keep the `Maity-Hub` header of the exchange as the hub's URL (the URL
+they were given when the header is missing) only if it passes the CLI's
+transport rule (`https`; plain HTTP only to a loopback hub, as for any
+hub URL) and its host equals the host of the join or pair URL or is that
+host's parent domain (`join.maity.team` → `maity.team`; `maity.team` →
+`maity.team`). Otherwise the command stops with exit 1 and stores
+nothing — no credential, no hub URL, no pointer lines — and says why; the
+join or enrollment is used by then, so the human creates a new one. The
+CLI follows no redirect on any call.
 
 `maity placement …` and `maity runners` run in an agent's clone, signed
 with the agent's credential, for agents with `agents:propose`; they never
@@ -2240,6 +2336,9 @@ credential as `text/plain`, a file the CLI writes and never prints.
   work like a join's: single use, expire with `expires_at`, the
   enrollment is burned after three wrong codes, and the exchange is
   rate limited per source address (10 per minute).
+- Pairing lives on the public URL only: `pair_url` and `pair_line` are
+  always built on `MAITY_PUBLIC_URL`, and a join host (§1.1) answers
+  `not_found` to every pairing path.
 
 ```
 POST /api/v1/runners/enrollments
@@ -2287,6 +2386,8 @@ enrollment was created is `invalid` and leaves the enrollment unused.
 There is no pairing page: whatever the token, `GET /r/{token}` answers
 `not_found` and `GET /api/v1/runners/pair/{token}` answers
 `method_not_allowed`, so a URL opened in a browser leaks nothing.
+`Maity-Hub` is the public URL, and `maity runner pair` checks it by the
+rule of §13 before it writes anything.
 
 ### 15.3 Runners and the runner view
 
