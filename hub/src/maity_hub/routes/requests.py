@@ -16,7 +16,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
@@ -608,6 +608,8 @@ def answer(
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
         _refuse_unless_open(row)
+        if inbox.needs_a_human(row, mine):
+            raise humans_only("under spawn_consent_by: human only a human answers this")
         if not inbox.may_answer(conn, row, mine):
             raise forbidden("requests:answer")
         if inbox.is_asker(row, mine):

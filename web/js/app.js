@@ -70,7 +70,7 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
-    if (parts[0] === "account") return { scope: "account" };
+    if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
     if (parts[0] === "p" && parts[1]) {
@@ -148,6 +148,54 @@ window.Maity = window.Maity || {};
 
   // State (owner and admin, with a reason) and absence (owner only), as
   // PATCH /projects/{slug}.
+  // The hub's rule for a repository URL (§6.1), as the create view says it too.
+  const FORGE_RULE = "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.";
+  M.FORGE_RULE = FORGE_RULE;
+
+  // The repository (§6.1, project:admin, humans only): where the probe, the
+  // Keep the Why dashboard and the runners' clones look. https only here;
+  // the hub checks the forge host. Changing or removing it asks first.
+  function repositoryForm(ctx) {
+    const current = ctx.project.repository && ctx.project.repository.url;
+    const status = statusLine();
+    const input = h("input", { id: "repo-url", type: "url", placeholder: "https://github.com/owner/name",
+      autocomplete: "off", spellcheck: "false", "aria-describedby": "repo-url-hint repo-url-error" });
+    input.value = current || "";
+    const error = h("p", { class: "field-error", id: "repo-url-error", role: "alert" });
+    const fail = (text) => { error.textContent = text; input.setAttribute("aria-invalid", "true"); input.focus(); };
+    return h("form", {
+      class: "inline-form repository-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        input.removeAttribute("aria-invalid");
+        const url = input.value.trim().replace(/\/+$/, "");
+        if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(FORGE_RULE); return; }
+        if (current && !window.confirm(url
+          ? "Change the repository to " + url + "? The probe, the Keep the Why dashboard and new clones of runners follow it."
+          : "Remove the repository? The probe and the Keep the Why dashboard stop, and runners cannot clone for this project.")) return;
+        status.busy("Saving…");
+        try {
+          await M.api.patch(ctx.base, { repository: url ? { url } : null });
+          render();
+        } catch (err) {
+          const fields = err.code === "invalid" && err.details && err.details.fields;
+          const why = fields && (fields["repository.url"] || fields.repository);
+          if (why) { status.done(); fail(why === "not_a_configured_forge" ? FORGE_RULE : String(why)); }
+          else status.fail("Repository not saved: ", err);
+        }
+      },
+    },
+    h("h2", { class: "panel-title", id: "repo-heading" }, "Repository"),
+    h("label", { for: "repo-url" }, "URL"), input,
+    h("p", { class: "hint", id: "repo-url-hint" }, "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it."),
+    error,
+    h("button", { type: "submit" }, "Save repository"),
+    status.el);
+  }
+
   function projectPanel(ctx) {
     const status = statusLine();
     const save = async (body, label) => {
@@ -180,6 +228,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
+    if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).
     if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
     if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
@@ -212,21 +261,12 @@ window.Maity = window.Maity || {};
   // humans: what shows now and where it comes from, upload, and removing an
   // upload (the forge's image then applies again). The type is read from the
   // file's first bytes, as the hub reads it; at most 1 MiB.
-  const IMAGE_MAX = 1024 * 1024;
+  const { sniffImage, IMAGE_MAX } = M.dom;
   const SOURCES = { uploaded: "uploaded here", forge: "from the repository's forge" };
   const IMAGE_REASONS = {
     unsupported_type: "not a PNG, JPEG or WebP image",
     too_large: "larger than 1 MiB",
   };
-
-  async function sniffImage(file) {
-    const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-    const at = (i, bytes) => bytes.every((v, k) => b[i + k] === v);
-    if (at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
-    if (at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
-    if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return "image/webp";
-    return null;
-  }
 
   // Set by an upload or a removal; the next header opens the panel with it.
   let imagesNote = null;
@@ -513,7 +553,7 @@ window.Maity = window.Maity || {};
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
         { label: "Profile", href: "#/account" },
-        { label: "Avatar", disabled: true, why: "coming soon" },
+        { label: "Picture", href: "#/account/picture" },
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
@@ -781,7 +821,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "new") {
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
-        await M.views.account(ctx, root);
+        await M.views.account(ctx, root, where.args);
       } else if (where.scope === "admin-users") {
         await M.views.adminUsers(ctx, root);
       } else if (where.scope === "runners") {

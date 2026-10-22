@@ -1295,8 +1295,11 @@ area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
-with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
-join that carries `reports_to`, against the project's current members.
+with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
+the project's current members. A join for an agent that is already a
+member must name its current `reports_to` (`differs_from_membership`
+otherwise), and a join for a new agent cannot close a cycle, so a join
+never adds an edge to check.
 Removing a member sets `reports_to` to `null` on everyone who reported to
 them (`member_updated` for each), so the chain never names a former member.
 
@@ -2051,10 +2054,11 @@ Two sets per reader, because reading and waking are different things:
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
 
-A mention wakes through this rule and no other: it puts `member:<id>` in
-the audience of the message or the `mentioned` event, so the mentioned
-member's `maity wait` returns it — a supervised session too, since the
-audience is then more than `all`. A member who mentions itself is not
+A mention wakes through this rule and no other: unless `to` already
+reaches the member (below), it puts `member:<id>` in the audience of the
+message or the `mentioned` event, so the mentioned member's `maity wait`
+returns it — a supervised session too, since the audience is then more
+than `all`. A member who mentions itself is not
 woken (its own echo). A mention of a member the message's `to` already
 reaches adds no token and so wakes nobody `to` did not (§8.6).
 

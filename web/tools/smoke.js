@@ -17,6 +17,7 @@ class Node_ {
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
   insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); return c; }
   removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; return c; }
+  replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
   set textContent(v) { this.childNodes = []; if (v !== "") this.appendChild(new Text_(String(v))); }
@@ -394,6 +395,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me" ? realGet5(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : realGet5(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/board");
   expect(!byId("chk-rel-0001-chk-1") && !btn(rel(), "Edit checklist"), "release: no editing without releases:write");
+  expect(!main.querySelector("form.card-order"), "board: without tasks:admin no card offers Place");
   win.Maity.api.get = realGet5;
   await go("#/p/sample/board");
   const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
@@ -821,6 +823,57 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const asg1 = bCard("tsk-0001").querySelector("form.card-assign select"); asg1.value = "agt-b";
   bCard("tsk-0001").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Assigning failed: It is claimed with a live lease"), "board: a live lease is not taken over, said in words");
+  // Order within a column (docs/api.md §6.4): by rank, then created_at, then id.
+  const colIds = (st) => colEl(st).querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  expect(JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0009", "tsk-0001", "tsk-0007"]), "board: a column in the hub's order, a ranked card first " + JSON.stringify(colIds("in_progress")));
+  const ordSel = (id) => bCard(id).querySelector("form.card-order select");
+  expect(JSON.stringify(ordSel("tsk-0009").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move down", "To the bottom"])
+    && JSON.stringify(ordSel("tsk-0001").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move up", "Move down"])
+    , "board: Place offers the moves the card's place allows");
+  expect(!main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === "done").querySelector("form.card-order"), "board: closed cards keep their order");
+  bProto.focus = function () { document.activeElement = this; };
+  const ordBefore = bWrites.length;
+  bCard("tsk-0009").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[ordBefore]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0009/move", { after: "tsk-0001" }])
+    && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0001", "tsk-0009", "tsk-0007"]) && text(main).includes("tsk-0009 is now below tsk-0001."),
+    "board: Move down places the card below its neighbour, once the hub answered");
+  expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "order:tsk-0009", "board: the focus stays on the placed card's Place");
+  ordSel("tsk-0007").value = "top";
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1][2]) === JSON.stringify({ to: "top" }) && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0007", "tsk-0001", "tsk-0009"]),
+    "board: To the top");
+  bProto.focus = bFocus; document.activeElement = undefined;
+  // Dragging within the column: above or below the card it is let go over.
+  bCard("tsk-0009").dispatch("dragstart", { dataTransfer: null });
+  expect(colEl("in_progress").classList.contains("drop-ok"), "board: its own column takes it while dragging");
+  const overCard = bCard("tsk-0007").querySelector(".card-id");
+  colEl("in_progress").dispatch("dragover", { target: overCard });
+  expect(bCard("tsk-0007").classList.contains("drop-before"), "board: the spot above the card is marked");
+  colEl("in_progress").dispatch("drop", { target: overCard }); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0009/move", { before: "tsk-0007" }])
+    && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0009", "tsk-0007", "tsk-0001"]) && !main.querySelector("article.drop-before"),
+    "board: dropped over a card's upper half, placed above it");
+  bCard("tsk-0009").dispatch("dragstart", { dataTransfer: null });
+  const lower = bCard("tsk-0001");
+  lower.getBoundingClientRect = () => ({ top: 0, height: 100 });
+  colEl("in_progress").dispatch("drop", { target: lower, clientY: 80 }); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1][2]) === JSON.stringify({ after: "tsk-0001" }) && colIds("in_progress")[2] === "tsk-0009",
+    "board: dropped over a card's lower half, placed below it");
+  // A neighbour that moved meanwhile: the board is read again and says so.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("gone", 400, p, "invalid", {}));
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Reordering failed: the card next to it moved or changed meanwhile; the board shows the order as it is now."),
+    "board: a stale neighbour re-reads the board and says so");
+  // A not_found while card and neighbour are still in place: a hub without the endpoint.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {}));
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Reordering failed: this hub does not order cards yet."), "board: a hub without the move endpoint is said as such");
+  win.Maity.api.post = (p, b) => { bWrites.push(["POST", p, b]); return bPost(p, b); };
+  // The mock as the hub: a neighbour in another column is invalid; a member may not order.
+  let otherCol = null;
+  try { await bPost("/projects/maity/tasks/tsk-0001/move", { before: "tsk-0006" }); } catch (err) { otherCol = err; }
+  expect(otherCol && otherCol.code === "invalid", "board: the mock refuses a neighbour from another column");
+
   // Filters by member and area.
   const fm = byId("board-member"); fm.value = "agt-b"; fm.dispatch("change");
   const visibleIds = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]).sort();
@@ -1152,10 +1205,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && hintLink.getAttribute("href") === "#/p/maity/message/%40agent-c", "message: a chat's @name is said to notify nobody, with a project message offered");
   chatText.value = "mail me@agent-c"; chatText.dispatch("input");
   expect(hintEl().hidden, "message: an @ inside a word gives no hint");
+  chatText.value = "run `@agent-c` or\n```\n@agent-c\n```"; chatText.dispatch("input");
+  expect(hintEl().hidden, "message: an @name in code gives no hint, as the hub skips code");
   chatText.value = ""; chatText.dispatch("input");
   // Opened from a chat with the @name in it.
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
+
+  // Markdown in a chat (js/markdown.js): text nodes only, https links only.
+  const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
+  const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
+  const mdP = MD("First line\nsecond line\n\nNext paragraph with `a <b>` code, **strong**, *em* and _em_.");
+  expect(JSON.stringify(tagsOf(mdP)) === '["p","p"]' && mdP.childNodes[0].querySelector("br") && mdP.querySelector("code").textContent === "a <b>"
+    && mdP.querySelector("strong").textContent === "strong" && mdP.querySelectorAll("em").length === 2, "markdown: paragraphs, line breaks, code, strong and em");
+  const mdHtml = MD("<script>alert(1)</script> and <b>bold</b>");
+  expect(!mdHtml.querySelector("script") && !mdHtml.querySelector("b") && text(mdHtml).includes("<script>alert(1)</script>"), "markdown: raw HTML stays visible as text");
+  const mdLinks = MD("[ok](https://example.org/a) [no](javascript:alert(1)) see https://maity.dev/x, and http://plain.example");
+  const mdA = mdLinks.querySelectorAll("a");
+  expect(mdA.length === 2 && mdA[0].getAttribute("href") === "https://example.org/a" && mdA[0].getAttribute("rel") === "noopener noreferrer"
+    && mdA[1].getAttribute("href") === "https://maity.dev/x" && text(mdLinks).includes("[no](javascript:alert(1))") && text(mdLinks).includes("http://plain.example"),
+    "markdown: links only when plain https, the rest as written");
+  const mdBlock = MD("# Title\n- one\n- two\n1. first\n> quoted\n> more\n\n```js\nconst a = `x`;\n```");
+  expect(JSON.stringify(tagsOf(mdBlock)) === '["p","ul","ol","blockquote","div"]' && mdBlock.childNodes[0].querySelector("strong") && mdBlock.querySelectorAll("ul li").length === 2
+    && text(mdBlock.querySelector("blockquote")).includes("quoted") && mdBlock.querySelector("pre code").textContent === "const a = `x`;"
+    && text(mdBlock.querySelector(".md-lang")) === "js" && btn(mdBlock, "Copy"), "markdown: a heading kept small, lists, a quote, a fenced block with its language and Copy");
+  btn(mdBlock, "Copy").click(); await tick();
+  expect(ctx.copied === "const a = `x`;", "markdown: Copy puts the code on the clipboard");
+  const mdPre = mdBlock.querySelector("pre");
+  expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
+    && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
+    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+  // A deep quote stops nesting instead of overflowing the stack.
+  const mdDeep = MD(">".repeat(5000) + " deep");
+  let quoteDepth = 0;
+  for (let q = mdDeep.querySelector("blockquote"); q; q = q.querySelector("blockquote")) quoteDepth += 1;
+  expect(quoteDepth === 8 && mdDeep.querySelector(".md-deep") && text(mdDeep).includes("deep"), "markdown: quotes nest at most eight deep, the rest as written");
+  const mdFences = MD("```python title=x.py\nprint(1)\n```\n  ~~~~\n```\nstill code\n~~~~~\n3. three\n4. four");
+  const mdCodes = mdFences.querySelectorAll("pre code");
+  expect(mdCodes.length === 2 && mdCodes[0].textContent === "print(1)" && text(mdFences.querySelector(".md-lang")) === "python"
+    && mdCodes[1].textContent === "```\nstill code" && mdFences.querySelector("ol").getAttribute("start") === "3",
+    "markdown: a fence with an info string, an indented tilde fence closed only by a long enough one, a list starting at 3");
+  const mdInfo = MD("``` not `a` fence\ntext");
+  expect(!mdInfo.querySelector("pre"), "markdown: a backtick fence whose info string has a backtick is no fence");
+  const mdTrick = MD("[https://bank.example](https://evil.example/x) [a](https://bank.example@evil.example) [b](https://ev\u202eil.example)");
+  expect(mdTrick.querySelectorAll("a").length === 1 && text(mdTrick).includes("(goes to evil.example)")
+    && text(mdTrick).includes("[a](https://bank.example@evil.example)"),
+    "markdown: a link text that looks like another address says where it goes; userinfo and bidi characters are no link");
+  expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
+  const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
 
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
@@ -1173,6 +1270,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!conv("Agent B").querySelector(".preview") && text(conv("Agent C")).includes("paused"), "chat: no messages, no preview; presence in words");
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelectorAll(".msg").length === 2, "conversation with A");
+  expect(main.querySelector("li.msg.in .md p") && main.querySelector("li.msg.in .md br"), "chat: an agent's message is drawn as Markdown, its line break kept");
+  const quoteBtn = main.querySelector("li.msg.in").querySelectorAll("button").find((b) => b.textContent === "Quote");
+  quoteBtn.click(); await tick();
+  expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
+    "chat: Quote puts the message into the composer as a quote");
+  byId("chat-text").value = ""; byId("chat-text").dispatch("input");
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
   // A draft per chat survives switching to another chat and back.
@@ -1527,6 +1630,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "logo: without logos on /me, the project views are read and the logo still shows");
   win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
+  // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the forge.
+  const repoPatches = [];
+  const repoRealPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if ("repository" in b) repoPatches.push(b); return repoRealPatch(p, b); };
+  await go("#/p/maity/inbox"); await projectSettings();
+  const repoIn = () => byId("repo-url");
+  const repoSave = async () => { header.querySelector("form.repository-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  expect(repoIn() && repoIn().value === "https://github.com/oliver-zehentleitner/maity", "repository: Project settings shows the project's repository");
+  repoIn().value = "http://github.com/a/b"; await repoSave();
+  expect(!repoPatches.length && text(byId("repo-url-error")).startsWith("Must be https://") && repoIn().getAttribute("aria-invalid") === "true",
+    "repository: anything but an https forge URL is refused at its field, nothing sent");
+  repoIn().value = "https://gitlab.com/a/b"; await repoSave();
+  expect(repoPatches.length === 1 && text(byId("repo-url-error")).startsWith("Must be https://"), "repository: the hub's not_a_configured_forge is said at the field");
+  let repoAsked = null;
+  win.confirm = (q) => { repoAsked = q; return true; };
+  repoIn().value = "https://github.com/acme/widget/"; await repoSave();
+  const repoNow = (await win.Maity.api.get("/projects/maity")).repository;
+  expect(JSON.stringify(repoPatches[1]) === JSON.stringify({ repository: { url: "https://github.com/acme/widget" } }) && repoNow.url === "https://github.com/acme/widget"
+    && /^Change the repository to https:\/\/github\.com\/acme\/widget\?/.test(repoAsked), "repository: a change asks first, then is sent without the trailing slash");
+  await projectSettings();
+  repoIn().value = ""; await repoSave();
+  expect(JSON.stringify(repoPatches[2]) === JSON.stringify({ repository: null }) && (await win.Maity.api.get("/projects/maity")).repository === null
+    && repoAsked.startsWith("Remove the repository?"), "repository: emptied, it is removed after asking");
+  win.confirm = () => true;
+  await repoRealPatch("/projects/maity", { repository: { url: "https://github.com/oliver-zehentleitner/maity" } });
+  win.Maity.api.patch = repoRealPatch;
   // Account: change the password (docs/api.md §2.1).
   // The profile menu: the avatar, the account, what is still to come, signing out (js/menu.js).
   const profileButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: "));
@@ -1539,10 +1668,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Avatar · coming soon", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].attrs["aria-disabled"] === "true", "header: arrows move through the items; one still to come is disabled");
+  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
+    "header: arrows move through the items; Picture goes to the account's picture");
+  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[3].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[3],
+    "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
   pMenu.dispatch("keydown", { key: "Escape" });
@@ -1578,6 +1711,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(byId("password-current-error")) === "This is not your current password." && byId("password-current").getAttribute("aria-invalid") === "true",
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
+
+  // Pictures (docs/api.md §6.10): one's own and one's agents', on the account.
+  const avCalls = [];
+  win.Maity.api.putImage = (p, blob, type) => { avCalls.push(["PUT", p, type]); return realPut(p, blob, type); };
+  win.Maity.api.del = (p) => { avCalls.push(["DELETE", p]); return realDel(p); };
+  await go("#/account/picture");
+  const avHeading = main.querySelector(".picture-heading");
+  expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
+    && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
+  const avAgents = main.querySelectorAll(".picture-list li");
+  // The fixtures' seven, and any joined earlier in this run.
+  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @agent-b")), "picture: the human's agents, each with its own upload");
+  await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
+  expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
+  expect(!avCalls.length && text(main).includes("Not uploaded: larger than 1 MiB"), "picture: over 1 MiB is refused before sending");
+  await pick("avatar-file-hum-maintainer", fakeFile(WEBP, 2000, "image/png"));
+  await tick(); await tick();
+  const meAfter = await win.Maity.api.get("/me");
+  const memberAfter = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "hum-maintainer");
+  expect(JSON.stringify(avCalls[0]) === JSON.stringify(["PUT", "/me/avatar", "image/webp"]) && meAfter.member.avatar_source === "uploaded"
+    && memberAfter.avatar_source === "uploaded" && memberAfter.avatar_url === meAfter.member.avatar_url,
+    "picture: uploaded with the sniffed type; the member is the same everywhere");
+  expect(text(main).includes("Picture uploaded.") && text(main).includes("Uploaded.") && btn(main, "Remove the upload"), "picture: the page says so and offers Remove");
+  btn(main, "Remove the upload").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(avCalls[1]) === JSON.stringify(["DELETE", "/me/avatar"]) && text(main).includes("Uploaded picture removed; the generated one shows again.")
+    && !btn(main, "Remove the upload"), "picture: Remove deletes the upload; the generated picture applies again");
+  await pick("avatar-file-agt-b", fakeFile(PNG, 3000));
+  await tick(); await tick();
+  const bAfter = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "agt-b");
+  expect(JSON.stringify(avCalls[2]) === JSON.stringify(["PUT", "/agents/agt-b/avatar", "image/png"]) && bAfter.avatar_source === "uploaded",
+    "picture: an owner sets an agent's picture, which its member view carries");
+  // The hub's refusals in words.
+  const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));
+  win.Maity.api.putImage = refuse("invalid", { fields: { body: "dimensions" } });
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: more than 4096 pixels on a side"), "picture: the hub's dimensions refusal in words");
+  win.Maity.api.putImage = refuse("rate_limited", {});
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: too many changes of this picture in the last hour"), "picture: the rate limit in words");
+  win.Maity.api.putImage = () => Promise.reject(new win.Maity.api.ApiError("Not found", 404, "/me/avatar", "not_found", {}));
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: this hub does not take pictures yet"), "picture: a hub without the endpoint is said as such");
+  win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
+  // The mock as the hub: someone else's profile is not_found; ten changes an hour.
+  let notMine = null;
+  try { await win.Maity.api.del("/agents/agt-zz/avatar"); } catch (err) { notMine = err; }
+  let limited = null;
+  try { for (let k = 0; k < 12; k++) await win.Maity.api.del("/agents/agt-c/avatar"); } catch (err) { limited = err; }
+  expect(notMine && notMine.code === "not_found" && limited && limited.code === "rate_limited", "picture: the mock answers not_found for another's profile and limits ten changes an hour");
+  // An avatar is loaded only from the hub's own path, and one that fails to load gives way to the generated one.
+  let foreign = null;
+  try { win.Maity.dom.h("img", { src: "https://evil.example/api/v1/avatars/agt-a?v=1" }); } catch (err) { foreign = err; }
+  const avBox = document.createElement("div");
+  const avImg = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
+  avBox.appendChild(avImg);
+  const loaded = avBox.querySelector("img");
+  avImg.dispatch("error");
+  expect(foreign && loaded && avBox.querySelector("svg") && !avBox.querySelector("img"), "picture: only the hub's avatar path loads; a failed load shows the generated picture");
 
   // sign out, sign in
   profileButton().click(); await tick();
