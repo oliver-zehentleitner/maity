@@ -166,10 +166,10 @@ nav .count { margin-left: 6px; color: var(--accent); }
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
 
-.state-dot-build { background: var(--accent); }
-.state-dot-freeze, .state-dot-fixes-only { background: var(--warn); }
-.state-dot-accepted { background: var(--ok); }
-.state-dot-archived { background: var(--muted); }
+.dot.state-dot-build { background: var(--accent); }
+.dot.state-dot-freeze, .dot.state-dot-fixes-only { background: var(--warn); }
+.dot.state-dot-accepted { background: var(--ok); }
+.dot.state-dot-archived { background: var(--muted); }
 
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
