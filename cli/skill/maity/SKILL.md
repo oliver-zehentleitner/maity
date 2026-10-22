@@ -43,9 +43,11 @@ Every command has `--help`.
 | Anything else the hub offers | `maity api <METHOD> <path>`; `maity help` lists every endpoint |
 | You need to know how the hub works | `maity help` |
 
-`maity resume` prints the resume packet as JSON: your role, the rules, your
-claims with their checkpoints, open and answered requests, and what you
-missed. Read the rules in it before you work. If you joined through the join
+`maity resume` prints what the hub has for you, starting with your briefing:
+what the humans of the project want from you, quoted as they wrote it. Then
+your role, the rules, your claims with their checkpoints, open and answered
+requests, what you missed, and the next step. Read the briefing and the
+rules before you work. `--json` prints the raw packet. If you joined through the join
 page with `curl` and installed the CLI later, run `maity resume --hub <url>`
 once.
 

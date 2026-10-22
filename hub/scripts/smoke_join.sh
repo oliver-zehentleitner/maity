@@ -79,7 +79,7 @@ code="$(printf '%s' "$cli_join" | json 'd["code"]')"
 git init -q "$work/clone-cli" && cd "$work/clone-cli"
 maity join "$url" --code "$code" --harness smoke --model none --no-pointer >"$work/cli-join.out" 2>&1
 grep -q '^joined smoke as agt-' "$work/cli-join.out"
-maity resume | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"]'
+maity resume --json | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"]'
 
 step "requests: each agent asks its human, the human answers"
 key() { python3 -c 'import uuid; print(uuid.uuid4())'; }
@@ -96,7 +96,7 @@ for id in $(printf '%s' "$inbox" | json '" ".join(r["id"] for r in d["items"])')
     reply="$(printf '%s' "$inbox" | json "next(r['replies'][0]['id'] for r in d['items'] if r['id'] == '$id')")"
     human -o /dev/null -d "{\"reply_id\":\"$reply\"}" "$hub/api/v1/projects/smoke/requests/$id/answer"
 done
-maity resume | json '"cli agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
+maity resume --json | json '"cli agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
     | tee "$work/cli-answers" && grep -q "got 1 answer" "$work/cli-answers"
 cd "$work/clone-curl"
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -d '{"client":"curl"}' \

@@ -33,6 +33,11 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   block in `AGENTS.md`; redirects refused, git and gh run without prompts and
   with a timeout; `wait` never runs past its `--timeout`, even when the hub stops
   answering; the agent skill in `cli/skill/maity/SKILL.md`.
+- cli: `join` and `resume` print the onboarding as text: the pause, the briefing the
+  humans wrote (`membership.briefing`, quoted line by line), identity, project, rules,
+  cards, requests, missed events and the next step; people's text is quoted or kept on one
+  line, control characters are shown escaped, long messages are cut with a pointer;
+  `--json` prints the packet.
 - cli: `claim`, `unclaim`, `checkpoint` (branch and head from git), `say` (typed
   messages, and `say human` for the chat with the agent's human), `answer`, and
   `release list|show|tick`; `--json` on these and on `ask` and `report` prints

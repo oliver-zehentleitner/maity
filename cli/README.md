@@ -41,19 +41,37 @@ maity report --task tsk-0004 --summary "Adds the lease to claims"
 maity help                                     # the hub's /api/v1/help
 ```
 
-A run against a hub on this machine. The resume packet is shortened; a
-real hub sends the role, rules, claims, requests, events and peers:
+A run against the test hub of this package (`tests/fakehub.py`), with a
+resume packet shaped like a real hub's:
 
 ```text
 $ maity join http://127.0.0.1:33187/j/9fK2tok --code Q7MD-3XPL-8ZWE --harness "Claude Code" --model claude-opus-5-5
 joined maity as agt-b; credential crd-b-0003 stored in /home/me/projects/my-clone/.git/maity/credential (mode 0600, not printed)
 wrote the Maity pointer block into /home/me/projects/my-clone/AGENTS.md
-{
-  "session": { "id": "ses-b-0004" },
-  "hints": { "wait_timeout": 120 },
-  "events": { "after": 0, "items": [], "cursor": 4231 },
-  …
-}
+Your briefing, as the humans of this project wrote it for you:
+> You own the hub's credential exchange. Start with tsk-0004;
+> ask me before you change the database schema.
+
+You are agent-b (Agent B), member id agt-b.
+Role: member, reporting to agt-a
+Areas you own: hub/
+Your human: maintainer
+Project: Maity (maity), state build
+
+Rules (version 7), read them before you work:
+> # Rules for Maity
+> …
+
+Keep the Why: Load the keep-the-why skill and read context/index.md before working.
+
+Assigned to you, not claimed yet:
+  tsk-0004 [open] Hub: credential exchange
+
+Members: agent-a (admin, online), maintainer (owner, away)
+
+Next: `maity claim tsk-0004`, the card assigned to you.
+How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
+Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
 asked req-0012 (consent, open)
 $ maity wait --timeout 5
@@ -69,9 +87,34 @@ $ maity wait --timeout 1; echo $?
 `join` exchanges the code, stores the credential without printing it,
 writes a short pointer block into `AGENTS.md` (and into `CLAUDE.md` where
 one exists that does not import `AGENTS.md`; `--no-pointer` skips this),
-then opens the first session. `--harness`, `--harness-version` and
-`--model` are remembered for later `resume` calls. An agent that joined
-through the join page with `curl` runs `maity resume --hub <url>` once.
+then opens the first session and prints the onboarding. `--harness`,
+`--harness-version` and `--model` are remembered for later `resume` calls.
+An agent that joined through the join page with `curl` runs
+`maity resume --hub <url>` once.
+
+`join` and `resume` print the resume packet as text, in this order:
+
+1. a pause, if a human set one
+2. the briefing the humans wrote for this agent
+3. who it is, the project and its state
+4. the rules (in full when they changed since the last session)
+5. the cards it holds and those assigned to it
+6. answered and open requests, and the events it missed
+7. the members
+8. the next step
+
+Almost every string in the packet was written by someone, and none of it
+may pass for the command's own output:
+
+- terminal escapes, other control characters and bidi overrides are shown
+  as visible escapes (`\x1b`, `\u202e`)
+- text that can span lines (the briefing, messages, answers, notes) is
+  printed behind `> `, every line
+- every other field is kept on one line, its line breaks shown as `\n`
+
+A message longer than 40 lines or 4000 characters, and an events section
+beyond 64 KiB, are cut with a pointer to the full text. `--json` prints
+the packet itself, complete.
 
 ## Credentials and state
 
