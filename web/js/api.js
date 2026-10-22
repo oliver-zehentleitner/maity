@@ -626,6 +626,46 @@ window.Maity = window.Maity || {};
       };
       return req;
     }],
+    // §6.11 the overview: counts per column (closed ones after closed_after),
+    // open requests as this caller would list them, the latest reports.
+    ["GET", /^\/projects\/([^/]+)\/overview$/, (m, body, path, query) => {
+      const after = query.get("closed_after");
+      if (after !== null && Number.isNaN(Date.parse(after))) fail(400, "invalid", "closed_after is no time", path, { fields: { closed_after: "invalid" } });
+      const limit = query.get("limit") === null ? 10 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) fail(400, "invalid", "limit is 1 to 50", path, { fields: { limit: "invalid" } });
+      const cards = file(m[1], "tasks.json", path).items;
+      const counts = { proposed: 0, open: 0, in_progress: 0, blocked: 0, review: 0, done: 0, cancelled: 0 };
+      cards.forEach((t) => {
+        const closed = t.status === "done" || t.status === "cancelled";
+        if (closed && after && Date.parse(t.closed_at || t.updated_at) <= Date.parse(after)) return;
+        if (t.status in counts) counts[t.status] += 1;
+      });
+      const meId = me().member.id;
+      const role = roleIn(m[1]);
+      const answers = ["owner", "admin", "proxy"].includes(role);
+      const mine = (r) => r.to === meId || r.to === role;
+      const open = openFor(m[1]).filter((r) => answers || mine(r) || (r.asked_by && r.asked_by.member_id === meId));
+      const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
+      open.forEach((r) => { if (r.priority in byPriority) byPriority[r.priority] += 1; });
+      const members = file(m[1], "members.json", path).items;
+      const who = (id) => { const x = members.find((mm) => mm.id === id); return { member_id: id, handle: x ? x.handle : id, display_name: x ? x.display_name : id, avatar_url: x ? x.avatar_url || null : null }; };
+      const reports = cards.filter((t) => t.report && t.report.reported_at)
+        .sort((a, b) => (a.report.reported_at < b.report.reported_at ? 1 : -1)).slice(0, limit)
+        .map((t) => {
+          const r = t.report;
+          const code = r.code !== false;
+          return { task: { id: t.id, title: t.title, status: t.status, kind: t.kind, label: t.label || null },
+            reported_by: who(r.reported_by), reported_at: r.reported_at, code, verification: r.verification || null,
+            pr: code && r.pr_status === "found" && r.pr ? { number: r.pr.number, url: r.pr.url } : null,
+            pr_state: r.observed ? r.observed.pr_state || null : null, observed_at: r.observed ? r.observed.observed_at || null : null,
+            mismatch: !!r.mismatch };
+        });
+      return { server_time: nowIso(),
+        board: { counts, closed_after: after },
+        requests: { open: open.length, to_me: open.filter(mine).length, by_priority: byPriority,
+          oldest_open_at: open.length ? open.map((r) => r.created_at).sort()[0] : null },
+        reports };
+    }],
     ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path, query) => {
       const keep = statusFilter(query, "all");
       return { items: file(m[1], "tasks.json", path).items.filter(keep), next_cursor: null };

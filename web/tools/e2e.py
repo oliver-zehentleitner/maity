@@ -1300,6 +1300,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
     board_order_step(run, page)
+    overview_step(run, page)
 
 
 def board_order_step(run: Run, page: Page) -> None:
@@ -1346,6 +1347,30 @@ def board_order_step(run: Run, page: Page) -> None:
     expect(titles).to_have_text([upper, lower])
     run.a11y(page, "board, order")
     no_problems(run, "board order")
+
+
+def overview_step(run: Run, page: Page) -> None:
+    """The project at a glance (docs/api.md §6.11): links, members, counts that link on."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.locator("nav.views").get_by_role("link", name="Overview", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/overview$"))
+    main = page.locator("main")
+    expect(main.locator("section.overview-part").first).to_be_visible()
+    run.a11y(page, "overview")
+    if "this hub has no overview yet" in main.inner_text():
+        # Only a hub without the endpoint is skipped, and the page has to say so.
+        run.step("overview: this hub has no overview endpoint yet; links and members show, the counts are said missing")
+        run.problems = [p for p in run.problems if not re.match(r"GET /api/v1/projects/e2e-alpha/overview\?\S* answered 404$", p)]
+        no_problems(run, "overview")
+        return
+    run.step("overview: the owner sees the project at a glance; a column count opens the board")
+    counts = main.locator(".overview-counts li")
+    expect(counts).to_have_count(7)
+    expect(main.locator('.overview-counts li[data-status="cancelled"]')).not_to_have_text(re.compile(r"^0 "))
+    run.shot(page, "overview")
+    main.locator('.overview-counts li[data-status="open"] a').click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/board$"))
+    no_problems(run, "overview")
 
 
 def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:

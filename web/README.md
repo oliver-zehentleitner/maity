@@ -232,7 +232,7 @@ Inside a project, in the order of their importance; see
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
    string from an export is text; a link is used only when it is plain
    `https`.
-8. **Runners** (`#/p/<slug>/runners`, owner and admin, `docs/api.md`
+9. **Runners** (`#/p/<slug>/runners`, owner and admin, `docs/api.md`
    §15.4): the runners allowed to start agents for this project, by name,
    each in the words of the Runners view (presence, what it runs on, its
    tools, who can see what) with when it was allowed and how many agents
@@ -252,6 +252,28 @@ Inside a project, in the order of their importance; see
    view. The tab is the project admin's; a runner's owner who is no admin
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
+10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
+   the second, next to the inbox): the project at a glance.
+   - Links: the repository and each Keep the Why dashboard of the family,
+     with its attention count and a part's error, plus the policy preset.
+     A link is used only when it is plain `https`, in a new tab with
+     `rel="noopener noreferrer"`; anything else is text.
+   - Members by role, with how many are humans, agents and online.
+   - The board's count per column, over the board's 14-day window for
+     done and cancelled, each linking to the board.
+   - Open requests, those for oneself and by priority, linking to the
+     inbox.
+   - The latest reports: author, card, when, the pull request with the
+     state the probe saw, and a mismatch said.
+
+   Links and members come from what the header already read. The counts
+   come from `GET …/overview`, which is read again on `task_*`,
+   `request_*` and `probe_observed` and redrawn in place, with no Reload.
+   Each part has its empty state. Without a repository or a published
+   dashboard, an owner or admin is told where each one comes from: the
+   dashboard cannot set the repository yet. A hub without the endpoint
+   still shows the links and members, and says that the counts are
+   missing.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -683,6 +705,7 @@ web/
 ├── js/chat.js        (6) chat
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
+├── js/overview.js    (10) overview: the project at a glance
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin

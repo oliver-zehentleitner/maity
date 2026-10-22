@@ -722,3 +722,13 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-controls input[type="file"] { max-width: 100%; }
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
+/* The project at a glance (js/overview.js). */
+.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 12px; }
+.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.overview-part h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 1rem; }
+.overview-part .facts { margin: 0; }
+.overview-why, .overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.overview-reports li { overflow-wrap: anywhere; }
+.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 6px; }
+.overview-counts a { display: block; padding: 4px 6px; border-radius: 4px; background: var(--surface-2); text-decoration: none; }
+.overview-counts .n { font-weight: 600; font-variant-numeric: tabular-nums; }
