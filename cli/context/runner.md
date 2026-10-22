@@ -310,7 +310,7 @@ network domains start empty, so the hub and the forge have to be named, or
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
@@ -679,3 +679,42 @@ agents' home stays readable.
   a newly staged submodule, so `report` would miss a change. The
   configuration setting keeps git out of the submodule and still shows
   the staged gitlink.
+
+## In the `agent_user` layout everything on the agents' side belongs to the agents' user
+
+**Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user
+**See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
+**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), or a live run shows a harness writing where the agents' user cannot
+
+With `layout = "agent_user"`, every command for the agents runs as
+`sudo -n -u <agent_user> --`, with only the environment it needs passed
+explicitly. That covers the tmux server and its sessions, the clone, the
+join, the supervised loop, `gc`'s git and its revocation check, and stopping
+a process group. Everything the agents' side needs (tmux socket and
+configuration, logs, the harness settings and Codex's home) lives under
+`~<agent_user>/.maity-runner/` and is written as that user. The runner's
+state directory, its credential and its records stay the runner user's
+alone.
+
+**Reason:** the layout exists so that agents, and any repository code
+they run, cannot read the runner's credential or state. That only holds
+if nothing the agents need has to be inside the runner's 0700 state
+directory. Harness settings written as the agents' user can be changed
+by that user, but under this layout the OS user is the boundary. A
+setting an agent widens only reaches what that same user could already
+do with a shell. Agents under one `agent_user` still see each other's
+files and credentials; separating them needs one user per agent (ssh
+`own_user`, or pods).
+
+**Rejected alternatives:**
+- Harness settings owned by the runner and readable by the agents: they
+  would need a runner-owned directory the agents can traverse, and
+  Claude Code still loads the agents' user's own settings, which that
+  user can write.
+- Running tmux as the runner with `server-access` for the agents' user:
+  tmux 3.3 and later only, and the sessions' processes would still be
+  the runner's.
