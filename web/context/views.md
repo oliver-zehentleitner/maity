@@ -84,3 +84,133 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
+
+**Id:** b8c3a4f4-1e21-4de1-9a82-7abe86456259
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of an expired join still listed as open, relayed by the coordinator, 2026-10-22; web PR #107 and its review, 2026-10-22
+**Revisit when:** the hub sends a join's state itself, or a join's lifetime becomes much shorter than a minute
+
+Join an agent lists each join with the state its fields give, in the
+hub's order: revoked, used, burned (three wrong codes), expired; open
+joins first, the others muted and labelled. Expiry is judged by the
+hub's clock: this browser's clock corrected by the `Maity-Server-Time`
+of the last answer (docs/api.md §1.2), re-judged every 10 s while the
+view is open. A join that expired less than a minute ago keeps Revoke,
+and a Revoke the hub refuses (`invalid_transition`) is said and the list
+re-read.
+
+**Reason:** Revoke is the safety valve for a leaked line. A browser whose
+clock runs ahead would hide Revoke while the hub still accepts the line;
+the hub's time, and a minute's grace in which the hub decides, keep the
+valve where it is needed. The order mirrors the hub's, so the page never
+calls "expired" what the hub calls "used".
+
+**Rejected alternative:** the browser's clock alone — wrong by the
+client's skew, which on a laptop can be minutes. Hiding Revoke exactly at
+`expires_at` — the second the hub and the page disagree is the second a
+leaked line is pasted.
+
+## Cards move by a Move menu and by dragging, only where the hub's transition table allows; nothing is drag-only
+
+**Id:** c285771a-0b3a-4867-b66b-a1c7faa837de
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22; re-checked by the coordinator after card order arrived (its revisit condition), 2026-10-22: the Move menu and the transition rule still hold, the order within a column is its own entry
+**Revisit when:** the hub exposes the moves a caller may make
+**See:** views.md#cards-are-placed-within-a-column-by-a-place-menu-and-by-dragging-over-a-card-and-the-order-changes-only-once-the-hub-answered — 3785a685-e976-400f-b088-9321804d29fc — as of 2026-10-22
+
+Each card a human may move has a **Move** menu with exactly the moves the
+hub allows them, mirrored from its transition check (proposed ↔ open for
+the creator, holder or an admin; review → done or back with done
+authority; cancel for an admin or an open card's creator). A pointer may
+drag the card instead: while dragging, the allowed columns are outlined
+and the others dimmed; a card let go over a refused column is said in
+words on `dragend` (a browser fires no drop there) and nothing is sent.
+Placing a card within its column is a separate move with its own menu
+(see the entry linked above). The board's filters (member, area)
+work on the cards already loaded.
+
+**Reason:** a drag-only board leaves keyboard and phone users without a
+way to move a card; the menu is the path for both, and dragging is a
+shortcut over the same rule. Mirroring the table means the page offers
+no move the hub would refuse, and the hub still decides.
+
+**Rejected alternative:** offering every column and letting the hub
+refuse — every refusal would be a round trip and a surprise. Filters as
+query parameters to the hub — the board already holds every card of the
+window, so filtering there is instant and needs no new contract.
+
+## Cards are placed within a column by a Place menu and by dragging over a card, and the order changes only once the hub answered
+
+**Id:** 3785a685-e976-400f-b088-9321804d29fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
+**See:** views.md#cards-move-by-a-move-menu-and-by-dragging-only-where-the-hubs-transition-table-allows-nothing-is-drag-only — c285771a-0b3a-4867-b66b-a1c7faa837de — as of 2026-10-22
+
+The board draws each column in the hub's card order (§6.4). With
+`tasks:admin` an open card has a **Place** menu next to **Move**, built
+the same way: a select with only the moves its place allows (Move up,
+Move down, To the top, To the bottom) and one button. A pointer can drag
+the card over another card of its column instead; the pointer's half of
+that card decides above or below, and a marker shows it while dragging.
+Either way the page sends one `POST …/move` and shows the new order only
+from the board read after the hub's answer. When a `not_found` or
+`invalid` comes back, the board is read again: if the card and its
+neighbour are still where they were, the hub has no endpoint; otherwise
+the neighbour moved meanwhile. Done and cancelled cards are not placed.
+
+**Reason:** the menu gives the keyboard and the phone the same way the
+pointer has, as for Move. Waiting for the hub keeps the board from
+showing an order the hub refused or changed, because the hub may rank
+other cards of the column as well. Reading the board again after a
+refusal is the only way to tell a race from a missing endpoint.
+
+**Rejected alternative:** four buttons per card. They add four tab stops
+to every card on a long board, and the menu already says which moves
+exist. Reordering at once and rolling back on a refusal: a card that
+jumps and then jumps back is worse than a short wait, and the card's
+brief asks for the order only after the answer.
+
+## A membership is edited in one form and sent as one PATCH of what changed; a reports-to circle is refused before it is sent
+
+**Id:** ae257555-b3a4-4ba7-add3-1ab051c1f621
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request to set reports_to and areas from the dashboard, relayed by the coordinator, 2026-10-22; contract PR #118 (cycle), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub offers the edit as separate endpoints, or a membership gains fields that need their own confirmation
+
+Members → Manage holds one form for what docs/api.md §6.2 lets an admin
+change: role (owner only for a human), reports to (nobody or another
+member), areas (repository paths, the hub's pattern, never `..`),
+capabilities (`tag`). The briefing has one editor, on the agent's card,
+and is sent as typed. Save sends one `PATCH` with only the fields that
+changed; edits not yet saved are kept per row across redraws (Done drops
+them), and a 202 (a consent request, when a human's go is needed) is said
+as waiting, the draft dropped and the form drawn from the hub's state, so a
+second Save files no second request. A drafted boss who has left the
+project since is dropped and said at the field: a select that silently
+fell back to "nobody" would send `reports_to: null` and clear the boss the
+member has. A
+reports-to that would close a circle is refused before sending, in the
+words the hub's `cycle` refusal also gets. Capabilities the page does not
+offer are kept as they are.
+
+**Reason:** one form keeps an admin's change atomic (the hub applies it
+in one write) and the organisation view follows at once. Refusing a
+circle in the page spares a round trip and says why; the hub refuses it
+too. Keeping unknown capabilities means an older page never strips what a
+newer hub added.
+
+**Rejected alternative:** one control per field with its own Save — a
+role and a reports-to change that belong together would land as two
+writes, and a failure in between leaves half a change. Sending every
+field every time — a stale form would overwrite a change made meanwhile.

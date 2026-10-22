@@ -41,7 +41,10 @@ convention without a lint — one forgotten call is enough.
 
 A URL that comes from data — a pull request link a member typed into a
 release, say — becomes a link only when it is plain `https://`
-(`Maity.dom.safeUrl`); anything else is shown as text. The paste line a
+(`Maity.dom.safeUrl`); anything else is shown as text. Since 2026-10-22
+that also excludes a URL with user info before the host
+(`https://bank.example@evil.example`) and one with control, bidi or
+zero-width characters: each reads as one address and goes to another. The paste line a
 join returns, with its single-use code, is kept in the join view's own
 variables only: it is not stored in the page's storage, not put into the
 URL, not logged, and leaving the view drops it.
@@ -65,3 +68,100 @@ it can be read back from.
 is where the human checks a pull request, and a link there is what makes
 it usable. A blocklist of schemes — `https` alone is the one the forge
 uses, and an allowlist of one cannot miss a scheme.
+
+## A member's picture is generated from its id, as SVG nodes, unless an avatar the page may load exists
+
+**Id:** f6560be2-4153-4d19-adc7-6fdc8589991f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request for a picture that differs per member, relayed by the coordinator, 2026-10-22; web PR #128, 2026-10-22
+**Revisit when:** avatars can be uploaded (docs/api.md #136) and an upload should replace the generated one everywhere, or a design asks for another pattern
+
+Every member gets a picture: a mirrored 5×5 identicon and a hue, both
+from FNV-1a of the member id, so every client draws the same picture for
+the same member without asking the hub. It is built from SVG nodes
+(`createElementNS`), never from markup, and it is decorative: the name is
+always written beside it. The hue is set as a custom property through
+CSSOM (`style.setProperty("--avatar-h")`); the theme sets lightness and
+background, so it reads in light and dark. A member that carries an
+`avatar_url` shows that picture only where `h()` lets the page load it
+(the hub's own images); anything else falls back to the identicon.
+
+**Reason:** a picture per member helps tell agents apart at a glance, and
+deriving it from the id needs no hub field and no storage; SVG nodes keep
+the rule that nothing from data becomes markup (see the entries above).
+CSSOM instead of a `style` attribute keeps working under a strict CSP.
+
+**Rejected alternative:** initials on a coloured disc — two agents named
+"Agent B" and "Agent Builder" look the same. A hash-coloured `style`
+attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
+picture from a third-party avatar service — it would send member ids out.
+
+## Chat messages are Markdown drawn as DOM nodes by a small renderer of our own, never an HTML-producing library
+
+**Id:** 854c8122-770c-4c80-be9f-0ce9c90c0d2e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** messages need tables, images or nested lists, or another view wants Markdown beyond what the renderer covers
+
+A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
+with their line breaks, headings (a line of strong text, not a page
+heading), lists (a numbered one keeps its first number; nested lists are
+flattened), quotes (nested at most eight deep, deeper shown as written,
+so a message of thousands of `>` cannot exhaust the stack), fenced code
+(backticks or tildes, up to three spaces in, any info string whose first
+word is the language) with a Copy button and a warning when the code
+holds invisible bidi or zero-width characters, inline code (matching
+backtick runs), strong and em, and links only where the target is plain
+`https`; a link whose text looks like another address also says where
+it goes. Every piece of text becomes a text node; raw HTML stays visible as
+text, and anything not understood is shown as written. Quote puts a
+message into the composer as `>` lines, which the renderer draws as a
+quote.
+
+**Reason:** what people paste into a chat with an agent is code, commands
+and short lists; a dozen rules cover that. Building nodes keeps the rule
+that nothing from data becomes markup (the entries above), so no
+sanitiser has to be trusted.
+
+**Rejected alternative:** a Markdown library that produces HTML plus a
+sanitiser — a dependency from a CDN, and the safety of the page would
+rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
+before — code and lists from agents were unreadable.
+
+## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
+
+**Id:** 3ec853f0-4141-4e81-acdf-c0fee94c920b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card for the avatar upload (tsk-j4r5xbq5jp27) and docs/api.md §6.10, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub's CSP allows `blob:` images, the accounts design gives linked forge accounts their own screen, or project admins get a say over pictures
+**See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-10-22
+
+The human sets their own picture and their agents' pictures on the
+account (`#/account/picture`, the profile menu's **Picture**), never in a
+project's views. Before sending, the page checks the file the way the hub
+does: the type from its first bytes (PNG, JPEG or WebP) and at most
+1 MiB. It sends the raw body with the sniffed type and says the hub's
+other refusals in words. What shows afterwards is the hub's own image,
+loaded from `/api/v1/avatars/<id>?v=…`, the one avatar path `h()`
+allows. There is no preview of the chosen file before the upload.
+
+**Reason:** a picture belongs to the account or profile and is the same
+in every project (§6.10), so it is set where the account is, not where a
+membership is. Checking the bytes in the page saves sending a megabyte
+the hub would refuse, and the wording matches the logo's upload. Without
+a preview the page needs no new image source: the hub serves the page
+under a CSP without `blob:` images. The hub also crops, scales and
+re-encodes what it gets, so the stored image, not the chosen file, is the
+honest preview.
+
+**Rejected alternative:** a preview from an object URL before the upload.
+The CSP blocks it on the hub, and it would show a file the hub then
+changes. An editor in Members for project admins: §6.10 gives
+`members:admin` no say over pictures, because a removal in one project
+would remove the picture in all of them.

@@ -115,8 +115,11 @@ window.Maity = window.Maity || {};
         : "the agent waits for the answer"),
       req.ktw_ref ? [h("dt", null, "Reasoning"), h("dd", null, h("code", null, req.ktw_ref))] : null));
 
-    if (req.summary) append(body, h("p", { class: "summary pre" }, req.summary));
-    if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, req.tried));
+    // Mentions link to the member in the request's own project (docs/api.md §8.6).
+    const memberHref = (id) => ctx.projectLink(req.slug, "members", id);
+    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref);
+    if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
+    if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {
       append(body, h("h3", { class: "sub" }, "Options it sees"),
         h("ul", { class: "options" }, req.options.map((o) =>
@@ -133,9 +136,9 @@ window.Maity = window.Maity || {};
     if (req.status !== "open") {
       const a = req.answer;
       append(body, h("p", { class: "answered" },
-        (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req))
-        + (a && a.text ? " — “" + a.text + "”" : "")
-        + (a ? " · " + names.member(a.by) + (a.on_behalf_of ? " for " + names.member(a.on_behalf_of) : "") + " · " + formatTime(a.at) : "")));
+        (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req)),
+        a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
+        a ? " · " + names.member(a.by) + (a.on_behalf_of ? " for " + names.member(a.on_behalf_of) : "") + " · " + formatTime(a.at) : null));
       return body;
     }
 
@@ -168,6 +171,8 @@ window.Maity = window.Maity || {};
       h("div", { class: "free-text" },
         h("label", { for: textId }, "Free text"),
         text,
+        // @ offers this project's members; the hub links them, it pings nobody (§8.6).
+        M.mentionPicker(text, () => M.api.getAll("/projects/" + encodeURIComponent(req.slug) + "/members").then((r) => r.items), ctx.me.id),
         h("button", {
           type: "button",
           onclick: () => {
@@ -302,6 +307,7 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" },
         h("h2", null, ctx.scope === "all" ? "Waiting for you, all projects" : "Inbox"),
+        ctx.scope === "project" ? h("a", { class: "button-link", href: ctx.link("message") }, "Message the project") : null,
         h("label", { for: "inbox-sort" }, "Sort by"), sortSelect,
         showSelect ? [h("label", { for: "inbox-show" }, "Show"), showSelect] : null),
       listStatus.el,

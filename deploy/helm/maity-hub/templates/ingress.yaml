@@ -17,17 +17,22 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
+        {{- with .Values.ingress.joinHost }}
+        - {{ . | quote }}
+        {{- end }}
       secretName: {{ default (printf "%s-tls" (include "maity-hub.fullname" .)) .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    {{- range compact (list .Values.ingress.host .Values.ingress.joinHost) }}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "maity-hub.fullname" . }}
+                name: {{ include "maity-hub.fullname" $ }}
                 port:
                   name: http
+    {{- end }}
 {{- end }}

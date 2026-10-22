@@ -455,3 +455,75 @@ def test_report_done_without_authority_names_the_scope(
     _claim(agent, card)
     refused = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
     assert refused.json()["error"]["details"] == {"scope": "tasks:review"}
+
+
+# --- a report without code (§6.6) ----------------------------------------------------------
+
+
+NO_CODE = {"summary": "the review: three findings, see below", "pr_status": "none", "code": False}
+
+
+def test_a_report_without_code_carries_no_git_facts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", NO_CODE)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "review"
+    report = body["report"]
+    assert (report["code"], report["head"], report["branch"], report["pr"]) == (
+        False,
+        None,
+        None,
+        None,
+    )
+    assert (report["observed"], report["mismatch"]) == (None, False)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"head": "a" * 40},
+        {"branch": "agent-b/x"},
+        {"upstream": "origin/x"},
+        {"remote_head": "a" * 40},
+        {"pr_unknown_reason": "no gh"},
+        {"pr_status": "unknown"},
+    ],
+)
+def test_a_report_without_code_refuses_git_facts(
+    owner: flow.Human, make_client: ClientFactory, extra: dict[str, Any]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", {**NO_CODE, **extra})
+    assert response.status_code == 400
+    assert set(response.json()["error"]["details"]["fields"].values()) == {"not_with_code_false"}
+
+
+@pytest.mark.parametrize("missing", ["head", "branch", "remote_head"])
+def test_a_report_with_code_still_needs_its_git_facts(
+    owner: flow.Human, make_client: ClientFactory, missing: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    body = {k: v for k, v in _report().items() if k != missing}
+    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    assert response.json()["error"]["details"]["fields"] == {missing: "required"}
+
+
+def test_the_probe_never_runs_on_a_report_without_code(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import forge, probe
+
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    agent.post(f"/projects/maity/tasks/{card['id']}/report", NO_CODE)
+    assert probe.observe_report(migrated, forge.Forge("token"), card["id"]) is False

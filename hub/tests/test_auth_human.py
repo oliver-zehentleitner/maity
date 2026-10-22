@@ -104,7 +104,8 @@ def test_session_answers_member_csrf_token_and_expiry(
     client = make_client()
     _login(client)
     body = client.get("/api/v1/auth/session").json()
-    assert set(body) == {"member", "csrf_token", "expires_at"}
+    assert set(body) == {"member", "csrf_token", "expires_at", "join_url"}
+    assert body["join_url"] is None
     assert body["member"]["id"] == owner
     assert body["csrf_token"] == client.cookies["maity_csrf"]
     assert factory.at(body["expires_at"]) > clock.now() + timedelta(days=13)

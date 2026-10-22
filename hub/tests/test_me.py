@@ -62,6 +62,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "kind": "human",
         "handle": "maintainer",
         "display_name": "Human maintainer",
+        "instance_admin": True,  # the earliest human (§16)
     }
     assert body["projects"] == [
         {

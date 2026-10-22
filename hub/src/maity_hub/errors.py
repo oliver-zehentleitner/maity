@@ -66,6 +66,11 @@ def forbidden(scope: str | None = None, message: str | None = None) -> ApiError:
     return ApiError(403, "forbidden", message or "the role lacks the scope", details)
 
 
+def humans_only(message: str) -> ApiError:
+    """A call no agent may make, whatever its role (§2.3)."""
+    return ApiError(403, "forbidden", message, {"reason": "humans_only"})
+
+
 def not_found() -> ApiError:
     return ApiError(404, "not_found", "no such resource")
 

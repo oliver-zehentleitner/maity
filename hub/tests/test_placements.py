@@ -274,12 +274,55 @@ def test_an_agents_proposal_waits_for_consent(setup: Setup, make_client: ClientF
     assert request["placement"]["id"] == body["id"]
     assert request["placement"]["isolation"]["kind"] == "shared_user"
     assert "reason: a second pair of hands" in request["summary"]
-    self_answer = admin.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
-    assert (self_answer.status_code, error(self_answer)) == (409, "self_answer")
+    # Under the default `spawn_consent_by: human` no agent answers it, the proposer neither.
+    own = admin.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
+    assert own.json()["error"]["details"] == {"reason": "humans_only"}
     go = setup.owner.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
     assert get(setup, body["id"])["approval"]["status"] == "approved"
     assert runner_reads(setup) == [body["id"]]
+
+
+def test_only_a_human_answers_a_placements_consent_by_default(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    proposer, other = admin_agent(make_client, setup), admin_agent(make_client, setup)
+    body = place(setup, proposer, reason="more hands").json()
+    request_id = body["approval"]["request_id"]
+    path = f"/projects/maity/requests/{request_id}/answer"
+    refused = other.post(path, {"reply_id": "go"})
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"] == {"reason": "humans_only"}
+    assert other.post(path, {"reply_id": "no"}).status_code == 403  # nor a refusal
+    assert get(setup, body["id"])["approval"]["status"] == "pending"
+    packet = other.resume().json()["requests"]
+    assert request_id not in [r["id"] for r in packet["to_answer"]]
+    # An agent cannot change who answers: setting the policy is a human's.
+    change = {"policy": {"spawn_consent_by": "role"}, "reason": "let us"}
+    assert other.patch("/projects/maity", change).status_code == 403
+    assert setup.owner.post(path, {"reply_id": "go"}).status_code == 200
+
+
+def test_under_role_an_admin_agent_answers_a_placements_consent(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    setup.owner.patch(
+        "/projects/maity", {"policy": {"spawn_consent_by": "role"}, "reason": "agreed"}
+    )
+    proposer, other = admin_agent(make_client, setup), admin_agent(make_client, setup)
+    body = place(setup, proposer, reason="more hands").json()
+    request_id = body["approval"]["request_id"]
+    packet = other.resume().json()["requests"]
+    assert request_id in [r["id"] for r in packet["to_answer"]]
+    go = other.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert get(setup, body["id"])["approval"]["status"] == "approved"
+    # Never the proposer itself, whatever the policy.
+    again = place(setup, proposer, agent={"id": other.id}, reason="you too").json()
+    self_answer = proposer.post(
+        f"/projects/maity/requests/{again['approval']['request_id']}/answer", {"reply_id": "go"}
+    )
+    assert (self_answer.status_code, error(self_answer)) == (409, "self_answer")
 
 
 def test_no_refuses_and_a_withdrawal_closes(setup: Setup, make_client: ClientFactory) -> None:
