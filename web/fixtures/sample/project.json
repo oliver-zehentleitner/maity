@@ -31,5 +31,13 @@
     ]
   },
   "rules_version": 3,
-  "created_at": "2026-09-02T10:00:00Z"
+  "created_at": "2026-09-02T10:00:00Z",
+  "logo": {
+    "available": false,
+    "source": null
+  },
+  "banner": {
+    "available": false,
+    "source": null
+  }
 }

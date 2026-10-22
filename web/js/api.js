@@ -101,6 +101,15 @@ window.Maity = window.Maity || {};
     return file(slug, "project.json", path);
   }
 
+  // Logo and banner (docs/api.md §11.2). A fixture project points at an
+  // image next to its JSON; an upload in this tab becomes an object URL.
+  const IMAGE_KINDS = ["logo", "banner"];
+  const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+  const IMAGE_MAX = 1024 * 1024;
+  const uploaded = {};  // "<slug>/<kind>" -> object URL
+  const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
+  let imageSerial = 0;
+
   // A release card that may still change: closed ones are a record.
   function releaseCard(slug, id, path) {
     const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
@@ -234,6 +243,28 @@ window.Maity = window.Maity || {};
       return created;
     }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => project(m[1], path)],
+    ["GET", /^\/projects$/, () => ({ items: me().projects.map((p) => project(p.slug, "/projects/" + p.slug)) })],
+    ["PUT", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (!IMAGE_TYPES.includes(body.type)) fail(400, "invalid", "not PNG, JPEG or WebP", path, { fields: { body: "unsupported_type" } });
+      if (body.size > IMAGE_MAX) fail(400, "invalid", "larger than 1 MiB", path, { fields: { body: "too_large" } });
+      const key = m[1] + "/" + m[2];
+      if (p[m[2]] && p[m[2]].source === "forge") forgeImages[key] = p[m[2]];
+      if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
+      uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body) : "uploaded-" + key;
+      imageSerial += 1;
+      p[m[2]] = { available: true, source: "uploaded", etag: "\"up" + imageSerial + "\"" };
+      return { [m[2]]: p[m[2]] };
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const key = m[1] + "/" + m[2];
+      delete uploaded[key];
+      // The forge's image applies again, where the fixture had one.
+      const forge = forgeImages[key] || null;
+      p[m[2]] = forge ? Object.assign({}, forge) : { available: false, source: null };
+      return { [m[2]]: p[m[2]] };
+    }],
     ["PATCH", /^\/projects\/([^/]+)$/, (m, body, path) => {
       const p = project(m[1], path);
       if ("state" in body) {
@@ -475,7 +506,7 @@ window.Maity = window.Maity || {};
     return sessionCsrf;
   }
 
-  async function fromApi(method, path, body) {
+  async function fromApi(method, path, body, raw) {
     const init = {
       method,
       credentials: "same-origin",
@@ -487,7 +518,11 @@ window.Maity = window.Maity || {};
       const token = csrfToken();
       if (token) init.headers["X-CSRF-Token"] = token;
     }
-    if (body !== undefined) {
+    if (raw) {
+      // An image upload (§11.2): the raw bytes, typed, no JSON.
+      init.headers["Content-Type"] = raw;
+      init.body = body;
+    } else if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
     }
@@ -517,8 +552,8 @@ window.Maity = window.Maity || {};
     return res.json();
   }
 
-  function request(method, path, body) {
-    const p = source === "fixtures" ? fromFixtures(method, path, body) : fromApi(method, path, body);
+  function request(method, path, body, raw) {
+    const p = source === "fixtures" ? fromFixtures(method, path, body) : fromApi(method, path, body, raw);
     if (path === "/auth/session") {
       return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
     }
@@ -543,6 +578,18 @@ window.Maity = window.Maity || {};
     get: (path) => request("GET", path),
     getAll,
     post: (path, body) => request("POST", path, body || {}),
+    // PUT of an image as its raw bytes; type is the sniffed Content-Type.
+    putImage: (path, blob, type) => request("PUT", path, blob, type),
+    // The URL of a project's logo or banner for an <img>, or null when the
+    // project view says there is none: the hub's own path, versioned by the
+    // ETag; in fixture mode the image next to the project's JSON, or an upload.
+    imageUrl: (slug, kind, view) => {
+      if (!IMAGE_KINDS.includes(kind) || !view || !view.available) return null;
+      if (source === "fixtures") {
+        return uploaded[slug + "/" + kind] || ("fixtures/" + encodeURIComponent(slug) + "/" + kind + ".png");
+      }
+      return API_BASE + "/projects/" + encodeURIComponent(slug) + "/" + kind + "?v=" + encodeURIComponent(view.etag || "");
+    },
     patch: (path, body) => request("PATCH", path, body || {}),
     del: (path) => request("DELETE", path),
   };
