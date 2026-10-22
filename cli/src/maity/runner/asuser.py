@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import pwd
+import re
 import shlex
 import shutil
 import signal
@@ -28,6 +29,7 @@ from pathlib import Path
 from .. import state
 
 TIMEOUT = 60.0
+REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
@@ -223,6 +225,11 @@ class Ssh(AsUser):
             "-o", f"UserKnownHostsFile={self.known_hosts}", "-o", "GlobalKnownHostsFile=/dev/null",
             "-o", "ControlMaster=auto", "-o", "ControlPersist=300",
             "-o", f"ControlPath={self.control_dir}/%C", "-o", "ConnectTimeout=15",
+            # A dead link or a stuck host ends a call within 30 s, not at the timeout.
+            "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
+            # Whatever the operator's ssh configuration says: no port forwarding into the
+            # operator's network, no local command, for every agent on the host to use.
+            "-o", "ClearAllForwardings=yes", "-o", "PermitLocalCommand=no",
             "-a", "-x", "-p", str(self.port),
         ]  # fmt: skip
         if self.identity != "agent":
@@ -247,6 +254,7 @@ class Ssh(AsUser):
         # remote command gets only `env`.
         return subprocess.run(  # noqa: S603 - argv from fixed templates, words quoted
             self.argv(argv, env), input=input, capture_output=True, text=True,
+            stdin=subprocess.DEVNULL if input is None else None,  # never the operator's tty
             timeout=timeout, check=False,
         )  # fmt: skip
 
@@ -254,6 +262,12 @@ class Ssh(AsUser):
         done = self.run(["printenv", "HOME"])
         if done.returncode == SSH_UNREACHABLE:
             raise Unreachable(f"cannot reach {self.name}: {done.stderr.strip()[:200]}")
-        if done.returncode != 0 or not done.stdout.strip().startswith("/"):
-            raise OSError(f"{self.name}: no home directory for {self.login}")
-        return Path(done.stdout.strip())
+        home = done.stdout.strip()
+        # The remote account is the agents': its shell start-up files can set HOME to
+        # anything, and the runner builds paths and the attach hint from it.
+        if done.returncode != 0 or not REMOTE_HOME.match(home) or ".." in home.split("/"):
+            raise OSError(
+                f"{self.name}: {self.login}'s home is not a plain absolute path "
+                f"({home[:80]!r}); the runner refuses the host"
+            )
+        return Path(home)

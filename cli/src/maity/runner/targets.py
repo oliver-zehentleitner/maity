@@ -23,6 +23,7 @@ from .tmux import Tmux, attach_words
 
 LOGS = "logs"
 AGENT_FILES = ".maity-runner"  # under the remote user's home on an ssh host
+UNIX_PATH_MAX = 108  # sun_path, with its terminating NUL: ssh's ControlPath must fit
 SANDBOX_TOOLS = ("bwrap", "socat")
 # Each argument with where the host's PATH finds it (empty when nowhere); names are data.
 WHICH = 'for b; do printf "%s\\t%s\\n" "$b" "$(command -v -- "$b")"; done'
@@ -118,7 +119,11 @@ def local(
 def ssh_hosts(cfg: config.Config) -> list[Target]:
     """One target per configured host; none of them connected yet."""
     assert cfg.ssh is not None  # noqa: S101 - config.parse guarantees it for kind = ssh
-    control = cfg.state_dir / "ssh"
+    control = cfg.state_dir / "ssh"  # ssh cannot create the directory of its ControlPath
+    try:
+        control.mkdir(mode=0o700, exist_ok=True)
+    except OSError:
+        pass  # no state directory yet: every connection fails, and check says why
     return [
         Target(
             name=host.name,

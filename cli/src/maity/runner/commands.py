@@ -342,7 +342,12 @@ def _check_claude_code(
         if missing:
             line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
             (report.error if harness.require_sandbox else report.warn)(line)
-    # The agents' user's own settings: agents start with --setting-sources user.
+    _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
+    """The agents' user's own Claude Code settings (here, through sudo, or on a host):
+    agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
         settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
     except (OSError, KeyError):
@@ -353,11 +358,12 @@ def _check_claude_code(
     allow = permissions.get("allow") if isinstance(permissions, dict) else None
     if isinstance(allow, list) and allow:
         report.warn(
-            f"harness claude-code: ~/.claude/settings.json allows {len(allow)} rule(s) of its "
-            "own; every agent this runner starts inherits them"
+            f"{where}harness claude-code: ~/.claude/settings.json allows {len(allow)} rule(s) "
+            "of its own; every agent this runner starts inherits them"
         )
     if settings.get("hooks"):
-        report.warn("harness claude-code: ~/.claude/settings.json defines hooks; agents run them")
+        report.warn(f"{where}harness claude-code: ~/.claude/settings.json defines hooks; "
+                    "agents run them")  # fmt: skip
 
 
 def _check_ssh(report: Report, cfg: config.Config, only: str | None) -> None:
@@ -380,6 +386,13 @@ def _check_ssh(report: Report, cfg: config.Config, only: str | None) -> None:
         report.error(f"identity {cfg.ssh.identity} does not exist")
     else:
         _private(report, Path(cfg.ssh.identity).expanduser(), "identity")
+    socket = cfg.state_dir / "ssh" / ("0" * 40)  # ssh's %C is 40 hex characters
+    if len(str(socket).encode()) >= targets.UNIX_PATH_MAX:
+        report.error(
+            f"state_dir {cfg.state_dir} is too long for ssh's connection sockets "
+            f"(<state_dir>/ssh/<40 hex> must stay under {targets.UNIX_PATH_MAX} bytes); "
+            "choose a shorter hub.state_dir"
+        )
     hosts = [t for t in targets.ssh_hosts(cfg) if only is None or t.name == only]
     if not hosts:
         report.error(f"no host named {onboarding.inline(only or '')} in backend.ssh.hosts")
@@ -422,6 +435,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.error(f"{name}: workspaces {root} cannot be created or written")
     else:
         report.ok(f"{name}: workspaces {root}")
+    if "claude-code" in cfg.harnesses:
+        _check_claude_settings(report, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
         report.warn(f"{name}: the remote user has sudo without a password; agents have it too")
 

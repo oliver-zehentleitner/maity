@@ -207,6 +207,7 @@ class Supervisor:
     advertised_at: float = 0.0
     advertised_counts: dict[str, int] = field(default_factory=dict)
     targets: dict[str, Target] = field(default_factory=dict)
+    target_errors: dict[str, str] = field(default_factory=dict)  # the last one logged
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -273,10 +274,13 @@ class Supervisor:
                 self._reachable(target, False, now, str(exc))
                 continue
             except (TmuxError, OSError) as exc:
-                self.log(f"supervisor: {target.name}: {exc}")
+                if self.target_errors.get(target.name) != str(exc):  # once per change
+                    self.target_errors[target.name] = str(exc)
+                    self.log(f"supervisor: {target.name}: {exc}")
                 if not target.remote:
                     return  # the local tmux server is the whole picture
                 continue
+            self.target_errors.pop(target.name, None)
             self._reachable(target, True, now)
         with self.lock:
             desired = list(self.desired)

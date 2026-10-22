@@ -558,8 +558,16 @@ agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the
 
 Every command is a fixed template sent as one quoted command line, with
 `BatchMode`, `StrictHostKeyChecking=yes`, only the configured
-`known_hosts`, no agent or X11 forwarding and a shared connection
-(`ControlMaster`, sockets in `<state_dir>/ssh`). The ssh agent (or key)
+`known_hosts`, no agent or X11 forwarding, no port forwarding or local
+command whatever your own ssh configuration says, keep-alives that end a
+call to a dead host within 30 s, and a shared connection (`ControlMaster`,
+sockets in `<state_dir>/ssh`, which must stay short enough for a unix
+socket path; `check` says when it is not). Put each host's key into
+`known_hosts` from the host itself or your provisioning, not from a blind
+`ssh-keyscan`, which trusts whatever answers first; a host on a port
+other than 22 is written `[address]:port`. The remote user's home has to
+be a plain absolute path: the runner refuses a host whose shell start-up
+files report anything else. The ssh agent (or key)
 is used for the connection only; the agents never see it. On each host,
 the tmux socket, logs and harness files live in the remote user's
 `~/.maity-runner/`. The join runs the host's own `maity`, so its
