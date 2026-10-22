@@ -128,3 +128,22 @@ sessions — which is a different layer with a different lifetime.
 
 **Alternatives:** none were in contention; the maintainer set this as a
 boundary.
+
+## A runner starts an agent only after the maintainer's go, until a policy says otherwise
+
+**Id:** 97a02556-475b-4041-8db5-6ce845ceb7fa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator
+**Revisit when:** the admin and the admin agent agree on a start policy
+**See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-22
+
+Starting an agent through a runner needs the maintainer's go. Which
+starts may go ahead without it is a policy the human admin and the admin
+agent are to agree; until they have, and wherever no policy says
+otherwise, the default is the human's go.
+
+**Reason:** the maintainer's decision; the reason was not stated.
+
+**Alternatives:** unknown. The policy itself is still open.
