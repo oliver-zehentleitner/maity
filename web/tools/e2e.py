@@ -1394,7 +1394,8 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
     if attached:  # allowed while pairing
         expect(card).to_contain_text("no agent running here")
         detach()
-    option = page.locator("#allow-runner option", has_text=re.compile("^" + re.escape(name) + " "))
+    # An option is the runner's name alone (its presence changes, the form should not).
+    option = page.locator("#allow-runner option", has_text=re.compile("^" + re.escape(name) + "$"))
     page.locator("#allow-runner").select_option(value=option.get_attribute("value"))
     view.get_by_role("button", name="Allow it here", exact=True).click()
     expect(card).to_contain_text("no agent running here")
