@@ -70,7 +70,7 @@ Why Maity is built the way it is.
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 
 ## T
-- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an outage is waited out or covered by a named substitute, per member
 
 ## U
 

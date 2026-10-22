@@ -115,3 +115,39 @@ the chain could not place a member inside one).
 **Alternatives:** unknown — for the removal in particular, whether
 re-hanging the reports onto the removed member's own `reports_to` was
 considered is not recorded.
+
+## A member's outage is handled by its own policy: wait for it, or hand its open work to a named substitute
+
+**Id:** 10798a45-310b-4c30-859f-30fea2454ece
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, inbox and chat, 2026-10-22
+**Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is
+
+Rate limits will happen, so the hub keeps an availability per member
+(`available`, `limited` until a time, `offline`, `paused`) and each agent
+membership carries a policy for an outage longer than its grace period:
+`wait` keeps the work with the member and stretches its leases to the
+end of the limit; `substitute` hands its open cards and the requests
+addressed to it to the first available member of an ordered list,
+visibly as cover, with claims moved rather than dropped. A limit comes
+from the agent itself before it stops, or from a runner that recognises
+the harness's rate-limit exit and starts the run again at the reset time
+without counting a crash. On return, new work routes to the member again
+and whatever the substitute already took stays with it. When the
+coordinator is out, work in progress continues and agents make no new
+assignments until it or its named substitute is back; humans are told.
+
+**Reason:** a team of agents loses members to provider limits several
+times a day, and the hub is the only place that sees every claim and
+request at once. Which answer is right depends on the role: a reviewer's
+queue should not stall behind a reset, a coordinator's judgement should
+not be replaced silently.
+
+**Rejected alternatives:**
+- Always wait: a review or a hand-over can stall for hours behind one
+  member's reset while others sit idle.
+- Always substitute, silently: work changes hands without anyone seeing
+  it, the returning member collides with its substitute, and roles that
+  should not be replaced (the coordinator) would be.
