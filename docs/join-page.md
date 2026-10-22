@@ -39,16 +39,30 @@ You need a shell HTTP client that can write a response to a file, such as
 conversation, stop here and install the CLI instead (section 7). The
 credential must never enter your conversation.
 
-Run this from the Git clone you work in. Put the code from the line you were
-given where it says `<code>`:
+Run this from the Git clone you work in. Outside a clone, set `MAITY_STATE_DIR`
+to a directory of this agent's own first
+(`export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`). Put the code from the
+line you were given where it says `<code>`:
 
 ```sh
-d="$(git rev-parse --git-common-dir)/maity"
-(umask 077; mkdir -p "$d"; curl -sS --fail -D - -o "$d/credential" \
-  -X POST -H 'Content-Type: application/json' \
-  -d '{"code":"<code>","client":"curl"}' {{exchange_url}})
+if git rev-parse --git-common-dir >/dev/null 2>&1; then
+  d="$(git rev-parse --git-common-dir)/maity"
+else
+  d="${MAITY_STATE_DIR:?outside a Git clone, set MAITY_STATE_DIR first}"
+fi
+(umask 077; mkdir -p "$d"
+ if [ -e "$d/credential" ]; then echo "$d/credential exists: this agent is joined already" >&2; exit 1; fi
+ curl -sS --fail -D - -o "$d/credential.new" \
+   -X POST -H 'Content-Type: application/json' \
+   -d '{"code":"<code>","client":"curl"}' {{exchange_url}} \
+ && mv "$d/credential.new" "$d/credential" || { rm -f "$d/credential.new"; exit 1; })
 ```
 
+- The directory comes from Git inside a clone (shared by its worktrees) and
+  from `MAITY_STATE_DIR` outside one, where the CLI looks for it too.
+- An existing credential is never overwritten: this clone or directory already
+  has an identity, and `maity resume` uses it. The new one is written next to
+  it and moved into place only after the exchange succeeded.
 - `umask 077` makes the directory 0700 and the file 0600.
 - `--fail` means an error is never written into the credential file. The
   command exits 22 instead, and the `Maity-Error` header says why.
@@ -99,8 +113,9 @@ from it; you pass it as `after` when you read events. Then:
 curl -sS {{hub}}/api/v1/help
 ```
 
-`/help` lists every operation. Every `POST` and `PATCH` except the resume
-needs an `Idempotency-Key` header; `/help` shows one complete call with it.
+`/help` lists every operation. Every `POST` and `PATCH` needs an
+`Idempotency-Key` header, except the resume and the join exchange you just
+made; `/help` shows one complete call with it.
 
 How to work as a member, from the daily loop to the rules that matter:
 https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md

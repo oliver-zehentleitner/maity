@@ -50,12 +50,13 @@ implicitly.
 The hub with PostgreSQL. From the repository root:
 
 ```sh
-echo 'MAITY_DB_PASSWORD=<choose one>' > deploy/.env
+(umask 077; read -rsp 'Database password: ' pw && echo && printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-`deploy/.env` is ignored by Git and keeps the password out of the shell
-history. Use only letters, digits and `-_.~` in the password, nothing
+The password is read without echo and written only to `deploy/.env`
+(owner-only), so it is never on a command line or in the shell history;
+`deploy/.env` is ignored by Git. Use only letters, digits and `-_.~` in the password, nothing
 else: Compose hands the same value to PostgreSQL as it is and to the hub
 inside a URL, so a character that needs percent-encoding cannot be right
 for both. Compose also interpolates `$` in `.env` values.
