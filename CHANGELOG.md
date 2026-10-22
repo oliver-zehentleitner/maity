@@ -10,6 +10,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- cli: `maity runner pair` and `maity runner check` (runner slice R1, `docs/api.md` §15.2) — the TOML configuration with unknown keys refused by name and every default listed by `check --explain`; pairing with `--code` or `--code-file -`, writing the credential 0600 under `state_dir` and a starter configuration when none exists, refusing a configuration for another hub; repository entries `host/owner/name` or `host/owner/*`, normalised like the project's repository URL; `maity runner` needs Python 3.11 and refuses on 3.10.
 - hub: runners, first slice (`docs/api.md` §15.1–15.3) — enrollments (paged) and the pairing exchange (`POST /runners/pair/{token}`, single use, burned after three wrong codes, rate limited, the join's transport rule), re-pairing, `GET`/`PATCH`/`DELETE /runners/{id}` and `POST /runners/{id}/revoke`; runner credentials (`rcrd-…`) sign every call, are refused as bearer with `signature_required`, reach `/runner/*` only (`not_found` on project routes, `forbidden` elsewhere), and are revoked when found in a payload; the request log masks `/r/…` and `/runners/pair/…`. `attach` in an enrollment is refused until attachments exist.
 - `docs/architecture.md` and `docs/api.md`: the architecture and the REST contract v1 the hub, the CLI and the dashboard build against.
 - Repository scaffold: README, licence, contributing guide, agent entry point,

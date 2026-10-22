@@ -88,15 +88,19 @@ def _ensure_dir(path: Path) -> None:
     A directory the user named (`MAITY_STATE_DIR`) is theirs: it is checked, never chmodded.
     """
     if path.is_dir():
-        _check_private(path)
+        check_private(path)
         return
     path.mkdir(mode=0o700, parents=True)
     os.chmod(path, 0o700)  # mkdir's mode is masked by the umask; this one is not
 
 
-def _atomic_write(path: Path, data: str) -> None:
-    """Write `data` to `path` with mode 0600, never leaving a partly written file behind."""
-    _ensure_dir(path.parent)
+def _atomic_write(path: Path, data: str, private_dir: bool = True) -> None:
+    """Write `data` to `path` with mode 0600, never leaving a partly written file behind.
+
+    `private_dir=False` accepts an existing directory as it is (a file without a secret in
+    a directory the operator made); a missing one is still created 0700."""
+    if private_dir or not path.parent.is_dir():
+        _ensure_dir(path.parent)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp = Path(tmp_name)  # mkstemp creates it 0600
     try:
@@ -110,8 +114,9 @@ def _atomic_write(path: Path, data: str) -> None:
         raise
 
 
-def _check_private(path: Path) -> None:
-    """Refuse a file or directory others could reach, the way ssh refuses a loose private key."""
+def check_private(path: Path, revoke: str = "revoke the session in the dashboard") -> None:
+    """Refuse a file or directory others could reach, the way ssh refuses a loose private key.
+    `revoke` is the way out when the file is not yours."""
     st = path.stat()
     if st.st_uid != os.getuid():
         raise StateError(f"{path} belongs to another user; refusing to use it")
@@ -120,8 +125,15 @@ def _check_private(path: Path) -> None:
         fix = "700" if path.is_dir() else "600"
         raise StateError(
             f"{path} is accessible by group or others (mode {mode:04o}); "
-            f"run `chmod {fix} {path}` if it is yours, or revoke the session in the dashboard"
+            f"run `chmod {fix} {path}` if it is yours, or {revoke}"
         )
+
+
+def write_file(path: Path, text: str) -> Path:
+    """Write a file 0600 that holds no secret (the runner's configuration); its directory
+    is created 0700 when missing and taken as it is otherwise."""
+    _atomic_write(path, text, private_dir=False)
+    return path
 
 
 def credential_path(state_dir: Path) -> Path:
@@ -150,19 +162,19 @@ def read_credential(state_dir: Path) -> Secret:
     path = credential_path(state_dir)
     if not path.is_file():
         raise StateError(f"no session credential in {state_dir}; run `maity join` first")
-    _check_private(state_dir)
-    _check_private(path)
+    check_private(state_dir)
+    check_private(path)
     value = path.read_text(encoding="utf-8").strip()
     if not value:
         raise StateError(f"{path} is empty; run `maity join` again")
     return Secret(value)
 
 
-def load_state(state_dir: Path) -> dict[str, Any]:
-    path = state_dir / STATE_FILE
+def load_state(state_dir: Path, name: str = STATE_FILE) -> dict[str, Any]:
+    path = state_dir / name
     if not path.is_file():
         return {}
-    _check_private(path)
+    check_private(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -172,7 +184,7 @@ def load_state(state_dir: Path) -> dict[str, Any]:
     return data
 
 
-def save_state(state_dir: Path, data: dict[str, Any]) -> Path:
-    path = state_dir / STATE_FILE
+def save_state(state_dir: Path, data: dict[str, Any], name: str = STATE_FILE) -> Path:
+    path = state_dir / name
     _atomic_write(path, json.dumps(data, indent=2, sort_keys=True) + "\n")
     return path

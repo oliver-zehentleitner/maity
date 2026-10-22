@@ -178,13 +178,12 @@ class JoinResult:
     hub: str | None
 
 
-def exchange(base: str, token: str, code: str, timeout: float = 30.0) -> JoinResult:
-    """POST /join/{token}; the response body is the credential and nothing else (§3.3).
-
-    The body is checked for the credential format and handed back as a `Secret`; it is never
-    decoded into anything that could be printed, and an error body is never mistaken for it.
-    """
-    url = f"{base}{API}/join/{segment(token)}"
+def _exchange(base: str, path: str, code: str, what: str, timeout: float) -> tuple[Secret, Message]:
+    """POST a single-use code to an exchange whose answer body is a credential and nothing
+    else (§3.3, §15.2). The body is checked for the credential format and handed back as a
+    `Secret`; it is never decoded into anything that could be printed, and an error body is
+    never mistaken for it."""
+    url = f"{base}{API}{path}"
     body = json.dumps({"code": code, "client": CLIENT}).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
     request = urllib.request.Request(url, data=body, method="POST", headers=headers)  # noqa: S310
@@ -193,17 +192,55 @@ def exchange(base: str, token: str, code: str, timeout: float = 30.0) -> JoinRes
             raw: bytes = response.read()
             facts: Message = response.headers
     except urllib.error.HTTPError as exc:
-        raise _error_from(exc, "join") from exc
+        raise _error_from(exc, what) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise HubError(f"cannot reach {base}: {getattr(exc, 'reason', exc)}") from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
-        raise HubError("the join exchange answered with something that is not a credential")
+        raise HubError(f"the {what} exchange answered with something that is not a credential")
+    return Secret(value), facts
+
+
+def exchange(base: str, token: str, code: str, timeout: float = 30.0) -> JoinResult:
+    """POST /join/{token} (§3.3)."""
+    credential, facts = _exchange(base, f"/join/{segment(token)}", code, "join", timeout)
     return JoinResult(
-        credential=Secret(value),
+        credential=credential,
         credential_id=facts.get("Maity-Credential-Id"),
         member_id=facts.get("Maity-Member-Id"),
         project=facts.get("Maity-Project"),
+        hub=facts.get("Maity-Hub"),
+    )
+
+
+def pair_token(url: str) -> str:
+    """The token from `https://<hub>/r/<token>` or `https://<hub>/api/v1/runners/pair/<token>`."""
+    path = urllib.parse.urlsplit(url.strip()).path.rstrip("/")
+    for prefix in ("/r/", f"{API}/runners/pair/"):
+        if path.startswith(prefix) and "/" not in path[len(prefix) :] and path[len(prefix) :]:
+            return urllib.parse.unquote(path[len(prefix) :])
+    raise HubError(f"not a pairing URL (expected /r/<token>): {safe_url(url)}")
+
+
+@dataclass(frozen=True)
+class PairResult:
+    credential: Secret
+    credential_id: str | None
+    runner_id: str | None
+    attached: list[str]
+    hub: str | None
+
+
+def pair_exchange(base: str, token: str, code: str, timeout: float = 30.0) -> PairResult:
+    """POST /runners/pair/{token} (§15.2): the runner's credential, and the projects attached."""
+    path = f"/runners/pair/{segment(token)}"
+    credential, facts = _exchange(base, path, code, "pairing", timeout)
+    attached = [s.strip() for s in (facts.get("Maity-Attached") or "").split(",") if s.strip()]
+    return PairResult(
+        credential=credential,
+        credential_id=facts.get("Maity-Credential-Id"),
+        runner_id=facts.get("Maity-Runner-Id"),
+        attached=attached,
         hub=facts.get("Maity-Hub"),
     )
 
