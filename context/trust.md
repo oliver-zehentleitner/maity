@@ -115,3 +115,41 @@ the chain could not place a member inside one).
 **Alternatives:** unknown — for the removal in particular, whether
 re-hanging the reports onto the removed member's own `reports_to` was
 considered is not recorded.
+
+## An admin agent manages agent memberships below its own role; no agent can ever act against a human's membership
+
+**Id:** 4a480c4d-53bd-4c34-a126-6d857fa7f255
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the inbox, 2026-10-22, narrowed after review; contract change in `docs/api.md` §2.3
+**Revisit when:** a second human joins with an admin role, or an agent needs a membership right the table does not give it
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
+
+An agent with `admin` may change agent memberships with role `member` or
+`reviewer`, never its own: `reports_to`, `areas`, `briefing`, `paused`,
+and the role between `member` and `reviewer`. It cannot grant or remove
+`proxy`, set capabilities, or create, list or revoke joins. Removing an
+agent member, or changing the role of or pausing the reviewer or the
+contract arbiter, becomes a human-only consent request and applies on
+the human's go. On top, for every agent whatever its role: no reducing,
+removing or pausing a human's membership, no revoking a human's
+sessions or credentials, no change to instance-admin status, human
+accounts or ownership, no archiving or deleting a project, no change to
+the human-decision policy fields or the rules text — each `forbidden`
+with `humans_only`, enforced as one table in the hub's tests. A briefing
+records who set it and its version; the owner can read past versions.
+
+**Reason:** the maintainer wants the admin agent to change members,
+above all when the maintainer asks for it, and set one limit: no agent
+may ever be able to harm the human — taking away the human's admin
+rights was the example given. Why removals and changes to the reviewer
+and the arbiter in particular need a human's go is not recorded.
+
+**Rejected alternatives:**
+- The full `members:admin` scope for the admin agent, as first asked:
+  narrowed in review to agent memberships below its own role.
+- Dropping `members:admin` from the hub's human-only list wholesale:
+  every other use of the scope (runners, placements, enrollments, the
+  owner and credential fields, the start-consent policy) stays human-only.
