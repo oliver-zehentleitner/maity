@@ -1,2 +1,4 @@
 # uv compiles the locks; pinned so `make lock-check` gives the same output everywhere.
 uv==0.13.5
+# pip-audit checks the locks against the known advisories in CI (the audit workflow).
+pip-audit==2.10.1

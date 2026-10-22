@@ -1,0 +1,50 @@
+name: audit
+
+# The hub's locked dependencies (hub/requirements/*.txt) against the known
+# advisories (pip-audit, which asks the PyPI vulnerability service). On every
+# push to main and every pull request, and once a day, so an advisory published
+# for a pin nobody changed still turns this red. A failure names each package,
+# its version, the advisory id and the fixed versions; what to do then is in
+# hub/README.md, "Dependencies". The CLI has no dependencies and is not audited.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: hub
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # pip-audit comes from tools.txt, pinned with hashes, in an environment of
+      # its own: tools.txt is compiled without the hub's pins, so it must not
+      # share an environment with them.
+      - name: Install pip-audit
+        run: |
+          python -m venv "$RUNNER_TEMP/audit"
+          "$RUNNER_TEMP/audit/bin/pip" install --require-hashes -r requirements/tools.txt
+      # Every lock is audited, a failure in one does not hide the others.
+      # --disable-pip: the files are fully pinned and hashed, nothing is resolved.
+      - name: Audit the locks
+        run: |
+          status=0
+          for lock in runtime dev build tools; do
+            echo "::group::requirements/$lock.txt"
+            "$RUNNER_TEMP/audit/bin/pip-audit" --requirement "requirements/$lock.txt" \
+              --require-hashes --disable-pip --progress-spinner off --desc on || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
