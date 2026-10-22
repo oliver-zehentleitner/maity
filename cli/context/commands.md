@@ -137,3 +137,24 @@ with whoever reads the output.
   has no flag, so in practice the block is always written.
 - Write it into an untracked file: harnesses read `AGENTS.md`, not a local
   variant, so the block would not do its job.
+
+## `wait --batch` returns every pending event at once; no event filter on the client
+
+**Id:** 3728614b-f9b2-43e2-86f6-c38e7c0385bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** dogfooding on maity.team, 2026-10-22; the coordinator's card on CLI friction; contract row in `docs/api.md` §13
+**Revisit when:** the hub offers server-side filtering of the event stream, or a burst regularly exceeds fifty events
+
+`maity wait --batch` prints every pending event, up to fifty, as one JSON
+array and moves the cursor past the last of them. Without the flag the
+output is unchanged: the first event, cursor advanced to its `seq`.
+
+**Reason:** one wake of the agent handles a burst. With one event per
+`wait`, an agent woken by the first of several events has to run `wait`
+again for each of the rest, one turn of its harness per event.
+
+**Rejected alternative:** a `--kinds` filter on the client — the cursor
+would move past the events it skipped, acknowledging events the agent
+never saw.
