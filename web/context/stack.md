@@ -42,6 +42,7 @@ order in `index.html` and one global namespace instead of imports.
 **Source:** the coordinator's review of the dashboard pull request, 2026-10-21
 **Revisit when:** CI can run a real browser without adding a package manager to the repository, or the shim starts to need browser behaviour it does not have
 **See:** stack.md#no-framework-and-no-build-step-static-html-vanilla-javascript-as-classic-scripts-css — bbf733b2-9b82-4c60-9857-4ee23849683b — as of 2026-10-21
+**See:** stack.md#a-real-browser-end-to-end-test-runs-in-ci-with-playwright-for-python-next-to-the-smoke-test — fb1daf22-fe54-4073-b89e-9e099a5a389e — as of 2026-10-22
 
 `tools/smoke.js` runs the page's scripts against a minimal DOM shim in
 Node and walks every view, in fixture mode and against a fake hub
@@ -63,3 +64,45 @@ brings a package manager and a browser download into the repository and
 CI. Emulating the DOM in Python — no standard-library DOM, and a second
 copy of the page's behaviour to keep in step. Keeping the test outside
 the repository — nobody else could run it, and CI would not.
+
+## A real-browser end-to-end test runs in CI with Playwright for Python, next to the smoke test
+
+**Id:** fb1daf22-fe54-4073-b89e-9e099a5a389e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request for real-browser end-to-end tests before the maintainer's first browser test, 2026-10-22; the VM's missing Chromium libraries (`ldd`), 2026-10-22
+**Revisit when:** the dashboard gets a Node toolchain for another reason, or the CI job outgrows its time budget
+**See:** stack.md#the-behaviour-smoke-test-runs-on-a-bare-node-binary-in-ci-make-check-stays-on-python-alone — ad2319c8-9158-483e-b180-ee88691c6b87 — as of 2026-10-22
+
+`tools/e2e.py` starts a real hub on a free loopback port with a
+throwaway SQLite file, serving this checkout's `web/`, and drives the
+dashboard in headless Chromium through Playwright for Python, while the
+agent side is the `maity` CLI in scratch clones: sign-in, create a
+project, the join line, an agent joining, claiming a card, asking,
+the answer in the inbox waking the agent's `maity wait`, a second
+project, the switcher and the cross-project view. It takes a screenshot
+of every step and fails on any console error, page error or failed API
+call. CI runs it in its own job, `web-e2e`, and uploads the screenshots
+also when a step fails. The smoke test stays: it is the fast check of
+every view and branch the browser test does not walk.
+
+**Reason:** the smoke test's DOM shim has no layout, focus, real timers,
+CSP or browser `fetch`, and the shim's gaps had already hidden bugs. The
+earlier entry rejected a headless browser because it brings a package
+manager into the repository; Playwright for Python does not: it is one
+more `pip install` next to the hub and the CLI, which the test needs
+anyway, so `web/` still has no `package.json`, no `node_modules` and no
+build step, and the browser download happens on the runner only. Python
+also drives the hub's and CLI's processes directly. It runs in CI and
+not only as a documented script because the shared VM's Chromium lacks
+system libraries (`libnss3`, `libnspr4`, `libasound2`) and they cannot
+be installed without root there, while `playwright install --with-deps`
+installs them on the runner.
+
+**Rejected alternative:** Playwright for Node — a `package.json` and a
+lockfile in `web/`, the Node toolchain the stack excludes. Selenium —
+a separate driver to match to the browser, and no waiting on the page's
+state built in, which the feed's 5-second interval needs. Only a
+documented local script — on this VM it could not run, so nobody would
+have seen the dashboard in a browser before the maintainer.

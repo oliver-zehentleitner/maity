@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
   }
 
   M.views.join = async function (ctx, root) {
-    const [profiles, joins] = await Promise.all([
+    let [profiles, joins] = await Promise.all([
       M.api.getAll("/agents"),
       M.api.getAll(ctx.base + "/joins"),
     ]);
@@ -28,11 +28,13 @@ window.Maity = window.Maity || {};
       return p ? p.display_name : id;
     };
 
-    const agentSelect = h("select", { id: "join-agent" },
+    const agentSelect = h("select", { id: "join-agent" });
+    const profileOptions = () => append(clear(agentSelect),
       profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + p.handle + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
-    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9-]{1,30}" });
+    profileOptions();
+    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9\\-]{1,30}" });
     const display = h("input", { id: "join-display", placeholder: "display name" });
     const newFields = h("div", { class: "new-agent", hidden: true },
       h("label", { for: "join-handle" }, "Handle"), handle,
@@ -91,14 +93,26 @@ window.Maity = window.Maity || {};
           ttl_seconds: Number(ttl.value),
         };
         status.busy("Creating…");
+        let j;
         try {
-          const j = await M.api.post(ctx.base + "/joins", body);
-          status.done();
-          showLine(j);
-          drawJoins(await M.api.getAll(ctx.base + "/joins"));
+          j = await M.api.post(ctx.base + "/joins", body);
         } catch (err) {
           status.fail("No join created: ", err);
+          return;
         }
+        status.done();
+        showLine(j);
+        // A new profile is named in the list and offered in the select.
+        try {
+          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        } catch (err) {
+          status.fail("Join created; the list could not be re-read: ", err);
+          return;
+        }
+        profileOptions();
+        agentSelect.value = j.agent_id;
+        newFields.hidden = agentSelect.value !== "";
+        drawJoins(joins);
       },
     },
     h("label", { for: "join-agent" }, "Agent"), agentSelect,

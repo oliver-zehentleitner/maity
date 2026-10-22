@@ -101,6 +101,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
   const byId = (id) => main.all().find((e) => e.id === id) || header.all().find((e) => e.id === id);
+  // A browser compiles `pattern` as ^(?:…)$ with the v flag and ignores one that does not compile.
+  const badPatterns = () => main.all().filter((e) => e.attrs.pattern !== undefined).filter((e) => {
+    try { new RegExp("^(?:" + e.attrs.pattern + ")$", "v"); return false; } catch (err) { return true; }
+  }).map((e) => e.id);
   const gets = [];
   const realGet = win.Maity.api.get;
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
@@ -261,6 +265,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   await go("#/p/maity/join");
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
+  expect(main.all().some((e) => e.attrs.pattern) && !badPatterns().length, "join: every pattern compiles with the v flag " + badPatterns());
   byId("join-agent").value = "agt-x";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
@@ -268,6 +273,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(text(main).includes("revoked"), "open join revoked");
+  // A join for a new profile: the list names it and the select offers it, without a reload.
+  const agentSel = byId("join-agent"); agentSel.value = ""; agentSel.dispatch("change");
+  byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
+  const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
+  expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
+    "a new profile is offered and selected after its join is created");
+  expect(main.querySelectorAll(".joins li")[0].textContent.includes("Agent New as member"), "the joins list names the new profile");
   await go("#/p/maity/inbox");
   expect(!text(main).includes("FIXTURE"), "the line is gone after leaving the view");
   // count polling: a change offers a reload instead of replacing the list
@@ -309,6 +322,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
   await go("#/new");
   expect(document.title === "New project · Maity" && byId("project-slug"), "create-project view");
+  expect(byId("project-slug").attrs.pattern && !badPatterns().length, "create: every pattern compiles with the v flag " + badPatterns());
   byId("project-name").value = "Dogfood Hub"; byId("project-name").dispatch("input");
   expect(byId("project-slug").value === "dogfood-hub", "slug proposed from the name");
   const posts = [];

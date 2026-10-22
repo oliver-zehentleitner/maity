@@ -132,7 +132,8 @@ window.Maity = window.Maity || {};
       edges("Depends on", c.depends_on, byId),
       edges("Ships with", c.ships_with, byId),
       c.blocked_by_request
-        ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "an answer"), " (" + c.blocked_by_request + ")")
+        ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "an answer"), " (",
+          h("span", { class: "request-id" }, c.blocked_by_request), ")")
         : null,
       c.contract
         ? h("p", { class: "muted" }, "Contract " + c.contract.state + ", arbiter " + ctx.nameOf(c.contract.arbiter))
