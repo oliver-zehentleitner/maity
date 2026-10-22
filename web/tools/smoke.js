@@ -286,7 +286,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   mlProto.focus = function () { document.activeElement = this; };
   await go(triedLink.getAttribute("href")); await tick(); await new Promise((r) => setTimeout(r, 5));
   const wantedRow = main.querySelector("tr.wanted");
-  expect(document.title === "Members · Maity · Maity" && wantedRow && wantedRow.getAttribute("data-member") === "agt-b"
+  expect(plainTitle() === "Members · Maity · Maity" && wantedRow && wantedRow.getAttribute("data-member") === "agt-b"
     && main.querySelectorAll("tr.wanted").length === 1 && document.activeElement === wantedRow.childNodes[0], "mentions: the link opens Members with the member marked and focused");
   await go("#/p/maity/members/agt-nobody"); await tick();
   expect(text(main).includes("No member with the id agt-nobody in this project.") && !main.querySelector("tr.wanted"), "mentions: an unknown member is said");
@@ -1301,7 +1301,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
   await go("#/p/maity/message");
   const toOpts = byId("message-to").querySelectorAll("option").map((o) => o.attrs.value);
-  expect(document.title === "Message the project · Maity · Maity" && toOpts[0] === "all" && toOpts.includes("role:reviewer") && toOpts.includes("agt-b")
+  expect(plainTitle() === "Message the project · Maity · Maity" && toOpts[0] === "all" && toOpts.includes("role:reviewer") && toOpts.includes("agt-b")
     && !toOpts.includes("hum-maintainer") && byId("message-type").value === "notice", "message: to everyone, a role or a member (not oneself); a notice by default");
   main.querySelector("form.message-form").dispatch("submit"); await tick();
   expect(!msgPosts.length && text(main).includes("Not sent: the message is empty"), "message: an empty one is not sent");
