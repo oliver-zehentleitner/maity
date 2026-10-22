@@ -948,6 +948,15 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-21T11:30:00Z",
         "id": "req-0010",
         "ktw_ref": "context/join.md",
+        "mentions": [
+          {
+            "field": "tried",
+            "handle": "agent-b",
+            "length": 8,
+            "member_id": "agt-b",
+            "offset": 46
+          }
+        ],
         "needs_in_session": null,
         "on_behalf_of": null,
         "options": [
@@ -983,7 +992,7 @@ window.MAITY_FIXTURES = {
         "task_id": "tsk-0006",
         "title": "Name of the CLI binary: `maity` or `mty`?",
         "to": "hum-maintainer",
-        "tried": "Checked PyPI and Debian: both names are free.",
+        "tried": "Checked PyPI and Debian: both names are free; @agent-b checked the shell completions.",
         "while_open": "proceed_provisionally"
       },
       {
@@ -991,10 +1000,19 @@ window.MAITY_FIXTURES = {
           "at": "2026-10-21T10:20:00Z",
           "by": "hum-maintainer",
           "conversation_id": null,
+          "mentions": [
+            {
+              "field": "text",
+              "handle": "agent-d",
+              "length": 8,
+              "member_id": "agt-d",
+              "offset": 9
+            }
+          ],
           "on_behalf_of": null,
           "reply_id": "keep",
           "talk": false,
-          "text": null
+          "text": "Keep it; @agent-d sorts the tabs."
         },
         "answered_at": "2026-10-21T10:20:00Z",
         "asked_by": {
@@ -1141,6 +1159,15 @@ window.MAITY_FIXTURES = {
         "report": {
           "branch": "agent-b/hub-skeleton",
           "head": "5c1e0aa",
+          "mentions": [
+            {
+              "field": "summary",
+              "handle": "agent-d",
+              "length": 8,
+              "member_id": "agt-d",
+              "offset": 47
+            }
+          ],
           "mismatch": false,
           "observed": {
             "branch_head_sha": "5c1e0aa",
@@ -1161,7 +1188,7 @@ window.MAITY_FIXTURES = {
           "reported_at": "2026-10-21T13:30:00Z",
           "reported_by": "agt-b",
           "session_id": "ses-b-0003",
-          "summary": "Skeleton with /health and the migration check.",
+          "summary": "Skeleton with /health and the migration check; @agent-d builds the dashboard on it.",
           "upstream": "origin/agent-b/hub-skeleton",
           "verification": "signed"
         },
@@ -1282,6 +1309,7 @@ window.MAITY_FIXTURES = {
         "kind": "contract",
         "ktw_ref": null,
         "label": null,
+        "rank": "r000016",
         "release": null,
         "report": null,
         "ships_with": [],

@@ -1,6 +1,7 @@
 # The hub with PostgreSQL, for a local run. Put the database password into
-# deploy/.env (never committed) and start from the repository root:
-#   echo 'MAITY_DB_PASSWORD=<choose one>' > deploy/.env
+# deploy/.env (never committed, read without echo) and start from the
+# repository root:
+#   (umask 077; printf 'Database password: '; stty -echo; read -r pw; stty echo; echo; printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
 #   docker compose -f deploy/docker-compose.yml up --build
 # The password: letters, digits and - _ . ~ only, nothing else. The same value
 # reaches PostgreSQL as it is and the hub inside a URL, so a character that

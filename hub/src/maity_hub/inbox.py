@@ -85,8 +85,21 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
     )
 
 
+def needs_a_human(request: Any, mine: Membership) -> bool:
+    """A placement's consent request under `spawn_consent_by: human` (§6.1, §15.6):
+    starting an agent spends compute and model budget, so no agent gives the go."""
+    return (
+        mine.kind == "agent"
+        and request.placement_id is not None
+        and mine.project.spawn_consent_by == "human"
+    )
+
+
 def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
-    """`requests:answer` for every class; the addressee in its own right for the others."""
+    """`requests:answer` for every class; the addressee in its own right for the others.
+    Never an agent where the request needs a human."""
+    if needs_a_human(request, mine):
+        return False
     if mine.may("requests:answer"):
         return True
     return getattr(request, "class") != "consent" and addressed_to(conn, request, mine)

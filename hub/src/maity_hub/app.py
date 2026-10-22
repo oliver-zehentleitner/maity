@@ -31,6 +31,7 @@ from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
 from maity_hub.middleware import HubMiddleware
 from maity_hub.routes import (
+    admin,
     agents,
     conversations,
     joins,
@@ -97,6 +98,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
+    app.include_router(admin.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
@@ -144,7 +146,10 @@ def render_help(settings: Settings) -> str:
     # (JSON examples, `{id}` in routes); only $-placeholders are substituted.
     template = Template((files("maity_hub") / "help.md").read_text(encoding="utf-8"))
     return template.safe_substitute(
-        api_version=API_VERSION, hub_version=__version__, public_url=settings.public_url
+        api_version=API_VERSION,
+        hub_version=__version__,
+        public_url=settings.public_url,
+        cli_install=settings.cli_install,
     )
 
 

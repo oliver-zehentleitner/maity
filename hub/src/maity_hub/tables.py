@@ -85,6 +85,7 @@ human = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("password_hash", String(255), nullable=False),  # scrypt, with parameters and salt
     Column("created_at", UtcDateTime, nullable=False),
+    Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
     **MYSQL_TABLE,
 )
@@ -147,6 +148,8 @@ project = Table(
     # (§6.1, §15.6); the defaults fill projects made before 0008.
     Column("spawn_requests", String(16), nullable=False, server_default="consent"),
     Column("max_placements", Integer, nullable=False, server_default="8"),
+    # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
+    Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -211,6 +214,8 @@ join_link = Table(
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
     Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
+    # The host the link was built on: the join host or the public URL (§3.1).
+    Column("via", String(16), nullable=False, server_default="public"),
     _ref("created_by", "human.id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
@@ -442,6 +447,7 @@ card = Table(
     Column("kind", String(32), nullable=False),
     Column("title", String(TITLE), nullable=False),
     Column("body", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
     Column("status_before_block", String(16)),
@@ -501,6 +507,7 @@ request = Table(
     Column("title", String(TITLE), nullable=False),
     Column("summary", MARKDOWN_TEXT),
     Column("tried", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),  # resolved from `summary` and `tried` (§8.6)
     Column("options", JSON_VALUE, nullable=False),
     Column("priority", String(16), nullable=False),
     # `to`: a member, a role, or the project's owner.
