@@ -288,7 +288,8 @@ the reason a limit counts neither as a crash nor toward the restart cap.
 
 **Id:** f24d2d25-9d94-49cc-89b6-1f2388baad66
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 0b6dd0cc-0be3-4e8a-bf18-66e5a957fcd7
 **Evidence:** inferred
 **Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
 **Revisit when:** agents' provider limits routinely last longer than a day, or an owner needs an absence longer than 90 days
@@ -363,7 +364,9 @@ it again, a new limit in the same outage, or a new outage resets
 nothing. An extension never shortens a lease.
 
 This tightens the 24-hour bound of the earlier entry, which reset with
-every new outage. The rule is the owner's ruling; why each alternative
+every new outage, and replaces it. The earlier entry's other half stays
+as it was: the owner's `absence.until` is at most 90 days ahead, so an
+absence cannot hold the project's cover open without end. The rule is the owner's ruling; why each alternative
 lost is inferred from the review.
 
 **Reason:** the review showed that an agent could clear and re-declare
