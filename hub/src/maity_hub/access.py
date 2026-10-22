@@ -53,8 +53,10 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
     if project is None:
         raise not_found()
+    # An agent credential belongs to one membership, of one project (§2.2): the
+    # profile's memberships elsewhere are not reachable through it.
     principal = (
-        t.membership.c.agent_id == caller.agent_id
+        t.membership.c.id == caller.membership_id
         if caller.kind == "agent"
         else t.membership.c.human_id == caller.human_id
     )

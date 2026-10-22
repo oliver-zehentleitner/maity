@@ -107,6 +107,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- hub: an agent credential is scoped to its own project (`docs/api.md` §2.2); any other project answers `not_found`.
 - hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.
 - web: the handle and slug fields validate in the browser again: their `pattern` had an
   unescaped `-` in a class, which browsers compile with the `v` flag and drop as invalid
