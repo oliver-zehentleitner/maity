@@ -2041,7 +2041,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 |---|---|---|
 | `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
-| `attachment_deleted` | the audience of the attachment's message (for a group chat its participants at write time); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
+| `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2359,8 +2359,8 @@ post does not lose the upload.
 | `POST /projects/{slug}/attachments?name=<file name>` | `events:post` | raw body, the file; `201` with the attachment (below); `Idempotency-Key` as every agent `POST` (§1.5) |
 | `GET /projects/{slug}/attachments/{id}` | whoever can read the message (below); the uploader while pending | the attachment's metadata, JSON |
 | `GET /projects/{slug}/attachments/{id}/content` | as `GET` | the bytes, with the headers below |
-| `GET /projects/{slug}/attachments?status=pending` | the caller's own pending uploads; a human with `members:admin` every member's | metadata only, oldest first, paged (§1.4); `uploaded_by=<member id>` narrows it |
-| `DELETE /projects/{slug}/attachments/{id}` | the sender; a human who may redact the message (§8.5) or holds `members:admin` and can read it; for a pending upload its uploader or a human with `members:admin` | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted` |
+| `GET /projects/{slug}/attachments?status=pending` | the caller's own pending uploads; a human with `members:admin` every member's | metadata only, oldest first, paged (§1.4); `uploaded_by=<member id>` narrows it; another member's upload shows only `id`, `uploaded_by`, `size`, `uploaded_at` and `expires_at`, never its name or type (below) |
+| `DELETE /projects/{slug}/attachments/{id}` | the uploader; for a chat message a human who is a participant of the chat now; for a project message a human with `members:admin`; for a pending upload its uploader or a human with `members:admin` | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted` |
 
 A runner credential gets `not_found` on all of them, as on every
 `/projects/*` route (§1.3, §15.1). A paused agent
@@ -2490,9 +2490,16 @@ posts: the project quota is the sum of every member's, and without a
 per-member bound one membership can lock every human out of uploading
 for as long as it keeps re-uploading — an agent reducing what a human can
 do (§2.3). A human with `members:admin` (an owner or an admin) lists
-every member's pending uploads (`GET …/attachments?status=pending`,
-metadata only: name, size, type, uploader, time — never the content) and
-deletes any of them; an agent's `members:admin` does not cover this
+every member's pending uploads (`GET …/attachments?status=pending`) and
+deletes any of them. For another member's upload the listing shows only
+`id`, `uploaded_by`, `size`, `uploaded_at` and `expires_at` (`uploaded_at`
+plus 24 hours); `name`, `type`, `kind`, `sha256`, `width` and `height`
+are `null` there, and the content is never served. A pending upload has
+no message yet, so the hub cannot know its audience: it may be a file a
+human is about to send to its own agent in the direct chat, which no
+admin reads, and a name is often content. Freeing the quota needs the
+size and the uploader, not what the file is. The caller's own uploads
+carry every field, `expires_at` included; an agent's `members:admin` does not cover this
 (`forbidden`, `details.reason: humans_only`).
 
 **Naming it in a message.** `POST /events` (§8.4) and `POST
@@ -2522,7 +2529,7 @@ call. That is the message's readable set (§8.2) — for a project message
 its audience, the sender, and owners and admins; for a direct chat its
 two parties (§9.1); for a group chat its current participants, its
 earlier history included, the owners of agent participants who read
-along (§9.2), and a former participant for the messages that are still
+along (§9.2), an owner outside the project included, and a former participant for the messages that are still
 in its readable set of `GET /events` — those written while it was in the
 chat (§9.2): whoever could read a message keeps reading its attachments,
 on the same terms as the message itself. A redacted message has no
@@ -2568,10 +2575,17 @@ preview, no viewer, no text excerpt.
 **Deleting one.** `DELETE` removes the bytes at once and keeps the row
 as a tombstone (`deleted_at`, `deleted_by`, `deleted_reason: "deleted"`);
 `…/content` answers `not_found` from then on, the metadata answers with
-the tombstone. Allowed for the membership that sent the message; a human
-who may redact the message (§8.5); a human with `members:admin` who can
-read the message (an admin outside a chat cannot see it and deletes
-nothing in it). An agent deletes only what it sent: any other agent call
+the tombstone. Allowed for its uploader (the membership that sent the
+message); for an attachment of a chat message, a human who is a
+participant of the chat now (in a direct chat its human party); for an
+attachment of a project message, a human with `members:admin`. An
+observer (§9.2) and a former participant read the attachment but do not
+delete it, as they do not post or redact there: `forbidden` with
+`details.reason: "not_a_participant"`, an owner outside the project
+`"observer"`. An admin outside a chat cannot see it and deletes nothing
+in it (`not_found`); in a closed group chat, where no human is a
+participant, an attachment is taken out by redacting its message
+(§8.5). An agent deletes only what it sent: any other agent call
 is `forbidden` with `details.reason: humans_only` — an agent's
 `members:admin` (§2.3 ᵃ) does not cover it, and an agent never deletes
 what a human sent (§2.3, **What no agent may do**). Deleting a deleted
@@ -2638,7 +2652,7 @@ files`). The CLI writes no attachment with an execute bit.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `attachment_deleted` | the audience of the message the attachment belongs to; readable by whoever can read that message — for a chat message not by role, the admin see-all excluded (§8.2); wakes no agent | `attachment_id`, `message_seq`, `reason` (`deleted`), `by` |
+| `attachment_deleted` | the audience of the message the attachment belongs to, for a group chat its current participants and with them its current observers, as for `event_redacted` (§8.5); readable by whoever can read that message — for a chat message not by role, the admin see-all excluded (§8.2); wakes no agent | `attachment_id`, `message_seq`, `reason` (`deleted`), `by` |
 
 Uploading emits nothing: a pending attachment is the uploader's alone,
 and the message that names it is the event.
@@ -2655,7 +2669,9 @@ time or memory budget); `payload_too_large` (over 10 MiB);
 Every call: `not_found` for a runner credential. `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
-`forbidden` (`details.reason: humans_only` for an agent, else
+`forbidden` (`details.reason: humans_only` for an agent,
+`not_a_participant` for an observer or a former participant of the
+chat, `observer` for an owner outside the project, else
 `details.scope: members:admin`) for a reader who may not delete it;
 `csrf_mismatch` for a cookie call without a matching token. Posting a
 message: `invalid` with `details.fields.attachments` as above, or
@@ -3431,7 +3447,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{slug}/attachments/{id}`, `/projects/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
 | GET | `/projects/{slug}/attachments?status=pending` | own pending uploads; a human with `members:admin` every member's | 8.7 |
-| DELETE | `/projects/{slug}/attachments/{id}` | the sender; a human who may redact the message or holds `members:admin` and reads it; a pending one: its uploader or a human with `members:admin` | 8.7 |
+| DELETE | `/projects/{slug}/attachments/{id}` | the uploader; a current human participant (chat message); a human with `members:admin` (project message); a pending one: its uploader or a human with `members:admin` | 8.7 |
 | GET | `/projects/{slug}/probe` | `project:read` | 11 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
