@@ -1608,8 +1608,7 @@ change it.
    hub does with that image is fixed here: it reads it server-side under
    the outbound rule (§11.1) from the forge's avatar host as §11.2 lists
    it (for GitHub `avatars.githubusercontent.com`), accepts the types an
-   upload accepts (below; JPEG is pending with them — GitHub serves
-   avatars as JPEG too, so without JPEG many forge avatars are no image),
+   upload accepts (below; GitHub serves avatars as JPEG),
    processes it as an upload, stores the result and refreshes it every
    6 hours like the project images. A failed refresh keeps the stored
    image; an answer that there is none drops it;
@@ -1675,20 +1674,22 @@ is a `304` without a body. It is served from what the hub stored and
 never reads through to the forge.
 
 **Upload.** `PUT` with the raw image as the body — no JSON, no multipart
-— and `Content-Type: image/png` or `image/webp`. The rules of the logo's
+— and `Content-Type: image/png`, `image/jpeg` or `image/webp`. The rules of the logo's
 upload apply (§11.2) — type sniffed from the magic bytes, the declared
 `Content-Type` must name it, at most 1 MiB (the body cap of §1.7 does not
-apply to this call), SVG and every other type refused — with two
-differences: only PNG and WebP are accepted, and the hub decodes the
-image and encodes it again. Whether JPEG is accepted as well is pending
-with the maintainer; until it is decided it is refused.
+apply to this call), SVG and every other type refused — with one
+difference: the hub decodes the image and encodes it again, so nothing
+of the uploaded file survives but its pixels — JPEG's EXIF data
+(location, camera) included. PNG, JPEG and WebP are accepted (the
+maintainer's decision of 2026-10-22: photos and forge avatars are JPEG,
+and re-encoding removes what made JPEG a concern).
 
 The decoder is the most exposed parser of the hub: it runs on bytes any
 agent credential can send. The rules below follow the image library's
 own guidance (Pillow, *Security*:
 https://pillow.readthedocs.io/en/stable/handbook/security.html):
 
-- Only the PNG and WebP decoders are enabled for this path; the type is
+- Only the PNG, JPEG and WebP decoders are enabled for this path; the type is
   chosen from the sniffed bytes, never by the library guessing.
 - The dimensions are read from the header before decoding; more than
   4096 pixels on either side is refused.
@@ -1772,7 +1773,7 @@ member list, which carries the current URL on every read.
 
 Errors, `GET`: `not_found` when there is no image or the caller may not
 see the member. `PUT`: `invalid` with `details.fields.body` one of
-`unsupported_type` (not PNG or WebP by its bytes, or a `Content-Type` that
+`unsupported_type` (not PNG, JPEG or WebP by its bytes, or a `Content-Type` that
 does not name the sniffed type), `too_large` (over 1 MiB), `dimensions`
 (over 4096 pixels on a side, by the header or after decoding, or a
 decoded size that differs from the header) and `undecodable` (the bytes
@@ -2721,7 +2722,7 @@ reviewer role.
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
-| `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
+| `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
