@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock
+from maity_hub import clock, images
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
@@ -38,19 +38,38 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
     return JSONResponse(body)
 
 
-def _project_row(project: Any, role: str) -> dict[str, Any]:
-    return {"slug": project.slug, "name": project.name, "state": project.state, "role": role}
+def _project_row(project: Any, role: str, shown: dict[str, Any]) -> dict[str, Any]:
+    logo = shown["logo"]
+    return {
+        "slug": project.slug,
+        "name": project.name,
+        "state": project.state,
+        "role": role,
+        # A project switcher shows each project's image without reading every project.
+        "logo": {"available": logo["available"], "etag": logo.get("etag")},
+    }
 
 
 def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
-        select(t.membership.c.id, t.membership.c.role, t.project)
+        select(
+            t.membership.c.id,
+            t.membership.c.role,
+            t.project.c.id.label("project_id"),
+            t.project.c.slug,
+            t.project.c.name,
+            t.project.c.state,
+        )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
         .order_by(t.project.c.slug)
     ).all()
+    shown = images.views(conn, [row.project_id for row in rows])
     return [
-        {**_project_row(row, row.role), "open_requests": open_requests(conn, row.id, row.role)}
+        {
+            **_project_row(row, row.role, shown[row.project_id]),
+            "open_requests": open_requests(conn, row.id, row.role),
+        }
         for row in rows
     ]
 
@@ -61,7 +80,7 @@ def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.id == caller.membership_id)
     ).one()
-    return [_project_row(row, row.role)]
+    return [_project_row(row, row.role, images.views(conn, [row.id])[row.id])]
 
 
 def open_requests(conn: Connection, membership_id: int, role: str) -> int:

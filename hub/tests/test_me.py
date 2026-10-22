@@ -64,12 +64,20 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "display_name": "Human maintainer",
     }
     assert body["projects"] == [
-        {"slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3},
+        {
+            "slug": "maity",
+            "name": "Maity",
+            "state": "build",
+            "role": "owner",
+            "logo": {"available": False, "etag": None},
+            "open_requests": 3,
+        },
         {
             "slug": "sample",
             "name": "Sample shop",
             "state": "freeze",
             "role": "proxy",
+            "logo": {"available": False, "etag": None},
             "open_requests": 1,
         },
     ]

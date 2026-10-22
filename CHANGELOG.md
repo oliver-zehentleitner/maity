@@ -52,7 +52,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - hub: a project's logo and banner (`docs/api.md` §11.2): upload by a project admin (PNG,
   JPEG or WebP by their bytes, at most 1 MiB, human only) or the repository's image read
   from the forge (the owner's avatar, a custom social preview), served from the hub with
-  `ETag`; `logo`/`banner` on the project view; `project_updated`, which never wakes; every
+  `ETag`; `logo`/`banner` on the project view and `logo` on `/me`'s projects;
+  `project_updated`, which never wakes; every
   read whose host comes from data under the transport rule of §11.1 (`outbound.py`).
 - deploy: `deploy/k3s-single/`, the hub with PostgreSQL 17, cert-manager and a daily
   `pg_dump` on one small instance with k3s, and its walkthrough in `docs/install/`.
