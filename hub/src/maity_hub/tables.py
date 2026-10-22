@@ -134,7 +134,7 @@ project = Table(
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
-    # optional or required (§2.2); the default fills projects made before 0003.
+    # optional or required (§2.2); the default fills projects made before 0004.
     Column("signing", String(16), nullable=False, server_default="optional"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),

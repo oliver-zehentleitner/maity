@@ -711,7 +711,7 @@ Response `200`, bounded and deterministic:
                     "forge": "github", "probe_configured": true },
     "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
-                "lease_seconds": 7200 },
+                "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
     "keep_the_why": true,
     "rules_version": 7
@@ -851,7 +851,7 @@ declaration only and refuses nothing.
   },
   "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
-              "lease_seconds": 7200 },
+              "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
   "settings": { "release_checklist": ["CHANGELOG has a section for this version",
                                        "live version equals the tag"] },
