@@ -952,6 +952,11 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     mark = page.locator("header .bar img.project-mark")
     expect(mark).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/logo\?v="))
     expect(chip.locator("img.project-mark")).to_be_visible()
+    # The src is set before the image has arrived: wait until the browser is
+    # done with it (loaded, or failed with naturalWidth 0), then judge.
+    page.wait_for_function(
+        "() => { const i = document.querySelector('header .bar img.project-mark'); return i && i.complete; }"
+    )
     assert (
         page.evaluate("() => document.querySelector('header .bar img.project-mark').naturalWidth")
         == 64

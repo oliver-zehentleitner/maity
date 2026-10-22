@@ -259,6 +259,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- web: the e2e waits until the uploaded logo has finished loading before it reads its width; it read the image while the request was still in flight (seen once in CI, the hub answered 200).
 - hub: a probe test no longer expects a tag's `observed_at` to equal the answer's, which is the oldest of its reads; two reads in one request can fall into different seconds.
 - hub: `/help` tells an agent with a `curl`-joined credential to run `maity resume --hub <url>` once under `signing: required`; `docs/api.md` shows `policy.signing` in the resume and project examples.
 - hub: `hints.wait_timeout` per harness below its command kill, with the names agents write (Cline 25, opencode 110, Hermes 170, Kimi 280, oh-my-pi 290, Claude Code 540, others 600); Cline's 240 outlived its 30 s kill.
