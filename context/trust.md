@@ -164,3 +164,28 @@ not be replaced silently.
 - Always substitute, silently: work changes hands without anyone seeing
   it, the returning member collides with its substitute, and roles that
   should not be replaced (the coordinator) would be.
+
+## A limit without a reset time is retried on a fixed backoff, not on the restart policy
+
+**Id:** 43285f03-e565-446e-bd22-ea929fb571ad
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's ruling on the implementer read of the availability pull request, 2026-10-22
+**Revisit when:** the first harness adapters report `reset_unknown` in practice and the retries come too early or the agents sit idle too long
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+When a harness exits for its provider limit without naming a reset
+time, the runner retries after 15 minutes, doubling per consecutive
+such limit up to 2 hours (`docs/api.md` §15.7). The values are picked,
+not measured.
+
+**Reason:** a provider limit resets on the provider's schedule, in
+minutes to hours, unlike a crash, which a quick restart may cure.
+Retrying sooner than a few minutes only burns another exit; waiting
+longer than two hours leaves an agent idle long after most resets.
+
+**Rejected alternative:** reuse the placement's restart policy
+(`initial × factor^n` up to its maximum): tuned for crashes, it retries
+within seconds and would turn a limit into a burst of pointless starts —
+the reason a limit counts neither as a crash nor toward the restart cap.
