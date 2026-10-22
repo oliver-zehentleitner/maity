@@ -40,6 +40,7 @@ class PolicyIn(Strict):
     lease_seconds: int | None = None
     signing: str | None = None
     spawn_requests: str | None = None
+    spawn_consent_by: str | None = None
     max_placements: int | None = None
 
 

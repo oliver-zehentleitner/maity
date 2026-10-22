@@ -1,6 +1,6 @@
 """The runner's configuration (runner design §5.1; docs/api.md §15).
 
-TOML, read with `tomllib` (Python 3.11 or newer; the rest of the CLI keeps 3.10). Unknown
+TOML, read with `tomllib`. Unknown
 keys are refused, like unknown fields in the API, so a typo fails at `check` instead of
 silently meaning a default. Keys left out take the defaults below; `~` is expanded in paths.
 What a runner may do at all — projects, repositories, harnesses, how many agents — is this
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import re
-import sys
+import tomllib
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -28,6 +28,8 @@ HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline"
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
+# Built but not offered: the maintainer decides on these when the runner goes into use.
+NOT_OFFERED_YET = ("opencode",)
 BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode", "pi": "pi",
             "hermes": "hermes", "kimi": "kimi", "cline": "cline", "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
@@ -109,17 +111,6 @@ class Config:
 
 
 # --- reading ---------------------------------------------------------------------------------
-
-
-def require_tomllib() -> Any:
-    """`tomllib`, or a ConfigError naming the Python version `maity runner` needs."""
-    if sys.version_info >= (3, 11):  # mypy checks as 3.10 and skips this branch
-        import tomllib
-
-        return tomllib
-    raise ConfigError(
-        [f"maity runner needs Python 3.11 or newer (this is {sys.version.split()[0]})"]
-    )
 
 
 def path_of(given: str | None) -> Path:
@@ -222,7 +213,6 @@ def _https_url(value: Any) -> str | None:
 
 def load(path: Path) -> Config:
     """The configuration at `path`; ConfigError listing every problem otherwise."""
-    tomllib = require_tomllib()
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -437,6 +427,10 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         problems.append(
             f"{where}: has no command allowlist of its own and cannot run unattended here "
             "(runner design §6.3)"
+        )
+    elif name in NOT_OFFERED_YET:
+        problems.append(
+            f"{where}: not offered yet; for now the runner runs claude-code and codex (and stub)"
         )
     modes = tuple(
         table.get(

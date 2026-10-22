@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import stat
 import sys
+import tomllib
 from pathlib import Path
 
 import fakehub
@@ -10,8 +11,6 @@ import pytest
 
 from maity import cli, state
 from maity.runner import commands, config
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
 
 MINIMAL = """\
 [hub]
@@ -37,7 +36,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def parse(text: str) -> config.Config:
-    loaded = config.require_tomllib().loads(text)
+    loaded = tomllib.loads(text)
     return config.parse(loaded, Path("runner.toml"))
 
 
@@ -193,13 +192,6 @@ def test_every_bad_repository_is_named() -> None:
 def test_backend_local_is_not_judged_under_another_kind() -> None:
     found = problems(minimal(b='\n[backend]\nkind = "ssh"\n[backend.local]\nlayout = "x"\n'))
     assert not any(p.startswith("backend.local") for p in found), found
-
-
-def test_python_310_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
-    with pytest.raises(config.ConfigError) as info:
-        config.require_tomllib()
-    assert "Python 3.11" in info.value.problems[0]
 
 
 def test_the_runner_ignores_maity_state_dir(
@@ -428,6 +420,7 @@ def test_check_passes_on_a_paired_runner(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     capsys.readouterr()
     code = cli.main(["runner", "check", "--config", str(paired)])
     out = lines(capsys)
@@ -451,6 +444,7 @@ def test_check_finds_the_harness_and_its_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "codex", "codex-cli 0.40.0")
     paired.write_text(paired.read_text() + "\n[harness.codex]\n")
     capsys.readouterr()
@@ -462,6 +456,7 @@ def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "claude", "2.1.308 (Claude Code)")
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
@@ -482,6 +477,7 @@ def test_check_requires_the_sandbox_when_configured(
     if not sys.platform.startswith("linux"):
         pytest.skip("the sandbox prerequisites are checked on Linux")
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "claude", "2.1.308")
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
     capsys.readouterr()
@@ -493,6 +489,7 @@ def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     os.chmod(tmp_path / "st", 0o755)  # noqa: S103 - the loose mode is the point
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
@@ -503,18 +500,11 @@ def test_check_warns_about_a_config_others_can_change(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     paired.chmod(0o664)
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     assert any("chmod go-w" in line and line.startswith("warn") for line in lines(capsys))
-
-
-def test_explain_refuses_on_python_310(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
-    assert cli.main(["runner", "check", "--explain"]) == cli.EXIT_ERROR
-    assert "Python 3.11" in capsys.readouterr().err
 
 
 def test_check_lists_configuration_problems(
@@ -540,3 +530,8 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("MAITY_RUNNER_CONFIG", "/etc/maity-runner/runner.toml")
     assert config.path_of(None) == Path("/etc/maity-runner/runner.toml")
     assert config.path_of("~/x.toml") == home / "x.toml"
+
+
+def test_opencode_is_not_offered_yet() -> None:
+    found = problems(minimal(o="\n[harness.opencode]\n"))
+    assert any(p.startswith("harness.opencode: not offered yet") for p in found), found

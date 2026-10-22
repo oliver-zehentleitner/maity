@@ -14,7 +14,7 @@ import re
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
@@ -29,6 +29,7 @@ from maity_hub.access import membership
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
+from maity_hub.config import Settings
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
@@ -41,7 +42,7 @@ from maity_hub.routes.members import validate_assignment
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter()
-page_router = APIRouter()  # /j/{token}, outside the API prefix
+page_router = APIRouter()  # /join/{token} and /j/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
@@ -66,6 +67,7 @@ class JoinCreate(Strict):
     # the join page, which whoever holds the URL can read (§3.1).
     briefing: str | None = markdown(default=None)
     ttl_seconds: int = TTL_DEFAULT
+    via: Literal["join", "public"] | None = None
 
 
 class Exchange(Strict):
@@ -88,7 +90,10 @@ idempotency.LOADERS["join"] = idempotency.plain(load_join)
 def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCaller) -> JSONResponse:
     if not TTL_MIN <= body.ttl_seconds <= TTL_MAX:
         raise invalid({"ttl_seconds": "out_of_range"})
-    public_url = settings_of(request).public_url
+    settings = settings_of(request)
+    via = body.via or ("join" if settings.join_url else "public")
+    if via == "join" and settings.join_url is None:
+        raise invalid({"via": "no_join_host"}, "this hub has no join host")
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -144,13 +149,14 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 areas=values["areas"],
                 capabilities=values["capabilities"],
                 briefing=body.briefing or None,
+                via=via,
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
                 failed_attempts=0,
             )
         )
-        join_url = f"{public_url}/j/{token}"
+        join_url = join_link(settings, via, token)
         return idempotency.Outcome(
             201,
             "join",
@@ -163,6 +169,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "agent_id": agent_id,
                 "project": mine.project.slug,
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
+                "via": via,
             },
         )
 
@@ -280,8 +287,8 @@ signs: a call with the bearer credential is refused with `signature_required`.
 Install the CLI and join with it:
 
 ```sh
-pipx install maity
-maity join {{hub}}/j/{{token}} --code <code>
+{{cli_install}}
+maity join {{join_link}} --code <code>
 ```
 
 If you cannot install it yet, the exchange in section 3 still works and
@@ -291,8 +298,27 @@ once.
 """
 
 
-def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, str]:
-    """The page as Markdown, and its title."""
+def join_link(settings: Settings, via: str, token: str) -> str:
+    """The join URL on the join host (no prefix, §1.1) or on the public URL."""
+    if via == "join" and settings.join_url is not None:
+        return f"{settings.join_url}/{token}"
+    return f"{settings.public_url}/join/{token}"
+
+
+def exchange_url(settings: Settings, on_join_host: bool, token: str) -> str:
+    """Where the page's exchange recipe posts: the same URL on the join host."""
+    if on_join_host and settings.join_url is not None:
+        return f"{settings.join_url}/{token}"
+    return f"{settings.public_url}/api/v1/join/{token}"
+
+
+def render_page(
+    conn: Connection, row: Any, token: str, settings: Settings, on_join_host: bool = False
+) -> tuple[str, str]:
+    """The page as Markdown, and its title. Every URL after the exchange is the public
+    URL's, also on the join host (§3.2)."""
+    hub = settings.public_url
+    link = join_link(settings, "join" if on_join_host else "public", token)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     agent = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == row.agent_id)).one()
     reports_to = principal_id(conn, row.reports_to)
@@ -315,8 +341,13 @@ def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, 
         "reports_to": reports_to_text,
         "hub": hub,
         "token": token,
+        "join_link": link,
+        "cli_install": settings.cli_install,
+        "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
-            _SIGNING_REQUIRED.replace("{{hub}}", hub).replace("{{token}}", token)
+            _SIGNING_REQUIRED.replace("{{hub}}", hub)
+            .replace("{{join_link}}", link)
+            .replace("{{cli_install}}", settings.cli_install)
             if project.signing == "required"
             else ""
         ),
@@ -333,30 +364,60 @@ def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, 
 _HTML = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 
-def _html(markdown: str, title_text: str) -> str:
+def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
     body = _HTML.render(markdown)
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{html.escape(title_text)}</title>\n</head>\n<body>\n<main>\n{body}</main>\n"
         "<footer><p>This page is documentation for the agent you are adding. "
-        'It has no form and performs no call. <a href="/">Open the dashboard</a>.</p>'
+        f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
+        "Open the dashboard</a>.</p>"
         "</footer>\n</body>\n</html>\n"
     )
 
 
+# The join host's answer to a token-shaped path that no longer works (§1.1): never
+# which of the reasons applies.
+_DEAD_LINK = """# This join link no longer works
+
+Ask the person who sent it to you for a new join line. Nobody needs to do
+anything else.
+"""
+
+
 async def _page(token: str, request: Request) -> Response:
     engine = engine_of(request)
-    hub = settings_of(request).public_url
+    settings = settings_of(request)
+    on_join_host = bool(request.scope["state"].get("join_host"))
+    dashboard = f"{settings.public_url}/" if on_join_host else "/"
 
     def run() -> tuple[str, str]:
         with engine.begin() as conn:
-            return render_page(conn, _usable(conn, token), token, hub)
+            return render_page(conn, _usable(conn, token), token, settings, on_join_host)
 
-    markdown, title_text = await run_in_threadpool(run)
+    try:
+        markdown, title_text = await run_in_threadpool(run)
+        status = 200
+    except ApiError as error:
+        if not (on_join_host and error.status == 404):
+            raise
+        markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
+    # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
+    headers = {"Maity-Error": "not_found"} if status == 404 else None
     if "text/html" in request.headers.get("accept", ""):
-        return Response(_html(markdown, title_text), media_type="text/html; charset=utf-8")
-    return Response(markdown, media_type="text/markdown; charset=utf-8")
+        return Response(
+            _html(markdown, title_text, dashboard),
+            status_code=status,
+            media_type="text/html; charset=utf-8",
+            headers=headers,
+        )
+    return Response(
+        markdown,
+        status_code=status,
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
 
 
 @router.get("/join/{token}")
@@ -364,8 +425,14 @@ async def join_page(token: str, request: Request) -> Response:
     return await _page(token, request)
 
 
+@page_router.get("/join/{token}")
+async def public_join_page(token: str, request: Request) -> Response:
+    return await _page(token, request)
+
+
 @page_router.get("/j/{token}")
 async def short_join_page(token: str, request: Request) -> Response:
+    """The links handed out before `/join/` (§3.2): an alias, not a redirect."""
     return await _page(token, request)
 
 
