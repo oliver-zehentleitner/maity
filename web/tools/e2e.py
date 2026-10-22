@@ -372,10 +372,10 @@ def scenario(run: Run, page: Page) -> None:
             wait.wait()
     assert wait.returncode == 0, f"maity wait exited {wait.returncode}: {stdout}{stderr}"
     event = json.loads(stdout)
-    print(f"   maity wait woke on {event.get('type')}")
-    assert event.get("type") == "request_answered", event
-    answered = json.dumps(event)
-    assert request_id in answered, event
+    print(f"   maity wait woke on {event.get('kind')} for {event.get('subject')}")
+    assert event.get("kind") == "request_answered", event
+    assert event.get("subject") == {"type": "request", "id": request_id}, event
+    assert (event.get("payload") or {}).get("answer", {}).get("reply_id") == "o1", event
     page.locator("nav.views").get_by_role("link", name="Board", exact=True).click()
     card = board_card(page, "E2E card")
     expect(card).to_contain_text("Claimed by")
