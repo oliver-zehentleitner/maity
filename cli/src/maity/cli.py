@@ -228,6 +228,18 @@ def cmd_resume(args: argparse.Namespace) -> int:
 BATCH_MAX = 50
 
 
+def _event_line(event: dict[str, Any]) -> str:
+    """`#seq kind subject: title`, cleaned: what woke the wait, before its JSON."""
+    subject = onboarding.get(event, "subject", "id")
+    title = onboarding.get(event, "payload", "title") or onboarding.get(event, "payload", "type")
+    line = f"#{onboarding.inline(event.get('seq'))} {onboarding.inline(event.get('kind'))}"
+    if subject:
+        line += f" {onboarding.inline(subject)}"
+    if title:
+        line += f": {onboarding.inline(title)[:120]}"
+    return line
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -263,19 +275,23 @@ def cmd_wait(args: argparse.Namespace) -> int:
         items = [e for e in page.get("items") or [] if isinstance(e, dict)]
         if items:
             taken = items[:BATCH_MAX] if args.batch else items[:1]
-            session.data["cursor"] = taken[-1].get("seq", cursor)
-            session.save()
+            if not args.keep_cursor:  # with it, the next resume still lists the events
+                session.data["cursor"] = taken[-1].get("seq", cursor)
+                session.save()
             for event in taken:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
                     _err(note)
+            for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
+                _err(_event_line(event))
             _print_json(taken if args.batch else taken[0])
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
-            cursor = new_cursor
-            session.data["cursor"] = cursor
-            session.save()
+            cursor = new_cursor  # this run polls on from here; --keep-cursor saves nothing
+            if not args.keep_cursor:
+                session.data["cursor"] = cursor
+                session.save()
         if time.monotonic() - started < 1:  # an empty answer that did not hold: do not spin
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
@@ -573,6 +589,210 @@ def cmd_release_list(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --- placements (docs/api.md §15.6), for agents with agents:propose ---------------------------
+
+
+def _grace(value: str) -> int:
+    seconds = int(value)
+    if not 0 <= seconds <= 900:
+        raise argparse.ArgumentTypeError("0 to 900 seconds")
+    return seconds
+
+
+def _obj(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _placements(session: Session) -> list[dict[str, Any]]:
+    answer = session.client.call("GET", session.project_path("placements"))
+    items = answer.get("items") if isinstance(answer, dict) else None
+    return [p for p in items or [] if isinstance(p, dict)]
+
+
+def _one(items: list[dict[str, Any]], which: str, keys: tuple[Callable[[Any], Any], ...],
+         what: str) -> dict[str, Any]:  # fmt: skip
+    """The one item `which` names: an exact match on the first key (the id) wins; otherwise
+    the later keys, and more than one match is refused rather than guessed. Handles are only
+    unique per owner, and an id is a valid handle."""
+    for key in keys:
+        found = [item for item in items if key(item) == which]
+        if len(found) == 1:
+            return found[0]
+        if len(found) > 1:
+            raise CommandError(f"{onboarding.inline(which)} names more than one {what}; use the id")
+    raise CommandError(f"no {what} {onboarding.inline(which)} in this project")
+
+
+def _placement(session: Session, which: str) -> dict[str, Any]:
+    """The active placement with id `which`, or the one of the agent with that id or handle."""
+    found = _one(
+        [p for p in _placements(session) if isinstance(p.get("id"), str)],
+        which,
+        (lambda p: p.get("id"), lambda p: _obj(p.get("agent")).get("id"),
+         lambda p: _obj(p.get("agent")).get("handle")),
+        "active placement",
+    )  # fmt: skip
+    return found
+
+
+def _member_id(session: Session, which: str) -> str:
+    """The member id for an agent named by id or handle."""
+    answer = session.client.call("GET", session.project_path("members"))
+    members = [
+        m for m in (answer.get("items") if isinstance(answer, dict) else None) or []
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+    ]  # fmt: skip
+    member = _one(members, which, (lambda m: m.get("id"), lambda m: m.get("handle")), "member")
+    return str(member["id"])
+
+
+def _placement_line(p: dict[str, Any]) -> str:
+    show = onboarding.inline
+    agent = _obj(p.get("agent"))
+    runner = _obj(p.get("runner"))
+    reported = _obj(p.get("reported"))
+    state_ = str(reported.get("state") or "not reported")
+    if reported.get("reason"):
+        state_ += f"/{reported['reason']}"
+    pending = "" if p.get("reported_current", True) else " (pending)"
+    return (
+        f"{show(p.get('id'))}  {show(agent.get('handle') or agent.get('id'))} on "
+        f"{show(runner.get('name') or runner.get('id'))}  {show(p.get('harness'))} "
+        f"{show(p.get('mode'))}  desired {show(p.get('desired'))}, {show(state_)}{pending}"
+    )
+
+
+def cmd_placement_list(args: argparse.Namespace) -> int:
+    placements = _placements(Session())
+    if args.json:
+        _print_json(placements)
+        return EXIT_OK
+    if not placements:
+        print("no active placements")
+    for placement in placements:
+        print(_placement_line(placement))
+    return EXIT_OK
+
+
+def cmd_placement_start(args: argparse.Namespace) -> int:
+    session = Session()
+    body: dict[str, Any] = {
+        "agent": {"id": _member_id(session, args.agent)},
+        "runner": args.runner,
+        "harness": args.tool,
+        "reason": _text(args.reason, "--reason"),
+    }
+    if args.mode:
+        body["mode"] = args.mode
+    if args.model:
+        body["model"] = args.model
+    if args.target:
+        body["target"] = args.target
+    if args.clone or args.branch:
+        body["workspace"] = {k: v for k, v in (("clone", args.clone), ("branch", args.branch)) if v}
+    placement = session.client.call("POST", session.project_path("placements"), body=body)
+    approval = _obj(_field(placement, "approval"))
+    line = f"placement {onboarding.inline(_field(placement, 'id'))} created"
+    if approval.get("status") == "pending":
+        line += f"; waiting for consent (request {onboarding.inline(approval.get('request_id'))})"
+    return _done(args, placement, line)
+
+
+def cmd_placement_stop(args: argparse.Namespace) -> int:
+    session = Session()
+    placement = _placement(session, args.which)
+    body: dict[str, Any] = {"desired": "stopped"}
+    if args.grace is not None:
+        body["stop_grace_seconds"] = args.grace
+    path = session.project_path("placements", placement["id"])
+    answer = session.client.call("PATCH", path, body=body)
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} stopping")
+
+
+def cmd_placement_restart(args: argparse.Namespace) -> int:
+    session = Session()
+    placement = _placement(session, args.which)
+    path = session.project_path("placements", placement["id"], "restart")
+    answer = session.client.call("POST", path, body={"rejoin": True} if args.rejoin else {})
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting")
+
+
+def cmd_runners(args: argparse.Namespace) -> int:
+    session = Session()
+    answer = session.client.call("GET", session.project_path("runners"))
+    items = [r for r in (answer.get("items") if isinstance(answer, dict) else None) or []
+             if isinstance(r, dict)]  # fmt: skip
+    if args.json:
+        _print_json(items)
+        return EXIT_OK
+    if not items:
+        print("no runners attached to this project")
+    for item in items:
+        runner = _obj(item.get("runner")) or item  # the attachment carries the runner view
+        caps = _obj(runner.get("capabilities"))
+        tools = ", ".join(
+            onboarding.inline(h.get("id"))
+            for h in caps.get("harnesses") or []
+            if isinstance(h, dict) and h.get("available")
+        )
+
+        def show(value: Any) -> str:
+            return "-" if value is None else onboarding.inline(value)
+
+        print(
+            f"{show(runner.get('id'))}  {show(runner.get('name'))}  {show(runner.get('presence'))}"
+            f"  {show(caps.get('running'))}/{show(caps.get('max_agents'))} running"
+            f"  tools: {tools or '-'}"
+        )
+    return EXIT_OK
+
+
+AVATAR_MAX = 1024 * 1024  # §6.10: at most 1 MiB; the hub checks the pixels
+
+
+def avatar_type(data: bytes) -> str | None:
+    """The image type from the magic bytes, as the hub sniffs it (§6.10, §11.2): PNG, JPEG or
+    WebP; None for anything else, whatever the file is called."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def cmd_profile_avatar(args: argparse.Namespace) -> int:
+    """`PUT /me/avatar` with the file as it is, or `DELETE /me/avatar` (§6.10, §13)."""
+    if args.remove == bool(args.file):
+        raise UsageError("give an image file, or --remove")
+    if args.remove:
+        answer = Session().client.call("DELETE", "/me/avatar")
+        return _done(args, answer, f"avatar removed; now {_avatar_line(answer)}")
+    try:
+        with open(args.file, "rb") as fh:
+            data = fh.read(AVATAR_MAX + 1)
+    except OSError as exc:
+        raise UsageError(f"cannot read {args.file}: {exc.strerror}") from None
+    kind = avatar_type(data)
+    if kind is None:
+        _err(f"refused: {args.file} is not a PNG, JPEG or WebP image (read from its first bytes)")
+        return EXIT_REFUSED
+    if len(data) > AVATAR_MAX:
+        _err(f"refused: {args.file} is larger than 1 MiB; scale it down first")
+        return EXIT_REFUSED
+    answer = Session().client.call("PUT", "/me/avatar", raw=data, content_type=kind)
+    return _done(args, answer, f"avatar set: {_avatar_line(answer)}")
+
+
+def _avatar_line(answer: Any) -> str:
+    url = _field(answer, "avatar_url")
+    source = _field(answer, "avatar_source")
+    if url is None:
+        return "no image (the generated avatar is shown)"
+    return f"{onboarding.inline(url)} ({onboarding.inline(source or 'unknown source')})"
+
+
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
     return _done(args, card, "\n".join(_release_summary(card)))
@@ -658,7 +878,8 @@ def build_parser() -> argparse.ArgumentParser:
         "join",
         "pair this clone with a project, using the line a human pasted",
         "Exchange the single-use join code for a session credential, store it in this clone's "
-        "state directory without printing it, write the Maity pointer block into AGENTS.md, then "
+        "state directory without printing it, print the Maity pointer block for AGENTS.md "
+        "(--pointer writes it), then "
         "open the first session and print the onboarding: the briefing the humans wrote for you, "
         "who you are, the project and its rules, and the next step. A clone that already holds a "
         "credential is refused.",
@@ -724,6 +945,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"print every pending event (at most {BATCH_MAX}) as one JSON array, not the first "
         "one alone: one wake for a burst",
     )
+    p.add_argument(
+        "--keep-cursor",
+        action="store_true",
+        help="return the event without acknowledging it, and save no cursor: the next "
+        "`maity resume` still lists it (for a supervisor that starts a run on each event)",
+    )
     p.set_defaults(handler=cmd_wait)
 
     p = add(
@@ -732,7 +959,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Send a completion report. The head commit comes from git, the remote head from "
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
-        "changes exist, the branch is not pushed, or the pull request's head differs. A card "
+        "changes exist, the branch is not pushed, or the pull request's head differs. A branch "
+        "deleted after its pull request was merged reports with the merged head. A card "
         "whose result is not code (a review, a draft, a decision prepared for a human) is "
         "reported with --no-code: the summary carries the result, and no git fact is read or "
         "sent.",
@@ -907,6 +1135,78 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_api)
 
     runner_commands.add_parser(sub, fmt)
+
+    p = add(
+        "profile",
+        "your own profile: its avatar",
+        "Change your agent profile, the same in every project it is a member of (§6.10).",
+    )
+    prof = p.add_subparsers(dest="profile_command", metavar="<action>", required=True)
+    r = prof.add_parser(
+        "avatar",
+        help="set or remove your avatar",
+        description="Upload an image as your avatar: PNG, JPEG or WebP, at most 1 MiB. The type "
+        "is read from the file's first bytes, and anything else is refused here before any "
+        f"call (exit {EXIT_REFUSED}). The hub re-encodes it as a square PNG of at most 256 "
+        "pixels, without metadata. --remove deletes the upload. Prints the new avatar_url.",
+        formatter_class=fmt,
+    )
+    r.add_argument("file", nargs="?", help="the image to upload")
+    r.add_argument("--remove", action="store_true", help="remove the uploaded avatar")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_profile_avatar)
+
+    p = add(
+        "placement",
+        "start, list, stop or restart agents on runners (agents:propose)",
+        "Placements say which agent runs on which runner (§15.6). With agents:propose an agent "
+        "may propose a start for an existing member (under consent the owner gives the go) and "
+        "stop, start, restart and list placements. An agent is named by its handle or id.",
+    )
+    psub = p.add_subparsers(dest="placement_command", metavar="<action>", required=True)
+    r = psub.add_parser("list", help="the project's active placements", formatter_class=fmt)
+    _json_flag(r)
+    r.set_defaults(handler=cmd_placement_list)
+    r = psub.add_parser(
+        "start",
+        help="propose or start an agent on a runner",
+        description="POST …/placements for an existing member; prints the placement and, "
+        "under consent, the request id the owner answers.",
+        formatter_class=fmt,
+    )
+    r.add_argument("agent", help="the member's handle or id")
+    r.add_argument("--runner", required=True, type=_id, help="the runner id")
+    r.add_argument("--tool", required=True, help="the harness, e.g. claude-code or codex")
+    r.add_argument("--mode", choices=("interactive", "supervised"), help="default: the tool's")
+    r.add_argument("--model", help="one of the runner's models for the tool")
+    r.add_argument("--target", help="a target the runner advertises")
+    r.add_argument("--clone", help="the clone name (default: the agent's handle)")
+    r.add_argument("--branch", help="a starting branch")
+    r.add_argument("--reason", required=True, help="why this agent should run there")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_placement_start)
+    r = psub.add_parser("stop", help="stop an agent's placement", formatter_class=fmt)
+    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument("--grace", type=_grace, metavar="N", help="seconds to park the work (0-900)")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_placement_stop)
+    r = psub.add_parser("restart", help="restart an agent's placement", formatter_class=fmt)
+    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "--rejoin",
+        action="store_true",
+        help="with a new credential, after the old one was revoked (§15.6)",
+    )
+    _json_flag(r)
+    r.set_defaults(handler=cmd_placement_restart)
+
+    p = add(
+        "runners",
+        "the runners attached to this project, their state and tools",
+        "List the project's runners (GET …/runners): presence, agents running, available tools.",
+    )
+    _json_flag(p)
+    p.set_defaults(handler=cmd_runners)
 
     p = sub.add_parser(
         "help",

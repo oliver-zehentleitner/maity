@@ -10,6 +10,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.config import DEFAULT_CLI_INSTALL
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_auth_agent import bearer, signed
@@ -67,8 +68,8 @@ def test_a_bearer_call_is_refused_where_signing_is_required(
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "signature_required"
     error = response.json()["error"]
-    assert error["details"] == {"cli": "pipx install maity", "then": "maity resume"}
-    assert "pipx install maity" in error["message"]
+    assert error["details"] == {"cli": DEFAULT_CLI_INSTALL, "then": "maity resume"}
+    assert "install the CLI" in error["message"]
 
 
 def test_a_signed_call_goes_through_where_signing_is_required(
@@ -254,6 +255,7 @@ def test_the_join_page_puts_the_cli_first_when_signing_is_required(
     page = make_client().get(f"/j/{token}").text
     required = page.index("## This project requires the CLI")
     assert required < page.index("## 1. What this is")
-    assert f"maity join https://hub.example/j/{token} --code <code>" in page[required:]
+    assert f"maity join https://hub.example/j/{token} --code <code>" not in page
+    assert f"maity join https://hub.example/join/{token} --code <code>" in page[required:]
     assert "{{" not in page
     assert "This project requires it: every call after the exchange must be signed." in page

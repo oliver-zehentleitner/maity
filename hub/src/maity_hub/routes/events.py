@@ -12,13 +12,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, longpoll
+from maity_hub import clock, events, idempotency, longpoll, mentions
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.models import Strict, markdown
+from maity_hub.models import Strict, Written, markdown
 from maity_hub.views import event_view, event_views
 
 router = APIRouter()
@@ -36,7 +36,7 @@ MESSAGE_TYPES = (
 )
 
 
-class MessageIn(Strict):
+class MessageIn(Written):
     kind: Literal["message"]
     type: str
     to: str | None = None
@@ -250,12 +250,27 @@ def post_message(
         ).first()
         if found is None:
             raise invalid({"task_id": "unknown_task"})
+    mentioned: list[dict[str, Any]] = []
+    if body.type != "chat":  # a chat stays between its two parties (§8.6)
+        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
+        named = mentions.members(mentioned)
+        roles = _roles(conn, mine.project.id, named)
+        pinged = [
+            m
+            for m in named
+            if not (
+                "all" in audience or f"member:{m}" in audience or f"role:{roles[m]}" in audience
+            )
+        ]
+        mentions.charge(conn, mine.id, len(pinged))
+        audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in named)]))
     payload = {
         "type": body.type,
         "to": to,
         "body": body.body,
         "conversation_id": body.conversation_id,
         "task_id": body.task_id,
+        "mentions": mentioned,
     }
     seq = events.emit(
         conn,
@@ -268,6 +283,20 @@ def post_message(
         conversation_id=body.conversation_id,
     )
     return load_event(conn, str(seq))
+
+
+def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str, str]:
+    """The role of each mentioned member, to tell who `to` already reaches."""
+    if not principals:
+        return {}
+    rows = conn.execute(
+        select(t.membership.c.agent_id, t.membership.c.human_id, t.membership.c.role).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.agent_id.in_(principals) | t.membership.c.human_id.in_(principals),
+        )
+    ).all()
+    return {(r.agent_id or r.human_id): r.role for r in rows}
 
 
 @router.post("/projects/{slug}/events")

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -12,8 +11,6 @@ import pytest
 
 from maity import hub, state
 from maity.runner import capabilities, config, restart, supervisor, tmux, workspace
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -114,7 +111,7 @@ def recorded(cfg: config.Config, n: int = 3, credential: bool = True) -> workspa
     if credential:
         (place.path / ".git" / "maity").mkdir(mode=0o700)
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
-    workspace._record(cfg.state_dir, place, f"agt-{n}", f"plc-000{n}")
+    workspace.record(cfg.state_dir, place, f"agt-{n}", f"plc-000{n}")
     return place
 
 
@@ -383,7 +380,7 @@ def new_clone(cfg: config.Config) -> workspace.Workspace:
     place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
     (place.path / ".git").mkdir(parents=True)
     (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
-    workspace._record(cfg.state_dir, place, "agent-3", "plc-0003")
+    workspace.record(cfg.state_dir, place, "agent-3", "plc-0003")
     return place
 
 
@@ -757,7 +754,7 @@ def test_two_placements_whose_names_would_have_collided_both_run(world: Any) -> 
         (place.path / ".git" / "maity").mkdir(parents=True)
         (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
-        workspace._record(sup.cfg.state_dir, place, p["agent"]["id"], p["id"])
+        workspace.record(sup.cfg.state_dir, place, p["agent"]["id"], p["id"])
     sup.update([first, second])
     settle(sup)
     clock.now += 10_000
@@ -1176,3 +1173,15 @@ def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.Mo
     sup.records["plc-0003"].retry_at = None
     settle(sup)  # the hub has not cleared `rejoin` yet
     assert len(calls) == 1 and len(backend.started) == 2
+
+
+def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    sup.cfg = replace(
+        sup.cfg,
+        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
+            allow=("make test",))},
+    )  # fmt: skip
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert states(reports) == [("failed", "harness_refused", None)]

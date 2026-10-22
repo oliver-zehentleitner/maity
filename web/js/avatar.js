@@ -55,12 +55,15 @@ window.Maity = window.Maity || {};
   }
 
   // member: { id, avatar_url? }. A URL the page refuses (h() allows only
-  // the hub's own images) falls back to the identicon.
+  // the hub's own images), and an image that does not load (a 404 once the
+  // access is gone, §6.10), fall back to the identicon.
   M.avatar = function (member, size) {
     const px = size || 24;
     if (member && member.avatar_url) {
       try {
-        return M.dom.h("img", { class: "avatar-img", src: member.avatar_url, alt: "", width: String(px), height: String(px) });
+        const img = M.dom.h("img", { class: "avatar-img", src: member.avatar_url, alt: "", width: String(px), height: String(px) });
+        img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(identicon(member.id || "?", px), img); });
+        return img;
       } catch (refused) {
         // not an image the page may load: the generated one instead
       }

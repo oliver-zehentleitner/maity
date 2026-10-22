@@ -41,6 +41,27 @@ def test_stale_keys_are_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(limiter) == 1
 
 
+def test_several_at_once_wait_for_room_for_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(3, 10)
+    assert limiter.take("k", 1) == 0
+    now[0] = 5.0
+    assert limiter.take("k", 2) == 0
+    now[0] = 6.0
+    assert limiter.take("k", 1) == 4  # the hit at 0 leaves at 10
+    assert limiter.take("k", 2) == 9  # two need the hit at 5 gone too: at 15
+    assert limiter.take("k", 4) == 10  # never fits: a whole window
+    limiter.give_back("k", 2)
+    assert limiter.take("k", 2) == 0
+
+
 def test_at_most_four_scrypt_derivations_run_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     running = 0
     peak = 0

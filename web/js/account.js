@@ -1,6 +1,7 @@
-// The signed-in human's account (#/account): who they are, and changing
-// the password (docs/api.md §2.1, POST /auth/password). A change ends
-// every other session of this human; this one stays signed in.
+// The signed-in human's account (#/account): who they are, their picture
+// and their agents' pictures (#/account/picture, docs/api.md §6.10), and
+// changing the password (§2.1, POST /auth/password). A password change
+// ends every other session of this human; this one stays signed in.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -11,7 +12,89 @@ window.Maity = window.Maity || {};
   // The hub's minimum, counted in characters as the hub counts them.
   const MIN_LENGTH = 12;
 
-  M.views.account = async function (ctx, root) {
+  const { sniffImage, IMAGE_MAX } = M.dom;
+  const SOURCE_WORDS = {
+    uploaded: "Uploaded.",
+    forge: "From the linked forge account.",
+  };
+  // The hub's refusals of an upload (§6.10), in words.
+  const REFUSED = {
+    unsupported_type: "not a PNG, JPEG or WebP image",
+    too_large: "larger than 1 MiB",
+    dimensions: "more than 4096 pixels on a side",
+    undecodable: "the image could not be read",
+  };
+  function refusal(err, own) {
+    const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
+    if (why) return { message: REFUSED[why] || why };
+    if (err.code === "rate_limited") return { message: "too many changes of this picture in the last hour, or the hub is busy; try again later" };
+    // /me/avatar is not_found only on a hub that has no pictures yet.
+    if (err.code === "not_found") return { message: own ? "this hub does not take pictures yet" : "this profile is not yours, or this hub does not take pictures yet" };
+    return err;
+  }
+
+  // One picture and its controls: what shows now, where it comes from, an
+  // upload and, for an upload, Remove. who: { id, display_name,
+  // avatar_url, avatar_source }; path: the PUT/DELETE endpoint; changed
+  // gets the hub's answer, { avatar_url, avatar_source }.
+  function pictureEditor(who, path, own, changed) {
+    const status = M.statusLine();
+    const id = "avatar-file-" + who.id;
+    const input = h("input", { id, type: "file", accept: "image/png,image/jpeg,image/webp" });
+    const whose = own ? "your" : who.display_name + "'s";
+    const done = (answer, words) => {
+      who.avatar_url = answer.avatar_url;
+      who.avatar_source = answer.avatar_source;
+      changed(answer, words);
+    };
+    input.addEventListener("change", async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const stop = (message) => { status.fail("Not uploaded: ", { message }); input.value = ""; };
+      if (file.size > IMAGE_MAX) { stop("larger than 1 MiB"); return; }
+      const type = await sniffImage(file);
+      if (!type) { stop("not a PNG, JPEG or WebP image"); return; }
+      input.disabled = true;
+      status.busy("Uploading " + whose + " picture…");
+      try {
+        done(await M.api.putImage(path, file, type), "Picture uploaded.");
+      } catch (err) {
+        status.fail("Not uploaded: ", refusal(err, own));
+        input.value = "";
+      } finally {
+        input.disabled = false;
+      }
+    });
+    const remove = who.avatar_source === "uploaded" ? h("button", {
+      type: "button",
+      onclick: async () => {
+        remove.disabled = true;
+        status.busy("Removing…");
+        try {
+          const answer = await M.api.del(path);
+          done(answer, "Uploaded picture removed; " + (answer.avatar_source === "forge" ? "the forge's picture shows again." : "the generated one shows again."));
+        } catch (err) {
+          status.fail("Not removed: ", refusal(err, own));
+          remove.disabled = false;
+        }
+      },
+    }, "Remove the upload") : null;
+    return h("div", { class: "picture" },
+      h("div", { class: "picture-now" }, M.avatar(who, 64),
+        h("p", { class: "muted" }, SOURCE_WORDS[who.avatar_source] || "Generated from the member id: the same in every client.")),
+      h("div", { class: "picture-controls" },
+        h("label", { for: id }, own ? "Upload a picture" : "Upload a picture for " + who.display_name),
+        input,
+        h("p", { class: "hint" }, "PNG, JPEG or WebP, at most 1 MiB and 4096 pixels on a side. The hub crops it to a square, "
+          + "scales it to 256 pixels and drops everything but the pixels (a photo's location included)."),
+        h("div", { class: "actions" }, remove),
+        status.el));
+  }
+
+  // Set by a change; the next drawing of the view says it.
+  let pictureNote = null;
+
+  M.views.account = async function (ctx, root, args) {
     const field = (id, label, autocomplete, hint) => {
       const input = h("input", { id, type: "password", autocomplete, required: true, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
@@ -68,12 +151,32 @@ window.Maity = window.Maity || {};
       },
     }, current.nodes, fresh.nodes, repeat.nodes, submit, status.el);
 
+    // A changed picture redraws the whole page: the header's own picture
+    // and /me come back with the hub's new avatar_url.
+    const changed = (answer, words) => { pictureNote = words; ctx.refresh(); };
+    const pictureHeading = h("h3", { class: "picture-heading", tabindex: "-1" }, "Your picture");
+    const note = pictureNote ? h("p", { class: "ok", role: "status" }, pictureNote) : null;
+    pictureNote = null;
+    // Your agents' pictures (§6.10: the profile's owner sets them); a hub
+    // without the field shows the profiles without the editor.
+    const agents = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id)).catch(() => null);
     append(root, h("h2", null, "Your account"),
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
         h("dt", null, "Handle"), h("dd", null, "@" + ctx.me.handle)),
+      pictureHeading,
+      h("p", { class: "muted" }, "Shown next to your name in every project, to everyone who shares one with you."),
+      note,
+      pictureEditor(ctx.me, "/me/avatar", true, changed),
+      agents && agents.length ? [h("h3", null, "Your agents' pictures"),
+        h("p", { class: "muted" }, "Each agent can also set its own; the last change wins."),
+        h("ul", { class: "picture-list" }, agents.map((a) => h("li", null,
+          h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + a.handle)),
+          pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
       h("h3", null, "Change password"),
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
+    // #/account/picture (the profile menu's Picture) starts at the picture.
+    if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
   };
 })(window.Maity);

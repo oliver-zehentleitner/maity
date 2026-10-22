@@ -370,8 +370,12 @@ class Client:
         query: Sequence[tuple[str, str]] = (),
         body: Any = None,
         timeout: float | None = None,
+        raw: bytes | None = None,
+        content_type: str | None = None,
     ) -> Any:
-        """Send one request; return the decoded JSON body. `path` is relative to /api/v1."""
+        """Send one request; return the decoded JSON body. `path` is relative to /api/v1.
+        `raw` sends those bytes as the body, as `content_type` (an image upload), instead of
+        `body` as JSON; they are signed the same way."""
         method = method.upper()
         if not path.startswith("/"):
             raise HubError(f"path must start with '/': {path!r}")
@@ -384,26 +388,33 @@ class Client:
             query = [*urllib.parse.parse_qsl(inline_query, keep_blank_values=True), *query]
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
         query_string = sign.canonical_query(query)
-        data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
+        if raw is not None:
+            data = raw
+        else:
+            data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
         _guard_payload(data, query_string, path)
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-        if body is not None:
+        if raw is not None:
+            headers["Content-Type"] = content_type or "application/octet-stream"
+        elif body is not None:
             headers["Content-Type"] = "application/json"
-        if method in ("POST", "PATCH") and not any(p in path for p in NO_IDEMPOTENCY):
+        # An upload's PUT carries one too (§6.10): a repeat with the same key replays.
+        uploads = method == "PUT" and raw is not None
+        if (method in ("POST", "PATCH") or uploads) and not any(p in path for p in NO_IDEMPOTENCY):
             headers["Idempotency-Key"] = uuid.uuid4().hex
         url = f"{self.base}{full_path}" + (f"?{query_string}" if query_string else "")
         for attempt in (1, 2):
             stamp = int(time.time() + self.clock_offset)
             signed = sign.sign_headers(self.key, method, full_path, query_string, data, stamp)
             request = urllib.request.Request(  # noqa: S310
-                url, data=data if body is not None else None, method=method
+                url, data=data if body is not None or raw is not None else None, method=method
             )
             for name, value in {**headers, **signed}.items():
                 request.add_header(name, value)
             try:
                 with self._opener.open(request, timeout=timeout or self.timeout) as response:
-                    raw: bytes = response.read()
-                    return json.loads(raw) if raw else None
+                    answer: bytes = response.read()
+                    return json.loads(answer) if answer else None
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
                 server = _parse_server_time(err.details.get("server_time"))

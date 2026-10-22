@@ -1318,8 +1318,11 @@ area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
-with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
-join that carries `reports_to`, against the project's current members.
+with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
+the project's current members. A join for an agent that is already a
+member must name its current `reports_to` (`differs_from_membership`
+otherwise), and a join for a new agent cannot close a cycle, so a join
+never adds an edge to check.
 Removing a member sets `reports_to` to `null` on everyone who reported to
 them (`member_updated` for each), so the chain never names a former member.
 
@@ -1373,6 +1376,7 @@ create the profile (§3.1).
   "report": null,
   "release": null,
   "contract": null,
+  "rank": "a3",
   "mentions": [],
   "created_at": "2026-10-21T09:12:00Z",
   "updated_at": "2026-10-21T13:20:00Z",
@@ -1383,7 +1387,22 @@ create the profile (§3.1).
 `kind` is `task`, `release` (§6.7), `contract` (§6.8) or
 `maintenance_round` (a Keep the Why context round, opened at milestones;
 it behaves as a `task` and exists so that the board and the release list
-can tell it from feature work). `label` is optional: `fix`, `feature`,
+can tell it from feature work). `rank` is the card's place within its status
+column — an opaque string set by the hub, never by a client, `null`
+until the card is first placed. **Card order** within a status is total:
+cards with a rank by rank (bytewise), then cards without one by
+`created_at`, then by `id`. A `move` is applied to the column as it is
+when the move runs, under the project's lock: the hub gives ranks to the
+column's unranked cards up to and including the neighbour where that is
+needed to express the intent, and may at any time reassign ranks in a
+column to keep room between them; every card whose rank changes gets a
+`task_updated` with `fields: ["rank"]`. A status change keeps the rank,
+and the card takes its place among the target column by the same order.
+Among `open` cards the order is the priority: an agent that picks its
+next card on its own takes the first claimable one, by
+`GET …/tasks?status=open`; rank is advice, never a gate — claim policy,
+dependencies and assignment apply as before. The resume packet lists the
+agent's assigned cards in this order. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `status`:
 
@@ -1413,10 +1432,11 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by `updated_at` desc; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
+| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
 | `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, ktw_ref?, release?, contract?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
+| `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
 | `POST /projects/{slug}/tasks/{id}/release` | holder, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null` |
 | `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin` | `{assignee}`; sets `assigned_to`; if the card is held with an expired lease, the claim moves to the assignee (`lease_active` otherwise) |
@@ -3079,9 +3099,9 @@ reviewer role.
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
-| `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
@@ -3094,29 +3114,22 @@ reviewer role.
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
-| `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. *Planned (runner track).* |
-| `maity placement list` | `GET /projects/{slug}/placements`. *Planned (runner track).* |
-| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). *Planned (runner track).* |
-| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. *Planned (runner track).* |
-| `maity runners` | `GET /projects/{slug}/runners`. *Planned (runner track).* |
+| `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
+| `maity placement list` | `GET /projects/{slug}/placements`. |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
+| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
+| `maity runners` | `GET /projects/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. *Planned (runner track).* |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
-| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
-| `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. |
+| `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
-A row or option marked *Planned (runner track)* is contract the CLI on
-`main` does not have yet: `maity` answers it with a usage error (exit 2).
-Of the runner commands, `maity runner pair` and `maity runner check` exist
-today. Until the placement commands ship, `maity api` reaches the same
-endpoints signed (`maity api POST /projects/{slug}/placements --json -`,
-`maity api GET /projects/{slug}/runners`, and so on) once the hub serves
-them; the placement endpoints belong to the same track. `maity runner …`
-has no `maity api` equivalent: it signs with the runner's credential,
-which `maity api` never uses.
+`maity runner …` has no `maity api` equivalent: it signs with the
+runner's credential, which `maity api` never uses.
 
 Every CLI request is signed (§2.2); every `POST`, `PATCH` and `PUT` carries
 `Idempotency-Key` except `POST /me/resume`, `POST /join/{token}`, `POST
@@ -3753,7 +3766,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `hot_loop` | `crash_loop` in `supervised` mode |
-| `mode_unsupported`, `model_unsupported` | `harness_refused` |
+| `mode_unsupported`, `model_unsupported`, `target_unknown` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made) |
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
