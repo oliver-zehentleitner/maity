@@ -56,7 +56,7 @@ or a secret store is more setup than the install itself.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the notifications contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
+**Source:** security reviews of the notifications contract and the contract owner's rulings on them (three rounds), 2026-10-22; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
 **See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
 The hub's mail is treated as a trusted channel that members must not
@@ -79,8 +79,12 @@ project — `security` and `system` — come from account records, the
 human's own audit records, readable by that human alone, numbered in a
 sequence of their own (`acr-<n>`), instead of from events, which always
 belong to a project. A personal request (a takeover notice or a soul
-proposal addressed to an agent's owner) reaches that human's inbox
-through its addressing, member of the project or not. The test send connects
+proposal addressed to an agent's owner) is an account record of that
+human too — one record per state change — so it reaches their inbox
+once, member of the project or not. Because the bell reads two
+sequences, its position is two-part, read from one snapshot and only
+ever moved forward per component. Security items are never read by
+age. The test send connects
 only to the configured server.
 
 The rules are the contract owner's rulings on the reviews (two rounds); the reasons
@@ -110,5 +114,8 @@ anyone noticing.
 - Account records numbered from the event sequence (the first round),
   so that one `after` covered both: the timing leak above; the bell now
   uses a two-part position instead.
+- Personal requests as a third source beside events and records (the
+  second round): it had no id, position or read flag of its own and
+  counted differently for members and non-members.
 - Dropping the `system` kind: the mail-disabled notice has a real
   source, the account record, so the kind stays.
