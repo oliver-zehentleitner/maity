@@ -1012,6 +1012,7 @@ TICKER_SUB_TYPES = ("merge", "contract", "decision", "deploy", "release", "note"
 
 def cmd_ticker(args: argparse.Namespace) -> int:
     """`GET …/ticker`, one page (§17.9); `more:` names the next one, never followed here."""
+    since = cli_time("--since", args.since, -1) if args.since else None  # refused before anything
     session = Session()
     query: list[tuple[str, str]] = [("limit", str(args.limit))]
     if args.mine:
@@ -1020,7 +1021,6 @@ def cmd_ticker(args: argparse.Namespace) -> int:
         query.append(("type", ",".join(args.type)))
     if args.area:
         query.append(("area", args.area))
-    since = cli_time("--since", args.since, -1) if args.since else None
     if since:
         query.append(("since", since))
     if args.cursor:
@@ -1035,7 +1035,12 @@ def cmd_ticker(args: argparse.Namespace) -> int:
     for item in items:
         print("\n".join(onboarding.ticker_lines(item)))
     cursor = _field(page, "next_cursor")
-    if isinstance(cursor, str) and cursor:
+    if not isinstance(cursor, str) or not cursor:
+        cursor = None
+    elif not (cursor.isascii() and cursor.isprintable()):  # it goes into a command line
+        _err("the hub's next cursor is not printable ASCII; not offering it")
+        cursor = None
+    if cursor:
         # The same filter set, `--since` as the time it resolved to: a cursor is valid for
         # one filter set only, and a duration would move.
         again = ["maity", "ticker", *(["--mine"] if args.mine else [])]
@@ -1084,7 +1089,13 @@ def cmd_ticker_post(args: argparse.Namespace) -> int:
     try:
         event = session.client.call("POST", session.project_path("ticker"), body=body)
     except hub.HubError as exc:
-        if exc.status != 404 or _hub_has_ticker(session):
+        if exc.status != 404:
+            raise
+        try:
+            has_ticker = _hub_has_ticker(session)
+        except (hub.HubError, ValueError):  # no readable openapi.json: the 404 stands as it is
+            raise exc from None
+        if has_ticker:
             raise
         line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
         _err("this hub has no ticker yet; post it as a project message instead:")

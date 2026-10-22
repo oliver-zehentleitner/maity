@@ -203,3 +203,39 @@ def test_resume_prints_the_ticker_section_and_not_the_events_twice() -> None:
 
 def test_no_ticker_section_without_items() -> None:
     assert "Ticker (" not in onboarding.render(packet())
+
+
+def test_a_cursor_that_is_not_printable_ascii_is_not_offered(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", BASE)] = lambda s: (
+        200, {"items": [DEPLOY], "next_cursor": "c2\x1b]52;c;aGk=\x07"}
+    )  # fmt: skip
+    assert cli.main(["ticker"]) == cli.EXIT_OK
+    out = capsys.readouterr()
+    assert "more:" not in out.out and "\x1b" not in out.out
+    assert "not offering it" in out.err
+
+
+@pytest.mark.parametrize("openapi", ["not json", None])
+def test_an_unreadable_openapi_keeps_the_original_not_found(
+    openapi: str | None, joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", BASE)] = lambda s: (
+        404, {"error": {"code": "not_found", "message": "no such project", "details": {}}}
+    )  # fmt: skip
+    if openapi is None:
+        fake.redirects["/api/v1/openapi.json"] = "http://elsewhere.example/x"  # a failed fetch
+    else:
+        fake.openapi = openapi  # type: ignore[assignment]
+    code = cli.main(["ticker", "post", "x", "--type", "note", "--area", "hub/"])
+    out = capsys.readouterr()
+    assert code not in (cli.EXIT_OK, cli.EXIT_USAGE)
+    assert "not_found" in out.err and "maity say" not in out.out and "Traceback" not in out.err
+
+
+def test_since_without_an_offset_is_refused_outside_a_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)  # no clone, no session: refused before any of that
+    assert cli.main(["ticker", "--since=2026-10-22T17:00"]) == cli.EXIT_USAGE

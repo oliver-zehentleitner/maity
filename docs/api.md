@@ -4588,7 +4588,7 @@ reviewer role.
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
-| `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
+| `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{slug}/placements`. |
 | `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
