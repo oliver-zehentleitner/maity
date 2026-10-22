@@ -283,6 +283,12 @@ def _refuse_revoked(row: Any) -> None:
             "this credential was revoked",
             {"reason": row.revoked_reason},
         )
+    if getattr(row, "runner_removed_at", None) is not None:
+        # Removing a runner revokes its credential in the same transaction; this holds
+        # even if a credential ever outlived its runner (§15.3).
+        raise ApiError(
+            401, "credential_revoked", "this runner was removed", {"reason": "runner_removed"}
+        )
 
 
 def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:
@@ -359,6 +365,7 @@ def _runner_credential(conn: Connection, credential_id: str) -> Any:
             t.runner_credential.c.revoked_reason,
             t.runner_credential.c.runner_id,
             t.runner.c.owner_id,
+            t.runner.c.removed_at.label("runner_removed_at"),
         )
         .join(t.runner, t.runner.c.id == t.runner_credential.c.runner_id)
         .where(t.runner_credential.c.id == credential_id)

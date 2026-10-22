@@ -13,14 +13,14 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency
+from maity_hub import clock, events, idempotency, paging
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import Caller, require_secure_transport
@@ -40,6 +40,7 @@ page_router = APIRouter()  # /r/{token}, outside the API prefix
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 900
 WRONG_CODES_BEFORE_BURN = 3
 PAIR_BY_ADDRESS = Limiter(10, 60)
+PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class EnrollmentCreate(Strict):
@@ -169,14 +170,29 @@ def create_enrollment(
 
 
 @router.get("/runners/enrollments")
-def list_enrollments(request: Request, caller: HumanCaller) -> JSONResponse:
+def list_enrollments(
+    request: Request,
+    caller: HumanCaller,
+    limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
+    cursor: str | None = None,
+) -> JSONResponse:
+    enrollment = t.runner_enrollment.c
+    query = select(t.runner_enrollment).where(enrollment.created_by == caller.principal_id)
+    if cursor is not None:
+        after_at, after_id = paging.uncursor(cursor)
+        query = query.where(
+            or_(
+                enrollment.created_at < after_at,
+                and_(enrollment.created_at == after_at, enrollment.id < after_id),
+            )
+        )
     with engine_of(request).begin() as conn:
         rows = conn.execute(
-            select(t.runner_enrollment)
-            .where(t.runner_enrollment.c.created_by == caller.principal_id)
-            .order_by(t.runner_enrollment.c.created_at.desc(), t.runner_enrollment.c.id.desc())
+            query.order_by(enrollment.created_at.desc(), enrollment.id.desc()).limit(limit + 1)
         ).all()
-        return JSONResponse({"items": [enrollment_view(r) for r in rows], "next_cursor": None})
+    page = rows[:limit]
+    next_cursor = paging.cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
+    return JSONResponse({"items": [enrollment_view(r) for r in page], "next_cursor": next_cursor})
 
 
 @router.delete("/runners/enrollments/{enrollment_id}")
@@ -377,12 +393,12 @@ def _create_runner(conn: Connection, owner_id: str, name: str) -> str:
 # --- runners (human) ------------------------------------------------------------------
 
 
-def _own_runner(conn: Connection, caller: Caller, runner_id: str) -> Any:
-    row = conn.execute(
-        select(t.runner).where(
-            t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id
-        )
-    ).first()
+def _own_runner(conn: Connection, caller: Caller, runner_id: str, *, lock: bool = False) -> Any:
+    """The caller's runner; `lock` orders a change with a concurrent re-pair (`_consume`)."""
+    query = select(t.runner).where(
+        t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id
+    )
+    row = conn.execute(query.with_for_update() if lock else query).first()
     if row is None:
         raise not_found()
     return row
@@ -422,13 +438,18 @@ def update_runner(
         row = _own_runner(conn, caller, runner_id)
         _refuse_removed(row)
         if body.name != row.name:
+            taken = invalid({"name": "taken"}, "you have a runner of that name")
             if _name_taken(conn, caller.principal_id, body.name, but=runner_id):
-                raise invalid({"name": "taken"}, "you have a runner of that name")
-            conn.execute(
-                update(t.runner)
-                .where(t.runner.c.id == runner_id)
-                .values(name=body.name, updated_at=clock.now())
-            )
+                raise taken
+            try:
+                with conn.begin_nested():
+                    conn.execute(
+                        update(t.runner)
+                        .where(t.runner.c.id == runner_id)
+                        .values(name=body.name, updated_at=clock.now())
+                    )
+            except IntegrityError:  # a concurrent rename took the name first
+                raise taken from None
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
@@ -440,10 +461,10 @@ def update_runner(
 def revoke_runner(
     runner_id: str, request: Request, caller: HumanCaller, body: RunnerRevoke | None = None
 ) -> JSONResponse:
-    reason = body.reason if body else None
+    reason = body.reason if body and body.reason else "revoked"  # as for an agent's
 
     def action(conn: Connection) -> idempotency.Outcome:
-        _own_runner(conn, caller, runner_id)
+        _own_runner(conn, caller, runner_id, lock=True)
         live = live_credential_id(conn, runner_id)
         if live is not None:  # none live: answered as it is
             revoke_runner_credential(conn, live, reason, by=caller.principal_id)
@@ -457,7 +478,7 @@ def revoke_runner(
 @router.delete("/runners/{runner_id}")
 def remove_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        row = _own_runner(conn, caller, runner_id)
+        row = _own_runner(conn, caller, runner_id, lock=True)
         if row.removed_at is None:
             now = clock.now()
             live = live_credential_id(conn, runner_id)

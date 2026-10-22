@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
+from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.routes import runners as runner_routes
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_auth_agent import signed
@@ -420,3 +423,74 @@ def test_removing_a_runner(make_client: ClientFactory, owner: flow.Human) -> Non
     assert (refused.status_code, error(refused)) == (409, "invalid_transition")
     # Its name is free again.
     assert paired(make_client, owner).id != runner.id
+
+
+# --- review: races and edges ------------------------------------------------------------
+
+
+def test_a_revocation_without_a_reason_reads_revoked(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    runner = paired(make_client, owner)
+    revoked = owner.post(f"/runners/{runner.id}/revoke").json()
+    assert revoked["credential"]["revoked_reason"] == "revoked"
+
+
+def test_a_credential_of_a_removed_runner_is_refused(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    runner = paired(make_client, owner)
+    with migrated.begin() as conn:  # a credential that outlived its runner, by hand
+        conn.execute(
+            update(t.runner)
+            .where(t.runner.c.id == runner.id)
+            .values(removed_at=clock.now(), active=None)
+        )
+    refused = call(make_client(), runner, "GET", "/api/v1/me")
+    assert (refused.status_code, error(refused)) == (401, "credential_revoked")
+    assert refused.json()["error"]["details"] == {"reason": "runner_removed"}
+
+
+def test_removing_a_runner_while_it_re_pairs_leaves_no_live_credential(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    for i in range(5):
+        runner = paired(make_client, owner, name=f"racer-{i}")
+        created = enroll(owner, name=None, runner_id=runner.id)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pairing = pool.submit(exchange, make_client(), created)
+            removal = pool.submit(owner.delete, f"/runners/{runner.id}")
+            assert removal.result(timeout=30).status_code == 200
+            assert pairing.result(timeout=30).status_code in (201, 404)
+        with migrated.begin() as conn:
+            live = conn.execute(
+                select(t.runner_credential.c.id).where(
+                    t.runner_credential.c.runner_id == runner.id,
+                    t.runner_credential.c.live.is_(True),
+                )
+            ).all()
+        assert live == []
+
+
+def test_a_rename_that_loses_the_race_for_a_name_is_taken(
+    make_client: ClientFactory, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = paired(make_client, owner)
+    paired(make_client, owner, name="build-box")
+    # The check passes as it would for two renames at once; the constraint decides.
+    monkeypatch.setattr(runner_routes, "_name_taken", lambda *_args, **_kwargs: False)
+    taken = owner.patch(f"/runners/{runner.id}", {"name": "build-box"})
+    assert (taken.status_code, taken.json()["error"]["details"]["fields"]) == (
+        400,
+        {"name": "taken"},
+    )
+
+
+def test_enrollments_are_paged(owner: flow.Human) -> None:
+    ids = [enroll(owner, name=f"box-{i}")["id"] for i in range(3)]
+    first = owner.get("/runners/enrollments?limit=2").json()
+    assert [e["id"] for e in first["items"]] == ids[::-1][:2]
+    rest = owner.get(f"/runners/enrollments?limit=2&cursor={first['next_cursor']}").json()
+    assert [e["id"] for e in rest["items"]] == ids[:1] and rest["next_cursor"] is None
+    bad = owner.get("/runners/enrollments?cursor=nonsense")
+    assert bad.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
