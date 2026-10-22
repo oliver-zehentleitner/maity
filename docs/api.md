@@ -151,7 +151,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
-| 409 | `runner_revoked` | a human creates or starts a placement on a runner without a live credential (§15.6) |
+| 409 | `runner_revoked` | a placement is created, started or restarted (by a human or an agent with `agents:propose`) on a runner without a live credential (§15.6) |
 | 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
@@ -1007,8 +1007,8 @@ reason — the logged exemption. There is no gate on labels.
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
-| `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent`, and a project that predates the field reads as `consent` (default pending the maintainer). Stop and restart are not proposals and are allowed under every value |
-| `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it |
+| `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
+| `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -1969,9 +1969,10 @@ order of the blocks, the root first.
 **The read.** The transport rule of §11.1 for every read, each
 `state.json` at most 1 MiB, `Accept: application/json`; at most 4 reads
 of one project's family in flight at once. The `.keep-the-why` files and
-the exports are cached together for `max_age` seconds (default 600; `0`
-forces a fresh read of the whole family, at most one per project every
-30 seconds — a closer one answers from the cache with `fresh: false`).
+the exports are cached together for `max_age` seconds (default 600). A
+`max_age` below 30 is taken as 30: a fresh read of the whole family
+happens at most once per project every 30 seconds, and a closer request
+answers from the cache with `fresh: false`.
 A failed read keeps the member's last good answer until the hub restarts.
 
 **What the hub relies on**, per export. Unknown keys are ignored, at
@@ -2691,7 +2692,7 @@ it, settles it in the same transaction:
 
 | Outcome | Creation | Change of spec |
 |---|---|---|
-| `go` | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
+| `go` (only an answer with `reply_id: go`; any other answer, text-only included, settles as `no`) | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
 | withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
 | the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
@@ -2934,7 +2935,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   `policy_changed` and `rules_changed`. The others stay readable and
   appear in the next resume.
 - **Member view** (§6.2) gains `placement`: `{id, state, desired,
-  runner_name}` or `null`.
+  runner_name}` or `null` — always present, `null` for humans and for
+  agents without an active placement.
 - **Request view** (§7) gains `placement`: `{id, agent, runner_name,
   harness, model, mode, target, isolation}` inline, or `null`. Only the
   hub sets it; `POST …/requests` does not accept it.
