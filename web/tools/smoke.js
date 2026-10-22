@@ -1119,6 +1119,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
 
+  // Markdown in a chat (js/markdown.js): text nodes only, https links only.
+  const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
+  const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
+  const mdP = MD("First line\nsecond line\n\nNext paragraph with `a <b>` code, **strong**, *em* and _em_.");
+  expect(JSON.stringify(tagsOf(mdP)) === '["p","p"]' && mdP.childNodes[0].querySelector("br") && mdP.querySelector("code").textContent === "a <b>"
+    && mdP.querySelector("strong").textContent === "strong" && mdP.querySelectorAll("em").length === 2, "markdown: paragraphs, line breaks, code, strong and em");
+  const mdHtml = MD("<script>alert(1)</script> and <b>bold</b>");
+  expect(!mdHtml.querySelector("script") && !mdHtml.querySelector("b") && text(mdHtml).includes("<script>alert(1)</script>"), "markdown: raw HTML stays visible as text");
+  const mdLinks = MD("[ok](https://example.org/a) [no](javascript:alert(1)) see https://maity.dev/x, and http://plain.example");
+  const mdA = mdLinks.querySelectorAll("a");
+  expect(mdA.length === 2 && mdA[0].getAttribute("href") === "https://example.org/a" && mdA[0].getAttribute("rel") === "noopener noreferrer"
+    && mdA[1].getAttribute("href") === "https://maity.dev/x" && text(mdLinks).includes("[no](javascript:alert(1))") && text(mdLinks).includes("http://plain.example"),
+    "markdown: links only when plain https, the rest as written");
+  const mdBlock = MD("# Title\n- one\n- two\n1. first\n> quoted\n> more\n\n```js\nconst a = `x`;\n```");
+  expect(JSON.stringify(tagsOf(mdBlock)) === '["h4","ul","ol","blockquote","div"]' && mdBlock.querySelectorAll("ul li").length === 2
+    && text(mdBlock.querySelector("blockquote")).includes("quoted") && mdBlock.querySelector("pre code").textContent === "const a = `x`;"
+    && text(mdBlock.querySelector(".md-lang")) === "js" && btn(mdBlock, "Copy"), "markdown: a heading kept small, lists, a quote, a fenced block with its language and Copy");
+  btn(mdBlock, "Copy").click(); await tick();
+  expect(ctx.copied === "const a = `x`;", "markdown: Copy puts the code on the clipboard");
+
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
   const convs = () => main.querySelectorAll(".chat-list a.conv");
@@ -1135,6 +1155,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!conv("Agent B").querySelector(".preview") && text(conv("Agent C")).includes("paused"), "chat: no messages, no preview; presence in words");
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelectorAll(".msg").length === 2, "conversation with A");
+  expect(main.querySelector("li.msg.in .md p") && main.querySelector("li.msg.in .md br"), "chat: an agent's message is drawn as Markdown, its line break kept");
+  const quoteBtn = main.querySelector("li.msg.in").querySelectorAll("button").find((b) => b.textContent === "Quote");
+  quoteBtn.click(); await tick();
+  expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
+    "chat: Quote puts the message into the composer as a quote");
+  byId("chat-text").value = ""; byId("chat-text").dispatch("input");
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
   // A draft per chat survives switching to another chat and back.
