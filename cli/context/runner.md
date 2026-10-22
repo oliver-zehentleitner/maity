@@ -316,7 +316,12 @@ network domains start empty, so the hub and the forge have to be named, or
 The runner grants named `git` subcommands, not `git *`. It denies `-c`,
 `--config-env`, `--exec-path`, `--no-index`, `--upload-pack`,
 `--receive-pack`, `--exec=` and any path under `.git/maity`. The file
-tools cannot reach `.git/maity`.
+tools cannot write anywhere under `.git` (its config and hooks would turn
+an allowed `git status` into anything) and cannot read `.git/maity`. With
+Claude Code's sandbox on, commands can neither read nor write
+`.git/maity`; only `maity` itself runs outside the sandbox. Without the
+sandbox, and for Codex and opencode, any repository code an allowed
+build or test command runs can read the clone's credential.
 
 **Reason:** git runs programs through its options and configuration, and
 `diff --no-index` reads any file. A wildcard grant therefore meant "may
