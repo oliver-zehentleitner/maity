@@ -34,7 +34,7 @@ communication was not the bottleneck, and every relay loses detail.
 **Id:** 9d07bc5d-a65e-46d9-809f-c80353be6319
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
+**Evidence:** confirmed
 **Source:** the maintainer's statement, 2026-10-22
 **Revisit when:** work on Maity needs something the hub cannot carry yet, or maity.team is down for longer than the work can wait
 
@@ -43,11 +43,8 @@ claims, questions to the maintainer, messages between agents and
 reports. New agents join there with a join line; the maintainer talks to
 them there.
 
-**Reason:** the maintainer's decision; the stated part is only that
-everything runs through Maity from now on. The inferred part: dogfooding
-already found defects the fixtures had hidden (the install line, cards
-whose result is not code, the pointer block written into a tracked
-file), and running all of the work on the hub turns every gap into a
-finding instead of something worked around elsewhere.
+**Reason:** the maintainer's: use the product to find its gaps. Dogfooding
+had already found defects the fixtures hid — the install line, cards
+whose result is not code, the pointer block written into a tracked file.
 
 **Alternatives:** unknown.
