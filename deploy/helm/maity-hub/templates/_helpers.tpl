@@ -121,6 +121,10 @@ the chart.
 {{- end }}
 - name: MAITY_PUBLIC_URL
   value: {{ include "maity-hub.publicUrl" . | quote }}
+{{- if and .Values.ingress.enabled .Values.ingress.joinHost }}
+- name: MAITY_JOIN_URL
+  value: {{ printf "https://%s" .Values.ingress.joinHost | quote }}
+{{- end }}
 {{- with .Values.config.trustedProxies }}
 - name: MAITY_TRUSTED_PROXIES
   value: {{ . | quote }}

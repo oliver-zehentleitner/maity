@@ -6,6 +6,7 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -33,6 +34,13 @@ class Settings:
     allow_plain_http: bool = False
     # Never logged, never in a response; only whether it is set is shown (§11).
     forge_github_token: str | None = field(default=None, repr=False)
+    # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
+    join_url: str | None = None
+
+    @property
+    def join_host(self) -> str | None:
+        """The join URL's `host[:port]` as a `Host` header names it, or None."""
+        return None if self.join_url is None else netloc(self.join_url)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -40,13 +48,14 @@ class Settings:
         host, port = parse_bind(env.get("MAITY_BIND", DEFAULT_BIND))
         public_url = env.get("MAITY_PUBLIC_URL")
         web_dir_env = env.get("MAITY_WEB_DIR")
+        public = (public_url or derive_public_url(host, port)).rstrip("/")
         return cls(
             database_url=normalize_database_url(
                 env.get("MAITY_DATABASE_URL", DEFAULT_DATABASE_URL)
             ),
             host=host,
             port=port,
-            public_url=(public_url or derive_public_url(host, port)).rstrip("/"),
+            public_url=public,
             public_url_guessed=not public_url and host in _WILDCARD_HOSTS,
             web_dir=Path(web_dir_env) if web_dir_env else checkout_web_dir(),
             web_dir_required=bool(web_dir_env),
@@ -55,7 +64,44 @@ class Settings:
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
+            join_url=parse_join_url(env.get("MAITY_JOIN_URL", ""), public),
         )
+
+
+def netloc(url: str) -> str:
+    """`host[:port]` of a URL, lower case, without the scheme's default port."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    default = {"https": 443, "http": 80}.get(parts.scheme)
+    if ":" in host:
+        host = f"[{host}]"
+    return host if parts.port in (None, default) else f"{host}:{parts.port}"
+
+
+def parse_join_url(value: str, public_url: str) -> str | None:
+    """`MAITY_JOIN_URL`: https, a host and nothing else, and not the public URL's host
+    (§1.1). Anything else stops the hub."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018  a malformed port raises here
+    except ValueError:
+        raise ConfigError(f"MAITY_JOIN_URL is not a URL: {value!r}") from None
+    if (
+        parts.scheme != "https"
+        or not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
+    if parts.hostname.lower() == (urlsplit(public_url).hostname or "").lower():
+        raise ConfigError("MAITY_JOIN_URL must name another host than MAITY_PUBLIC_URL")
+    return value.rstrip("/")
 
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network

@@ -20,7 +20,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, net
+from maity_hub import clock, events, join_host, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -120,6 +120,12 @@ class HubMiddleware:
                 status = message["status"]
             await send(message)
 
+        if join_host.is_join_host(scope, self.settings):
+            answer = join_host.route(scope, self.settings)
+            if answer is not None:  # not the join: nothing else is served there (§1.1)
+                await answer(scope, replay, tracking)
+                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+                return
         try:
             await self.app(scope, replay, tracking)
         except Exception:

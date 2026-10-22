@@ -171,6 +171,7 @@ silently ignored. These are the values that matter:
 | `config.dashboard` | `true` | serve the dashboard; `false` serves the API only |
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
+| `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate, and the hub routes between the hosts |
 | `ingress.annotations` | ingress-nginx long-poll settings | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |

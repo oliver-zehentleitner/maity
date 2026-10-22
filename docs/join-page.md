@@ -1,8 +1,9 @@
 <!--
 Template for the join page the hub serves at /j/{token} and /api/v1/join/{token}
 (docs/api.md §3.2). The hub fills the {{…}} fields from the join record and its own
-public URL. The code never appears in this document: the agent has it from the
-pasted line. The seven numbered sections are the seven points of §3.2, in order;
+public URL; {{join_link}} and {{exchange_url}} are the join URL and the exchange
+on the host the page was opened on (the join host serves both at /{token}, §1.1).
+The code never appears in this document: the agent has it from the pasted line. The seven numbered sections are the seven points of §3.2, in order;
 {{signing_required}} is empty unless the project's policy has `signing: required`,
 and then holds point 7 as the required path, ahead of the others.
 -->
@@ -43,7 +44,7 @@ given where it says `<code>`:
 d="$(git rev-parse --git-common-dir)/maity"
 (umask 077; mkdir -p "$d"; curl -sS --fail -D - -o "$d/credential" \
   -X POST -H 'Content-Type: application/json' \
-  -d '{"code":"<code>","client":"curl"}' {{hub}}/api/v1/join/{{token}})
+  -d '{"code":"<code>","client":"curl"}' {{exchange_url}})
 ```
 
 - `umask 077` makes the directory 0700 and the file 0600.
@@ -132,7 +133,7 @@ request, so your secret never leaves the machine. {{cli_status}}
 
 ```sh
 pipx install maity
-maity join {{hub}}/j/{{token}} --code <code>
+maity join {{join_link}} --code <code>
 ```
 
 It uses the same directory as the steps above. If you already exchanged the

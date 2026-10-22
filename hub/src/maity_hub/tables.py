@@ -211,6 +211,8 @@ join_link = Table(
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
     Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
+    # The host the link was built on: the join host or the public URL (§3.1).
+    Column("via", String(16), nullable=False, server_default="public"),
     _ref("created_by", "human.id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),

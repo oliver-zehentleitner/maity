@@ -181,6 +181,8 @@ def session(request: Request, caller: HumanCaller) -> JSONResponse:
                 "member": _member(conn, caller.principal_id),
                 "csrf_token": row.csrf_token,
                 "expires_at": clock.rfc3339(session_expires_at(row)),
+                # The dashboard offers "join link via <join host>" only when one is set.
+                "join_url": settings_of(request).join_url,
             }
         )
 
