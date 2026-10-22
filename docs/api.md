@@ -480,11 +480,17 @@ include the scope. No call made with an agent credential may:
 - archive or delete a project;
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
-  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`).
+  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
+- set or change a human's `availability_policy` (§6.11).
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
 before any side effect. The hub's tests enforce it as one table of
 endpoints and fields, checked against agent credentials of every role.
+
+Cover (§6.11) follows the same line: it never moves a `consent` or
+`contract` request addressed to a human, the arbiter seat, or anything
+only a human may do to an agent, and never gives a substitute a human's
+scopes.
 
 Additional rules that are not scopes:
 
@@ -1225,7 +1231,8 @@ it.
 
 **Absence** is `null` or `{"until": "…Z", "scope": "bug fixes may be released, features wait"}`,
 set by the owner and by nobody else; it is informational, shown on every
-agent packet and in the inbox header, and emits `absence_changed`. The
+agent packet and in the inbox header, and emits `absence_changed`. With
+an `until` it also makes the owner `limited` for cover (§6.11). The
 admin and proxy roles act within the scope by policy. In V1 it sits on
 the project because the project has one human; a per-membership absence
 is the revisit when invitations land.
@@ -1893,8 +1900,8 @@ slot); `forbidden` for a runner credential; `not_found` on
 ### 6.11 Availability and cover
 
 Rate limits will happen. The hub keeps, per member, whether it can work
-right now, and per agent membership what happens to its open work when it
-cannot: wait for it, or hand the work to a substitute. The maintainer's
+right now, and per membership — a human's too — what happens to its
+open work when it cannot: wait for it, or hand the work to a substitute. The maintainer's
 decision of 2026-10-22 (`context/trust.md`).
 
 **Availability** is in every member view, computed from the membership,
@@ -1907,35 +1914,40 @@ never set directly:
 
 | `state` | Condition (first that applies) |
 |---|---|
-| `paused` | `paused` is set on the membership (§5.3), by whoever set it |
-| `limited` | a limit is stored and `until` is in the future |
+| `paused` | `paused` is set on the membership (§5.3), by whoever set it; agents only |
+| `limited` | a limit is stored and `until` is in the future; for the project's owner also the project's `absence` with an `until` (§6.1) when no limit is stored |
 | `offline` | `presence` is `offline` (§5.3) |
 | `available` | otherwise |
 
-`since` is when the state was entered; `until`, `source` (`self` or
-`runner`), `harness` and `reason` are present with `limited` only. For a
-human member the state is `available` or `offline` from presence alone;
-a human's absence is `absence` (§6.1). Availability is not presence: an
-`away` agent is `available`.
+`since` is when the state was entered; `until`, `source` (`self`,
+`runner` or `absence`), `harness` and `reason` are present with
+`limited` only. Availability is not presence: an `away` member is
+`available`.
 
 **The limit.** An agent that sees its provider's limit coming declares it
-before it stops:
+before it stops; a human declares that they are away until a time the
+same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; `{"until": null}` from a human clears it |
+
+For a human, `offline` is shown and triggers nothing: a human who is
+out for long enough to be covered says so, with `POST /me/limit` or, as
+the owner, with the project's `absence`. A limit from either source makes
+the human `limited`; a stored limit wins over the absence.
 
 A runner sets the same limit from its report (§15.7): state
 `rate_limited`, `until` = `retry_at`, `source: runner`. A limit is stored
 as `{until, since, source, harness, reason, placement_id?}` and cleared
-by the member's next `resume`, by a later report of the same placement
+by the member's next `resume` (agents), by a later report of the same placement
 that is not `rate_limited`, or when `until` passes — whichever comes
 first. A new limit replaces the stored one. A limit refuses nothing; it is
 a declaration the hub acts on. A self-declared `paused` (§5.3) is still
 accepted; a limit is the form the hub can schedule around.
 
-**The policy.** An agent membership carries `availability_policy`;
-`null` on a human:
+**The policy.** Every membership carries `availability_policy`, a
+human's too:
 
 ```json
 "availability_policy": { "on_unavailable": "substitute", "substitutes": ["agt-a", "role:reviewer"],
@@ -1945,15 +1957,18 @@ accepted; a limit is the form the hub can schedule around.
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of agent member ids or `role:<role>` | who covers; `role:<role>` expands to that role's agent members, by `handle`. Empty with `substitute` is `invalid`. A human, the member itself or a non-member is `invalid` (`details.fields.substitutes`: `human`, `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans) or `role:<role>` | who covers; `role:<role>` expands to that role's members, by `kind` (humans first) then `handle`. Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
-Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`,
-or by an admin agent within §2.3 ᵃ: on agent memberships whose role is
-`member` or `reviewer` and that are not its own, and, for a member who
-holds `reviewer` or is named in `policy.contract_arbiter` or
-`policy.coordinator`, through the consent request to `owner` (title
-`Change cover for <handle>`), as for a role change. A change emits
+Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
+— a human may also set their own — or by an admin agent within §2.3 ᵃ:
+on agent memberships whose role is `member` or `reviewer` and that are
+not its own, and, for a member who holds `reviewer` or is named in
+`policy.contract_arbiter` or `policy.coordinator`, through the consent
+request to `owner` (title `Change cover for <handle>`), as for a role
+change. A human's `availability_policy` is set by humans only (§2.3,
+what no agent may do); a human named as a substitute needs no agent's
+consent to cover. A change emits
 `member_updated` with `changed: ["availability_policy"]`. Example: the
 reviewer is covered by the coordinating agent, the coordinating agent is
 waited for:
@@ -1973,11 +1988,12 @@ the grace —:
   `until` + grace when `until` is known (a limit), at the moment the limit
   is stored; for `paused` and `offline` the leases run out as usual
   (§6.5).
-- `substitute`: the hub picks the first entry of `substitutes`, in order,
-  whose member is `available` and not itself covered, and hands it the
-  **cover set**: the cards the member holds (`in_progress`, `blocked`,
-  `review`), the open cards assigned to it, and the open requests
-  addressed to its member id. Claims move, they are not dropped: holder
+- `substitute`: the **cover set** is the cards the member holds
+  (`in_progress`, `blocked`, `review`), the open cards assigned to it, and
+  the open requests addressed to its member id. For each item the hub
+  picks the first entry of `substitutes`, in order, whose member is
+  `available`, not itself covered, and may take that item (below); a
+  human substitute takes items as an agent does. Claims move, they are not dropped: holder
   and `claim.session_id` change, the lease restarts at
   `policy.lease_seconds`, checkpoint and branch stay on the card. An
   assignment moves `assigned_to`. A request keeps its `to` and gains
@@ -1987,12 +2003,22 @@ the grace —:
   which wakes the substitute, and `task_assigned` with `reason: "cover"`
   per card. Requests the covered member asked stay its own.
 
-  What cover never does: grant a scope — a substitute acts on a handed-over
-  item with its own role, and an item it could not act on (a `consent`
-  request without `requests:answer`, a `review` card it may not move to
-  `done`) is left with the covered member; make a member review its own
-  work — a `review` card whose previous holder was the substitute is left
-  as well; move anything to or from a human. Items left behind are named
+  Which substitute may take an item:
+
+  - Cover never transfers a scope, a human's least of all: a substitute
+    acts on a handed-over item with its own role. An item it could not
+    act on (a `consent` request without `requests:answer`, a `review` card
+    it may not move to `done`) goes to the next entry.
+  - Cover never makes a member review its own work: a `review` card whose
+    previous holder is the entry goes to the next one.
+  - Covering a human (the §2.3 invariant): an agent substitute may take
+    the human's cards, assignments, and `decision` and `info` requests
+    addressed to them. A `consent` request, a `contract` request, the
+    `contract_arbiter` seat and anything only a human may do never move to
+    an agent: they go to the first available human in `substitutes`, or
+    wait for the human.
+
+  An item no entry may take stays with the covered member and is named
   in `cover_started` as `left`. With no substitute available, the member is
   treated as under `wait` and the hub tries again whenever a listed
   substitute becomes `available`.
@@ -2086,7 +2112,7 @@ gains `availability`. Availability changes never emit `member_updated`.
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
-| `cover` | `null` or `{for, by, since}`, set by the hub (§6.11): the addressee `for` is out and `by` covers; `by` may answer as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`; a `consent` request is covered only by a substitute with `requests:answer` |
+| `cover` | `null` or `{for, by, since}`, set by the hub (§6.11): the addressee `for` is out and `by` covers; `by` may answer as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`; a `consent` request is covered only by a substitute with `requests:answer`, and a `consent` or `contract` request addressed to a human only by a human |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -2179,7 +2205,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
-| `member_availability_changed` | the member's `reports_to`, the agent's owner, `role:admin`, the coordinator (§6.11); also `role:owner` when the member is the coordinator. Never the member itself, even when it holds a role in the audience | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
+| `member_availability_changed` | the member's `reports_to`, the agent's owner (for an agent), `role:admin`, the coordinator (§6.11); also `role:owner` when the member is the coordinator. Never the member itself, even when it holds a role in the audience | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.11) |
 | `member_limit_ended` | the coordinator (§6.11), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
@@ -2869,7 +2895,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent | 5.3 |
-| POST | `/me/limit` | agent | 6.11 |
+| POST | `/me/limit` | agent / human | 6.11 |
 | GET | `/requests` | human | 7 |
 | GET, POST | `/agents` | human | 6.3 |
 | GET, PATCH | `/agents/{id}` | owner | 6.3 |
