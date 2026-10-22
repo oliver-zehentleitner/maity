@@ -105,7 +105,7 @@ window.Maity = window.Maity || {};
       ordered(chatsOf(mine, byAgent)).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
       none.hidden = mine.length > 0;
       if (focused) {
-        const again = ul.querySelectorAll("a.conv").find((a) => a.getAttribute("href") === focused);
+        const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
         if (again) again.focus();
       }
     };
