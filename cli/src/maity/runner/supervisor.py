@@ -25,7 +25,7 @@ import time
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +122,7 @@ def _count(value: Any) -> bool:
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
-    return datetime.fromtimestamp(moment, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(moment, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass

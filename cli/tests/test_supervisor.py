@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -12,8 +11,6 @@ import pytest
 
 from maity import hub, state
 from maity.runner import capabilities, config, restart, supervisor, tmux, workspace
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\

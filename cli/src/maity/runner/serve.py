@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +54,7 @@ class Stop(BaseException):
 
 
 def utc(stamp: float | None = None) -> str:
-    moment = datetime.fromtimestamp(time.time() if stamp is None else stamp, tz=timezone.utc)
+    moment = datetime.fromtimestamp(time.time() if stamp is None else stamp, tz=UTC)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

@@ -13,8 +13,6 @@ import pytest
 from maity import cli, hub, state
 from maity.runner import capabilities, config, serve
 
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
-
 CONFIG = """\
 [hub]
 url = "{url}"
@@ -231,7 +229,7 @@ def test_capabilities(tmp_path: Path, bin_dir: Path) -> None:
     path.write_text(
         CONFIG.format(url="https://hub.example", state_dir=tmp_path / "st")
         + '\n[harness.claude-code]\nmodes = ["interactive", "supervised"]\nmodels = ["opus"]\n'
-        + "\n[harness.codex]\n\n[harness.opencode]\n"
+        + "\n[harness.codex]\n"
     )
     cfg = config.load(path)
     probes = {h.id: capabilities.probe(h, str(bin_dir)) for h in cfg.harnesses.values()}
@@ -243,7 +241,8 @@ def test_capabilities(tmp_path: Path, bin_dir: Path) -> None:
         "models": ["opus"], "targets": ["local"], "confinement": "allowlist", "sandbox": "off",
     }  # fmt: skip
     assert by_id["codex"]["available"] is False and by_id["codex"]["reason"] == "version_failed"
-    assert by_id["opencode"]["reason"] == "binary_not_found"
+    missing = config.Harness("codex", ("supervised",), "supervised", binary="no-such-codex")
+    assert capabilities.probe(missing, str(bin_dir)).reason == "binary_not_found"
     assert by_id["stub"]["confinement"] == "none" and by_id["stub"]["sandbox"] == "n/a"
     assert caps["projects"] == ["maity"] and caps["backend"] == "local"
     assert caps["targets"][0]["isolation"]["kind"] == "shared_user"
