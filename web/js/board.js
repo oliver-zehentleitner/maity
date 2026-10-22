@@ -116,7 +116,8 @@ window.Maity = window.Maity || {};
   function pullRequests(rel) {
     const prs = rel.pull_requests || [];
     if (!prs.length) return h("p", { class: "muted" }, "No pull requests yet: they come from the shipped cards' reports, or are typed in.");
-    return h("table", { class: "prs" },
+    // The table scrolls sideways in a narrow card; a keyboard reaches it.
+    return h("table", { class: "prs", tabindex: "0", "aria-label": "Pull requests of " + rel.version },
       h("thead", null, h("tr", null,
         h("th", { scope: "col" }, "PR"), h("th", { scope: "col" }, "State"),
         h("th", { scope: "col" }, "Checks"), h("th", { scope: "col" }, "Observed"))),

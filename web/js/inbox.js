@@ -114,9 +114,9 @@ window.Maity = window.Maity || {};
       req.ktw_ref ? [h("dt", null, "Reasoning"), h("dd", null, h("code", null, req.ktw_ref))] : null));
 
     if (req.summary) append(body, h("p", { class: "summary pre" }, req.summary));
-    if (req.tried) append(body, h("h4", null, "What it tried"), h("p", { class: "pre" }, req.tried));
+    if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, req.tried));
     if (req.options && req.options.length) {
-      append(body, h("h4", null, "Options it sees"),
+      append(body, h("h3", { class: "sub" }, "Options it sees"),
         h("ul", { class: "options" }, req.options.map((o) =>
           h("li", null, h("strong", null, o.label), o.detail ? " — " + o.detail : ""))));
     }

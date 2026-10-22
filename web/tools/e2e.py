@@ -16,7 +16,7 @@ git clones. The path, one screenshot per step:
 
 Every browser console error, page error and failed API call (status >= 400,
 apart from the signed-out session check) fails the run. Each view is also
-checked with axe-core at 1280 and 390 px; a serious or critical violation
+checked with axe-core at 1280 and 390 px, and dark at 1280 px; a serious or critical violation
 fails the run after the last step, and every finding is written to
 a11y.json and a11y.txt in the artifacts.
 
@@ -69,7 +69,8 @@ AXE_SHA512 = (
 )
 AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]
 AXE_FAIL = {"serious", "critical"}
-WIDTHS = ((1280, 900), (390, 844))
+# Light at desktop and phone width, then dark at desktop width.
+PASSES = ((1280, 900, "light"), (390, 844, "light"), (1280, 900, "dark"))
 
 # The caller's own MAITY_* settings (a state dir, a forge token) never reach
 # the throwaway hub or the scratch clones.
@@ -87,9 +88,10 @@ class Run:
         self.a11y_findings: list[dict] = []
 
     def a11y(self, page: Page, view: str) -> None:
-        """axe-core on the page as it stands, at 1280 and 390 px; back to 1280 after."""
-        for width, height in WIDTHS:
+        """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
+        for width, height, scheme in PASSES:
             page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
             # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
             if not page.evaluate("typeof window.axe === 'object'"):
                 page.evaluate(self.axe)
@@ -103,6 +105,7 @@ class Run:
                     {
                         "view": view,
                         "width": width,
+                        "scheme": scheme,
                         "id": v["id"],
                         "impact": v["impact"],
                         "help": v["help"],
@@ -111,20 +114,20 @@ class Run:
                         "count": len(v["nodes"]),
                     }
                 )
-        page.set_viewport_size({"width": WIDTHS[0][0], "height": WIDTHS[0][1]})
-        print(
-            f"   a11y {view}: checked at {' and '.join(str(w) for w, _ in WIDTHS)} px", flush=True
-        )
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+        print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:
         """Write every finding; return the ones that fail the run."""
         (self.artifacts / "a11y.json").write_text(json.dumps(self.a11y_findings, indent=2) + "\n")
+        order = sorted(
+            self.a11y_findings, key=lambda f: (f["impact"] not in AXE_FAIL, f["id"], f["view"])
+        )
         lines = [
-            f"{f['impact']:<8} {f['id']:<28} {f['view']} @ {f['width']} px: {f['help']}"
-            f" ({f['count']} node(s), e.g. {f['nodes'][:3]})"
-            for f in sorted(
-                self.a11y_findings, key=lambda f: (f["impact"] not in AXE_FAIL, f["id"], f["view"])
-            )
+            f"{f['impact']:<8} {f['id']:<28} {f['view']} @ {f['width']} px {f['scheme']}:"
+            f" {f['help']} ({f['count']} node(s), e.g. {f['nodes'][:3]})"
+            for f in order
         ]
         (self.artifacts / "a11y.txt").write_text(
             f"axe-core {AXE_VERSION}, tags {', '.join(AXE_TAGS)}\n"
@@ -468,7 +471,8 @@ def main() -> int:
             raise AssertionError(
                 f"{len(failing)} serious or critical accessibility finding(s); see a11y.txt:\n  "
                 + "\n  ".join(
-                    f"{f['impact']} {f['id']} {f['view']} @ {f['width']} px" for f in failing
+                    f"{f['impact']} {f['id']} {f['view']} @ {f['width']} px {f['scheme']}"
+                    for f in failing
                 )
             )
     except Exception:

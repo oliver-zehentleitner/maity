@@ -97,7 +97,7 @@ window.Maity = window.Maity || {};
 
   function renderLogin(main) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      h("span", { class: "brand" }, "Maity"),
+      h("h1", { class: "brand" }, "Maity"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
@@ -270,7 +270,7 @@ window.Maity = window.Maity || {};
       : null;
     append(header,
       h("div", { class: "bar" },
-        h("span", { class: "brand" }, "Maity"),
+        h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
           ? [h("span", { class: "project" }, ctx.project.name), stateBadge(ctx.project.state, ctx.project.state_note), toggle]
           : h("span", { class: "project" }, ctx.scope === "new" ? "New project" : "Everything waiting for you"),
@@ -475,7 +475,7 @@ window.Maity = window.Maity || {};
       ctx = await loadContext(where, me);
     } catch (err) {
       if (seq !== renderSeq) return;
-      append(clear(document.getElementById("header")), h("div", { class: "bar" }, h("span", { class: "brand" }, "Maity")));
+      append(clear(document.getElementById("header")), h("div", { class: "bar" }, h("h1", { class: "brand" }, "Maity")));
       append(clear(main), errorBox(err));
       return;
     }

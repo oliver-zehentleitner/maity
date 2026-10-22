@@ -8,7 +8,7 @@
   --text: #1d2125;
   --muted: #5e6670;
   --border: #d5d9de;
-  --accent: #1f6feb;
+  --accent: #1a66d9; /* 4.96:1 on --bg, 5.32:1 on --surface (WCAG AA) */
   --accent-text: #ffffff;
   --high: #b42318;
   --normal: #8a5a00;
@@ -62,7 +62,7 @@ a { color: var(--accent); }
 
 h2 { font-size: 1.25rem; margin: 0 0 12px; }
 h3 { font-size: 1rem; margin: 4px 0; }
-h4 { font-size: 0.85rem; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+h4, h3.sub { font-size: 0.85rem; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
 code { font-family: var(--mono); font-size: 0.9em; }
 
@@ -112,7 +112,8 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.brand { font-weight: 700; }
+/* The page's one h1: the product name, at the size of the header line. */
+.brand { font-weight: 700; font-size: inherit; margin: 0; }
 .me { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
