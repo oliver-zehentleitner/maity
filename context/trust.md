@@ -95,14 +95,16 @@ would mostly leave work half done without a checkpoint.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** contract change in `docs/api.md` §6.2, 2026-10-22, for the maintainer's need to re-hang members in the organisation chart
+**Source:** contract change in `docs/api.md` §6.2, 2026-10-22, for the maintainer's need to re-hang members in the organisation chart; the check moved to the PATCH alone in the hub's follow-up (`docs/api.md` §6.2), re-confirmed by the coordinator, 2026-10-22
 **Revisit when:** a member has to report to more than one member, or the organisation needs a relation a tree cannot express
 **See:** https://github.com/oliver-zehentleitner/maity — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-10-22
 
 A `reports_to` that names the member itself, or a member that already
 reports up to it, is `invalid` (`details.fields.reports_to: "cycle"`),
-checked on the PATCH and on a join that carries `reports_to`, against the
-project's current members. Removing a member sets `reports_to` to `null`
+checked on the PATCH against the project's current members. A join adds no
+edge to the chain: a join for an agent that is already a member must name
+its current `reports_to` (anything else is `differs_from_membership`), and
+nobody reports to a new agent yet, so a join has no cycle to check. Removing a member sets `reports_to` to `null`
 on everyone who reported to them, with a `member_updated` event for each.
 
 **Reason:** the maintainer re-hangs members in the organisation chart,
