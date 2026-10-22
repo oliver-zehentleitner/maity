@@ -281,3 +281,31 @@ the hub allows it. In V1 that only adds a view nobody else can use, and
 an Allow nobody but the admin may send. Treating a 404 as an older hub:
 that was right before the hub had attachments, and today it only
 covers a regression.
+
+## In the cross-project inbox, the project's badge is a link beside the entry, and its name starts the entry's own name
+
+**Id:** e356660d-570b-47ec-9ba1-70b5bad4224d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback that entries of all projects were hard to tell apart, relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the entry head is no longer one button, or the cross-project view gets a layout of its own per project
+
+Every entry of `#/all` has its project's badge (logo or monogram, name,
+state) before it, as a link to the project's inbox; the entry's head
+button starts with the project's name, visually hidden, so that the
+button's own name says which project it is. A project filter and an
+optional grouping by project (sections in the switcher's order, each a
+heading with its own list) sit in the toolbar; both are kept only for
+this tab's session and apply to `#/all` only, never to a project's own
+inbox. The entry opened first and the one opened after an answer follow
+the order on screen, filter and grouping included.
+
+**Reason:** a link may not sit inside a button, and the head is a button
+(it opens the entry); so the badge stands beside it. A screen reader
+moving by buttons would then miss the project, hence the hidden prefix.
+
+**Rejected alternative:** the badge inside the button, as before — it
+cannot be a link there, and its place after the priority read as just
+another label. An `aria-label` on the button — it would have to repeat
+the visible text word for word (axe label-content-name-mismatch).
