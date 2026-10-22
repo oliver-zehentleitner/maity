@@ -18,7 +18,9 @@ free on PyPI and npm at the time of the decision.
 the name should say *companion*, not *command*, and stay neutral towards
 how a team is organised. The maintainer wanted a coined word rather than a
 plain-English phrase, with the nod to AI in the spelling rather than in
-the meaning.
+the meaning. After living with it, the maintainer added: it also carries
+*mighty* next to *mate*, it is short to type, and it reads like an
+attribute, so it combines naturally (Maity hub, Maity CLI).
 
 **Rejected alternatives:** several, dropped for name collisions or for a
 tone that contradicted the team idea; not itemised at the maintainer's
