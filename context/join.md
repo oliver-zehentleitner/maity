@@ -109,3 +109,30 @@ public host only.
   join needs.
 - A separate join service: more to run and secure for no gain over the
   same hub answering a second hostname.
+
+## Without a join host the join page lives at `/join/{token}`; `/j/{token}` stays as an alias
+
+**Id:** d8548eb6-20cd-46c0-bc0c-4359267d49e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22; contract change in `docs/api.md` §3.2
+**Revisit when:** no join link with `/j/` is in circulation any more and the alias can be dropped
+**See:** join.md#an-optional-join-host-answers-only-the-agent-join-everything-else-on-it-goes-to-the-start-page — a749f1eb-f54f-4549-8113-2abee4e2d666 — as of 2026-10-22
+
+On a hub without a join host, a join link reads
+`https://<public host>/join/<token>`, the same word as the API's
+`/api/v1/join/{token}`. `/j/{token}` serves the same document — an
+alias, not a redirect — so links handed out before the move keep
+working. The CLI accepts both shapes, and the log mask and the join
+host's list of paths that are not tokens cover both.
+
+**Reason:** the maintainer preferred how the full word reads. Why the
+saved characters weighed less than that was not stated.
+
+**Rejected alternatives:**
+- Keep `/j/{token}`: shorter, and the maintainer's call went the other
+  way.
+- Move to `/join/` and redirect `/j/` there: the CLI follows no
+  redirects and the curl recipe has no `-L`, so every link already
+  handed out would stop working.
