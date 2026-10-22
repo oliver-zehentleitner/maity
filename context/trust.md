@@ -343,26 +343,47 @@ reading is inferred from the review finding it answered.
 - Scope a human's limit per project (proposed in the review): not
   chosen; why is not recorded (unknown).
 
-## The 24-hour lease bound holds per outage; a new limit after the member was back starts a new one
+## A limit extends a card's lease once per 7 days, never beyond one lease the humans set
 
 **Id:** 0b6dd0cc-0be3-4e8a-bf18-66e5a957fcd7
 **Type:** decision
+**Type:** constraint
 **Status:** active
 **Evidence:** inferred
-**Source:** contract owner's ruling on the re-verification of the availability pull request, 2026-10-23; contract in `docs/api.md` §6.12
-**Revisit when:** declarations are found to hold cards that would otherwise have been released, from members that no longer call the hub
+**Source:** the owner's ruling on the review of the contract-notes pull request, 2026-10-23; contract in `docs/api.md` §6.12
+**Revisit when:** a limit's extension keeps a card from a human who wanted to release or assign it, or agents' provider limits routinely outlast one lease
 **See:** trust.md#a-declared-limit-holds-a-members-cards-for-at-most-24-hours-and-an-absence-ends-within-90-days — f24d2d25-9d94-49cc-89b6-1f2388baad66 — as of 2026-10-23
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
 
-An agent that clears its limit while online is `available` again, which
-ends the outage; a limit declared after that starts a new outage with
-its own 24 hours. The contract says so instead of preventing it. An
-extension also never shortens a lease that already runs later.
+A declared limit extends each lease the member holds to the earlier of
+the limit's end plus the grace and one `policy.lease_seconds` from the
+moment of the extension — so never more than 24 hours — and does so at
+most once per card in any rolling 7 days. Clearing a limit and declaring
+it again, a new limit in the same outage, or a new outage resets
+nothing. An extension never shortens a lease.
 
-**Reason:** any authenticated call already renews the holder's leases
-(§2.4), so an agent that keeps calling holds its cards anyway. The bound
-exists for a member that has stopped calling, and it holds for that one.
-Machinery to carry the bound across outages would bound nothing new.
+This tightens the 24-hour bound of the earlier entry, which reset with
+every new outage. The rule is the owner's ruling; why each alternative
+lost is inferred from the review.
+
+**Reason:** the review showed that an agent could clear and re-declare
+its limit twice a day and keep its cards under a lease of 24 hours at a
+time, indefinitely, while the humans had set `lease_seconds` to as
+little as ten minutes — the hold a limit is never to become. That is the
+`Revisit when` of the outage entry ("a limit is used to hold cards
+against a human"); it was considered, and this rule is the answer to it:
+a limit gives at most one lease of the length the humans chose, once per
+card per week, so it never holds a card longer than a call would and
+never repeatedly.
 
 **Rejected alternatives:**
-- Count the 24 hours across a cleared and re-declared limit: extra state
-  for no gain, since calling renews leases regardless.
+- A fresh 24 hours per outage, accepted because calls renew leases
+  anyway (this entry's first version): wrong when `lease_seconds` is
+  shorter than a day; the re-declaration loop overrides the humans'
+  setting.
+- Continue the previous outage's budget when a new one starts within a
+  window: still a per-member budget an agent can wait out, and a second
+  timer to explain.
+- Let a human with `tasks:admin` release or assign over an extended
+  lease: rejected before (see the earlier entry); bounding the extension
+  keeps one lease rule for everyone.

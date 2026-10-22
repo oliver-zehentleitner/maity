@@ -243,11 +243,11 @@ another agent's) attention from it.
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner's ruling on the re-verification of the ticker pull request, 2026-10-23; contract in `docs/api.md` §17.4
-**Revisit when:** a forge's deliveries are found failing unnoticed because the webhook view no longer shows rejections, or 60 per minute per address is hit by a real forge
+**Revisit when:** a forge's deliveries are found failing unnoticed because the webhook view no longer shows rejections, or 60 per minute per project and address is hit by a real forge
 
 Requests to `POST …/forge/webhook` that do not verify are limited to 60
-per minute per source address, refused before the body is read beyond
-that. Only a verified delivery sets `last_result`, so `signature` and
+per minute per project and source address, refused before the body is
+read beyond that. Only a verified delivery sets `last_result`, so `signature` and
 `too_large` are no longer among its values. A forge whose deliveries
 stop verifying shows as a `last_delivery_at` that stops moving, and the
 forge's own delivery log shows the refusal.
@@ -259,6 +259,9 @@ anything about the real forge. 60 per minute matches the verified
 delivery limit and is a chosen value, not measured.
 
 **Rejected alternatives:**
+- One limit per source address across all projects (the first
+  version): forges deliver from shared address pools, so one project's
+  failing deliveries would refuse every other project's verified ones.
 - Leave unverified requests unbounded and say so as a choice (offered in
   the re-verification): delay and load rather than loss, but nothing
   stops it.

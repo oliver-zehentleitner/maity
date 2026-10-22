@@ -161,55 +161,62 @@ agent under the same name.
   behind is exactly the one the owner wants gone; revoking the joins
   serves that and closes the gap.
 
-## A pending cross-owner pair is withdrawn only by its asker and the two owners
+## No agent but the asker withdraws a pending cross-owner pair; the humans keep the lever
 
 **Id:** b2fb3c6b-7fec-482c-977b-79e5fce227ba
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** contract owner's ruling on the re-verification of the cross-owner pull request, 2026-10-23; contract in `docs/api.md` §6.2 and §7
-**Revisit when:** pending pairs are found to stay open with nobody able to clear them, or a project has humans besides the owners who settle such requests
+**Source:** the owner's ruling on the review of the contract-notes pull request, 2026-10-23; contract in `docs/api.md` §6.2 and §7
+**Revisit when:** pending pairs are found to stay open with nobody able to clear them, or agents need to clear pairs other agents filed
 **See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-10-23
 
-While a cross-owner `reports_to` pair is pending, only the asker and the
-edge's two owners may withdraw it. Holders of `requests:answer`, an
-admin agent included, may not, and an agent other than the asker cannot
-end it indirectly with a superseding `PATCH` (`forbidden`,
-`pending_consent`).
+While a cross-owner `reports_to` pair is pending, an agent other than
+the asker can neither withdraw it nor end it with a superseding `PATCH`
+(`forbidden`, `pending_consent`). The asker, the edge's two owners and
+every human with `requests:answer` or `members:admin` in the project
+keep both.
 
 **Reason:** the re-verification found that an admin agent could stop an
-edge two humans were about to approve, by withdrawal or by a superseding
-`PATCH`. The edge grants nothing, so this was no lever over a human, but
-the choice was implicit. Two humans are deciding; an agent that did not
-ask has no part in ending that.
+edge two humans were about to approve. The first fix restricted
+withdrawal to the asker and the two owners, which took the lever away
+from the project's own human owners and admins: an agent's pending
+request would have locked them out until another human answered. The
+rule is about agents, so the restriction is too.
 
 **Rejected alternatives:**
-- Leave withdrawal with every `requests:answer` holder, as for any other
-  request: an agent could end a decision two humans were taking.
-
+- Leave withdrawal with every `requests:answer` holder, agents included:
+  an agent could end a decision two humans were taking.
+- Only the asker and the two owners (the first version of this rule):
+  an agent's request would block the project's other humans.
 ## Removing a member resets every seat that names it to its default and tells the project's humans
 
 **Id:** 02d819b8-1d40-471a-ac93-968dd051b3b7
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** contract owner's ruling on the re-verification of the profile-deletion pull request, 2026-10-23; contract in `docs/api.md` §6.2 and §6.3
+**Source:** contract owner's ruling on the re-verification of the profile-deletion pull request, 2026-10-23; the owner's ruling on the review of the contract-notes pull request, 2026-10-23; contract in `docs/api.md` §6.2 and §6.3
 **Revisit when:** a seat gains a value that names nobody, or a new policy field names a single member
 **See:** members.md#deleting-an-agent-profile-owner-only-refused-while-in-use-unless-cascaded-a-tombstone-instead-of-a-hard-delete — 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1 — as of 2026-10-23
 
 When a removal takes out a member that holds a seat, the same
-transaction sets the seat back to its documented default:
-`policy.contract_arbiter` and `policy.coordinator` to `role:admin`,
-`policy.coordinator_substitute` to `null`, and the arbiter of an open
-contract card to the project's arbiter. The `policy_changed` and
-`task_updated` it emits are addressed to the project's human owners and
-admins by member token as well. It holds for every removal; the case
+transaction resets the seat: `policy.contract_arbiter` to `role:admin`
+when an agent held it and the project has an admin, otherwise to the
+project's owner, so a seat a human held never lands on an agent;
+`policy.coordinator` to `role:admin`; `policy.coordinator_substitute` to
+`null`; the arbiter of an open contract card to the project's arbiter;
+and the member's entries in other members' `substitutes` are removed
+(an emptied `substitute` policy becomes `wait`). The events it emits are
+addressed to the project's human owners and admins by member token as
+well. It holds for every removal; the case
 that raised it is an agent profile's cascade, whose deleting owner need
 not be a member of the project. A closed card keeps its arbiter as a
 record.
 
-The ruling is the contract owner's. `role:admin` for the arbiter, which
-has no documented default, is the contract writer's choice: the
+The reset is the contract owner's ruling; the fallbacks to the
+project's owner and the `substitutes` cleanup come from the owner's
+ruling on the review. `role:admin` for an agent-held arbiter,
+which has no documented default, is the contract writer's choice: the
 existing value that names no single member.
 
 **Reason:** without it a seat named a former member, and the project's
@@ -225,3 +232,6 @@ rather than the hub picking someone.
   choice no human made.
 - A new `null` value for "no arbiter": a new policy value for one edge
   case, when `role:admin` already exists.
+- `role:admin` for every arbiter: in a project without an admin it
+  names nobody, and for a seat a human held it hands the arbiter role to
+  admin agents without a human choosing that.
