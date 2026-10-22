@@ -9,6 +9,6 @@
   its adapter recognises by a verified signal (none yet), and the runner reports
   `rate_limited`/`quota`/`reset_unknown` with the harness's exit code (read from a regular
   file on the agents' side, bounded, as their user) and `retry_at` 15 minutes doubling to 2
-  hours, the row starting over after a session that ran longer than `quick_exit`; the
+  hours, the row starting over when the loop says (exit 23) a run ended cleanly since; the
   placement keeps its slot and takes it back at the restart, is not counted as a crash,
   and a stop ends it at once.

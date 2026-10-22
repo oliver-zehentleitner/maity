@@ -175,18 +175,47 @@ def test_a_reset_time_in_the_file_is_not_used(world: Any) -> None:
     assert rec.detail == "reset_unknown" and round(rec.retry_at - clock.now) == 900
 
 
-def test_a_session_that_ran_a_while_starts_the_row_over(world: Any) -> None:
+def test_four_limits_in_a_row_double_however_long_each_session_ran(world: Any) -> None:
     sup, backend, _, clock, _ = world
     recorded(sup.cfg)
     sup.update([placement()])
+    gaps = []
+    for _ in range(4):
+        settle(sup)
+        clock.now += 120  # each session works a while before its limit, with no clean run
+        limited(sup, backend)
+        rec = sup.records["plc-0003"]
+        gaps.append(round(rec.retry_at - clock.now))
+        clock.now = rec.retry_at
+    assert gaps == [900, 1800, 3600, 7200]
+
+
+def test_a_limit_after_a_clean_run_starts_the_row_over(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    for _ in range(2):
+        settle(sup)
+        limited(sup, backend)
+        clock.now = sup.records["plc-0003"].retry_at
     settle(sup)
-    limited(sup, backend)
-    clock.now = sup.records["plc-0003"].retry_at
-    settle(sup)
-    clock.now += 3600  # clean turns of the loop for an hour, then the next limit
-    limited(sup, backend)
+    path = limit_file(sup)
+    path.write_text('{"exit_code": 75}')
+    backend.exit("maity_maity_agent-3", loop.EXIT_RATE_LIMITED_AFTER_CLEAN)
+    sup.tick()
     rec = sup.records["plc-0003"]
     assert rec.limits_unknown == 1 and round(rec.retry_at - clock.now) == 900
+
+
+def test_the_loop_says_when_a_clean_run_came_before_the_limit(tmp_path: Path) -> None:
+    spec = {"first": ["h"], "again": ["h"], "env": {},
+            "restart": {"initial": 10, "factor": 2.0, "max": 300, "crash_window": 1800,
+                        "crash_cap": 5, "quick_exit": 60},
+            "limit": {"exit_codes": [75], "file": str(tmp_path / "limit.json")}}  # fmt: skip
+    codes = iter([0, 75])  # the first turn ends cleanly, the next one hits the limit
+    run = loop.Loop(spec, run=lambda argv, env: next(codes), wait=lambda: (0, '{"seq": 9}', ""),
+                    sleep=lambda s: None, log=lambda line: None)  # fmt: skip
+    assert run.main() == loop.EXIT_RATE_LIMITED_AFTER_CLEAN
 
 
 @pytest.mark.parametrize(

@@ -329,7 +329,7 @@ def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
     path.parent.mkdir(parents=True)
     path.write_text('{"exit_code": 75}')
     assert sup._limit_exit_code("plc-0003") == 75
-    assert "head -c 512" in fake_sudo.read_text()
+    assert "iflag=nofollow,nonblock" in fake_sudo.read_text()
     path.unlink()
     path.symlink_to("/dev/zero")
     assert sup._limit_exit_code("plc-0003") is None  # a link is never followed

@@ -396,7 +396,9 @@ class Supervisor:
             rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
             return
-        if code == loop.EXIT_RATE_LIMITED:
+        if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
+            if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
+                rec.limits_unknown = 0  # a clean run since the last limit: a new row
             self._rate_limited(rec, now)
             return
         rec.limits_unknown = 0
@@ -411,15 +413,12 @@ class Supervisor:
 
     def _rate_limited(self, rec: Record, now: float) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
-        the fixed backoff, 15 minutes, doubling with each limit in a row up to 2 hours; a
-        session that ran longer than `quick_exit` before its limit starts the row over (the
-        loop's clean runs in between never reach the runner). A reset time the harness names
+        the fixed backoff, 15 minutes, doubling with each limit in a row up to 2 hours; the
+        loop says by its exit code (23) when a run ended cleanly since its start, which
+        starts the row over, as any other end of a run does. A reset time the harness names
         is not used until a real run shows where to read it (`reset_unknown` until then)."""
         pid = next((p for p, r in self.records.items() if r is rec), "")
         code = self._limit_exit_code(pid)
-        started = rec.started_at
-        if started is None or now - started > self.cfg.limits.restart.quick_exit:
-            rec.limits_unknown = 0
         rec.limits_unknown += 1
         backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
         retry_at = now + backoff
@@ -445,8 +444,10 @@ class Supervisor:
         path, as_user = self._limit_file(pid), self.as_user
         try:
             if as_user.user:
-                done = as_user.run(["sh", "-c", '[ -f "$1" ] && [ ! -L "$1" ] && head -c '
-                                    f'{LIMIT_BYTES} -- "$1"', "sh", str(path)])  # fmt: skip
+                # Opened without following a link and without blocking on a FIFO, so a file
+                # swapped after any check cannot hold the read.
+                done = as_user.run(["dd", f"if={path}", f"bs={LIMIT_BYTES}", "count=1",
+                                    "iflag=nofollow,nonblock", "status=none"])  # fmt: skip
                 raw = done.stdout if done.returncode == 0 else ""
             else:
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)

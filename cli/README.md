@@ -475,8 +475,8 @@ project's own harness configuration is never loaded:
   `crash_loop`/`hot_loop`. A run that ends for the provider's limit, by a
   signal verified on a real run of that harness, is reported
   `rate_limited` (not a crash) and started again after 15 minutes,
-  doubling with each limit in a row up to 2 hours (a session that ran a
-  while before its limit starts the row over); the placement keeps its
+  doubling with each limit in a row up to 2 hours (a run that ended
+  cleanly since the last limit starts the row over); the placement keeps its
   slot meanwhile and takes it back at the restart, and a stop ends it at
   once. No harness has a verified signal yet, so for now a limit exits
   like any other failure; a reset time a harness names is not read until

@@ -7,7 +7,8 @@ burst settle, and runs the harness again, whose `maity resume` lists the event a
 Exit codes the runner maps (§15.7): 20 the agent's credential is revoked
 (`agent_credential_revoked`), 21 runs keep ending without progress (`crash_loop`,
 `hot_loop`), 22 the harness stopped for its provider's limit (`rate_limited`, with the
-harness's own exit code in the spec's `limit.file`). Which exits mean a
+harness's own exit code in the spec's `limit.file`), 23 the same after at least one run of
+this loop had ended cleanly, which starts the runner's backoff row over. Which exits mean a
 limit is the adapter's `limit` in the spec, and only a signal verified on a real run of that
 harness goes there; without one, a limit is an ordinary non-zero exit. A run that ends
 within `quick_exit` without the event having been acknowledged counts toward `crash_cap`
@@ -34,6 +35,7 @@ SETTLE = 15.0
 EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
 EXIT_RATE_LIMITED = 22
+EXIT_RATE_LIMITED_AFTER_CLEAN = 23
 
 
 @dataclass
@@ -45,6 +47,7 @@ class Loop:
     now: Callable[[], float] = time.monotonic
     rand: Callable[[], float] = random.random
     crashes: list[float] = field(default_factory=list)
+    clean: bool = False  # a run of this loop ended cleanly: a later limit is not "in a row"
     log: Callable[[str], None] = lambda line: print(f"maity loop: {line}", flush=True)
 
     def policy(self) -> config.Restart:
@@ -86,10 +89,11 @@ class Loop:
             started = self.now()
             code = self.run(argv, self.spec.get("env") or {})
             if code == 0:
+                self.clean = True
                 return None
             self.log(f"the run exited {code}")
             if self.limited(code):
-                return EXIT_RATE_LIMITED
+                return EXIT_RATE_LIMITED_AFTER_CLEAN if self.clean else EXIT_RATE_LIMITED
             stop = self.count(started, self.now())
             if stop is not None:
                 return stop
