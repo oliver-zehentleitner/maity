@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, case, select, update
 
-from maity_hub import clock, idempotency, rules
+from maity_hub import clock, idempotency, placements, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
@@ -267,6 +267,7 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
         )
         for credential_id in credentials:
             revoke(conn, credential_id, "member_removed", by=caller.principal_id)
+        placements.membership_removed(conn, target.id, caller.actor(mine.id), caller.principal_id)
         conn.execute(
             update(t.card)
             .where(

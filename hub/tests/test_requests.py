@@ -34,6 +34,7 @@ REQUEST_KEYS = {
     "answer",
     "created_at",
     "answered_at",
+    "placement",
 }
 
 

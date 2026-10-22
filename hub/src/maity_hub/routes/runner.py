@@ -1,5 +1,5 @@
-"""The runner's own endpoints (docs/api.md §15.8): hello, its event stream, and what
-it advertises. Placements and the join pickup arrive with §15.5 and §15.9.
+"""The runner's own endpoints (docs/api.md §15.8): hello, its event stream, what it
+advertises, its placements and its reports. The join pickup arrives with §15.9.
 
 A runner reads only events whose audience names it, across every project it
 was attached to, and never `all`; an event is a wake-up, the source of truth
@@ -21,15 +21,15 @@ from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import clock, events, idempotency, longpoll
+from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import RunnerCaller, engine_of, wait_of
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.routes.events import FALLBACK_SECONDS, answer, parse_after, parse_limit
 from maity_hub.runners import (
-    attached_project_ids,
     event_project_ids,
     listening_key,
     load_runner,
@@ -130,7 +130,8 @@ def _stored(capabilities: Capabilities) -> dict[str, Any]:
 
 
 def _projects(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
-    ids = attached_project_ids(conn, runner_id)
+    """The projects a runner reads: attached, or with an active placement of it (§15.8)."""
+    ids = pl.reading_projects(conn, runner_id)
     rows = conn.execute(
         select(t.project.c.slug, t.project.c.name, t.project.c.repository_url)
         .where(t.project.c.id.in_(ids))
@@ -205,7 +206,7 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
             "server_time": clock.rfc3339(now),
             "runner": {"id": runner_id, "name": name, "session_id": session_id},
             "projects": _projects(conn, runner_id),
-            "placements": [],
+            "placements": [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)],
             "cursor": events.highest_for_runner(
                 conn, event_project_ids(conn, runner_id), runner_id
             ),
@@ -291,3 +292,97 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
         longpoll.registry.leave(waiter)
+
+
+# --- placements and reports (§15.7, §15.8) ---------------------------------------------------
+
+
+class Status(Strict):
+    seq: int = Field(ge=1, le=2**31 - 1)
+    observed_generation: int = Field(ge=0, le=2**31 - 1)
+    state: REPORTED_STATES
+    reason: str | None = None
+    detail: str | None = None
+    exit_code: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
+    restarts: int = Field(ge=0, le=2**31 - 1)
+    retry_at: AwareDatetime | None = None
+    crash_count: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    crash_window_seconds: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    deadline_at: AwareDatetime | None = None
+    target: Name
+    since: AwareDatetime
+    session_hint: Text | None = None
+
+
+def _check_codes(body: Status) -> None:
+    """The closed lists of §15.7, and which reason and detail go with which state."""
+    errors: dict[str, str] = {}
+    if body.reason is None:
+        if body.state == "pending":
+            errors["reason"] = "required_with_pending"
+    elif body.reason not in pl.REASONS:
+        errors["reason"] = "unknown"
+    elif body.state not in pl.REASONS[body.reason]:
+        errors["reason"] = "not_with_state"
+    if body.detail is not None:
+        rule = pl.DETAILS.get(body.detail)
+        if rule is None:
+            errors["detail"] = "unknown"
+        elif (rule[0] == "reason" and body.reason != rule[1]) or (
+            rule[0] == "state" and body.state != rule[1]
+        ):
+            errors["detail"] = "not_with_reason"
+    if errors:
+        raise invalid(errors)
+
+
+def _own_placement(conn: Connection, runner_id: str, placement_id: str) -> Any:
+    """A placement of this runner that it may read; closed ones included, which answer
+    as they are (§15.8)."""
+    found = conn.execute(
+        select(t.placement).where(
+            t.placement.c.id == placement_id,
+            t.placement.c.runner_id == runner_id,
+            t.placement.c.approval_status == "approved",
+        )
+    ).first()
+    if found is None:
+        raise not_found()
+    return found
+
+
+def _runner_answer(conn: Connection, placement: Any) -> dict[str, Any]:
+    return {
+        **pl.for_runner(conn, placement),
+        "active": placement.active is True,
+        "reported": pl.view(conn, placement, viewer_id="", briefing=False)["reported"],
+    }
+
+
+@router.get("/runner/placements")
+def runner_placements(request: Request, caller: RunnerCaller) -> JSONResponse:
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    with engine_of(request).begin() as conn:
+        items = [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)]
+        return JSONResponse({"items": items, "next_cursor": None})
+
+
+@router.post("/runner/placements/{placement_id}/status")
+def report_status(
+    placement_id: str, body: Status, request: Request, caller: RunnerCaller
+) -> JSONResponse:
+    """No `Idempotency-Key`: a compare-and-set on `seq`, so a resend is applied as
+    nothing (§15.8)."""
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    _check_codes(body)
+    with events.transaction(engine_of(request)) as conn:
+        placement = _own_placement(conn, runner_id, placement_id)
+        events.lock_project(conn, placement.project_id)
+        placement = pl.row(conn, placement.id)  # as it is under the lock
+        try:
+            after = pl.report(conn, placement, body.model_dump(), caller.runner_actor())
+        except pl.Refusal as refusal:
+            raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
+        return JSONResponse(_runner_answer(conn, after))

@@ -11,13 +11,13 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, idempotency, inbox
+from maity_hub import clock, idempotency, inbox, placements
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.events import emit, lock_project
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, markdown, title
 from maity_hub.views import principal_id, ts
@@ -122,6 +122,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "answer": row.answer,
         "created_at": ts(row.created_at),
         "answered_at": ts(row.answered_at),
+        "placement": placements.request_summary(conn, row.placement_id),
     }
 
 
@@ -650,6 +651,9 @@ def answer(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
+        # A consent for a placement: `go` approves, any other answer refuses (§15.6).
+        outcome = "go" if body.reply_id == "go" else "no"
+        placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -701,6 +705,7 @@ def withdraw(
             )
         )
         _unblock(conn, row)
+        placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -714,3 +719,111 @@ def withdraw(
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def close_request(
+    conn: Connection,
+    request_id: str,
+    outcome: str,
+    actor: Actor | None,
+    *,
+    by: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Answer (`go`, in `by`'s name) or withdraw an open request from inside the hub, as
+    the routes above would, without settling a placement again: the placement code that
+    calls this settles its own side (§15.6)."""
+    row = _row(conn, request_id)
+    if row.status != "open":
+        return
+    now = clock.now()
+    audit = {
+        "changed_by_credential": actor.credential_id if actor else None,
+        "changed_via": actor.via if actor else None,
+    }
+    if outcome == "withdrawn":
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id)
+            .values(status="withdrawn", withdrawn_at=now, withdraw_reason=reason, **audit)
+        )
+        kind, extra = "request_withdrawn", {"reason": reason}
+    else:
+        stored = {
+            "reply_id": outcome,
+            "text": None,
+            "talk": False,
+            "by": by,
+            "on_behalf_of": None,
+            "at": clock.rfc3339(now),
+            "conversation_id": None,
+        }
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id)
+            .values(
+                status="answered",
+                answer=stored,
+                answered_by=actor.membership_id if actor else None,
+                answered_at=now,
+                **audit,
+            )
+        )
+        kind, extra = "request_answered", {}
+    _unblock(conn, row)
+    view = request_view(conn, _row(conn, row.id))
+    emit(
+        conn,
+        row.project_id,
+        kind,
+        _asker_audience(conn, row),
+        {**view, **extra},
+        actor=actor,
+        subject=("request", row.id),
+    )
+
+
+def file_consent(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    placement_id: str,
+    title_text: str,
+    summary: str,
+) -> str:
+    """The consent request for an agent's placement proposal (§15.6): to the owner,
+    go/no, waiting, and linked to the placement; returns its id."""
+    request_id = new_id("request")
+    to = inbox.Addressee("owner")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": mine.project.id,
+                "class": "consent",
+                "title": title_text[:200],
+                "summary": summary,
+                "options": [],
+                "priority": "normal",
+                "to_kind": to.kind,
+                "asked_by": mine.id,
+                "asked_session_id": caller.session_id,
+                "placement_id": placement_id,
+                "while_open": "wait",
+                "status": "open",
+                "changed_by_credential": caller.credential_id,
+                "changed_via": caller.via,
+                "created_at": clock.now(),
+            }
+        )
+    )
+    emit(
+        conn,
+        mine.project.id,
+        "request_created",
+        _addressee_audience(conn, mine, to),
+        request_view(conn, _row(conn, request_id)),
+        actor=caller.actor(mine.id),
+        subject=("request", request_id),
+    )
+    return request_id

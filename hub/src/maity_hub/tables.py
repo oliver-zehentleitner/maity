@@ -143,6 +143,10 @@ project = Table(
     Column("lease_seconds", Integer, nullable=False),
     # optional or required (§2.2); the default fills projects made before 0004.
     Column("signing", String(16), nullable=False, server_default="optional"),
+    # What an agent's placement proposal does, and how many placements may be active
+    # (§6.1, §15.6); the defaults fill projects made before 0008.
+    Column("spawn_requests", String(16), nullable=False, server_default="consent"),
+    Column("max_placements", Integer, nullable=False, server_default="8"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -365,6 +369,54 @@ runner_attachment = Table(
     **MYSQL_TABLE,
 )
 
+placement = Table(
+    "placement",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    # The membership it runs; null while it creates a profile, until the first pickup.
+    _membership_ref("membership_id"),
+    # A profile it creates: the handle (unique while active) and the join fields (§3.1).
+    Column("new_handle", String(HANDLE)),
+    Column("new_profile", JSON_VALUE),
+    _ref("runner_id", "runner.id", nullable=False, index=True),
+    Column("target", String(TITLE)),
+    Column("harness", String(32), nullable=False),
+    Column("mode", String(16), nullable=False),
+    Column("model", String(TITLE)),
+    Column("clone", String(HANDLE), nullable=False),
+    Column("branch", String(255)),
+    Column("desired", String(16), nullable=False),
+    Column("generation", Integer, nullable=False),
+    Column("rejoin", Boolean, nullable=False),
+    Column("stop_grace_seconds", Integer, nullable=False),
+    Column("approval_status", String(16), nullable=False),
+    Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
+    Column("reason", MARKDOWN_TEXT),
+    _ref("credential_id", "credential.id", index=True),  # the revocation hook looks it up
+    # The runner's latest report (§15.7), its counter and the hint; only the runner writes them.
+    Column("reported", JSON_VALUE),
+    Column("reported_seq", Integer, nullable=False),
+    Column("session_hint", String(TITLE)),
+    # Set when the placement closes the uniform way (§15.5): the reason it will close with.
+    Column("closing", String(32)),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    _ref("created_by", "human.id", nullable=False),
+    _membership_ref("proposed_by"),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("updated_by", String(ID)),
+    Column("updated_at", UtcDateTime, nullable=False),
+    # True while active, NULL once closed: the rules of §15.5 as unique constraints.
+    Column("active", Boolean, default=True),
+    UniqueConstraint("membership_id", "active"),
+    UniqueConstraint("project_id", "new_handle", "active"),
+    UniqueConstraint("project_id", "runner_id", "clone", "active"),
+    CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
+    CheckConstraint("membership_id IS NOT NULL OR new_handle IS NOT NULL", name="names_an_agent"),
+    **MYSQL_TABLE,
+)
+
 idempotency_key = Table(
     "idempotency_key",
     metadata,
@@ -459,6 +511,8 @@ request = Table(
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
     _ref("task_id", "card.id"),
+    # A consent request filed for a placement proposal (§15.6); only the hub sets it.
+    _ref("placement_id", "placement.id", index=True),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),
@@ -510,6 +564,8 @@ event = Table(
     Column("redacted", Boolean, nullable=False),
     Index("ix_event_project_seq", "project_id", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),
+    # A placement's reports, newest first (§15.6).
+    Index("ix_event_subject", "project_id", "subject_type", "subject_id", "seq"),
     # SQLite would reuse the highest rowid after a delete; seq never repeats.
     sqlite_autoincrement=True,
     **MYSQL_TABLE,

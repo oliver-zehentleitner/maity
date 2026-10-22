@@ -16,6 +16,7 @@ _HIERARCHICAL = {
     "tag_authority": "human",
     "steward_writes": "cards_only",
     "signing": "optional",
+    "spawn_requests": "consent",
 }
 _FILLINGS = {
     "hierarchical": _HIERARCHICAL,
@@ -32,13 +33,23 @@ CHOICES = {
     "tag_authority": ("human", "capability"),
     "steward_writes": ("cards_only", "self"),
     "signing": ("optional", "required"),
+    "spawn_requests": ("off", "consent", "direct"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
-FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds")
+MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
+FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds", "max_placements")
+# Kept when a preset changes: a preset must not quietly loosen signing or who may start
+# agents, nor reset the placement limit; only the field itself changes them (§6.1).
+KEPT_ON_PRESET = ("signing", "spawn_requests", "max_placements")
 
 
 def filled(preset: str, owner_id: str) -> dict[str, Any]:
-    policy = {"preset": preset, **_FILLINGS[preset], "lease_seconds": LEASE_DEFAULT}
+    policy = {
+        "preset": preset,
+        **_FILLINGS[preset],
+        "lease_seconds": LEASE_DEFAULT,
+        "max_placements": MAX_PLACEMENTS_DEFAULT,
+    }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
     return policy
@@ -55,6 +66,8 @@ def of(project: Any) -> dict[str, Any]:
         "steward_writes": project.steward_writes,
         "lease_seconds": project.lease_seconds,
         "signing": project.signing,
+        "spawn_requests": project.spawn_requests,
+        "max_placements": project.max_placements,
     }
 
 
@@ -69,4 +82,6 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "steward_writes": policy["steward_writes"],
         "lease_seconds": policy["lease_seconds"],
         "signing": policy["signing"],
+        "spawn_requests": policy["spawn_requests"],
+        "max_placements": policy["max_placements"],
     }

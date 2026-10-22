@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import clock, events, listening
 from maity_hub import tables as t
@@ -239,8 +239,13 @@ def attachment_view(
         "attached_by": row.attached_by,
         "attached_at": ts(row.attached_at),
         "detached_at": ts(row.detached_at),
-        # Placements come with §15.5.
-        "active_placements": 0,
+        "active_placements": conn.execute(
+            select(func.count()).where(
+                t.placement.c.project_id == row.project_id,
+                t.placement.c.runner_id == row.runner_id,
+                t.placement.c.active.is_(True),
+            )
+        ).scalar_one(),
     }
 
 

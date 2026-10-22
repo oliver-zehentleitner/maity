@@ -20,6 +20,7 @@ TABLE = {
     "events:post": "✓✓✓✓✓",
     "events:admin": "✓h   ",
     "credentials:admin": "✓h   ",
+    "agents:propose": "✓✓   ",
 }
 ROLES = ("owner", "admin", "proxy", "reviewer", "member")
 
