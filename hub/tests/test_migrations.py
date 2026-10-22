@@ -23,6 +23,19 @@ def test_every_migration_downgrades(engine: Engine) -> None:
     assert current_revision(engine) is None
 
 
+def test_sqlite_keeps_foreign_keys_on_after_a_migration(engine: Engine) -> None:
+    """Migrations switch SQLite's foreign keys off to rebuild tables; the pooled
+    connection must come back with them on, or the hub would stop enforcing them."""
+    if engine.dialect.name != "sqlite":
+        return
+    migrate(engine)
+    downgrade(engine, "0002")  # a downgrade rebuilds referenced tables
+    migrate(engine)
+    for _ in range(3):  # whichever pooled connection comes next
+        with engine.connect() as conn:
+            assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+
+
 def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)

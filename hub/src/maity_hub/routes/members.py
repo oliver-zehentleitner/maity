@@ -21,7 +21,7 @@ from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import emit
 from maity_hub.models import Strict, markdown
 from maity_hub.scopes import ROLES
-from maity_hub.views import credential_view, member_view
+from maity_hub.views import credential_view, human_paused, member_view
 
 router = APIRouter()
 
@@ -41,6 +41,7 @@ class MemberPatch(Strict):
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
     paused: PausedIn | None = None
+    briefing: str | None = markdown(default=None)
 
 
 class RevokeIn(Strict):
@@ -48,8 +49,10 @@ class RevokeIn(Strict):
 
 
 def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
+    """The answer of a member write. Only an admin or the member itself writes one,
+    and both may read the briefing (§6.2)."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
-    return member_view(conn, row)
+    return member_view(conn, row, briefing=True)
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
@@ -120,7 +123,8 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
                 t.membership.c.project_id == mine.project.id, t.membership.c.active.is_(True)
             )
         ).all()
-        views = [member_view(conn, r) for r in rows]
+        admin = mine.may("members:admin")
+        views = [member_view(conn, r, briefing=admin or r.id == mine.id) for r in rows]
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 
@@ -130,7 +134,9 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(member_view(conn, member_row(conn, mine.project.id, member_id)))
+        row = member_row(conn, mine.project.id, member_id)
+        own = row.id == mine.id
+        return JSONResponse(member_view(conn, row, briefing=own or mine.may("members:admin")))
 
 
 @router.patch("/projects/{slug}/members/{member_id}")
@@ -155,6 +161,8 @@ def patch_member(
         )
         if "reports_to" in given and body.reports_to is None:
             values["reports_to"] = None
+        if "briefing" in given:
+            values["briefing"] = body.briefing or None
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
@@ -168,7 +176,7 @@ def patch_member(
                 )
             )
             row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-            view = member_view(conn, row)
+            view = member_view(conn, row)  # to everyone: never the briefing
             if {"role", "areas"} & changed.keys():
                 # The member's role brief is part of the rules: a bump (§6.9).
                 rules.bump(
@@ -203,8 +211,11 @@ def patch_member(
 def set_paused(
     conn: Connection, mine: Membership, target: Any, reason: str | None, caller: Caller
 ) -> None:
-    """Set or clear `paused` (§5.3); setting it tells `reports_to` and the admins."""
+    """Set or clear `paused` (§5.3). Setting it tells the member itself (its long-poll
+    wakes), `reports_to` and the admins; lifting a pause someone else set tells them
+    the same way, with `paused: null`."""
     now = clock.now()
+    lifts_a_human_pause = reason is None and human_paused(target)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -214,13 +225,13 @@ def set_paused(
             paused_by=caller.principal_id if reason else None,
         )
     )
-    if reason is None:
+    if reason is None and not lifts_a_human_pause:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, row)
-    audience = ["role:admin"]
+    audience = [f"member:{view['id']}", "role:admin"]
     if view["reports_to"]:
-        audience.insert(0, f"member:{view['reports_to']}")
+        audience.insert(1, f"member:{view['reports_to']}")
     emit(
         conn,
         mine.project.id,
@@ -275,7 +286,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             .where(t.membership.c.id == target.id)
             .values(active=None, removed_at=now, changed_via=caller.via)
         )
-        view = load_member(conn, str(target.id))
+        removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+        view = member_view(conn, removed)  # to everyone: never the briefing
         emit(
             conn,
             mine.project.id,
@@ -285,7 +297,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             actor=caller.actor(mine.id),
             subject=("member", member_id),
         )
-        return idempotency.Outcome(200, "member", str(target.id), view)
+        # The answer goes to the admin who removed it, like a repeated DELETE's.
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

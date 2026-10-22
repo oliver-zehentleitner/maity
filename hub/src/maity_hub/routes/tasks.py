@@ -27,7 +27,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, markdown, title
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
-from maity_hub.views import principal_id, task_view
+from maity_hub.views import human_paused, paused, principal_id, task_view
 
 router = APIRouter()
 
@@ -271,6 +271,19 @@ def _closing(card: Any) -> dict[str, Any]:
     return values
 
 
+def _refuse_paused(conn: Connection, membership_id: int) -> None:
+    """A member a human paused takes no new work: no claims, no new cards (§5.3).
+    Its own pause is a declaration and refuses nothing."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    if human_paused(row):
+        raise ApiError(
+            409,
+            "paused",
+            "this member is paused; it takes no new work until the pause is lifted",
+            {"paused": paused(row)},
+        )
+
+
 def _refuse_closed_release(card: Any) -> None:
     """A closed release is the record of what shipped (§6.7)."""
     if card.kind == "release" and card.status in cards.CLOSED:
@@ -499,6 +512,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         _check_area(body.area)
         mine = _locked(conn, mine)
         state = _require_open_project(mine, body.reason)
+        _refuse_paused(conn, mine.id)  # a paused agent opens no new work
         extra: dict[str, Any] = {}
         if body.kind == "release":
             extra = _new_release(conn, mine, body.release)
@@ -694,6 +708,7 @@ def claim(
             mine.require("tasks:admin")
             holder_id = _member_id(conn, mine, body.holder, "holder")
             session_id = None  # the holder's next call moves it to its session
+        _refuse_paused(conn, holder_id)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
         if card.status != "open":
@@ -848,7 +863,8 @@ def assign(
                     "the holder's lease has not expired",
                     {"lease_until": clock.rfc3339(card.lease_until)},
                 )
-            # An expired claim moves to the assignee (§6.4).
+            # An expired claim moves to the assignee (§6.4): a claim on its behalf.
+            _refuse_paused(conn, assignee)
             values.update(
                 claim_holder=assignee,
                 claim_session_id=None,

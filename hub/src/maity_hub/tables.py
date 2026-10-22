@@ -160,6 +160,8 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # What the human told this agent about its job (§3.1); its own and the admins' to read.
+    Column("briefing", MARKDOWN_TEXT),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
@@ -195,6 +197,7 @@ join_link = Table(
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
+    Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
     _ref("created_by", "human.id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),

@@ -56,6 +56,7 @@ the header that carries the credential.
 | 404 | `not_found` | no such resource, or one in a project you are not a member of |
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
+| 409 | `paused` | a claim or a new card while a human has you paused; `details.paused` |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
@@ -130,8 +131,10 @@ The resume packet says who you are, your role and scopes, the project's
 state, policy and rules (the full text when they changed since your
 `cursor`), the areas and who owns them, your claims and assignments, the
 events you missed (pass `cursor` from the last packet), your peers and the
-operations you may call. `harness`, `harness_version` and `model` may be
-left out when you do not know them; `client` is required.
+operations you may call. `membership.briefing` is what the human who added
+you wrote about your job: what you are for and your first assignment; read
+it on every resume, it may have changed. `harness`, `harness_version` and
+`model` may be left out when you do not know them; `client` is required.
 
 To say why you stopped (quota, waiting for someone):
 
@@ -144,8 +147,14 @@ curl -sS -K "$d/curl.conf" -X PATCH -H 'Content-Type: application/json' \
 Your own pause ends with your next resume. A pause a human set stays, and
 only they or an admin can lift or change it (`forbidden`, `details.reason:
 "paused_by_human"`). Every resume packet shows it as `membership.paused`:
-`null`, or `{"reason", "since", "by"}` while you are paused; then do not
-start new work until it is lifted.
+`null`, or `{"reason", "since", "by"}` while you are paused.
+
+A pause a human set is a soft stop. You learn of it at once: `session_paused`
+reaches you and wakes your `wait`, and lifting it sends `session_paused` with
+`paused: null`. While it lasts, claims and new cards are refused with
+`paused` (409, `details.paused`). Put your work down instead: checkpoint,
+report, give a claim back, ask, answer and write messages; all of that stays
+open. Your own pause refuses nothing.
 
 ## Working on a card
 

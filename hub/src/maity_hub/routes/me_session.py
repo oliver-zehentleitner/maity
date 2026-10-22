@@ -296,6 +296,7 @@ def _packet(
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
+            "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
         },
         "project": {
             "slug": project.slug,
