@@ -557,6 +557,13 @@ def cmd_release_list(args: argparse.Namespace) -> int:
 # --- placements (docs/api.md §15.6), for agents with agents:propose ---------------------------
 
 
+def _grace(value: str) -> int:
+    seconds = int(value)
+    if not 0 <= seconds <= 900:
+        raise argparse.ArgumentTypeError("0 to 900 seconds")
+    return seconds
+
+
 def _obj(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -567,24 +574,41 @@ def _placements(session: Session) -> list[dict[str, Any]]:
     return [p for p in items or [] if isinstance(p, dict)]
 
 
+def _one(items: list[dict[str, Any]], which: str, keys: tuple[Callable[[Any], Any], ...],
+         what: str) -> dict[str, Any]:  # fmt: skip
+    """The one item `which` names: an exact match on the first key (the id) wins; otherwise
+    the later keys, and more than one match is refused rather than guessed. Handles are only
+    unique per owner, and an id is a valid handle."""
+    for key in keys:
+        found = [item for item in items if key(item) == which]
+        if len(found) == 1:
+            return found[0]
+        if len(found) > 1:
+            raise CommandError(f"{onboarding.inline(which)} names more than one {what}; use the id")
+    raise CommandError(f"no {what} {onboarding.inline(which)} in this project")
+
+
 def _placement(session: Session, which: str) -> dict[str, Any]:
-    """The active placement whose id, agent id or agent handle is `which`."""
-    for placement in _placements(session):
-        agent = _obj(placement.get("agent"))
-        if which in (placement.get("id"), agent.get("id"), agent.get("handle")):
-            return placement
-    raise CommandError(f"no active placement for {onboarding.inline(which)}")
+    """The active placement with id `which`, or the one of the agent with that id or handle."""
+    found = _one(
+        [p for p in _placements(session) if isinstance(p.get("id"), str)],
+        which,
+        (lambda p: p.get("id"), lambda p: _obj(p.get("agent")).get("id"),
+         lambda p: _obj(p.get("agent")).get("handle")),
+        "active placement",
+    )  # fmt: skip
+    return found
 
 
 def _member_id(session: Session, which: str) -> str:
     """The member id for an agent named by id or handle."""
     answer = session.client.call("GET", session.project_path("members"))
-    for member in (answer.get("items") if isinstance(answer, dict) else None) or []:
-        if isinstance(member, dict) and which in (member.get("id"), member.get("handle")):
-            member_id = member.get("id")
-            if isinstance(member_id, str):
-                return member_id
-    raise CommandError(f"no member {onboarding.inline(which)} in this project")
+    members = [
+        m for m in (answer.get("items") if isinstance(answer, dict) else None) or []
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+    ]  # fmt: skip
+    member = _one(members, which, (lambda m: m.get("id"), lambda m: m.get("handle")), "member")
+    return str(member["id"])
 
 
 def _placement_line(p: dict[str, Any]) -> str:
@@ -592,7 +616,7 @@ def _placement_line(p: dict[str, Any]) -> str:
     agent = _obj(p.get("agent"))
     runner = _obj(p.get("runner"))
     reported = _obj(p.get("reported"))
-    state_ = reported.get("state") or "not reported"
+    state_ = str(reported.get("state") or "not reported")
     if reported.get("reason"):
         state_ += f"/{reported['reason']}"
     pending = "" if p.get("reported_current", True) else " (pending)"
@@ -633,7 +657,7 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
         body["workspace"] = {k: v for k, v in (("clone", args.clone), ("branch", args.branch)) if v}
     placement = session.client.call("POST", session.project_path("placements"), body=body)
     approval = _obj(_field(placement, "approval"))
-    line = f"placement {_field(placement, 'id')} created"
+    line = f"placement {onboarding.inline(_field(placement, 'id'))} created"
     if approval.get("status") == "pending":
         line += f"; waiting for consent (request {onboarding.inline(approval.get('request_id'))})"
     return _done(args, placement, line)
@@ -647,15 +671,15 @@ def cmd_placement_stop(args: argparse.Namespace) -> int:
         body["stop_grace_seconds"] = args.grace
     path = session.project_path("placements", placement["id"])
     answer = session.client.call("PATCH", path, body=body)
-    return _done(args, answer, f"placement {placement['id']} stopping")
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} stopping")
 
 
 def cmd_placement_restart(args: argparse.Namespace) -> int:
     session = Session()
     placement = _placement(session, args.which)
     path = session.project_path("placements", placement["id"], "restart")
-    answer = session.client.call("POST", path, body={})
-    return _done(args, answer, f"placement {placement['id']} restarting")
+    answer = session.client.call("POST", path, body={"rejoin": True} if args.rejoin else {})
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting")
 
 
 def cmd_runners(args: argparse.Namespace) -> int:
@@ -676,11 +700,14 @@ def cmd_runners(args: argparse.Namespace) -> int:
             for h in caps.get("harnesses") or []
             if isinstance(h, dict) and h.get("available")
         )
+
+        def show(value: Any) -> str:
+            return "-" if value is None else onboarding.inline(value)
+
         print(
-            f"{onboarding.inline(runner.get('id'))}  {onboarding.inline(runner.get('name'))}  "
-            f"{onboarding.inline(runner.get('presence'))}  "
-            f"{onboarding.inline(caps.get('running'))}/{onboarding.inline(caps.get('max_agents'))} "
-            f"running  tools: {tools or '-'}"
+            f"{show(runner.get('id'))}  {show(runner.get('name'))}  {show(runner.get('presence'))}"
+            f"  {show(caps.get('running'))}/{show(caps.get('max_agents'))} running"
+            f"  tools: {tools or '-'}"
         )
     return EXIT_OK
 
@@ -1042,11 +1069,16 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_placement_start)
     r = psub.add_parser("stop", help="stop an agent's placement", formatter_class=fmt)
     r.add_argument("which", help="the placement id, or the agent's handle or id")
-    r.add_argument("--grace", type=int, metavar="N", help="seconds to park the work (0-900)")
+    r.add_argument("--grace", type=_grace, metavar="N", help="seconds to park the work (0-900)")
     _json_flag(r)
     r.set_defaults(handler=cmd_placement_stop)
     r = psub.add_parser("restart", help="restart an agent's placement", formatter_class=fmt)
     r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "--rejoin",
+        action="store_true",
+        help="with a new credential, after the old one was revoked (§15.6)",
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_placement_restart)
 
