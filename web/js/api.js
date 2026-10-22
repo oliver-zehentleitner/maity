@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
     return fixtures()["runners.json"];
@@ -216,6 +217,40 @@ window.Maity = window.Maity || {};
   }
   const guarded = (slug, target) => target.role === "reviewer"
     || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
+  // A member's avatar as §6.10 keeps it: one per account or profile, so
+  // every object that names the member carries the same avatar_url.
+  function setAvatar(id, url, source) {
+    const all = fixtures();
+    const objects = [all["me.json"].member].concat((all["agents.json"] || { items: [] }).items,
+      ...Object.keys(all).filter((k) => k.endsWith("/members.json")).map((k) => all[k].items));
+    objects.filter((x) => x && x.id === id).forEach((x) => { x.avatar_url = url; x.avatar_source = source; });
+    return { avatar_url: url, avatar_source: source };
+  }
+  function avatarRoute(idOf) {
+    return (m, body, path) => {
+      const id = idOf(m, path);
+      const now = Date.now();
+      const recent = (avatarChanges[id] || []).filter((t) => now - t < 3600000);
+      if (recent.length >= 10) fail(429, "rate_limited", "at most 10 changes of one avatar per hour", path);
+      if (body && body.blob) {
+        if (!IMAGE_TYPES.includes(body.type)) fail(400, "invalid", "not PNG, JPEG or WebP", path, { fields: { body: "unsupported_type" } });
+        if (body.size > IMAGE_MAX) fail(400, "invalid", "larger than 1 MiB", path, { fields: { body: "too_large" } });
+      }
+      avatarChanges[id] = recent.concat(now);
+      const key = "avatar/" + id;
+      if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
+      delete uploaded[key];
+      if (!body || !body.blob) return setAvatar(id, null, null);
+      uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body.blob) : "uploaded-" + key;
+      return setAvatar(id, uploaded[key], "uploaded");
+    };
+  }
+  // /agents/{id}/avatar: the profile's owner only; any other is not_found.
+  const ownAgent = (m, path) => {
+    const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
+    if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+    return agent.id;
+  };
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -444,6 +479,10 @@ window.Maity = window.Maity || {};
       p[m[2]] = { available: true, source: "uploaded", etag: "\"up" + imageSerial + "\"" };
       return { [m[2]]: p[m[2]] };
     }],
+    ["PUT", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
+    ["DELETE", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
+    ["PUT", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
+    ["DELETE", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
     ["DELETE", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {
       const p = project(m[1], path);
       const key = m[1] + "/" + m[2];

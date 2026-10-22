@@ -17,6 +17,7 @@ class Node_ {
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
   insertBefore(c, ref) { c.parentNode = this; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); return c; }
   removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; return c; }
+  replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
   set textContent(v) { this.childNodes = []; if (v !== "") this.appendChild(new Text_(String(v))); }
@@ -1589,10 +1590,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Avatar · coming soon", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].attrs["aria-disabled"] === "true", "header: arrows move through the items; one still to come is disabled");
+  expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
+    "header: arrows move through the items; Picture goes to the account's picture");
+  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[3].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[3],
+    "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
   pMenu.dispatch("keydown", { key: "Escape" });
@@ -1628,6 +1633,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(byId("password-current-error")) === "This is not your current password." && byId("password-current").getAttribute("aria-invalid") === "true",
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
+
+  // Pictures (docs/api.md §6.10): one's own and one's agents', on the account.
+  const avCalls = [];
+  win.Maity.api.putImage = (p, blob, type) => { avCalls.push(["PUT", p, type]); return realPut(p, blob, type); };
+  win.Maity.api.del = (p) => { avCalls.push(["DELETE", p]); return realDel(p); };
+  await go("#/account/picture");
+  const avHeading = main.querySelector(".picture-heading");
+  expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
+    && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
+  const avAgents = main.querySelectorAll(".picture-list li");
+  // The fixtures' seven, and any joined earlier in this run.
+  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @agent-b")), "picture: the human's agents, each with its own upload");
+  await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
+  expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
+  expect(!avCalls.length && text(main).includes("Not uploaded: larger than 1 MiB"), "picture: over 1 MiB is refused before sending");
+  await pick("avatar-file-hum-maintainer", fakeFile(WEBP, 2000, "image/png"));
+  await tick(); await tick();
+  const meAfter = await win.Maity.api.get("/me");
+  const memberAfter = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "hum-maintainer");
+  expect(JSON.stringify(avCalls[0]) === JSON.stringify(["PUT", "/me/avatar", "image/webp"]) && meAfter.member.avatar_source === "uploaded"
+    && memberAfter.avatar_source === "uploaded" && memberAfter.avatar_url === meAfter.member.avatar_url,
+    "picture: uploaded with the sniffed type; the member is the same everywhere");
+  expect(text(main).includes("Picture uploaded.") && text(main).includes("Uploaded.") && btn(main, "Remove the upload"), "picture: the page says so and offers Remove");
+  btn(main, "Remove the upload").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(avCalls[1]) === JSON.stringify(["DELETE", "/me/avatar"]) && text(main).includes("Uploaded picture removed; the generated one shows again.")
+    && !btn(main, "Remove the upload"), "picture: Remove deletes the upload; the generated picture applies again");
+  await pick("avatar-file-agt-b", fakeFile(PNG, 3000));
+  await tick(); await tick();
+  const bAfter = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "agt-b");
+  expect(JSON.stringify(avCalls[2]) === JSON.stringify(["PUT", "/agents/agt-b/avatar", "image/png"]) && bAfter.avatar_source === "uploaded",
+    "picture: an owner sets an agent's picture, which its member view carries");
+  // The hub's refusals in words.
+  const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));
+  win.Maity.api.putImage = refuse("invalid", { fields: { body: "dimensions" } });
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: more than 4096 pixels on a side"), "picture: the hub's dimensions refusal in words");
+  win.Maity.api.putImage = refuse("rate_limited", {});
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: too many changes of this picture in the last hour"), "picture: the rate limit in words");
+  win.Maity.api.putImage = () => Promise.reject(new win.Maity.api.ApiError("Not found", 404, "/me/avatar", "not_found", {}));
+  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
+  expect(text(main).includes("Not uploaded: this hub does not take pictures yet"), "picture: a hub without the endpoint is said as such");
+  win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
+  // The mock as the hub: someone else's profile is not_found; ten changes an hour.
+  let notMine = null;
+  try { await win.Maity.api.del("/agents/agt-zz/avatar"); } catch (err) { notMine = err; }
+  let limited = null;
+  try { for (let k = 0; k < 12; k++) await win.Maity.api.del("/agents/agt-c/avatar"); } catch (err) { limited = err; }
+  expect(notMine && notMine.code === "not_found" && limited && limited.code === "rate_limited", "picture: the mock answers not_found for another's profile and limits ten changes an hour");
+  // An avatar is loaded only from the hub's own path, and one that fails to load gives way to the generated one.
+  let foreign = null;
+  try { win.Maity.dom.h("img", { src: "https://evil.example/api/v1/avatars/agt-a?v=1" }); } catch (err) { foreign = err; }
+  const avBox = document.createElement("div");
+  const avImg = win.Maity.avatar({ id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" }, 24);
+  avBox.appendChild(avImg);
+  const loaded = avBox.querySelector("img");
+  avImg.dispatch("error");
+  expect(foreign && loaded && avBox.querySelector("svg") && !avBox.querySelector("img"), "picture: only the hub's avatar path loads; a failed load shows the generated picture");
 
   // sign out, sign in
   profileButton().click(); await tick();
