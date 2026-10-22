@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
@@ -549,9 +550,13 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
         }
         const same = p.repository && p.repository.url === url;
-        p.repository = url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
-        // The export follows the repository; a new one has not been read yet.
-        if (!same && "keep_the_why_export" in p) p.keep_the_why_export = null;
+        // What the repository had, kept by its URL, comes back with it: the
+        // export follows the repository, and a new one has not been read yet.
+        if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
+        const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
+        p.repository = back ? back.repository
+          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
       }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
