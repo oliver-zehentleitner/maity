@@ -63,3 +63,33 @@ by noticing that a project is missing from its next hello.
 
 **Rejected alternative:** writing the detachment somewhere outside the
 project. Every event belongs to exactly one project (§15.10).
+
+## Mention pings are counted in process, before the write commits
+
+**Id:** 8a5e4c45-edcd-4c23-89c6-2b784b9d3e14
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of mentions (`docs/api.md` §8.6), 2026-10-22, PR #151
+
+The limit of 30 pings per membership in 10 minutes is a sliding window in
+memory (`mentions.PingRate`), charged inside the write's transaction just
+before the event is emitted. A write past the limit is refused as a whole
+and stores nothing.
+
+**Reason:** like the nonce window and the long-poll registry, it is state of
+the one replica (`docs/api.md` §8.3), cheap to check and lost harmlessly on a
+restart. Charging before the emit is what lets the over-limit write fail
+whole, as the contract asks.
+
+**Known imprecision:** a write that is charged and then fails later in the
+same transaction, or is run again by `retrying`, has counted its pings
+anyway; the limit can only err towards refusing a little early.
+
+**Rejected alternative:** counting pings from the event table (`mentioned`
+events and message audiences of the last 10 minutes). Exact across restarts
+and replicas, but a query over the event log on every write that mentions
+someone, for a spam guard.
+
+**Revisit when:** the hub runs more than one replica.
