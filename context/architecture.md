@@ -53,3 +53,24 @@ is the cheapest way to keep both true.
 
 **Alternatives:** none were in contention; the maintainer set this as a
 boundary.
+
+## Python 3.11 is the minimum everywhere
+
+**Id:** 22a7d470-4458-493b-8df6-08176d4abb13
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator
+**Revisit when:** a supported agent host cannot provide Python 3.11
+**See:** https://github.com/oliver-zehentleitner/maity — f2a34d72-f074-474c-87bb-2d8c6bccd60e — as of 2026-10-22
+
+Every Maity component requires at least Python 3.11 — the CLI on agent
+hosts included, where `maity runner` and the rest of the command used to
+differ (3.11 for the runner, 3.10 for everything else).
+
+**Reason:** the maintainer's decision; the reason was not stated.
+
+**Rejected alternative:** the CLI's 3.10 floor with `tomllib` gated to
+3.11 for the runner only, so that agent hosts on 3.10 kept working — the
+earlier choice, recorded with its reasons in the CLI's runner context.
+Why that reason no longer weighs is not recorded.
