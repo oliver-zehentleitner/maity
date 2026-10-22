@@ -260,7 +260,8 @@ Inside a project, in the order of their importance; see
       `rel="noopener noreferrer"`; anything else is text.
     - Members by role, with how many are humans, agents and online.
     - The board's count per column, over the board's 14-day window for
-      done and cancelled, each linking to the board.
+      done and cancelled, each linking to the board (the board has no
+      route to one column or card yet, so a report links there too).
     - Open requests, those for oneself and by priority, linking to the
       inbox.
     - The latest reports: author, card, when, the pull request with the
@@ -268,7 +269,11 @@ Inside a project, in the order of their importance; see
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,
-    `request_*` and `probe_observed` and redrawn in place, with no Reload.
+    `request_*` and `probe_observed` and redrawn in place, with no Reload;
+    for a viewer who is neither owner nor admin (in few events' audiences)
+    also every 60 seconds and when the tab comes back. Triggers during a
+    read give one more read after it; the focus stays on the same link. A
+    family cut at the hub's limit and a failed Keep the Why read are said.
     Each part has its empty state. Without a repository or a published
     dashboard, an owner or admin gets **Set the repository** (it opens
     Project settings at the repository) and is told where the Keep the Why

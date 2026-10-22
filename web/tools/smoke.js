@@ -2119,6 +2119,59 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".error") && ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
     && text(main).includes("The counts could not be read: this hub has no overview yet."), "overview: without the endpoint the rest stays, the counts said missing");
   win.Maity.api.get = ovGet;
+  // An owner gets no timer: the events reach them. A redraw keeps the focus on the same link.
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) { const items = ovFeed; ovFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 10199, superseded: false }); }
+    if (p.includes("/overview")) ovGets.push(p);
+    return ovGet(p);
+  };
+  const ovReads = () => ovGets.length;
+  await go("#/p/maity/overview");
+  let ovBefore = ovReads();
+  await fireIntervals(); await tick(); await tick();
+  expect(ovReads() === ovBefore && !docListeners.visibilitychange, "overview: an owner's view has no 60-second re-read and no tab-focus re-read");
+  const ovProto = Object.getPrototypeOf(main);
+  const ovFocus = ovProto.focus;
+  ovProto.focus = function () { document.activeElement = this; };
+  const openCount = () => main.querySelector(".overview-counts li[data-status=\"open\"] a");
+  const firstOpen = openCount();
+  firstOpen.focus();
+  ovFeed = [{ seq: 10200, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(openCount() !== firstOpen && document.activeElement === openCount(), "overview: a redraw puts the focus back on the same count");
+  ovProto.focus = ovFocus; document.activeElement = undefined;
+  // A member (neither owner nor admin): every 60 seconds and on the tab's return, one follow-up for a burst.
+  const ovMe = win.Maity.api.get;
+  let ovSlow = null;
+  win.Maity.api.get = (p) => {
+    if (p === "/me") return ovMe(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; });
+    if (p.includes("/overview") && ovSlow) { ovGets.push(p); return new Promise((done) => { ovSlow.push(() => ovGet(p).then(done)); }); }
+    return ovMe(p);
+  };
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview");
+  expect(!btn(main, "Set the repository") && !text(main).includes("dashboard-state line"), "overview: a member sees neither Set the repository nor where the link comes from");
+  ovBefore = ovReads();
+  await fireIntervals(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 1, "overview: a member's view re-reads every 60 seconds");
+  document.visibilityState = "visible";
+  docListeners.visibilitychange(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 2, "overview: and when the tab comes back");
+  ovSlow = [];
+  ovBefore = ovReads();
+  docListeners.visibilitychange(); docListeners.visibilitychange(); docListeners.visibilitychange(); await tick();
+  ovSlow.shift()(); await tick(); await tick();
+  ovSlow.length && ovSlow.shift()(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 2, "overview: triggers during a read give one more read, not none and not one each");
+  ovSlow = null;
+  win.Maity.api.get = ovMe;
+  // A mismatch the probe has not looked at yet (null) is no warning.
+  const ovGet2 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.includes("/overview") ? ovGet2(p).then((o) => Object.assign({}, o, { reports: o.reports.map((r) => Object.assign({}, r, { mismatch: null })) })) : ovGet2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview");
+  expect(!text(ovPart("overview-reports")).includes("does not match"), "overview: mismatch null is no warning");
+  win.Maity.api.get = ovGet;
+  await go("#/p/maity/inbox");
+
   // The mock as the hub: closed cards counted after closed_after only; a bad limit is invalid.
   const allTime = await ovGet("/projects/maity/overview");
   const recent = await ovGet("/projects/maity/overview?closed_after=2030-01-01T00:00:00Z");

@@ -17,11 +17,13 @@ window.Maity = window.Maity || {};
   const ROLES = ["owner", "admin", "reviewer", "member", "proxy"];
   const PR_STATES = { merged: "merged", open: "open", closed: "closed without merge" };
   const REREAD = /^(task_|request_|probe_observed$)/;
+  const NARROW_MS = 60000;
 
   // A link from data: plain https only, in a new tab; anything else is text.
-  function out(url, text) {
+  // key: the control's name across redraws, so the focus can come back to it.
+  function out(url, text, key) {
     const href = safeUrl(url);
-    return href ? h("a", { href, rel: "noopener noreferrer", target: "_blank" }, text) : text;
+    return href ? h("a", { href, rel: "noopener noreferrer", target: "_blank", "data-key": key }, text) : text;
   }
 
   const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
@@ -32,8 +34,8 @@ window.Maity = window.Maity || {};
     const repo = p.repository && p.repository.url;
     const exp = p.keep_the_why_export;
     const rows = [h("dt", null, "Repository"),
-      h("dd", null, repo ? out(repo, repo) : "No repository.",
-        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
+      h("dd", null, repo ? out(repo, repo, "repo") : "No repository.",
+        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
     rows.push(h("dt", null, "Keep the Why"));
     if (!exp) {
       rows.push(h("dd", null, "No Keep the Why dashboard is published.",
@@ -42,10 +44,13 @@ window.Maity = window.Maity || {};
       rows.push(h("dd", null, h("ul", { class: "overview-why" }, (exp.members || []).map((mm) => {
         const name = mm.path ? (mm.name || mm.path) : "the project";
         const sum = mm.summary || {};
-        return h("li", null, mm.dashboard_url ? out(mm.dashboard_url, name) : name,
+        return h("li", null, mm.dashboard_url ? out(mm.dashboard_url, name, "why:" + mm.path) : name,
           typeof sum.attention === "number" ? h("span", { class: sum.attention ? "flag" : "muted" }, " · " + plural(sum.attention, "entry needs", "entries need") + " attention") : null,
           mm.error ? h("span", { class: "flag" }, " · " + (mm.error.reason || mm.error.code || "not read")) : null);
-      }))));
+      })),
+      // A family cut at the hub's limit (§11.3) and a failed read of it are said.
+      exp.family_truncated ? h("p", { class: "flag" }, "Only part of the family is shown: it has more parts than the hub reads.") : null,
+      exp.error ? h("p", { class: "flag" }, "The last read failed: " + (exp.error.reason || exp.error.code || "unknown") + ".") : null));
     }
     if (p.policy && p.policy.preset) rows.push(h("dt", null, "Policy"), h("dd", null, p.policy.preset));
     return h("section", { class: "overview-part", "aria-labelledby": "overview-links" },
@@ -56,7 +61,7 @@ window.Maity = window.Maity || {};
     const list = ctx.members || [];
     const online = list.filter((m) => m.presence === "online").length;
     return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
-      h("h3", { id: "overview-members" }, h("a", { href: ctx.link("members") }, "Members"), h("span", { class: "count" }, String(list.length))),
+      h("h3", { id: "overview-members" }, h("a", { href: ctx.link("members"), "data-key": "members" }, "Members"), h("span", { class: "count" }, String(list.length))),
       list.length
         ? [h("p", { class: "muted" }, plural(list.filter((m) => m.kind === "human").length, "human", "humans") + ", "
             + plural(list.filter((m) => m.kind === "agent").length, "agent", "agents") + "; " + online + " online."),
@@ -71,10 +76,10 @@ window.Maity = window.Maity || {};
     const counts = (o.board && o.board.counts) || {};
     const total = COLUMNS.reduce((n, [s]) => n + (counts[s] || 0), 0);
     return h("section", { class: "overview-part", "aria-labelledby": "overview-board" },
-      h("h3", { id: "overview-board" }, h("a", { href: ctx.link("board") }, "Board")),
+      h("h3", { id: "overview-board" }, h("a", { href: ctx.link("board"), "data-key": "board" }, "Board")),
       total
         ? h("ul", { class: "overview-counts" }, COLUMNS.map(([s, label]) => h("li", { "data-status": s },
-          h("a", { href: ctx.link("board") }, h("span", { class: "n" }, String(counts[s] || 0)), " " + label))))
+          h("a", { href: ctx.link("board"), "data-key": "count:" + s }, h("span", { class: "n" }, String(counts[s] || 0)), " " + label))))
         : h("p", { class: "muted" }, "No cards yet."),
       o.board && o.board.closed_after ? h("p", { class: "hint" }, "Done and cancelled: the last " + M.boardWindowDays + " days, as on the board.") : null);
   }
@@ -82,9 +87,9 @@ window.Maity = window.Maity || {};
   function requests(ctx, o) {
     const r = o.requests || {};
     return h("section", { class: "overview-part", "aria-labelledby": "overview-requests" },
-      h("h3", { id: "overview-requests" }, h("a", { href: ctx.link("inbox") }, "Open requests"), h("span", { class: "count" }, String(r.open || 0))),
+      h("h3", { id: "overview-requests" }, h("a", { href: ctx.link("inbox"), "data-key": "requests" }, "Open requests"), h("span", { class: "count" }, String(r.open || 0))),
       r.open
-        ? [h("p", null, h("a", { href: ctx.link("inbox") }, plural(r.to_me || 0, "is", "are") + " for you"),
+        ? [h("p", null, h("a", { href: ctx.link("inbox"), "data-key": "mine" }, r.to_me ? plural(r.to_me, "is", "are") + " for you" : "None is for you"),
             r.oldest_open_at ? h("span", { class: "muted" }, " · the oldest asked " + formatAgo(r.oldest_open_at)) : null),
           h("p", { class: "muted" }, PRIORITIES.filter(([k]) => (r.by_priority || {})[k]).map(([k, l]) => r.by_priority[k] + " " + l).join(", "))]
         : h("p", { class: "muted" }, "Nothing waits for an answer."));
@@ -98,9 +103,10 @@ window.Maity = window.Maity || {};
         ? h("ol", { class: "overview-reports" }, list.map((r) => h("li", null,
           M.avatar({ id: r.reported_by.member_id, avatar_url: r.reported_by.avatar_url }, 20),
           h("span", null, " " + r.reported_by.display_name + " · "),
-          h("a", { href: ctx.link("board") }, h("span", { class: "card-id" }, r.task.id), " " + r.task.title),
+          // The board has no card route yet: a report links to the board.
+          h("a", { href: ctx.link("board"), "data-key": "report:" + r.task.id }, h("span", { class: "card-id" }, r.task.id), " " + r.task.title),
           h("span", { class: "muted" }, " · " + formatAgo(r.reported_at)),
-          r.pr ? h("span", null, " · ", out(r.pr.url, "PR #" + r.pr.number), r.pr_state ? " " + (PR_STATES[r.pr_state] || r.pr_state) : "") : null,
+          r.pr ? h("span", null, " · ", out(r.pr.url, "PR #" + r.pr.number, "pr:" + r.task.id), r.pr_state ? " " + (PR_STATES[r.pr_state] || r.pr_state) : "") : null,
           !r.code ? h("span", { class: "muted" }, " · no code") : null,
           r.mismatch ? h("span", { class: "flag" }, " · the pull request does not match what was reported") : null)))
         : h("p", { class: "muted" }, "No card has been reported yet."));
@@ -113,11 +119,15 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "overview" });
     // The links and members come from what the header holds; only the
     // counts need the overview call, and a failed one is said where they go.
+    // A redraw keeps the focus on the same control (its data-key).
     function draw(o, err) {
+      const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
       append(clear(box), links(ctx), members(ctx),
         o ? [board(ctx, o), requests(ctx, o), reports(ctx, o)]
           : h("p", { class: "send-status failed" }, "The counts could not be read: "
             + (err.status === 404 ? "this hub has no overview yet." : err.message)));
+      const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
+      if (again) again.focus();
     }
     try {
       draw(await M.api.get(path));
@@ -125,10 +135,12 @@ window.Maity = window.Maity || {};
       draw(null, err);
     }
     append(root, h("h2", null, "Overview"), status.el, box);
-    // A summary is not read line by line: it is drawn again in place.
+    // A summary is not read line by line: it is drawn again in place. A
+    // trigger during a read runs one more read after it, so none is lost.
     let reading = false;
-    ctx.onEvents(async (events) => {
-      if (reading || !events.some((e) => REREAD.test(e.kind))) return;
+    let pendingRead = false;
+    async function reread() {
+      if (reading) { pendingRead = true; return; }
       reading = true;
       try {
         draw(await M.api.get(path));
@@ -137,7 +149,20 @@ window.Maity = window.Maity || {};
         status.fail("Could not refresh: ", err);
       } finally {
         reading = false;
+        if (pendingRead) { pendingRead = false; reread(); }
       }
-    });
+    }
+    ctx.onEvents((events) => { if (events.some((e) => REREAD.test(e.kind))) reread(); });
+    // §6.11: a viewer who is neither owner nor admin is in few events'
+    // audiences, so the view also re-reads every 60 seconds and when the
+    // tab comes back; the timer ends with the view, the listener with it.
+    if (!(ctx.canAdmin || ctx.isOwner)) {
+      ctx.every(NARROW_MS, reread);
+      const back = () => {
+        if (!root.isConnected && root.isConnected !== undefined) { document.removeEventListener("visibilitychange", back); return; }
+        if (document.visibilityState !== "hidden") reread();
+      };
+      document.addEventListener("visibilitychange", back);
+    }
   };
 })(window.Maity);
