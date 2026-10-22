@@ -501,7 +501,7 @@ window.Maity = window.Maity || {};
       try {
         const msg = await M.api.post(path, files.length ? { body, attachments: files } : { body });
         add(msg, true);
-        if (files0) files0.clear();
+        if (files0) files0.clear(files);
         text.value = "";
         drafts.delete(key);
         hintMention();

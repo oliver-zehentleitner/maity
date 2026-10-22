@@ -77,7 +77,7 @@ window.Maity = window.Maity || {};
           const event = await M.api.post(ctx.base + "/events", message);
           const mentioned = ((event.payload && event.payload.mentions) || []).map((x) => ctx.nameOf(x.member_id));
           if (body.value.trim() === text) body.value = "";
-          if (files) files.clear();
+          if (files) files.clear(ids);
           status.done();
           const whom = message.to === "all" ? "everyone" : message.to.startsWith("role:") ? "every " + message.to.slice(5) : ctx.nameOf(message.to);
           append(clear(result), h("p", { class: "ok" }, "Sent to " + whom

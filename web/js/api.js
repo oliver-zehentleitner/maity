@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  let uploadSerial = 0;
   const attachmentBlobs = {};  // "<slug>/<attachment id>" -> object URL of the file uploaded in this tab
   const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
@@ -1084,8 +1085,11 @@ window.Maity = window.Maity || {};
       const declared = String(body.type || "").toLowerCase().split(";")[0].trim().replace("image/jpg", "image/jpeg");
       const image = ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(declared);
       const at = nowIso();
+      // Monotonic, never reused after a deletion (ids are opaque, §1.1).
+      let id;
+      do id = "att-" + String(++uploadSerial).padStart(4, "0"); while (list.some((x) => x.id === id));
       const att = {
-        id: "att-" + String(list.length + 1).padStart(4, "0"),
+        id,
         name: image && declared === "image/gif" ? name.replace(/\.gif$/i, "") + ".png" : name,
         size: body.size, type: image ? (declared === "image/gif" ? "image/png" : declared) : (/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(declared) ? declared : "application/octet-stream"),
         kind: image ? "image" : "file", sha256: "fixture", width: image ? 640 : null, height: image ? 480 : null,
@@ -1106,8 +1110,8 @@ window.Maity = window.Maity || {};
         && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
       return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
     }],
-    ["GET", /^\/projects\/([^/]+)\/attachments\/(att-[^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
-    ["DELETE", /^\/projects\/([^/]+)\/attachments\/(att-[^/]+)$/, (m, body, path) => {
+    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
+    ["DELETE", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => {
       const a = attachmentOf(m[1], m[2], path);
       const meId = me().member.id;
       const admin = ["owner", "admin"].includes(roleIn(m[1]));

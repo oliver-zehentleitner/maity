@@ -836,7 +836,7 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     page.locator("#chat-text").fill("a picture")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     img = page.locator("ol.messages li.msg.out img.attach-image").last
-    expect(img).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/attachments/att-[A-Za-z0-9_-]+/content$"))
+    expect(img).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/attachments/[A-Za-z0-9_-]+/content$"))
     page.wait_for_function("() => { const i = [...document.querySelectorAll('img.attach-image')].pop(); return i && i.complete; }")
     assert page.evaluate("() => [...document.querySelectorAll('img.attach-image')].pop().naturalWidth") > 0
     run.a11y(page, "chat with an attachment")

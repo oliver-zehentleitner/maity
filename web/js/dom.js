@@ -74,7 +74,7 @@ window.Maity = window.Maity || {};
   // fixture mode an object URL of a file chosen in this tab.
   function isOwnFile(value) {
     if (typeof value !== "string") return false;
-    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/attachments\/att-[A-Za-z0-9_-]{1,64}\/content(\?download=1)?$/.test(value)) return true;
+    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/attachments\/[A-Za-z0-9_-]{1,64}\/content(\?download=1)?$/.test(value)) return true;
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
 

@@ -366,7 +366,7 @@ window.Maity = window.Maity || {};
         status.busy("Sending…");
         try {
           add(await M.api.post(path, ids.length ? { body, attachments: ids } : { body }));
-          if (files) files.clear();
+          if (files) files.clear(ids);
           text.value = "";
           parts.drafts.delete(key);
           hintMention();

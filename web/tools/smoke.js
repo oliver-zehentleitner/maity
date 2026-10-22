@@ -2408,6 +2408,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "attachments: the admin sees everyone's pending uploads, another member's by size and uploader only");
   win.Maity.api.getAll = atAll;
   await projectSettings();
+  // The mock never reuses an id after a deletion.
+  const atX = await atRaw("/projects/maity/attachments?name=x.txt", fakeFile([0x78], 1, "text/plain"), "text/plain");
+  const atY = await atRaw("/projects/maity/attachments?name=y.txt", fakeFile([0x79], 1, "text/plain"), "text/plain");
+  await atDel("/projects/maity/attachments/" + atX.id);
+  const atZ = await atRaw("/projects/maity/attachments?name=z.txt", fakeFile([0x7a], 1, "text/plain"), "text/plain");
+  expect(atZ.id !== atY.id && atZ.id !== atX.id, "attachments: the mock gives a new id after a deletion");
+  // One's own uploads no message names yet, offered in the composer to attach or remove.
+  await go("#/p/maity/chat/agt-b");
+  const atEarlier = () => main.querySelector(".attach-earlier-box");
+  const atEarlierItem = (name) => main.querySelectorAll(".attach-earlier li").find((li) => text(li).includes(name));
+  expect(!atEarlier().hidden && atEarlierItem("draft.png") && atEarlierItem("y.txt") && atEarlierItem("z.txt") && !atEarlierItem("x.txt"),
+    "attachments: one's files waiting from before are offered");
+  btn(atEarlierItem("z.txt"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(atCalls.slice(-1)[0][0] === "DELETE" && atCalls.slice(-1)[0][1].endsWith("/" + atZ.id) && !atEarlierItem("z.txt"), "attachments: one waiting from before removed");
+  btn(atEarlierItem("y.txt"), "Attach").click(); await tick();
+  expect(text(main.querySelector(".attach-pending")).includes("y.txt") && !atEarlierItem("y.txt"), "attachments: one waiting from before attached");
+  byId("chat-text").value = "the rest"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const atRest = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maity/conversations/agt-b/messages").pop();
+  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && atEarlierItem("draft.png") && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: it is sent with the message, the others still wait");
+  // An image that fails to load: said, its download link kept.
+  const atImg = main.querySelectorAll("li.msg").find((li) => li.querySelector("img.attach-image"));
+  atImg.querySelector("img.attach-image").dispatch("error");
+  expect(!atImg.querySelector("img.attach-image") && text(atImg).includes("shot.png: could not be shown.") && atImg.querySelector("a.attach-link") && btn(atImg, "Delete"),
+    "attachments: an image that did not load is said, not called removed");
+  // Inline only a raster type the hub produced; any id the hub gives.
+  const atSvg = win.Maity.attachments.render({ slug: "maity" }, { body: "", attachments: [{ id: "f1", name: "a.svg", size: 10, type: "image/svg+xml", kind: "image" }] }, null);
+  expect(!atSvg.querySelector("img") && atSvg.querySelector("a.attach-link"), "attachments: an image of another type is only a download");
+  expect(win.Maity.dom.h("img", { src: "/api/v1/projects/maity/attachments/file_7Q/content" }), "attachments: the id is the hub's, not parsed");
   // A closed project takes no new files.
   const atState = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maity" ? atState(p).then((x) => Object.assign({}, x, { state: "archived" })) : atState(p));

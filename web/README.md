@@ -256,20 +256,26 @@ Inside a project, in the order of their importance; see
    - **Attaching.** **Attach files** uploads each chosen file at once as
      its raw body (`POST …/attachments?name=`), an image with the type
      its bytes say. The file shows as pending with **Remove** until the
-     message is sent and names it. A message may be only files.
+     message is sent and names it. A message may be only files. One's
+     own uploads that no message names yet (a composer left, a failed
+     send) are read from the hub and offered under the composer, to
+     **Attach** to this message or **Remove**: they count against the
+     pending cap until then.
    - **Refused before sending:** over 10 MiB, or more than ten in one
      message. The hub's own refusals (the 20-file or 100 MiB pending
      cap, the project's quota, an image's size in pixels, a closed
      project) are said in words.
-   - **Showing.** A message's image is shown inline from the hub's own
-     path (`…/attachments/{id}/content`). Every other file is its name,
-     size and type with a download link (`?download=1`): no preview, no
+   - **Showing.** A message's image (PNG, JPEG or WebP, as the hub
+     re-encodes it) is shown inline from the hub's own path
+     (`…/attachments/{id}/content`). Every other file is its name, size
+     and type with a download link (`?download=1`): no preview, no
      viewer, nothing rendered. `h()` allows only that path as a link or
-     an image source.
+     an image source, and in fixture mode the `blob:null/…` URL of a
+     file chosen in the tab.
    - **Deleting.** The human party of a direct chat, or a human in a
      group chat, deletes a file of it for everyone; the message stays.
-     An `attachment_deleted` says it in place, and a file that no longer
-     loads is said removed.
+     An `attachment_deleted` says it in place. An image that does not
+     load is said so, with its download link kept.
    - **Admins.** In **Project settings** an owner or admin sees the
      pending uploads of everyone and deletes them. Another member's shows
      only its size, uploader and expiry. A closed project offers no new

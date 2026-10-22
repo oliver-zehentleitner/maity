@@ -16,6 +16,8 @@ window.Maity = window.Maity || {};
   const FILE_MAX = 10 * 1024 * 1024;
   const PER_MESSAGE = 10;
   const CLOSED_STATES = ["accepted", "archived"];
+  // The types the hub re-encodes an image to (§8.7): only these inline.
+  const INLINE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
@@ -54,7 +56,10 @@ window.Maity = window.Maity || {};
 
   // The composer's part: choose files, each uploaded at once and shown as
   // pending with a Remove; ids() is what the message names. Not offered
-  // in a closed project (§8.7: it takes no new files).
+  // in a closed project (§8.7: it takes no new files). One's uploads that
+  // no message names yet (a composer left, a send that failed) are read
+  // from the hub and offered apart, to attach here or to remove: they
+  // count against the pending cap until sent or removed.
   function picker(ctx, idBase) {
     if (CLOSED_STATES.includes(ctx.project.state) || ctx.outsider) return null;
     const pending = [];
@@ -62,7 +67,51 @@ window.Maity = window.Maity || {};
     const id = idBase + "-files";
     const input = h("input", { type: "file", id, multiple: true, class: "visually-hidden" });
     const list = h("ul", { class: "attach-pending", "aria-label": "Files to send" });
+    const earlierList = h("ul", { class: "attach-earlier", "aria-label": "Your files waiting from before" });
+    const earlierBox = h("div", { class: "attach-earlier-box", hidden: true },
+      h("p", { class: "muted" }, "Your files waiting from before, not sent yet:"), earlierList);
+    let earlier = [];
+    const drawEarlier = () => {
+      clear(earlierList);
+      const shown = earlier.filter((a) => !pending.some((p) => p.att && p.att.id === a.id));
+      earlierBox.hidden = !shown.length;
+      shown.forEach((a) => append(earlierList, h("li", null,
+        h("span", { class: "attach-name" }, a.name), " ", h("span", { class: "muted" }, sizeOf(a.size)), " ",
+        h("button", {
+          type: "button", class: "small", "aria-label": "Attach " + a.name + " to this message",
+          onclick: () => {
+            if (pending.length >= PER_MESSAGE) { status.fail("Not attached: ", { message: "at most " + PER_MESSAGE + " files in one message" }); return; }
+            pending.push({ name: a.name, att: a });
+            draw();
+            input.focus();
+          },
+        }, "Attach"), " ",
+        h("button", {
+          type: "button", class: "small", "aria-label": "Remove " + a.name + " from the hub",
+          onclick: async () => {
+            try {
+              await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
+            } catch (err) {
+              status.fail("Not removed: ", err);
+              return;
+            }
+            earlier = earlier.filter((x) => x !== a);
+            drawEarlier();
+            input.focus();
+          },
+        }, "Remove"))));
+    };
+    const loadEarlier = async () => {
+      try {
+        earlier = (await M.api.getAll(ctx.base + "/attachments?status=pending&uploaded_by=" + encodeURIComponent(ctx.me.id))).items;
+      } catch (err) {
+        // A hub without attachments, or none to read: nothing to offer.
+        earlier = [];
+      }
+      drawEarlier();
+    };
     const draw = () => {
+      drawEarlier();
       clear(list);
       pending.forEach((p) => append(list, h("li", null,
         h("span", { class: "attach-name" }, p.att ? p.att.name : p.name), " ",
@@ -98,19 +147,27 @@ window.Maity = window.Maity || {};
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
           status.fail("Not attached: " + p.name + ": ", said(err));
+          // Over the pending cap: show what waits, so it can be sent or removed.
+          if (err.code === "attachment_quota") await loadEarlier();
         }
         draw();
       }
     });
     const el = h("div", { class: "attach" },
       h("label", { for: id, class: "button small attach-button" }, "Attach files"), input,
-      list, status.el);
+      list, earlierBox, status.el);
+    loadEarlier();
     return {
       el,
       ids: () => pending.filter((p) => p.att).map((p) => p.att.id),
       busy: () => pending.some((p) => !p.att),
-      // After the message was sent: they belong to it now.
-      clear: () => { pending.splice(0, pending.length); draw(); },
+      // After the message was sent: the ones it named belong to it now; a
+      // file picked while it was sending stays.
+      clear: (sent) => {
+        for (let i = pending.length - 1; i >= 0; i--) if (pending[i].att && sent.includes(pending[i].att.id)) pending.splice(i, 1);
+        earlier = earlier.filter((a) => !sent.includes(a.id));
+        draw();
+      },
     };
   }
 
@@ -122,15 +179,25 @@ window.Maity = window.Maity || {};
     const box = h("ul", { class: "attach-list" });
     atts.forEach((a) => {
       const li = h("li", { class: "attach-item", "data-attachment": a.id });
-      const gone = () => { clear(li); append(li, h("span", { class: "muted" }, a.name + ": removed.")); };
+      // Deleted here: said, and focus kept on the note.
+      const gone = () => {
+        clear(li);
+        const note = h("span", { class: "muted", tabindex: "-1" }, a.name + ": removed.");
+        append(li, note);
+        note.focus();
+      };
       let shown = null;
       const url = M.api.attachmentUrl(ctx.slug, a.id, false);
-      if (a.kind === "image" && url) {
+      if (a.kind === "image" && INLINE_TYPES.includes(a.type) && url) {
         const w = a.width && a.height ? Math.min(a.width, 360) : null;
         shown = h("img", { class: "attach-image", src: url, alt: a.name, loading: "lazy",
           width: w ? String(w) : null, height: w ? String(Math.round(a.height * (w / a.width))) : null });
-        // Gone (deleted, or no longer readable): said instead of a broken image.
-        shown.addEventListener("error", gone);
+        // Not loaded (deleted, an access that ended, or a failure on the way):
+        // said instead of a broken image; the link stays to try again.
+        shown.addEventListener("error", () => {
+          const note = h("span", { class: "muted" }, a.name + ": could not be shown. ");
+          if (shown.parentNode) { shown.parentNode.insertBefore(note, shown); shown.parentNode.removeChild(shown); }
+        });
       }
       const dl = M.api.attachmentUrl(ctx.slug, a.id, true);
       append(li, shown,
@@ -167,6 +234,7 @@ window.Maity = window.Maity || {};
   // Another member's shows only its size, uploader and expiry (§8.7).
   function pendingPanel(ctx) {
     const status = M.statusLine();
+    status.el.setAttribute("tabindex", "-1");
     const list = h("ul", { class: "attach-admin" });
     const box = h("div", { class: "attach-admin-box" }, h("h2", { class: "panel-title" }, "Files waiting to be sent"),
       ctx.project.attachments ? h("p", { class: "muted" }, "Stored: " + sizeOf(ctx.project.attachments.used) + " of " + sizeOf(ctx.project.attachments.quota) + ".") : null,
@@ -192,6 +260,7 @@ window.Maity = window.Maity || {};
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
               status.done();
               append(status.el, h("span", { class: "ok" }, "Deleted."));
+              status.el.focus();
               load();
             } catch (err) {
               status.fail("Not deleted: ", err);
