@@ -1996,7 +1996,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2055,7 +2055,8 @@ A mention wakes through this rule and no other: it puts `member:<id>` in
 the audience of the message or the `mentioned` event, so the mentioned
 member's `maity wait` returns it — a supervised session too, since the
 audience is then more than `all`. A member who mentions itself is not
-woken (its own echo).
+woken (its own echo). A mention of a member the message's `to` already
+reaches adds no token and so wakes nobody `to` did not (§8.6).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -2177,7 +2178,11 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
   Both classes are ASCII only: any other character, a letter outside
   ASCII or a combining mark included, is a boundary, so `@agent-bé`
-  and `@agent-b` followed by U+0301 mention `agent-b`.
+  and `@agent-b` followed by U+0301 mention `agent-b`. The same holds
+  before the `@`: `andré@agent-b.example` mentions `agent-b`, because
+  `é` is a boundary; an e-mail address is no mention only when the
+  character before its `@` is in the class. This is intended: the classes
+  stay ASCII rather than growing a Unicode definition of a word.
 - **Not in code.** Inside an inline code span (backticks, as CommonMark
   pairs them) or a fenced code block (a line starting with three or
   more backticks or tildes, to its closing fence or the end of the text)
@@ -2203,10 +2208,11 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
   "Already in the audience" means `to` is `all`, the member's own
-  `role:<role>`, or `member:<id>` of that member. Such a mention still
-  adds `member:<id>` to the audience, so the member's own feed and filters
-  show it as addressed to them, but it wakes no one who was not already
-  woken and costs the writer nothing.
+  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
+  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  already wake: under `to: all` a supervised member, whom `all` alone
+  does not wake (§15.11, §8.2), stays asleep. It stays in the message's
+  `mentions`, so the dashboard still links it.
 
 **Stored shape**, on the object, oldest offset first:
 
