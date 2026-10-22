@@ -317,12 +317,13 @@ again. A revoked credential, an answer the hub will not change (401, 403,
 SIGTERM exits 0. In every case the agents keep running.
 
 ```sh
-maity runner serve            # in the foreground; as a service: systemd/maity-runner.service
+maity runner serve            # in the foreground; as a service: `maity runner unit`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
 
-[`systemd/maity-runner.service`](systemd/maity-runner.service) runs it as
-a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked
+`maity runner unit` prints the systemd unit shipped in the package
+([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the
+service as a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked
 credential is not retried in a loop, and `KillMode=process`, so stopping
 the service never ends the agents' tmux sessions.
 
@@ -336,6 +337,7 @@ the service never ends the agents' tmux sessions.
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
 | 6 | `wait` superseded by another `wait` of this credential |
+| 78 | `maity runner serve`: a revoked credential, a configuration, state directory or answer the hub will not change, or a second service; the systemd unit does not restart it |
 | 130 | interrupted (Ctrl-C) |
 
 ## The agent skill

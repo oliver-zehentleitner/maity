@@ -10,6 +10,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- cli: `maity runner serve` and `maity runner status` (runner slice R2, `docs/api.md` §15.8) — `hello` with the advertised capabilities, the runner's event long-poll, placements re-read on every wake and every ten minutes, reconnect with full-jitter backoff (60 s cap, `Retry-After` honoured), exit 78 on a revoked credential, a refusing hub or a second service, exit 0 on SIGTERM with the agents left running; a local status file; a lock against a second service on the same state directory; the systemd unit in the package (`maity runner unit`) with `RestartPreventExitStatus=78` and `KillMode=process`. `maity runner check` reports a harness whose `--version` fails as an error, no longer as "version unknown".
 - cli: `maity runner serve` and `maity runner status` (runner slice R2, `docs/api.md` §15.8) — `hello` with the advertised capabilities, the runner's event long-poll, placements re-read on every wake and every ten minutes, reconnect with full-jitter backoff (60 s cap, `Retry-After` honoured), exit 78 on a revoked credential, a refusing hub or a second service, exit 0 on SIGTERM with the agents left running; a local status file; `cli/systemd/maity-runner.service` with `RestartPreventExitStatus=78` and `KillMode=process`.
 - web: **avatars** — a picture for every member, generated from its id (a mirrored identicon
   and a hue, the same on every client), readable in both themes; an `avatar_url` the page may

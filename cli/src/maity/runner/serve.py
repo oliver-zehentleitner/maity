@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .. import hub, sign, state
+from .. import hub, onboarding, sign, state
 from . import capabilities, config
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
@@ -36,6 +36,9 @@ POLL_SLACK = 15.0  # the request timeout beyond the long-poll's own wait
 REREAD_INTERVAL = 600.0
 BACKOFF_CAP = 60.0
 BACKOFF_RESET = 30.0  # a long-poll that lasted this long proves the connection
+POLL_FLOOR = 1.0  # an empty long-poll that returned sooner is waited out: never spin
+RETRY_AFTER_CAP = 3600.0
+LOCK_FILE = "serve.lock"
 STATUS_FILE = "status.json"
 RUNNER_FILE = "runner.json"  # written by `pair`: hub, runner id, credential id
 REVOKE = "revoke the runner in the dashboard"
@@ -63,7 +66,10 @@ def fatal_reason(err: hub.HubError) -> str | None:
     """Why `err` ends the service, or None when backing off and saying `hello` again can
     help (no answer, a 5xx, 408, 429, a clock skew the client could not settle in one go)."""
     if err.code == "credential_revoked":
-        return f"the runner's credential was revoked; {REVOKE} and pair again, or remove it"
+        return (
+            "the runner's credential was revoked; re-pair the runner in the dashboard and run "
+            "`maity runner pair` here, or remove the runner"
+        )
     if err.code == "timestamp_skew" or err.status is None:
         return None
     if err.status in (408, 429) or err.status >= 500:
@@ -75,7 +81,7 @@ def backoff(attempt: int, err: hub.HubError | None, rand: Callable[[], float]) -
     """Full jitter: uniform in [0, min(cap, 2^attempt)] seconds, never below Retry-After."""
     delay = rand() * min(BACKOFF_CAP, 2.0**attempt)
     if err is not None and err.retry_after is not None:
-        delay = max(delay, err.retry_after)
+        delay = max(delay, min(err.retry_after, RETRY_AFTER_CAP))
     return delay
 
 
@@ -107,7 +113,7 @@ class Service:
         cursor = packet.get("cursor")
         self.cursor = cursor if isinstance(cursor, int) else 0
         self.connected = True
-        log(f"connected as {self._name(runner)}; session {self.session_id}")
+        log(f"connected as {self._name(runner)}; session {onboarding.inline(self.session_id)}")
         self._take(packet.get("placements"))
 
     def poll(self) -> bool:
@@ -145,7 +151,7 @@ class Service:
     def _name(runner: Any) -> str:
         if not isinstance(runner, dict):
             return "this runner"
-        return f"{runner.get('name')} ({runner.get('id')})"
+        return f"{onboarding.inline(runner.get('name'))} ({onboarding.inline(runner.get('id'))})"
 
     # --- the loop --------------------------------------------------------------------------
 
@@ -158,12 +164,17 @@ class Service:
                 while True:
                     started = self.monotonic()
                     woken = self.poll()
-                    if self.monotonic() - started >= BACKOFF_RESET:
+                    held = self.monotonic() - started
+                    if held >= BACKOFF_RESET:
                         attempt = 0
+                    if not woken and held < POLL_FLOOR:
+                        self.sleep(POLL_FLOOR - held)  # an empty answer that did not hold
                     if woken or self.monotonic() - self.last_read >= REREAD_INTERVAL:
                         self.read_placements()
             except Fatal as exc:
                 return self._fatal(str(exc))
+            except OSError as exc:  # the state directory, never the network (that is HubError)
+                return self._fatal(f"the state directory cannot be written: {exc}")
             except hub.HubError as exc:
                 reason = fatal_reason(exc)
                 if reason is not None:
@@ -177,7 +188,10 @@ class Service:
 
     def _fatal(self, reason: str) -> int:
         self.connected = False
-        self.write_status(error=reason)
+        try:
+            self.write_status(error=reason)
+        except OSError:
+            pass  # the reason goes to the log either way
         log(f"stopping: {reason}. Agents keep running.")
         return EXIT_CONFIG
 
@@ -220,6 +234,21 @@ def stop_on_signals() -> Iterator[None]:
             signal.signal(signum, old)
 
 
+def hold_lock(state_dir: Path) -> Any:
+    """An exclusive lock on the state directory for as long as this service runs: a second
+    `serve` on the same host is refused at start, instead of taking the event stream from
+    the first and leaving both stopped on `superseded`."""
+    import fcntl
+
+    handle = os.fdopen(os.open(state_dir / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600), "r+")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise Fatal(f"another `maity runner serve` already runs on {state_dir}") from None
+    return handle
+
+
 def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     """The service for `cfg`; Fatal when the state directory cannot be used."""
     base = hub.hub_base(cfg.hub_url)
@@ -255,7 +284,8 @@ def serve(config_path: Path) -> int:
     try:
         runner_state = state.load_state(cfg.state_dir, name=RUNNER_FILE)
         service = open_service(cfg, runner_state)
-    except (Fatal, state.StateError, hub.HubError) as exc:
+        lock = hold_lock(cfg.state_dir)
+    except (Fatal, state.StateError, hub.HubError, OSError) as exc:
         log(f"cannot start: {exc}")
         return EXIT_CONFIG
     log(f"serving {hub.safe_url(cfg.hub_url)} from {config_path}")
@@ -264,6 +294,11 @@ def serve(config_path: Path) -> int:
             return service.run()
         except Stop:
             service.connected = False
-            service.write_status(error="stopped")
+            try:
+                service.write_status(error="stopped")
+            except OSError:
+                pass
             log("stopped by signal; agents keep running")
             return 0
+        finally:
+            lock.close()

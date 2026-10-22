@@ -29,6 +29,9 @@ Homepage = "https://github.com/oliver-zehentleitner/maity"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"maity.runner" = ["maity-runner.service"]
+
 [tool.black]
 line-length = 100
 target-version = ["py310"]

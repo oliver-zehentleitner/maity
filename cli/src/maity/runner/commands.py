@@ -9,13 +9,15 @@ import shutil
 import stat
 import sys
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import hub, state
+from .. import hub, onboarding, state
 from . import capabilities, config, serve
 
 STATE_FILE = serve.RUNNER_FILE
+UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
 
@@ -355,12 +357,19 @@ def cmd_check(args: argparse.Namespace) -> int:
 # --- serve and status ------------------------------------------------------------------------
 
 
+def cmd_unit(args: argparse.Namespace) -> int:
+    """The systemd unit shipped in the package, to stdout."""
+    print(resources.files("maity.runner").joinpath(UNIT).read_text(encoding="utf-8"), end="")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     config.require_tomllib()
     return serve.serve(config.path_of(args.config))
 
 
 def _alive(pid: Any) -> bool:
+    """Whether `pid` is a running `maity runner serve`; a reused pid is not."""
     if not isinstance(pid, int) or pid <= 0:
         return False
     try:
@@ -368,8 +377,12 @@ def _alive(pid: Any) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
-    return True
+        pass
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return True  # no /proc: the signal check is all there is
+    return b"runner" in command and b"serve" in command
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -392,17 +405,20 @@ def cmd_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(view, indent=2))
         return 0
-    print(f"runner   {view['runner_id'] or 'not paired'} on {view['hub'] or '-'}")
+    show = onboarding.inline  # every string here came from the hub or a file it wrote
+    print(f"runner   {show(view['runner_id'] or 'not paired')} on {show(view['hub'] or '-')}")
     connection = "connected" if view["connected"] else "not connected"
-    print(f"service  {view['service']}, {connection} (as of {view['updated_at'] or '-'})")
+    print(f"service  {view['service']}, {connection} (as of {show(view['updated_at'] or '-')})")
     if view["error"]:
-        retry = f"; next try {view['retry_at']}" if view["retry_at"] and running else ""
-        print(f"last     {view['error']}{retry}")
+        retry = f"; next try {show(view['retry_at'])}" if view["retry_at"] and running else ""
+        print(f"last     {show(view['error'])}{retry}")
     for placement in view["placements"]:
-        print(
-            f"placement {placement.get('id')}  {placement.get('project')}  "
-            f"generation {placement.get('generation')}  desired {placement.get('desired')}"
-        )
+        if isinstance(placement, dict):
+            print(
+                f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
+                f"generation {show(placement.get('generation'))}  "
+                f"desired {show(placement.get('desired'))}"
+            )
     return 0
 
 
@@ -469,3 +485,12 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
     r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "unit",
+        help="print the systemd unit for running serve as a service",
+        description="Print the systemd unit shipped with this package; its comments say how "
+        "to install it (`maity runner unit > /etc/systemd/system/maity-runner.service`).",
+        formatter_class=fmt,
+    )
+    r.set_defaults(handler=cmd_unit)

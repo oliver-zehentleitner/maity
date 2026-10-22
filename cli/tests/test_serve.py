@@ -390,3 +390,81 @@ def test_sigterm_stops_polling_and_exits_0(
     assert process.returncode == 0, err
     assert "agents keep running" in err
     assert json.loads(status.read_text())["connected"] is False
+
+
+# --- review round: no spin, 78 on local trouble, one service per state directory ------------
+
+
+def test_empty_answers_that_do_not_hold_are_waited_out(tmp_path: Path) -> None:
+    script = Script(HELLO, events(), events(), events())
+    clock = Clock(poll_seconds=0.0)
+    svc, _, _ = service(tmp_path, script, clock)
+    run(svc)
+    assert clock.slept == [serve.POLL_FLOOR] * 3
+
+
+def test_retry_after_is_capped(tmp_path: Path) -> None:
+    script = Script(("POST /runner/hello", err(429, "rate_limited", retry_after=99_999_999)), HELLO)
+    svc, _, clock = service(tmp_path, script)
+    run(svc)
+    assert clock.slept == [serve.RETRY_AFTER_CAP]
+
+
+def test_a_state_directory_that_cannot_be_written_ends_with_78(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = Script(HELLO)
+    svc, _, _ = service(tmp_path, script)
+    (tmp_path / "st").mkdir(mode=0o500)
+    try:
+        assert run(svc) == serve.EXIT_CONFIG
+    finally:
+        (tmp_path / "st").chmod(0o700)
+    assert "cannot be written" in capsys.readouterr().err
+
+
+def test_an_unreadable_runner_file_ends_with_78(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = paired(tmp_path, fake)
+    (tmp_path / "st" / serve.RUNNER_FILE).chmod(0o000)
+    try:
+        assert cli.main(["runner", "serve", "--config", str(path)]) == serve.EXIT_CONFIG
+    finally:
+        (tmp_path / "st" / serve.RUNNER_FILE).chmod(0o600)
+    assert "cannot start" in capsys.readouterr().err
+
+
+def test_a_second_service_on_the_same_state_directory_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "st").mkdir(mode=0o700)
+    first = serve.hold_lock(tmp_path / "st")
+    try:
+        with pytest.raises(serve.Fatal, match="already runs"):
+            serve.hold_lock(tmp_path / "st")
+    finally:
+        first.close()
+    serve.hold_lock(tmp_path / "st").close()
+
+
+def test_status_cleans_what_the_hub_wrote_and_ignores_a_reused_pid(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = paired(tmp_path, fake)
+    state.save_state(
+        tmp_path / "st",
+        {"pid": os.getpid(), "connected": True, "error": None,
+         "placements": [{"id": "plc-1\x1b]8;;evil\x07", "project": "maity"}]},
+        name=serve.STATUS_FILE,
+    )  # fmt: skip
+    capsys.readouterr()
+    assert cli.main(["runner", "status", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\x07" not in out
+    assert "not running" in out  # this pid is pytest, not a runner
+
+
+def test_the_unit_ships_with_the_package(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["runner", "unit"]) == 0
+    unit = capsys.readouterr().out
+    assert "KillMode=process" in unit and "RestartPreventExitStatus=78" in unit
+    assert "PrivateTmp" not in unit.replace("No PrivateTmp", "")
