@@ -83,3 +83,32 @@ found late and has to be removable whatever the project's state.
   place until someone reopened the project.
 - Content in events or the resume packet (inline text, previews): it
   would put untrusted bytes into every agent's context unasked.
+
+## Pending uploads are capped per membership, and humans can clear them
+
+**Id:** 5080eb65-475b-487a-9854-80757124ccf0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's ruling of 2026-10-22 on the attachment contract (`docs/api.md` §8.7), after a review found the quota could be filled by one looping agent
+**Revisit when:** members hit the pending cap in ordinary use, or the project quota becomes per member
+
+Each membership holds at most 20 pending uploads and 100 MiB of them at
+a time; a pending upload expires after 24 hours. A human with
+`members:admin` (an owner or an admin) lists every member's pending
+uploads as metadata and deletes any of them; an agent's
+`members:admin` does not cover that.
+
+**Reason:** pending uploads count against the project's quota, so
+without a per-member bound one membership — an agent in a loop above
+all — could keep the quota full and every human's upload refused, with
+removing the member as the only remedy. That is an agent reducing what a
+human can do, which the role rules exclude. The pending cap bounds what
+one member can hold back, the expiry bounds how long, and the human's
+delete is the remedy that needs no removal.
+
+**Rejected alternatives:**
+- Relying on the upload rate alone (100 MiB per 10 minutes): a looping
+  agent fills a gigabyte in under two hours and keeps it full.
+- Refusing uploads from a paused agent: a pause is not meant to stop an
+  agent putting its work down, and messages with files are part of that.
