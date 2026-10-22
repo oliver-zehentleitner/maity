@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +54,7 @@ class Stop(BaseException):
 
 
 def utc(stamp: float | None = None) -> str:
-    moment = datetime.fromtimestamp(time.time() if stamp is None else stamp, tz=timezone.utc)
+    moment = datetime.fromtimestamp(time.time() if stamp is None else stamp, tz=UTC)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -217,8 +217,13 @@ class Service:
                 "error": error,
                 "retry_at": utc(time.time() + retry_in) if retry_in is not None else None,
                 "placements": [
-                    {k: p.get(k) for k in ("id", "project", "generation", "desired")}
+                    {
+                        **{k: p.get(k) for k in ("id", "project", "generation", "desired")},
+                        "agent": (p.get("agent") or {}).get("handle"),
+                    }
                     for p in self.placements
+                    # never a path or a line from an unchecked id
+                    if isinstance(p.get("id"), str) and supervisor.PLACEMENT_ID.match(p["id"])
                 ],
                 "updated_at": utc(),
             },

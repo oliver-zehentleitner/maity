@@ -23,6 +23,7 @@ from sqlalchemy import Connection, and_, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials
+from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
 from maity_hub.net import Origin
@@ -48,6 +49,7 @@ class RequestFacts:
     body: bytes
     origin: Origin
     allow_plain_http: bool
+    cli_install: str = DEFAULT_CLI_INSTALL
 
 
 @dataclass(frozen=True)
@@ -195,7 +197,7 @@ def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> C
     if is_runner_credential(row.id):
         # Whatever any project's policy says, before any side effect (§15.1).
         raise ApiError(403, "signature_required", "a runner credential signs every call")
-    return _agent(conn, row, "bearer", renew)
+    return _agent(conn, row, "bearer", renew, facts.cli_install)
 
 
 def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bool) -> Caller:
@@ -230,7 +232,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
     if is_runner_credential(row.id):
         return _runner(conn, row)
-    return _agent(conn, row, "signed", renew)
+    return _agent(conn, row, "signed", renew, facts.cli_install)
 
 
 NONCES = credentials.NonceWindow()
@@ -301,16 +303,18 @@ def _refuse_revoked(row: Any) -> None:
         )
 
 
-def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:
+def _agent(
+    conn: Connection, row: Any, via: str, renew: bool, cli_install: str = DEFAULT_CLI_INSTALL
+) -> Caller:
     if via == "bearer" and row.signing == "required":
         # After the proof of possession, before any side effect: no presence, no
         # lease, no last use, and no idempotent replay of an earlier answer (§2.2).
         raise ApiError(
             403,
             "signature_required",
-            "this project requires signed requests: install the CLI (pipx install maity); "
+            "this project requires signed requests: install the CLI; "
             "it uses the credential you already have",
-            {"cli": "pipx install maity", "then": "maity resume"},
+            {"cli": cli_install, "then": "maity resume"},
         )
     now = clock.now()
     credential_id: str = row.id

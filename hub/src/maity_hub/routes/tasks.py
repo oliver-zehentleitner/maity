@@ -14,7 +14,7 @@ from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import cards, clock, idempotency, paging, releases
+from maity_hub import cards, clock, idempotency, mentions, paging, releases
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -23,7 +23,7 @@ from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
-from maity_hub.models import Strict, markdown, title
+from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
 from maity_hub.views import human_paused, paused, principal_id, task_view, task_views
@@ -68,7 +68,7 @@ class ChecklistTickIn(Strict):
     done: bool
 
 
-class TaskCreate(Strict):
+class TaskCreate(Written):
     title: str = title()
     body: str | None = markdown(default=None)
     kind: str = "task"
@@ -84,7 +84,7 @@ class TaskCreate(Strict):
     reason: str | None = markdown(default=None)
 
 
-class TaskPatch(Strict):
+class TaskPatch(Written):
     title: str | None = title(default=None)
     body: str | None = markdown(default=None)
     label: str | None = None
@@ -121,15 +121,17 @@ class PullRequestIn(Strict):
     state: Literal["open", "merged", "closed"]
 
 
-class ReportIn(Strict):
+class ReportIn(Written):
     summary: str = markdown(min_length=1)
-    head: str = Field(max_length=64)
-    branch: str = Field(min_length=1, max_length=255)
+    head: str | None = Field(default=None, max_length=64)
+    branch: str | None = Field(default=None, min_length=1, max_length=255)
     upstream: str | None = Field(default=None, max_length=255)
-    remote_head: str = Field(max_length=64)
+    remote_head: str | None = Field(default=None, max_length=64)
     pr: PullRequestIn | None = None
     pr_status: Literal["found", "none", "unknown"]
     pr_unknown_reason: str | None = Field(default=None, max_length=1000)
+    # False for a result that is not code: a review, a draft, a decision (§6.6).
+    code: bool = True
     done: bool = False
 
 
@@ -516,6 +518,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
+        found = mentions.resolve(conn, mine.project.id, body.body, "body")
         now = clock.now()
         card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
         try:
@@ -529,6 +532,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
                         kind=body.kind,
                         title=body.title,
                         body=body.body,
+                        mentions=found,
                         label=body.label,
                         status=body.status,
                         area=body.area,
@@ -557,6 +561,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             actor=caller.actor(mine.id),
             subject=("task", card_id),
         )
+        _ping(conn, mine, caller, card, found, "body", before=[])
         releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
         return idempotency.Outcome(201, "task", card_id, view)
 
@@ -605,6 +610,10 @@ def patch_task(
         for field in ("title", "body", "ktw_ref"):
             if field in given and (field != "title" or body.title is not None):
                 values[field] = getattr(body, field)
+        found = None
+        if "body" in values:
+            found = mentions.resolve(conn, mine.project.id, values["body"], "body")
+            values["mentions"] = found
         if "label" in given:
             _check_label(body.label)
             values["label"] = body.label
@@ -640,6 +649,7 @@ def patch_task(
             values["status"] = body.status
             if body.status in cards.CLOSED:
                 values.update(_closing(card))
+        previous_mentions = card.mentions or []
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
@@ -673,12 +683,46 @@ def patch_task(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if found is not None:
+            _ping(conn, mine, caller, card, found, "body", before=previous_mentions)
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
             releases.close(conn, card.id, fg)  # after the write's own event: release_ready last
         releases.recheck(conn, mine.project.id, fg)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _ping(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    card: Any,
+    found: list[dict[str, Any]],
+    field: str,
+    *,
+    before: list[dict[str, Any]],
+) -> None:
+    """`mentioned` to the members a card body or a report summary newly mentions (§8.6):
+    not again for a member the body mentioned before this write, never to the writer."""
+    known = set(mentions.members(before))
+    new = [m for m in mentions.members(found) if m not in known and m != mine.principal_id]
+    if not new:
+        return
+    mentions.charge(conn, mine.id, len(new))
+    emit(
+        conn,
+        mine.project.id,
+        "mentioned",
+        [f"member:{m}" for m in new],
+        {
+            "task": {"id": card.id, "title": card.title, "status": card.status},
+            "field": field,
+            "mentions": [m for m in found if m["member_id"] in new],
+        },
+        actor=caller.actor(mine.id),
+        subject=("task", card.id),
+    )
 
 
 # --- claims and leases (§6.5) ----------------------------------------------------------
@@ -986,9 +1030,11 @@ def report(
                 )
             cards.refuse_open_dependencies(conn, card.id)
             _refuse_unready(conn, card, fg)
+        found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {
             "summary": body.summary,
+            "mentions": found,
             "head": body.head,
             "branch": body.branch,
             "upstream": body.upstream,
@@ -1001,8 +1047,10 @@ def report(
             "session_id": caller.session_id,
             "reported_at": clock.rfc3339(now),
             # Filled by the probe in the background; never awaited inside a write.
+            "code": body.code,
             "observed": None,
-            "mismatch": None,
+            # A report without code is never probed: nothing to compare (§6.6).
+            "mismatch": None if body.code else False,
         }
         values: dict[str, Any] = {"report": stored}
         if body.done:
@@ -1034,6 +1082,7 @@ def report(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        _ping(conn, mine, caller, card, found, "report.summary", before=[])
         if body.done and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
         releases.recheck(conn, mine.project.id, fg)
@@ -1045,8 +1094,24 @@ def report(
     return response
 
 
+GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_reason")
+
+
 def _check_report(body: ReportIn) -> None:
     errors: dict[str, str] = {}
+    if not body.code:
+        # No code, no git facts: every one of them null, and no pull request (§6.6).
+        errors = {f: "not_with_code_false" for f in GIT_FIELDS if getattr(body, f) is not None}
+        if body.pr_status != "none":
+            errors["pr_status"] = "not_with_code_false"
+        if errors:
+            raise invalid(errors)
+        return
+    for field in ("head", "branch", "remote_head"):
+        if getattr(body, field) is None:
+            errors[field] = "required"
+    if errors:
+        raise invalid(errors)
     for field in ("head", "remote_head"):
         if not FULL_SHA.fullmatch(getattr(body, field)):
             errors[field] = "not_a_sha"

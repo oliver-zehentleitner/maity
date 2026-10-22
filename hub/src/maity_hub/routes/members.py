@@ -18,7 +18,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.events import emit
+from maity_hub.events import emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.scopes import ROLES
 from maity_hub.views import credential_view, human_paused, member_view, member_views
@@ -73,8 +73,10 @@ def validate_assignment(
     reports_to: str | None,
     areas: list[str] | None,
     capabilities: list[str] | None,
+    member: int | None = None,
 ) -> dict[str, Any]:
-    """Columns for role, reports_to, areas, capabilities; `invalid` naming every bad field."""
+    """Columns for role, reports_to, areas, capabilities; `invalid` naming every bad field.
+    `member` is the membership being assigned, for the cycle check; None for a new one."""
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
     if role is not None:
@@ -88,6 +90,9 @@ def validate_assignment(
             values["reports_to"] = member_row(conn, project_id, reports_to).id
         except ApiError:
             errors["reports_to"] = "not_a_member"
+        else:
+            if member is not None and member in _chain(conn, values["reports_to"]):
+                errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
             errors["areas"] = "invalid_path"
@@ -99,6 +104,20 @@ def validate_assignment(
     if errors:
         raise invalid(errors)
     return values
+
+
+def _chain(conn: Connection, membership_id: int) -> set[int]:
+    """The member and everyone it reports up to (§6.2)."""
+    seen: set[int] = set()
+    current: int | None = membership_id
+    while current is not None and current not in seen:
+        seen.add(current)
+        current = conn.execute(
+            select(t.membership.c.reports_to).where(
+                t.membership.c.id == current, t.membership.c.active.is_(True)
+            )
+        ).scalar()
+    return seen
 
 
 def _owners(conn: Connection, project_id: str) -> int:
@@ -124,7 +143,13 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             )
         ).all()
         admin = mine.may("members:admin")
-        views = member_views(conn, rows, briefing=lambda r: admin or r.id == mine.id)
+        owned = _owned_agents(conn, mine)
+        views = member_views(
+            conn,
+            rows,
+            briefing=lambda r: admin or r.id == mine.id,
+            details=lambda r: admin or r.agent_id in owned,
+        )
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 
@@ -136,7 +161,21 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
         own = row.id == mine.id
-        return JSONResponse(member_view(conn, row, briefing=own or mine.may("members:admin")))
+        admin = mine.may("members:admin")
+        details = admin or row.agent_id in _owned_agents(conn, mine)
+        return JSONResponse(member_view(conn, row, briefing=own or admin, details=details))
+
+
+def _owned_agents(conn: Connection, mine: Any) -> set[str]:
+    """The agent profiles a human caller owns: their members' `owner` and
+    `credentials` are theirs to see (§6.2)."""
+    if mine.kind != "human":
+        return set()
+    return set(
+        conn.execute(
+            select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == mine.principal_id)
+        ).scalars()
+    )
 
 
 @router.patch("/projects/{slug}/members/{member_id}")
@@ -150,6 +189,9 @@ def patch_member(
         mine.require("members:admin")
         target = member_row(conn, mine.project.id, member_id)
         kind = "agent" if target.agent_id else "human"
+        if body.reports_to is not None:
+            # Two PATCHes naming each other must not both pass the cycle check.
+            lock_project(conn, mine.project.id)
         values = validate_assignment(
             conn,
             mine.project.id,
@@ -158,6 +200,7 @@ def patch_member(
             reports_to=body.reports_to,
             areas=body.areas,
             capabilities=body.capabilities,
+            member=target.id,
         )
         if "reports_to" in given and body.reports_to is None:
             values["reports_to"] = None
@@ -297,6 +340,38 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             view,
             actor=caller.actor(mine.id),
             subject=("member", member_id),
+        )
+        # The chain never names a former member: nor does a join still to be used.
+        reported = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.reports_to == target.id, t.membership.c.active.is_(True)
+            )
+        ).scalars()
+        for report_id in sorted(reported):
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == report_id)
+                .values(
+                    reports_to=None,
+                    changed_by_credential=caller.credential_id,
+                    changed_via=caller.via,
+                )
+            )
+            row = conn.execute(select(t.membership).where(t.membership.c.id == report_id)).one()
+            report = member_view(conn, row)
+            emit(
+                conn,
+                mine.project.id,
+                "member_updated",
+                ["all"],
+                report,
+                actor=caller.actor(mine.id),
+                subject=("member", report["id"]),
+            )
+        conn.execute(
+            update(t.join_link)
+            .where(t.join_link.c.reports_to == target.id, t.join_link.c.used_at.is_(None))
+            .values(reports_to=None)
         )
         # The answer goes to the admin who removed it, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
