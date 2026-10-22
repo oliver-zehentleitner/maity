@@ -20,7 +20,6 @@ that need the maintainer are marked **[maintainer]**.
 - The endpoint slices of `docs/api.md` after events, one pull request each: release and contract cards (§6.7, §6.8, the checklist endpoint); the probe with `observed`/`mismatch` on reports and release readiness. Batching the board's per-card lookups after a measurement.
 - Signed requests mandatory per project, later (a project setting; bearer stays for the page-driven join).
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
-- Helm chart.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
 - Dependency update automation for `hub/requirements/`: Renovate or Dependabot on the uv-compiled files, and/or `pip-audit` against `runtime.txt` in CI. Until then security bumps are manual (`make lock-upgrade PACKAGE=<name>`, hub/README.md "Dependencies").
 

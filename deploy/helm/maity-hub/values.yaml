@@ -1,0 +1,148 @@
+# The Maity hub on Kubernetes: one Deployment with one pod, a Service, an
+# optional Ingress, and `maity-hub migrate` as a Job before every install and
+# upgrade. PostgreSQL is not part of the chart; the hub connects to one that
+# exists. Secrets are never values here: the chart only names Secrets that
+# already exist in the release namespace.
+#
+# The four values every install sets: image.repository, database.existingSecret,
+# and either ingress.* (host, className, config.trustedProxies) or
+# config.publicUrl. See README.md for a complete example.
+
+image:
+  # Required. The image built from deploy/Dockerfile and pushed to a registry
+  # the cluster can pull from; the project does not publish one yet.
+  repository: ""
+  # Empty: the chart's appVersion. Use an immutable tag (a release or a full
+  # commit SHA), never `latest`: the pod would not change on an upgrade.
+  tag: ""
+  # `sha256:…`; when set it wins over the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# Names of existing docker-registry Secrets for a private registry.
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+config:
+  # MAITY_PUBLIC_URL: the address browsers and agents use; it appears in join
+  # links and in /help. Empty: https://<ingress.host> with the Ingress enabled;
+  # required without it.
+  publicUrl: ""
+  # MAITY_TRUSTED_PROXIES: comma-separated addresses or CIDRs of the proxies in
+  # front of the hub, i.e. the ingress controller's pods (the cluster's pod
+  # network, e.g. 10.244.0.0/16). The hub takes the client address and the
+  # scheme from X-Forwarded-* only when the connection comes from one of them.
+  # Required with the Ingress enabled: without it the hub sees plain HTTP from
+  # the controller and refuses logins and joins.
+  trustedProxies: ""
+  # MAITY_ALLOW_PLAIN_HTTP: bearer credentials and cookies over plain HTTP.
+  # Only for a cluster-internal hub that nothing outside the cluster reaches.
+  allowPlainHttp: false
+  # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
+  # API only.
+  dashboard: true
+
+database:
+  # Required. The name of a Secret in the release namespace whose `key` holds
+  # MAITY_DATABASE_URL, e.g.
+  #   postgresql://maity:<password>@postgres.db.svc:5432/maity
+  # Percent-encode an `@` or `:` in the password. Create it with
+  #   kubectl create secret generic maity-hub-database \
+  #     --from-file=database-url=./database-url
+  # so the URL never appears in the shell history.
+  existingSecret: ""
+  key: database-url
+
+forge:
+  github:
+    # Optional. The name of a Secret whose `key` holds a GitHub token for the
+    # probe (MAITY_FORGE_GITHUB_TOKEN; read access to pull requests, contents
+    # and checks is enough). Without it the probe answers probe_not_configured
+    # and no release can become ready. May be the same Secret as the database's.
+    existingSecret: ""
+    key: github-token
+
+migrate:
+  # `maity-hub migrate` as a Helm hook Job before every install and upgrade;
+  # the hub itself never migrates and refuses to serve an outdated schema.
+  # Off: run the migration yourself before each upgrade.
+  enabled: true
+  # Retries for a database that is briefly unreachable during the upgrade.
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+# More environment variables for the hub and the migrate Job, in the usual
+# `env` form (name/value or name/valueFrom).
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  # The IngressClass, e.g. nginx.
+  className: ""
+  # The host name browsers and agents use, e.g. maity.example.org.
+  host: ""
+  # The defaults are for ingress-nginx: an event long-poll holds its request
+  # for up to 55 seconds and must reach the client unbuffered (docs/api.md §8).
+  # Another controller needs its own equivalents. Add e.g.
+  #   cert-manager.io/cluster-issuer: letsencrypt
+  # to have cert-manager fill the TLS Secret.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "75"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "75"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  tls:
+    enabled: true
+    # Empty: <release fullname>-tls.
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# A long-poll may still be open for up to 55 seconds when the pod is asked to
+# stop; the hub finishes open requests before it exits.
+terminationGracePeriodSeconds: 65
+
+probes:
+  # /api/v1/health answers 503 while the database is unreachable or not at the
+  # migration head: the pod then gets no traffic, but is not restarted.
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # /api/v1/help needs no database: it tells whether the process still answers.
+  liveness:
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startup:
+    periodSeconds: 2
+    failureThreshold: 30
+
+serviceAccount:
+  # A dedicated ServiceAccount without an API token; the hub never talks to
+  # the Kubernetes API.
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

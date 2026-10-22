@@ -66,6 +66,22 @@ a TLS proxy in front, remove `MAITY_ALLOW_PLAIN_HTTP` and set both in
 `MAITY_PUBLIC_URL` to the address the others use (`http://<host>:8080`),
 since the public URL ends up in `/help` and in join links.
 
+## Run it on Kubernetes
+
+The Helm chart in [`deploy/helm/maity-hub`](../deploy/helm/maity-hub/README.md)
+runs the hub against an existing PostgreSQL:
+
+- **Migration:** a hook Job runs `maity-hub migrate` before every install
+  and upgrade.
+- **Pods:** exactly one pod, replaced with `Recreate`.
+- **Secrets:** the database URL and the forge token come from Secrets you
+  create; the chart only names them.
+- **Ingress:** optional, with TLS.
+
+The chart's README walks through an install. `deploy/helm/check.sh` lints
+and renders the chart. `deploy/helm/kind-smoke.sh` installs, tests and
+upgrades it on a throwaway kind cluster.
+
 ## Run the image on its own
 
 ```sh

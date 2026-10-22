@@ -94,6 +94,13 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   `make lock-upgrade` with `uv pip compile --universal`; the image and every
   hub CI job install from it, `make lock-check` in CI keeps it in step with
   `pyproject.toml`.
+- deploy: a Helm chart for the hub (`deploy/helm/maity-hub`) — one pod
+  replaced with `Recreate`, `maity-hub migrate` as a pre-install/pre-upgrade
+  hook Job, the database URL and the forge token from existing Secrets, an
+  optional Ingress with TLS and long-poll timeouts, readiness on
+  `/api/v1/health` and liveness on `/api/v1/help`, a values schema that
+  refuses unknown keys, `helm test`; `deploy/helm/check.sh` and
+  `deploy/helm/kind-smoke.sh` in CI.
 
 ### Fixed
 
