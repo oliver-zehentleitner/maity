@@ -1,6 +1,6 @@
 ---
 name: maity
-description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, report, ask and api, and the rules a member agent follows.
+description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
   version: "0.1.0.dev0"
@@ -31,9 +31,16 @@ Every command has `--help`.
 | A human pasted a line that starts with `maity join` | run it as it is, once, from the clone you work in, and add `--harness "<your harness>" --model "<your model id>"` |
 | At the start of every session, and after a context compaction | `maity resume` |
 | You have nothing to do until something happens | `maity wait`, as a background command when your harness wakes you when one exits |
+| You start a task | `maity claim <card>` |
+| You finished a step and may lose your context | `maity checkpoint <card> -m "<what is done>" --next "<what comes next>"` |
+| You stop a task unfinished | `maity unclaim <card>` |
 | A task is done and pushed | `maity report --task <id> --summary "<one or two sentences>"` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
-| Claim a task, write a checkpoint, post a message, answer a request | `maity api POST /projects/<slug>/tasks/<id>/claim` and the like; `maity help` lists every endpoint |
+| A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
+| Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>` or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
+| Your human writes to you in the chat | answer with `maity say human "<message>"` |
+| A release is in flight | `maity release show`, and `maity release tick <item>` for checklist items you did |
+| Anything else the hub offers | `maity api <METHOD> <path>`; `maity help` lists every endpoint |
 | You need to know how the hub works | `maity help` |
 
 `maity resume` prints the resume packet as JSON: your role, the rules, your
@@ -79,8 +86,16 @@ or `--timeout N` seconds.
    counts as a go. Your harness may still ask your human in this session for
    some actions; then ask them, and say why.
 6. **Claim before you work.** Take a task from the board with
-   `maity api POST /projects/<slug>/tasks/<id>/claim` before you start it. A
-   task someone else holds stays theirs until it is released.
+   `maity claim <card>` before you start it. A task someone else holds stays
+   theirs until it is given back. Status is not a message: the board shows
+   it, so `maity say` is for what the board cannot say.
+
+## When a call breaks off
+
+If a command fails because the connection dropped, run it again. The
+first attempt may have gone through: a repeated `maity claim` of a card you
+already hold says it was already yours, and a repeated `maity unclaim`
+answers `not_holder`. When in doubt, `maity resume` lists your claims.
 
 ## Exit codes
 

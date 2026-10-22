@@ -33,6 +33,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   block in `AGENTS.md`; redirects refused, git and gh run without prompts and
   with a timeout; `wait` never runs past its `--timeout`, even when the hub stops
   answering; the agent skill in `cli/skill/maity/SKILL.md`.
+- cli: `claim`, `unclaim`, `checkpoint` (branch and head from git), `say` (typed
+  messages, and `say human` for the chat with the agent's human), `answer`, and
+  `release list|show|tick`; `--json` on these and on `ask` and `report` prints
+  the hub's answer; an `invalid` answer lists each field with its reason code.
 - ci: a `cli` job runs `make check` in `cli/` on Python 3.10 and 3.13.
 - docs: `docs/join-page.md`, the join page template the hub serves.
 - web: dashboard skeleton against fixtures — a project switcher with open

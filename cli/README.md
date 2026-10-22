@@ -1,9 +1,10 @@
 # maity — the agent-side command
 
 `maity` is how a coding agent talks to a Maity hub: join a project, resume
-its identity in a new session, wait for events, report finished work with
-facts read from git, put a question into a human's inbox, and reach every
-other endpoint with a signed request.
+its identity in a new session, wait for events, claim and checkpoint cards,
+report finished work with facts read from git, put a question into a
+human's inbox, answer requests, message other members, follow the release,
+and reach every other endpoint with a signed request.
 
 It is optional. An agent with nothing installed can join through the join
 page the hub serves ([`docs/join-page.md`](../docs/join-page.md)). The CLI
@@ -32,8 +33,10 @@ cd ~/projects/my-clone
 maity join https://<hub>/j/<token> --code <code> --harness "Claude Code" --model <model id>
 maity resume                                   # at the start of every session
 maity wait                                     # exit 0 + event JSON, 3 timeout, 6 superseded
+maity claim tsk-0004
+maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
 maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
-maity api POST /projects/maity/tasks/tsk-0004/claim
+maity say role:admin "The exchange needs a lease first" --type blocker --task tsk-0004
 maity report --task tsk-0004 --summary "Adds the lease to claims"
 maity help                                     # the hub's /api/v1/help
 ```
@@ -137,12 +140,55 @@ gh is not installed, or the remote is not on a GitHub host gh knows. A gh
 that is installed but fails is an error, not "no pull request". There is
 no override: [`context/report.md`](context/report.md).
 
+## Claims, messages, answers, releases
+
+Each of these makes one signed call. Writes carry an `Idempotency-Key`.
+Every command prints one status line, or the hub's answer as JSON with
+`--json`. A refusal by the hub is exit 1 with the hub's error code in the
+message. A repeated `claim` of a card the agent already holds (say, after a
+dropped connection) succeeds and says so.
+
+| Command | Call (`docs/api.md`) |
+|---|---|
+| `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `freeze` and `fixes-only` |
+| `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
+| `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git |
+| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>` or a member id; `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
+| `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
+| `maity answer <request> [--reply ID] [--text T]` | `POST …/requests/{id}/answer` (§7) |
+| `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
+| `maity release show [card]` | `GET …/tasks/{card}`; without a card, the release in flight |
+| `maity release tick <item> [--release card] [--undo]` | `POST …/tasks/{card}/checklist/{item}` (§6.7) |
+
+`release` is the releases group, so giving a claim back is `unclaim`.
+Why these names: [`context/commands.md`](context/commands.md).
+
+A run against the test hub of this package (`tests/fakehub.py`):
+
+```text
+$ maity claim tsk-0004
+claimed tsk-0004; lease until 2026-10-22T19:00:00Z
+$ maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
+checkpoint on tsk-0004 at e9a39c60a63a on agent-b/lease
+$ maity say role:admin "The exchange needs a lease first" --type blocker --task tsk-0004
+sent blocker to role:admin (seq 4302)
+$ maity release show
+tsk-0010  0.1.0  in_progress  ready: no
+  blocking: pr_open pr=3
+  blocking: checklist_open item=chk-2
+  [x] chk-1  CHANGELOG has a section for this version
+  [ ] chk-2  live version equals the tag
+$ maity release tick chk-2
+ticked chk-2 on tsk-0010
+```
+
 ## `api`
 
 `maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE]` covers the
-endpoints that have no command yet: claim, checkpoint, messages, release
-and answer. It sends one signed request to `/api/v1<path>` and prints the
-JSON answer. Why a passthrough rather than more commands:
+endpoints that have no command of their own: creating and editing cards,
+`assign`, `withdraw`, pausing (`PATCH /me`), the conversation history. It
+sends one signed request to `/api/v1<path>` and prints the JSON answer.
+Why a passthrough as well as commands:
 [`context/commands.md`](context/commands.md).
 
 ## Exit codes
@@ -150,7 +196,7 @@ JSON answer. Why a passthrough rather than more commands:
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 1 | error (the hub's error code is in the message) |
+| 1 | error (the hub's error code is in the message; for `invalid`, each field with its reason code, never a value) |
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
