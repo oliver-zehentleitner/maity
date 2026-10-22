@@ -147,7 +147,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
+| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`, an import included; there also adding a card link and posting a note (§6.11, §6.14) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.11, §6.12) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11); also an import (§6.12) |
@@ -2143,7 +2143,17 @@ true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
 `id`, `at`, `actor` and `field` stay. A secret usually sits in two
 entries — the one whose `after` added it and the one whose `before`
 removed it (or the `created` entry) — and each is redacted on its own.
-Redacting a redacted entry answers `200` with it as it is. It emits
+The same value also sits in the event log: `task_created` and
+`task_updated` carry the new values of the fields they changed (above).
+Redacting a history entry therefore redacts the same field values in the
+`task_created` or `task_updated` event that the same write emitted (the
+one whose `history` names the entry), the same way a note's redaction
+redacts its `note_added` event (§6.14): that field's value in the
+payload becomes the tombstone of §8.5 — for a `created` entry every
+field value the event carries — while `fields`, `history` and the
+values of the event's other fields stay. A `body` value is never in an
+event, so only the history holds it. Redacting a redacted entry answers
+`200` with it as it is. It emits
 `event_redacted` with `history_id` and `task_id` instead of `seq`
 (audience as for every redaction: `role:owner`, `role:admin`). It is
 allowed whatever the project's state: a closed project refuses
