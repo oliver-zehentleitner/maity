@@ -262,6 +262,46 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  // A message item as §9 shows it (#206): redacted and redaction always there.
+  const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
+  // each { view, items, read }; joined_seq is where a participant's window begins.
+  function groupChats(slug) {
+    const all = fixtures();
+    if (!all[slug + "/group-chats.json"]) all[slug + "/group-chats.json"] = {};
+    return all[slug + "/group-chats.json"];
+  }
+  function groupChat(slug, id, path) {
+    const c = groupChats(slug)[id];
+    if (!c) fail(404, "not_found", "Not found", path);
+    return c;
+  }
+  const participantOf = (m, at, seq) => ({ member_id: m.id, kind: m.kind, handle: m.handle, owner_id: m.kind === "agent" ? m.owner_id : null, joined_at: at, joined_seq: seq });
+  function windowOf(c, memberId) {
+    const p = c.view.participants.find((x) => x.member_id === memberId);
+    return c.items.filter((x) => x.seq > (p ? p.joined_seq : 0));
+  }
+  // The view as the caller may see it, or null when it may not.
+  function groupItem(slug, c, path) {
+    const meId = me().member.id;
+    const v = c.view;
+    const participant = v.participants.some((x) => x.member_id === meId);
+    const observers = [...new Set(v.participants.filter((x) => x.kind === "agent" && x.owner_id && !v.participants.some((y) => y.member_id === x.owner_id)).map((x) => x.owner_id))];
+    if (!participant && !observers.includes(meId)) return null;
+    return { id: v.id, kind: "group", title: v.title, created_by: v.created_by, created_at: v.created_at,
+      participants: v.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at })),
+      observers, closed_at: v.closed_at, closed_reason: v.closed_reason, access: participant ? "participant" : "observer" };
+  }
+  // The creator while a participant, or a human participant with members:admin; else refused.
+  function managed(slug, id, path) {
+    const c = groupChat(slug, id, path);
+    const item = groupItem(slug, c, path);
+    if (!item) fail(404, "not_found", "Not found", path);
+    if (item.access === "observer") fail(403, "forbidden", "an observer does not manage", path, { reason: "observer" });
+    if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
+    if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
+    return c;
+  }
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -987,23 +1027,154 @@ window.Maity = window.Maity || {};
       }
       return j;
     }],
-    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
+    // §9.3: the direct conversations and the group chats, newest first; with
+    // observed=true also the group chats read along as an agent's owner.
+    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
       const all = file(m[1], "conversations.json", path);
-      return {
-        items: Object.keys(all).map((agentId) => {
-          const items = all[agentId].items;
-          const last = items.length ? items[items.length - 1] : null;
-          return {
-            agent_id: agentId,
-            last_message_at: last ? last.sent_at : null,
-            unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
-            // §9: the newest message as a preview, its body cut at 200 code points.
-            last_message: last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
-              sent_at: last.sent_at, redacted: !!last.redacted },
-          };
-        }),
-        next_cursor: null,
-      };
+      const members = file(m[1], "members.json", path).items;
+      const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
+        sent_at: last.sent_at, redacted: !!last.redacted };
+      const direct = Object.keys(all).map((agentId) => {
+        const items = all[agentId].items;
+        const last = items.length ? items[items.length - 1] : null;
+        const agent = members.find((x) => x.id === agentId);
+        return {
+          id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
+          participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+            { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
+          last_message_at: last ? last.sent_at : null,
+          unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
+          mentions_unread: 0,
+          // §9: the newest message as a preview, its body cut at 200 code points.
+          last_message: preview(last),
+        };
+      });
+      const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
+        .filter((g) => g.access === "participant" || query.get("observed") === "true")
+        .map((g) => {
+          const c = groupChats(m[1])[g.id];
+          const win = windowOf(c, me().member.id);
+          const last = win.length ? win[win.length - 1] : null;
+          const readTo = c.read[me().member.id] || 0;
+          const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
+          return Object.assign({}, g, {
+            participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+            last_message_at: last ? last.sent_at : null, last_message: preview(last),
+            unread: g.access === "observer" ? null : theirs.length,
+            mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
+          });
+        });
+      const at = (c) => c.last_message_at || c.created_at || "";
+      return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    }],
+    // §9.2 group chats.
+    ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
+      const chats = groupChats(m[1]);
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const members = file(m[1], "members.json", path).items;
+      const ids = [...new Set([me().member.id].concat(body.participants || []))];
+      if (ids.some((id) => !members.some((x) => x.id === id))) fail(400, "invalid", "not a member", path, { fields: { participants: "not_a_member" } });
+      if (ids.length < 2) fail(400, "invalid", "too few", path, { fields: { participants: "too_few" } });
+      if (ids.length > 12) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+      const others = ids.filter((id) => id !== me().member.id).map((id) => members.find((x) => x.id === id));
+      if (others.length === 1 && others[0].kind === "agent" && others[0].owner_id === me().member.id) {
+        fail(400, "invalid", "that is the direct conversation", path, { fields: { participants: "use_direct" } });
+      }
+      const at = nowIso();
+      const id = "cnv-" + String(Object.keys(chats).length + 100).padStart(4, "0");
+      chats[id] = { view: { id, kind: "group", title: body.title || null, created_by: me().member.id, created_at: at,
+        participants: ids.map((mid) => participantOf(members.find((x) => x.id === mid), at, 0)), closed_at: null, closed_reason: null },
+      items: [], read: {} };
+      return groupItem(m[1], chats[id], path);
+    }],
+    ["GET", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)$/, (m, body, path) => {
+      const item = groupItem(m[1], groupChat(m[1], m[2], path), path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      return item;
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)$/, (m, body, path) => {
+      const c = managed(m[1], m[2], path);
+      c.view.title = body.title || null;
+      return groupItem(m[1], c, path);
+    }],
+    ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants$/, (m, body, path) => {
+      const c = managed(m[1], m[2], path);
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const who = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id);
+      if (!who) fail(400, "invalid", "not a member", path, { fields: { member_id: "not_a_member" } });
+      if (!c.view.participants.some((x) => x.member_id === who.id)) {
+        if (c.view.participants.length >= 12) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+        const last = c.items.length ? c.items[c.items.length - 1].seq : 0;
+        c.view.participants.push(participantOf(who, nowIso(), last));
+      }
+      return groupItem(m[1], c, path);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants\/([^/]+)$/, (m, body, path) => {
+      const c = groupChat(m[1], m[2], path);
+      const self = m[3] === me().member.id;
+      if (!self) managed(m[1], m[2], path);
+      else if (!c.view.participants.some((x) => x.member_id === me().member.id)) fail(404, "not_found", "Not found", path);
+      const gone = c.view.participants.find((x) => x.member_id === m[3]);
+      if (!gone) fail(404, "not_found", "no such participant", path);
+      c.view.participants = c.view.participants.filter((x) => x !== gone);
+      // The last human gone: the chat closes (§9.2).
+      if (!c.view.participants.some((x) => x.kind === "human")) { c.view.closed_at = nowIso(); c.view.closed_reason = "no_human"; }
+      return { conversation_id: m[2], member_id: m[3], joined_at: gone.joined_at, left_at: nowIso(), by: me().member.id, reason: self ? "left" : "removed" };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path, query) => {
+      const c = groupChat(m[1], m[2], path);
+      const item = groupItem(m[1], c, path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      if (query.get("after") !== null && query.get("before") !== null) fail(400, "invalid", "after or before", path, { fields: { before: "invalid" } });
+      const limit = Math.min(200, Number(query.get("limit") || 50));
+      const win = windowOf(c, me().member.id);
+      let items;
+      if (query.get("before") !== null) {
+        const older = c.items.filter((x) => x.seq < Number(query.get("before")));
+        items = older.slice(-limit);
+      } else {
+        items = win.filter((x) => x.seq > Number(query.get("after") || 0)).slice(0, limit);
+        if (item.access === "participant" && items.length) c.read[me().member.id] = Math.max(c.read[me().member.id] || 0, items[items.length - 1].seq);
+      }
+      // earlier: the seq to pass as before; for a window with nothing in it
+      // yet, everything said so far lies before it.
+      const first = items.length ? items[0].seq : (win.length ? win[0].seq : (c.items.length ? c.items[c.items.length - 1].seq + 1 : null));
+      const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
+      return { items: items.map(messageView), cursor: items.length ? items[items.length - 1].seq : null, earlier };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path) => {
+      const c = groupChat(m[1], m[2], path);
+      const item = groupItem(m[1], c, path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      if (item.access === "observer") fail(403, "forbidden", "an observer does not post", path, { reason: "observer" });
+      if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
+      const last = Math.max(5000, ...c.items.map((x) => x.seq), ...Object.values(file(m[1], "conversations.json", path)).flatMap((x) => x.items.map((y) => y.seq)));
+      const msg = { id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2], from: me().member.id, to: m[2], body: body.body, sent_at: nowIso(), mentions: [] };
+      c.items.push(msg);
+      c.read[me().member.id] = msg.seq;
+      return msg;
+    }],
+    // §8.5: a chat message redacted by a human in the room (or the direct chat's human).
+    ["POST", /^\/projects\/([^/]+)\/events\/(\d+)\/redact$/, (m, body, path) => {
+      const seq = Number(m[2]);
+      const chats = groupChats(m[1]);
+      let msg = null;
+      let chat = null;
+      Object.values(chats).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; chat = c; } });
+      if (!msg) Object.values(file(m[1], "conversations.json", path)).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) msg = x; });
+      if (!msg) fail(404, "not_found", "Not found", path);
+      if (chat) {
+        const item = groupItem(m[1], chat, path);
+        if (!item) fail(404, "not_found", "Not found", path);
+        if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
+      }
+      // §8.5: the reason is required, as the hub's own check has it.
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      // …/messages shows a removed message as body null, redacted true and
+      // its redaction {at, by, reason} (§9, #206).
+      Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { at: nowIso(), by: me().member.id, reason: body.reason } });
+      return { seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: me().member.id, at: nowIso() } };
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);
@@ -1011,7 +1182,7 @@ window.Maity = window.Maity || {};
       conv.items.forEach((x) => { x.seen_by_human = true; });
       return {
         items: conv.items.filter((x) => x.seq > after).map((x) => {
-          const copy = Object.assign({}, x);
+          const copy = messageView(x);
           delete copy.seen_by_human;
           return copy;
         }),

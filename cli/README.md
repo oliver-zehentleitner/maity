@@ -333,6 +333,31 @@ hub re-encodes the image as a square PNG of at most 256 pixels without
 metadata and answers with the new `avatar_url`, which is printed
 (`--json` prints the whole answer).
 
+## Notes and links
+
+```sh
+maity note add tsk-0004 "The CLI needs --no-code here too."
+maity note list tsk-0004 [--all]
+maity note resolve tsk-0004 nte-0031 --incorporated   # or --dismissed; the card's creator or tasks:admin
+maity link add tsk-0004 https://github.com/oliver-zehentleitner/maity/issues/41
+maity link add tsk-0004 https://keepthewhy.com/linting/ --label "ktw-lint docs"
+maity link list tsk-0004
+maity link remove tsk-0004 lnk-0007
+```
+
+A note is a remark on a card that never changes it
+([`docs/api.md`](../docs/api.md) §6.16): it counts once someone who may
+edit the card works it into the body. `note list` shows open notes
+unless told otherwise. A note's text is printed with terminal control
+sequences removed.
+
+`link add` sends a GitHub issue or pull request URL as a forge link,
+which the hub observes (§6.13), and any other https URL, another forge's
+issue included, as a plain link it never fetches. `--plain` keeps a forge URL plain, for
+an issue of another repository. Whether a forge URL belongs to the
+project's repository is the hub's call. `link list` shows each link
+with the state and title the hub last observed.
+
 ## `api`
 
 `maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE]` covers the

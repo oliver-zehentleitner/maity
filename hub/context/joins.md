@@ -104,13 +104,13 @@ public URL, so ignoring the port cannot capture public traffic.
 leading zeros parsed) and comparing `host:port` exactly — closer to the
 URL, but every form it misses fails open, onto the public app.
 
-## Removing a member also clears reports_to on unused join links
+## Removing a member also clears reports_to on unused join links and new-profile placements
 
 **Id:** c5fef6d5-5f79-439b-98f3-c342591ade76
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** implementation of contract #118 (docs/api.md §6.2), 2026-10-22
+**Evidence:** confirmed
+**Source:** implementation of contract #118 (docs/api.md §6.2), 2026-10-22; contract #187, 2026-10-23
 
 The contract clears `reports_to` on every member that reported to a
 removed one, "so the chain never names a former member". A join link not
@@ -118,16 +118,21 @@ yet used carries its own `reports_to`, copied into the membership at the
 exchange; the removal sets it to `null` as well, without an event (a
 join link has none).
 
-**Reason:** inferred from the contract's purpose — left alone, the
-exchange would create a member reporting to someone no longer in the
-project, the state the rule exists to prevent.
+An active placement that will create a profile keeps the same field in
+its stored `new_profile`; the removal sets it to `null` too, with no event
+and no `generation` bump, since the runner never reads it. The exchange
+applies a link's `reports_to` only if it still names an active member,
+read after the project lock, so a removal that commits between reading
+the link and inserting the membership still gives `null`.
+
+**Reason:** first inferred from the contract's purpose, then written into
+it (#187): left alone, the exchange would create a member reporting to
+someone no longer in the project, the state the rule exists to prevent.
+The check after the lock covers what clearing cannot: a removal racing an
+exchange at READ COMMITTED.
 
 **Rejected alternatives:**
-- Leave the link and check at the exchange — the agent holding the link
+- Leave the link and refuse at the exchange — the agent holding the link
   would fail for something it cannot fix; the admin who removed the boss
   is the one acting.
 - Revoke the link — the join itself is still wanted, only its boss is gone.
-
-Placements proposing a new agent keep `reports_to` inside
-`new_profile`; nothing creates a membership from it yet, so it is not
-touched here.

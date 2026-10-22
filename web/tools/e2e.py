@@ -743,6 +743,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     chat_pause_state(run, page, alpha, agent_id)
+    group_chat_form_step(run, page)
     members_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -812,6 +813,25 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def group_chat_form_step(run: Run, page: Page) -> None:
+    """Group chats (docs/api.md §9.2): the create form, and one's own agent alone pointed to the direct chat."""
+    run.step("group chat: the owner opens New group chat; their own agent alone is the direct chat, said before anything is sent")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat")
+    page.locator(".chat-list-pane").get_by_role("link", name="New group chat", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/chat/new$"))
+    form = page.locator("form.group-form")
+    expect(form).to_be_visible()
+    run.a11y(page, "new group chat")
+    form.locator("fieldset.group-people input[type=checkbox]").first.check()
+    form.get_by_role("button", name="Create", exact=True).click()
+    error = page.locator("#group-people-error")
+    if form.locator("fieldset.group-people input[type=checkbox]").count() == 1:
+        expect(error).to_contain_text("That is your direct chat with")
+        expect(error.get_by_role("link", name="open it")).to_have_attribute("href", re.compile(r"^#/p/e2e-alpha/chat/"))
+    run.shot(page, "group-chat-new")
+    no_problems(run, "group chat form")
 
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
