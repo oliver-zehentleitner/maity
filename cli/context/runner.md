@@ -543,10 +543,13 @@ while `serve` holds it. `maity runner gc --revoked` asks whether a
 workspace's credential is revoked by running that clone's own `maity`
 (`python -I -m maity api GET /me` with the clone's state directory). It
 asks the hub which placements are active and keeps every clone one of
-them names. git runs in a clone only when `.git/config` holds nothing but
-a plain clone's keys (core basics, origin, branch tracking, user name and
-email) and there is no `.git/info/attributes` and no submodule, with the
-operator's own git configuration left out. Otherwise, and whenever git
+them names. git runs in a clone only when `.git` holds nothing but a
+plain clone's top-level entries (so no `commondir`, `config.worktree` or
+submodules, and nothing in `info/` but `exclude`) and `.git/config` holds
+nothing but a plain clone's keys (core basics, origin, branch tracking,
+user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
+to the clone, without the operator's `GIT_*` environment or git
+configuration. Otherwise, and whenever git
 fails, the clone is listed as not inspected and is never removed.
 
 **Reason:** a running service compares sessions with the hub's desired
@@ -563,7 +566,11 @@ pagers and called that defused. A review showed filter drivers (through
 `.git/info/attributes`) and `gpg.program` (through `log.showSignature`)
 still ran the agent's code as the operator. Overrides can only switch off
 what they name, and git keeps adding ways to run programs, so the rule
-now reads only configuration it knows to be inert.
+now reads only configuration it knows to be inert. A second review found
+the same gap one level up: `.git/commondir` sends git to another
+directory's configuration and attributes. Checking `.git/config` alone
+was again an enumeration, of the files git reads, so `.git` itself is
+now held to a plain clone's entries as well.
 
 **Rejected alternatives:**
 - `stop-all` telling the service to stop its agents: there is no control
@@ -571,5 +578,8 @@ now reads only configuration it knows to be inert.
   works around.
 - Overriding every dangerous git setting with `-c`: an enumeration of
   what git can run, which is how the first version missed two.
+- Pinning `GIT_COMMON_DIR` alone instead of checking `.git`'s entries:
+  it closes `commondir` but not the next file git learns to read; it is
+  kept as a second line, not as the rule.
 - Reading the credential in the runner to ask the hub: a second holder
   of every agent's credential.
