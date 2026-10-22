@@ -792,6 +792,7 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
+    picture_step(run, page)
 
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
@@ -810,10 +811,22 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(entry).to_have_attribute("aria-current", "page")
     run.maity(alpha, "say", "human", "Hello from the agent.")
     expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    # Markdown as the agent writes it: strong, inline code, a fenced block with Copy; raw HTML as text.
+    run.maity(alpha, "say", "human", "**Done**: see `make check`.\n\n```sh\nmake smoke\n```\n<b>not bold</b>")
+    last = page.locator("ol.messages li.msg.in").last
+    expect(last.locator(".md strong")).to_have_text("Done")
+    expect(last.locator(".md p code").first).to_have_text("make check")
+    expect(last.locator(".md pre code")).to_have_text("make smoke")
+    # Each Copy is named after its block, so several in one chat stay apart.
+    expect(last.get_by_role("button", name=re.compile(r"^Copy Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last.get_by_role("region", name=re.compile(r"^Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last).to_contain_text("<b>not bold</b>")
+    expect(last.locator("b")).to_have_count(0)
     # The preview needs the hub's last_message (docs/api.md §9); without it, none.
     listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/conversations").json()
     if any("last_message" in c for c in listed["items"]):
-        expect(entry.locator(".preview")).to_have_text("Hello from the agent.")
+        # The newest message: the Markdown one, its source as text.
+        expect(entry.locator(".preview")).to_contain_text("**Done**: see `make check`.")
     else:
         expect(entry.locator(".preview")).to_have_count(0)
     wait = run.wait_start(alpha)
@@ -1263,6 +1276,50 @@ def board_cards_step(run: Run, page: Page) -> None:
     expect(page.locator('section.column[data-status="cancelled"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
+    board_order_step(run, page)
+
+
+def board_order_step(run: Run, page: Page) -> None:
+    """Card order within a column (docs/api.md §6.4): Place and dragging, by tasks:admin."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/board")
+    view = page.locator("main section.view-board")
+    for title in ("E2E order: first", "E2E order: second"):
+        page.get_by_role("button", name="New card", exact=True).click()
+        page.locator("#new-card-title").fill(title)
+        page.locator("#new-card-status").select_option("open")
+        page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
+        expect(view.locator(".send-status").first).to_contain_text("created in open")
+    column = page.locator('section.column[data-status="open"]')
+    second = column.locator("article.card", has_text="E2E order: second")
+
+    def order() -> list[str]:
+        return [t for t in column.locator("article.card h3").all_inner_texts() if t.startswith("E2E order")]
+
+    assert order() == ["E2E order: first", "E2E order: second"], order()
+    second.locator("form.card-order select").select_option("up")
+    second.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
+    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now above|does not order cards yet"))
+    if "does not order cards yet" in view.locator(".send-status").first.inner_text():
+        # Only a hub without the endpoint is skipped, and the board has to say so.
+        run.step("board order: this hub has no move endpoint yet, and the board says so")
+        run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/e2e-alpha/tasks/[^/]+/move answered 404$", p)]
+        no_problems(run, "board order")
+        return
+    run.step("board order: the owner moves a card up with Place, then drags it back below")
+    expect(column.locator("article.card", has_text="E2E order: second").locator("form.card-order select")).to_be_focused()
+    assert order() == ["E2E order: second", "E2E order: first"], order()
+    dt = page.evaluate_handle("() => new DataTransfer()")
+    moving = column.locator("article.card", has_text="E2E order: second")
+    target = column.locator("article.card", has_text="E2E order: first")
+    box = target.bounding_box()
+    moving.dispatch_event("dragstart", {"dataTransfer": dt})
+    target.dispatch_event("dragover", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
+    target.dispatch_event("drop", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
+    moving.dispatch_event("dragend", {"dataTransfer": dt})
+    expect(view.locator(".send-status").first).to_contain_text("is now below")
+    assert order() == ["E2E order: first", "E2E order: second"], order()
+    run.a11y(page, "board, order")
+    no_problems(run, "board order")
 
 
 def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
@@ -1627,13 +1684,32 @@ def members_step(run: Run, page: Page) -> None:
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
-    manage.locator("select").select_option("reviewer")
-    manage.get_by_role("button", name="Change role", exact=True).click()
+    manage.locator("select").first.select_option("reviewer")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("reviewer")
     run.shot(page, "members")
-    manage.locator("select").select_option("member")
-    manage.get_by_role("button", name="Change role", exact=True).click()
+    manage.locator("select").first.select_option("member")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("member")
+    # Reports to: the agent under the owner, at once in the organisation.
+    manage.locator("select").nth(1).select_option(label="Owner (@owner)")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    page.locator("nav.views").get_by_role("link", name="Organisation", exact=True).click()
+    owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
+    expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
+    page.locator("nav.views").get_by_role("link", name="Members", exact=True).click()
+    # The owner reporting to the agent would close a circle: refused before it is sent.
+    humans.get_by_role("button", name="Manage Owner").click()
+    owner_manage = page.locator("tr.member-manage")
+    owner_manage.locator("select").nth(1).select_option(label="E2E Agent (@e2e-agent)")
+    owner_manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("That would close a circle")
+    humans.get_by_role("button", name="Done managing Owner").click()
+    row.get_by_role("button", name="Manage E2E Agent").click()
+    manage.locator("select").nth(1).select_option("")
+    manage.get_by_role("button", name="Save changes", exact=True).click()
+    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.
     page.set_viewport_size({"width": 360, "height": 780})
     for button in (row.get_by_role("button", name=re.compile("^(Manage|Done managing) E2E Agent$")),
@@ -1646,6 +1722,36 @@ def members_step(run: Run, page: Page) -> None:
     run.shot(page, "phone-members")
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "members")
+
+
+def picture_step(run: Run, page: Page) -> None:
+    """docs/api.md §6.10: the owner's picture, from the profile menu; uploaded where the hub has it."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+    page.get_by_role("menuitem", name="Picture", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/account/picture$"))
+    expect(page.locator(".picture-heading")).to_be_focused()
+    run.a11y(page, "account picture")
+    page.locator("#avatar-file-" + page.evaluate("Maity.api.get('/me').then((m) => m.member.id)")).set_input_files(
+        files=[{"name": "me.png", "mimeType": "image/png", "buffer": tiny_png(48, 48, (217, 102, 26))}]
+    )
+    expect(page.locator("main")).to_contain_text(re.compile(r"Picture uploaded\.|Not uploaded"))
+    if "Not uploaded" in page.locator("main").inner_text():
+        # Only a hub without the endpoint is skipped, and the page has to say so.
+        run.step("picture: this hub has no avatar upload yet, and the page says so")
+        run.problems = [p for p in run.problems if p != "PUT /api/v1/me/avatar answered 404"]
+        no_problems(run, "picture")
+        return
+    run.step("picture: the owner uploads a picture from the profile menu, it shows in the header, then removes it")
+    face = page.locator("header .profile-menu img.avatar-img")
+    expect(face).to_have_attribute("src", re.compile(r"^/api/v1/avatars/[A-Za-z0-9_-]+\?v="))
+    page.wait_for_function("() => { const i = document.querySelector('header .profile-menu img.avatar-img'); return i && i.complete; }")
+    assert page.evaluate("() => document.querySelector('header .profile-menu img.avatar-img').naturalWidth") > 0
+    run.shot(page, "account-picture")
+    page.get_by_role("button", name="Remove the upload", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Uploaded picture removed")
+    expect(page.locator("header .profile-menu svg.avatar-svg")).to_be_visible()
+    no_problems(run, "picture")
 
 
 def change_password(run: Run, page: Page) -> None:
@@ -1675,7 +1781,7 @@ def change_password(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if "/api/v1/auth/password answered 400" not in p]
     page.locator("#password-current").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Change password", exact=True).click()
-    expect(page.locator("main .send-status")).to_contain_text(
+    expect(page.locator("main form.project-form .send-status")).to_contain_text(
         "Password changed. Every other session of yours was signed out"
     )
     run.shot(page, "password-changed")

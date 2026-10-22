@@ -1308,8 +1308,11 @@ area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
-with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
-join that carries `reports_to`, against the project's current members.
+with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
+the project's current members. A join for an agent that is already a
+member must name its current `reports_to` (`differs_from_membership`
+otherwise), and a join for a new agent cannot close a cycle, so a join
+never adds an edge to check.
 Removing a member sets `reports_to` to `null` on everyone who reported to
 them (`member_updated` for each), so the chain never names a former member.
 
@@ -2820,9 +2823,9 @@ reviewer role.
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
-| `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
@@ -2832,16 +2835,16 @@ reviewer role.
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
-| `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. *Planned (runner track).* |
-| `maity placement list` | `GET /projects/{slug}/placements`. *Planned (runner track).* |
-| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). *Planned (runner track).* |
-| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. *Planned (runner track).* |
-| `maity runners` | `GET /projects/{slug}/runners`. *Planned (runner track).* |
+| `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
+| `maity placement list` | `GET /projects/{slug}/placements`. |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
+| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
+| `maity runners` | `GET /projects/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. *Planned (runner track).* |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
-| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
-| `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. |
+| `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. *Planned (ticker).* |
 | `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--pr N] [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. *Planned (ticker).* |
@@ -2849,17 +2852,12 @@ reviewer role.
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
-A row or option marked *Planned (runner track)* or *Planned (ticker)* is
-contract the CLI on `main` does not have yet: `maity` answers it with a
-usage error (exit 2). Until the ticker ships, the coordinator's interim
-posts are `maity say all --type notice "[ticker] …"` (§17.6).
-Of the runner commands, `maity runner pair` and `maity runner check` exist
-today. Until the placement commands ship, `maity api` reaches the same
-endpoints signed (`maity api POST /projects/{slug}/placements --json -`,
-`maity api GET /projects/{slug}/runners`, and so on) once the hub serves
-them; the placement endpoints belong to the same track. `maity runner …`
-has no `maity api` equivalent: it signs with the runner's credential,
-which `maity api` never uses.
+A row marked *Planned (ticker)* is contract the CLI on `main` does not
+have yet: `maity` answers it with a usage error (exit 2). Until the
+ticker ships, the coordinator's interim posts are
+`maity say all --type notice "[ticker] …"` (§17.6).
+`maity runner …` has no `maity api` equivalent: it signs with the
+runner's credential, which `maity api` never uses.
 
 Every CLI request is signed (§2.2); every `POST`, `PATCH` and `PUT` carries
 `Idempotency-Key` except `POST /me/resume`, `POST /join/{token}`, `POST

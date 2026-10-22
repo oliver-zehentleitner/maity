@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import stat
 import sys
+import tomllib
 from pathlib import Path
 
 import fakehub
@@ -10,8 +11,6 @@ import pytest
 
 from maity import cli, state
 from maity.runner import commands, config
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
 
 MINIMAL = """\
 [hub]
@@ -37,7 +36,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def parse(text: str) -> config.Config:
-    loaded = config.require_tomllib().loads(text)
+    loaded = tomllib.loads(text)
     return config.parse(loaded, Path("runner.toml"))
 
 
@@ -193,13 +192,6 @@ def test_every_bad_repository_is_named() -> None:
 def test_backend_local_is_not_judged_under_another_kind() -> None:
     found = problems(minimal(b='\n[backend]\nkind = "ssh"\n[backend.local]\nlayout = "x"\n'))
     assert not any(p.startswith("backend.local") for p in found), found
-
-
-def test_python_310_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
-    with pytest.raises(config.ConfigError) as info:
-        config.require_tomllib()
-    assert "Python 3.11" in info.value.problems[0]
 
 
 def test_the_runner_ignores_maity_state_dir(
@@ -515,14 +507,6 @@ def test_check_warns_about_a_config_others_can_change(
     assert any("chmod go-w" in line and line.startswith("warn") for line in lines(capsys))
 
 
-def test_explain_refuses_on_python_310(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
-    assert cli.main(["runner", "check", "--explain"]) == cli.EXIT_ERROR
-    assert "Python 3.11" in capsys.readouterr().err
-
-
 def test_check_lists_configuration_problems(
     tmp_path: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -546,3 +530,8 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("MAITY_RUNNER_CONFIG", "/etc/maity-runner/runner.toml")
     assert config.path_of(None) == Path("/etc/maity-runner/runner.toml")
     assert config.path_of("~/x.toml") == home / "x.toml"
+
+
+def test_opencode_is_not_offered_yet() -> None:
+    found = problems(minimal(o="\n[harness.opencode]\n"))
+    assert any(p.startswith("harness.opencode: not offered yet") for p in found), found

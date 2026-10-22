@@ -4,7 +4,8 @@
 
 **Id:** f2a34d72-f074-474c-87bb-2d8c6bccd60e
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
 **Evidence:** confirmed
 **Source:** runner design v2 §5.1 and §12 question 7; the coordinator's binding answers on the runner configuration, 2026-10-22
 **Revisit when:** the CLI's floor moves to Python 3.11, or the dashboard's pairing panel generates keys `check` does not know
@@ -164,7 +165,8 @@ reports them; that describes the machine, not how the agent runs.
 
 **Id:** 5ed066bf-d571-489f-902c-1097d3a6b6e8
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5d71ccda-d931-460f-aa82-1438221cf2c9
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
 **Revisit when:** the harness adapters (R5) are in; then this case no longer exists
@@ -337,3 +339,279 @@ operator's account. The operator docs say so.
 **Rejected alternative:** a longer deny list that tries to close every
 route. git's surface keeps growing, and a list that looks complete
 would read as a boundary when it is not one.
+
+## Codex reaches the operator's login through a link in its per-placement home
+
+**Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** runner design v2 §6.1 and §6.2 (a `CODEX_HOME` per placement); implementation of runner slice R5b, 2026-10-22; whether Codex rewrites `auth.json` on a token refresh is unverified (the design marks it *verify*)
+**Revisit when:** a real Codex run shows the link replaced by a file, or the operator's login going stale while an agent's stays fresh
+
+Each Codex placement gets its own `CODEX_HOME` under the runner's state
+directory. A `config.toml` written by the runner sets the sandbox,
+approvals and network rules. The operator's `~/.codex/auth.json` is
+linked into it, not copied.
+
+**Reason:** a per-placement home keeps `codex exec resume --last` from
+picking up another agent's session and keeps the operator's own Codex
+configuration out of the agents' runs. The login, though, is one account.
+A copy would go stale when Codex refreshes the token in one place and
+not the other, and the agents would start failing while the operator's
+own Codex still works. A link keeps one file for both.
+
+**Rejected alternatives:**
+- Copying `auth.json` at every start: the copy can diverge after a
+  refresh, and the next start would overwrite a newer token with an older
+  one.
+- Running Codex with the operator's own `CODEX_HOME`: every agent would
+  see the operator's history and configuration, and `--last` would cross
+  placements.
+
+## Codex is confined by its sandbox, so it refuses command allowlists
+
+**Id:** c2acd907-0f26-4850-8272-063390f1d6a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
+**Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
+
+Codex placements are advertised with `confinement: "sandbox"`, not
+`allowlist`. A placement for a repository whose `allow` list is not
+empty is refused for Codex (`harness_refused`). The project's own
+Codex configuration is kept out by marking the clone untrusted.
+
+**Reason:** the runner's Codex profile limits files and network through
+Codex's sandbox, but Codex has no command allowlist the runner can write.
+Advertising `allowlist` would tell the human choosing a runner that
+commands are filtered when they are not. A repository `allow` list would
+look honoured while it is ignored. Refusing makes the gap visible. A
+trusted clone would load a committed `.codex/config.toml` over the
+runner's profile, and one reviewer saw that switch the sandbox off.
+
+**Rejected alternatives:**
+- Keep advertising `allowlist` and ignore the grant: a claim the runner
+  cannot keep.
+- Build an exec-policy layer for Codex now: unverified against the
+  shipped Codex, and the sandbox already sets the boundary that matters.
+
+## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
+
+**Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 7, relayed 2026-10-22; runner design v2 §5.1; the coordinator's binding answers on the runner configuration, 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 22a7d470-4458-493b-8df6-08176d4abb13 — as of 2026-10-22
+**Revisit when:** the dashboard's pairing panel generates keys `check` does not know
+
+`maity runner` reads a TOML file (`~/.config/maity-runner/runner.toml`,
+`--config` or `MAITY_RUNNER_CONFIG`) with the standard library's
+`tomllib`. Only `hub.url`, `limits.projects`, `limits.repositories` and
+one `[harness.<id>]` are required. Every other key has a default, and
+`maity runner check --explain` prints them all. Unknown keys are refused
+with their full dotted name. The whole CLI, agent commands included,
+needs Python 3.11 or newer.
+
+**Reason:** the dashboard writes a starter file trimmed to the required
+keys, so the defaults have to be the documented ones and nothing else. A
+typo that silently fell back to a default would widen or narrow what a
+runner may do without anyone noticing, which is the same reason the API
+refuses unknown fields. The maintainer chose one floor for the whole CLI
+over a gate for the runner alone. One version line for agents and
+operators to read, and no code path that exists only to refuse, outweigh
+supporting hosts that only have 3.10.
+
+**Rejected alternatives:**
+- Gating `tomllib` to the runner while agent commands kept 3.10 (the
+  first version): two floors in one package, and a refusal path to test.
+- A vendored TOML parser or JSON configuration: a third-party parser
+  breaks the stdlib-only rule, and JSON gives operators no comments in a
+  file they edit by hand.
+- Ignoring unknown keys with a warning: a warning on a service's start is
+  easily missed, and the key decides what agents may touch.
+
+## The agents' OS user is the operator's choice
+
+**Id:** c666ae71-f252-4973-aa28-f13222254713
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 1, relayed 2026-10-22
+**Revisit when:** a deployment needs agents isolated from each other by default, or the `agent_user` layout proves too hard to set up for most operators
+
+Both layouts stay supported. With `single`, agents run as the runner's
+user, which may be the operator's own account in a terminal. With
+`agent_user`, agents run as a separate OS user through sudo. Neither is
+required, and the runner advertises which one it uses
+(`targets[].isolation`).
+
+**Reason:** running agents as one's own user in a terminal is a
+legitimate way to work: it is how a single developer starts, and the
+harness's own sandbox and allowlists still apply. A separate user is the
+stronger boundary (see the constraint on allowlists in this file) for
+operators who want it, at the cost of sudo rules and a second account.
+Making it mandatory would block the simple case without making the
+shared case safer than an operator would choose anyway.
+
+**Rejected alternative:** `agent_user` as the only layout. It is the
+safer default on paper, but it puts sudo configuration in front of a
+first run.
+
+## For now the runner offers Claude Code and Codex
+
+**Id:** 62bcf506-caed-470c-a094-9bea4217b440
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
+**Revisit when:** the maintainer decides on opencode and the harnesses without a command allowlist when the runner goes into use
+
+A configuration may name `claude-code`, `codex` and `stub`. `opencode`
+is refused as "not offered yet" even though its adapter is built. `pi`,
+`hermes`, `kimi`, `cline` and `omp` stay refused because they have no
+command allowlist (design §6.3).
+
+**Reason:** the maintainer wants to discuss the rest once the runner is
+in use, with real runs behind the discussion. The opencode adapter stays
+in the code so that the decision costs a line, not a slice.
+
+**Rejected alternative:** offering every built adapter: opencode's
+project-configuration switch and `instructions` path are still
+unverified (design §6.1).
+
+## Model access is the operator's to arrange
+
+**Id:** 889e6702-afb6-429c-8e89-b5d7a1561992
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 2, relayed 2026-10-22
+**Revisit when:** the hub is asked to hand out or meter model access, or operators want per-agent spend visible in the dashboard
+
+How agents pay for their model is up to the operator: a subscription
+login or API keys, one shared by all agents or one per agent. Maity
+prescribes nothing. The runner passes on what the operator configured
+(the agents' user's own harness login, a harness `env_file`, Codex's
+linked `auth.json`), and nothing about it reaches the hub.
+
+**Reason:** the operator already holds the accounts and knows their
+terms. A hub-side model credential would make the hub a store of the most
+valuable secret in the setup, and it would add a billing concept the
+project does not need.
+
+**Rejected alternative:** model keys managed by the hub and handed to
+runners per placement: a secret store in the hub, and a second place for
+a key to leak from.
+
+## Default session modes: Claude Code attachable, Codex woken by events
+
+**Id:** 46741392-ca22-48e6-9417-d509c67d31a8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 5, relayed 2026-10-22; runner design v2 §6.2
+**Revisit when:** a harness's interactive mode stops waking on a background `maity wait`, or a supervised run costs model calls while idle
+
+A placement that names no mode gets the harness's advertised
+`default_mode`. In the shipped configuration examples that is
+`interactive` for Claude Code locally and over ssh (a tmux session a
+human can attach to) and `supervised` for Codex (headless runs woken by
+events). The mode can be chosen per start.
+
+**Reason:** Claude Code wakes on a background `maity wait`, so an
+attachable session costs nothing while idle and lets a human answer in
+the session. Codex has no such wake-up in its interactive UI, and
+`codex exec` ends and closes its terminals when its turn ends. The
+supervised loop starts it again on the next event.
+
+**Rejected alternative:** one default mode for every harness: it fits
+only one of them.
+
+## `stop-all` refuses while the service runs; `gc` never holds an agent's credential
+
+**Id:** ad84669c-8da9-4e2a-8598-342d797d6454
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.5 and §10.1; implementation of runner slice R6b, 2026-10-22
+**Revisit when:** the runner gains a local control channel the service listens on, or the hub reports revocation to runners directly
+
+`maity runner stop-all` takes the service's lock first and refuses
+while `serve` holds it. `maity runner gc --revoked` asks whether a
+workspace's credential is revoked by running that clone's own `maity`
+(`python -I -m maity api GET /me` with the clone's state directory). It
+asks the hub which placements are active and keeps every clone one of
+them names. git runs in a clone only when `.git` holds nothing but a
+plain clone's top-level entries, each a file or a directory as git
+makes it (so no `commondir`, `config.worktree`, submodules or object
+alternates, nothing in `info/` but `exclude`, and no symlink anywhere,
+since git follows them past every check) and `.git/config`, at most
+64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
+user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
+to the clone, without the operator's `GIT_*` environment or git
+configuration. Otherwise, and whenever git
+fails, the clone is listed as not inspected and is never removed.
+
+**Reason:** a running service compares sessions with the hub's desired
+state every five seconds. It would start every agent `stop-all` just
+ended, and the operator would see the emergency stop fail. Refusing with
+the reason is clearer than racing the service. The runner never holds an
+agent's credential (§15.9). Letting the agent-side CLI make the call keeps
+that true, and `-I` with a cwd outside the clone keeps the clone's code
+out of the process. `gc` is the one place the runner reads an agent's
+git state, so it does so with everything git could run switched off.
+
+A first version ran git with `-c` overrides for hooks, fsmonitor and
+pagers and called that defused. A review showed filter drivers (through
+`.git/info/attributes`) and `gpg.program` (through `log.showSignature`)
+still ran the agent's code as the operator. Overrides can only switch off
+what they name, and git keeps adding ways to run programs, so the rule
+now reads only configuration it knows to be inert. A second review found
+the same gap one level up: `.git/commondir` sends git to another
+directory's configuration and attributes. Checking `.git/config` alone
+was again an enumeration, of the files git reads, so `.git` itself is
+now held to a plain clone's entries as well.
+
+**Rejected alternatives:**
+- `stop-all` telling the service to stop its agents: there is no control
+  channel, and an emergency path should not depend on the process it
+  works around.
+- Overriding every dangerous git setting with `-c`: an enumeration of
+  what git can run, which is how the first version missed two.
+- Pinning `GIT_COMMON_DIR` alone instead of checking `.git`'s entries:
+  it closes `commondir` but not the next file git learns to read; it is
+  kept as a second line, not as the rule.
+- Reading the credential in the runner to ask the hub: a second holder
+  of every agent's credential.
+
+## A placement for a harness this runner does not run is refused with a reason
+
+**Id:** 5d71ccda-d931-460f-aa82-1438221cf2c9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22
+**See:** runner.md — 62bcf506-caed-470c-a094-9bea4217b440 — as of 2026-10-22
+**Revisit when:** the configuration accepts a harness without an adapter in this version, or a contract code for "not in this version" is added to §15.7
+
+A placement whose harness is not in this runner's configuration, opencode
+included (the configuration refuses it), is reported as
+`failed`/`harness_refused`; a mode or model the configuration does not
+list is `harness_refused` with `mode_unsupported` or `model_unsupported`.
+Every harness the configuration accepts has an adapter, so the earlier
+"logged, not reported" case for a harness without one cannot arise; the
+supervisor keeps that check only as a guard. A start that fails in tmux
+counts as a quick exit and ends in `exited`, and in `crash_loop` after
+the cap, with the cause in the log.
+
+**Reason:** `harness_refused` means "not allowed by the runner's
+configuration" (§15.7), and that is now exactly the case. The human sees
+the real cause and can pick another runner or tool, instead of a
+placement that waits for something this runner will never do.
+
+**Rejected alternative:** keeping such a placement pending without a
+report, as while the adapters were missing: it would wait forever on a
+runner that refuses the harness by configuration.

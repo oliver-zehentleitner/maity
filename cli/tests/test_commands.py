@@ -522,7 +522,8 @@ def test_wait_says_when_the_pause_was_lifted(
     }
     _wait_for(fake, event)
     assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
-    assert capsys.readouterr().err == "maity: your pause was lifted; you can take new work again.\n"
+    err = capsys.readouterr().err
+    assert "maity: your pause was lifted; you can take new work again.\n" in err
 
 
 def test_wait_is_quiet_about_someone_elses_pause(
@@ -536,7 +537,8 @@ def test_wait_is_quiet_about_someone_elses_pause(
     }
     _wait_for(fake, event)
     assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
-    assert capsys.readouterr().err == ""
+    err = capsys.readouterr().err
+    assert "your pause" not in err and "you were paused" not in err  # only the event line
 
 
 def test_report_no_code_reads_and_sends_no_git_facts(
@@ -853,3 +855,16 @@ def test_wait_keep_cursor_acknowledges_nothing(
     assert cli.main(["wait", "--timeout", "5", "--keep-cursor"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 21
     assert state.load_state(joined).get("cursor") == before
+
+
+def test_wait_names_the_event_on_stderr_and_keeps_stdout_json(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.events.append(
+        {"seq": 31, "kind": "task_created", "subject": {"type": "task", "id": "tsk-9"},
+         "payload": {"title": "Fix \x1b[2Jthe runner"}}
+    )  # fmt: skip
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    out = capsys.readouterr()
+    assert json.loads(out.out)["seq"] == 31
+    assert "#31 task_created tsk-9: Fix" in out.err and "\x1b" not in out.err

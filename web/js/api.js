@@ -37,6 +37,10 @@ window.Maity = window.Maity || {};
   // ?ktw=unavailable: the root .keep-the-why cannot be read; ?ktw=member_failed:
   // one family member's read fails (docs/api.md §11.3).
   const fixtureKtw = params.get("ktw");
+  // ?as=<member id>: the mock takes member changes (PATCH and DELETE of a
+  // membership) as coming from that member, to show how the hub answers an
+  // admin agent (§2.3 ᵃ); the page itself stays the signed-in human's.
+  const fixtureAs = params.get("as");
 
   // The bundle is loaded on the first fixture request, never on an
   // http(s) origin (it is not referenced from index.html).
@@ -112,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
     return fixtures()["runners.json"];
@@ -124,6 +129,7 @@ window.Maity = window.Maity || {};
   }
 
   let taskSerial = 0;
+  let consentSerial = 0;
   // tasks:admin and tasks:review, by the human's role in a project (§2.3).
   const roleIn = (slug) => (me().projects.find((p) => p.slug === slug) || {}).role;
   const tasksAdmin = (slug) => ["owner", "admin"].includes(roleIn(slug));
@@ -188,6 +194,62 @@ window.Maity = window.Maity || {};
   const membersAdmin = (slug) => {
     const mine = me().projects.find((p) => p.slug === slug);
     return !!mine && ["owner", "admin"].includes(mine.role);
+  };
+  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  function caller(slug, path) {
+    if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
+    const x = member(slug, fixtureAs, path);
+    return { member: x, admin: ["owner", "admin"].includes(x.role) };
+  }
+  // §2.3 ᵃ: an admin agent changes only other agents' memberships whose role
+  // is member or reviewer; capabilities and proxy stay a human's.
+  function agentLimits(who, target, body, path) {
+    const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
+    if (who.kind !== "agent") return;
+    if (target.kind !== "agent" || target.id === who.id || !["member", "reviewer"].includes(target.role)) human();
+    if (body && ("capabilities" in body || ("role" in body && !["member", "reviewer"].includes(body.role)))) human();
+  }
+  // Changing the role of or pausing a reviewer or the contract arbiter, and
+  // any removal, by an agent waits for a human's go: 202 with the request.
+  function consentFor(who, title) {
+    if (who.kind !== "agent") return null;
+    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
+  }
+  const guarded = (slug, target) => target.role === "reviewer"
+    || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
+  // A member's avatar as §6.10 keeps it: one per account or profile, so
+  // every object that names the member carries the same avatar_url.
+  function setAvatar(id, url, source) {
+    const all = fixtures();
+    const objects = [all["me.json"].member].concat((all["agents.json"] || { items: [] }).items,
+      ...Object.keys(all).filter((k) => k.endsWith("/members.json")).map((k) => all[k].items));
+    objects.filter((x) => x && x.id === id).forEach((x) => { x.avatar_url = url; x.avatar_source = source; });
+    return { avatar_url: url, avatar_source: source };
+  }
+  function avatarRoute(idOf) {
+    return (m, body, path) => {
+      const id = idOf(m, path);
+      const now = Date.now();
+      const recent = (avatarChanges[id] || []).filter((t) => now - t < 3600000);
+      if (recent.length >= 10) fail(429, "rate_limited", "at most 10 changes of one avatar per hour", path);
+      if (body && body.blob) {
+        if (!IMAGE_TYPES.includes(body.type)) fail(400, "invalid", "not PNG, JPEG or WebP", path, { fields: { body: "unsupported_type" } });
+        if (body.size > IMAGE_MAX) fail(400, "invalid", "larger than 1 MiB", path, { fields: { body: "too_large" } });
+      }
+      avatarChanges[id] = recent.concat(now);
+      const key = "avatar/" + id;
+      if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
+      delete uploaded[key];
+      if (!body || !body.blob) return setAvatar(id, null, null);
+      uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body.blob) : "uploaded-" + key;
+      return setAvatar(id, uploaded[key], "uploaded");
+    };
+  }
+  // /agents/{id}/avatar: the profile's owner only; any other is not_found.
+  const ownAgent = (m, path) => {
+    const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
+    if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+    return agent.id;
   };
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
@@ -417,6 +479,10 @@ window.Maity = window.Maity || {};
       p[m[2]] = { available: true, source: "uploaded", etag: "\"up" + imageSerial + "\"" };
       return { [m[2]]: p[m[2]] };
     }],
+    ["PUT", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
+    ["DELETE", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
+    ["PUT", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
+    ["DELETE", /^\/agents\/([^/]+)\/avatar$/, avatarRoute(ownAgent)],
     ["DELETE", /^\/projects\/([^/]+)\/(logo|banner)$/, (m, body, path) => {
       const p = project(m[1], path);
       const key = m[1] + "/" + m[2];
@@ -592,6 +658,33 @@ window.Maity = window.Maity || {};
       card.updated_at = nowIso();
       return card;
     }],
+    // §6.4 card order: the card placed within its status column, under the
+    // project's lock; the mock gives the whole column fresh ranks, as the
+    // hub may at any time.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/move$/, (m, body, path) => {
+      if (!tasksAdmin(m[1])) fail(403, "forbidden", "ordering needs tasks:admin", path, { scope: "tasks:admin" });
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const all = file(m[1], "tasks.json", path).items;
+      const card = all.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      const key = ["before", "after", "to"].filter((k) => k in body);
+      if (key.length !== 1 || (key[0] === "to" && !["top", "bottom"].includes(body.to))) fail(400, "invalid", "one of before, after or to", path, { fields: { body: "invalid" } });
+      const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+      const order = (a, b) => (a.rank && b.rank ? cmp(a.rank, b.rank) || cmp(a.id, b.id) : a.rank || b.rank ? (a.rank ? -1 : 1)
+        : cmp(a.created_at || "", b.created_at || "") || cmp(a.id, b.id));
+      const column = all.filter((x) => x.status === card.status && x !== card).sort(order);
+      let at = body.to === "top" ? 0 : column.length;
+      if (key[0] !== "to") {
+        const near = all.find((x) => x.id === body[key[0]]);
+        if (!near) fail(404, "not_found", "no such card", path);
+        if (near === card || near.status !== card.status) fail(400, "invalid", "not a neighbour in this column", path, { fields: { [key[0]]: "invalid" } });
+        at = column.indexOf(near) + (key[0] === "after" ? 1 : 0);
+      }
+      column.splice(at, 0, card);
+      column.forEach((x, i) => { x.rank = "r" + String((i + 1) * 16).padStart(6, "0"); });
+      card.updated_at = nowIso();
+      return card;
+    }],
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/checklist\/([^/]+)$/, (m, body, path) => {
       const card = releaseCard(m[1], m[2], path);
       const item = card.release.checklist.find((i) => i.id === m[3]);
@@ -643,21 +736,55 @@ window.Maity = window.Maity || {};
         });
       }) };
     }],
+    // §6.2 as the hub does it: every field checked first, each bad one
+    // named at once, then one write. A reports-to circle or self is `cycle`
+    // (#118). An admin agent stays within §2.3 ᵃ.
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      const who = caller(m[1], path);
+      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
-      if ("briefing" in body) {
-        if (body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) {
-          fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
-        }
-        target.briefing = body.briefing || null;
-      }
+      agentLimits(who.member, target, body, path);
+      const all = file(m[1], "members.json", path).items;
+      const errors = {};
+      if ("briefing" in body && body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) errors.briefing = "string_too_long";
       if ("role" in body) {
-        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) fail(400, "invalid", "unknown role", path, { fields: { role: "unknown" } });
-        if (body.role === "owner" && target.kind !== "human") fail(400, "invalid", "only a human is an owner", path, { fields: { role: "owner_is_human" } });
-        const owners = file(m[1], "members.json", path).items.filter((x) => x.role === "owner");
-        if (target.role === "owner" && body.role !== "owner" && owners.length === 1) fail(400, "invalid", "the last owner cannot be demoted", path, { fields: { role: "last_owner" } });
-        target.role = body.role;
+        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) errors.role = "unknown";
+        else if (body.role === "owner" && target.kind !== "human") errors.role = "owner_is_human";
+        else if (target.role === "owner" && body.role !== "owner" && all.filter((x) => x.role === "owner").length === 1) errors.role = "last_owner";
+      }
+      if ("reports_to" in body && body.reports_to !== null) {
+        const boss = all.find((x) => x.id === body.reports_to);
+        if (!boss) errors.reports_to = "not_a_member";
+        else {
+          const seen = new Set();
+          for (let at = body.reports_to; at && !seen.has(at); at = (all.find((x) => x.id === at) || {}).reports_to) {
+            if (at === target.id) { errors.reports_to = "cycle"; break; }
+            seen.add(at);
+          }
+        }
+      }
+      if ("areas" in body) {
+        if ((body.areas || []).length > 50) errors.areas = "too_long";
+        else if ((body.areas || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.areas = "invalid_path";
+      }
+      if ("capabilities" in body) {
+        if ((body.capabilities || []).length > 20) errors.capabilities = "too_long";
+        else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
+      }
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if (guarded(m[1], target)) {
+        const consent = "role" in body && body.role !== target.role ? consentFor(who.member, "Change " + target.handle + " to " + body.role)
+          : body.paused ? consentFor(who.member, "Pause " + target.handle) : null;
+        if (consent) return consent;
+      }
+      if ("role" in body) target.role = body.role;
+      if ("reports_to" in body) target.reports_to = body.reports_to;
+      if ("areas" in body) target.areas = [...new Set(body.areas)];
+      if ("capabilities" in body) target.capabilities = [...new Set(body.capabilities)];
+      if ("briefing" in body) {
+        target.briefing = body.briefing || null;
+        target.briefing_by = { kind: me().member.kind, id: me().member.id, handle: me().member.handle };
+        target.briefing_version = (target.briefing_version || 1) + 1;
       }
       if ("paused" in body) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
@@ -666,13 +793,17 @@ window.Maity = window.Maity || {};
       return target;
     }],
     ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      const who = caller(m[1], path);
+      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const list = file(m[1], "members.json", path);
       // A second DELETE answers 200 with the removed member as it is.
       list.removed = list.removed || [];
       const gone = list.removed.find((x) => x.id === m[2]);
       if (gone) return gone;
       const target = member(m[1], m[2], path);
+      agentLimits(who.member, target, null, path);
+      const consent = consentFor(who.member, "Remove " + target.handle);
+      if (consent) return consent;
       if (target.role === "owner" && list.items.filter((x) => x.role === "owner").length === 1) {
         fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
       }
@@ -683,6 +814,7 @@ window.Maity = window.Maity || {};
       });
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
       list.items = list.items.filter((x) => x !== target);
+      list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
       const removed = Object.assign({}, target, { removed_at: at });
       list.removed.push(removed);
       return removed;

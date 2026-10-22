@@ -71,6 +71,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "lease_seconds": 7200,
         "signing": "optional",
         "spawn_requests": "consent",
+        "spawn_consent_by": "human",
         "max_placements": 8,
     }
     assert body["absence"] is None and body["rules_version"] == 1
@@ -178,6 +179,13 @@ def test_a_policy_preset_fills_the_fields_and_is_announced(
     assert event.payload["reason"] == "alone" and event.payload["rules_version"] == 2
 
 
+def test_a_preset_keeps_who_answers_a_placements_consent(owner: flow.Human) -> None:
+    flow.project(owner, "maity")
+    owner.patch("/projects/maity", {"policy": {"spawn_consent_by": "role"}, "reason": "agreed"})
+    response = owner.patch("/projects/maity", {"policy": {"preset": "solo"}, "reason": "alone"})
+    assert response.json()["policy"]["spawn_consent_by"] == "role"
+
+
 @pytest.mark.parametrize(
     ("policy", "field"),
     [
@@ -186,6 +194,7 @@ def test_a_policy_preset_fills_the_fields_and_is_announced(
         ({"lease_seconds": 86401}, "policy.lease_seconds"),
         ({"contract_arbiter": "agt-nobody"}, "policy.contract_arbiter"),
         ({"preset": "anarchy"}, "policy.preset"),
+        ({"spawn_consent_by": "anyone"}, "policy.spawn_consent_by"),
     ],
 )
 def test_policy_values_are_checked(owner: flow.Human, policy: dict[str, Any], field: str) -> None:

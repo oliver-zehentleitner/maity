@@ -64,6 +64,8 @@ def sandbox_available(harness: config.Harness, path: str | None = None) -> bool:
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
     needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Nothing else is
     switched on yet."""
+    if harness.id == "codex":
+        return True  # its own sandbox, always on with the runner's profile (§6.1)
     if harness.id != "claude-code" or not sys.platform.startswith("linux"):
         return False
     return all(shutil.which(tool, path=path) for tool in ("bwrap", "socat"))
@@ -83,7 +85,8 @@ def harness_entry(harness: config.Harness, found: Probe, path: str | None = None
         "default_mode": harness.default_mode,
         "models": [ascii_text(m) for m in harness.models],
         "targets": ["local"],
-        "confinement": "none" if harness.id == "stub" else "allowlist",
+        # Codex has no per-command allowlist of its own: its sandbox is the boundary.
+        "confinement": {"stub": "none", "codex": "sandbox"}.get(harness.id, "allowlist"),
         "sandbox": (
             "n/a" if harness.id == "stub" else "on" if sandbox_available(harness, path) else "off"
         ),

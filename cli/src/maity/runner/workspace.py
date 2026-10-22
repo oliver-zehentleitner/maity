@@ -90,7 +90,7 @@ def records(state_dir: Path) -> dict[str, Any]:
     return state.load_state(state_dir, name=RECORDS)
 
 
-def _record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str) -> None:
+def record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str) -> None:
     with _lock:
         found = records(state_dir)
         found[str(workspace.path)] = {
@@ -112,19 +112,17 @@ def inspect(
     """An existing clone's record, when it is `agent`'s (or was made for this placement,
     which covers the time between a join and the hub naming the new member) and points at
     `repository`; `Refused` otherwise. Reads the record and `.git/config` only."""
-    record = records(cfg.state_dir).get(str(workspace.path))
-    if not isinstance(record, dict):
+    found = records(cfg.state_dir).get(str(workspace.path))
+    if not isinstance(found, dict):
         raise Refused("workspace_in_use", "workspace_unrecorded")
-    if record.get("agent") != agent and (
-        placement_id is None or record.get("placement_id") != placement_id
+    if found.get("agent") != agent and (
+        placement_id is None or found.get("placement_id") != placement_id
     ):
         raise Refused("workspace_in_use", "other_agent")
-    found = origin(workspace.path)
-    if found is None or config.normalise_repository(found) != config.normalise_repository(
-        repository
-    ):
+    url = origin(workspace.path)
+    if url is None or config.normalise_repository(url) != config.normalise_repository(repository):
         raise Refused("workspace_in_use", "origin_mismatch")
-    return record
+    return found
 
 
 def prepare(
@@ -138,9 +136,9 @@ def prepare(
     """Make sure the clone exists and belongs to `agent`; clone it when it is missing.
     `Refused` otherwise. `agent` is the agent's id, or its handle before the first join."""
     if workspace.path.exists():
-        record = inspect(cfg, workspace, repository, agent, placement_id)
-        if record.get("placement_id") != placement_id:
-            _record(cfg.state_dir, workspace, agent, placement_id)
+        existing = inspect(cfg, workspace, repository, agent, placement_id)
+        if existing.get("placement_id") != placement_id:
+            record(cfg.state_dir, workspace, agent, placement_id)
         return
     workspace.path.parent.mkdir(parents=True, exist_ok=True)
     if not config.repository_url_ok(repository):
@@ -159,7 +157,7 @@ def prepare(
         raise Refused("clone_failed") from None
     if done.returncode != 0:
         raise Refused("clone_failed", exit_code=done.returncode)
-    _record(cfg.state_dir, workspace, agent, placement_id)
+    record(cfg.state_dir, workspace, agent, placement_id)
 
 
 def rebind(state_dir: Path, workspace: Workspace, old: str, new: str) -> None:

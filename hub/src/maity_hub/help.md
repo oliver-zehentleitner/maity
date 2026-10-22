@@ -371,7 +371,10 @@ Your human may write to you directly: those are `chat` messages with
   `POST …/placements` proposes a placement for an existing member,
   `PATCH …/placements/{id}` proposes a change, both with a `reason` and,
   under `policy.spawn_requests: consent`, as a `consent` request the
-  owner answers; `desired` (stop, start), `POST …/placements/{id}/restart`
+  owner answers. Under `policy.spawn_consent_by: human` (the default) only
+  a human answers it, and an agent's answer is `forbidden` with
+  `details.reason: humans_only`; under `role` every holder of
+  `requests:answer` may, never the proposer. `desired` (stop, start), `POST …/placements/{id}/restart`
   and `DELETE …/placements/{id}` are never proposals.
   `GET …/runners` lists the runners you may propose for.
 - `GET /j/{token}`, `GET /api/v1/join/{token}` — the join page;
