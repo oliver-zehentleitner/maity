@@ -71,7 +71,13 @@ Inside a project, in the order of their importance; see
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
-   clears the pause. Credentials are shown as id, client, dates and a
+   clears the pause; the form says in one line what a human's pause does
+   (`docs/api.md` §5.3): the agent is told at once and gets no new work,
+   and can still park its work and talk. An owner or admin also reads and
+   edits the agent's **briefing** (Markdown, at most 16 KiB, `PATCH
+   …/members/{id}`), which the agent gets in its resume packet; the
+   editor is offered only where the hub's member view has the field.
+   Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
 4. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
@@ -84,7 +90,9 @@ Inside a project, in the order of their importance; see
    in the feed, or the window getting the focus back, re-reads the
    messages from the oldest pending one on.
 6. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
-   for an existing agent profile or a new one, and shows the paste line
+   for an existing agent profile or a new one, optionally with a briefing
+   (what the agent is for and its first assignment; it reaches the agent
+   after the exchange, never on the join page), and shows the paste line
    once, with a copy button; open joins can be revoked.
 
 **For a first-time human**, the empty inbox and the empty board say where
@@ -241,8 +249,11 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    wakes with that message, and after a reload it is "reached a session";
 10. **Pause**: the owner pauses the agent with a reason; the agent's own
     `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
-    does not lift it, the member list shows it by the owner; the owner
-    clears it, and the agent then sets and lifts a pause of its own;
+    does not lift it and its packet shows it (`membership.paused`, by the owner); the owner
+    clears it, and the agent then sets and lifts a pause of its own; the
+    form and the paused card say what a human's pause does. Where the hub
+    knows briefings, the owner writes one on the card and the agent's
+    `resume` packet carries it; where it does not, no editor is offered;
 11. **State & absence**: the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`

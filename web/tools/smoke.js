@@ -86,7 +86,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URLSearchParams, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URLSearchParams, TextEncoder, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -212,9 +212,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".profile").length === 5, "5 agent profiles");
   expect(text(main).includes("never resumed") && text(main).includes("revoked") && text(main).includes("replaced by a new clone"), "never resumed and revoked credentials");
   expect(text(main).includes("Areas") && text(main).includes("capabilities".slice(0, 0) + "tag"), "areas and capabilities");
+  expect(text(byId("pause-agt-b").parentNode).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),
+    "the pause form says what a pause does");
+  // Briefing: shown to an owner, edited in place with PATCH members.
+  const patches = [];
+  const realPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { patches.push([p, b]); return realPatch(p, b); };
+  const profileB = byId("pause-agt-b").parentNode.parentNode;
+  const bBox = () => profileB.querySelector(".briefing");
+  expect(bBox() && text(bBox()).includes("You build the hub (hub/). First: the credential exchange"), "the briefing is shown on the agent's card");
+  btn(bBox(), "Edit briefing").click(); await tick();
+  expect(byId("briefing-agt-b") && byId("briefing-agt-b").value.startsWith("You build the hub"), "the editor starts with the briefing");
+  byId("briefing-agt-b").value = "x".repeat(16 * 1024 + 1);
+  byId("briefing-agt-b").parentNode.dispatch("submit"); await tick();
+  expect(!patches.length && text(main).includes("the briefing is longer than 16 KiB"), "a briefing over 16 KiB is refused before sending");
+  byId("briefing-agt-b").value = "  Review hub PRs first.  ";
+  byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
+  expect(patches.length === 1 && patches[0][0] === "/projects/maity/members/agt-b" && JSON.stringify(patches[0][1]) === JSON.stringify({ briefing: "Review hub PRs first." })
+    && !byId("briefing-agt-b") && text(main).includes("Review hub PRs first."), "a saved briefing is PATCHed and shown");
+  btn(bBox(), "Edit briefing").click(); await tick();
+  byId("briefing-agt-b").value = "";
+  byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(patches[1][1]) === JSON.stringify({ briefing: null }) && text(main).includes("No briefing yet."), "an empty briefing clears it");
+  win.Maity.api.patch = realPatch;
+  // A hub without briefings (the sample fixtures carry no such key): nothing offered.
+  await go("#/p/sample/agents");
+  expect(main.querySelectorAll(".profile").length && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
+  await go("#/p/sample/join");
+  expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
+  await go("#/p/maity/agents");
   const pauseInput = byId("pause-agt-b"); pauseInput.value = "quota";
   pauseInput.parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("Paused") && text(main).includes("by Maintainer: quota"), "pause by the human");
+  expect(text(main).includes("The agent was told at once and gets no new work"), "a human's pause says what it does");
+  expect(!text(main.querySelectorAll(".profile").find((p) => text(p).includes("Waiting for the API contract"))).includes("The agent was told at once"),
+    "an agent's own pause is a declaration, without that line");
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
@@ -361,7 +393,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
   expect(main.all().some((e) => e.attrs.pattern) && !badPatterns().length, "join: every pattern compiles with the v flag " + badPatterns());
   byId("join-agent").value = "agt-x";
+  const joinPosts = [];
+  const realPost2 = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { joinPosts.push([p, b]); return realPost2(p, b); };
+  byId("join-briefing").value = "x".repeat(16 * 1024 + 1);
+  main.querySelector("form").dispatch("submit"); await tick();
+  expect(!joinPosts.length && text(main).includes("the briefing is longer than 16 KiB"), "a join briefing over 16 KiB is refused before sending");
+  byId("join-briefing").value = "  You review hub/.  ";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
+  win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();

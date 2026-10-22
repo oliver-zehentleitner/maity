@@ -66,6 +66,60 @@ window.Maity = window.Maity || {};
     return box;
   }
 
+  // What a pause by a human does (docs/api.md §5.3), in one line.
+  const PAUSE_EFFECT = "A pause tells the agent at once and refuses it new work (claims, new cards); "
+    + "it can still checkpoint, report, give a card back and talk to you.";
+  const PAUSED_EFFECT = "The agent was told at once and gets no new work (claims, new cards); "
+    + "it can still checkpoint, report, give a card back and talk to you.";
+
+  // The briefing (docs/api.md §6.2): shown to members:admin, edited in
+  // place. The view re-reads presence in place, so an open editor stays.
+  const BRIEFING_BYTES = 16 * 1024;
+  function briefingControl(ctx, m) {
+    const box = h("div", { class: "briefing" });
+    const status = M.statusLine();
+    const show = () => {
+      M.dom.clear(box);
+      append(box, h("h4", null, "Briefing"),
+        m.briefing ? h("p", { class: "pre" }, m.briefing) : h("p", { class: "muted" }, "No briefing yet."),
+        h("button", { type: "button", class: "small", onclick: edit }, m.briefing ? "Edit briefing" : "Write a briefing"),
+        status.el);
+    };
+    const edit = () => {
+      const id = "briefing-" + m.id;
+      const text = h("textarea", { id, rows: "6" });
+      text.value = m.briefing || "";
+      const save = async (e) => {
+        e.preventDefault();
+        const value = text.value.trim();
+        if (new TextEncoder().encode(value).length > BRIEFING_BYTES) {
+          status.fail("Not saved: ", { message: "the briefing is longer than 16 KiB" });
+          return;
+        }
+        status.busy("Saving…");
+        try {
+          const updated = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { briefing: value || null });
+          m.briefing = updated && "briefing" in updated ? updated.briefing : (value || null);
+          status.done();
+          show();
+        } catch (err) {
+          status.fail("Not saved: ", err);
+        }
+      };
+      M.dom.clear(box);
+      append(box, h("form", { class: "briefing-form", onsubmit: save },
+        h("label", { for: id }, "Briefing (Markdown, at most 16 KiB)"), text,
+        h("p", { class: "hint" }, "The agent reads it at its next resume."),
+        h("div", { class: "row" },
+          h("button", { type: "submit" }, "Save briefing"),
+          h("button", { type: "button", onclick: show }, "Cancel")),
+        status.el));
+      text.focus();
+    };
+    show();
+    return box;
+  }
+
   function pauseControl(ctx, m) {
     const status = M.statusLine();
     const save = async (paused) => {
@@ -91,7 +145,8 @@ window.Maity = window.Maity || {};
         save({ reason: reason.value.trim() });
       },
     },
-    h("label", { for: id }, "Pause"), reason, h("button", { type: "submit" }, "Pause"), status.el);
+    h("label", { for: id }, "Pause"), reason, h("button", { type: "submit" }, "Pause"),
+    h("p", { class: "hint" }, PAUSE_EFFECT), status.el);
   }
 
   // One failing credentials call costs that card its credentials section,
@@ -159,9 +214,12 @@ window.Maity = window.Maity || {};
             h("dt", null, "Joined"), h("dd", null, formatTime(m.joined_at))),
           m.paused
             ? h("p", { class: "flag" }, "Paused " + formatAgo(m.paused.since)
-              + (m.paused.by && m.paused.by !== m.id ? " by " + ctx.nameOf(m.paused.by) : "") + ": " + m.paused.reason)
+              + (m.paused.by && m.paused.by !== m.id ? " by " + ctx.nameOf(m.paused.by) : "") + ": " + m.paused.reason,
+              m.paused.by && m.paused.by !== m.id ? h("span", { class: "hint" }, " " + PAUSED_EFFECT) : null)
             : null,
           ctx.canAdmin ? pauseControl(ctx, m) : null,
+          // A hub that does not know briefings yet has no such key.
+          ctx.canAdmin && m.kind === "agent" && "briefing" in m ? briefingControl(ctx, m) : null,
           creds[i].error
             ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(creds[i].error))
             : credentials(ctx, m, creds[i].list),

@@ -290,6 +290,7 @@ window.MAITY_FIXTURES = {
           "context/",
           "TASKS.md"
         ],
+        "briefing": null,
         "capabilities": [
           "tag"
         ],
@@ -319,6 +320,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "hub/"
         ],
+        "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3.",
         "capabilities": [],
         "display_name": "Agent B",
         "handle": "agent-b",
@@ -346,6 +348,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "cli/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Agent C",
         "handle": "agent-c",
@@ -370,6 +373,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Agent D",
         "handle": "agent-d",
@@ -395,6 +399,7 @@ window.MAITY_FIXTURES = {
       },
       {
         "areas": [],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Reviewer",
         "handle": "reviewer",
