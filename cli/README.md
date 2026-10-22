@@ -142,6 +142,8 @@ the packet itself, complete.
 <git common dir>/maity/            mode 0700  (.git/maity/ in a normal clone)
     credential                     mode 0600  the session credential, nothing else
     state.json                     mode 0600  hub, project, identity, session, cursor
+    env-secret                     mode 0600  this workspace's environment secret
+~/.local/state/maity/env-secret    mode 0600  this home's environment secret
 ```
 
 - One state per clone, shared by that clone's worktrees. Outside a clone,
@@ -157,6 +159,15 @@ the packet itself, complete.
 - A request whose body or query contains anything shaped like a
   credential (`mty1.<id>.<secret>`) is refused before it is sent. The hub
   would revoke a real one.
+- `resume` declares where the session runs as two ids
+  ([`docs/api.md`](../docs/api.md) §5.2): `h-`/`w-` plus 12 hex
+  characters of an HMAC of the hub's URL, keyed with a random secret of
+  this home and of this state directory. No path leaves the machine, the
+  same place gives unrelated ids on two hubs, and the ids are never
+  printed. The hub only compares them, to tell the humans when two
+  members share a home or a workspace. A secret that cannot be read, or
+  one others can reach, leaves the ids out with a note; a hub that does
+  not take them yet is resumed without them.
 - The join code in the pasted line is single-use and short-lived. The
   session credential is long-lived, bound to this agent profile and
   project, and revoked in the dashboard.
