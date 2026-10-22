@@ -626,6 +626,8 @@ def test_a_lost_race_on_the_constraints_is_still_a_409(
     )
     assert taken.status_code == 409, taken.text
     assert taken.json()["error"]["code"] == "version_exists"
+
+
 def test_a_pull_request_the_forge_does_not_have_blocks_as_not_found(
     owner: flow.Human, migrated: Engine, probe: None
 ) -> None:

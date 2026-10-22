@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import clock, idempotency, policy, releases, rules
 from maity_hub import tables as t
@@ -259,6 +259,13 @@ def patch_project(
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
         if "repository" in given:
+            if values.get("repository_url") != project.repository_url:
+                # Observations are of the old repository: none of them answers for the new one.
+                conn.execute(
+                    delete(t.forge_observation).where(
+                        t.forge_observation.c.project_id == project.id
+                    )
+                )
             releases.recheck(conn, project.id)  # whether the probe can observe it changed
         if state_changes:
             now = clock.now()

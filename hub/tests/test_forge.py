@@ -1,0 +1,218 @@
+"""docs/api.md §11: the forge reads themselves — `forge._get` against a fake opener,
+the redirect guard, check runs and commit statuses, a repository the token cannot see."""
+
+from __future__ import annotations
+
+import http.client
+import io
+import json
+import urllib.error
+import urllib.request
+from typing import Any
+
+import pytest
+
+from maity_hub import forge
+
+TOKEN = "ghp_test_token_value_never_printed"
+SHA = "d91e294c" + "0" * 32
+
+
+class FakeOpener:
+    """Answers by URL path (with query); records each request it was given."""
+
+    def __init__(self) -> None:
+        self.answers: dict[str, Any] = {}
+        self.requests: list[urllib.request.Request] = []
+
+    def open(self, request: urllib.request.Request, timeout: float) -> Any:
+        self.requests.append(request)
+        path = request.full_url.removeprefix(f"https://{forge.API_HOST}")
+        answer = self.answers.get(path, self.answers.get(path.split("?")[0]))
+        if isinstance(answer, BaseException):
+            raise answer
+        if isinstance(answer, int):
+            raise urllib.error.HTTPError(request.full_url, answer, "error", {}, None)  # type: ignore[arg-type]
+        if answer is None:
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)  # type: ignore[arg-type]
+        return io.BytesIO(json.dumps(answer).encode())
+
+
+@pytest.fixture
+def opener(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
+    fake = FakeOpener()
+    monkeypatch.setattr(forge, "_opener", fake)
+    monkeypatch.setattr(forge, "_token", TOKEN)
+    forge._visible.clear()
+    return fake
+
+
+# --- _get ----------------------------------------------------------------------------------
+
+
+def test_a_read_goes_to_the_api_host_with_the_token_and_the_api_headers(
+    opener: FakeOpener,
+) -> None:
+    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    assert forge._get("/repos/a/b") == {"full_name": "a/b"}
+    [request] = opener.requests
+    assert request.full_url == "https://api.github.com/repos/a/b"
+    headers = {k.lower(): v for k, v in request.header_items()}
+    assert headers["authorization"] == f"Bearer {TOKEN}"
+    assert headers["accept"] == "application/vnd.github+json"
+    assert headers["x-github-api-version"] == "2022-11-28"
+
+
+def test_a_404_is_none(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b/pulls/9"] = None
+    assert forge._get("/repos/a/b/pulls/9") is None
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 502])
+def test_any_other_status_is_unavailable_and_never_names_the_token(
+    opener: FakeOpener, status: int
+) -> None:
+    opener.answers["/repos/a/b"] = status
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        forge._get("/repos/a/b")
+    assert raised.value.status == status
+    assert TOKEN not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        http.client.IncompleteRead(b"partial"),
+        http.client.BadStatusLine("garbage"),
+        TimeoutError("timed out"),
+        ConnectionResetError("reset"),
+    ],
+)
+def test_a_protocol_or_network_failure_is_unavailable(
+    opener: FakeOpener, failure: BaseException
+) -> None:
+    opener.answers["/repos/a/b"] = failure
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        forge._get("/repos/a/b")
+    assert TOKEN not in str(raised.value)
+
+
+def test_without_a_token_nothing_is_sent(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(forge, "_token", None)
+    with pytest.raises(forge.ForgeUnavailableError):
+        forge._get("/repos/a/b")
+    assert opener.requests == []
+
+
+# --- the redirect guard ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.example/x",
+        "http://api.github.com/repos/a/b",  # plain HTTP would carry the header in clear
+        "https://api.github.com:8443/repos/a/b",
+        "https://api.github.com:bad/repos/a/b",
+        "https://api.github.com.evil.example/repos/a/b",
+    ],
+)
+def test_a_redirect_leaves_https_api_github_com_only_by_refusal(target: str) -> None:
+    handler = forge._SameHostOnly()
+    request = urllib.request.Request("https://api.github.com/repos/a/b")
+    with pytest.raises(forge.ForgeUnavailableError):
+        handler.redirect_request(request, None, 301, "Moved", {}, target)
+
+
+@pytest.mark.parametrize(
+    "target", ["https://api.github.com/repositories/1", "https://api.github.com:443/repositories/1"]
+)
+def test_a_redirect_within_the_api_host_is_followed(target: str) -> None:
+    handler = forge._SameHostOnly()
+    request = urllib.request.Request("https://api.github.com/repos/a/b")
+    assert handler.redirect_request(request, None, 301, "Moved", {}, target).full_url == target
+
+
+# --- a repository the token cannot see -----------------------------------------------------
+
+
+def test_a_missing_ref_in_a_visible_repository_is_an_answer(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b/pulls/9"] = None
+    opener.answers["/repos/a/b/branches/gone"] = None
+    assert forge.pull_request("a/b", 9) == {"number": 9, "found": False}
+    assert forge.branch("a/b", "gone")["found"] is False
+    visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
+    assert len(visibility) == 1  # asked once, then remembered
+
+
+def test_a_repository_the_token_cannot_see_is_unavailable_not_missing(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b"] = None
+    opener.answers["/repos/a/b/pulls/9"] = None
+    with pytest.raises(forge.ForgeUnavailableError, match="not visible"):
+        forge.pull_request("a/b", 9)
+
+
+# --- checks ----------------------------------------------------------------------------------
+
+
+def _runs(*conclusions: str | None, total: int | None = None) -> dict[str, Any]:
+    return {
+        "total_count": total if total is not None else len(conclusions),
+        "check_runs": [{"name": f"run {i}", "conclusion": c} for i, c in enumerate(conclusions)],
+    }
+
+
+def _checks_path(page: int) -> str:
+    return f"/repos/a/b/commits/{SHA}/check-runs?per_page=100&page={page}"
+
+
+def test_commit_statuses_count_like_check_runs(opener: FakeOpener) -> None:
+    opener.answers[_checks_path(1)] = _runs()
+    opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {
+        "state": "failure",
+        "statuses": [{"context": "ci/jenkins", "state": "failure"}],
+    }
+    summary, detail = forge.checks("a/b", SHA)
+    assert summary == "failure"
+    assert detail == [{"name": "ci/jenkins", "status": "failure"}]
+
+
+def test_a_failure_on_the_second_page_is_a_failure(opener: FakeOpener) -> None:
+    opener.answers[_checks_path(1)] = _runs(*["success"] * 100, total=101)
+    opener.answers[_checks_path(2)] = _runs("failure", total=101)
+    opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
+    summary, detail = forge.checks("a/b", SHA)
+    assert (summary, len(detail)) == ("failure", 101)
+
+
+def test_more_runs_than_the_cap_are_unknown(opener: FakeOpener) -> None:
+    for page in range(1, forge.MAX_PAGES + 1):
+        opener.answers[_checks_path(page)] = _runs(*["success"] * 100, total=5000)
+    opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
+    assert forge.checks("a/b", SHA)[0] == "unknown"
+
+
+def test_no_permission_for_checks_is_unknown_not_a_failed_read(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b/pulls/3"] = {
+        "state": "open",
+        "head": {"sha": SHA},
+        "base": {"ref": "main"},
+        "merged_at": None,
+    }
+    opener.answers[_checks_path(1)] = 403
+    pr = forge.pull_request("a/b", 3)
+    assert (pr["found"], pr["state"], pr["head_sha"], pr["checks"]) == (
+        True,
+        "open",
+        SHA,
+        "unknown",
+    )
+
+
+def test_stale_runs_are_pending(opener: FakeOpener) -> None:
+    opener.answers[_checks_path(1)] = _runs("success", "stale")
+    opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
+    assert forge.checks("a/b", SHA)[0] == "pending"

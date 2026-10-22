@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 import urllib.request
 from typing import Any
@@ -23,12 +24,14 @@ class FakeGitHub:
     """The forge API by path; a value of `None` is a 404, an exception is raised."""
 
     def __init__(self) -> None:
-        self.answers: dict[str, Any] = {}
+        # The token sees the repository: a 404 below it is a missing ref.
+        self.answers: dict[str, Any] = {"/repos/acme/maity": {"full_name": "acme/maity"}}
         self.calls: list[str] = []
 
     def __call__(self, path: str) -> Any:
         self.calls.append(path)
-        answer = self.answers.get(path.split("?")[0])
+        # An answer for the exact path with its query wins over one for the path alone.
+        answer = self.answers.get(path, self.answers.get(path.split("?")[0]))
         if isinstance(answer, Exception):
             raise answer
         return answer
@@ -51,8 +54,10 @@ class FakeGitHub:
 
     def runs(self, sha: str, runs: list[tuple[str, str | None]]) -> None:
         self.answers[f"/repos/acme/maity/commits/{sha}/check-runs"] = {
-            "check_runs": [{"name": name, "conclusion": result} for name, result in runs]
+            "total_count": len(runs),
+            "check_runs": [{"name": name, "conclusion": result} for name, result in runs],
         }
+        self.answers.setdefault(f"/repos/acme/maity/commits/{sha}/status", {"statuses": []})
 
     def branch(self, name: str, head: str = SHA) -> None:
         quoted = name.replace("/", "%2F")
@@ -145,6 +150,7 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
     assert [call.split("?")[0] for call in github.calls] == [
         "/repos/acme/maity/pulls/3",
         f"/repos/acme/maity/commits/{SHA}/check-runs",
+        f"/repos/acme/maity/commits/{SHA}/status",
     ]
 
 
@@ -153,9 +159,9 @@ def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGit
     first = owner.get("/projects/maity/probe?pr=3").json()
     cached = owner.get("/projects/maity/probe?pr=3").json()
     assert cached["fresh"] is False and cached["observed_at"] == first["observed_at"]
-    assert len(github.calls) == 2
+    assert len(github.calls) == 3  # the pull request, its check runs, its statuses
     forced = owner.get("/projects/maity/probe?pr=3&max_age=0").json()
-    assert forced["fresh"] is True and len(github.calls) == 4
+    assert forced["fresh"] is True and len(github.calls) == 6
 
 
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
@@ -368,8 +374,8 @@ def test_the_release_is_refreshed_and_turns_ready(
     view = owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]
     assert view["readiness"]["blocking"] == [{"reason": "pr_open", "pr": 1}]
     assert view["tag"]["found"] is False and view["tag"]["observed_at"] is not None
-    [event] = _events(migrated, "probe_observed")
-    assert set(event.payload["observations"]) == {"pr:1", "tag:v0.1.0"}
+    events = _events(migrated, "probe_observed")  # one per changed ref
+    assert [set(e.payload["observations"]) for e in events] == [{"pr:1"}, {"tag:v0.1.0"}]
     github.pull(1, merged=True)
     assert probe.observe_release(migrated, project_id, max_age=0) is True
     assert owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]["readiness"] == {
@@ -378,4 +384,138 @@ def test_the_release_is_refreshed_and_turns_ready(
     }
     assert len(_events(migrated, "release_ready")) == 2  # announced again on this turn
     assert probe.observe_release(migrated, project_id, max_age=0) is False  # nothing changed
-    assert len(_events(migrated, "probe_observed")) == 2
+    assert len(_events(migrated, "probe_observed")) == 3
+
+
+def test_whoever_sees_the_merge_first_announces_it(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """GET /probe reads the merge before the worker does: the release card still
+    gets its probe_observed, and release_ready comes at once, not a sweep later."""
+    release = owner.post(
+        "/projects/maity/tasks",
+        {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
+    ).json()
+    owner.patch(
+        f"/projects/maity/tasks/{release['id']}",
+        {"release": {"pull_requests_typed": [{"number": 1}]}},
+    )
+    github.pull(1)
+    github.answers["/repos/acme/maity/git/ref/tags/v0.1.0"] = None
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, project_id)
+    before = len(_events(migrated, "probe_observed"))
+    ready_before = len(_events(migrated, "release_ready"))
+    github.pull(1, merged=True)
+    seen = owner.get("/projects/maity/probe?pr=1&max_age=0").json()["pr"]
+    assert seen["state"] == "merged"
+    events = _events(migrated, "probe_observed")
+    assert len(events) == before + 1
+    assert events[-1].payload["task"] == release["id"]
+    assert events[-1].payload["observations"]["pr:1"]["state"] == "merged"
+    assert len(_events(migrated, "release_ready")) == ready_before + 1
+    assert probe.observe_release(migrated, project_id, max_age=0) is False  # already known
+
+
+# --- the review round on the probe -----------------------------------------------------------
+
+
+def test_a_repository_the_token_cannot_see_leaves_the_report_unverified(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.answers["/repos/acme/maity"] = None  # private, and the token has no access
+    github.answers["/repos/acme/maity/pulls/7"] = None
+    github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = None
+    _, card_id = _reported_card(owner, make_client)
+    with pytest.raises(forge.ForgeUnavailableError):
+        probe.observe_report(migrated, card_id)
+    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    assert (report["observed"], report["mismatch"]) == (None, None)  # never a false mismatch
+    answer = owner.get("/projects/maity/probe?pr=7")
+    assert (answer.status_code, answer.headers["Maity-Error"]) == (503, "probe_unavailable")
+
+
+def test_an_answer_of_another_shape_is_unavailable_not_a_crash(
+    owner: flow.Human, github: FakeGitHub
+) -> None:
+    github.answers["/repos/acme/maity/pulls/3"] = {"state": "open"}  # no head, no base
+    answer = owner.get("/projects/maity/probe?pr=3")
+    assert (answer.status_code, answer.headers["Maity-Error"]) == (503, "probe_unavailable")
+
+
+def test_a_report_replaced_within_the_same_second_keeps_its_own_verdict(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _, card_id = _reported_card(owner, make_client)
+    real_observe = probe.observe
+
+    def a_second_report_arrives(*args: Any, **kwargs: Any) -> probe.Observation:
+        observation = real_observe(*args, **kwargs)
+        with migrated.begin() as conn:  # same reported_at, another head
+            report = conn.execute(
+                select(t.card.c.report).where(t.card.c.id == card_id)
+            ).scalar_one()
+            replaced = {**report, "head": OTHER, "remote_head": OTHER}
+            conn.execute(t.card.update().where(t.card.c.id == card_id).values(report=replaced))
+        return observation
+
+    monkeypatch.setattr(probe, "observe", a_second_report_arrives)
+    assert probe.observe_report(migrated, card_id) is False
+    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    assert (report["head"], report["observed"]) == (OTHER, None)
+
+
+def test_only_a_changed_verdict_is_announced_again(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, card_id) is True
+    time.sleep(1.1)  # observed_at moves on; nothing else does
+    probe.observe_report(migrated, card_id, max_age=0)
+    reported = [e for e in _events(migrated, "probe_observed") if e.payload.get("task") == card_id]
+    assert len(reported) == 1
+
+
+def test_a_round_ends_at_the_first_read_the_forge_does_not_answer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    for _ in range(3):
+        _reported_card(owner, make_client)
+    github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = forge.ForgeUnavailableError(
+        "rate limited"
+    )
+    probe.sweep(migrated)
+    assert len(github.calls) == 1  # not one timeout per card
+
+
+def test_a_set_stop_ends_the_round_before_the_next_read(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    _reported_card(owner, make_client)
+    stop = threading.Event()
+    stop.set()
+    probe.sweep(migrated, stop)
+    assert github.calls == []
+
+
+def test_a_new_repository_starts_without_the_old_observations(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(3)
+    owner.get("/projects/maity/probe?pr=3")
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.forge_observation)).all()
+    moved = owner.patch(
+        "/projects/maity", {"repository": {"url": "https://github.com/acme/maity-next"}}
+    )
+    assert moved.status_code == 200, moved.text
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.forge_observation)).all() == []

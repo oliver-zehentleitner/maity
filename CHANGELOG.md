@@ -196,7 +196,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   requests and tag on an interval, with `probe_observed` and release
   readiness from what it saw; a pull request the forge does not have is a
   report `mismatch` and blocks a release as `pr_not_found`, a branch
-  deleted after the merge is no mismatch.
+  deleted after the merge is no mismatch; `checks` from check runs (all
+  pages) and commit statuses; a change is announced by whichever read sees
+  it first.
 
 ### Changed
 

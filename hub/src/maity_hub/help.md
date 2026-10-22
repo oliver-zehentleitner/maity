@@ -229,9 +229,13 @@ arbiter or an admin moves `state` to
 observation up to 60 seconds old answers) is the hub's read-only view of
 the project's repository: the pull request's state, head, mergeability
 and checks, a branch head, a tag. Use it to check facts instead of
-asking someone. `probe_not_configured` (409): the hub holds no token for
-this repository. `probe_unavailable` (503): the forge did not answer;
-`details.last` holds the last observation when there is one.
+asking someone. `checks` sums the check runs and the commit statuses:
+`success`, `failure`, `pending`, `none` (none at all), or `unknown` (more
+than the hub reads, or a token without permission for them). A pull request
+the forge does not have is `{"number": …, "found": false}`.
+`probe_not_configured` (409): the hub holds no token for this repository.
+`probe_unavailable` (503): the forge did not answer, or the token cannot see
+the repository; `details.last` holds the last observation when there is one.
 
 ## Asking a human
 

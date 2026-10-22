@@ -8,7 +8,9 @@ is refused, so the token never leaves for a host the operator did not choose.
 
 from __future__ import annotations
 
+import http.client
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,7 +23,12 @@ _token: str | None = None
 
 
 class ForgeUnavailableError(Exception):
-    """The forge did not answer a read (network, timeout, 5xx, rate limit, bad token)."""
+    """The forge did not answer a read (network, timeout, 5xx, rate limit, bad token,
+    a repository the token cannot see, an answer of an unexpected shape)."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status  # the forge's HTTP status, when it answered with one
 
 
 def configure(token: str | None) -> None:
@@ -53,11 +60,19 @@ def repository_of(url: str) -> str:
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to https://api.github.com on the default port: the
+    Authorization header goes with it, so plain HTTP or another port would leak it."""
+
     def redirect_request(
         self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
     ) -> Any:
-        if urllib.parse.urlsplit(newurl).hostname != API_HOST:
-            raise ForgeUnavailableError(f"the forge redirected to another host ({code})")
+        target = urllib.parse.urlsplit(newurl)
+        try:
+            port = target.port
+        except ValueError:
+            port = -1
+        if target.scheme != "https" or target.hostname != API_HOST or port not in (None, 443):
+            raise ForgeUnavailableError(f"the forge redirected elsewhere ({code})")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -79,9 +94,26 @@ def _get(path: str) -> Any | None:
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
-        raise ForgeUnavailableError(f"the forge answered {error.code}") from None
-    except (OSError, ValueError) as error:
+        raise ForgeUnavailableError(f"the forge answered {error.code}", error.code) from None
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not
+        # answer, like a timeout; never the error text, which may quote the request.
         raise ForgeUnavailableError(f"the forge did not answer: {type(error).__name__}") from None
+
+
+VISIBILITY_SECONDS = 300
+_visible: dict[str, float] = {}  # repository -> when the token last saw it
+
+
+def _missing(repository: str) -> None:
+    """A 404 for a ref is an answer only when the token can see the repository: GitHub
+    answers 404 for a private repository the token has no access to, too."""
+    seen = _visible.get(repository)
+    if seen is not None and time.monotonic() - seen < VISIBILITY_SECONDS:
+        return
+    if _get(f"/repos/{repository}") is None:
+        raise ForgeUnavailableError("the repository is not visible to the forge token")
+    _visible[repository] = time.monotonic()
 
 
 def _quote(ref: str) -> str:
@@ -90,20 +122,54 @@ def _quote(ref: str) -> str:
 
 # --- the three reads; each returns the observation's data, without `observed_at` ------------
 
-FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
+FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure", "error"}
+PENDING = {"pending", "stale"}  # stale: GitHub marked it outdated; it decides nothing yet
+PAGE = 100
+MAX_PAGES = 10  # 1000 check runs; past that the sum is `unknown`
+
+
+def _check_runs(repository: str, sha: str) -> list[dict[str, str]] | None:
+    """Every check run on the commit; None when there are more than MAX_PAGES pages."""
+    runs: list[dict[str, str]] = []
+    for page in range(1, MAX_PAGES + 1):
+        found = _get(
+            f"/repos/{repository}/commits/{_quote(sha)}/check-runs?per_page={PAGE}&page={page}"
+        )
+        batch = (found or {}).get("check_runs", [])
+        runs += [{"name": r["name"], "status": r.get("conclusion") or "pending"} for r in batch]
+        if len(batch) < PAGE or len(runs) >= (found or {}).get("total_count", 0):
+            return runs
+    return None
+
+
+def _statuses(repository: str, sha: str) -> list[dict[str, str]]:
+    """The commit statuses (the API before check runs), latest per context."""
+    found = _get(f"/repos/{repository}/commits/{_quote(sha)}/status?per_page={PAGE}")
+    return [
+        {"name": item["context"], "status": item["state"]}
+        for item in (found or {}).get("statuses", [])
+    ]
 
 
 def checks(repository: str, sha: str) -> tuple[str, list[dict[str, str]]]:
-    """The check runs on a commit, summed up: success, failure, pending or none."""
-    found = _get(f"/repos/{repository}/commits/{_quote(sha)}/check-runs?per_page=100")
-    runs = (found or {}).get("check_runs", [])
-    detail = [{"name": run["name"], "status": run.get("conclusion") or "pending"} for run in runs]
+    """Check runs and commit statuses on a commit, summed up: success, failure,
+    pending, none, or unknown when they cannot all be read."""
+    try:
+        runs = _check_runs(repository, sha)
+        statuses = _statuses(repository, sha)
+    except ForgeUnavailableError as error:
+        if error.status == 403:  # a token without the checks or statuses permission
+            return "unknown", []
+        raise
+    if runs is None:
+        return "unknown", statuses
+    detail = runs + statuses
     if not detail:
         return "none", []
     states = {item["status"] for item in detail}
     if states & FAILED:
         return "failure", detail
-    if "pending" in states:
+    if states & PENDING:
         return "pending", detail
     return "success", detail
 
@@ -111,6 +177,7 @@ def checks(repository: str, sha: str) -> tuple[str, list[dict[str, str]]]:
 def pull_request(repository: str, number: int) -> dict[str, Any]:
     pr = _get(f"/repos/{repository}/pulls/{number}")
     if pr is None:
+        _missing(repository)
         return {"number": number, "found": False}
     merged = pr.get("merged_at") is not None
     mergeable = {True: "mergeable", False: "conflicting"}.get(pr.get("mergeable"), "unknown")
@@ -138,6 +205,7 @@ def pull_request(repository: str, number: int) -> dict[str, Any]:
 def branch(repository: str, name: str) -> dict[str, Any]:
     found = _get(f"/repos/{repository}/branches/{_quote(name)}")
     if found is None:
+        _missing(repository)
         return {"name": name, "head_sha": None, "found": False}
     return {"name": name, "head_sha": found["commit"]["sha"], "found": True}
 
@@ -145,6 +213,8 @@ def branch(repository: str, name: str) -> dict[str, Any]:
 def tag(repository: str, name: str) -> dict[str, Any]:
     ref = _get(f"/repos/{repository}/git/ref/tags/{_quote(name)}")
     if ref is None or not isinstance(ref, dict):  # a list: no exact match, only prefixes
+        if ref is None:
+            _missing(repository)
         return {"name": name, "sha": None, "found": False}
     target = ref["object"]
     sha = target["sha"]
