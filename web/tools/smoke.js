@@ -449,6 +449,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(patches.length === 1 && patches[0][0] === "/projects/maity/members/agt-b" && JSON.stringify(patches[0][1]) === JSON.stringify({ briefing: "  Review hub PRs first.  " })
     && !byId("briefing-agt-b") && text(main).includes("Review hub PRs first.") && text(main).includes("Set by @maintainer"),
     "a saved briefing is PATCHed as typed (Markdown keeps its spaces), shown, and says who set it");
+  const bStored = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "agt-b");
+  expect(bStored.briefing_version > 1 && text(bBox()).includes("Set by @maintainer · version " + bStored.briefing_version),
+    "a saved briefing shows the version the hub answered, not the one read before");
   btn(bBox(), "Edit briefing").click(); await tick();
   byId("briefing-agt-b").value = "";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
@@ -958,9 +961,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   eSel(1).value = "agt-d"; eSel(1).dispatch("change");
   eIn()[0].value = "docs/, web/tools/, docs/"; eIn()[0].dispatch("input");
   eIn()[1].checked = true; eIn()[1].dispatch("change");
-  // Edits survive a redraw (here the presence refresh), and are sent as typed.
-  await fireIntervals(); await tick(); await tick();
-  expect(eSel(1).value === "agt-d" && eIn()[0].value === "docs/, web/tools/, docs/" && eIn()[1].checked, "members: unsaved edits survive a redraw");
+  // Edits survive a redraw (here: another row opened and closed, each a
+  // rebuild of the table), and are sent as typed.
+  const formBefore = eRow().querySelector("form.member-edit");
+  const pauseIn = () => eRow().querySelector(".member-pause input");
+  pauseIn().value = "quota, half typed"; pauseIn().dispatch("input");
+  btn(mRow("Agent D"), "Manage").click(); await tick();
+  btn(mRow("Agent D"), "Done").click(); await tick();
+  expect(eRow().querySelector("form.member-edit") !== formBefore && eSel(1).value === "agt-d" && eIn()[0].value === "docs/, web/tools/, docs/" && eIn()[1].checked,
+    "members: unsaved edits survive a redraw");
+  expect(pauseIn().value === "quota, half typed", "members: a half-typed pause reason survives a redraw too");
   await submitEdit();
   expect(JSON.stringify(eWrites[0]) === JSON.stringify(["/projects/maity/members/agt-r",
     { reports_to: "agt-d", areas: ["docs/", "web/tools/"], capabilities: ["tag"] }])
@@ -1016,13 +1026,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = mPatch; win.Maity.api.getAll = nlGet;
   btn(mRow("Reviewer"), "Done").click(); await tick();
   // A change that waits for a human's go (202, the consent request) is no "Saved".
-  win.Maity.api.patch = () => Promise.resolve({ id: "req-c009", class: "consent", status: "open", to: "owner", title: "Let reviewer report to agent-x" });
+  const consents = [];
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c009", class: "consent", status: "open", to: "owner", title: "Change reviewer to member" }); };
   await go("#/p/maity/members");
   btn(mRow("Reviewer"), "Manage").click(); await tick();
-  eSel(1).value = "agt-b"; eSel(1).dispatch("change");
+  eSel(0).value = "member"; eSel(0).dispatch("change");
   await submitEdit();
-  expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c009, Let reviewer report to agent-x).") && !text(main).includes("Saved for Reviewer"),
+  expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c009, Change reviewer to member).") && !text(main).includes("Saved for Reviewer"),
     "members: a change waiting for consent says so, and not that it was saved");
+  // The form shows the member as it is again, so a second Save asks nothing twice.
+  expect(eSel(0).value === "reviewer", "members: after a consent request the form shows the hub's state, not the draft");
+  await submitEdit();
+  expect(consents.length === 1 && text(main).includes("Nothing changed."), "members: saving again after a consent request files no second one");
+  win.Maity.api.patch = mPatch;
+  btn(mRow("Reviewer"), "Done").click(); await tick();
+  // Done drops a row's unsaved edits.
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  eSel(0).value = "member"; eSel(0).dispatch("change");
+  btn(mRow("Reviewer"), "Done").click(); await tick();
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  expect(eSel(0).value === "reviewer", "members: Done drops the row's unsaved edits");
+  btn(mRow("Reviewer"), "Done").click(); await tick();
+  // A drafted boss who has left since is dropped and said, never sent as nobody.
+  const goneSent = [];
+  win.Maity.api.patch = (p, b) => { goneSent.push(b); return mPatch(p, b); };
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  eSel(1).value = "agt-c"; eSel(1).dispatch("change");
+  const gGet = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => gGet(p).then((r) => (p !== "/projects/maity/members" ? r : { items: r.items.filter((x) => x.id !== "agt-c"), next_cursor: null }));
+  await fireIntervals(); await tick(); await tick();
+  expect(eSel(1).value === "agt-a" && text(eRow()).includes("whom you picked, is no longer a member"), "members: a drafted boss who left is dropped, and said");
+  eIn()[0].value = "docs/"; eIn()[0].dispatch("input");
+  await submitEdit();
+  expect(goneSent.length === 1 && !("reports_to" in goneSent[0]), "members: saving then leaves the boss as it is");
+  win.Maity.api.getAll = gGet;
+  await mPatch("/projects/maity/members/agt-r", { areas: [] });
   win.Maity.api.patch = mPatch;
   btn(mRow("Reviewer"), "Done").click(); await tick();
   await go("#/p/maity/members");
@@ -1610,6 +1648,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Nothing waits for you.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
+
+  // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
+  win.location.search = "?as=agt-a";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const asAgent = async (call) => { try { return await call(); } catch (err) { return err; } };
+  const aRole = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-r", { role: "member" }));
+  const aPause = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-r", { paused: { reason: "quota" } }));
+  const aRemove = await asAgent(() => win.Maity.api.del("/projects/maity/members/agt-b"));
+  const aMember = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-b", { areas: ["web/"], paused: { reason: "quota" } }));
+  const aCaps = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-b", { capabilities: ["tag"] }));
+  const aProxy = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-b", { role: "proxy" }));
+  const aHuman = await asAgent(() => win.Maity.api.patch("/projects/maity/members/hum-maintainer", { areas: ["x/"] }));
+  const aSelf = await asAgent(() => win.Maity.api.patch("/projects/maity/members/agt-a", { areas: ["x/"] }));
+  const aAfter = (await win.Maity.api.getAll("/projects/maity/members")).items;
+  const humansOnly = (e) => e && e.code === "forbidden" && e.details.reason === "humans_only";
+  expect(aRole.class === "consent" && aRole.to === "owner" && aRole.title === "Change reviewer to member"
+    && aPause.title === "Pause reviewer" && aRemove.title === "Remove agent-b"
+    && aAfter.find((x) => x.id === "agt-r").role === "reviewer" && !aAfter.find((x) => x.id === "agt-r").paused && aAfter.some((x) => x.id === "agt-b"),
+    "mock as an admin agent: a reviewer's role or pause and any removal wait for the owner's consent (202), nothing changed yet");
+  expect(aMember.id === "agt-b" && aMember.paused && aMember.areas.join() === "web/", "mock as an admin agent: a member agent's areas and pause apply at once");
+  expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
+    "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
+  win.location.search = "";
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

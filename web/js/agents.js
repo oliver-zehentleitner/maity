@@ -110,7 +110,7 @@ window.Maity = window.Maity || {};
         try {
           const updated = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { briefing: value.trim() ? value : null });
           m.briefing = updated && "briefing" in updated ? updated.briefing : (value.trim() ? value : null);
-          if (updated && "briefing_by" in updated) m.briefing_by = updated.briefing_by;
+          ["briefing_by", "briefing_version", "briefing_updated_at"].forEach((k) => { if (updated && k in updated) m[k] = updated[k]; });
           status.done();
           show();
         } catch (err) {

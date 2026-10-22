@@ -140,8 +140,10 @@ Inside a project, in the order of their importance; see
    ones the page does not offer are kept) — saved in one PATCH of only what
    changed, and at once in the Organisation view. Each field says its own
    error; edits not yet saved survive any redraw (the presence refresh, an
-   action in another row); a change that waits for a human's go (the hub's
-   202 with a consent request) says so and is not called saved; pause an
+   action in another row) and are dropped by **Done**; a drafted boss who
+   has left since is dropped and said, never sent as nobody; a change that
+   waits for a human's go (the hub's 202 with a consent request) says so,
+   is not called saved, and the form shows the hub's state again; pause an
    agent with a reason or clear its pause; and **Remove
    from the project** after a confirmation that says what it does; the
    hub's `last_owner` refusal is said in words, and a write that went
@@ -358,7 +360,10 @@ mode is labelled **Fixtures** in the header. Every write in fixture mode (answer
 pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
 the sign-in (handle `maintainer`, any password); `?no_projects=1` starts
-it without memberships, to show the empty state. A project created there
+it without memberships, to show the empty state; `?as=<member id>` makes
+the mock take membership changes as coming from that member, to show how
+the hub answers an admin agent (`docs/api.md` §2.3 ᵃ: a reviewer's role or
+pause and any removal answer 202 with a consent request to the owner). A project created there
 gets empty fixtures and the github.com forge rule.
 
 The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,

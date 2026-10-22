@@ -37,6 +37,10 @@ window.Maity = window.Maity || {};
   // ?ktw=unavailable: the root .keep-the-why cannot be read; ?ktw=member_failed:
   // one family member's read fails (docs/api.md §11.3).
   const fixtureKtw = params.get("ktw");
+  // ?as=<member id>: the mock takes member changes (PATCH and DELETE of a
+  // membership) as coming from that member, to show how the hub answers an
+  // admin agent (§2.3 ᵃ); the page itself stays the signed-in human's.
+  const fixtureAs = params.get("as");
 
   // The bundle is loaded on the first fixture request, never on an
   // http(s) origin (it is not referenced from index.html).
@@ -190,6 +194,28 @@ window.Maity = window.Maity || {};
     const mine = me().projects.find((p) => p.slug === slug);
     return !!mine && ["owner", "admin"].includes(mine.role);
   };
+  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  function caller(slug, path) {
+    if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
+    const x = member(slug, fixtureAs, path);
+    return { member: x, admin: ["owner", "admin"].includes(x.role) };
+  }
+  // §2.3 ᵃ: an admin agent changes only other agents' memberships whose role
+  // is member or reviewer; capabilities and proxy stay a human's.
+  function agentLimits(who, target, body, path) {
+    const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
+    if (who.kind !== "agent") return;
+    if (target.kind !== "agent" || target.id === who.id || !["member", "reviewer"].includes(target.role)) human();
+    if (body && ("capabilities" in body || ("role" in body && !["member", "reviewer"].includes(body.role)))) human();
+  }
+  // Changing the role of or pausing a reviewer or the contract arbiter, and
+  // any removal, by an agent waits for a human's go: 202 with the request.
+  function consentFor(who, title) {
+    if (who.kind !== "agent") return null;
+    return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
+  }
+  const guarded = (slug, target) => target.role === "reviewer"
+    || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -646,15 +672,12 @@ window.Maity = window.Maity || {};
     }],
     // §6.2 as the hub does it: every field checked first, each bad one
     // named at once, then one write. A reports-to circle or self is `cycle`
-    // (#118). An agent caller may not do what is a human's (humans_only,
-    // §2.3); a reports-to onto another owner's agent waits for that owner's
-    // consent and answers 202 with the request (#159).
+    // (#118). An admin agent stays within §2.3 ᵃ.
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      if (me().member.kind === "agent" && ("capabilities" in body || body.role === "proxy")) {
-        fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
-      }
-      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      const who = caller(m[1], path);
+      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
+      agentLimits(who.member, target, body, path);
       const all = file(m[1], "members.json", path).items;
       const errors = {};
       if ("briefing" in body && body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) errors.briefing = "string_too_long";
@@ -663,9 +686,8 @@ window.Maity = window.Maity || {};
         else if (body.role === "owner" && target.kind !== "human") errors.role = "owner_is_human";
         else if (target.role === "owner" && body.role !== "owner" && all.filter((x) => x.role === "owner").length === 1) errors.role = "last_owner";
       }
-      let boss = null;
       if ("reports_to" in body && body.reports_to !== null) {
-        boss = all.find((x) => x.id === body.reports_to);
+        const boss = all.find((x) => x.id === body.reports_to);
         if (!boss) errors.reports_to = "not_a_member";
         else {
           const seen = new Set();
@@ -684,9 +706,10 @@ window.Maity = window.Maity || {};
         else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
       }
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
-      if (boss && target.kind === "agent" && boss.kind === "agent" && boss.owner_id && boss.owner_id !== target.owner_id) {
-        return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: boss.owner_id,
-          title: "Let " + target.handle + " report to " + boss.handle, created_at: nowIso() };
+      if (guarded(m[1], target)) {
+        const consent = "role" in body && body.role !== target.role ? consentFor(who.member, "Change " + target.handle + " to " + body.role)
+          : body.paused ? consentFor(who.member, "Pause " + target.handle) : null;
+        if (consent) return consent;
       }
       if ("role" in body) target.role = body.role;
       if ("reports_to" in body) target.reports_to = body.reports_to;
@@ -704,13 +727,17 @@ window.Maity = window.Maity || {};
       return target;
     }],
     ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      const who = caller(m[1], path);
+      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const list = file(m[1], "members.json", path);
       // A second DELETE answers 200 with the removed member as it is.
       list.removed = list.removed || [];
       const gone = list.removed.find((x) => x.id === m[2]);
       if (gone) return gone;
       const target = member(m[1], m[2], path);
+      agentLimits(who.member, target, null, path);
+      const consent = consentFor(who.member, "Remove " + target.handle);
+      if (consent) return consent;
       if (target.role === "owner" && list.items.filter((x) => x.role === "owner").length === 1) {
         fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
       }
