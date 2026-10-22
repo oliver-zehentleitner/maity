@@ -149,7 +149,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.11, §6.12); `details.max` |
 | 409 | `instance_assigned` | a claim by an instance of a team while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.12); `details.assigned_instance` |
-| 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds (§6.13); `details.holder`, `details.instance` |
+| 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.13); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one (§6.13); `details.takeover` |
 | 409 | `takeover_closed` | a response, withdrawal, escalation or override on a closed takeover (§6.13); `details.status` |
 | 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.13) |
@@ -314,10 +314,10 @@ base64url without padding (43 characters). The hub stores the id and the
 verifier `sha256(<secret>)`, computed over the UTF-8 bytes of the secret
 text exactly as it appears in the credential — nobody decodes the
 base64url. A credential is long-lived, revocable (§10) and never rotated
-silently. Each credential is one **instance** of its membership, with a
-short id of its own (§6.11): a membership with several credentials is a
-team of instances under one handle, and everything a credential does is
-recorded with its instance.
+silently. Each credential is one **agent instance** of its membership,
+with a short id of its own (§6.11): a membership with several
+credentials is a team of agent instances under one handle, and
+everything a credential does is recorded with its agent instance.
 
 **The hub refuses any request body or query string — the query matched
 both raw and percent-decoded — in which the pattern
@@ -1061,7 +1061,7 @@ text, or as it is with `--json` (§13).
 
 ### 5.3 Sessions and presence
 
-A session is one run of an agent instance under its credential: opened
+A session is one run of one agent instance under its credential: opened
 by `resume`, closed by the next `resume` of the same credential or by
 revocation. Each instance has its own session; a team of three
 instances can have three open at once. It carries `harness`, `harness_version`, `model`, `client`,
@@ -1116,12 +1116,18 @@ honest as the client that sends it.
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wle2"}}`, or `{"paused": null, "instance": "wle2"}` to lift it) for one agent instance only |
 
-`PATCH /me` with `paused` declares the pause of the calling instance
-only (the instance view's `paused`, §6.11); its siblings carry on. A
-pause set through `PATCH …/members/{id}` is the membership's and holds
-for every instance.
+`PATCH /me` with `paused` declares the pause of the calling agent
+instance only (the instance view's `paused`, §6.11); its siblings carry
+on. A pause set through `PATCH …/members/{id}` without `instance` is the
+membership's and holds for every agent instance; with `instance` it is
+that instance's alone, stored on the instance view and following every
+rule below for that instance — not cleared by its `resume`, refused to
+its `PATCH /me`, a gate on its new work — while its siblings keep
+working. An unknown or revoked instance is `invalid`
+(`details.fields.instance: "not_an_instance"`). `session_paused` then
+names the instance and wakes only it.
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
@@ -1490,8 +1496,8 @@ not `done` or `cancelled`, for every kind and every caller.
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
 | `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
-| `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or a human with `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` (§6.13) |
-| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease and the caller is a human, the claim moves to the assignee (`lease_active` otherwise); an agent moving a held card is `takeover_required` (§6.13) |
+| `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.13) |
+| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.13); with an active lease a human gets `lease_active` and an agent `takeover_required` |
 | `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.13 |
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
@@ -1537,8 +1543,8 @@ version it was seen on) and `area`; routing to the area's owner is the
 - `already_claimed` when a claim exists, even an expired one, also for
   another instance of the holder's team (`details.instance`); the holding
   instance renews it with its calls, anyone else obtains it only through
-  a takeover (§6.13), or through `release` or `assign` by a human with
-  `tasks:admin` after expiry.
+  a takeover (§6.13), or through `release` or `assign` by `tasks:admin`
+  after expiry (by an agent, recorded as a `lease_expired` takeover).
 - Lease: `lease_until = now + policy.lease_seconds`, renewed to the same
   length by any authenticated call of the holding membership (not only
   calls on this card), except the events long-poll (§2.4). `expired` is
@@ -1964,15 +1970,23 @@ slot); `forbidden` for a runner credential; `not_found` on
 `/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
 `DELETE`: `csrf_mismatch` for a cookie call without a matching token.
 
-### 6.11 Instances
+### 6.11 Agent instances
 
 Several agents may work under one handle as a team: each is an
-**instance** of the one membership, individually identifiable. An
-instance is one agent credential of the membership (§2.2, §10) — one per
+**agent instance** of the one membership, individually identifiable. An
+agent instance is one agent credential of the membership (§2.2, §10) — one per
 clone or state directory — and everything the hub records about work
-names the member and the instance. (Not to be confused with the hub
-instance and its instance admin, §16: an agent instance is always
-"`<handle>#<id>`".)
+names the member and the agent instance. In this contract "instance"
+alone, and the field `instance`, always mean an agent instance; the hub
+instance and its instance admin (§16) are always named as such. The
+two namespaces stay apart: the audience token `instance:<member
+id>#<id>` (§8.2) names an agent instance, while `instance:admin` is a
+scope (§2.3) and never an audience token or an address.
+
+**Follow-up.** Placements (§15.5) still allow one active placement per
+membership; one placement per agent instance instead is a follow-up
+contract change of its own, so for now a runner hosts at most one
+instance of a team.
 
 **The instance id.** At the exchange (§3.3) the hub gives the new
 credential a short id, unique within the membership and never reused,
@@ -2130,8 +2144,25 @@ required. The card must be claimed (`not_claimed` otherwise: claim or
 assign it instead) by someone other than `to`; one open takeover per
 card (`takeover_open`, `details.takeover`). An agent's `assign`,
 `release` or `PATCH assigned_to` that would move a card claimed by
-someone else is `takeover_required` and changes nothing; the expired
-lease no longer lets an agent skip the procedure.
+someone else is `takeover_required` and changes nothing while that
+claim's lease is active.
+
+**An expired lease skips the window.** When the holder's lease has run
+out (§6.5), the takeover is immediate: the call answers `200` with the
+record already `transferred` and `outcome.how: "lease_expired"`, and the
+former holder is notified and woken like on every transfer. An agent
+with `tasks:admin` (or a team's lead within its team) may then also use
+`assign` or `release` as a human does; the hub records the same
+takeover with `lease_expired`, so the move is in the history either way.
+
+**Cover is not a takeover.** A card that moves to a substitute because
+its holder is out — cover under the holder's own `availability_policy`
+(the availability contract) — is applied by the hub as that contract
+says, with `cover` on the card and its own events; it opens no takeover
+and has no objection window. A takeover is one member or agent instance
+taking work from another; cover is the holder's own policy acting
+during its outage. A takeover of a covered card from its substitute
+follows this section.
 
 ```json
 {
@@ -2158,8 +2189,8 @@ lease no longer lets an agent skip the procedure.
 | `transferred`, `withdrawn`, `refused`, `cancelled` | closed. `cancelled` when the card stopped being held by `from` some other way — the holder released or finished it, a human reassigned it, the card was cancelled, the membership was removed |
 
 `outcome` is `{how, by, reason, at}` with `how` one of `accepted`,
-`window_elapsed`, `override`, `decided`, `withdrawn`, `immediate`,
-`cancelled`.
+`window_elapsed`, `lease_expired`, `override`, `decided`, `withdrawn`,
+`immediate`, `cancelled`.
 
 | Endpoint | Caller | Body |
 |---|---|---|
@@ -2175,7 +2206,7 @@ A call on a closed takeover is `takeover_closed` (`details.status`).
 Every step is audited in the takeover and as an event (§8.2).
 
 **The admin team** is the members with the role `admin` — humans and
-agents — and the `owner`, except the parties: `from`, `to` and the
+agents — and the `owner`, never a `proxy`, and never the parties: `from`, `to` and the
 requester (their member, all instances of it). On escalation the hub
 files a request of class `decision` — someone must pick between two
 outcomes — with `to: "role:admin"`, `asked_by` the requester,
@@ -4266,7 +4297,9 @@ something was there and who removed it.
 - **Team** (`store: "team"`): an agent writes to its own team only; the
   entry carries its instance. Any instance of the team deletes the
   team's entries; so do the agent's owner and humans with
-  `members:admin`. Nobody else reads them.
+  `members:admin`. An admin agent never deletes another team's memory,
+  whatever its role (`forbidden`, `details.reason: "humans_only"`).
+  Nobody else reads them.
 - **Community** (`store: "community"`): a human with `project:admin`
   writes and deletes directly. An agent's `POST` — any role — answers
   `202` with a `consent` request to `owner` carrying `memory_proposal:
