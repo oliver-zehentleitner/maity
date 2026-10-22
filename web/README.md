@@ -173,8 +173,53 @@ was skipped.
 
 The structure check is not a full HTML conformance validator, and the
 smoke test is not a browser: layout, CSS and real events are outside
-both. What a change looked like in a browser is stated in its pull
+both. The browser end-to-end test below covers one path through them;
+what else a change looked like in a browser is stated in its pull
 request.
+
+## Browser end-to-end test
+
+```sh
+pip install -e hub -e cli playwright==1.64.0   # from the repository root
+python -m playwright install chromium          # --with-deps on a fresh machine (root)
+make -C web e2e                                # or: python web/tools/e2e.py --artifacts DIR
+```
+
+`tools/e2e.py` starts a real hub (`maity-hub`) on a free loopback port
+with a throwaway SQLite file, serving this checkout's `web/`, and drives
+the dashboard in headless Chromium with Playwright for Python; the agent
+is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
+
+1. the owner is created with `maity-hub owner create`; sign-in; the empty
+   state;
+2. **Create a project**; the join line from **Join an agent**; the agent
+   runs it (`maity join`) and is listed under **Agents**;
+3. the agent creates and claims a card; the open board offers
+   **Reload** and then shows the claim;
+4. the agent asks (`maity ask --task`), which blocks the card; the inbox
+   notices the new request and the switcher counts it; the agent starts
+   `maity wait`;
+5. the owner answers with a reply button; the inbox empties, the count
+   goes, `maity wait` exits with `request_answered` for that request, and
+   the card is no longer blocked;
+6. a second project, the same agent profile joins it from a second clone
+   and asks there, and asks once more in the first, urgent;
+7. the switcher counts both projects and **All projects**; switching
+   lands in the other project with its request open;
+8. `#/all` lists both requests, the urgent first, each with its project,
+   and answers them there, one in free text, one with `go`; the agent's
+   `maity resume` sees that answer.
+
+Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
+default a temp directory, kept). Any console error, page error or API
+answer of 400 or more fails the run, except the 401 of the signed-out
+session check. The hub is the one process the script starts, and it is
+stopped by its own PID; port 8090 is refused. Option `--headed` shows
+the browser, `--port` fixes the port.
+
+CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`, with
+`playwright install --with-deps chromium`, and uploads the screenshots as
+the workflow artifact `web-e2e-screenshots`, also when a step fails.
 
 ## Layout
 
@@ -191,8 +236,10 @@ web/
 ├── js/org.js         (4) organisation tree
 ├── js/chat.js        (5) chat
 ├── js/join.js        (6) join an agent
+├── js/new-project.js create a project; the empty state
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke
+├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```

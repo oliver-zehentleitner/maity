@@ -51,6 +51,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   presence re-read in place; the "what waits for you changed" notice now appears
   (the count re-read had marked itself as seen)
 - web: fixtures label the consent replies `go` and `no`, as the hub sends them
+- web: a browser end-to-end test (`web/tools/e2e.py`, CI job `web-e2e`): headless
+  Chromium against a real hub on SQLite, the agent through the `maity` CLI, from
+  sign-in to the answer that wakes `maity wait`, with a screenshot of every step
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -93,3 +96,5 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 ### Fixed
 
 - hub: the join smoke script reads a token that starts with `-` as text, and its check that the join page never shows the code can fail at all.
+- web: the handle and slug fields validate in the browser again: their `pattern` had an
+  unescaped `-` in a class, which browsers compile with the `v` flag and drop as invalid
