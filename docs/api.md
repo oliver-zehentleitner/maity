@@ -146,6 +146,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§17.4); `details.held`: the id of the change held now, or `null` |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
@@ -2789,8 +2790,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notifications/read` | human | 17.3 |
 | GET, PATCH | `/me/notification-settings` | human | 17.4 |
 | POST | `/me/notification-settings/email/verify` | human | 17.4 |
-| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old | 17.4 |
-| POST | `/me/notification-settings/email/address-change/reject` | human | 17.4 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old; `{id, address}` of the held change | 17.4 |
+| POST | `/me/notification-settings/email/address-change/reject` | human; `{id, address}` of the held change | 17.4 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 17.6 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -3997,13 +3998,8 @@ when it is read or sent, from two sources, plus a read flag per human:
   is not an audience token (§6.4), so for a watcher the check is
   whether the human may read the card (`project:read` in its project),
   and the item carries only what the card view shows.
-- **Personal requests** (#162, §7) — `inbox` items for the human the
-  request is addressed to through `profile_owner:<agent id>`, whether or
-  not that human is a member of the request's project. They are
-  resolved through the addressing, never through the event's audience,
-  and belong to the account like account records do: the hub files
-  them, only the addressed human reads them.
-- **Account records** — the kinds `security` and `system`. An account
+- **Account records** — the kinds `security` and `system`, and the
+  `inbox` items of personal requests (below). An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
   carry it. Its id is `acr-<n>` from a sequence of its own, never the
@@ -4016,11 +4012,28 @@ when it is read or sent, from two sources, plus a read flag per human:
   runner — and kept 90 days. The types: `mail_disabled` (§17.7) and
   `email_address_changed` (§17.4); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
-  account's session list; `session_ended` is no notification.
+  account's session list; `session_ended` is no notification; and with
+  the instances contract (#162, §7) `personal_request_created`,
+  `personal_request_answered` and `personal_request_withdrawn`.
+
+**Personal requests** (#162, §7) are requests the hub files to the
+human who owns an agent profile (`to: "profile_owner:<agent id>"`),
+whether or not that human is a member of the request's project. They
+reach the human through account records, never through an event's
+audience: every state change of one — filed, answered, withdrawn —
+writes one account record of the addressed human, `{request_id,
+project, status}` and nothing of the request's content. The
+`personal_request_created` record is the human's `inbox` item for it;
+the other two only move the position (§17.2) and close the count. So a
+personal request has the same id scheme, position and read flag as
+every other record, member or not, and nobody but the addressed human
+learns of it from this view. The request's own events (#162, §7: ids
+and status only) never make an item, also not for an owner who is a
+member and in their audience, so each personal request is one item.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
@@ -4063,12 +4076,12 @@ wins over `card` and `chat`, `inbox` over everything.
 
 Human only. The counts for the badges and the newest items for the
 bell, across every project the human is a member of, plus the human's
-personal requests (#162, §7) and account records, which need no
-membership.
+account records — personal requests (#162, §7) included — which need
+no membership.
 
 | Query | Meaning |
 |---|---|
-| `limit` | 0–50, default 20; `0` answers the counts only |
+| `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists |
@@ -4079,11 +4092,11 @@ membership.
 {
   "counts": { "inbox": 3, "chat": 2, "mention": 1, "card": 4, "agent": 0, "ticker": 2, "jour_fixe": 0, "security": 0, "system": 0, "total": 6 },
   "by_project": {
-    "maity": { "inbox": 2, "chat": 2, "mention": 1, "card": 4, "agent": 0, "ticker": 2, "jour_fixe": 0, "total": 5 },
-    "lasteverlm": { "inbox": 1, "chat": 0, "mention": 0, "card": 0, "agent": 0, "ticker": 0, "jour_fixe": 0, "total": 1 }
+    "maity": { "member": true, "inbox": 2, "chat": 2, "mention": 1, "card": 4, "agent": 0, "ticker": 2, "jour_fixe": 0, "total": 5 },
+    "lasteverlm": { "member": false, "inbox": 1, "chat": 0, "mention": 0, "card": 0, "agent": 0, "ticker": 0, "jour_fixe": 0, "total": 1 }
   },
   "items": [
-    { "id": "ntf-4237", "seq": 4237, "position": "4237.118", "kind": "chat", "at": "2026-10-22T13:10:00Z",
+    { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
       "project": { "slug": "maity", "name": "Maity" },
       "actor": { "member_id": "agt-a", "display_name": "Agent A", "avatar_url": "/api/v1/avatars/agt-a?v=1c2d" },
       "title": "Agent A in agent-a",
@@ -4091,7 +4104,7 @@ membership.
       "target": { "type": "conversation", "id": "agt-a" },
       "url": "https://maity.team/#/p/maity/chat/agt-a",
       "read": false, "redacted": false },
-    { "id": "ntf-4231", "seq": 4231, "position": "4231.118", "kind": "card", "at": "2026-10-22T12:41:12Z",
+    { "id": "ntf-4231", "seq": 4231, "kind": "card", "at": "2026-10-22T12:41:12Z",
       "project": { "slug": "maity", "name": "Maity" },
       "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
       "title": "tsk-0004 Hub: credential exchange and storage: status review",
@@ -4107,19 +4120,50 @@ membership.
 ```
 
 **Positions.** Events and account records have two sequences (§17.1),
-so a place in the list is a **position** `<event seq>.<account record
-n>`: for an event item its `seq` and the newest record number at that
-moment, for a record item the newest `seq` at that moment and its
-number. Each item carries its `position`; an item is past position
-`a.b` when its event `seq` is above `a` or its record number above `b`.
-`next_after` is the position the answer reached (the current one when
-there is no item); the dashboard passes positions back unchanged and
-never builds one itself.
+so a place in the list is a **position** `a.b`: every event with
+`seq ≤ a` and every account record with number `≤ b` lies behind it,
+and an item is past it when its `seq` is above `a` or its record number
+above `b`. The dashboard passes positions back unchanged and never
+builds one itself. The rules that make a position safe to resume from:
+
+- **One snapshot.** Each answer reads both sequences, the read flags
+  and the counts in one database transaction at `REPEATABLE READ`
+  isolation (PostgreSQL, MySQL/MariaDB; a SQLite transaction is
+  serializable), so items, counts and `next_after` describe one moment.
+- **Numbers become visible in order.** The hub allocates an event's
+  `seq` and a record's number in the transaction that writes the row,
+  under a lock on that sequence held until commit, and stamps `at` from
+  the hub's clock under the same lock; so neither sequence shows a
+  number before every lower one is visible, and `at` never decreases
+  along either sequence. A position therefore never skips an item that
+  commits later.
+- **One order.** Items are ordered by `at`, then events before records,
+  then by number — the same order in both directions, and consistent
+  with each sequence's own order.
+- **`next_after` moves forward component by component.** With `after`,
+  the answer lists the items past it, oldest first, up to `limit`.
+  When `limit` cut the list, `next_after` is `a'.b'` with `a'` the
+  highest listed `seq` (or `a` when none is listed) and `b'` the highest
+  listed record number (or `b`); since the list is a prefix of one
+  order, no item past `next_after` precedes a listed one, and nothing
+  omitted is skipped. When nothing was cut, `next_after` is the
+  snapshot's head (the highest visible `seq` and record number), or
+  `after` itself where that is higher. Either way neither component
+  is ever lower than in `after`.
+- **Without `after`** (newest first, older ones through `cursor`),
+  `next_after` is the snapshot's head: everything not listed is older
+  and reached through `cursor`, and a long-poll from `next_after`
+  receives only what came later.
+- **`limit=0`** lists nothing and moves nothing: `next_after` is
+  `after` when given, else the snapshot's head — the starting point for
+  a long-poll.
 
 - **Counts.** `inbox` is the number of open requests addressed to the
-  human across projects — the sum of `open_requests` in `/me` (§5.1)
-  plus the human's open personal requests (#162, §7) in projects where
-  `/me` does not list the human; it
+  human across projects — the sum of `open_requests` in `/me` (§5.1),
+  which never contains a personal request (the project's list does not
+  carry it), plus every open personal request addressed to the human
+  (#162, §7), member of its project or not, each counted exactly once;
+  it
   falls when a request is answered or withdrawn, not when its
   notification is read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
@@ -4132,19 +4176,29 @@ never builds one itself.
   slug, for every project of the human with at least one non-zero
   count; computed by the hub over every unread item and open request,
   not over the listed items, so the dashboard never counts from the
-  newest 50. `inbox` is that project's `open_requests`, `chat` the
+  newest 50. `inbox` is that project's `open_requests` plus the open
+  personal requests of that project addressed to the human, `chat` the
   `unread` of that project's conversations, `total` the per-project
-  `inbox + chat + mention`. A project whose only count is a personal
-  request of a non-member appears here too, by its slug, with
-  `"member": false` and only `inbox` set; the dashboard shows it as a
-  badge on the personal inbox, not in the project switcher, since the
-  human cannot open the project. `security` and `system` belong to no
-  project and appear only in `counts`. `limit=0` answers `counts` and
-  `by_project`.
-- **Items.** Newest first, one per event, the last 30 days; older ones
-  count as read and are not listed. `id` is `ntf-<seq>` for an item
-  from an event and `ntf-acr-<n>` for one from an account record;
-  account-record items carry `record` (`acr-<n>`) instead of `seq`. `title` is
+  `inbox + chat + mention`. Every entry carries `member`: `true` for a
+  project the human is a member of, `false` for one that appears only
+  through a personal request — then only `inbox` is set, and the
+  dashboard shows it as a badge on the personal inbox, not in the
+  project switcher, since the human cannot open the project. The sum of
+  the entries' `inbox` is `counts.inbox`: no personal request is
+  counted twice or left out. `security` and `system` belong to no
+  project and appear only in `counts`.
+- **Items.** Newest first, one per event or record, the last 30 days;
+  older ones count as read and are not listed — except `security`
+  items, which stay listed and unread until a session allowed to mark
+  them reads them (§17.3) or their record expires after 90 days. That
+  age-based reading never counts as a marking: it grants no session the
+  good standing of §17.3. `id` is `ntf-<seq>` for an item from an event
+  and `ntf-acr-<n>` for one from an account record; account-record
+  items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
+  item has `target: {type: "request", id}`, `project: {slug, name,
+  member}` and the URL of the personal inbox (`/#/requests/<id>`), which
+  reads it through `GET /requests/{id}` (#162, §7), membership not
+  required; its `title` is composed when read, from that request. `title` is
   composed from fields the human may read, at most 200 characters, text
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
@@ -4156,8 +4210,8 @@ never builds one itself.
   `creator`, `assignee`, `holder`, `agent_holder`, `agent_assignee`,
   `watcher` — the first that applies in this order. `target` is the object the
   item links to — `request`, `task`, `conversation`, `placement`, and
-  for account records `session` or `settings`; `project` is `null` on
-  those — and
+  for account records `session` or `settings`, `project` `null` on
+  those (a personal request's record targets its `request`, above) — and
   `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
   dashboard owns its routes, the hub builds the URL from the target.
 - **Read.** An item is read when it was marked (§17.3) or, for `chat`
@@ -4172,9 +4226,9 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
   has no item for is ignored, not an error (the item may have dropped
   out, §17.1).
 - `{"up_to": "4237.118", "kind"?: "card", "project"?: "maity"}` —
-  every item not past that position (§17.2; the newest listed item's
-  `position` for "mark all read"), optionally of one kind or one
-  project.
+  every item not past that position (§17.2; for "mark all read" the
+  `next_after` of the answer the bell shows), optionally of one kind or
+  one project.
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
@@ -4183,7 +4237,8 @@ marked read, the open requests stay open. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
-already read) — never from the session it reports on and never from a
+already marked read by an allowed session — never read by age, §17.2)
+— never from the session it reports on and never from a
 session created after it. From any other session the item is skipped,
 through `ids` (ignored as an unknown id) and `up_to` alike, and the
 rest of the call applies. Answers `200` with the counts
@@ -4267,12 +4322,16 @@ device; the browser's own permission is per browser and is not stored.
   counted against the login limit of §2.1). A human without a password
   needs the change approved from a session of theirs at least 24 hours
   old: a `PATCH` from such a session is the approval; from a younger
-  one the change is held (`202`, `email.address_change: {address,
-  requested_at, session_id}`) until `POST
-  /me/notification-settings/email/address-change/approve` from a
-  session at least 24 hours old (younger: `forbidden`,
-  `details.reason: session_too_new`) or `…/address-change/reject`; a
-  held change lapses after 7 days. When the new address is verified, or
+  one the change is held (`202`, `email.address_change: {id, address,
+  requested_at, session_id}`, `id` an immutable `adc-<random>`) until
+  `POST /me/notification-settings/email/address-change/approve` `{id,
+  address}` from a session at least 24 hours old (younger: `forbidden`,
+  `details.reason: session_too_new`) or `…/address-change/reject`
+  `{id, address}`. One change is held per human: a newer `PATCH` of the
+  address replaces it atomically under a new `id`, and an approval or
+  rejection that names the old `id`, or an address that is not the held
+  change's, is `conflict` (§1.3) and changes nothing. A held change
+  lapses after 7 days. When the new address is verified, or
   the address is removed, the old address gets one security mail saying
   the address was changed (the new one masked to its first character
   and its domain), when, and from which browser, operating system and
@@ -4283,9 +4342,13 @@ device; the browser's own permission is per browser and is not stored.
   sign-in factor. What this rule guarantees: neither a session obtained
   through the mailbox nor one approved by device code on an unlocked
   dashboard can move the sign-in path to another mailbox without the
-  password; for a human without a password, not before the change has
-  waited for a session a day old, while the alerts of the new session
-  (#169, §2.6.5) are on every earlier screen. `address_status`:
+  password. For a human without a password the guard is an age gate:
+  only a session at least 24 hours old approves the change, so a
+  session obtained a moment ago cannot, and one that waits to approve
+  its own change stays signed in for a day, listed in the human's
+  sessions with an unread `security` item in the bell (and, after a
+  mail sign-in, a banner in the human's other sessions; a device-code
+  session has no banner, #169 §2.6.5). `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§17.7). Setting the address again, also the same one,
   sends a new link and voids the old one. `null` removes the address and
