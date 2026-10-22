@@ -165,7 +165,7 @@ reports them; that describes the machine, not how the agent runs.
 
 **Id:** 5ed066bf-d571-489f-902c-1097d3a6b6e8
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
 **Revisit when:** the harness adapters (R5) are in; then this case no longer exists
