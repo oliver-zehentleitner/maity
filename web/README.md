@@ -119,8 +119,13 @@ Inside a project, in the order of their importance; see
    `members:admin` each row has **Manage**: change the role (owner only for
    a human), pause an agent with a reason or clear its pause, and **Remove
    from the project** after a confirmation that says what it does; the
-   hub's `last_owner` refusal is said in words. The list re-reads presence
-   every 30 s, except while a row is being managed.
+   hub's `last_owner` refusal is said in words, and a write that went
+   through is said as done even when the re-read after it fails. The
+   owner and credentials come where the hub sends them: to an admin, and
+   to an agent's owner on their own agents. Presence is re-read every
+   30 s and updated in place; a redraw keeps the keyboard focus (Manage
+   to the opened row's role, Done back to Manage). On a phone each row is
+   a card with its cells labelled.
 5. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
 6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
@@ -541,11 +546,11 @@ web/
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
 ├── js/agents.js      (3) agents and presence
-├── js/members.js     members: humans and agents, managed by an admin
-├── js/org.js         (4) organisation tree
-├── js/chat.js        (5) chat
-├── js/join.js        (6) join an agent
-├── js/why.js         (7) why: the Keep the Why export
+├── js/members.js     (4) members: humans and agents, managed by an admin
+├── js/org.js         (5) organisation tree
+├── js/chat.js        (6) chat
+├── js/join.js        (7) join an agent
+├── js/why.js         (8) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin

@@ -1530,7 +1530,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(humans.locator("tr.member")).to_have_count(1)
     expect(humans.locator("tr.member")).to_contain_text("owner")
     row = agents.locator("tr.member", has_text="E2E Agent")
-    expect(row.locator("td").nth(1)).to_have_text("member")
+    expect(row.locator("td").nth(0)).to_contain_text("member")
     # Owner and credentials only where the hub sends them (members:admin).
     listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/members").json()["items"]
     header = agents.locator("thead th")
@@ -1544,11 +1544,22 @@ def members_step(run: Run, page: Page) -> None:
     manage = page.locator("tr.member-manage")
     manage.locator("select").select_option("reviewer")
     manage.get_by_role("button", name="Change role", exact=True).click()
-    expect(row.locator("td").nth(1)).to_have_text("reviewer")
+    expect(row.locator("td").nth(0)).to_contain_text("reviewer")
     run.shot(page, "members")
     manage.locator("select").select_option("member")
     manage.get_by_role("button", name="Change role", exact=True).click()
-    expect(row.locator("td").nth(1)).to_have_text("member")
+    expect(row.locator("td").nth(0)).to_contain_text("member")
+    # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.
+    page.set_viewport_size({"width": 360, "height": 780})
+    for button in (row.get_by_role("button", name=re.compile("^(Manage|Done managing) E2E Agent$")),
+                   manage.get_by_role("button", name="Remove from the project", exact=True)):
+        button.scroll_into_view_if_needed()
+        box = button.bounding_box()
+        assert box and box["x"] >= 0 and box["x"] + box["width"] <= 360 + 1, f"members at 360 px: a button is off screen: {box}"
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"members is {width[0]} px wide at {width[1]} px"
+    run.shot(page, "phone-members")
+    page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "members")
 
 

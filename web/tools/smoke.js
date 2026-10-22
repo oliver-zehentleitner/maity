@@ -778,10 +778,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(document.title === "Members · Maity · Maity" && tables.length === 2 && tables[0].querySelectorAll("tr.member").length === 1
     && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
     "members: humans first, then agents");
-  const ths = tables[1].querySelectorAll("th").map((t) => t.textContent);
+  const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(JSON.stringify(ths) === JSON.stringify(["Name", "Role", "Owner", "Presence", "Joined", "Paused", "Credentials", "Actions"]),
     "members: an admin's agent columns, with owner and credentials " + JSON.stringify(ths));
-  expect(text(mRow("Agent C")).includes("paused by Agent C") && text(mRow("Agent C")).includes("Waiting for the API contract")
+  expect(text(mRow("Agent C")).includes("paused itself") && text(mRow("Agent C")).includes("Waiting for the API contract")
     && mRow("Agent C").classList.contains("paused"), "members: a paused agent says by whom and why");
   expect(text(mRow("Agent A")).includes("Maintainer") && / active/.test(text(mRow("Agent A"))) && text(mRow("Maintainer")).includes("owner"),
     "members: owner and a credentials summary");
@@ -789,7 +789,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mPatch = win.Maity.api.patch, mDel = win.Maity.api.del;
   win.Maity.api.patch = (p, b) => { mWrites.push(["PATCH", p, b]); return mPatch(p, b); };
   win.Maity.api.del = (p) => { mWrites.push(["DELETE", p]); return Promise.resolve({ removed_at: "2026-10-22T10:00:00Z" }); };
+  // Focus follows by key: Manage to the opened row's role, Done back to Manage.
+  const elProto = Object.getPrototypeOf(main);
+  const focus0 = elProto.focus;
+  elProto.focus = function () { document.activeElement = this; };
   btn(mRow("Agent D"), "Manage").click(); await tick();
+  expect(document.activeElement && document.activeElement.tagName === "SELECT" && document.activeElement.id === "member-role-agt-d",
+    "members: Manage moves the focus to the row's role");
+  btn(mRow("Agent D"), "Done").click(); await tick();
+  expect(document.activeElement === btn(mRow("Agent D"), "Manage"), "members: Done gives the focus back to Manage");
+  // Presence is refreshed in place: an open row and its select stay the same elements.
+  btn(mRow("Agent D"), "Manage").click(); await tick();
+  const openSelect = main.querySelector("tr.member-manage select");
+  const pAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => pAll(p).then((r) => (p !== "/projects/maity/members" ? r
+    : { items: r.items.map((x) => (x.id === "agt-d" ? Object.assign({}, x, { presence: "away" }) : x)), next_cursor: null }));
+  await fireIntervals(); await tick(); await tick();
+  expect(main.querySelector("tr.member-manage select") === openSelect && text(mRow("Agent D")).includes("Away"), "members: presence refreshed in place, the open row untouched");
+  win.Maity.api.getAll = pAll;
+  elProto.focus = focus0; document.activeElement = undefined;
   const dManage = main.querySelector("tr.member-manage");
   expect(dManage && btn(mRow("Agent D"), "Done") && btn(mRow("Agent D"), "Done").getAttribute("aria-expanded") === "true", "members: Manage opens the row");
   const dRole = dManage.querySelector("select"); dRole.value = "reviewer";
@@ -823,14 +841,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = mConfirm;
   expect(mAsked === "Remove Reviewer from Maity? Its credentials are revoked and the cards it claimed are released."
     && JSON.stringify(mWrites[mWrites.length - 1]) === JSON.stringify(["DELETE", "/projects/maity/members/agt-r"]), "members: removing asks first and says what it does");
+  // A write that went through is said as done when the re-read fails.
   win.Maity.api.patch = mPatch; win.Maity.api.del = mDel;
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  const rAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? Promise.reject(new win.Maity.api.ApiError("down", 0, p)) : rAll(p));
+  main.querySelector("tr.member-manage select").value = "proxy";
+  main.querySelector("tr.member-manage form.member-role").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Reviewer is now proxy. Could not refresh: down") && !text(main).includes("Changing the role failed"),
+    "members: a failed re-read after a write is no failed write");
+  win.Maity.api.getAll = rAll;
+  await win.Maity.api.patch("/projects/maity/members/agt-r", { role: "reviewer" });
+  // The mock as the hub: removal revokes, releases claims, and answers again as it is.
+  const credsBefore = (await win.Maity.api.getAll("/projects/sample/members/agt-s1/credentials")).items.filter((c) => !c.revoked_at).length;
+  const removedS = await win.Maity.api.del("/projects/sample/members/agt-s1");
+  const removedAgain = await win.Maity.api.del("/projects/sample/members/agt-s1");
+  const tasksAfter = (await win.Maity.api.getAll("/projects/sample/tasks?status=all")).items;
+  const credsAfter = (await win.Maity.api.getAll("/projects/sample/members/agt-s1/credentials")).items;
+  expect(credsBefore > 0 && removedS.removed_at && removedAgain.removed_at === removedS.removed_at
+    && credsAfter.every((c) => c.revoked_at) && !tasksAfter.some((t) => t.claim && t.claim.holder === "agt-s1"),
+    "members: the mock's DELETE revokes, releases, and answers a second time as it is");
   // A plain member: no actions, no owner or credentials from the hub.
   const mGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? mGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").role = "member"; return x; })
     : p === "/projects/maity/members" ? mGet(p).then((x) => ({ items: x.items.map((y) => { const o = Object.assign({}, y); delete o.owner; delete o.credentials; return o; }), next_cursor: null }))
       : mGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/members");
-  const ths2 = main.querySelectorAll("table.members")[1].querySelectorAll("th").map((t) => t.textContent);
+  const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(!btn(main, "Manage") && !ths2.includes("Credentials") && !ths2.includes("Actions") && text(mRow("Agent A")).includes("Maintainer"),
     "members: a member reads the list without actions; the owner from the members");
   win.Maity.api.get = mGet;
