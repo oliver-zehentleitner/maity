@@ -128,12 +128,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (§9.2), and `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included (§8.5) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (the one exception: the owner of an agent in a group chat reads that chat along, §9.2), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (the one exception: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -2043,7 +2043,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
-| `event_redacted` | `role:owner`, `role:admin`; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat (§8.5) | `seq`, `reason` |
+| `event_redacted` | `role:owner`, `role:admin`; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason` |
 | `probe_observed` | holder of the affected card, `role:admin` | the observation |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -2188,9 +2188,21 @@ it out, and `by` records who did. An agent never redacts, its own
 message included (it asks a human in the chat, as everywhere else in this
 section). Anyone else who can read the message — an owner reading
 through its agent (§9.2), a former participant through `/events` — gets
-`forbidden` with `details.reason: "not_a_participant"`; whoever cannot
+`forbidden` with `details.reason: "not_a_participant"` (an owner outside
+the project gets `"observer"`, §9.2); whoever cannot
 read it gets `not_found`. Its `event_redacted` goes to the current
-participants. Replaces `payload` with
+participants. A group chat that has closed (§9.2) has no human
+participant left, so there the redaction passes to humans outside it:
+every former human participant may redact any message of the chat it
+could read (its readable set of `GET /events`), and a human with
+`members:admin` may redact a message of the chat by its `seq` without
+being able to read it, acting on a report. Its `event_redacted` then goes
+to the remaining participants, every former human participant and, for
+an admin's redaction, that admin. When an admin redacted, the `reason`,
+in the tombstone and in the event, is shown only to that admin and the
+chat's former human participants; everyone else who reads the message
+(the remaining agents, the owners reading along) sees `reason: null`.
+Agents and observers stay as above. Replaces `payload` with
 `{"redacted": true, "reason": "…", "by": "…", "at": "…"}` and sets
 `redacted: true`; `seq`, `kind`, `actor`, `subject`, `audience` stay, and
 the hub emits `event_redacted` so that the one mutation the log allows is
@@ -2449,7 +2461,10 @@ The conversation view:
   closes: `closed_at` is set, `closed_reason: "no_human"`, and it emits
   `conversation_updated` with `changed.closed`. A closed chat takes no
   message, participant or title change (`conversation_closed`, 409); its
-  participants keep reading it. It is not reopened — a human starts a new
+  participants keep reading it. Redaction stays possible: its former
+  human participants, and a human with `members:admin` acting on a
+  report, redact in it (§8.5), so a secret said in the room can still be
+  taken out after the last human left. It is not reopened — a human starts a new
   one. This keeps every group chat a room a human is in: agents of
   different owners never hold a channel among themselves that no human
   takes part in.
@@ -2507,10 +2522,17 @@ The conversation view:
   (§6.2); its owner still reads along, as a reader limited to the chats
   that agent is in, and is listed under `observers` like any other. For
   such a human `GET /projects/{slug}/conversations?observed=true` lists
-  exactly those chats (without `observed=true` the list is empty), and
-  `GET …/conversations/{id}` and `GET …/conversations/{id}/messages`
-  answer for them as for an observer who is a member. Every other route
-  of the project, `GET /events` and the member list included, stays
+  exactly those chats (without `observed=true` the list is empty); a
+  human who is not a member and has no agent in the project gets
+  `not_found` on this route, `observed=true` or not, so the route does
+  not tell an outsider that the project exists. `GET …/conversations/{id}`
+  and `GET …/conversations/{id}/messages` answer for those chats as for
+  an observer who is a member, and so do `GET …/attachments/{id}` and
+  `…/content` for the attachments of their messages (§8.7), the one
+  exception besides the chats themselves. Any write it makes in the
+  project, a post, a change to a chat or a redaction included, is
+  `forbidden` with `details.reason: "observer"`. Every other read of the
+  project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
   No event reaches a non-member, so there is no live update and no
@@ -3053,7 +3075,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/events/{seq}/redact` | `events:admin` | 8.5 |
 | GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{slug}/conversations` | human | 9.2 |
-| GET, PATCH | `/projects/{slug}/conversations/{id}` | participant, owner of an agent participant / creator, human participant with `members:admin` | 9.2 |
+| GET, PATCH | `/projects/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |
 | POST | `/projects/{slug}/conversations/{id}/participants` | creator, human participant with `members:admin` | 9.2 |
 | DELETE | `/projects/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
 | GET, POST | `/projects/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
