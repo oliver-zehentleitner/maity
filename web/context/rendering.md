@@ -165,3 +165,37 @@ The CSP blocks it on the hub, and it would show a file the hub then
 changes. An editor in Members for project admins: §6.10 gives
 `members:admin` no say over pictures, because a removal in one project
 would remove the picture in all of them.
+
+## Attachments: an image is shown from the hub's own path, every other file is only ever a download link, and nothing is previewed before it is sent
+
+**Id:** 52e88bfb-69a5-4f6d-95e8-a2a3dd8acdd7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §8.7 (#166) and the coordinator's card for the dashboard's part (tsk-tfw5shzzp0kw), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub serves files from a separate origin, offers previews, or a browser is found to render a served file anyway
+**See:** rendering.md#links-from-data-are-https-only-the-join-line-lives-in-the-join-view-and-nowhere-else — 5b7f6472-086d-4d69-87a5-0030204b76bc — as of 2026-10-23
+
+A message's image is an `<img>` of `…/attachments/{id}/content` on the
+hub's own origin. Every other file is shown as its name, size and type,
+with a link to `…/content?download=1`, and nothing of its content is
+shown: no preview, no viewer, no excerpt. The page lets `h()` use only
+that path, built from the project and the attachment id, as a link or an
+image source. A file is uploaded when it is chosen, and shows as pending
+by name and size until the message is sent; there is no preview of the
+chosen file. An image that does not load reads as removed, which covers a
+deletion and an access that ended.
+
+**Reason:** the hub re-encodes images and serves every other file as
+`octet-stream` with `attachment`, `nosniff` and a sandbox CSP, so the
+browser renders nothing but the pixels of an image. A page that
+previewed a file itself would undo that, because it would read the
+bytes into its own origin. Uploading at once is the contract's two
+steps: a failed post loses no upload, and the message names ids. A
+preview of the chosen file would need `blob:` images, which the hub's
+CSP refuses.
+
+**Rejected alternative:** a text excerpt or a PDF viewer for files: the
+contract excludes it, and it would parse untrusted bytes in the page.
+Uploading only on Send: a large file would hold the message back, and a
+failure would lose both.
