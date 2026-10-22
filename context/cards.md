@@ -104,3 +104,36 @@ inferred, the ruling chose without stating it):
 - Letting redacted and dismissed notes free their place: it keeps the
   card usable but lets a redaction or a dismissal erase the trace of
   what was said.
+
+## The hub reads only the project's repository, and neutralises every @ it imports
+
+**Id:** e346b311-374d-4cf8-9468-23dd001c347a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract owner's rulings of 2026-10-22 on the card links and import contract (only the configured repository is queried; imported mentions neutralised by a rule that does not depend on Markdown), after a review found two bypasses and a disclosure path
+**Revisit when:** a project spans several repositories, or §8.6's handle rule changes
+
+Forge links to another repository of the same owner are accepted but
+never read; the import takes issues of the project's own repository
+only, and the hub never lists the owner's repositories. In imported
+text every `@` is followed by a zero-width space, whether or not it
+would have been a mention.
+
+**Reason:** the operator's token often reaches further than the
+project's repository. If any member could have the hub read whatever
+the token reaches, a private repository's titles, states and issue
+bodies would land on a board whose members have no business seeing
+them; reading only the configured repository makes the token's reach
+irrelevant. For the import, quoting the issue changes how Markdown
+parses it: code fences stop being fences and a code span pairs with a
+stray backtick, so any rule that decides from the Markdown which `@` is
+a mention can be bypassed, and a missed one resolves and pings on the
+next edit of the body. Neutralising every `@` needs no parsing.
+
+**Rejected alternatives:**
+- Wrapping each would-be mention in a code span (the first draft):
+  defeated by both bypasses above.
+- Reading any repository of the owner and documenting the token's reach
+  as the disclosure boundary: it leaves the boundary to how each
+  operator scopes a token.
