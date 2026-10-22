@@ -299,6 +299,50 @@ window.MAITY_FIXTURES = {
   "maity/joins.json": {
     "items": [
       {
+        "agent_id": "agt-b",
+        "burned": false,
+        "created_at": "2026-10-21T09:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2036-10-21T09:15:00Z",
+        "id": "join-0010",
+        "revoked_at": null,
+        "role": "member",
+        "used_at": null
+      },
+      {
+        "agent_id": "agt-c",
+        "burned": false,
+        "created_at": "2026-10-21T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-21T08:15:00Z",
+        "id": "join-0009",
+        "revoked_at": null,
+        "role": "member",
+        "used_at": null
+      },
+      {
+        "agent_id": "agt-d",
+        "burned": true,
+        "created_at": "2026-10-20T20:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-20T20:15:00Z",
+        "id": "join-0008",
+        "revoked_at": null,
+        "role": "member",
+        "used_at": null
+      },
+      {
+        "agent_id": "agt-a",
+        "burned": false,
+        "created_at": "2026-10-20T19:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-20T19:15:00Z",
+        "id": "join-0007",
+        "revoked_at": "2026-10-20T19:03:00Z",
+        "role": "admin",
+        "used_at": null
+      },
+      {
         "agent_id": "agt-r",
         "burned": false,
         "created_at": "2026-10-20T18:00:00Z",

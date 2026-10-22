@@ -1,5 +1,9 @@
 {
   "items": [
+    { "id": "join-0010", "agent_id": "agt-b", "role": "member", "created_by": "hum-maintainer", "created_at": "2026-10-21T09:00:00Z", "expires_at": "2036-10-21T09:15:00Z", "used_at": null, "burned": false, "revoked_at": null },
+    { "id": "join-0009", "agent_id": "agt-c", "role": "member", "created_by": "hum-maintainer", "created_at": "2026-10-21T08:00:00Z", "expires_at": "2026-10-21T08:15:00Z", "used_at": null, "burned": false, "revoked_at": null },
+    { "id": "join-0008", "agent_id": "agt-d", "role": "member", "created_by": "hum-maintainer", "created_at": "2026-10-20T20:00:00Z", "expires_at": "2026-10-20T20:15:00Z", "used_at": null, "burned": true, "revoked_at": null },
+    { "id": "join-0007", "agent_id": "agt-a", "role": "admin", "created_by": "hum-maintainer", "created_at": "2026-10-20T19:00:00Z", "expires_at": "2026-10-20T19:15:00Z", "used_at": null, "burned": false, "revoked_at": "2026-10-20T19:03:00Z" },
     { "id": "join-0006", "agent_id": "agt-r", "role": "reviewer", "created_by": "hum-maintainer", "created_at": "2026-10-20T18:00:00Z", "expires_at": "2026-10-20T18:15:00Z", "used_at": "2026-10-20T18:02:00Z", "burned": false, "revoked_at": null }
   ],
   "next_cursor": null

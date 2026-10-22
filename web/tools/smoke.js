@@ -747,6 +747,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   await go("#/p/maity/join");
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
+  // Each join's state from its fields; only an open one can be revoked, and it comes first.
+  const joinRow = (id) => main.querySelectorAll(".joins li").find((li) => li.textContent.includes(id));
+  const openRows = main.querySelector(".open-joins").querySelectorAll("li");
+  expect(openRows.length === 1 && joinRow("join-0010").classList.contains("join-open") && text(joinRow("join-0010")).startsWith("open join-0010")
+    && text(joinRow("join-0010")).includes("open until") && btn(joinRow("join-0010"), "Revoke"), "joins: an open join is listed first, with Revoke");
+  const closedRows = main.querySelector(".closed-joins").querySelectorAll("li");
+  expect(closedRows.length === 4 && closedRows.every((li) => !btn(li, "Revoke")), "joins: used, expired, burned and revoked joins have no Revoke");
+  expect(text(joinRow("join-0009")).startsWith("expired join-0009") && text(joinRow("join-0009")).includes("· expired ")
+    && joinRow("join-0009").classList.contains("join-expired"), "joins: an expired join says expired, not open");
+  expect(text(joinRow("join-0008")).startsWith("burned") && text(joinRow("join-0008")).includes("refused after three wrong codes"), "joins: a burned join");
+  expect(text(joinRow("join-0007")).startsWith("revoked") && text(joinRow("join-0007")).includes("· revoked "), "joins: a revoked join");
+  expect(text(joinRow("join-0006")).startsWith("used") && text(joinRow("join-0006")).includes("· used "), "joins: a used join");
   expect(main.all().some((e) => e.attrs.pattern) && !badPatterns().length, "join: every pattern compiles with the v flag " + badPatterns());
   byId("join-agent").value = "agt-x";
   const joinPosts = [];
@@ -780,6 +792,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
   expect(main.querySelectorAll(".joins li")[0].textContent.includes("Agent New as member"), "the joins list names the new profile");
+  // A join that expires while the view is open moves to the others without a reload.
+  const jAll = win.Maity.api.getAll;
+  const soon = { id: "join-soon", agent_id: "agt-b", role: "member", created_by: "hum-maintainer", created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60).toISOString(), used_at: null, burned: false, revoked_at: null };
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/joins" ? Promise.resolve({ items: [soon], next_cursor: null }) : jAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  expect(btn(joinRow("join-soon"), "Revoke") && main.querySelector(".open-joins"), "joins: open while it lasts");
+  await new Promise((r) => setTimeout(r, 80)); await fireIntervals(); await tick();
+  expect(!main.querySelector(".open-joins") && text(main).includes("No open join.") && text(joinRow("join-soon")).startsWith("expired")
+    && !btn(joinRow("join-soon"), "Revoke"), "joins: expired while the view is open, without a reload");
+  win.Maity.api.getAll = jAll;
   await go("#/p/maity/inbox");
   expect(!text(main).includes("FIXTURE"), "the line is gone after leaving the view");
   // count polling: a change offers a reload instead of replacing the list
