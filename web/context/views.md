@@ -309,3 +309,38 @@ moving by buttons would then miss the project, hence the hidden prefix.
 cannot be a link there, and its place after the priority read as just
 another label. An `aria-label` on the button — it would have to repeat
 the visible text word for word (axe label-content-name-mismatch).
+
+## The overview is the second tab, redrawn in place, and its counts failing leaves the rest standing
+
+**Id:** e585b67d-8a1a-4e68-8ea7-814ec4fbc251
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the overview contract (docs/api.md §6.11, PR #189) and its contract owner's rulings, 2026-10-22; the coordinator's card for the view (tsk-hha96xyqcpdd), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the overview gains merges from the change ticker (#180) or releases, or the inbox stops being the landing page
+
+`#/p/<slug>/overview` gets the tab right after **Inbox**, while the inbox
+stays the landing page. The view is five parts: links, members, board
+counts, open requests and the latest reports. Links and members come
+from what the header already holds. The counts come from one
+`GET …/overview` with the board's window, read again on `task_*`,
+`request_*` and `probe_observed` and redrawn in place, with no Reload
+offer. A viewer who is neither owner nor admin is in few of those
+events' audiences (§8.2), so for them the view also re-reads every 60
+seconds and when the tab comes back. A trigger that arrives during a
+read causes one more read after it, and a redraw puts the focus back on
+the same link. If that call fails, links and members still show, and the place
+of the counts says why they are missing.
+
+**Reason:** the inbox is where the human acts. The overview is where
+they look first after a while away, so it sits next to the inbox
+without replacing it. A summary is not read line by line, so redrawing
+it does not pull text away from a reader, which is why the contract
+asks for it in place. Links and members do not depend on the new call,
+so one missing endpoint should not blank the page.
+
+**Rejected alternative:** the overview as the landing page. The contract
+keeps the inbox there, and what waits for an answer matters more than a
+summary. The board's "changed, Reload" notice would interrupt nothing
+worth protecting here. One error for the whole view: it hides what the
+page already has.
