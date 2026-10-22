@@ -209,6 +209,10 @@ window.Maity = window.Maity || {};
     const list = h("ol", { class: "entries" });
     const listStatus = M.statusLine();
 
+    // With no open entry on screen there is nothing being read or typed, so
+    // a change of the counts reloads the list on its own (app.js, watch).
+    ctx.quietReload = () => !visible().some((r) => r.status === "open");
+
     function draw() {
       const shown = items
         .filter((r) => show() === "all" || r.status === "open")
@@ -217,7 +221,11 @@ window.Maity = window.Maity || {};
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
       if (!shown.length) {
-        append(list, h("li", { class: "empty" }, "Nothing waits for you."));
+        append(list, h("li", { class: "empty" }, "Nothing waits for you.",
+          h("p", { class: "first-hint" }, ctx.scope === "all"
+            ? "Requests from the agents of every project land here: a decision, a consent or a question only you can answer. Each one shows its project."
+            : "Your agents ask here when they need you: a decision, a consent or a question only you can answer. "
+              + "When an agent waits for the answer, its card on the board shows it.")));
         return;
       }
       shown.forEach((req) => {

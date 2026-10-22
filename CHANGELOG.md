@@ -61,6 +61,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: a browser end-to-end test (`web/tools/e2e.py`, CI job `web-e2e`): headless
   Chromium against a real hub on SQLite, the agent through the `maity` CLI, from
   sign-in to the answer that wakes `maity wait`, with a screenshot of every step
+- web: first-time hints: the empty inbox and board say where their content comes from,
+  the join line says where to paste it, the board's subtitle says that open cards are
+  all shown, a tab row wider than the screen fades where more tabs are, and an inbox
+  with nothing open on screen reloads on its own when a request arrives
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

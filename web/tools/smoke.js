@@ -27,6 +27,14 @@ class El extends Node_ {
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
   removeAttribute(k) { delete this.attrs[k]; }
+  get classList() {
+    const names = () => this.className.split(" ").filter(Boolean);
+    const set = (list) => { this.className = list.join(" "); };
+    return {
+      contains: (c) => names().includes(c),
+      toggle: (c, on) => { const has = names().includes(c); const want = on === undefined ? !has : on; set(want ? (has ? names() : names().concat(c)) : names().filter((x) => x !== c)); return want; },
+    };
+  }
   addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
   dispatch(t, extra) { const e = Object.assign({ target: this, preventDefault() {}, key: "" }, extra || {}); (this.listeners[t] || []).forEach((f) => f(e)); }
   click() { this.dispatch("click"); }
@@ -252,9 +260,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick();
   expect(gets.slice(before).filter((p) => p === "/me").length >= 1, "a request event re-reads /me");
   const realGet4 = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/me"
-    ? realGet2(p).then((m) => { m.projects[0].open_requests += 1; return m; })
+  const bump = (slug) => (p) => (p === "/me"
+    ? realGet2(p).then((m) => { m.projects.find((x) => x.slug === slug).open_requests += 1; return m; })
     : (p.includes("/events?") ? Promise.resolve({ items: [], cursor: 10004 }) : realGet2(p)));
+  // Nothing open on screen: nothing is being read or typed, so the list reloads on its own.
+  expect(!main.querySelectorAll("li.entry").some((e) => !e.className.includes("done")), "maity inbox has no open entry here");
+  win.Maity.api.get = bump("maity");
+  const beforeQuiet = gets.length;
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(!text(main).includes("What waits for you changed") && gets.slice(beforeQuiet).some((p) => p.startsWith("/projects/maity/requests")),
+    "a changed count reloads an empty list on its own, without a notice");
+  expect(main.querySelector(".notice") && main.querySelector(".notice").getAttribute("role") === "status" && text(main.querySelector(".notice")).includes("1 new request."),
+    "the quiet reload says \"1 new request.\" in the status notice");
+  // The same with the State & absence panel open and typed in: no reload, the offer instead.
+  win.Maity.api.get = realGet2; await go("#/p/maity/board"); await go("#/p/maity/inbox");
+  btn(header, "State & absence").click(); await tick();
+  byId("state-reason").value = "typed, not sent";
+  win.Maity.api.get = bump("maity");
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
+    "with the State & absence panel open the empty list is not reloaded; the panel and its text stay");
+  btn(header, "State & absence").click(); await tick();
+  // An open entry on screen: the change is offered as a reload instead.
+  win.Maity.api.get = realGet2;
+  await go("#/p/sample/inbox");
+  expect(main.querySelector("li.entry.current"), "sample inbox has an open entry");
+  win.Maity.api.get = bump("sample");
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("What waits for you changed") && btn(main, "Reload the list"), "a changed open count offers to reload the list");
   win.Maity.api.get = realGet4;
@@ -269,6 +300,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-x";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   btn(main, "Revoke").click(); await tick(); await tick();
@@ -360,6 +392,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No agents in this project yet") && main.querySelectorAll("a").some((a) => a.textContent === "Join an agent."),
     "the new project offers to join an agent");
   expect(chip("Dogfood Hub") && chip("Dogfood Hub").getAttribute("aria-current") === "page", "the new project is in the switcher");
+  // A first-time human: the empty board and inbox say where their content comes from.
+  await go("#/p/dogfood/board");
+  expect(text(main).includes("Every open card, and the done and cancelled ones of the last 14 days.")
+    && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
+  await go("#/p/dogfood/inbox");
+  expect(text(main).includes("Nothing waits for you.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
 

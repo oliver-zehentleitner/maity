@@ -213,6 +213,18 @@ window.Maity = window.Maity || {};
     h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
   }
 
+  // A row that scrolls shows it: a fade on the side with more entries. Set
+  // on render, on the row's scroll and on a resize or rotation.
+  function updateCue(nav) {
+    const more = nav.scrollWidth - nav.clientWidth;
+    nav.classList.toggle("more-before", more > 1 && nav.scrollLeft > 1);
+    nav.classList.toggle("more-after", more > 1 && nav.scrollLeft < more - 1);
+  }
+  function scrollCue(nav) {
+    nav.addEventListener("scroll", () => updateCue(nav), { passive: true });
+    updateCue(nav);
+  }
+
   // A tab row scrolls sideways on its own when it is wider than the screen;
   // the current tab is scrolled into it, without moving the page.
   function showCurrent(nav) {
@@ -234,6 +246,7 @@ window.Maity = window.Maity || {};
     old.parentNode.insertBefore(fresh, old);
     old.remove();
     fresh.scrollLeft = scrolled;
+    scrollCue(fresh);
   }
 
   function renderHeader(ctx, current) {
@@ -279,7 +292,7 @@ window.Maity = window.Maity || {};
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))
         : null);
-    header.querySelectorAll("nav").forEach(showCurrent);
+    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
   }
 
   // ---- context ------------------------------------------------------------
@@ -352,6 +365,9 @@ window.Maity = window.Maity || {};
   // head on: requests re-read the counts at once, and an event of a kind
   // the view watches, from someone else, offers a reload. Listeners added
   // with ctx.onEvents get every event, the human's own included.
+  // Set by a quiet reload of the inbox, shown once by the next watch().
+  let quietNote = null;
+
   function watch(ctx, where, item, main) {
     const openNow = () => (where.scope === "all"
       ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
@@ -362,6 +378,10 @@ window.Maity = window.Maity || {};
     const failLine = h("div");
     const notice = h("div", { class: "notice", role: "status" }, countLine, changeLine, failLine);
     main.insertBefore(notice, main.firstChild);
+    if (quietNote) {
+      append(countLine, h("p", { class: "muted" }, quietNote));
+      quietNote = null;
+    }
     const reload = h("button", { type: "button", class: "small", onclick: () => render() }, "Reload");
     const changed = new Set();
 
@@ -370,6 +390,17 @@ window.Maity = window.Maity || {};
       clear(countLine);
       const now = openNow();
       if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
+        // Nothing open on screen and nobody busy in the header (the State &
+        // absence panel, a focused control): the list reloads on its own,
+        // and says so to a screen reader in the next render's notice.
+        const header = document.getElementById("header");
+        const busy = header.querySelector(".panel") || (document.activeElement && header.contains(document.activeElement));
+        if (ctx.quietReload && ctx.quietReload() && !busy) {
+          const n = now - seen;
+          quietNote = n > 0 ? n + (n === 1 ? " new request." : " new requests.") : "The list was updated (" + now + " open).";
+          render();
+          return;
+        }
         append(countLine, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
           h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
       }
@@ -490,5 +521,8 @@ window.Maity = window.Maity || {};
   M.STATE_LABELS = STATE_LABELS;
 
   window.addEventListener("hashchange", render);
+  window.addEventListener("resize", () => {
+    document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
+  });
   document.addEventListener("DOMContentLoaded", render);
 })(window.Maity);
