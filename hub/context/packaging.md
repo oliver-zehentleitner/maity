@@ -55,3 +55,45 @@ image too, and the volume keeps the data across container restarts.
 name `MAITY_DATABASE_URL` in one line. Clear, but the image would then be
 the one way to run the hub that cannot start without configuration, and
 a quick look would need a server database first.
+
+## The tested set pinned in hashed requirements files from `uv pip compile --universal`
+
+**Id:** c43481ca-facf-4f92-bac4-df5c6468cde8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the constraints task)
+**See:** packaging.md — dc0b5562-83c6-4182-b541-16869cfb7313 — as of 2026-10-22
+**Revisit when:** pip installs from a standard lock file (`pylock.toml`) without uv, or the hub needs a dependency without wheels for some platform the image or CI uses
+
+`pyproject.toml` keeps lower bounds. The exact versions CI tests and the
+image ships live in `hub/requirements/` as pip requirements files with a
+hash for every distribution. There are four: runtime, dev (constrained by
+runtime), build (hatchling and `editables`, constrained by dev) and tools
+(uv). `uv pip compile --universal` generates them for Python 3.12 or newer
+on every platform. They are installed with plain
+`pip install --require-hashes`, and the hub itself goes on top with
+`--no-deps`, so nothing is resolved twice. The wheel and the editable
+install are built without build isolation from the pinned backend.
+`make lock-check` recompiles in CI with the pinned uv and fails on any
+difference.
+
+**Reason:** the image should contain what CI proved, and every download
+should be checked against a hash recorded in review. Requirements files
+with hashes give both with pip alone, so neither the image nor a
+self-hoster needs uv at install time. The universal resolution keeps one
+file for Python 3.12 (the image) and 3.13 (the wheel job) instead of one
+file per interpreter.
+
+**Rejected alternatives:**
+- A constraints file (`pip install -c constraints.txt -e .`): pins the
+  same versions and pip checks hashes given there too, but a dependency
+  missing from the file is resolved to the newest release without a word.
+  A requirements file installed with `--require-hashes` turns any
+  unpinned dependency into an error.
+- `uv lock` with `uv.lock`: a full project lock, but pip cannot read it,
+  and the image and CI would depend on uv for installing, not only for
+  locking.
+- pip-tools' `pip-compile`: produces the same file format, but resolves
+  for the running interpreter only, so 3.12 and 3.13 would need separate
+  files.
