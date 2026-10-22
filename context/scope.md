@@ -148,3 +148,35 @@ otherwise, the default is the human's go.
 **Reason:** the maintainer's decision; the reason was not stated.
 
 **Alternatives:** unknown. The policy itself is still open.
+
+## What revoking a runner does to its agents is a setting: the operator sets the default and a floor, the project chooses within it
+
+**Id:** 943c3a36-b8b7-40b0-861a-2191c0c2b82c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to the runner design's question 6, 2026-10-22; contract change in `docs/api.md` §6.1, §15.3 and §16, revised after an adversarial review
+**Revisit when:** a revoked runner's agents are seen running on under `keep` after a compromise, or the hub gains a way to end an agent's process itself
+**See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-22
+
+When a runner is revoked or removed, each attached project applies
+`on_runner_revoke`: `keep` (the agents run on with their credentials,
+flagged on the dashboard), `stop` (the runner's placements are closed at
+once, its unused joins revoked, and the agents' credentials revoked after
+the stop grace so they can park their work), or `inherit` (the default)
+for the instance setting `MAITY_ON_RUNNER_REVOKE` — `keep` by default,
+`stop`, or `stop_floor`, which refuses a project's `keep`. The runner's
+owner can override every project with `agents: "stop"` on the revoke. A
+re-pair never triggers it, and a revocation because the credential leaked
+in a payload applies `keep`. The hub cannot end an agent's process or its
+forge access; that stays the machine's.
+
+**Reason:** the maintainer's answer: the server's operator and the
+project's owner should both be able to choose in their settings. The
+owner's override exists because the machine is the runner owner's, and a
+revocation is often the answer to a machine that is no longer trusted. A
+leaked runner key under `keep`: the key leaked, not the machine.
+
+**Alternatives:** a first version of the contract was replaced after its
+adversarial review; what it got wrong is not recorded here. Others:
+unknown.
