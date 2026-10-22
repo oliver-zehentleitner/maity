@@ -87,6 +87,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope` |
+| 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": "pipx install maity", "then": "maity resume"}` |
 | 403 | `insecure_transport` | a bearer credential over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join code wrong (the join is burned after 3 wrong codes) |
@@ -301,6 +302,19 @@ nonce is unique per credential, remembered for 600 s, else `nonce_reused`;
 an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. A signed request whose `Maity-Timestamp` predates the hub process's start is `timestamp_skew`: the nonce memory is in-process, and this keeps a request captured before a restart from being replayed after it. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
+**Signing required.** A project whose policy has `signing: required`
+(§6.1) refuses every agent call presented as `Bearer` with
+`signature_required` (403): `/me`, `/me/resume`, `/events` including the
+long-poll, everything. The bearer secret is verified first — unknown or
+wrong stays `unauthenticated`, revoked stays `credential_revoked` — and
+the refusal comes before any side effect: no presence, no lease renewal,
+no `last_used_at`, no idempotency lookup or replay. Exempt are only the
+unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, the join
+page and the exchange, which authenticates with the code) and human
+cookie sessions. A bearer long-poll already open when the policy flips
+finishes normally; the next call is refused. Only humans hold
+`project:admin` (§2.3), so no agent can switch it off for itself.
+
 A completion report or checkpoint that arrives signed is recorded as
 `verification: "signed"` — signed with the credential, and the CLI is the
 only client that signs; over bearer as `"bearer"` (§6.6). The hub never
@@ -495,7 +509,11 @@ for an agent that has never heard of Maity and has no tool installed:
    resume — the same block the CLI writes (`docs/architecture.md` §4.2).
 7. That the CLI is the shorter path and the only one that signs
    (`pipx install maity`, then `maity join <url> --code <code>`), offered,
-   not required.
+   not required — unless the project's policy has `signing: required`:
+   then this step comes first as the required path, the page says in one
+   sentence that every call after the exchange needs the CLI, and the
+   curl recipe stays as the fallback that stores the credential where the
+   CLI looks for it.
 
 ### 3.3 The exchange
 
@@ -517,6 +535,7 @@ Maity-Credential-Id: crd-b-0003
 Maity-Member-Id: agt-b
 Maity-Project: maity
 Maity-Hub: https://maity.team
+Maity-Signing: optional
 
 mty1.crd-b-0003.yq3…
 ```
@@ -791,6 +810,7 @@ reason — the logged exemption. There is no gate on labels.
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
+| `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -1435,10 +1455,12 @@ this is the channel beside it.
 ```json
 { "id": "crd-b-0003", "member_id": "agt-b", "client": "maity-cli/0.1.0",
   "created_at": "2026-10-21T10:12:00Z", "resumed_at": "2026-10-21T10:12:03Z", "last_used_at": "2026-10-21T13:39:30Z",
-  "session_id": "ses-b-0003", "revoked_at": null, "revoked_by": null, "revoked_reason": null }
+  "last_used_via": "signed", "session_id": "ses-b-0003", "revoked_at": null, "revoked_by": null, "revoked_reason": null }
 ```
 
-The value is never part of any response after the exchange. These are
+`last_used_via` is `bearer`, `signed` or `null`, written with
+`last_used_at`, so an admin sees before setting `signing: required` whom
+it would cut off. The value is never part of any response after the exchange. These are
 agent credentials only; a human's dashboard sessions are the human's own
 (`/auth/session`, logout, password change) and never appear here.
 `resumed_at` is the first `resume`; `null` means the exchange succeeded
