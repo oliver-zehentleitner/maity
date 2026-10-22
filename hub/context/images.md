@@ -20,6 +20,13 @@ holds a forge token, because a public repository's avatar can be read
 without one. A refresh that fails keeps the stored image; an answer of
 "none" drops it.
 
+A read-through runs once per project and kind at a time; other requests
+wait for it. After a failure, `GET` answers `probe_unavailable` for a
+minute without reading. The worker backs off per project and kind after
+failures, doubling from ten minutes up to six hours. A forge outage then
+neither ties up the request threads nor spends the rate limit that the
+probe shares on the same API host.
+
 **Reason:**
 - Building a project view must never wait on the network (latency, and
   a lever for anyone who can list projects), and neither should a `GET`

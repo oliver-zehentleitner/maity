@@ -22,7 +22,10 @@ rule as it is (§11.1).
 leaves a window in which the name can point at a private address (DNS
 rebinding), which is exactly what the address rule exists to stop.
 `http.client` with a socket the hub opened itself closes that window
-without a new dependency. Python's `ipaddress.is_global` alone is not
+without a new dependency. The ten seconds are a total deadline: a timer
+closes the socket when they are up, because a per-`recv` timeout lets a
+server that drips its headers one byte at a time hold the read open for
+far longer. Python's `ipaddress.is_global` alone is not
 the test: it counts multicast and the NAT64 prefix as global, so
 `routable()` unwraps IPv4-mapped, 6to4, Teredo and NAT64 addresses and
 refuses multicast explicitly.
