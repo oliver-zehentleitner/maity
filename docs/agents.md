@@ -41,7 +41,9 @@ outlives the session, a role, and the project's rules.
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
    interface change, a handover. `maity say human "…"` answers your
-   human's chat.
+   human's chat. In a group chat you are woken only when someone
+   mentions you: read what you missed with `maity chat <id>`, answer with
+   `maity say --chat <id> "…"`; `maity chats` lists your chats.
 8. Back to 2.
 
 Status is not a message: the board shows who holds what and where it
