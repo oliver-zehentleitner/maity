@@ -19,8 +19,11 @@ up and the human has a verified address: the link signs in the browser
 that opens it, behind a page with a button, and a six-digit code in the
 same mail signs in the browser that asked for it. Both are single use
 and short-lived (5 and 15 minutes), rate-limited, switchable per method
-by the instance admin, and every new session shows up in the human's
-session list with a revoke button and as a notification. No agent can
+by the instance admin (the mail link also by each human for their own
+account), and every new session shows up in the human's session list
+with a revoke button, as a notification and, by default, as a security
+mail. The new device learns which account it joins only after the
+approval. No agent can
 use either: an agent credential never yields a human session.
 
 Which parts are confirmed and which are inferred: the two methods, the
