@@ -111,7 +111,7 @@ def recorded(cfg: config.Config, n: int = 3, credential: bool = True) -> workspa
     if credential:
         (place.path / ".git" / "maity").mkdir(mode=0o700)
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
-    workspace._record(cfg.state_dir, place, f"agt-{n}", f"plc-000{n}")
+    workspace.record(cfg.state_dir, place, f"agt-{n}", f"plc-000{n}")
     return place
 
 
@@ -380,7 +380,7 @@ def new_clone(cfg: config.Config) -> workspace.Workspace:
     place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
     (place.path / ".git").mkdir(parents=True)
     (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
-    workspace._record(cfg.state_dir, place, "agent-3", "plc-0003")
+    workspace.record(cfg.state_dir, place, "agent-3", "plc-0003")
     return place
 
 
@@ -754,7 +754,7 @@ def test_two_placements_whose_names_would_have_collided_both_run(world: Any) -> 
         (place.path / ".git" / "maity").mkdir(parents=True)
         (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
-        workspace._record(sup.cfg.state_dir, place, p["agent"]["id"], p["id"])
+        workspace.record(sup.cfg.state_dir, place, p["agent"]["id"], p["id"])
     sup.update([first, second])
     settle(sup)
     clock.now += 10_000

@@ -217,7 +217,10 @@ class Service:
                 "error": error,
                 "retry_at": utc(time.time() + retry_in) if retry_in is not None else None,
                 "placements": [
-                    {k: p.get(k) for k in ("id", "project", "generation", "desired")}
+                    {
+                        **{k: p.get(k) for k in ("id", "project", "generation", "desired")},
+                        "agent": (p.get("agent") or {}).get("handle"),
+                    }
                     for p in self.placements
                 ],
                 "updated_at": utc(),

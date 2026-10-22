@@ -210,7 +210,7 @@ def test_status_file_after_hello(tmp_path: Path) -> None:
     status = state.load_state(tmp_path / "st", name=serve.STATUS_FILE)
     assert status["connected"] is True and status["session_id"] == "rses-1"
     assert status["pid"] == os.getpid() and status["cursor"] == 5120
-    assert status["placements"] == [PLACEMENT]
+    assert status["placements"] == [{**PLACEMENT, "agent": None}]
 
 
 # --- capabilities ----------------------------------------------------------------------------
@@ -315,7 +315,7 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     capsys.readouterr()
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     view = json.loads(capsys.readouterr().out)
-    assert view["runner_id"] == "rnr-0002" and view["placements"] == [PLACEMENT]
+    assert view["runner_id"] == "rnr-0002" and view["placements"] == [{**PLACEMENT, "agent": None}]
 
 
 def test_serve_refuses_to_start_without_a_credential(
