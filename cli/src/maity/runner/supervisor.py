@@ -20,6 +20,7 @@ import os
 import random
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import threading
@@ -93,9 +94,9 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
-LIMIT_MAX = 7 * 24 * 3600.0  # a named reset further out is capped (§15.7)
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
+LIMIT_BYTES = 512
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -133,17 +134,6 @@ def valid(p: Any) -> bool:
 
 def _count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
-def _when(value: Any) -> float | None:
-    """An RFC 3339 time with an offset as a timestamp; None for anything else."""
-    if not isinstance(value, str):
-        return None
-    try:
-        moment = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return moment.timestamp() if moment.tzinfo is not None else None
 
 
 def stamp(moment: float | None) -> str | None:
@@ -370,7 +360,8 @@ class Supervisor:
         if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
             rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
             return 0
-        if alive >= self.cfg.limits.max_agents:
+        # A restart at retry_at takes the slot it kept: it never waits for capacity (§15.7).
+        if alive - (rec.state == "rate_limited") >= self.cfg.limits.max_agents:
             rec.enter(now, "pending", "capacity")
             return 0
         return self._launch(p, rec, now)
@@ -420,30 +411,57 @@ class Supervisor:
 
     def _rate_limited(self, rec: Record, now: float) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
-        the reset time it named, at most 7 days ahead, or the fixed backoff: 15 minutes,
-        doubling with each limit in a row without one, up to 2 hours."""
-        assert self.cfg.local is not None  # noqa: S101 - the local backend's supervisor
-        found: dict[str, Any] = {}
+        the fixed backoff, 15 minutes, doubling with each limit in a row up to 2 hours; a
+        session that ran longer than `quick_exit` before its limit starts the row over (the
+        loop's clean runs in between never reach the runner). A reset time the harness names
+        is not used until a real run shows where to read it (`reset_unknown` until then)."""
         pid = next((p for p, r in self.records.items() if r is rec), "")
-        try:
-            data = json.loads(
-                (self.cfg.state_dir / "agents" / pid / adapters.LIMIT_FILE).read_text()
-            )
-            found = data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            pass
-        code = found.get("exit_code")
-        reset = _when(found.get("reset_at"))
-        if reset is not None and reset > now:
-            retry_at, detail = min(reset, now + LIMIT_MAX), None
+        code = self._limit_exit_code(pid)
+        started = rec.started_at
+        if started is None or now - started > self.cfg.limits.restart.quick_exit:
             rec.limits_unknown = 0
-        else:
-            rec.limits_unknown += 1
-            backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
-            retry_at, detail = now + backoff, "reset_unknown"
-        rec.enter(now, "rate_limited", "quota", detail=detail, retry_at=retry_at,
-                  exit_code=code if isinstance(code, int) else None)  # fmt: skip
+        rec.limits_unknown += 1
+        backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
+        retry_at = now + backoff
+        rec.enter(now, "rate_limited", "quota", detail="reset_unknown", retry_at=retry_at,
+                  exit_code=code)  # fmt: skip
         self.log(f"{pid}: the harness stopped for its provider's limit; again at {stamp(retry_at)}")
+
+    def _limit_file(self, pid: str) -> Path:
+        assert self.cfg.local is not None  # noqa: S101 - the local backend's supervisor
+        return self.cfg.local.agent_files / "agents" / pid / adapters.LIMIT_FILE
+
+    def _clear_limit_file(self, pid: str) -> None:
+        path = self._limit_file(pid)
+        if self.as_user.user:
+            self.as_user.run(["rm", "-f", "--", str(path)])
+        else:
+            path.unlink(missing_ok=True)
+
+    def _limit_exit_code(self, pid: str) -> int | None:
+        """The harness's exit code from the loop's `limit.json`. The file is on the agents'
+        side, which may have written or replaced it: a regular file only, never followed
+        through a link, at most LIMIT_BYTES, and nothing but a plain exit code taken."""
+        path, as_user = self._limit_file(pid), self.as_user
+        try:
+            if as_user.user:
+                done = as_user.run(["sh", "-c", '[ -f "$1" ] && [ ! -L "$1" ] && head -c '
+                                    f'{LIMIT_BYTES} -- "$1"', "sh", str(path)])  # fmt: skip
+                raw = done.stdout if done.returncode == 0 else ""
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    if not stat.S_ISREG(os.fstat(fd).st_mode):
+                        return None
+                    raw = os.read(fd, LIMIT_BYTES).decode("utf-8", errors="replace")
+                finally:
+                    os.close(fd)
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
+            return None
+        code = data.get("exit_code") if isinstance(data, dict) else None
+        valid = isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 255
+        return code if valid else None
 
     # --- starting --------------------------------------------------------------------------
 
@@ -567,6 +585,7 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             launch = adapters.launch(self._context(p, harness, place))
+            self._clear_limit_file(p["id"])  # only the loop of this run may leave one
             self.backend.start(name, place.path, launch.argv, launch.env, p["id"], p["generation"])
         except workspace.Refused as refused:
             with self.lock:

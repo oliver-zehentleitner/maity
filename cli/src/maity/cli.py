@@ -808,17 +808,22 @@ def _avatar_line(answer: Any) -> str:
     return f"{onboarding.inline(url)} ({onboarding.inline(source or 'unknown source')})"
 
 
-# --- the limit (§6.11) --------------------------------------------------------------------------
+# --- the limit (§6.12) --------------------------------------------------------------------------
 
 LIMIT_MAX = 7 * 24 * 3600
-_DURATION = re.compile(r"^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
+_DURATION = re.compile(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.ASCII)
+_RFC3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:[Zz]|[+-]\d{2}:\d{2})", re.ASCII
+)
+_NO_OFFSET = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?", re.ASCII)
 
 
 def limit_until(value: str, now: float | None = None) -> str:
     """`--until` as RFC 3339 in UTC with `Z`: a timestamp with an offset (converted), or a
-    duration from now (`90m`, `1h30m`, `2d12h`). A timestamp without an offset is refused,
-    never read as local time: an agent's zone is often not its human's."""
-    match = _DURATION.match(value)
+    duration from now (`90m`, `1h30m`, `2d12h`; §13's grammar, ASCII digits only). A
+    timestamp without an offset is refused, never read as local time: an agent's zone is
+    often not its human's. Nothing but these two forms is accepted."""
+    match = _DURATION.fullmatch(value)
     if value and match and any(match.groups()):
         if any(g is not None and int(g) == 0 for g in match.groups()):
             raise UsageError(f"--until {value!r}: each part of a duration is a positive number")
@@ -827,28 +832,25 @@ def limit_until(value: str, now: float | None = None) -> str:
         if seconds > LIMIT_MAX:
             raise UsageError(f"--until {value!r}: at most 7 days ahead")
         moment = datetime.fromtimestamp((time.time() if now is None else now) + seconds, tz=UTC)
-    else:
-        parsed: datetime | None = None
-        try:
-            parsed = datetime.fromisoformat(value) if "T" in value else None
-        except ValueError:
-            pass
-        if parsed is None:
-            raise UsageError(
-                f"--until {value!r}: an RFC 3339 time with an offset "
-                "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
-            )
-        if parsed.tzinfo is None:
-            raise UsageError(
-                f"--until {value!r} has no offset; add Z or ±hh:mm (it is never read as "
-                "local time)"
-            )
-        moment = parsed.astimezone(UTC)
+        return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if _NO_OFFSET.fullmatch(value):
+        raise UsageError(
+            f"--until {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
+        )
+    if not _RFC3339.fullmatch(value):
+        raise UsageError(
+            f"--until {value!r}: an RFC 3339 time with an offset "
+            "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
+        )
+    try:
+        moment = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
+    except (ValueError, OverflowError):
+        raise UsageError(f"--until {value!r}: not a time this CLI can send") from None
     return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def cmd_limit(args: argparse.Namespace) -> int:
-    """`POST /me/limit` before the session stops for a provider limit (§6.11); the next
+    """`POST /me/limit` before the session stops for a provider limit (§6.12); the next
     `maity resume` clears it."""
     body: dict[str, Any] = {"until": limit_until(args.until)}
     if args.reason:
@@ -1224,11 +1226,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "limit",
         "declare a provider limit before the session stops",
-        "Tell the hub you are out until a time: `POST /me/limit` (§6.11). Run it before the "
+        "Tell the hub you are out until a time: `POST /me/limit` (§6.12). Run it before the "
         "session stops for a provider limit; the next `maity resume` clears it. TIME is an "
         "RFC 3339 timestamp with an offset (2026-10-22T17:00:00Z) or a duration from now "
         "(90m, 3h, 1h30m, 2d12h: units d, h, m, s in that order, each once), at most 7 days "
-        "ahead. A timestamp without an offset is refused: it is never read as local time.",
+        "ahead (by this machine's clock; the hub may refuse the very edge if its clock differs). "
+        "A timestamp without an offset is refused: it is never read as local time.",
     )
     p.add_argument("--until", required=True, metavar="TIME", help="when you are back")
     p.add_argument("--reason", help="why, at most 200 characters")

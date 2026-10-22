@@ -313,3 +313,23 @@ def test_the_sandbox_tools_are_found_as_the_agents_user(tmp_path: Path, fake_sud
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
     assert "command -v" in fake_sudo.read_text()
+
+
+def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    from test_supervisor import FakeTmux
+
+    from maity.runner import adapters
+
+    cfg = load(tmp_path, monkeypatch)
+    assert cfg.local is not None
+    sup = supervisor.Supervisor(cfg, FakeTmux(), None, print, {})  # type: ignore[arg-type]
+    path = cfg.local.agent_files / "agents" / "plc-0003" / adapters.LIMIT_FILE
+    path.parent.mkdir(parents=True)
+    path.write_text('{"exit_code": 75}')
+    assert sup._limit_exit_code("plc-0003") == 75
+    assert "head -c 512" in fake_sudo.read_text()
+    path.unlink()
+    path.symlink_to("/dev/zero")
+    assert sup._limit_exit_code("plc-0003") is None  # a link is never followed

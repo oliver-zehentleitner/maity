@@ -183,7 +183,7 @@ def _cover(item: dict[str, Any], names: dict[str, str]) -> str:
 
 
 def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
-    """The Availability block (§6.11): whom the caller covers, with the handed-over ids, and
+    """The Availability block (§6.12): whom the caller covers, with the handed-over ids, and
     every peer that is not available. Empty when there is nothing to say."""
     covering = _items(get(packet, "membership", "covering"))
     held = [*_items(packet.get("claims")), *_items(packet.get("assigned"))]
@@ -193,6 +193,8 @@ def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for entry in covering:
         member = entry.get("member_id")
+        if not isinstance(member, str):
+            continue  # a malformed entry would match every item without `cover`
         ids = [inline(item.get("id")) for item in held if get(item, "cover", "for") == member]
         line = f"  covering @{_name(member, names)} since {inline(entry.get('since'))}"
         lines.append(line + (": " + ", ".join(ids) if ids else ""))

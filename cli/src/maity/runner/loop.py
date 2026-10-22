@@ -7,7 +7,7 @@ burst settle, and runs the harness again, whose `maity resume` lists the event a
 Exit codes the runner maps (§15.7): 20 the agent's credential is revoked
 (`agent_credential_revoked`), 21 runs keep ending without progress (`crash_loop`,
 `hot_loop`), 22 the harness stopped for its provider's limit (`rate_limited`, with the
-harness's own exit code and any reset time in the spec's `limit.file`). Which exits mean a
+harness's own exit code in the spec's `limit.file`). Which exits mean a
 limit is the adapter's `limit` in the spec, and only a signal verified on a real run of that
 harness goes there; without one, a limit is an ordinary non-zero exit. A run that ends
 within `quick_exit` without the event having been acknowledged counts toward `crash_cap`
@@ -63,15 +63,18 @@ class Loop:
 
     def limited(self, code: int) -> bool:
         """Whether exit `code` is the harness's provider limit, by the adapter's verified
-        signal; if so, the harness's own code (and no reset time: none is read yet) goes to
-        the spec's file for the runner."""
+        signal; if so, the harness's own code goes to the spec's file for the runner (no
+        reset time: none is read until a real run shows where a harness names it)."""
         limit = self.spec.get("limit") or {}
         if code not in (limit.get("exit_codes") or []):
             return False
         self.log("the harness stopped for its provider's limit")
-        if limit.get("file"):
-            with open(limit["file"], "w", encoding="utf-8") as fh:
-                json.dump({"exit_code": code, "reset_at": None}, fh)
+        try:
+            if limit.get("file"):
+                with open(limit["file"], "w", encoding="utf-8") as fh:
+                    json.dump({"exit_code": code}, fh)
+        except OSError as exc:  # still a limit: the runner then reports no exit code
+            self.log(f"cannot record the limit's exit code: {exc}")
         return True
 
     def turn(self, argv: list[str]) -> int | None:
