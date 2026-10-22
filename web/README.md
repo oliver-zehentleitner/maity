@@ -107,10 +107,13 @@ Inside a project, in the order of their importance; see
    after the exchange, never on the join page), and shows the paste line
    once, with a copy button. The joins below are open ones first (each
    with **Revoke**), then the others, muted, each labelled with its state
-   from the join's fields: used, expired (its `expires_at` has passed;
-   judged against the clock while the view is open, so a join that
-   expires on screen moves down without a reload), burned (refused after
-   three wrong codes) or revoked.
+   from the join's fields, in the hub's order: revoked, used, burned
+   (refused after three wrong codes), expired. Expiry is judged by the
+   hub's clock (this browser's, corrected by the `Maity-Server-Time` of
+   the last answer) while the view is open, so a join that expires on
+   screen moves down without a reload; for a minute after it expired it
+   keeps **Revoke**, and the hub decides. A Revoke the hub refuses
+   (`invalid_transition`) is said and the list re-read.
 7. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard
    state as the hub read it, read-only. A headline says how many entries

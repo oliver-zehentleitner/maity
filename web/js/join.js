@@ -11,18 +11,22 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
-  // Expiry emits no event; the list re-judges it on this interval.
+  // Expiry emits no event; the list re-judges it on this interval, by the
+  // hub's clock (M.api.now). A join expired less than GRACE_MS ago keeps
+  // Revoke: what the hub still accepts must stay revocable, and the hub
+  // decides.
   const EXPIRY_MS = 10000;
+  const GRACE_MS = 60000;
 
   const ROLES = ["member", "reviewer", "proxy", "admin"];
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
-  // A join's state from GET /joins (docs/api.md §3.1): what ended it
-  // first by its own act, else the clock.
+  // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
+  // revoked, used, burned, then the clock.
   function joinState(j, now) {
     if (j.revoked_at) return { key: "revoked", label: "revoked", text: "revoked " + formatTime(j.revoked_at) };
-    if (j.burned) return { key: "burned", label: "burned", text: "refused after three wrong codes" };
     if (j.used_at) return { key: "used", label: "used", text: "used " + formatTime(j.used_at) };
+    if (j.burned) return { key: "burned", label: "burned", text: "refused after three wrong codes" };
     if (Date.parse(j.expires_at) <= now) return { key: "expired", label: "expired", text: "expired " + formatTime(j.expires_at) };
     return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
   }
@@ -165,19 +169,34 @@ window.Maity = window.Maity || {};
 
     const listBox = h("div");
     let shownList = null;
-    let shownOpen = "";
+    let shownKey = "";
+    // One status line for the list, so a redraw keeps an error on screen.
+    const listStatus = M.statusLine();
+    const revocable = (j, state, now) => state.key === "open"
+      || (state.key === "expired" && now - Date.parse(j.expires_at) < GRACE_MS);
+    // What a redraw would change: the open set and the revocable set.
+    const keyOf = (list, now) => list.items.map((j) => {
+      const state = joinState(j, now);
+      return j.id + ":" + state.key + (revocable(j, state, now) ? "+" : "");
+    }).join(" ");
+    async function reread() {
+      try {
+        drawJoins(await M.api.getAll(ctx.base + "/joins"));
+      } catch (err) {
+        listStatus.fail("The joins could not be read: ", err);
+      }
+    }
     function drawJoins(list) {
       shownList = list;
-      const now = Date.now();
-      const listStatus = M.statusLine();
+      const now = M.api.now();
+      shownKey = keyOf(list, now);
       const rows = list.items.map((j) => ({ j, state: joinState(j, now) }));
       const open = rows.filter((r) => r.state.key === "open");
       const done = rows.filter((r) => r.state.key !== "open");
-      shownOpen = open.map((r) => r.j.id).join(" ");
       const row = ({ j, state }) => h("li", { class: "join-" + state.key },
         h("span", { class: "badge join-state" }, state.label), " ",
         h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text,
-        state.key === "open"
+        revocable(j, state, now)
           ? h("button", {
                 type: "button",
                 class: "danger",
@@ -185,9 +204,12 @@ window.Maity = window.Maity || {};
                   listStatus.busy("Revoking…");
                   try {
                     await M.api.del(ctx.base + "/joins/" + encodeURIComponent(j.id));
-                    drawJoins(await M.api.getAll(ctx.base + "/joins"));
+                    listStatus.done();
+                    await reread();
                   } catch (err) {
                     listStatus.fail("Not revoked: ", err);
+                    // Used, burned or expired meanwhile: show it as the hub has it.
+                    if (err.code === "invalid_transition") await reread();
                   }
                 },
               }, "Revoke")
@@ -196,16 +218,12 @@ window.Maity = window.Maity || {};
         !rows.length ? h("p", { class: "muted" }, "No joins yet.") : null,
         open.length ? h("ul", { class: "joins open-joins", "aria-label": "Open joins" }, open.map(row)) : null,
         rows.length && !open.length ? h("p", { class: "muted" }, "No open join.") : null,
-        done.length ? [h("h4", null, "Used, expired or revoked"), h("ul", { class: "joins closed-joins" }, done.map(row))] : null,
+        done.length ? [h("h4", null, "No longer usable"), h("ul", { class: "joins closed-joins" }, done.map(row))] : null,
         listStatus.el);
     }
     drawJoins(joins);
     // A join that expires while the view is open moves down without a reload.
-    ctx.every(EXPIRY_MS, () => {
-      const now = Date.now();
-      const stillOpen = shownList.items.filter((j) => joinState(j, now).key === "open").map((j) => j.id).join(" ");
-      if (stillOpen !== shownOpen) drawJoins(shownList);
-    });
+    ctx.every(EXPIRY_MS, () => { if (keyOf(shownList, M.api.now()) !== shownKey) drawJoins(shownList); });
 
     append(root, h("h2", null, "Join an agent"),
       h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),

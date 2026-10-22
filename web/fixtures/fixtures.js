@@ -303,7 +303,7 @@ window.MAITY_FIXTURES = {
         "burned": false,
         "created_at": "2026-10-21T09:00:00Z",
         "created_by": "hum-maintainer",
-        "expires_at": "2036-10-21T09:15:00Z",
+        "expires_in_seconds": 900,
         "id": "join-0010",
         "revoked_at": null,
         "role": "member",

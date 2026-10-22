@@ -800,8 +800,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); await go("#/p/maity/join");
   expect(btn(joinRow("join-soon"), "Revoke") && main.querySelector(".open-joins"), "joins: open while it lasts");
   await new Promise((r) => setTimeout(r, 80)); await fireIntervals(); await tick();
-  expect(!main.querySelector(".open-joins") && text(main).includes("No open join.") && text(joinRow("join-soon")).startsWith("expired")
-    && !btn(joinRow("join-soon"), "Revoke"), "joins: expired while the view is open, without a reload");
+  expect(!main.querySelector(".open-joins") && text(main).includes("No open join.") && text(joinRow("join-soon")).startsWith("expired"),
+    "joins: expired while the view is open, without a reload");
+  expect(btn(joinRow("join-soon"), "Revoke"), "joins: just expired, it keeps Revoke for a minute: the hub decides");
+  const jNow = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 61000;
+  await fireIntervals(); await tick();
+  expect(!btn(joinRow("join-soon"), "Revoke"), "joins: a minute after it expired, no Revoke");
+  // Expiry is judged by the hub's clock (M.api.now; its skew is tested in API mode).
+  soon.expires_at = new Date(Date.now() - 5 * 60000).toISOString();
+  win.Maity.api.now = () => Date.now() - 10 * 60000;
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  expect(main.querySelector(".open-joins") && btn(joinRow("join-soon"), "Revoke"), "joins: a browser ahead of the hub still sees an open join open");
+  // A Revoke the hub refuses (expired by its clock): said, kept on screen, the list re-read.
+  win.Maity.api.getAll = jAll;
+  win.Maity.api.now = () => Date.parse("2026-10-21T08:10:00Z");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  const jReads = [];
+  const jAll2 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => { jReads.push(p); return jAll2(p); };
+  btn(joinRow("join-0009"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Not revoked: the join is expired") && jReads.includes("/projects/maity/joins"),
+    "joins: a refused Revoke is said and the list re-read");
+  win.Maity.api.getAll = jAll2;
+  win.Maity.api.now = jNow;
   win.Maity.api.getAll = jAll;
   await go("#/p/maity/inbox");
   expect(!text(main).includes("FIXTURE"), "the line is gone after leaving the view");
@@ -1015,12 +1037,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));
   const calls = [];
+  // The fake hub's clock is 10 minutes behind this one.
+  const HUB_TIME = new Date(Date.now() - 10 * 60000).toISOString().replace(/\.\d+Z$/, "Z");
   let mode = "ok";
   ctx.fetch = async (url, init) => {
     if (mode === "down") throw new Error("connection refused");
     calls.push({ url, method: init.method, headers: Object.assign({}, init.headers) });
     const [p, q] = url.replace("/api/v1", "").split("?");
-    const json = (status, data) => ({ ok: status < 400, status, statusText: "x", headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : null) }, json: async () => data });
+    const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
+      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
     if (init.method === "POST") {
       if (mode === "reject") return json(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch", details: {} } });
       const r = F["maity/requests.json"].items.find((x) => p.includes(x.id));
@@ -1034,6 +1059,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   document.cookie = "other=1; maity_csrf=tok%3D123";
   await go("#/p/maity/inbox");
   expect(!main.querySelector(".error"), "API mode against a fake hub renders the inbox");
+  expect(Math.abs(win.Maity.api.now() - Date.parse(HUB_TIME)) < 5000, "API mode: the hub's clock from Maity-Server-Time");
   expect(!text(header).includes("Fixtures"), "no fixture label in API mode");
   expect(!head.querySelector("script"), "API mode never loads the fixture bundle");
   expect(calls.filter((c) => c.method === "GET").every((c) => !("X-CSRF-Token" in c.headers)), "no CSRF header on GET");
