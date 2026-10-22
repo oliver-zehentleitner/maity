@@ -363,8 +363,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(bBox(), "Edit briefing").click(); await tick();
   byId("briefing-agt-b").value = "  Review hub PRs first.  ";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(patches.length === 1 && patches[0][0] === "/projects/maity/members/agt-b" && JSON.stringify(patches[0][1]) === JSON.stringify({ briefing: "Review hub PRs first." })
-    && !byId("briefing-agt-b") && text(main).includes("Review hub PRs first."), "a saved briefing is PATCHed and shown");
+  expect(patches.length === 1 && patches[0][0] === "/projects/maity/members/agt-b" && JSON.stringify(patches[0][1]) === JSON.stringify({ briefing: "  Review hub PRs first.  " })
+    && !byId("briefing-agt-b") && text(main).includes("Review hub PRs first.") && text(main).includes("Set by @maintainer"),
+    "a saved briefing is PATCHed as typed (Markdown keeps its spaces), shown, and says who set it");
   btn(bBox(), "Edit briefing").click(); await tick();
   byId("briefing-agt-b").value = "";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
@@ -870,20 +871,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && eSel(1).querySelectorAll("option")[0].textContent === "nobody", "members: reports to offers nobody and everyone else, set to the current one");
   await submitEdit();
   expect(!eWrites.length && text(main).includes("Nothing changed."), "members: nothing changed, nothing sent");
-  eSel(1).value = "agt-d";
-  eIn()[0].value = "docs/, web/tools/, docs/";
-  eIn()[1].checked = true;
-  eRow().querySelector("textarea").value = "Review what touches web/.";
+  expect(!eRow().querySelector("textarea") && text(eRow()).includes("The briefing is edited on the agent's card"), "members: one briefing editor, on the agent's card");
+  eSel(1).value = "agt-d"; eSel(1).dispatch("change");
+  eIn()[0].value = "docs/, web/tools/, docs/"; eIn()[0].dispatch("input");
+  eIn()[1].checked = true; eIn()[1].dispatch("change");
+  // Edits survive a redraw (here the presence refresh), and are sent as typed.
+  await fireIntervals(); await tick(); await tick();
+  expect(eSel(1).value === "agt-d" && eIn()[0].value === "docs/, web/tools/, docs/" && eIn()[1].checked, "members: unsaved edits survive a redraw");
   await submitEdit();
   expect(JSON.stringify(eWrites[0]) === JSON.stringify(["/projects/maity/members/agt-r",
-    { reports_to: "agt-d", areas: ["docs/", "web/tools/"], capabilities: ["tag"], briefing: "Review what touches web/." }])
-    && text(main).includes("Saved for Reviewer: reports to, areas, capabilities, briefing."), "members: one PATCH with exactly what changed");
+    { reports_to: "agt-d", areas: ["docs/", "web/tools/"], capabilities: ["tag"] }])
+    && text(main).includes("Saved for Reviewer: reports to, areas, capabilities."), "members: one PATCH with exactly what changed");
   // A circle is refused before sending: Agent D would report to the Reviewer, who reports to Agent D.
   btn(mRow("Reviewer"), "Done").click(); await tick();
   btn(mRow("Agent D"), "Manage").click(); await tick();
   eSel(1).value = "agt-r";
   await submitEdit();
-  expect(eWrites.length === 1 && text(main).includes("Not saved: That would close a circle"), "members: a reports-to circle is refused before sending");
+  expect(eWrites.length === 1 && text(main).includes("Not saved: That would close a circle") && eSel(1).getAttribute("aria-invalid") === "true"
+    && text(byId("member-reports-agt-d-error")).includes("close a circle") && eSel(1).getAttribute("aria-describedby") === "member-reports-agt-d-error", "members: a reports-to circle is refused before sending, at its field");
   eSel(1).value = "";
   eIn()[0].value = "../secret";
   await submitEdit();
@@ -901,11 +906,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/org");
   const orgNode = (name) => main.querySelectorAll(".org-tree li").find((li) => li.querySelector(".org-node strong").textContent === name);
   expect(orgNode("Agent D").querySelector("ul") && text(orgNode("Agent D").querySelector("ul")).includes("Reviewer"), "members: the organisation shows the Reviewer under Agent D");
-  // The mock refuses a circle as the hub does (docs/api.md §6.2, #118), and a removal clears reports_to.
+  // The mock refuses a circle as the hub does (docs/api.md §6.2, #118); a removal clearing reports_to is checked with the removal below.
   let circle = null;
   try { await mPatch("/projects/maity/members/agt-d", { reports_to: "agt-r" }); } catch (err) { circle = err; }
   expect(circle && circle.details.fields.reports_to === "cycle", "members: the mock refuses a circle with cycle");
-  await mPatch("/projects/maity/members/agt-r", { reports_to: "agt-a", areas: [], capabilities: [], briefing: null });
+  // Atomic as the hub: one bad field, nothing written, every bad field named.
+  let atomic = null;
+  try { await mPatch("/projects/maity/members/agt-r", { role: "member", areas: ["../x"], capabilities: ["fly"] }); } catch (err) { atomic = err; }
+  const afterBad = (await win.Maity.api.getAll("/projects/maity/members")).items.find((x) => x.id === "agt-r");
+  expect(atomic && atomic.details.fields.areas === "invalid_path" && atomic.details.fields.capabilities === "unknown" && afterBad.role !== "member",
+    "members: the mock checks every field before it writes anything");
+  await mPatch("/projects/maity/members/agt-r", { reports_to: "agt-a", areas: [], capabilities: [] });
+  // A boss not in the list read stays chosen (and is not sent as nobody).
+  const nlGet = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => nlGet(p).then((r) => (p !== "/projects/maity/members" ? r
+    : { items: r.items.map((x) => (x.id === "agt-r" ? Object.assign({}, x, { reports_to: "agt-gone" }) : x)), next_cursor: null }));
+  await go("#/p/maity/members");
+  await fireIntervals(); await tick(); await tick();
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  const nlSent = [];
+  win.Maity.api.patch = (p, b) => { nlSent.push(b); return Promise.resolve(Object.assign({ id: "agt-r", kind: "agent" }, b)); };
+  expect(eSel(1).value === "agt-gone" && text(eSel(1)).includes("(not in this list)"), "members: a boss not in the list stays chosen");
+  eSel(0).value = "member"; eSel(0).dispatch("change");
+  await submitEdit();
+  expect(nlSent.length === 1 && !("reports_to" in nlSent[0]), "members: saving the role leaves an unlisted boss alone");
+  win.Maity.api.patch = mPatch; win.Maity.api.getAll = nlGet;
+  btn(mRow("Reviewer"), "Done").click(); await tick();
+  // A change that waits for a human's go (202, the consent request) is no "Saved".
+  win.Maity.api.patch = () => Promise.resolve({ id: "req-c009", class: "consent", status: "open", to: "owner", title: "Let reviewer report to agent-x" });
+  await go("#/p/maity/members");
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  eSel(1).value = "agt-b"; eSel(1).dispatch("change");
+  await submitEdit();
+  expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c009, Let reviewer report to agent-x).") && !text(main).includes("Saved for Reviewer"),
+    "members: a change waiting for consent says so, and not that it was saved");
+  win.Maity.api.patch = mPatch;
+  btn(mRow("Reviewer"), "Done").click(); await tick();
   await go("#/p/maity/members");
   // A write that went through is said as done when the re-read fails.
   win.Maity.api.patch = mPatch; win.Maity.api.del = mDel;
@@ -920,7 +956,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await win.Maity.api.patch("/projects/maity/members/agt-r", { role: "reviewer" });
   // The mock as the hub: removal revokes, releases claims, and answers again as it is.
   const credsBefore = (await win.Maity.api.getAll("/projects/sample/members/agt-s1/credentials")).items.filter((c) => !c.revoked_at).length;
+  await win.Maity.api.patch("/projects/sample/members/hum-maintainer", { reports_to: "agt-s1" });
   const removedS = await win.Maity.api.del("/projects/sample/members/agt-s1");
+  const sampleOwner = (await win.Maity.api.getAll("/projects/sample/members")).items.find((x) => x.id === "hum-maintainer");
+  expect(sampleOwner.reports_to === null, "members: the mock's removal clears reports_to on whoever reported to the removed member");
   const removedAgain = await win.Maity.api.del("/projects/sample/members/agt-s1");
   const tasksAfter = (await win.Maity.api.getAll("/projects/sample/tasks?status=all")).items;
   const credsAfter = (await win.Maity.api.getAll("/projects/sample/members/agt-s1/credentials")).items;

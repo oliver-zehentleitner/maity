@@ -118,7 +118,10 @@ Inside a project, in the order of their importance; see
    and can still park its work and talk. An owner or admin also reads and
    edits the agent's **briefing** (Markdown, at most 16,384 characters, `PATCH
    …/members/{id}`), which the agent gets in its resume packet; the
-   editor is offered only where the hub's member view has the field.
+   editor is offered only where the hub's member view has the field. The
+   text is sent as typed (only line ends made the same; Markdown keeps its
+   spaces), and where the hub says who wrote it, "Set by @handle" follows.
+   This is the one briefing editor; Members → Manage links here.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
@@ -132,9 +135,12 @@ Inside a project, in the order of their importance; see
    admin change — the role (owner only for a human), whom the member
    reports to (nobody or another member; a circle is refused before it is
    sent, as the hub's `cycle` refusal is worded), its areas (repository
-   paths, comma separated, never with `..`), its capabilities (`tag`) and,
-   for an agent where the hub shows it, the briefing — saved in one PATCH
-   of only what changed, and at once in the Organisation view; pause an
+   paths, comma separated, never with `..`) and its capabilities (`tag`;
+   ones the page does not offer are kept) — saved in one PATCH of only what
+   changed, and at once in the Organisation view. Each field says its own
+   error; edits not yet saved survive any redraw (the presence refresh, an
+   action in another row); a change that waits for a human's go (the hub's
+   202 with a consent request) says so and is not called saved; pause an
    agent with a reason or clear its pause; and **Remove
    from the project** after a confirmation that says what it does; the
    hub's `last_owner` refusal is said in words, and a write that went

@@ -17,28 +17,42 @@ window.Maity = window.Maity || {};
   // updates the presence cells in place, so focus and forms stay.
   const PRESENCE_MS = 30000;
   // The hub's refusals, in words; anything else is shown as it comes.
+  // The hub's refusals in words, by field and reason; a reason the page
+  // does not know is shown as it comes.
   const REFUSALS = {
-    last_owner: "The project's last owner cannot be demoted or removed.",
-    owner_is_human: "Only a human can be an owner.",
-    cycle: "That would close a circle: they would end up reporting to themselves.",
-    not_a_member: "Reports to someone who is not a member of this project.",
-    invalid_path: "An area is a repository path like hub/ or docs/api.md, without ..",
-    unknown: "Not a known value.",
-    string_too_long: "The briefing is longer than 16,384 characters.",
+    "role:last_owner": "The project's last owner cannot be demoted or removed.",
+    "member:last_owner": "The project's last owner cannot be demoted or removed.",
+    "role:owner_is_human": "Only a human can be an owner.",
+    "role:unknown": "Not a role of this hub.",
+    "reports_to:cycle": "That would close a circle: they would end up reporting to themselves.",
+    "reports_to:not_a_member": "Reports to someone who is not a member of this project.",
+    "areas:invalid_path": "An area is a repository path like hub/ or docs/api.md, without ..",
+    "areas:too_long": "At most 50 areas.",
+    "capabilities:unknown": "A capability this hub does not know.",
+    "capabilities:too_long": "At most 20 capabilities.",
+    "paused.reason:string_too_long": "The pause's reason is too long.",
   };
+  const CYCLE = REFUSALS["reports_to:cycle"];
+  const BAD_AREA = REFUSALS["areas:invalid_path"];
   // The hub's rules for an area (hub/src/maity_hub/routes/members.py).
   const AREA = /^[A-Za-z0-9._/-]{1,255}$/;
   const areaOk = (a) => AREA.test(a) && !a.startsWith("..") && !("/" + a + "/").includes("/../");
   const CAPABILITIES = [["tag", "May tag a release (tag)"]];
-  const BRIEFING_CHARS = 16 * 1024;
 
   // The hub names each bad field (details.fields); said in words.
   function refusal(err) {
+    if (err.code === "forbidden" && err.details && err.details.reason === "humans_only") {
+      return { message: "only a human may make this change" };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
-    const said = Object.values(fields).map((reason) => REFUSALS[reason]).filter(Boolean);
-    return said.length ? { message: said.join(" ") } : err;
+    const said = Object.entries(fields).map(([f, reason]) => REFUSALS[f + ":" + reason] || f.replace("_", " ") + ": " + reason);
+    return { message: said.join(" ") };
   }
+
+  // A change an agent's rule holds for a human's go answers 202 with the
+  // consent request (docs/api.md §2.3), not with the member.
+  const isConsent = (answer) => !!answer && answer.class === "consent" && /^req-/.test(answer.id || "");
 
   function credentialsText(c) {
     if (!c) return "—";
@@ -95,14 +109,20 @@ window.Maity = window.Maity || {};
     // through is said as done even when the list cannot be read afterwards.
     async function act(label, done, call, focusKey) {
       status.busy(label + "…");
+      let answer;
       try {
-        await call();
+        answer = await call();
       } catch (err) {
         status.fail(label + " failed: ", refusal(err));
         return false;
       }
       status.done();
-      append(status.el, h("span", { class: "ok" }, done));
+      // Waiting for a human's go is no change yet: said as such.
+      append(status.el, isConsent(answer)
+        ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
+          + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
+        : h("span", { class: "ok" }, done));
+      if (isConsent(answer)) return "consent";
       try {
         await reload();
         redraw(focusKey);
@@ -169,67 +189,88 @@ window.Maity = window.Maity || {};
 
     // The membership as §6.2 lets an admin change it, in one form; only the
     // fields that changed are sent, in one PATCH.
+    // The rows' unsaved edits, by member id: a redraw (an action elsewhere,
+    // the presence refresh) rebuilds the form from them, not from the member.
+    const edits = new Map();
+
     function editForm(m, memberPath, self) {
       const id = (what) => "member-" + what + "-" + m.id;
+      const draft = edits.get(m.id) || {};
+      const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
       const role = keyed("role:" + m.id, h("select", { id: id("role") },
         ROLES.filter((r) => r !== "owner" || m.kind === "human").map((r) => h("option", { value: r }, r))));
-      role.value = m.role;
-      const reports = h("select", { id: id("reports") }, h("option", { value: "" }, "nobody"),
-        items.filter((x) => x.id !== m.id).map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")")));
-      reports.value = m.reports_to || "";
-      const areas = h("input", { id: id("areas"), placeholder: "hub/, docs/", autocomplete: "off", spellcheck: "false",
-        "aria-describedby": id("areas") + "-hint" });
-      areas.value = (m.areas || []).join(", ");
+      role.value = draft.role !== undefined ? draft.role : m.role;
+      // The current boss stays offered even if it is not in the list read.
+      const others = items.filter((x) => x.id !== m.id);
+      const listed = !m.reports_to || others.some((x) => x.id === m.reports_to);
+      const reports = keyed("reports:" + m.id, h("select", { id: id("reports") }, h("option", { value: "" }, "nobody"),
+        others.map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")")),
+        listed ? null : h("option", { value: m.reports_to }, nameOf(m.reports_to) + " (not in this list)")));
+      reports.value = draft.reports !== undefined ? draft.reports : (m.reports_to || "");
+      const areas = keyed("areas:" + m.id, h("input", { id: id("areas"), placeholder: "hub/, docs/", autocomplete: "off", spellcheck: "false" }));
+      areas.value = draft.areas !== undefined ? draft.areas : (m.areas || []).join(", ");
       const caps = CAPABILITIES.map(([cap, label]) => {
         const box = h("input", { type: "checkbox", id: id("cap-" + cap) });
-        box.checked = (m.capabilities || []).includes(cap);
+        box.checked = draft["cap:" + cap] !== undefined ? draft["cap:" + cap] : (m.capabilities || []).includes(cap);
+        box.addEventListener("change", () => keep("cap:" + cap, box.checked));
         return { cap, box, label };
       });
-      // A briefing only where the hub shows one (members:admin, docs/api.md §6.2).
-      const hasBriefing = m.kind === "agent" && "briefing" in m;
-      const briefing = hasBriefing ? h("textarea", { id: id("briefing"), rows: "4" }) : null;
-      if (briefing) briefing.value = m.briefing || "";
-      const fail = (field, text) => { status.fail("Not saved: ", { message: text }); field.focus(); };
+      role.addEventListener("change", () => keep("role", role.value));
+      reports.addEventListener("change", () => keep("reports", reports.value));
+      areas.addEventListener("input", () => keep("areas", areas.value));
+      // Each field says its own error, tied to it (as on the account view).
+      const errorOf = (what) => h("p", { class: "field-error", id: id(what) + "-error", role: "alert" });
+      const errors = { role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
+      [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
+        + (k === "areas" ? " " + id("areas") + "-hint" : "")));
+      const clearErrors = () => [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
+      const fieldFail = (f, k, text) => { errors[k].textContent = text; f.setAttribute("aria-invalid", "true"); status.fail("Not saved: ", { message: text }); f.focus(); };
+      const save = h("button", { type: "submit" }, "Save changes");
       return h("form", {
         class: "member-edit",
         onsubmit: async (e) => {
           e.preventDefault();
+          if (save.disabled) return;
+          clearErrors();
           const body = {};
           if (role.value !== m.role) body.role = role.value;
           const boss = reports.value || null;
           if (boss !== (m.reports_to || null)) {
-            if (boss && closesCircle(m, boss)) { fail(reports, REFUSALS.cycle); return; }
+            if (boss && closesCircle(m, boss)) { fieldFail(reports, "reports", CYCLE); return; }
             body.reports_to = boss;
           }
           const list = [...new Set(areas.value.split(",").map((a) => a.trim()).filter(Boolean))];
-          if (list.some((a) => !areaOk(a))) { fail(areas, REFUSALS.invalid_path); return; }
+          if (list.some((a) => !areaOk(a))) { fieldFail(areas, "areas", BAD_AREA); return; }
           if (list.join("\n") !== (m.areas || []).join("\n")) body.areas = list;
           // Capabilities this page does not offer are kept as they are.
-          const others = (m.capabilities || []).filter((c) => !CAPABILITIES.some(([k]) => k === c));
-          const capList = others.concat(caps.filter((c) => c.box.checked).map((c) => c.cap));
+          const kept = (m.capabilities || []).filter((c) => !CAPABILITIES.some(([k]) => k === c));
+          const capList = kept.concat(caps.filter((c) => c.box.checked).map((c) => c.cap));
           if ([...capList].sort().join() !== [...(m.capabilities || [])].sort().join()) body.capabilities = capList;
-          if (briefing) {
-            const text = briefing.value.trim();
-            if ([...text].length > BRIEFING_CHARS) { fail(briefing, REFUSALS.string_too_long); return; }
-            if (text !== (m.briefing || "")) body.briefing = text || null;
-          }
           if (!Object.keys(body).length) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
-          const said = { role: "role", reports_to: "reports to", areas: "areas", capabilities: "capabilities", briefing: "briefing" };
+          const said = { role: "role", reports_to: "reports to", areas: "areas", capabilities: "capabilities" };
+          save.disabled = true;
           const saved = await act("Saving", "Saved for " + m.display_name + ": " + Object.keys(body).map((k) => said[k]).join(", ") + ".",
             () => M.api.patch(memberPath, body), "role:" + m.id);
+          save.disabled = false;
+          if (saved === true) edits.delete(m.id);
           // Demoting oneself changes what this page may offer: re-render it.
-          if (saved && self && body.role) ctx.refresh();
+          if (saved === true && self && body.role) ctx.refresh();
         },
       },
       h("div", { class: "member-fields" },
-        h("label", { for: id("role") }, "Role"), role,
-        h("label", { for: id("reports") }, "Reports to"), reports,
+        h("label", { for: id("role") }, "Role"), role, errors.role,
+        h("label", { for: id("reports") }, "Reports to"), reports, errors.reports,
         h("label", { for: id("areas") }, "Areas"), areas,
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
-        h("span", { class: "label" }, "Capabilities"),
-        h("div", { class: "member-caps" }, caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label))),
-        briefing ? [h("label", { for: id("briefing") }, "Briefing (Markdown; the agent reads it at its next resume)"), briefing] : null),
-      h("div", { class: "actions" }, h("button", { type: "submit" }, "Save changes")));
+        errors.areas,
+        h("fieldset", { class: "member-caps" }, h("legend", null, "Capabilities"),
+          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label))),
+        // One briefing editor: on the agent's card.
+        m.kind === "agent" && "briefing" in m
+          ? h("p", { class: "muted member-briefing" }, "The briefing is edited on ", h("a", { href: ctx.link("agents") }, "the agent's card"),
+            m.briefing_by ? " · set by @" + m.briefing_by.handle : "", ".")
+          : null),
+      h("div", { class: "actions" }, save));
     }
 
     function nameCell(m) {

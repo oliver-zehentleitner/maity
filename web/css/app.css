@@ -468,11 +468,15 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .member-edit .member-fields .label { font-size: 0.85rem; color: var(--muted); }
 .member-edit textarea { width: 100%; }
 .member-caps label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.member-edit .member-fields .field-error { grid-column: 2; }
+.member-edit fieldset.member-caps { grid-column: 1 / -1; margin: 4px 0 0; padding: 4px 0 0; border: 0; border-top: 1px solid var(--border); }
+.member-edit fieldset.member-caps legend { font-size: 0.85rem; color: var(--muted); padding: 0; }
+.member-edit .member-briefing { grid-column: 1 / -1; margin: 4px 0 0; }
 /* A row of buttons: at the right edge, the primary one last. */
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
 @media (max-width: 600px) {
   .member-edit .member-fields { grid-template-columns: minmax(0, 1fr); }
-  .member-edit .member-fields .hint { grid-column: 1; }
+  .member-edit .member-fields .hint, .member-edit .member-fields .field-error { grid-column: 1; }
   .actions > button { flex: 1 1 100%; }
   .members, .members tbody, .members tr, .members th, .members td { display: block; width: auto; }
   .members thead { display: none; }
