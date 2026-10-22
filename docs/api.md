@@ -2796,8 +2796,9 @@ by its member or the agent's owner, decoded and encoded again as PNG,
 path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
 `instance:admin` for `/admin/*` (§16), notifications derived from the
-reader's readable set at read and at send time and the SMTP password
-never stored or returned (§16.2, §17); for runners (§15):
+reader's readable set at read and at send time, and the SMTP password
+never returned and stored only encrypted with the instance key (§16.2,
+§17); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
@@ -3724,8 +3725,8 @@ environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
 does to its agents in projects whose policy says `inherit` (§15.3,
 §6.1). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
-§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_SMTP_*` and
-`MAITY_MAIL_SIGNING_KEY` §16.2).
+§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_SMTP_*`,
+`MAITY_MAIL_SIGNING_KEY` and `MAITY_SECRET_KEY` §16.2).
 
 ### 16.1 `GET /admin/users`
 
@@ -3782,14 +3783,36 @@ The hub sends mail for two things only: the notifications of §17 and
 the verification of a human's address (§17.4). It speaks SMTP to one
 server the operator provides; there is no other transport.
 
-**Where each value lives.** The password lives in the environment and
-nowhere else: the hub reads it at startup, never writes it to the
-database, never returns it from any endpoint, never logs it and never
-puts it in an error's `message` or `details`. Every other value may come
-from the environment or be set by the instance admin through `PATCH`;
-a value set in the environment wins, is shown with `source: "env"`, and
-a `PATCH` of it is `invalid` with `details.fields.<field>:
-"set_by_environment"`.
+**Where each value lives.** Every value may come from the environment
+or be set by the instance admin through `PATCH`; a value set in the
+environment wins, is shown with `source: "env"`, and a `PATCH` of it is
+`invalid` with `details.fields.<field>: "set_by_environment"`.
+
+**The password** has the same two sources, with rules of its own:
+
+- From the environment (`MAITY_SMTP_PASSWORD`, or `MAITY_SMTP_PASSWORD_FILE`
+  for a mounted Secret) it wins, as every value does; it is never
+  written to the database.
+- Otherwise the instance admin may set it through `PATCH` — meant for a
+  single local install without a secret store. The hub stores it
+  encrypted at rest (AES-256-GCM, the field name as associated data)
+  with the instance key `MAITY_SECRET_KEY` (32 bytes, base64, from the
+  environment, never in the database, never returned). Without
+  `MAITY_SECRET_KEY` the `PATCH` is `invalid` with
+  `details.fields.password: "secret_key_missing"` and nothing is
+  stored. A stored password that the current key cannot decrypt (the
+  key was changed or lost) counts as not set: `complete: false`,
+  `missing: ["password"]`, and the admin sets it again.
+- It is write-only, whichever the source: no endpoint returns it, its
+  length, a hash or a hint; the hub never logs it and never puts it in
+  an error's `message` or `details`. `PATCH {"password": null}` deletes
+  a stored one.
+- **Kubernetes.** When the hub runs in Kubernetes (`KUBERNETES_SERVICE_HOST`
+  is set) and the password comes from the database, the admin view
+  carries `warnings: ["smtp_password_in_database"]`, the hub logs the
+  same warning at startup, and `GET /health` lists the code under
+  `warnings` (the code only, no value): a cluster has Secrets, and the
+  password belongs in one (`mail.smtp.existingSecret`, below).
 
 | Environment | Field | Meaning |
 |---|---|---|
@@ -3797,17 +3820,19 @@ a `PATCH` of it is `invalid` with `details.fields.<field>:
 | `MAITY_SMTP_PORT` | `port` | default 587 for `starttls`, 465 for `implicit`, 25 for `none` |
 | `MAITY_SMTP_TLS` | `tls` | `starttls` (default), `implicit`, or `none` — `none` only for a host that is a loopback address or the name `localhost` (a relay on the same machine or in the same pod); for any other host it is `invalid` and stops the hub at startup when set in the environment. Certificates are always verified against the system store, or against `MAITY_SMTP_CA_FILE` when set; there is no switch to skip verification |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS |
-| `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | environment only; read-only `{set, source}` in the answer |
+| `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | every mail the instance sends, all humans together; default 500; over it, immediate mails wait for the next hour like a digest (§17.5) |
 | — | `enabled` | `false` stops every notification mail and every verification mail without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §17.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
-In the Helm chart the password and the signing key come from a Secret
-by reference, as the database URL does (`mail.smtp.existingSecret` with
-the keys `smtp-password` and `mail-signing-key`), and the other values
-from `config.mail.*`; they never pass through the chart's values.
+In the Helm chart the password, the signing key and the instance key
+come from a Secret by reference, as the database URL does
+(`mail.smtp.existingSecret` with the keys `smtp-password`,
+`mail-signing-key` and `secret-key`), and the other values from
+`config.mail.*`; they never pass through the chart's values.
 
 ```
 GET /admin/settings/mail
@@ -3829,6 +3854,8 @@ Scope `instance:admin`, human only (§16.1):
   "reply_to": { "value": null, "source": "default" },
   "max_per_hour": { "value": 500, "source": "default" },
   "signing_key": { "set": true },
+  "secret_key": { "set": false },
+  "warnings": [],
   "last_test": { "at": "2026-10-22T14:02:11Z", "ok": true, "stage": null, "smtp_code": 250 },
   "sent_last_hour": 12
 }
@@ -3837,19 +3864,25 @@ Scope `instance:admin`, human only (§16.1):
 `source` is `env`, `admin` (set through `PATCH`, stored in the
 database) or `default`. `complete` is `true` when host, from and the
 signing key are there and, with a username, a password; `missing` names
-what is not. `password` and `signing_key` never carry a value, a
-length, a hash or a hint — only whether one is set.
+what is not. `password`, `signing_key` and `secret_key` never carry a
+value, a length, a hash or a hint — only whether one is set.
+`warnings` lists `smtp_password_in_database` under the Kubernetes rule
+above, else nothing.
 
 ```
 PATCH /admin/settings/mail
 ```
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
-`port`, `tls`, `username`, `from`, `reply_to`, `max_per_hour`; `null`
-returns a field to its default. `password` or `signing_key` in the body
-is `invalid` with `details.fields.password: "environment_only"` (the
-value is not echoed and not logged). Answers the `GET` shape. A change
-of `host`, `port`, `tls`, `username` or `from` clears `last_test`. The
+`port`, `tls`, `username`, `password`, `from`, `reply_to`,
+`max_per_hour`; `null` returns a field to its default (for `password`:
+deletes the stored one). `password` follows the rules above:
+`set_by_environment` when the environment sets it,
+`secret_key_missing` without the instance key. `signing_key` or
+`secret_key` in the body is `invalid` with `environment_only`. A value
+in the body is never echoed and never logged. Answers the `GET` shape. A change
+of `host`, `port`, `tls`, `username`, `password` or `from` clears
+`last_test`. The
 change is not an event (there is no project to put it in); the accounts
 design's instance audit log records it (pending).
 
@@ -3904,10 +3937,18 @@ longer addressed to them drops out, and a redacted event shows as
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `card` — the change ticker | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card where the human is creator, assignee, holder or in `contract.watchers` (§6.8); never `task_checkpoint` | those; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
+| `card` — the change ticker | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card where the human is creator, assignee, holder or in `contract.watchers` (§6.8); never `task_checkpoint`. Which cards count as the human's is a default pending the maintainer (below) | those; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
 | `jour_fixe` | reserved: the jour-fixe report has no contract yet; until it has one this kind exists in the settings and produces nothing | — | — |
 | `system` | the hub about the human's own mail delivery (§17.7) | the human | `Mail to <address> disabled after 3 failures` |
+
+**Which cards are "mine" — default pending the maintainer.** The
+change ticker counts the cards the human created, is assigned to,
+holds, or watches as a contract watcher. Whether it also counts cards
+held by agents the human owns, and whether any card can be watched, is
+the maintainer's open question; the relations above are the default
+until he decides, and `reason` (§17.2) already names the relation so
+that more can be added without changing the shape.
 
 A human's own actions never notify them. One event gives at most one
 notification per human: when it qualifies under two kinds, `mention`
@@ -3929,7 +3970,7 @@ bell, across every project the human is a member of.
 
 ```json
 {
-  "counts": { "inbox": 3, "chat": 2, "mention": 1, "card": 4, "agent": 0, "jour_fixe": 0, "system": 0, "total": 10 },
+  "counts": { "inbox": 3, "chat": 2, "mention": 1, "card": 4, "agent": 0, "jour_fixe": 0, "system": 0, "total": 6 },
   "items": [
     { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
       "project": { "slug": "maity", "name": "Maity" },
@@ -3958,8 +3999,10 @@ bell, across every project the human is a member of.
   notification is read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
   list shows. `mention`, `card`, `agent`, `jour_fixe` and `system` count
-  the unread items of that kind. `total` is the sum; the dashboard shows
-  it in the tab title as `(10) maity` and nothing when it is `0`.
+  the unread items of that kind. `total` is `inbox + chat + mention` —
+  what asks for the human, not what informs them; the dashboard shows
+  it in the tab title as `(6) maity` and nothing when it is `0`. The
+  other counts show on the bell and their own badges only.
 - **Items.** Newest first, one per event, the last 30 days; older ones
   count as read and are not listed. `id` is `ntf-<seq>`. `title` is
   composed from fields the human may read, at most 200 characters, text
