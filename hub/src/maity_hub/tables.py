@@ -148,6 +148,8 @@ project = Table(
     # (§6.1, §15.6); the defaults fill projects made before 0008.
     Column("spawn_requests", String(16), nullable=False, server_default="consent"),
     Column("max_placements", Integer, nullable=False, server_default="8"),
+    # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
+    Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),

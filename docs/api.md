@@ -1295,8 +1295,11 @@ area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
-with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
-join that carries `reports_to`, against the project's current members.
+with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
+the project's current members. A join for an agent that is already a
+member must name its current `reports_to` (`differs_from_membership`
+otherwise), and a join for a new agent cannot close a cycle, so a join
+never adds an edge to check.
 **Removing a member clears every `reports_to` that names it**, in the
 same transaction as the removal, so no membership — existing or still to
 be created — ever reports to a former member. Three places hold a
@@ -1316,7 +1319,9 @@ has joined. The exchange (§3.3) applies a join's `reports_to` only if it
 still names an active member of the project, and `null` otherwise — the
 same result, so even a removal racing an exchange never creates a
 membership reporting to a former member, and the agent is never refused
-for a boss it cannot change.
+for a boss it cannot change. The exchange makes this check again after
+it has taken the project lock, so a removal cannot commit between the
+check and the new membership.
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.

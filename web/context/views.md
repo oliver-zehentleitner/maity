@@ -120,8 +120,9 @@ leaked line is pasted.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22
-**Revisit when:** the contract gives cards an order within a column, or the hub exposes the moves a caller may make
+**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22; re-checked by the coordinator after card order arrived (its revisit condition), 2026-10-22: the Move menu and the transition rule still hold, the order within a column is its own entry
+**Revisit when:** the hub exposes the moves a caller may make
+**See:** views.md#cards-are-placed-within-a-column-by-a-place-menu-and-by-dragging-over-a-card-and-the-order-changes-only-once-the-hub-answered — 3785a685-e976-400f-b088-9321804d29fc — as of 2026-10-22
 
 Each card a human may move has a **Move** menu with exactly the moves the
 hub allows them, mirrored from its transition check (proposed ↔ open for
@@ -130,7 +131,8 @@ authority; cancel for an admin or an open card's creator). A pointer may
 drag the card instead: while dragging, the allowed columns are outlined
 and the others dimmed; a card let go over a refused column is said in
 words on `dragend` (a browser fires no drop there) and nothing is sent.
-There is no order within a column. The board's filters (member, area)
+Placing a card within its column is a separate move with its own menu
+(see the entry linked above). The board's filters (member, area)
 work on the cards already loaded.
 
 **Reason:** a drag-only board leaves keyboard and phone users without a
@@ -142,6 +144,40 @@ no move the hub would refuse, and the hub still decides.
 refuse — every refusal would be a round trip and a surprise. Filters as
 query parameters to the hub — the board already holds every card of the
 window, so filtering there is instant and needs no new contract.
+
+## Cards are placed within a column by a Place menu and by dragging over a card, and the order changes only once the hub answered
+
+**Id:** 3785a685-e976-400f-b088-9321804d29fc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
+**See:** views.md#cards-move-by-a-move-menu-and-by-dragging-only-where-the-hubs-transition-table-allows-nothing-is-drag-only — c285771a-0b3a-4867-b66b-a1c7faa837de — as of 2026-10-22
+
+The board draws each column in the hub's card order (§6.4). With
+`tasks:admin` an open card has a **Place** menu next to **Move**, built
+the same way: a select with only the moves its place allows (Move up,
+Move down, To the top, To the bottom) and one button. A pointer can drag
+the card over another card of its column instead; the pointer's half of
+that card decides above or below, and a marker shows it while dragging.
+Either way the page sends one `POST …/move` and shows the new order only
+from the board read after the hub's answer. When a `not_found` or
+`invalid` comes back, the board is read again: if the card and its
+neighbour are still where they were, the hub has no endpoint; otherwise
+the neighbour moved meanwhile. Done and cancelled cards are not placed.
+
+**Reason:** the menu gives the keyboard and the phone the same way the
+pointer has, as for Move. Waiting for the hub keeps the board from
+showing an order the hub refused or changed, because the hub may rank
+other cards of the column as well. Reading the board again after a
+refusal is the only way to tell a race from a missing endpoint.
+
+**Rejected alternative:** four buttons per card. They add four tab stops
+to every card on a long board, and the menu already says which moves
+exist. Reordering at once and rolling back on a refusal: a card that
+jumps and then jumps back is worse than a short wait, and the card's
+brief asks for the order only after the answer.
 
 ## A membership is edited in one form and sent as one PATCH of what changed; a reports-to circle is refused before it is sent
 

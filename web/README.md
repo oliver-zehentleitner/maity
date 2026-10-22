@@ -33,7 +33,7 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with this
 project's **Project settings** (for an owner or admin; it opens the panel
 under the header), **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
-**Profile**, **Avatar** (coming soon), **Change password**, **Linked
+**Profile**, **Picture** (`#/account/picture`), **Change password**, **Linked
 accounts** (later) and **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
@@ -45,7 +45,7 @@ stay on screen.
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
-| `#/account` | the signed-in human's account: name, handle, **Change password**; **Account** beside **Sign out** in the header |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -104,7 +104,17 @@ Inside a project, in the order of their importance; see
    creator of an open card. A pointer can drag the card instead: the
    columns it may go to are marked while dragging and the others
    dimmed; a drop on one of those is refused in words and sends nothing.
-   There is no order within a column. With `tasks:admin` a card can be
+   Within a column the cards stand in the hub's order (`docs/api.md`
+   §6.4: by `rank`, then the unranked ones by `created_at`, then by id).
+   With `tasks:admin` (an owner or admin) an open card can be placed: a
+   **Place** menu (Move up, Move down, To the top, To the bottom, as its
+   place allows) or dragging it over another card of its column, above or
+   below that card by the pointer's half; it sends `POST …/move` with
+   `before`, `after` or `to`, and the board shows the new order once the
+   hub answered, never before. A neighbour that moved or left meanwhile
+   (`not_found`, `invalid`) has the board read again and said; a hub
+   without the endpoint is said as such. Done and cancelled cards keep
+   their order. With `tasks:admin` a card can be
    assigned or reassigned (`POST …/assign`; a live lease is said, not
    taken over). The hub's refusals (`invalid_transition`,
    `dependencies_open`, …) are said in words; after a move the board is
@@ -170,7 +180,12 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. A chat is shaped
+   back; opening a chat there moves the focus to its heading. Messages
+   are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
+   headings as strong lines, lists, quotes, fenced code with its language
+   and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
+   `https`; raw HTML stays visible as text. **Quote** under a message puts
+   it into the composer as a quote. A chat is shaped
    for several participants (title, their avatars), for group chats to
    come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
@@ -262,6 +277,20 @@ stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
 anyone else gets neither the link nor the list. On a phone each row is a
 card.
 
+**Pictures** (`#/account/picture`, `docs/api.md` §6.10). The account
+shows the human's picture as it shows now, where it comes from (uploaded,
+the linked forge account, or generated from the member id), an upload and,
+for an upload, **Remove the upload**; below it the same for each of the
+human's agent profiles (`GET /agents`, `PUT`/`DELETE /agents/{id}/avatar`).
+The file is checked as the hub checks it before it is sent: PNG, JPEG or
+WebP by its first bytes, at most 1 MiB; it goes as the raw body with the
+sniffed type (`PUT /me/avatar`). The hub's refusals (`dimensions`,
+`undecodable`, the hourly limit, a hub without the endpoint) are said in
+words. After a change the page is drawn again from `/me`, so the header's
+picture follows at once. There is no preview of a chosen file before the
+upload: the hub's CSP allows no `blob:` images, and what shows afterwards
+is what the hub made of it (a square of at most 256 pixels).
+
 **Change password** (`#/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
 characters (counted as the hub counts them), checked before sending; a
@@ -314,8 +343,10 @@ shown under it.
 a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
 the same one — as SVG nodes, decorative next to the name; the theme sets
 its lightness and background, so it reads in light and dark. A member
-that carries an `avatar_url` the page may load (the hub's own images
-today) shows that one instead. On the agents' cards, in the
+that carries an `avatar_url` the page may load (only the hub's own
+`/api/v1/avatars/<id>?v=…`, never another origin) shows that one instead,
+and falls back to the generated one when the image does not load (a
+`404` once access has ended). On the agents' cards, in the
 organisation and in the chat list.
 
 **Message the project** (`#/p/<slug>/message`, no tab: **Message the
@@ -595,6 +626,7 @@ web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only; https-only links
+├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu)
 ├── js/mentions.js    the @ picker
@@ -611,7 +643,7 @@ web/
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
-├── js/account.js     the account and changing the password
+├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
