@@ -1,2 +1,2 @@
 # uv compiles the locks; pinned so `make lock-check` gives the same output everywhere.
-uv==0.13.0
+uv==0.13.4
