@@ -366,3 +366,31 @@ own Codex still works. A link keeps one file for both.
 - Running Codex with the operator's own `CODEX_HOME`: every agent would
   see the operator's history and configuration, and `--last` would cross
   placements.
+
+## Codex is confined by its sandbox, so it refuses command allowlists
+
+**Id:** c2acd907-0f26-4850-8272-063390f1d6a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
+**Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
+
+Codex placements are advertised with `confinement: "sandbox"`, not
+`allowlist`. A placement for a repository whose `allow` list is not
+empty is refused for Codex (`harness_refused`). The project's own
+Codex configuration is kept out by marking the clone untrusted.
+
+**Reason:** the runner's Codex profile limits files and network through
+Codex's sandbox, but Codex has no command allowlist the runner can write.
+Advertising `allowlist` would tell the human choosing a runner that
+commands are filtered when they are not. A repository `allow` list would
+look honoured while it is ignored. Refusing makes the gap visible. A
+trusted clone would load a committed `.codex/config.toml` over the
+runner's profile, and one reviewer saw that switch the sandbox off.
+
+**Rejected alternatives:**
+- Keep advertising `allowlist` and ignore the grant: a claim the runner
+  cannot keep.
+- Build an exec-policy layer for Codex now: unverified against the
+  shipped Codex, and the sandbox already sets the boundary that matters.
