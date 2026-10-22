@@ -244,9 +244,10 @@ Inside a project, in the order of their importance; see
    attached (`POST /projects/{slug}/runners`; one attached meanwhile is
    said, not a failure); **Detach** asks first, naming the agents whose
    placements the hub then closes and the runner stops, counted when it is
-   pressed. After either, the status line has the focus. The 30-second
-   refresh redraws only what changed and keeps the focus on the same
-   control and the runner chosen in **Allow**. Without runners, the view
+   pressed. After either, the status line has the focus and says what
+   happened. The 30-second refresh redraws only what changed and keeps the
+   focus on the same control (in the **Allow** form too, when it is rebuilt
+   for a new runner) and the runner chosen there. Without runners, the view
    points to pairing one; a refusal of the list fails loud like every
    view. The tab is the project admin's; a runner's owner who is no admin
    here (possible once invitations exist; not in V1) cannot detach it
