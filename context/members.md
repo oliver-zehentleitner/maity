@@ -6,15 +6,15 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-22; contract change in `docs/api.md` §6.10
-**Revisit when:** the maintainer decides the open JPEG question, or the accounts design brings forge linking or instance-admin moderation
+**Source:** the maintainer's decisions, 2026-10-22; contract change in `docs/api.md` §6.10
+**Revisit when:** the accounts design brings forge linking or instance-admin moderation
 
 Every member has a generated avatar, drawn by the client from the member
 id; the hub stores nothing for it. A human can upload a picture, or later
 use a linked forge account's; an agent sets its own, and its owner can
 set or remove it too. The avatar belongs to the human's account or the
 agent's profile, not to a membership, so it is the same in every
-project. Uploads are PNG or WebP only, at most 1 MiB and 4096 px per
+project. Uploads are PNG, JPEG or WebP, at most 1 MiB and 4096 px per
 side, decoded under a budget, centre-cropped, scaled to at most 256×256
 and re-encoded as PNG without metadata; anything that fails is refused.
 A change emits `avatar_changed` per project, not `member_updated`, and a
@@ -29,7 +29,9 @@ avatar that spans projects they are not part of; removing the membership
 or the owner deleting the picture is the remedy.
 
 **Rejected alternatives:**
-- JPEG uploads: refused under the decision, with the dashboard converting
-  a picked photo before upload; whether the hub should accept JPEG
-  instead is open for the maintainer.
+- PNG and WebP only, refusing JPEG — the contract's first version, with
+  the dashboard converting a picked photo before upload. The maintainer
+  decided for JPEG: photos and forge avatars are JPEG, and re-encoding
+  removes what made JPEG a concern (its EXIF data, location and camera
+  included, does not survive).
 - Moderation by a project's `members:admin`: see above.
