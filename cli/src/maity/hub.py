@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import time
@@ -61,10 +62,13 @@ def opener() -> urllib.request.OpenerDirector:
 
 def safe_url(url: str) -> str:
     """A URL fit for a message: scheme, host, port and path; never userinfo or query."""
-    parts = urllib.parse.urlsplit(url.strip())
-    host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+    except ValueError:
+        return "<not a URL>"
     return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", "")) or "<empty>"
 
 
@@ -73,7 +77,11 @@ def hub_base(url: str) -> str:
 
     Credentials travel over TLS only; plain HTTP is accepted for a hub on this machine.
     """
-    parts = urllib.parse.urlsplit(url.strip())
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+        parts.port  # noqa: B018 - raises ValueError on a port that is not a number in range
+    except ValueError:
+        raise HubError(f"not a hub URL: {safe_url(url)}") from None
     if parts.username or parts.password:
         raise HubError("refusing a URL with credentials in it")
     if parts.scheme not in ("https", "http") or not parts.hostname:
@@ -118,16 +126,43 @@ def accept_hub(given: str, header: str | None) -> str:
             f"the exchange named a hub URL the CLI refuses ({exc}); nothing was stored. The "
             "code is used: ask for a new one"
         ) from None
-    host = (urllib.parse.urlsplit(base).hostname or "").rstrip(".")
-    other = (urllib.parse.urlsplit(claimed).hostname or "").rstrip(".")
-    parent = host.split(".", 1)[1] if "." in host else ""
-    if other != host and not (other == parent and "." in parent):
+    host, other = _host(base), _host(claimed)
+    if other is None or host is None or not (other == host or other == _parent(host)):
         raise HubError(
             f"the exchange on {host} named {safe_url(claimed)} as the hub, which is neither "
             "that host nor its parent domain; nothing was stored. The code is used: ask for a "
             "new one"
         )
     return claimed
+
+
+def _host(url: str) -> str | None:
+    """The URL's host for comparison: lowercased, one trailing dot dropped, IDNA-encoded (so
+    `。` and the other full stops split labels the way DNS does). None when it cannot be."""
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host.endswith("."):
+        host = host[:-1]
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    try:
+        encoded = host.encode("idna").decode("ascii").lower()
+    except UnicodeError:
+        return None
+    return encoded if encoded and ".." not in encoded and not encoded.endswith(".") else None
+
+
+def _parent(host: str) -> str | None:
+    """The direct parent domain while it still has two labels; None for an address."""
+    try:
+        ipaddress.ip_address(host)
+        return None
+    except ValueError:
+        pass
+    parent = host.split(".", 1)[1] if "." in host else ""
+    return parent if "." in parent else None
 
 
 def segment(value: str) -> str:

@@ -89,8 +89,12 @@ def test_hub_base(url: str, base: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["http://hub.example", "ftp://hub.example", "hub.example", "https://u:p@hub.example"]
-)
+    "url",
+    [
+        "http://hub.example", "ftp://hub.example", "hub.example", "https://u:p@hub.example",
+        "https://[x", "https://hub.example:abc", "https://hub.example:99999",
+    ],
+)  # fmt: skip
 def test_hub_base_refuses(url: str) -> None:
     with pytest.raises(hub.HubError):
         hub.hub_base(url)
@@ -134,6 +138,12 @@ def test_join_target_refuses(url: str) -> None:
         ("https://maity.team/j/t", None, "https://maity.team"),
         ("https://join.maity.team/t", "https://join.maity.team", "https://join.maity.team"),
         ("http://127.0.0.1:8/j/t", "http://127.0.0.1:9", "http://127.0.0.1:9"),
+        ("https://maity.team./j/t", "https://maity.team", "https://maity.team"),
+        (
+            "https://join.bücher.example/t",
+            "https://xn--bcher-kva.example",
+            "https://xn--bcher-kva.example",
+        ),
     ],
 )
 def test_accept_hub(given: str, header: str | None, kept: str) -> None:
@@ -151,6 +161,12 @@ def test_accept_hub(given: str, header: str | None, kept: str) -> None:
         ("https://maity.team/j/t", "https://join.maity.team"),  # a child, not a parent
         ("https://maity.team/j/t", "https://maity.team.evil.example"),
         ("https://maity.team/j/t", "not a url"),
+        ("http://127.0.0.1:8/j/t", "https://0.0.1"),  # an address has no parent
+        ("https://10.0.0.200/j/t", "https://0.0.200"),
+        ("https://maity.team/j/t", "https://[x"),
+        ("https://maity.team/j/t", "https://maity.team:abc"),
+        ("https://maity.team/j/t", "https://maity.team.."),
+        ("https://x\u3002join.maity.team/t", "https://maity.team"),  # 。 splits labels too
     ],
 )
 def test_accept_hub_refuses(given: str, header: str) -> None:
