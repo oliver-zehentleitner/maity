@@ -5,8 +5,8 @@
 **Id:** c1af6c8f-9d69-4afe-b233-fa8f437faaa6
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract details are the contract owner's design in `docs/api.md` §9
+**Evidence:** confirmed
+**Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract owner's design in `docs/api.md` §9, accepted by the maintainer on 2026-10-22 with one change: history on demand for someone added later
 **Revisit when:** practice shows people forgetting to mention the agent they want an answer from, or agents needing to open a chat themselves
 **See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-22
 
@@ -20,7 +20,9 @@ direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
   every message of the others;
-- someone added later reads from their join on, not the earlier history;
+- someone added later starts fresh from their join (resume packet,
+  unread counts and wake-ups count only from there) and reads the
+  earlier history on demand by paging back through the chat;
 - mentions resolve to participants only, a non-participant's handle stays
   text;
 - any human participant may redact a message, no agent may;
@@ -35,12 +37,15 @@ answering each other loop; mention-only waking plus the existing mention
 rate cap bounds both. And a chat is a private channel, so it must not
 become one between agents of different owners that no human sees: only
 humans create chats, a chat without a human closes, and the owner of an
-agent participant reads along (its own entry below). History from join on
-and participant-only mentions keep what was said within the audience it
-was said to, the same rule mentions already follow. Redaction by any
+agent participant reads along (its own entry below). Starting fresh keeps a
+newcomer's packet and wake-ups free of a backlog it was not there for;
+the maintainer wants the earlier history readable on demand, because a
+newcomer that needs the context should read it rather than ask for it
+to be repeated. Participant-only mentions keep a mention from becoming
+an invitation that bypasses adding a participant. Redaction by any
 human participant keeps the one tombstone usable by whoever sees a
-secret, while agents redact nothing anywhere. The group-chat part of the
-requirement is confirmed; the reasons are the contract owner's.
+secret, while agents redact nothing anywhere. The maintainer accepted
+these rules on 2026-10-22.
 
 **Rejected alternatives:**
 - Project messages (`POST /events` to members or roles) as the group
@@ -56,21 +61,25 @@ requirement is confirmed; the reasons are the contract owner's.
   coordinate through project messages and cards.
 - Waking every agent participant on every message, or a per-chat switch
   for it: the cost and loop above, for the chats that turn it on.
-- All history for someone added later: it widens the audience of
-  everything already said without anyone saying it again.
+- No history for someone added later (the contract owner's first
+  draft): what was said stays with the audience it was said to, but a
+  newcomer that needs the context has to ask for it to be repeated; the
+  maintainer chose fresh by default with the history on demand.
+- The whole history in a newcomer's packet, unread counts and wake-ups:
+  a backlog it was not there for would cost model runs on old talk.
 
 ## The owner of an agent in a group chat reads along
 
 **Id:** 3e1031d9-82f8-4f66-98a2-42d6ee833034
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** the contract owner's design, 2026-10-22, `docs/api.md` §9.2; default pending the maintainer
-**Revisit when:** the maintainer decides between read-along, read-along only with the participants' consent, and no read-along
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22, on the contract owner's design in `docs/api.md` §9.2
+**Revisit when:** participants object to being read along, or owners turn out not to look at what their agents are told
 
-Default until the maintainer decides: a human who owns an agent
-participant of a group chat and is a member of the project reads every
-message that agent can read, without being a participant. It is listed
+A human who owns an agent participant of a group chat and is a member
+of the project reads every message that agent can read, the earlier
+history included, without being a participant. It is listed
 in the chat as an observer, never woken, never posting, never redacting.
 
 **Reason:** the owner answers for what their agent does, and a group
@@ -80,7 +89,9 @@ through a room its owner cannot see: the prompt-injection path between
 owners. Listing observers in the chat makes the privacy cost visible to
 everyone in it.
 
-**Alternatives still open:** no read-along (full privacy of the room,
-at the cost of that blind spot), or read-along only when the
-participants agree when the agent is added. Either changes one paragraph
-of the contract and the `observers` field.
+**Rejected alternatives:**
+- No read-along: full privacy of the room, at the cost of that blind
+  spot.
+- Read-along only when the participants agree when the agent is added:
+  a refusal would bring the blind spot back for exactly the rooms where
+  it matters.

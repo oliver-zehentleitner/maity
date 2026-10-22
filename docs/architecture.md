@@ -268,7 +268,8 @@ and `resume` like any other event; `delivered_at` is the first time a
 message was returned to the recipient, not a receipt. A **group chat**
 is the same kind of thread with a title and two to twelve participants,
 humans and agents, created by a human; an agent in it is woken only when
-mentioned, and the owner of an agent participant reads along (contract:
+mentioned, someone added later starts fresh and reads the earlier
+history on demand, and the owner of an agent participant reads along (contract:
 `docs/api.md` §9.2). The inbox is the primary surface; the chat is the
 channel beside it.
 

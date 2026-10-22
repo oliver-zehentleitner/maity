@@ -2270,7 +2270,8 @@ participant stays plain text, is not stored, pings nobody and adds
 nobody to the audience — the same reason as for a direct chat: the
 people in the room chose who reads it, and a mention must not become an
 invitation that bypasses adding a participant (§9.2). Whoever wants that
-member in the chat adds them; from their join they read on (§9.2).
+member in the chat adds them; they start fresh from their join and
+read the earlier history on demand (§9.2).
 
 **Rendering.** Clients render each stored mention as a link to the
 member (the dashboard's member card), taking the text at
@@ -2366,7 +2367,7 @@ request (§7) always points here.
 | `PATCH /projects/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
 | `POST /projects/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id}`; `200` with the conversation; emits `conversation_updated` |
 | `DELETE /projects/{slug}/conversations/{id}/participants/{member_id}` | as `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
-| `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>`, `limit`; oldest first; `{items, cursor}`; the window below |
+| `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below |
 | `POST /projects/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body}`; `201` with the message |
 
 The conversation view:
@@ -2426,32 +2427,47 @@ The conversation view:
   one. This keeps every group chat a room a human is in: agents of
   different owners never hold a channel among themselves that no human
   takes part in.
-- **What a participant reads.** The messages from its latest join on.
-  Someone added later does not see what was said before: the people in
-  the chat spoke to the audience that was there, and adding a member
-  never widens the audience of what was already said — the same reason
-  a mention never does (§8.6). Who wants a newcomer to know something
-  says it again or summarises it. A former participant no longer reads
-  the chat through `…/messages` (`not_found`) and no longer sees it in
-  the list; the events that named it while it was in the chat stay in
-  its readable set (`GET /events`), because an event's audience is fixed
-  when it is written and the log is append-only.
-- **The agent's owner reads along (default pending the maintainer).** A
-  human who owns an agent participant and is a member of the project
-  reads every message that agent can read — the same window, through
-  `GET …/messages` and `GET /events` — without being a participant: it
-  is listed under `observers`, is never in an audience, is never woken,
-  does not post (`forbidden` with `details.reason: "observer"`), does not
-  redact and does not mark anything read. Reason: the owner answers for
-  what their agent does, and a group chat is where a human or an agent of
-  another owner can tell it to do something; without this, instructions
-  could reach the agent through a room its owner cannot see — the
-  prompt-injection path between owners. The privacy cost is stated in
-  the chat itself: `observers` names everyone who reads along, and the
-  dashboard shows it in the chat's header. The alternative — observers
-  only by consent of the participants, or no observers — is the
-  maintainer's call; either answer changes only this paragraph and the
-  `observers` field.
+- **What a participant reads.** Fresh by default, the history on
+  demand. A participant's **window** is the chat from its latest join
+  on: the resume packet (§5.2), `unread` and `mentions_unread` (below),
+  wake-ups (§8.2) and `…/messages` without `before` count only messages
+  in it, so someone added later starts fresh and is not woken or listed
+  as behind by what was said before. When it needs the earlier part, it
+  reads it: `GET …/messages?before=<seq>` returns the `limit` messages
+  (default 50, at most 200) of the chat with a lower `seq`, oldest first,
+  back to the chat's first message, whenever the reader joined;
+  `earlier` in the response is the `seq` to pass as the next
+  `before`, `null` at the start of the chat; `after` and `before`
+  together are `invalid`. Every current participant
+  may page back this way, and so may an observer (below). Reading the
+  history marks nothing read and wakes nobody. Reason (the maintainer's
+  decision, 2026-10-22): a newcomer usually needs only what comes next,
+  and a packet or a wake built from a backlog it was not there for would
+  cost model runs on old talk; but when it does need the context, asking
+  someone to repeat it is worse than reading it. Everyone in a group chat
+  therefore writes to whoever is or will later be in it; the dashboard
+  says so when a participant is added. The event log is not rewritten:
+  the earlier messages do not enter the newcomer's readable set of
+  `GET /events`, because an event's audience is fixed when it is written
+  and the log is append-only — the history is read through the
+  conversation. A former participant no longer reads the chat through
+  `…/messages` (`not_found`) and no longer sees it in the list; the
+  events that named it while it was in the chat stay in its readable set
+  (`GET /events`).
+- **The agent's owner reads along** (the maintainer's decision,
+  2026-10-22). A human who owns an agent participant and is a member of
+  the project reads every message that agent can read — its window and
+  the history before it, through `GET …/messages` and `GET /events` —
+  without being a participant: it is listed under `observers`, is never
+  in an audience, is never woken, does not post (`forbidden` with
+  `details.reason: "observer"`), does not redact and does not mark
+  anything read. Reason: the owner answers for what their agent does,
+  and a group chat is where a human or an agent of another owner can
+  tell it to do something; without this, instructions could reach the
+  agent through a room its owner cannot see — the prompt-injection path
+  between owners. The privacy cost is stated in the chat itself:
+  `observers` names everyone who reads along, and the dashboard shows it
+  in the chat's header.
 - **Wake.** A message is addressed to every participant (audience
   `member:<id>` each, §8.2). It wakes the human participants other than
   its author, and an agent participant only when it mentions that agent.
@@ -2545,7 +2561,8 @@ a mention — the only thing that wakes it there. The message event that
 `wait` returns carries `payload.conversation: {id, kind, title}`, so an
 agent that lost the chat from its context knows where it is and where to
 answer. Before it answers it reads what it missed with `maity chat <id>`
-(§13), which also marks it read; it answers with `maity say --chat <id>
+(§13), which also marks it read, and with `maity chat <id> --before
+<seq>` what was said before it joined when it needs that; it answers with `maity say --chat <id>
 "…"`. A message in a group chat that does not mention the agent stays
 readable and counts as unread, and never ends a `wait`.
 
@@ -3045,7 +3062,8 @@ path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
 group chats created by humans only, between two and twelve active
 members, closed when no human is left in them, read by participants from
-their latest join and by the owners of agent participants, redacted by
+their latest join with the earlier history on demand, and by the owners
+of agent participants, redacted by
 human participants only (§9.2),
 `instance:admin` for `/admin/*` (§16); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
@@ -3073,7 +3091,7 @@ reviewer role.
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
-| `maity chat <conversation> [--after SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` the unread messages, at most the last 50; marks them read |
+| `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. *Planned (runner track).* |
