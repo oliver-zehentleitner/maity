@@ -508,3 +508,75 @@ def test_attaching_while_the_runner_is_removed_leaves_no_attachment(
                 )
             ).all()
         assert active == []
+
+
+# --- review: races and edges of hello ------------------------------------------------------
+
+
+def test_concurrent_hellos_leave_one_live_session(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    runner = paired(make_client, owner)
+    clients = [make_client() for _ in range(6)]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda c: hello(c, runner), clients))
+    assert [r.status_code for r in results] == [200] * 6, [r.text for r in results]
+    with migrated.begin() as conn:
+        live = conn.execute(
+            select(t.runner_session.c.id).where(t.runner_session.c.live.is_(True))
+        ).all()
+    assert len(live) == 1
+
+
+def test_hello_racing_other_runner_calls(make_client: ClientFactory, owner: flow.Human) -> None:
+    """A runner restarting while its old process still polls: hello and authentication
+    take the rows in one order, so neither deadlocks the other (§15.8)."""
+    runner = paired(make_client, owner)
+    clients = [make_client() for _ in range(8)]
+    hello(clients[0], runner)
+
+    def one(i: int) -> Any:
+        return hello(clients[i], runner) if i % 2 else stream(clients[i], runner, "after=0")
+
+    outcomes: list[tuple[int, str]] = []
+    for _ in range(5):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for response in pool.map(one, range(8)):
+                code = "" if response.status_code == 200 else error(response)
+                outcomes.append((response.status_code, code))
+    assert [o for o in outcomes if o[0] != 200] == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"client": "maity-cli/0.3.0ä"},
+        {
+            "capabilities": {
+                **CAPABILITIES,
+                "harnesses": [{**CAPABILITIES["harnesses"][0], "available": False}],
+            }
+        },
+        {
+            "capabilities": {
+                **CAPABILITIES,
+                "harnesses": [CAPABILITIES["harnesses"][0], CAPABILITIES["harnesses"][0]],
+            }
+        },
+        {
+            "capabilities": {
+                **CAPABILITIES,
+                "targets": [
+                    {**CAPABILITIES["targets"][0], "unreachable_since": "2026-10-22T13:00:00"}
+                ],
+            }
+        },
+    ],
+)
+def test_hello_refuses_what_it_cannot_show_or_trust(
+    make_client: ClientFactory, owner: flow.Human, body: dict[str, Any]
+) -> None:
+    runner = paired(make_client, owner)
+    payload = {"client": "maity-cli/0.3.0", "capabilities": CAPABILITIES, **body}
+    response = send(make_client(), runner, "POST", "/api/v1/runner/hello", payload)
+    assert (response.status_code, error(response)) == (400, "invalid")

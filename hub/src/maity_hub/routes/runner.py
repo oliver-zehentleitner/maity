@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field, StringConstraints
+from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -61,7 +61,7 @@ class Target(Strict):
     max_agents: int = Field(ge=0, le=10_000)
     running: int = Field(ge=0, le=10_000)
     reachable: bool
-    unreachable_since: datetime | None = None
+    unreachable_since: AwareDatetime | None = None
     isolation: Isolation
 
 
@@ -77,6 +77,13 @@ class HarnessOffer(Strict):
     confinement: Literal["allowlist", "pod", "none"]
     sandbox: Literal["on", "off", "n/a"]
 
+    @model_validator(mode="after")
+    def _reason_with_unavailable(self) -> HarnessOffer:
+        """`available: false` comes with its reason, and only then (§15.3)."""
+        if (self.reason is None) != self.available:
+            raise ValueError("reason goes with available: false, and only with it")
+        return self
+
 
 class Capabilities(Strict):
     backend: Name
@@ -90,6 +97,13 @@ class Capabilities(Strict):
     # Set by the hub (§15.8); a value the runner sends is replaced.
     reported_at: datetime | None = None
 
+    @model_validator(mode="after")
+    def _one_offer_per_harness(self) -> Capabilities:
+        ids = [h.id for h in self.harnesses]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each harness is offered once")
+        return self
+
 
 class Actual(Strict):
     placement_id: Name
@@ -99,7 +113,7 @@ class Actual(Strict):
 
 
 class Hello(Strict):
-    client: str = Field(min_length=1, max_length=200)
+    client: Name  # shown to humans as the runner's version
     capabilities: Capabilities
     # What runs on the runner now; read once placements exist (§15.5).
     actual: list[Actual] = Field(default_factory=list, max_length=1000)
@@ -150,6 +164,23 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
     assert runner_id is not None
     with events.transaction(engine_of(request)) as conn:
         now = clock.now()
+        # Rows in the order every authenticated runner call touches them (credential,
+        # runner, session), so that two calls never wait on each other in a cycle; the
+        # credential row also serialises two hellos of one credential (one live session).
+        conn.execute(
+            update(t.runner_credential)
+            .where(t.runner_credential.c.id == caller.credential_id)
+            .values(last_used_at=now)
+        )
+        conn.execute(
+            update(t.runner)
+            .where(t.runner.c.id == runner_id)
+            .values(
+                version=body.client,
+                capabilities=_stored(body.capabilities),
+                capabilities_at=now,
+            )
+        )
         conn.execute(
             update(t.runner_session)
             .where(
@@ -167,15 +198,6 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
                 started_at=now,
                 last_seen_at=now,
                 live=True,
-            )
-        )
-        conn.execute(
-            update(t.runner)
-            .where(t.runner.c.id == runner_id)
-            .values(
-                version=body.client,
-                capabilities=_stored(body.capabilities),
-                capabilities_at=now,
             )
         )
         name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
