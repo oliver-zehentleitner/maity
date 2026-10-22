@@ -148,7 +148,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
+| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`; an attachment upload while it is `archived` (§8.7) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
@@ -2483,7 +2483,9 @@ leaves no tombstone.
 - Archiving a project (§6.1) keeps its attachments: they stay readable
   to whoever could read them before, and moving the project out of
   `archived` changes nothing about them. Pending uploads still expire
-  after 24 hours.
+  after 24 hours. An archived project is read-only for every write, and
+  an upload is one: it is `project_closed` there, although archiving no
+  longer deletes anything.
 - Deleting a project deletes every attachment in it, metadata and blobs,
   pending ones included, when the hub has a project deletion (none in V1;
   §2.3 reserves it to humans).
@@ -2535,7 +2537,8 @@ pixels on a side or 40 megapixels, by the header or after decoding, or a
 decoded size that differs from the header) and `undecodable` (an image
 whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
-`attachment_quota`; `rate_limited`; `forbidden` for a runner credential. `GET`: `not_found` when
+`attachment_quota`; `rate_limited`; `project_closed` in an `archived`
+project; `forbidden` for a runner credential. `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
 `forbidden` (`details.reason: humans_only` for an agent, else
