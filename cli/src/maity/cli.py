@@ -263,8 +263,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
         items = [e for e in page.get("items") or [] if isinstance(e, dict)]
         if items:
             taken = items[:BATCH_MAX] if args.batch else items[:1]
-            session.data["cursor"] = taken[-1].get("seq", cursor)
-            session.save()
+            if not args.keep_cursor:  # with it, the next resume still lists the events
+                session.data["cursor"] = taken[-1].get("seq", cursor)
+                session.save()
             for event in taken:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
@@ -273,9 +274,10 @@ def cmd_wait(args: argparse.Namespace) -> int:
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
-            cursor = new_cursor
-            session.data["cursor"] = cursor
-            session.save()
+            cursor = new_cursor  # this run polls on from here; --keep-cursor saves nothing
+            if not args.keep_cursor:
+                session.data["cursor"] = cursor
+                session.save()
         if time.monotonic() - started < 1:  # an empty answer that did not hold: do not spin
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
@@ -881,6 +883,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=f"print every pending event (at most {BATCH_MAX}) as one JSON array, not the first "
         "one alone: one wake for a burst",
+    )
+    p.add_argument(
+        "--keep-cursor",
+        action="store_true",
+        help="return the event without acknowledging it, and save no cursor: the next "
+        "`maity resume` still lists it (for a supervisor that starts a run on each event)",
     )
     p.set_defaults(handler=cmd_wait)
 

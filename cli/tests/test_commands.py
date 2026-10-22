@@ -843,3 +843,13 @@ def test_placement_restart_with_rejoin(joined: Path, fake: fakehub.FakeHub) -> N
     )  # fmt: skip
     assert cli.main(["placement", "restart", "agent-f", "--rejoin"]) == cli.EXIT_OK
     assert fake.signed()[-1].json() == {"rejoin": True}
+
+
+def test_wait_keep_cursor_acknowledges_nothing(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = state.load_state(joined).get("cursor")
+    fake.events.append({"seq": 21, "kind": "message"})
+    assert cli.main(["wait", "--timeout", "5", "--keep-cursor"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out)["seq"] == 21
+    assert state.load_state(joined).get("cursor") == before

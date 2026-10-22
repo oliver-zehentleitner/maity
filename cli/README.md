@@ -383,9 +383,32 @@ and runs `maity join --join-file - --no-resume` in the clone. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
-the hub's reason. This slice starts the `stub` harness only (no model,
-for tests: it exits with `exit_code` after `run_seconds`); the real
-harness adapters come next.
+the hub's reason. Harnesses run with the narrowest grant the runner can give them, and the
+project's own harness configuration is never loaded:
+
+- **Claude Code** gets `--setting-sources user`, a settings file written
+  by the runner outside the clone (`maity`, `git`, the repository's
+  `allow` list, file tools inside the clone only, nothing on
+  `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
+  configuration. Where bubblewrap and socat are on the agents' `PATH`,
+  its OS sandbox is switched on strictly. It refuses to start without the
+  sandbox, allows no unsandboxed retry, and the command allowlist still
+  applies inside it. Network goes only to the hub, the forge and the
+  repository's `network` list. `git` is granted by subcommand, and
+  `-c`, `--no-index` and paths under `.git/maity` are denied.
+
+  These lists stop accidents and naive prompt injection; they are not a
+  security boundary. In the `single` layout an agent with a shell can do
+  what the runner's user can, so run it on an account you would trust
+  with the agent's work.
+- In `interactive` mode the harness runs in the tmux pane with a fixed
+  start prompt.
+- In `supervised` mode `maity.runner.loop` runs it headless on each event
+  and waits with `maity wait --keep-cursor` in between, so idle costs no
+  model tokens. Runs that end without progress stop the loop as
+  `crash_loop`/`hot_loop`.
+
+`stub` (no model, for tests) runs as before. Codex and opencode follow.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the

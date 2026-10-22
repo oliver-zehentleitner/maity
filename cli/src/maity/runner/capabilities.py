@@ -8,8 +8,10 @@ printable ASCII of at most 200 characters.
 from __future__ import annotations
 
 import getpass
+import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,11 +60,20 @@ def probe(harness: config.Harness, agent_path: str) -> Probe:
     return Probe(found, ascii_text(match.group(0) if match else lines[0], 80), None)
 
 
+def sandbox_available(harness: config.Harness, path: str | None = None) -> bool:
+    """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
+    needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Nothing else is
+    switched on yet."""
+    if harness.id != "claude-code" or not sys.platform.startswith("linux"):
+        return False
+    return all(shutil.which(tool, path=path) for tool in ("bwrap", "socat"))
+
+
 def agent_path(cfg: config.Config, environ_path: str) -> str:
     return (cfg.local.agent_path if cfg.local else None) or environ_path
 
 
-def harness_entry(harness: config.Harness, found: Probe) -> dict[str, Any]:
+def harness_entry(harness: config.Harness, found: Probe, path: str | None = None) -> dict[str, Any]:
     return {
         "id": harness.id,
         "version": found.version,
@@ -73,8 +84,9 @@ def harness_entry(harness: config.Harness, found: Probe) -> dict[str, Any]:
         "models": [ascii_text(m) for m in harness.models],
         "targets": ["local"],
         "confinement": "none" if harness.id == "stub" else "allowlist",
-        # No adapter switches a harness's own OS sandbox on yet (R5); claiming it would be a lie.
-        "sandbox": "n/a" if harness.id == "stub" else "off",
+        "sandbox": (
+            "n/a" if harness.id == "stub" else "on" if sandbox_available(harness, path) else "off"
+        ),
     }
 
 
@@ -99,7 +111,10 @@ def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dic
                 },
             }
         ],
-        "harnesses": [harness_entry(h, probes[h.id]) for h in cfg.harnesses.values()],
+        "harnesses": [
+            harness_entry(h, probes[h.id], agent_path(cfg, os.environ.get("PATH", "")))
+            for h in cfg.harnesses.values()
+        ],
         "projects": list(limits.projects),
         "repositories": list(limits.repositories),
         "require_local_approval": limits.require_local_approval,

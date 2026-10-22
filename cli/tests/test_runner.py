@@ -428,6 +428,7 @@ def test_check_passes_on_a_paired_runner(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     capsys.readouterr()
     code = cli.main(["runner", "check", "--config", str(paired)])
     out = lines(capsys)
@@ -451,6 +452,7 @@ def test_check_finds_the_harness_and_its_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "codex", "codex-cli 0.40.0")
     paired.write_text(paired.read_text() + "\n[harness.codex]\n")
     capsys.readouterr()
@@ -462,6 +464,7 @@ def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "claude", "2.1.308 (Claude Code)")
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
@@ -482,6 +485,7 @@ def test_check_requires_the_sandbox_when_configured(
     if not sys.platform.startswith("linux"):
         pytest.skip("the sandbox prerequisites are checked on Linux")
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "claude", "2.1.308")
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
     capsys.readouterr()
@@ -493,6 +497,7 @@ def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     os.chmod(tmp_path / "st", 0o755)  # noqa: S103 - the loose mode is the point
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
@@ -503,6 +508,7 @@ def test_check_warns_about_a_config_others_can_change(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
     paired.chmod(0o664)
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
