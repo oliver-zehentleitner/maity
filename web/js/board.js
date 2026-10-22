@@ -255,13 +255,13 @@ window.Maity = window.Maity || {};
       },
       h("h4", null, title), list,
       h("div", { class: "row" },
-        h("button", { type: "button", class: "small", onclick: () => {
+        h("button", { type: "button", class: "small list-tool", onclick: () => {
           const li = add(null);
           const first = li.querySelector("input");
           if (first) first.focus();
         } }, "Add"),
-        h("button", { type: "submit" }, "Save"),
-        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel")),
+        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel"),
+        h("button", { type: "submit" }, "Save")),
       status.el);
       M.dom.clear(box);
       append(box, form);

@@ -83,8 +83,7 @@ window.Maity = window.Maity || {};
         h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
           + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
           + "You can also run it yourself in a terminal in that clone."),
-        copy,
-        h("button", { type: "button", onclick: () => clear(result) }, "Hide")));
+        h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(result) }, "Hide"), copy)));
     }
 
     const form = h("form", {

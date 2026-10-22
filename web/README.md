@@ -209,6 +209,12 @@ the header of every screen; owner and admin change it there with a
 reason (**Project settings**), and the owner sets and clears the absence
 shown under it.
 
+**Buttons** sit at the right edge of their form, panel or card. In a row
+the secondary ones come first and the primary one last (Cancel, Save;
+Later, "Neither — let's talk", the replies; Hide, Copy), in that order in
+the page too, so the tab order is the order on screen; destructive ones
+(Revoke, Remove) stand apart. On a phone (≤ 600 px) they stack, full width.
+
 ## Fixture mode
 
 `js/api.js` is the only place that knows where data comes from: a page

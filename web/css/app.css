@@ -247,14 +247,16 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .options { margin: 0; padding-left: 20px; }
 .answered { color: var(--ok); }
 
-.replies { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.replies { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+/* A row of buttons: at the right edge, secondary ones before the primary one. */
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
 .reply { min-width: 5rem; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
 
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
-.free-text button { justify-self: start; }
+.free-text button { justify-self: end; }
 .chat-link { margin: 10px 0 0; }
 
 /* ---- board ---------------------------------------------------------- */
@@ -313,7 +315,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prs td:first-child { overflow-wrap: break-word; }
 .groups .unknown { color: var(--muted); }
 .release-edit { margin-top: 6px; }
-.release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+/* A tool for the list itself stays at the left, apart from Cancel and Save. */
+.rows-form .row .list-tool { margin-right: auto; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
 .rows-form h4 { margin: 6px 0 4px; }
@@ -349,7 +353,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .credentials .revoked { color: var(--muted); }
 .credentials .never { color: var(--warn); }
 
-.pause { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.pause { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .pause input { flex: 1 1 10rem; }
 .pause .hint { flex: 1 1 100%; }
 .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
@@ -378,7 +382,10 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .runner h4 { margin: 10px 0 4px; }
 .runner ul { margin: 0; padding-left: 18px; }
 .runner-tools .unavailable { color: var(--muted); }
-.runner-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 10px; }
+.runner-actions { display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.runner-actions .rename { margin-right: auto; }
+/* The destructive ones apart from the rest. */
+.runner-actions .separated { margin-left: 12px; }
 .runner-actions .rename { display: flex; gap: 6px; align-items: end; max-width: none; }
 .presence.revoked, .dot.revoked { color: var(--bad); }
 .dot.revoked { background: var(--bad); }
@@ -411,7 +418,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .briefing .pre { margin: 0 0 6px; max-height: 12rem; overflow: auto; }
 .briefing-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .briefing-form label { font-size: 0.85rem; color: var(--muted); }
-.briefing-form .row { display: flex; gap: 6px; }
+.briefing-form .row { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ---- organisation --------------------------------------------------- */
 
@@ -440,7 +447,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .compose { display: grid; gap: 6px; }
 .compose label { font-size: 0.85rem; color: var(--muted); }
-.compose button { justify-self: start; }
+.compose button { justify-self: end; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
@@ -453,13 +460,13 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .panel-title { margin: 0; font-size: 1rem; }
 .panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
-.inline-form button, .login button, .join-form button { justify-self: start; }
+.inline-form button, .login button, .join-form button { justify-self: end; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
 
 .join-result { margin: 12px 0; }
-.join-result button + button { margin-left: 6px; }
+.join-result .actions, .pair-steps .actions { margin-top: 8px; }
 .paste-line { display: block; padding: 8px; background: var(--surface); border-radius: 4px; overflow-wrap: anywhere; user-select: all; }
 .joins { list-style: none; padding: 0; display: grid; gap: 6px; }
 .joins li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -467,7 +474,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .project-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .project-form label { font-size: 0.85rem; color: var(--muted); }
 .project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
-.project-form button { justify-self: start; margin-top: 6px; }
+.project-form button { justify-self: end; margin-top: 6px; }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
 .field-error:empty { display: none; }
 .me .small-link { font-size: 0.82rem; margin: 0 4px; }
@@ -483,6 +490,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
+  /* On a phone the buttons of a form or a row stack, full width. */
+  .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
+  .compose > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button { flex: 1 1 100%; justify-self: stretch; }
   .toolbar h2 { flex-basis: 100%; }
   .profiles { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }

@@ -195,8 +195,9 @@ window.Maity = window.Maity || {};
       h("h2", { class: "panel-title" }, "Your absence"),
       h("label", { for: "absence-until" }, "Away until"), until,
       h("label", { for: "absence-scope" }, "Meanwhile"), scope,
-      h("button", { type: "submit" }, a ? "Update absence" : "Set absence"),
-      a ? h("button", { type: "button", onclick: () => save({ absence: null }, "Absence") }, "I am back") : null));
+      h("div", { class: "actions" },
+        a ? h("button", { type: "button", onclick: () => save({ absence: null }, "Absence") }, "I am back") : null,
+        h("button", { type: "submit" }, a ? "Update absence" : "Set absence"))));
     }
     append(panel, status.el);
     return panel;
