@@ -70,6 +70,19 @@ def _no_forge_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nor does any read under §11.1: resolution and connection both refuse unless a
+    test puts its own fakes in their place."""
+    from maity_hub import outbound
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise outbound.Refused("unavailable")
+
+    monkeypatch.setattr(outbound, "resolver", refuse)
+    monkeypatch.setattr(outbound, "connector", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""

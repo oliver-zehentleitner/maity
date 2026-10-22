@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 access = logging.getLogger("maity_hub.access")
 
 BODY_CAP = 64 * 1024
+# An uploaded logo or banner may be up to 1 MiB (docs/api.md §1.7, §11.2); past it the
+# answer is `invalid` with `fields.body: too_large`, as §11.2 says, not 413.
+IMAGE_CAP = 1024 * 1024
+_IMAGE_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/(logo|banner)$")
 CSP = "default-src 'self'"
 
 
@@ -48,9 +52,12 @@ class HubMiddleware:
         scope.setdefault("state", {})["origin"] = origin
         send = _with_headers(send)
 
+        image = scope.get("method") == "PUT" and bool(_IMAGE_UPLOAD.match(scope.get("path", "")))
+        cap = IMAGE_CAP if image else BODY_CAP
+        refuse = _image_too_large if image else _too_large
         declared = _content_length(scope)
-        if declared is not None and declared > BODY_CAP:
-            await _too_large(scope, receive, send)
+        if declared is not None and declared > cap:
+            await refuse(scope, receive, send)
             return
         body = b""
         more = True
@@ -60,8 +67,8 @@ class HubMiddleware:
                 return
             body += message.get("body", b"")
             more = message.get("more_body", False)
-            if len(body) > BODY_CAP:
-                await _too_large(scope, receive, send)
+            if len(body) > cap:
+                await refuse(scope, receive, send)
                 return
 
         raw_query: bytes = scope.get("query_string", b"")
@@ -161,16 +168,26 @@ async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
 
 
+async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
+    response = error_response(
+        400, "invalid", "the image is over 1 MiB", {"fields": {"body": "too_large"}}
+    )
+    await response(scope, receive, send)
+    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
+
+
 def _with_headers(send: Send) -> Send:
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
-            headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in _SET]
-            content_type = next(
-                (v for k, v in message.get("headers", []) if k.lower() == b"content-type"), b""
-            )
+            given = message.get("headers", [])
+            headers = [(k, v) for k, v in given if k.lower() not in _SET]
+            content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
+            # Every answer is no-store, except one whose route chose its own caching:
+            # the logo and banner, revalidated by ETag (§1.1, §11.2).
+            cache = next((v for k, v in given if k.lower() == b"cache-control"), b"no-store")
             headers += [
                 (b"maity-server-time", clock.rfc3339(clock.now(), millis=True).encode()),
-                (b"cache-control", b"no-store"),
+                (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
             if content_type.startswith(b"text/html"):

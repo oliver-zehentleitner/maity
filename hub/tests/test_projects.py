@@ -43,6 +43,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "state_note",
         "state_changed_at",
         "repository",
+        "logo",
+        "banner",
         "keep_the_why",
         "policy",
         "absence",
@@ -51,6 +53,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "created_at",
     }
     assert body["state"] == "build"
+    assert body["logo"] == body["banner"] == {"available": False, "source": None}
     assert body["repository"] == {
         "url": "https://github.com/oliver-zehentleitner/maity",
         "default_branch": "main",

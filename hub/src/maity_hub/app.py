@@ -22,6 +22,7 @@ from maity_hub import (
     __version__,
     errors,
     forge,
+    images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
 )
@@ -35,6 +36,7 @@ from maity_hub.routes import (
     joins,
     me_session,
     members,
+    project_images,
     projects,
     requests,
     runners,
@@ -65,7 +67,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         _app.state.probe = worker
         if worker is not None:
             worker.start()
+        # Forge images are read without a token for a public repository, so this one
+        # runs whether or not the hub holds a token (docs/api.md §11.2).
+        image_worker = images.Worker(engine, reader)
+        image_worker.start()
         yield
+        image_worker.stop()
         if worker is not None:
             worker.stop()
         engine.dispose()
@@ -89,6 +96,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
+    app.include_router(project_images.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
