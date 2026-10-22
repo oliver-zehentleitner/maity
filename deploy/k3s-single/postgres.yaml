@@ -1,0 +1,40 @@
+# PostgreSQL 17 for the hub, one replica, on k3s's local-path storage (the
+# instance's own disk). The password comes from the Secret maity-postgres,
+# created by hand (docs/install/README.md); nothing here holds a secret.
+apiVersion: v1
+kind: Service
+metadata: {name: maity-postgres, namespace: maity, labels: {app: maity-postgres}}
+spec:
+  clusterIP: None
+  selector: {app: maity-postgres}
+  ports: [{name: pg, port: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: maity-postgres, namespace: maity}
+spec:
+  serviceName: maity-postgres
+  replicas: 1
+  selector: {matchLabels: {app: maity-postgres}}
+  template:
+    metadata: {labels: {app: maity-postgres}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 999, runAsUser: 999, runAsGroup: 999, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: postgres
+          image: postgres:17.10
+          env:
+            - {name: POSTGRES_USER, value: maity}
+            - {name: POSTGRES_DB, value: maity}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: maity-postgres, key: password}}
+          ports: [{containerPort: 5432, name: pg}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 512Mi}}
+          readinessProbe: {exec: {command: [pg_isready, -U, maity, -d, maity]}, periodSeconds: 10}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 10Gi}}}

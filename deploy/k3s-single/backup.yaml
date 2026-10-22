@@ -1,0 +1,41 @@
+# A daily pg_dump into its own volume, keeping the newest 14. The volume is on
+# the same disk as the database: copy the dumps off the instance as well
+# (docs/install/README.md, "Backups").
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: maity-backups, namespace: maity}
+spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 5Gi}}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: maity-pg-dump, namespace: maity}
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata: {labels: {app: maity-pg-dump}}   # admitted by postgres-netpol.yaml
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext: {runAsUser: 999, runAsGroup: 999, fsGroup: 999, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: dump
+              image: postgres:17.10
+              env:
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: maity-postgres, key: password}}
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  f=/backups/maity-$(date -u +%Y%m%dT%H%M%SZ).dump
+                  pg_dump -h maity-postgres -U maity -Fc maity -f "$f.part" && mv "$f.part" "$f"
+                  ls -1t /backups/maity-*.dump | tail -n +15 | xargs -r rm --
+                  ls -l /backups
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              volumeMounts: [{name: b, mountPath: /backups}]
+          volumes: [{name: b, persistentVolumeClaim: {claimName: maity-backups}}]

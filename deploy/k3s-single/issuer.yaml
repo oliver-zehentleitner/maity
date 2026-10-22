@@ -1,0 +1,11 @@
+# Let's Encrypt through cert-manager, HTTP-01 over k3s's Traefik. No account
+# e-mail: expiry notices are not needed while cert-manager renews.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata: {name: letsencrypt}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef: {name: letsencrypt-account}
+    solvers:
+      - http01: {ingress: {ingressClassName: traefik}}
