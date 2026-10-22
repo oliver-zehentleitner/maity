@@ -739,30 +739,34 @@ files and credentials; separating them needs one user per agent (ssh
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** `docs/api.md` §15.7 and §6.11 as settled in the contract's review rounds (recognition only by a signal verified on a real run; the reset_unknown backoff); implementation of the CLI side of #158, 2026-10-22
+**Source:** `docs/api.md` §15.7 and §6.12 as settled in the contract's review rounds (recognition only by a signal verified on a real run; the reset_unknown backoff); implementation of the CLI side of #158, 2026-10-22
 **Revisit when:** a real run of Claude Code or Codex shows the exit code or output that marks its provider limit, or a harness names its reset time in a form the loop can read
 
 The supervised loop learns from the adapter which exit codes are the
 harness's provider limit (`limit.exit_codes` in its spec). On such an
 exit it writes the harness's own exit code to `limit.json` in the
 agent's directory and exits 22. The runner maps 22 to `rate_limited`,
-`reason: quota`, with that exit code and `retry_at`: the reset time the
-file names, capped at 7 days, or else 15 minutes, doubling with each
-limit in a row that names none, up to 2 hours (`detail: reset_unknown`).
-A limit that names its reset, and any other end of a run, start the count
-over; so does a new generation. No adapter lists an exit code yet, so for
+`reason: quota`, `detail: reset_unknown`, with that exit code and
+`retry_at` 15 minutes on, doubling with each limit in a row up to 2
+hours. A session that ran longer than `quick_exit` before its limit
+starts the row over, and so does a new generation. The runner deletes
+the file before each start and reads it as the agents' user, a regular
+file only, never through a link, at most 512 bytes, and takes nothing
+but a plain exit code from it. No adapter lists an exit code yet, so for
 now every limit exits as an ordinary failure, as §15.7 asks until a
-signal is verified.
+signal is verified; a reset time a harness names is not read either.
 
 **Reason:** the loop is the only process that sees the harness exit, and
 the runner only sees the loop's exit status; a fixed exit code plus a
-file the runner already owns carries the harness's own code and a reset
-time without a new channel. Guessing a harness's limit signal would turn
+file in the agent's directory carries the harness's own code without a
+new channel. That directory is the agents' side, so the file is
+untrusted input: an agent could plant a link to a device or a deep JSON,
+or a reset time that holds its slot for a week. Guessing a harness's limit signal would turn
 some real crashes into limits, which hide from the crash cap and set the
 member's availability; an empty list keeps the old behaviour until a run
-shows the signal. The contract does not say whether a limit with a named
-reset breaks a run of reset_unknown limits; counting only unknown resets
-in a row keeps the backoff for the case it exists for.
+shows the signal. The loop's clean runs between two limits never reach the runner, so a
+session's own length is what shows that a limit was not the previous one
+repeating.
 
 **Rejected alternatives:**
 - Reading the harness's output in the pane for limit messages: the loop
