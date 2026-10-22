@@ -48,7 +48,20 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e hub -e cli playwright==1.64.0
-      - run: python -m playwright install --with-deps --only-shell chromium
+      # The headless shell only, and from apt only the libraries it lacks on
+      # the runner; `--with-deps` installed 9 and upgraded 8 packages and took
+      # 52 s to 5 min, mostly apt. A library still missing afterwards fails
+      # here, before the test.
+      - run: python -m playwright install --only-shell chromium
+      - run: |
+          shell="$(ls ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell)"
+          missing="$(ldd "$shell" | awk '/not found/ {print $1}' | tr '\n' ' ')"
+          echo "missing before: ${missing:-none}"
+          if [ -n "$missing" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends libnss3 libnspr4 libasound2t64
+          fi
+          if ldd "$shell" | grep "not found"; then exit 1; fi
       - run: python web/tools/e2e.py --artifacts e2e-screenshots
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

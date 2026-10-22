@@ -218,12 +218,24 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    lands in the other project with its request open;
 8. `#/all` lists both requests, the `high` one first, each with its project,
    and answers them there, one in free text, one with `go`; the agent's
-   `maity resume` sees that answer.
-9. at phone width (390 px) the inbox, board, agents, organisation and join
-   views, each reached through its tab, load without an error, none of
-   them scrolls sideways, the current tab and project stay visible in
-   their rows, the tab row shows its scroll fade (and at 1280 px neither
-   row does), and every Revoke label stays on one line.
+   `maity resume` sees that answer;
+9. **Chat**: the agent writes with `maity say human`, the message appears in
+   the open conversation; the owner answers there, the agent's `maity wait`
+   wakes with that message, and after a reload it is "reached a session";
+10. **Pause**: the owner pauses the agent with a reason; the agent's own
+    `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
+    does not lift it, the member list shows it by the owner; the owner
+    clears it, and the agent then sets and lifts a pause of its own;
+11. **State & absence**: the owner freezes the project with a note and a
+    reason and sets an absence; the header shows both, the switcher's state
+    dot differs from the building project's, and the agent's `resume`
+    packet carries the state, the note and the absence; then back to build
+    and "I am back", which the packet shows too;
+12. at phone width (390 px) the inbox, board, agents, organisation and join
+    views, each reached through its tab, load without an error, none of
+    them scrolls sideways, the current tab and project stay visible in
+    their rows, the tab row shows its scroll fade (and at 1280 px neither
+    row does), and every Revoke label stays on one line.
 
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
 default a temp directory, kept), with the join line painted over; the
@@ -236,9 +248,13 @@ script starts, and it is stopped by its own PID, also on Ctrl-C; port
 refused too. The caller's own `MAITY_*` variables are dropped for the hub
 and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
 
-CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`, with
-`playwright install --with-deps --only-shell chromium`, and uploads the
-screenshots and `hub.log` as the workflow artifact `web-e2e-screenshots`, also when a step fails.
+CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
+the headless shell only (`playwright install --only-shell chromium`) and
+checks it with `ldd`; only when a library is missing does it install a
+fixed minimal list from apt (`libnss3`, `libnspr4`, `libasound2t64`), and a
+library still missing then fails the job before the test. The job uploads
+the screenshots and `hub.log` as the workflow artifact
+`web-e2e-screenshots`, also when a step fails.
 
 ## Layout
 

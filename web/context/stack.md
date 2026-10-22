@@ -97,8 +97,9 @@ build step, and the browser download happens on the runner only. Python
 also drives the hub's and CLI's processes directly. It runs in CI and
 not only as a documented script because the shared VM's Chromium lacks
 system libraries (`libnss3`, `libnspr4`, `libasound2`) and they cannot
-be installed without root there, while `playwright install --with-deps`
-installs them on the runner.
+be installed without root there, while the CI runner has them (the job
+checks with `ldd` and installs a fixed minimal list only when one is
+missing, since 2026-10-22; `--with-deps` before took 52 s to 5 min).
 
 **Rejected alternative:** Playwright for Node — a `package.json` and a
 lockfile in `web/`, the Node toolchain the stack excludes. Selenium —

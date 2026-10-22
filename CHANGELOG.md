@@ -131,6 +131,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   and a credential's id, client and dates wrap as one text beside it
 - web: a request id on a blocked card no longer breaks at its hyphen
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
+- web: the project switcher's state dot shows the state's colour; a later `.dot` rule
+  had made every dot grey
 - web: on a narrow screen the current tab and project are scrolled into their rows;
   the 15-second count re-read redraws only the switcher, so it no longer closes an
   open State & absence panel with what was typed in it, nor resets a scrolled tab row
