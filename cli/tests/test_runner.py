@@ -150,9 +150,9 @@ def test_harness_without_allowlist_is_refused() -> None:
 
 
 def test_unknown_harness_and_later_backends() -> None:
-    found = problems(minimal(x="\n[harness.vim]\n", b='\n[backend]\nkind = "ssh"\n'))
+    found = problems(minimal(x="\n[harness.vim]\n", b='\n[backend]\nkind = "k8s"\n'))
     assert any(p.startswith("harness.vim: unknown harness") for p in found)
-    assert any(p.startswith("backend.ssh: not supported") for p in found)
+    assert any(p.startswith("backend.k8s: not supported") for p in found)
 
 
 def test_default_mode_must_be_a_mode() -> None:

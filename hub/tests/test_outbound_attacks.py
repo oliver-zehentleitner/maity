@@ -455,3 +455,25 @@ def test_concurrent_first_uploads(owner: flow.Human) -> None:
             codes += [a.result().status_code, b.result().status_code]
     print("RACE", codes)
     assert set(codes) == {200}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n" + b"x" * 10,
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n64\r\n" + b"x" * 10,
+    ],
+)
+def test_a_body_cut_short_is_refused(monkeypatch: pytest.MonkeyPatch, answer: bytes) -> None:
+    # The stream ending before the declared length is no answer: the watchdog closing the
+    # socket at the deadline ends a read the same way, and a part is never the body.
+    def short(conn: socket.socket) -> None:
+        conn.sendall(answer)
+        conn.close()
+
+    server = Server(short)
+    wire(monkeypatch, server)
+    with pytest.raises(outbound.Refused) as refused:
+        outbound.read("https://example.org/x", cap=1024)
+    server.close()
+    assert refused.value.reason == "unavailable"

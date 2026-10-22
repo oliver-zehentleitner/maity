@@ -94,8 +94,8 @@ model budget, so a human gives the go unless the project's admins agree
 otherwise. `humans_only` first because under `human` no agent may answer at
 all; `self_answer` would name a narrower reason than the real one. Kept on
 a preset change like `signing` and `spawn_requests`, the fields that govern
-what humans decide: a preset must not loosen it in passing. The contract
-does not list it among the kept fields; this is the hub's reading.
+what humans decide: a preset must not loosen it in passing. §6.1 lists it
+among the kept fields since the contract owner's ruling on #185 (#186).
 
 **Rejected alternative:** only the runner's owner gives the go (the open
 question this replaces). Not chosen by the maintainer; the policy names a

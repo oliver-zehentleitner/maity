@@ -176,8 +176,46 @@ def _project(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _card(card: dict[str, Any]) -> str:
+def _cover(item: dict[str, Any], names: dict[str, str]) -> str:
+    """` (cover for @<handle>)` for a card or request handed over during an outage."""
+    covered = get(item, "cover", "for")
+    return f" (cover for @{_name(covered, names)})" if covered else ""
+
+
+def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
+    """The Availability block (§6.12): whom the caller covers, with the handed-over ids, and
+    every peer that is not available. Empty when there is nothing to say."""
+    covering = _items(get(packet, "membership", "covering"))
+    held = [*_items(packet.get("claims")), *_items(packet.get("assigned"))]
+    reqs = _dict(packet.get("requests"))
+    held += [r for key in ("answered_since_cursor", "mine_open", "to_answer")
+             for r in _items(reqs.get(key))]  # fmt: skip
+    lines: list[str] = []
+    for entry in covering:
+        member = entry.get("member_id")
+        if not isinstance(member, str):
+            continue  # a malformed entry would match every item without `cover`
+        ids = [inline(item.get("id")) for item in held if get(item, "cover", "for") == member]
+        line = f"  covering @{_name(member, names)} since {inline(entry.get('since'))}"
+        lines.append(line + (": " + ", ".join(ids) if ids else ""))
+    for peer in _items(packet.get("peers")):
+        state = get(peer, "availability", "state")
+        if not state or state == "available":
+            continue
+        line = f"  @{_name(peer.get('member_id') or peer.get('handle'), names)} {inline(state)}"
+        until = get(peer, "availability", "until")
+        if until:
+            line += f" until {inline(until)}"
+        by = get(peer, "covered_by", "member_id")
+        if by:
+            line += f", covered by @{_name(by, names)}"
+        lines.append(line)
+    return ["Availability", *lines, ""] if lines else []
+
+
+def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
     line = f"  {inline(card.get('id'))} [{inline(card.get('status'))}] {inline(card.get('title'))}"
+    line += _cover(card, names or {})
     lease = get(card, "claim", "lease_until")
     if lease:
         line += f" (lease until {inline(lease)})"
@@ -188,7 +226,10 @@ def _card(card: dict[str, Any]) -> str:
 
 
 def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False) -> list[str]:
-    lines = [f"  {inline(req.get('id'))} ({inline(req.get('class'))}): {inline(req.get('title'))}"]
+    lines = [
+        f"  {inline(req.get('id'))} ({inline(req.get('class'))}): {inline(req.get('title'))}"
+        + _cover(req, names)
+    ]
     if answering:
         if req.get("summary"):
             lines += ["  " + q for q in quote(req["summary"])]
@@ -282,6 +323,7 @@ def render(packet: Any, first: bool = False) -> str:
             *quote(paused.get("reason") or ""),
             "",
         ]
+    out += _availability(packet, names)
     briefing = ms.get("briefing")
     if briefing:
         out += [
@@ -305,8 +347,11 @@ def render(packet: Any, first: bool = False) -> str:
 
     reqs = _dict(packet.get("requests"))
     sections: list[tuple[str, list[str]]] = [
-        ("Cards you hold:", [_card(c) for c in _items(packet.get("claims"))]),
-        ("Assigned to you, not claimed yet:", [_card(c) for c in _items(packet.get("assigned"))]),
+        ("Cards you hold:", [_card(c, names) for c in _items(packet.get("claims"))]),
+        (
+            "Assigned to you, not claimed yet:",
+            [_card(c, names) for c in _items(packet.get("assigned"))],
+        ),
         (
             "Answered since your last session:",
             [ln for r in _items(reqs.get("answered_since_cursor")) for ln in _request(r, names)],

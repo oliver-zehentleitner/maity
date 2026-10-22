@@ -142,6 +142,8 @@ the packet itself, complete.
 <git common dir>/maity/            mode 0700  (.git/maity/ in a normal clone)
     credential                     mode 0600  the session credential, nothing else
     state.json                     mode 0600  hub, project, identity, session, cursor
+    env-secret                     mode 0600  this workspace's environment secret
+~/.local/state/maity/env-secret    mode 0600  this home's environment secret
 ```
 
 - One state per clone, shared by that clone's worktrees. Outside a clone,
@@ -157,6 +159,15 @@ the packet itself, complete.
 - A request whose body or query contains anything shaped like a
   credential (`mty1.<id>.<secret>`) is refused before it is sent. The hub
   would revoke a real one.
+- `resume` declares where the session runs as two ids
+  ([`docs/api.md`](../docs/api.md) §5.2): `h-`/`w-` plus 12 hex
+  characters of an HMAC of the hub's URL, keyed with a random secret of
+  this home and of this state directory. No path leaves the machine, the
+  same place gives unrelated ids on two hubs, and the ids are never
+  printed. The hub only compares them, to tell the humans when two
+  members share a home or a workspace. A secret that cannot be read, or
+  one others can reach, leaves the ids out with a note; a hub that does
+  not take them yet is resumed without them.
 - The join code in the pasted line is single-use and short-lived. The
   session credential is long-lived, bound to this agent profile and
   project, and revoked in the dashboard.
@@ -266,6 +277,26 @@ $ maity release tick chk-2
 ticked chk-2 on tsk-0010
 ```
 
+## Availability
+
+```sh
+maity limit --until 2h --reason "provider quota"   # or 1h30m, 2d12h, 2026-10-22T17:00:00Z
+```
+
+Run `maity limit` before the session stops for a provider limit: the hub
+then knows you are out until a time and acts on your availability policy
+(wait, or a substitute covers your work, [`docs/api.md`](../docs/api.md)
+§6.12). The next `maity resume` clears it. `--until` is a duration from
+now (`<n><unit>` groups in the order `d`, `h`, `m`, `s`, each once) or an
+RFC 3339 time with an offset; a time without one is refused rather than
+read as local time, and nothing more than 7 days ahead is sent. The CLI
+sends UTC and prints the `until` the hub stored.
+
+`maity resume` prints an `Availability` block after any pause notice
+when you cover someone (with the ids of the cards and requests handed to
+you) or a peer is not available, and marks a handed-over card or request
+with `(cover for @<handle>)`.
+
 ## Placements and runners
 
 An agent whose role holds `agents:propose` can start other members on a
@@ -301,6 +332,31 @@ or a file over 1 MiB, is refused here with exit 4 before any call. The
 hub re-encodes the image as a square PNG of at most 256 pixels without
 metadata and answers with the new `avatar_url`, which is printed
 (`--json` prints the whole answer).
+
+## Notes and links
+
+```sh
+maity note add tsk-0004 "The CLI needs --no-code here too."
+maity note list tsk-0004 [--all]
+maity note resolve tsk-0004 nte-0031 --incorporated   # or --dismissed; the card's creator or tasks:admin
+maity link add tsk-0004 https://github.com/oliver-zehentleitner/maity/issues/41
+maity link add tsk-0004 https://keepthewhy.com/linting/ --label "ktw-lint docs"
+maity link list tsk-0004
+maity link remove tsk-0004 lnk-0007
+```
+
+A note is a remark on a card that never changes it
+([`docs/api.md`](../docs/api.md) §6.16): it counts once someone who may
+edit the card works it into the body. `note list` shows open notes
+unless told otherwise. A note's text is printed with terminal control
+sequences removed.
+
+`link add` sends a GitHub issue or pull request URL as a forge link,
+which the hub observes (§6.13), and any other https URL, another forge's
+issue included, as a plain link it never fetches. `--plain` keeps a forge URL plain, for
+an issue of another repository. Whether a forge URL belongs to the
+project's repository is the hub's call. `link list` shows each link
+with the state and title the hub last observed.
 
 ## `api`
 
@@ -398,8 +454,8 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
 
-Settings this version does not carry out yet (`layout = "agent_user"`,
-`memory_max`, `cpu_quota`, a harness `env_file`) are errors in `check`,
+Settings this version does not carry out yet (`memory_max`,
+`cpu_quota`, a harness `env_file`) are errors in `check`,
 and `serve` refuses to start with them (exit 78), instead of running
 agents with less isolation than the file asks for. `tmux_socket` must be
 an absolute path.
@@ -422,23 +478,46 @@ project's own harness configuration is never loaded:
   its OS sandbox is switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
-  repository's `network` list. `git` is granted by subcommand, and
-  `-c`, `--no-index` and paths under `.git/maity` are denied.
+  repository's `network` list. Sandboxed commands cannot read the
+  runner's state directory and configuration, the listed secrets in the
+  agents' home (below), or the credential of any other clone that
+  existed when the agent started. A clone made later stays readable to
+  it until its next start, and the rest of every other clone stays
+  readable. `git` is granted by subcommand, and `-c`, `--no-index` and
+  paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. In the `single` layout an agent with a shell can do
-  what the runner's user can, so run it on an account you would trust
-  with the agent's work.
+  security boundary. `git diff /dev/null <file>` reads a file outside the
+  work tree without saying `--no-index`, and allowed build and test
+  commands run repository code. In the `single` layout an agent with a
+  shell can do what the runner's user can, so run it on an account you
+  would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
   and waits with `maity wait --keep-cursor` in between, so idle costs no
   model tokens. Runs that end without progress stop the loop as
-  `crash_loop`/`hot_loop`.
+  `crash_loop`/`hot_loop`. A run that ends for the provider's limit, by a
+  signal verified on a real run of that harness, is reported
+  `rate_limited` (not a crash) and started again after 15 minutes,
+  doubling with each limit in a row up to 2 hours (a run that ended
+  cleanly since the last limit starts the row over); the placement keeps its
+  slot meanwhile and takes it back at the restart, and a stop ends it at
+  once. No harness has a verified signal yet, so for now a limit exits
+  like any other failure; a reset time a harness names is not read until
+  a real run shows where. In `interactive` mode the agent (or you, in the pane)
+  runs `maity limit` instead.
 
 - **Codex** gets a `CODEX_HOME` of its own per placement, with a
   `config.toml` the runner writes. It turns on Codex's sandbox with the
-  workspace profile, makes the clone's `.git` writable, sets
+  workspace profile (checked with `codex sandbox -- true` once per binary:
+  a host where it cannot start is advertised `sandbox: off`; restart the
+  runner after upgrading Codex), makes the clone's
+  `.git` writable but its `config` and `hooks` read-only, and hides the
+  workspaces root (every other clone), the runner's state directory and
+  the logins and keys in the agents' home from it. The clone's own
+  credential stays readable, because the agent's `maity` runs inside the
+  sandbox. It sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
   Codex's model endpoints and a repository's `network` list only. The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
@@ -449,12 +528,133 @@ project's own harness configuration is never loaded:
 - **opencode** (built, not offered yet: a configuration that names it is
   refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (except on `.git/maity`), `maity *`, named `git` subcommands
+  file tools (not on `.git/maity`; `grep` and `glob` are off, because opencode
+  asks about them by the pattern typed, not the path searched), `maity *`, named `git` subcommands
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
 
 `stub` (no model, for tests) runs as before.
+
+**What an agent can and cannot reach.** git keeps lock files in `.git`,
+so an agent can always write there, `.git/commondir` included, which
+points git at another directory's configuration. It can also register a
+nested repository of its own as a submodule, whose configuration git
+reads for a plain `status`. Every agent session therefore gets
+`GIT_COMMON_DIR=<clone>/.git` and, through `GIT_CONFIG_COUNT`,
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. With those, the
+harness's own git calls, which run outside its sandbox, use the clone's
+real `.git` and do not run a program from a planted directory or
+submodule. `maity` runs its own git (`report`, `checkpoint`) with the
+same settings on the command line, whatever its environment, because
+for Claude Code it runs outside the sandbox. An agent can unset the
+variables for its own commands, but those stay in its sandbox. The cost:
+in a session, `git status` and `git diff` do not look into submodules,
+and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
+submodule moved to another commit does not show in `git status` or
+`git diff --cached`, yet `git add -A` stages it and a commit records it;
+`maity report` does not count such a staged bump as an uncommitted
+change. A newly added submodule does show.
+
+Only the listed paths in the agents' home are hidden: `~/.ssh`,
+`~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
+`~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
+`~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
+configuration, and the runner's own configuration and state. Any other
+secret there, such as an `.env` file of your own, stays readable. In the
+`single` layout the agents' home is the operator's. The forge login
+(`gh`, a credential helper) stays readable on purpose, because pushing
+needs it.
+
+| Layout | What an agent can read or act as | What you must not do |
+|---|---|---|
+| `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
+| `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
+| `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
+
+The runner itself runs git in a clone only to clone into a missing
+directory and in `gc`, with the pinned environment and the layout check
+above. **Never run git in an agent's clone as yourself in the `single`
+layout:** a planted `.git/commondir`, submodule, hook or configuration
+runs as you. Look at the work through the pushed branch or the pull
+request instead. The `agent_user` layout keeps you out by itself: git
+refuses another user's repository unless `safe.directory` says
+otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write
+there, and an agent could rewrite its own profile for the next start.
+
+**Layouts.** By default (`layout = "single"`) agents run as the runner's
+own user, which may be the operator's account in a terminal. With
+`layout = "agent_user"` and `agent_user = "maity-agent"`, every agent
+command runs as that user through `sudo -n -u maity-agent --`. That
+covers the tmux server, the clone, the join, the supervised loop and
+`gc`. The agents' files (tmux socket, logs, harness settings) live in
+`~maity-agent/.maity-runner/`. The runner's state directory and credential
+stay out of the agents' reach. The layout needs a sudoers rule
+(`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
+both users can run it, and the workspaces writable by the agents' user;
+`maity runner check` tests all three. Under the shipped systemd unit
+(`ProtectSystem=strict`), sudo's children share the unit's read-only
+file system: add `~maity-agent/.maity-runner` and the workspaces to its
+`ReadWritePaths` (the unit's comment shows the line), or every start
+fails. `check` run from a login shell cannot see that. sudo logs every
+command it runs, one `tmux list-panes` per tick among them; a
+`Defaults:maity-runner !syslog` line in sudoers quiets it if you want.
+The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
+`check` reads the agents' user's own Claude Code settings, which its
+agents load. Agents under one `agent_user` can still read each other's
+files.
+
+**ssh backend.** With `[backend] kind = "ssh"` the runner does on each
+configured host what it does locally, over ssh:
+
+```toml
+[backend]
+kind = "ssh"
+
+[backend.ssh]
+known_hosts = "/etc/maity-runner/known_hosts"   # the only known_hosts used; strict checking
+identity = "agent"                              # the operator's ssh agent; or a key file path
+
+[[backend.ssh.hosts]]
+name = "build-1"                                # the target name placements use
+address = "build-1.lan"
+user = "maity"                                  # the remote user the agents run as
+port = 22
+workspaces = "/home/maity/workspaces"           # absolute, on the host
+max_agents = 2
+agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the harness are
+```
+
+Every command is a fixed template sent as one quoted command line, with
+`BatchMode`, `StrictHostKeyChecking=yes`, only the configured
+`known_hosts`, no agent or X11 forwarding, no port forwarding or local
+command whatever your own ssh configuration says, keep-alives that end a
+call to a dead host within 30 s, and a shared connection (`ControlMaster`,
+sockets in `<state_dir>/ssh`, which must stay short enough for a unix
+socket path; `check` says when it is not). Put each host's key into
+`known_hosts` from the host itself or your provisioning, not from a blind
+`ssh-keyscan`, which trusts whatever answers first; a host on a port
+other than 22 is written `[address]:port`. The remote user's home has to
+be a plain absolute path: the runner refuses a host whose shell start-up
+files report anything else. The ssh agent (or key)
+is used for the connection only; the agents never see it. On each host,
+the tmux socket, logs and harness files live in the remote user's
+`~/.maity-runner/`. The join runs the host's own `maity`, so its
+credential is written on the host and never passes through the runner.
+A placement names a host as its `target`. Without one, the runner takes
+the first reachable host with a free slot, and the placement stays
+there. A target the configuration no longer has is
+`failed`/`harness_refused`/`target_unknown`. While a host does not
+answer, its agents keep running there and their last reported state
+stands. The runner advertises the host as `reachable: false` with
+`unreachable_since` and picks it up again when it answers.
+`maity runner check [--target build-1]` reaches each host and checks
+tmux, git, `maity`, the harnesses and the workspaces there. It warns
+when the remote user has passwordless sudo. `logs` and `stop-all` work
+across the hosts; `stop-all` names a host it could not reach and exits 1.
+`gc` and `workspace claim` are for the local backend in this version.
+`isolation = "own_user"` (one remote user per agent) is not supported
+yet.
 
 On the runner host, without the hub:
 

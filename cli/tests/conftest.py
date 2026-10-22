@@ -99,3 +99,12 @@ def joined(clone: Path, fake: fakehub.FakeHub) -> Path:
     state.write_credential(directory, state.Secret(fakehub.CREDENTIAL))
     state.save_state(directory, {"hub": fake.url, "project": "maity", "member_id": "agt-b"})
     return directory
+
+
+@pytest.fixture(autouse=True)
+def _home_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The environment secret of the home (§5.3) goes to the test's own directory, never to
+    the real ~/.local/state/maity."""
+    from maity import environment
+
+    monkeypatch.setattr(environment, "HOME_SECRET", tmp_path / "home-state" / "env-secret")

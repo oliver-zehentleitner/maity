@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-22, and his answers on the contract pull request the same day (both password sources, the tab total); contract in `docs/api.md` §16.2, §16.3, §17
+**Source:** the maintainer's decision, 2026-10-22, and his answers on the contract pull request the same day (both password sources, the tab total); contract in `docs/api.md` §16.2, §16.3, §18
 **Revisit when:** mail volume or complaints show that per-kind modes are not enough, or notifications are needed without an open tab (Web Push)
 
 Humans learn that something waits for them in three stages, all of
@@ -56,7 +56,7 @@ or a secret store is more setup than the install itself.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the notifications contract and the contract owner's rulings on them (four rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
+**Source:** security reviews of the notifications contract and the contract owner's rulings on them (four rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §6.4, §16.2, §16.3, §18.1, §18.4, §18.5
 **See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
 The hub's mail is treated as a trusted channel that members must not

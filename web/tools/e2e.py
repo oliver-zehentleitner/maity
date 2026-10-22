@@ -709,6 +709,24 @@ def scenario(run: Run, page: Page) -> None:
     expect(entries.nth(0)).to_contain_text("E2E Alpha")  # high before normal
     expect(entries.nth(0)).to_contain_text("Which colour for alpha?")
     expect(entries.nth(1)).to_contain_text("E2E Beta")
+    # Each entry's project as a link before it; a project filter; grouping by project.
+    badge = entries.nth(0).locator("a.project-label")
+    expect(badge).to_contain_text("E2E Alpha")
+    expect(badge).to_have_attribute("href", "#/p/e2e-alpha/inbox")
+    expect(entries.nth(0).locator(".entry-head")).to_have_accessible_name(re.compile(r"^E2E Alpha: "))
+    page.locator("#inbox-project").select_option("e2e-beta")
+    expect(entries).to_have_count(1)
+    expect(entries.nth(0)).to_contain_text("E2E Beta")
+    page.locator("#inbox-project").select_option("")
+    page.locator("#inbox-group").check()
+    # One section per project, its heading and its own list of entries.
+    groups = page.locator("section.entry-group")
+    expect(groups).to_have_count(2)
+    expect(groups.nth(0).get_by_role("heading")).to_contain_text("E2E Alpha")
+    expect(groups.nth(0).locator("ol.entries > li.entry")).to_have_count(1)
+    run.a11y(page, "#/all grouped by project")
+    page.locator("#inbox-group").uncheck()
+    expect(entries).to_have_count(2)
     run.shot(page, "all-projects")
     run.a11y(page, "#/all with requests")
     current = page.locator("li.entry.current")
@@ -725,6 +743,8 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     chat_pause_state(run, page, alpha, agent_id)
+    group_chat_form_step(run, page)
+    direct_removal_step(run, page, agent_id)
     members_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -752,6 +772,7 @@ def scenario(run: Run, page: Page) -> None:
     # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
     if page.locator("nav.views").get_by_role("link", name="Why", exact=True).count():
         tabs += (("why", "Why"),)
+    tabs += (("runners", "Runners"),)
     for view, tab in tabs:
         page.locator("nav.views").get_by_role("link", name=tab, exact=True).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
@@ -793,6 +814,43 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
+    """§8.5: the human party removes a message of its direct chat, with a reason; it reads as removed after a reload."""
+    run.step("direct chat: the owner removes the agent's message with a reason; after a reload it still reads as removed")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    incoming = page.locator("ol.messages li.msg.in").first
+    expect(incoming).to_be_visible()
+    seq = incoming.get_attribute("data-seq")
+    page.once("dialog", lambda d: d.accept("e2e: removed on purpose"))
+    incoming.get_by_role("button", name="Remove this message for everyone", exact=True).click()
+    removed = page.locator(f'ol.messages li.msg[data-seq="{seq}"]')
+    expect(removed).to_contain_text("This message was removed by")
+    expect(removed).to_contain_text("e2e: removed on purpose")
+    page.reload()
+    expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]')).to_contain_text("This message was removed")
+    expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]').get_by_role("button", name="Quote this message")).to_have_count(0)
+    no_problems(run, "direct removal")
+
+
+def group_chat_form_step(run: Run, page: Page) -> None:
+    """Group chats (docs/api.md §9.2): the create form, and one's own agent alone pointed to the direct chat."""
+    run.step("group chat: the owner opens New group chat; their own agent alone is the direct chat, said before anything is sent")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat")
+    page.locator(".chat-list-pane").get_by_role("link", name="New group chat", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/chat/new$"))
+    form = page.locator("form.group-form")
+    expect(form).to_be_visible()
+    run.a11y(page, "new group chat")
+    form.locator("fieldset.group-people input[type=checkbox]").first.check()
+    form.get_by_role("button", name="Create", exact=True).click()
+    error = page.locator("#group-people-error")
+    if form.locator("fieldset.group-people input[type=checkbox]").count() == 1:
+        expect(error).to_contain_text("That is your direct chat with")
+        expect(error.get_by_role("link", name="open it")).to_have_attribute("href", re.compile(r"^#/p/e2e-alpha/chat/"))
+    run.shot(page, "group-chat-new")
+    no_problems(run, "group chat form")
 
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
@@ -1179,11 +1237,12 @@ def runners_step(run: Run, page: Page) -> None:
     expect(steps).to_contain_text("maity runner pair")
     # A hub before attachments (§15.4) refuses `attach` with 400; the page pairs
     # without it and says so. That refusal is then expected, not a failure.
-    if (
+    note_shown = bool(
         page.locator(".pair-panel")
         .get_by_text("cannot allow the runner in projects while pairing yet")
         .count()
-    ):
+    )
+    if note_shown:
         run.problems = [
             p for p in run.problems if p != "POST /api/v1/runners/enrollments answered 400"
         ]
@@ -1212,6 +1271,9 @@ def runners_step(run: Run, page: Page) -> None:
     card.get_by_role("button", name="Rename", exact=True).click()
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     expect(card).to_be_visible()
+    project_runners_step(run, page, "e2e-renamed", attached=not note_shown)
+    page.goto(f"{run.base}/#/runners")
+    card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     card.get_by_role("button", name="Re-pair", exact=True).click()
     expect(page.locator(".pair-steps")).to_contain_text("Keep your existing configuration")
     repair = page.locator(".pair-steps pre.paste-line").nth(1).inner_text()
@@ -1277,6 +1339,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
     board_order_step(run, page)
+    overview_step(run, page)
 
 
 def board_order_step(run: Run, page: Page) -> None:
@@ -1290,15 +1353,17 @@ def board_order_step(run: Run, page: Page) -> None:
         page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
         expect(view.locator(".send-status").first).to_contain_text("created in open")
     column = page.locator('section.column[data-status="open"]')
-    second = column.locator("article.card", has_text="E2E order: second")
-
-    def order() -> list[str]:
-        return [t for t in column.locator("article.card h3").all_inner_texts() if t.startswith("E2E order")]
-
-    assert order() == ["E2E order: first", "E2E order: second"], order()
-    second.locator("form.card-order select").select_option("up")
-    second.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
-    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now above|does not order cards yet"))
+    titles = column.locator("article.card h3").filter(has_text=re.compile(r"^E2E order: "))
+    # Two cards made in the same second have no rank yet and tie on
+    # created_at, so their id decides (§6.4): read the order, never assume it.
+    expect(titles).to_have_count(2)
+    upper, lower = titles.all_inner_texts()
+    lower_card = column.locator("article.card", has_text=lower)
+    # The lower one goes up: "up" when it is right below, else "To the top".
+    ways = lower_card.locator("form.card-order select option").evaluate_all("(os) => os.map((o) => o.value)")
+    lower_card.locator("form.card-order select").select_option("up" if "top" not in ways else "top")
+    lower_card.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
+    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now (above|at the top)|does not order cards yet"))
     if "does not order cards yet" in view.locator(".send-status").first.inner_text():
         # Only a hub without the endpoint is skipped, and the board has to say so.
         run.step("board order: this hub has no move endpoint yet, and the board says so")
@@ -1306,20 +1371,45 @@ def board_order_step(run: Run, page: Page) -> None:
         no_problems(run, "board order")
         return
     run.step("board order: the owner moves a card up with Place, then drags it back below")
-    expect(column.locator("article.card", has_text="E2E order: second").locator("form.card-order select")).to_be_focused()
-    assert order() == ["E2E order: second", "E2E order: first"], order()
+    # The status line speaks before the board is read again: wait for the order itself.
+    expect(titles).to_have_text([lower, upper])
+    expect(column.locator("article.card", has_text=lower).locator("form.card-order select")).to_be_focused()
     dt = page.evaluate_handle("() => new DataTransfer()")
-    moving = column.locator("article.card", has_text="E2E order: second")
-    target = column.locator("article.card", has_text="E2E order: first")
+    moving = column.locator("article.card", has_text=lower)
+    target = column.locator("article.card", has_text=upper)
     box = target.bounding_box()
     moving.dispatch_event("dragstart", {"dataTransfer": dt})
     target.dispatch_event("dragover", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
     target.dispatch_event("drop", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
     moving.dispatch_event("dragend", {"dataTransfer": dt})
     expect(view.locator(".send-status").first).to_contain_text("is now below")
-    assert order() == ["E2E order: first", "E2E order: second"], order()
+    expect(titles).to_have_text([upper, lower])
     run.a11y(page, "board, order")
     no_problems(run, "board order")
+
+
+def overview_step(run: Run, page: Page) -> None:
+    """The project at a glance (docs/api.md §6.11): links, members, counts that link on."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.locator("nav.views").get_by_role("link", name="Overview", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/overview$"))
+    main = page.locator("main")
+    expect(main.locator("section.overview-part").first).to_be_visible()
+    run.a11y(page, "overview")
+    if "this hub has no overview yet" in main.inner_text():
+        # Only a hub without the endpoint is skipped, and the page has to say so.
+        run.step("overview: this hub has no overview endpoint yet; links and members show, the counts are said missing")
+        run.problems = [p for p in run.problems if not re.match(r"GET /api/v1/projects/e2e-alpha/overview\?\S* answered 404$", p)]
+        no_problems(run, "overview")
+        return
+    run.step("overview: the owner sees the project at a glance; a column count opens the board")
+    counts = main.locator(".overview-counts li")
+    expect(counts).to_have_count(7)
+    expect(main.locator('.overview-counts li[data-status="cancelled"]')).not_to_have_text(re.compile(r"^0 "))
+    run.shot(page, "overview")
+    main.locator('.overview-counts li[data-status="open"] a').click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/board$"))
+    no_problems(run, "overview")
 
 
 def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
@@ -1364,6 +1454,39 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert event.get("kind") == "message" and event["payload"].get("type") == "chat", event
     assert not event["payload"].get("mentions"), event["payload"]
     no_problems(run, "message")
+
+
+def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> None:
+    """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.locator("nav.views").get_by_role("link", name="Runners", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/runners$"))
+    view = page.locator("main section.view-runners")
+    expect(view.locator("h2").first).to_be_visible()
+    run.step("project runners: allow the paired runner in a project and detach it")
+    card = view.locator("article.runner", has=page.get_by_role("heading", name=name))
+
+    def detach() -> None:
+        asked: list[str] = []
+        page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+        card.get_by_role("button", name="Detach", exact=True).click()
+        expect(card).to_have_count(0)
+        assert asked == [f"Detach {name} from E2E Alpha? Nothing runs on it here."], asked
+
+    if attached:  # allowed while pairing
+        expect(card).to_contain_text("no agent running here")
+        detach()
+    # An option is the runner's name alone (its presence changes, the form should not).
+    option = page.locator("#allow-runner option", has_text=re.compile("^" + re.escape(name) + "$"))
+    page.locator("#allow-runner").select_option(value=option.get_attribute("value"))
+    view.get_by_role("button", name="Allow it here", exact=True).click()
+    expect(card).to_contain_text("no agent running here")
+    expect(card).to_contain_text("It has not reported what it can do yet")
+    run.shot(page, "project-runners")
+    run.a11y(page, "project runners")
+    detach()
+    expect(view).to_contain_text("No runner is allowed in this project yet.")
+    no_problems(run, "project runners")
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:
