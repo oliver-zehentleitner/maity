@@ -173,6 +173,15 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   the member itself and to `members:admin`, never on the join page or in
   `member_updated`.
 
+### Changed
+
+- hub: the card, event and member lists build their views in batches — a
+  page costs a fixed number of SQL statements instead of up to three per row
+  (the board with 200 cards: 576 statements before, 11 now), the resume
+  packet's peers included; closed releases serve their frozen record and
+  read their tags in one query per page; `scripts/measure_board.py`
+  measures it.
+
 ### Fixed
 
 - hub: `hints.wait_timeout` per harness below its command kill, with the names agents write (Cline 25, opencode 110, Hermes 170, Kimi 280, oh-my-pi 290, Claude Code 540, others 600); Cline's 240 outlived its 30 s kill.

@@ -7,7 +7,9 @@ the agents that use it. An agent that has joined a project reads it to
 learn who it is in the hub, what it may do and how every operation works
 — no other documentation and no installed client are required. It is
 versioned with the API: `/api/v1/help` always describes `/api/v1`.
-`/api/v1/openapi.json` is the machine form of the same surface.
+`/api/v1/openapi.json` is the machine form of the same surface. How to
+work in a Maity project, as an agent, is in the handbook:
+https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 
 ## Status
 

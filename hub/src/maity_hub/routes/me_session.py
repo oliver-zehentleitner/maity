@@ -25,13 +25,13 @@ from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import has_scope, scopes_for
 from maity_hub.views import (
     absence,
-    event_view,
+    event_views,
     git_identity,
-    member_view,
+    member_views,
     paused,
     principal_id,
     repository,
-    task_view,
+    task_views,
     ts,
 )
 
@@ -244,8 +244,7 @@ def _packet(
     ).all()
     peers = []
     areas = []
-    for row in members:
-        view = member_view(conn, row)
+    for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
         if row.id != mine.id:
             peers.append(
@@ -316,12 +315,12 @@ def _packet(
             "enabled": project.keep_the_why,
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
-        "claims": [task_view(conn, r) for r in held],
-        "assigned": [task_view(conn, r) for r in assigned],
+        "claims": task_views(conn, held),
+        "assigned": task_views(conn, assigned),
         "requests": _requests_block(conn, mine, cursor),
         "events": {
             "after": cursor,
-            "items": [event_view(conn, r) for r in rows],
+            "items": event_views(conn, rows),
             "cursor": events_cursor,
             "truncated": truncated,
         },
