@@ -69,6 +69,7 @@ window.Maity = window.Maity || {};
     return h("li", null,
       h("div", { class: "org-node" },
         h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
+        M.avatar(m, 20),
         h("strong", null, m.display_name),
         h("span", { class: "role" }, m.role),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,

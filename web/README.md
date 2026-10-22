@@ -222,6 +222,14 @@ the header of every screen; owner and admin change it there with a
 reason (**Project settings**), and the owner sets and clears the absence
 shown under it.
 
+**Avatars**: every member has a picture, generated from its member id —
+a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
+the same one — as SVG nodes, decorative next to the name; the theme sets
+its lightness and background, so it reads in light and dark. A member
+that carries an `avatar_url` the page may load (the hub's own images
+today) shows that one instead. On the agents' cards and in the
+organisation.
+
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
 Later, "Neither — let's talk", the replies with the primary one last;
@@ -467,6 +475,7 @@ web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/dom.js         element builder, text only; https-only links
+├── js/avatar.js     generated member pictures (identicons)
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all
