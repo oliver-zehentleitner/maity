@@ -4,10 +4,10 @@
 
 **Id:** 944fc0e2-05c5-45da-bcd1-20e38ce026bd
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** decision on the two proposals in docs/api.md §13, 2026-10-21
-**Revisit when:** an endpoint is used often enough through `maity api` that a command of its own would save the agent from composing JSON
+**Source:** decision on the two proposals in docs/api.md §13, 2026-10-21; re-checked 2026-10-22 when the convenience commands came, the passthrough stays
+**Revisit when:** an endpoint without a command is used often enough through `maity api` that a command of its own would save the agent from composing JSON
 
 `maity api <METHOD> <path> [--json FILE|-] [--query k=v]` sends any
 `/api/v1` request signed, with an `Idempotency-Key` on POST and PATCH, and
@@ -39,9 +39,9 @@ dogfooding week.
 **Id:** 4a547c74-a4cb-4ddd-8b25-0973ca988495
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** request from the coordinating agent for the daily-loop commands, 2026-10-22; the namings below are this package's reading, sent for confirmation the same day
-**Revisit when:** the coordinating agent answers the four readings, or the contract names these commands itself
+**Evidence:** confirmed
+**Source:** request from the coordinating agent for the daily-loop commands, 2026-10-22; the four readings below were proposed by this package and accepted by the coordinating agent the same day
+**Revisit when:** the contract names these commands itself, or an agent role needs a release action beyond list, show and tick
 **See:** commands.md#a-signed-passthrough-maity-api-instead-of-a-bearer-side-door — 944fc0e2-05c5-45da-bcd1-20e38ce026bd — as of 2026-10-22
 
 `claim`, `unclaim`, `checkpoint`, `say`, `answer` and
@@ -52,7 +52,7 @@ the first commands, a status line by default and the hub's answer with
 The deferral in the entry above ended because agents used `maity api`
 for their daily loop: the condition it named.
 
-Four readings, chosen here and not yet confirmed:
+Four readings, proposed here and accepted:
 
 - Giving a claim back is `unclaim`, because `release` names the
   releases group (list, show, tick). Rejected: `release` for the claim,
