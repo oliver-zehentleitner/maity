@@ -67,7 +67,7 @@ def test_identity_project_rules_and_next_step() -> None:
     assert "Project: Maity (maity), state build" in text
     assert "Rules (version 7), read them before you work:\n> # Rules for Maity" in text
     assert "Keep the Why: Load the keep-the-why skill." in text
-    assert "Members: agent-a (admin, online)" in text
+    assert "Members: agent-a [agt-a] (admin, online)" in text
     assert text.rstrip().endswith("Next: `maity wait` until something is addressed to you.")
 
 
@@ -331,3 +331,25 @@ def test_a_handle_is_still_cleaned() -> None:
     peers = [{"member_id": "agt-a", "handle": "evil\x1b[2Jname", "role": "admin"}]
     text = onboarding.render(packet(peers=peers))
     assert "\x1b" not in text and "reporting to evil" in text
+
+
+@pytest.mark.parametrize(
+    "handle", ["maintainer", "Maintainer", "hum-2", "agt-x", "all", "role:admin"]
+)
+def test_a_handle_that_could_mislead_falls_back_to_the_id(handle: str) -> None:
+    peers = [
+        {"member_id": "agt-a", "handle": handle, "role": "admin"},
+        {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
+    ]
+    text = onboarding.render(packet(peers=peers))
+    assert "reporting to agt-a" in text
+    assert "Members: agt-a [agt-a]" in text
+
+
+def test_every_peer_id_is_in_the_text_once_on_the_members_line() -> None:
+    peers = [
+        {"member_id": "agt-a", "handle": "agent-a", "role": "admin"},
+        {"member_id": "hum-9", "handle": "oliver", "role": "owner"},
+    ]
+    text = onboarding.render(packet(peers=peers))
+    assert "agent-a [agt-a]" in text and "oliver [hum-9]" in text

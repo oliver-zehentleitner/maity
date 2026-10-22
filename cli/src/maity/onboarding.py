@@ -20,6 +20,7 @@ the full value; `--json` stays complete.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
@@ -97,14 +98,28 @@ def _items(data: Any) -> list[dict[str, Any]]:
     return [i for i in data if isinstance(i, dict)] if isinstance(data, list) else []
 
 
+_ID_SHAPED = re.compile(r"^(agt|hum|role|area)[-:]", re.IGNORECASE)
+
+
 def _names(packet: dict[str, Any]) -> dict[str, str]:
-    """member id → handle, from the peers and this member itself: a human reads names."""
-    found: dict[str, str] = {}
+    """member id → handle, from the peers and this member itself: a human reads names. A
+    handle stays out when it could be read as something else: shared by two members, shaped
+    like an id or an address, or `all`; that member keeps its id."""
+    pairs: list[tuple[str, str]] = []
     for member in [*_items(packet.get("peers")), _dict(packet.get("me"))]:
         member_id, handle = member.get("member_id"), member.get("handle")
         if isinstance(member_id, str) and isinstance(handle, str) and handle:
-            found[member_id] = handle
-    return found
+            pairs.append((member_id, handle))
+    owners: dict[str, set[str]] = {}
+    for member_id, handle in pairs:
+        owners.setdefault(handle.casefold(), set()).add(member_id)
+    return {
+        member_id: handle
+        for member_id, handle in pairs
+        if len(owners[handle.casefold()]) == 1
+        and not _ID_SHAPED.match(handle)
+        and handle.casefold() != "all"
+    }
 
 
 def _name(value: Any, names: dict[str, str]) -> str:
@@ -310,7 +325,7 @@ def render(packet: Any, first: bool = False) -> str:
     peers = _items(packet.get("peers"))
     if peers:
         listed = ", ".join(
-            f"{inline(p.get('handle') or p.get('member_id'))} "
+            f"{_name(p.get('member_id'), names)} [{inline(p.get('member_id'))}] "
             f"({inline(p.get('role'))}, {inline(p.get('presence'))})"
             for p in peers
         )
