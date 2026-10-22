@@ -38,6 +38,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert json.loads(Path(argv[argv.index("--mcp-config") + 1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
 
 
@@ -322,6 +323,21 @@ def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: 
     assert str(tmp_path / "ws") not in deny  # it holds the clone; see the context entry
 
 
+def test_other_clones_credentials_are_private_as_they_stand_at_start(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    for clone in (own, ws / "maity" / "agent-4", ws / "other" / "agent-5"):
+        (clone / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / ".git").mkdir(parents=True)  # never joined: nothing to hide
+    found = supervisor.private_paths(tmp_path / "st", tmp_path / "home", own, ws,
+                                     tmp_path / "runner.toml")  # fmt: skip
+    assert ws / "maity" / "agent-4" / ".git" / "maity" in found
+    assert ws / "other" / "agent-5" / ".git" / "maity" in found
+    assert own / ".git" / "maity" not in found  # its own maity reads it
+    assert tmp_path / "runner.toml" in found
+    assert not any("agent-6" in str(p) for p in found)
+
+
 def test_private_paths_never_hide_the_clone(tmp_path: Path) -> None:
     clone = tmp_path / "home" / "ws" / "maity" / "agent-3"
     found = supervisor.private_paths(tmp_path / "home", tmp_path / "home", clone)
@@ -329,11 +345,13 @@ def test_private_paths_never_hide_the_clone(tmp_path: Path) -> None:
     assert tmp_path / "home" / ".ssh" in found and tmp_path / "home" / ".codex" in found
 
 
-def test_opencode_search_tools_cannot_read_the_credential(tmp_path: Path) -> None:
+def test_opencode_search_tools_are_off(tmp_path: Path) -> None:
+    """opencode asks about grep and glob by the pattern typed, not the path searched: a path
+    rule cannot keep them off the credential, so they are denied outright."""
     ctx = context(tmp_path, "opencode")
     permission = adapters.opencode_config(ctx)["permission"]
-    for tool in ("read", "grep", "glob"):
-        assert permission[tool][f"{ctx.clone}/.git/maity/*"] == "deny"
+    assert permission["grep"] == permission["glob"] == "deny"
+    assert permission["read"][f"{ctx.clone}/.git/maity/*"] == "deny"
 
 
 def test_a_dangling_login_link_is_replaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

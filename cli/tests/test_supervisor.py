@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from maity import hub, state
-from maity.runner import capabilities, config, restart, supervisor, tmux, workspace
+from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -154,7 +154,10 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert sup.cfg.local is not None
     clone = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3").path
     assert name == "maity_maity_agent-3"
-    assert env == {"MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git")}
+    assert env == {
+        "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        **adapters.SESSION_GIT_CONFIG,
+    }  # fmt: skip
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER

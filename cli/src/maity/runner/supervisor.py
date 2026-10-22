@@ -574,6 +574,10 @@ class Supervisor:
         agent_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = self.probes.get(harness.id)
+        workspaces = self.cfg.local.workspaces if self.cfg.local else None
+        private = private_paths(
+            self.cfg.state_dir, Path.home(), place.path, workspaces, self.cfg.path
+        )
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -591,8 +595,8 @@ class Supervisor:
                 )
                 if h
             ),
-            private=private_paths(self.cfg.state_dir, Path.home(), place.path),
-            workspaces=self.cfg.local.workspaces.resolve() if self.cfg.local else None,
+            private=private,
+            workspaces=workspaces.resolve() if workspaces else None,
         )
 
     def agent_path(self) -> str:
@@ -697,19 +701,34 @@ class Supervisor:
                     rec.acked, rec.pending = pending["key"], None
 
 
-# In the agents' home: logins and keys a sandboxed command never needs. The forge login (gh)
-# is not among them: pushing needs it, and the agents share the operator's in this layout.
+# In the agents' home: logins and keys a sandboxed command never needs. A list, so not every
+# secret a home can hold; the README says so. The forge login (gh) is not among them:
+# pushing needs it, and the agents share the operator's in the single layout.
 HOME_SECRETS = (
     ".ssh", ".gnupg", ".codex", ".claude", ".claude.json", ".git-credentials", ".netrc",
-    ".config/maity-runner", ".local/state/maity-runner",
+    ".config/maity-runner", ".local/state/maity-runner", ".aws", ".azure", ".config/gcloud",
+    ".kube", ".docker", ".local/share/opencode", ".config/opencode",
 )  # fmt: skip
 
 
-def private_paths(state_dir: Path, home: Path, clone: Path) -> tuple[Path, ...]:
-    """What no sandboxed command may read: the runner's state and the secrets in the agents'
-    home. A path that contains the clone is left out: it would hide the clone itself."""
-    found = [state_dir.resolve(), *(home / name for name in HOME_SECRETS)]
+def private_paths(
+    state_dir: Path, home: Path, clone: Path, workspaces: Path | None = None,
+    config_file: Path | None = None,
+) -> tuple[Path, ...]:  # fmt: skip
+    """What no sandboxed command may read: the runner's state and configuration, the secrets
+    in the agents' home, and the credential of every other clone under `workspaces` as it
+    stands now (a clone made later is covered from this agent's next start). A path that
+    contains the clone is left out: it would hide the clone itself."""
     clone = clone.resolve()
+    found = [state_dir.resolve(), *(home / name for name in HOME_SECRETS)]
+    if config_file is not None:
+        found.append(config_file.resolve())
+    if workspaces is not None and workspaces.is_dir():
+        found += sorted(
+            other / ".git" / "maity"
+            for other in workspaces.resolve().glob("*/*")
+            if other != clone and (other / ".git" / "maity").is_dir()
+        )
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 

@@ -52,6 +52,11 @@ GIT_DENIED = (
 
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
+SESSION_GIT_CONFIG = {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "diff.ignoreSubmodules", "GIT_CONFIG_VALUE_1": "all",
+}  # fmt: skip
 
 
 class NotYet(Exception):
@@ -87,6 +92,9 @@ def launch(ctx: Context) -> Launch:
     env = {
         "MAITY_PLACEMENT": ctx.placement["id"],
         "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        # A nested repository the agent registers as a submodule keeps its own configuration,
+        # which the pin does not reach; git passes these settings on to it.
+        **SESSION_GIT_CONFIG,
         **ctx.extra_env,
     }
     harness = ctx.harness
@@ -268,13 +276,14 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     # The clone's credential is neither readable nor writable; nothing under .git is edited
     # (agents commit through git; its config and hooks would turn a git call into anything).
     read = {"*": "allow", secret: "deny"}
-    search = {"*": "allow", secret: "deny"}  # grep and glob read file contents and names too
     edit = {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     return {
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            "read": read, "glob": search, "grep": dict(search), "list": "allow",
+            # grep and glob are asked about the pattern typed, not the path searched, so a path
+            # rule cannot keep them off .git/maity: they are off.
+            "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,
             "webfetch": "deny",

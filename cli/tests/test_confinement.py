@@ -61,8 +61,59 @@ def test_without_the_pin_the_planted_commondir_runs_code(tmp_path: Path) -> None
     """What the pin prevents, and what an agent gets by unsetting it: its own git runs the
     planted program, as itself, inside its own sandbox."""
     clone, marker = planted(tmp_path)
-    env = {k: v for k, v in session_env(clone).items() if k != "GIT_COMMON_DIR"}
+    env = {k: v for k, v in session_env(clone).items() if not k.startswith("GIT_")}
     subprocess.run(["git", "status", "--short"], cwd=clone, env=env, capture_output=True,
+                   check=False)  # fmt: skip
+    assert marker.exists()
+
+
+def planted_submodule(tmp_path: Path) -> tuple[Path, Path]:
+    """A clone with a nested repository registered as a gitlink, whose own configuration
+    sets `core.fsmonitor`: what an agent can plant with work-tree and index writes alone.
+    The pin on the clone's `.git` does not reach it."""
+    clone = tmp_path / "ws" / "maity" / "agent-3"
+    sub = clone / "sub"
+    sub.mkdir(parents=True)
+    git(clone, "init", "-q")
+    git(clone, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty",
+        "-m", "one")  # fmt: skip
+    git(sub, "init", "-q")
+    git(sub, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty",
+        "-m", "sub")  # fmt: skip
+    marker = tmp_path / "ran"
+    with (sub / ".git" / "config").open("a") as fh:
+        fh.write(f"[core]\n\tfsmonitor = touch {marker}\n")
+    head = git(sub, "rev-parse", "HEAD")
+    git(clone, "update-index", "--add", "--cacheinfo", f"160000,{head},sub")
+    return clone, marker
+
+
+def test_a_planted_submodule_runs_nothing_in_the_session(tmp_path: Path) -> None:
+    clone, marker = planted_submodule(tmp_path)
+    subprocess.run(["git", "status", "--porcelain"], cwd=clone, env=session_env(clone),
+                   capture_output=True, check=False)  # fmt: skip
+    assert not marker.exists()
+
+
+def test_maitys_own_git_runs_nothing_from_a_planted_submodule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bin_dir: Path
+) -> None:
+    """For Claude Code `maity` runs outside the sandbox: `maity report` reads the clone with
+    git, so that git has to run nothing the agent planted, whatever its environment."""
+    from maity import gitfacts
+
+    clone, marker = planted_submodule(tmp_path)
+    for key in [k for k in os.environ if k.startswith("GIT_")]:
+        monkeypatch.delenv(key)
+    facts = gitfacts.collect(clone)
+    assert not marker.exists()
+    assert facts.dirty  # the staged gitlink still counts as a change
+
+
+def test_the_control_a_planted_submodule_runs_without_the_settings(tmp_path: Path) -> None:
+    clone, marker = planted_submodule(tmp_path)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "status", "--porcelain"], cwd=clone, env=env, capture_output=True,
                    check=False)  # fmt: skip
     assert marker.exists()
 
@@ -130,22 +181,40 @@ def test_inside_codexs_sandbox_an_agent_reaches_only_itself(tmp_path: Path) -> N
     assert done.returncode == 0 and not (outside / "ran").exists()
 
 
-def test_the_runner_runs_git_only_through_its_two_guarded_paths() -> None:
-    """Any `git` the runner itself starts: a clone into a missing directory (workspace.py),
-    or gc's read with SAFE_GIT and the pinned environment (operate.py). A new call site has
-    to come through one of them, or be added here on purpose."""
+def _git_argv_sites(root: Path) -> set[tuple[str, str]]:
+    """(file, function) of every list or tuple that holds the string `git` or a path ending
+    in `/git`: the argv of a git call, however it is built."""
     found: set[tuple[str, str]] = set()
-    for path in sorted(RUNNER_SRC.glob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        scopes = {node: node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+        scopes = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
         for node in ast.walk(tree):
-            if isinstance(node, ast.List) and node.elts:
-                first = node.elts[0]
-                if isinstance(first, ast.Constant) and first.value == "git":
-                    owner = next(
-                        (name for scope, name in scopes.items()
-                         if scope.lineno <= node.lineno <= (scope.end_lineno or 0)),
-                        "<module>",
-                    )  # fmt: skip
-                    found.add((path.name, owner))
-    assert found == {("workspace.py", "prepare"), ("operate.py", "<module>")}
+            if not isinstance(node, ast.List | ast.Tuple):
+                continue
+            if not any(
+                isinstance(e, ast.Constant) and isinstance(e.value, str)
+                and (e.value == "git" or e.value.endswith("/git"))
+                for e in node.elts
+            ):  # fmt: skip
+                continue
+            owner = min(
+                (f for f in scopes if f.lineno <= node.lineno <= (f.end_lineno or 0)),
+                key=lambda f: (f.end_lineno or 0) - f.lineno,
+                default=None,
+            )
+            found.add((str(path.relative_to(root)), owner.name if owner else "<module>"))
+    return found
+
+
+def test_maity_runs_git_only_through_its_guarded_paths() -> None:
+    """Every `git` maity and the runner start: maity's own (proc.GIT: no fsmonitor, no hooks,
+    not into submodules), a clone into a missing directory (workspace.prepare), and gc's read
+    with SAFE_GIT and the pinned environment. A new call site has to use one of them, or be
+    added here on purpose."""
+    root = RUNNER_SRC.parent
+    found = {(f, s) for f, s in _git_argv_sites(root) if not f.endswith("_test.py")}
+    assert found == {
+        ("proc.py", "<module>"),
+        ("runner/workspace.py", "prepare"),
+        ("runner/operate.py", "<module>"),
+    }

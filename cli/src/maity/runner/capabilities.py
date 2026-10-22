@@ -76,6 +76,8 @@ def sandbox_available(harness: config.Harness, path: str | None = None) -> bool:
 
 @functools.lru_cache(maxsize=8)
 def _codex_sandbox_starts(binary: str) -> bool:
+    """Once per binary path for the service's lifetime: after upgrading Codex in place, or
+    when the host's sandbox support changes, restart the runner."""
     try:
         done = proc.run([binary, "sandbox", "--", "true"], cwd=Path.home(), timeout=30)
     except proc.ToolError:
