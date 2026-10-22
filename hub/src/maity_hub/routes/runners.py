@@ -605,12 +605,15 @@ def attach_runner(slug: str, body: AttachIn, request: Request, caller: HumanCall
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        # Locked like removal, so a runner removed meanwhile is not attached again.
         owned = conn.execute(
-            select(t.runner.c.id).where(
+            select(t.runner.c.id)
+            .where(
                 t.runner.c.id == body.runner_id,
                 t.runner.c.owner_id == caller.principal_id,
                 t.runner.c.active.is_(True),
             )
+            .with_for_update()
         ).first()
         if owned is None:
             raise invalid({"runner_id": "not_yours"}, "attach one of your own runners")
