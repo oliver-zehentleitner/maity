@@ -426,6 +426,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
 .inline-form, .login, .join-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
+/* The settings panel sits under the page's h1: its sections are h2, styled small. */
+.panel-title { margin: 0; font-size: 1rem; }
+.panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button, .join-form button { justify-self: start; }
 .new-agent { display: grid; gap: 6px; }

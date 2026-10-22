@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
           save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, "State");
         },
       },
-      h("h3", null, "Project state"),
+      h("h2", { class: "panel-title" }, "Project state"),
       h("label", { for: "state-select" }, "State"), state,
       h("label", { for: "state-note" }, "Note"), note,
       h("label", { for: "state-reason" }, "Reason"), reason,
@@ -191,7 +191,7 @@ window.Maity = window.Maity || {};
           save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, "Absence");
         },
       },
-      h("h3", null, "Your absence"),
+      h("h2", { class: "panel-title" }, "Your absence"),
       h("label", { for: "absence-until" }, "Away until"), until,
       h("label", { for: "absence-scope" }, "Meanwhile"), scope,
       h("button", { type: "submit" }, a ? "Update absence" : "Set absence"),
@@ -230,7 +230,7 @@ window.Maity = window.Maity || {};
       append(status.el, h("span", { class: "ok" }, imagesNote));
       imagesNote = null;
     }
-    const box = h("div", { class: "images" }, h("h3", null, "Logo and banner"));
+    const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, "Logo and banner"));
     [["logo", "Logo", "Square; shown next to the project's name everywhere."],
       ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
       const view = ctx.project[kind] || { available: false, source: null };
@@ -255,7 +255,7 @@ window.Maity = window.Maity || {};
         }
       });
       append(box, h("div", { class: "image-row" },
-        h("h4", null, label),
+        h("h3", { class: "panel-sub" }, label),
         url
           ? h("img", { class: "image-preview image-preview-" + kind, src: url, alt: "The project's current " + kind })
           : h("p", { class: "muted" }, kind === "logo" ? "None: a monogram is shown." : "None."),
@@ -357,7 +357,7 @@ window.Maity = window.Maity || {};
         save({ policy: { signing: select.value }, reason: reason.value.trim() }, "Signing");
       },
     },
-    h("h3", null, "Agent signing"),
+    h("h2", { class: "panel-title" }, "Agent signing"),
     h("p", { class: "hint" }, "Required refuses every agent call made with the bare bearer credential (curl, the join page's plain path); "
       + "the maity CLI signs its calls. Humans in the dashboard are not affected."),
     h("label", { for: "signing-select" }, "Signing"), select,
