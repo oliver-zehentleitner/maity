@@ -324,6 +324,40 @@ runner_credential = Table(
     **MYSQL_TABLE,
 )
 
+runner_session = Table(
+    "runner_session",
+    metadata,
+    _id(primary_key=True),
+    _ref("credential_id", "runner_credential.id", nullable=False),
+    Column("client", Text),
+    Column("started_at", UtcDateTime, nullable=False),
+    Column("last_seen_at", UtcDateTime, nullable=False),
+    Column("ended_at", UtcDateTime),
+    # One live session per credential, opened by `hello` (§15.8), as for agents.
+    Column("live", Boolean),
+    UniqueConstraint("credential_id", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+runner_attachment = Table(
+    "runner_attachment",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _ref("runner_id", "runner.id", nullable=False, index=True),
+    _ref("attached_by", "human.id", nullable=False),
+    Column("attached_at", UtcDateTime, nullable=False),
+    Column("detached_at", UtcDateTime),
+    Column("detached_by", String(ID)),
+    # True while attached, NULL afterwards: one active attachment per (project,
+    # runner), and the detached rows stay (§15.4).
+    Column("active", Boolean, default=True),
+    UniqueConstraint("project_id", "runner_id", "active"),
+    CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
+    **MYSQL_TABLE,
+)
+
 idempotency_key = Table(
     "idempotency_key",
     metadata,
@@ -457,6 +491,9 @@ event = Table(
     Column("actor_via", String(16)),  # signed, bearer, cookie; null for the hub
     Column("actor_harness", Text),
     Column("actor_model", Text),
+    # The runner that caused the event (§15.10), with `actor_membership` null; like the
+    # session and credential columns, no foreign key: the log outlives what it names.
+    Column("actor_runner_id", String(ID)),
     Column("subject_type", String(32)),
     Column("subject_id", String(ID)),
     Column("audience", JSON_VALUE, nullable=False),
