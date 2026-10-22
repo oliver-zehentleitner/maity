@@ -27,7 +27,7 @@ from maity_hub.views import (
     absence,
     event_views,
     git_identity,
-    member_view,
+    member_views,
     paused,
     principal_id,
     repository,
@@ -244,8 +244,7 @@ def _packet(
     ).all()
     peers = []
     areas = []
-    for row in members:
-        view = member_view(conn, row)
+    for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
         if row.id != mine.id:
             peers.append(

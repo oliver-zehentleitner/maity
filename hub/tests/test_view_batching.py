@@ -80,10 +80,16 @@ def test_lists_cost_the_same_for_3_rows_and_for_30(
             select(t.membership.c.id).where(t.membership.c.project_id == project_id)
         ).scalar_one()
     agents = [factory.agent(migrated, project_id, owner.id)]
+    resumer = make_client()
+    bearer = {"Authorization": f"Bearer {agents[0].value}"}
     calls = {
         "tasks": lambda: owner.get("/projects/maity/tasks?status=all&limit=200"),
         "events": lambda: owner.get("/projects/maity/events?after=0&limit=200"),
         "members": lambda: owner.get("/projects/maity/members"),
+        # The packet: claims, events and every peer (§5.2).
+        "resume": lambda: resumer.post(
+            "/api/v1/me/resume", json={"client": "test", "cursor": 0}, headers=bearer
+        ),
     }
     _grow(migrated, project_id, owner_membership, agents, 3)
     small = {name: _statements(migrated, call) for name, call in calls.items()}

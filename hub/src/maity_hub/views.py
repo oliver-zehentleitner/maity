@@ -129,14 +129,6 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     return "offline"
 
 
-def live_session(conn: Connection, membership_id: int) -> Any:
-    return conn.execute(
-        select(t.agent_session)
-        .where(t.agent_session.c.membership_id == membership_id, t.agent_session.c.live.is_(True))
-        .order_by(t.agent_session.c.started_at.desc())
-    ).first()
-
-
 def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any], dict[int, Any]]:
     """Per membership: the newest live session, and the newest session of any kind."""
     if not membership_ids:
