@@ -9,11 +9,12 @@ agents; this file is the short form for a human contributor.
 2. Keep the change to one concern. A change to an interface other parts
    depend on is documented in `docs/` in the same change.
 3. Lint, types and tests must be green before the pull request.
-4. Documentation is part of the change: README, CHANGELOG under
-   `[Unreleased]`, `docs/`, and `context/` for every decision, rejected
-   alternative or workaround. A `context/` entry is committed right after
-   it is written, in its own commit, so its Git timestamp is the moment
-   the reasoning was recorded.
+4. Documentation is part of the change: README, a changelog entry as one
+   new file in `changelog.d/` (never an edit to `CHANGELOG.md`; see
+   `changelog.d/README.md`), `docs/`, and `context/` for every decision,
+   rejected alternative or workaround. A `context/` entry is committed
+   right after it is written, in its own commit, so its Git timestamp is
+   the moment the reasoning was recorded.
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 

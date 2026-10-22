@@ -1,10 +1,10 @@
 name: ci
 
-# The dashboard's checks and smoke test; the hub's checks: lint, types and
-# tests on SQLite; the test suite against PostgreSQL and MariaDB; the built
-# wheel on Python 3.13; the image; the Helm chart. Every hub job installs the
-# locked set from hub/requirements/, and hub-lock checks the locks follow
-# pyproject.toml.
+# The changelog fragments; the dashboard's checks and smoke test; the hub's
+# checks: lint, types and tests on SQLite; the test suite against PostgreSQL
+# and MariaDB; the built wheel on Python 3.13; the image; the Helm chart.
+# Every hub job installs the locked set from hub/requirements/, and hub-lock
+# checks the locks follow pyproject.toml.
 on:
   push:
     branches: [main]
@@ -18,6 +18,24 @@ defaults:
     working-directory: hub
 
 jobs:
+  # The changelog fragments in changelog.d/ (one per pull request, folded into
+  # CHANGELOG.md at release) and the tool's own tests; standard library only,
+  # on the oldest Python the tool supports.
+  changelog:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: python tools/changelog.py check
+      - run: python -m unittest discover -s tools -p 'test_*.py' -v
+
   # The dashboard (web/, owned by Agent D): structure checks on the Python
   # standard library, the behaviour smoke test on the runner's node binary.
   web:
