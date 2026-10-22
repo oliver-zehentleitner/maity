@@ -47,6 +47,15 @@ class MessageIn(Written):
 
 class RedactIn(Strict):
     reason: str = markdown(min_length=1)
+    # What the caller means to redact (§8.5); the hub redacts nothing else.
+    expect: Literal["closed_chat_message"] | None = None
+
+
+def _closed_group_chat_message(row: Any) -> bool:
+    """A message of a closed group chat (§9). The hub has no group chats yet, so no
+    event is one, and `expect: closed_chat_message` refuses everything until it has."""
+    del row
+    return False
 
 
 def load_event(conn: Connection, seq: str, reader: Any = None) -> dict[str, Any]:
@@ -353,11 +362,14 @@ def redact(
         audience = list(row.audience or [])
         if row.conversation_id is not None:
             # A chat is redacted only by its human party; to anyone else it does not
-            # exist, and the tombstone's event goes to the two parties (§8.5).
+            # exist, and the tombstone's event goes to the two parties (§8.5). Checked
+            # first: no later refusal may tell anyone else that the event exists.
             _, human = chat_parties(conn, mine, row.conversation_id)
             if mine.id != human.id:
                 raise not_found()
             audience = [f"member:{row.conversation_id}", f"member:{human.human_id}"]
+        if body.expect == "closed_chat_message" and not _closed_group_chat_message(row):
+            raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
         if row.kind == "event_redacted":  # a tombstone's record is not itself redacted
             raise ApiError(
                 400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}

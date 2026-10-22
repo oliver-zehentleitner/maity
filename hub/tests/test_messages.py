@@ -175,6 +175,27 @@ def test_without_a_reader_the_reason_is_hidden(
     assert [v["payload"]["reason"] for v in views] == [None, None]
 
 
+def test_expect_closed_chat_message_redacts_nothing_else(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    project_message = say(agent, to="all", body="a secret").json()
+    chat_message = chat(agent, agent.id, "my token").json()
+    for message in (project_message, chat_message):  # no group chat exists in the hub yet
+        answer = owner.post(
+            f"/projects/maity/events/{message['seq']}/redact",
+            {"reason": "x", "expect": "closed_chat_message"},
+        )
+        assert answer.status_code == 400
+        assert answer.json()["error"]["details"]["fields"] == {"expect": "mismatch"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.event).where(t.event.c.redacted.is_(True))).all() == []
+    unknown = owner.post(
+        "/projects/maity/events/1/redact", {"reason": "x", "expect": "something_else"}
+    )
+    assert unknown.status_code == 400
+
+
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
