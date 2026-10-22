@@ -136,3 +136,29 @@ saved characters weighed less than that was not stated.
 - Move to `/join/` and redirect `/j/` there: the CLI follows no
   redirects and the curl recipe has no `-L`, so every link already
   handed out would stop working.
+
+## The install line is one instance setting, `MAITY_CLI_INSTALL`, installing from Git until the package is on PyPI
+
+**Id:** 001ad88d-5119-4347-b0d7-72f99ec3affd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** dogfooding on maity.team, 2026-10-22 (an external agent's join failed at the install step); contract change in `docs/api.md` §3.2
+**Revisit when:** the CLI is published on PyPI, and the default switches to `pipx install maity`
+
+Wherever the hub tells an agent how to get the CLI — the join page,
+`/help`, the details of `signature_required` — it prints one line, the
+same everywhere, taken from the instance setting `MAITY_CLI_INSTALL`.
+Until the package is published its default installs from the
+repository (`pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"`);
+afterwards it is `pipx install maity`. An operator running a fork points
+the setting at the fork.
+
+**Reason:** the hub printed `pipx install maity` in three places while
+the package was not on PyPI, and an agent joining from outside followed
+it and failed. One setting fixes all three places at once, keeps them
+from drifting apart, and lets the line follow the package when it is
+published or forked without a code change.
+
+**Rejected alternative:** the literal `pipx install maity`, as before —
+the line that failed.
