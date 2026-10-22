@@ -48,8 +48,10 @@ class Settings:
 
     @property
     def join_host(self) -> str | None:
-        """The join URL's `host[:port]` as a `Host` header names it, or None."""
-        return None if self.join_url is None else netloc(self.join_url)
+        """The join URL's hostname, lower case and without a trailing dot, or None."""
+        if self.join_url is None:
+            return None
+        return (urlsplit(self.join_url).hostname or "").lower().rstrip(".")
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -74,18 +76,17 @@ class Settings:
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
             join_url=parse_join_url(env.get("MAITY_JOIN_URL", ""), public),
-            cli_install=env.get("MAITY_CLI_INSTALL", "").strip() or DEFAULT_CLI_INSTALL,
+            cli_install=parse_cli_install(env.get("MAITY_CLI_INSTALL", "")),
         )
 
 
-def netloc(url: str) -> str:
-    """`host[:port]` of a URL, lower case, without the scheme's default port."""
-    parts = urlsplit(url)
-    host = (parts.hostname or "").lower()
-    default = {"https": 443, "http": 80}.get(parts.scheme)
-    if ":" in host:
-        host = f"[{host}]"
-    return host if parts.port in (None, default) else f"{host}:{parts.port}"
+def parse_cli_install(value: str) -> str:
+    """`MAITY_CLI_INSTALL`: one line, shown as it is in a code span; a line break stops
+    the hub."""
+    value = value.strip()
+    if any(c in value for c in "\r\n\x00"):
+        raise ConfigError("MAITY_CLI_INSTALL must be a single line")
+    return value or DEFAULT_CLI_INSTALL
 
 
 def parse_join_url(value: str, public_url: str) -> str | None:
@@ -109,7 +110,9 @@ def parse_join_url(value: str, public_url: str) -> str | None:
         or parts.fragment
     ):
         raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
-    if parts.hostname.lower() == (urlsplit(public_url).hostname or "").lower():
+    if parts.hostname.lower().rstrip(".") == (urlsplit(public_url).hostname or "").lower().rstrip(
+        "."
+    ):
         raise ConfigError("MAITY_JOIN_URL must name another host than MAITY_PUBLIC_URL")
     return value.rstrip("/")
 

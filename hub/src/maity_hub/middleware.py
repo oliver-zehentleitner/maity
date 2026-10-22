@@ -52,6 +52,9 @@ class HubMiddleware:
             return
         origin = net.resolve(scope, self.settings.trusted_proxies)
         scope.setdefault("state", {})["origin"] = origin
+        # Decided before anything is logged: the log masks every path there (§1.1).
+        on_join_host = join_host.is_join_host(scope, self.settings)
+        scope["state"]["on_join_host"] = on_join_host
         send = _with_headers(send)
 
         image = scope.get("method") == "PUT" and bool(_IMAGE_UPLOAD.match(scope.get("path", "")))
@@ -120,7 +123,7 @@ class HubMiddleware:
                 status = message["status"]
             await send(message)
 
-        if join_host.is_join_host(scope, self.settings):
+        if on_join_host:
             answer = join_host.route(scope, self.settings)
             if answer is not None:  # not the join: nothing else is served there (§1.1)
                 await answer(scope, replay, tracking)
@@ -153,12 +156,20 @@ _TOKEN_PATHS = (
 )
 
 
+_FIRST_SEGMENT = re.compile(r"^(/)[^/]+")
+
+
 def _logged_path(scope: Scope) -> str:
-    """The path for the log: never a query string, join and pairing tokens as `…` (§1.1)."""
+    """The path for the log: never a query string, join and pairing tokens as `…` (§1.1).
+    On the join host any path not rewritten to the join may still carry its token
+    (`HEAD /{token}`, `/{token}/`): its first segment is masked as well."""
     path = str(scope.get("path", ""))
+    masked = path
     for pattern in _TOKEN_PATHS:
-        path = pattern.sub(r"\1…", path)
-    return path
+        masked = pattern.sub(r"\1…", masked)
+    if masked == path and scope.get("state", {}).get("on_join_host"):
+        masked = _FIRST_SEGMENT.sub(r"\1…", path)
+    return masked
 
 
 def _content_length(scope: Scope) -> int | None:

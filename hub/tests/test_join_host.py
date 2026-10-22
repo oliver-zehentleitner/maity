@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from maity_hub.config import ConfigError, parse_join_url
+from maity_hub.config import DEFAULT_CLI_INSTALL, ConfigError, Settings, parse_join_url
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -61,6 +61,7 @@ def token_of(created: dict[str, Any]) -> str:
         "https://join.example/?x=1",
         "https://user@join.example",
         "https://hub.example",
+        "https://hub.example.",
         "join.example",
     ],
 )
@@ -138,7 +139,7 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
     created = create(owner)
     owner.delete(f"/projects/maity/joins/{created['id']}")
     dead = join_client(make_client).get(f"/{token_of(created)}")
-    assert dead.status_code == 404
+    assert dead.status_code == 404 and dead.headers["Maity-Error"] == "not_found"
     assert "no longer works" in dead.text and "new join line" in dead.text
     html = join_client(make_client).get(f"/{token_of(created)}", headers={"Accept": "text/html"})
     assert html.status_code == 404 and "<h1>This join link no longer works</h1>" in html.text
@@ -203,6 +204,58 @@ def test_the_log_masks_the_join_hosts_token(
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
     assert lines == ["GET /join/… 200"]
     assert not any(token in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix", "status"), [("HEAD", "", 404), ("GET", "/", 302), ("PUT", "", 404)]
+)
+def test_the_log_masks_a_token_that_was_not_rewritten(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    caplog: pytest.LogCaptureFixture,
+    method: str,
+    suffix: str,
+    status: int,
+) -> None:
+    token = token_of(create(owner))
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        join_client(make_client).request(method, f"/{token}{suffix}", follow_redirects=False)
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+    assert lines == [f"{method} /…{suffix} {status}"]
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "join.example.",
+        "join.example.:443",
+        "join.example:80",
+        "join.example:0443",
+        "JOIN.example:x",
+    ],
+)
+def test_a_variant_of_the_join_host_is_the_join_host(
+    make_client: ClientFactory, owner: flow.Human, migrated: Any, host: str
+) -> None:
+    factory.human(migrated, "variant")
+    client = join_client(make_client)
+    headers = {"Host": host}
+    help_ = client.get("/api/v1/help", headers=headers, follow_redirects=False)
+    assert help_.status_code == 302 and help_.headers["location"] == f"{PUBLIC}/"
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"handle": "variant", "password": factory.PASSWORD},
+        headers=headers,
+    )
+    assert login.status_code == 404 and "set-cookie" not in login.headers
+    token = token_of(create(owner))
+    assert client.get(f"/{token}", headers=headers).status_code == 200
+
+
+def test_a_multi_line_install_line_stops_the_hub() -> None:
+    with pytest.raises(ConfigError):
+        Settings.from_env({"MAITY_CLI_INSTALL": "pipx install maity\nrm -rf ~"})
+    assert Settings.from_env({"MAITY_CLI_INSTALL": "  "}).cli_install == DEFAULT_CLI_INSTALL
 
 
 def test_pairing_lines_stay_on_the_public_url(make_client: ClientFactory, migrated: Any) -> None:

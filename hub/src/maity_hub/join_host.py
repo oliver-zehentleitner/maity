@@ -21,20 +21,32 @@ from maity_hub.config import Settings
 from maity_hub.errors import error_response
 
 # One segment in the join token's alphabet and length (`secrets.token_urlsafe(16)`, §3.1).
-TOKEN_PATH = re.compile(r"^/([A-Za-z0-9_-]{22})$")
+TOKEN_PATH = re.compile(r"^/([A-Za-z0-9_-]{22})\Z")
 _DROPPED = {b"cookie", b"authorization"}
 
 
+def hostname(host: str) -> str:
+    """The name in a `Host` header: lower case, without the port and trailing dots."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        name = host[: host.find("]") + 1] if "]" in host else host
+    else:
+        name = host.partition(":")[0]
+    return name.rstrip(".")
+
+
 def requested_host(scope: Scope) -> str:
-    """The `Host` header, lower case, without `:443`; `X-Forwarded-Host` is not read."""
+    """The hostname the `Host` header names; `X-Forwarded-Host` is not read."""
     for name, value in scope.get("headers", []):
         if name == b"host":
-            host: str = value.decode("latin-1").strip().lower()
-            return host.removesuffix(":443")
+            return hostname(value.decode("latin-1"))
     return ""
 
 
 def is_join_host(scope: Scope, settings: Settings) -> bool:
+    """Matched on the hostname alone, so `join.example.`, `:80` or `:0443` are the
+    join host too: a variant never reaches the public app (fails closed). The public
+    URL names another hostname (`parse_join_url`)."""
     return settings.join_host is not None and requested_host(scope) == settings.join_host
 
 

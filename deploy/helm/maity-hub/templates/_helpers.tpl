@@ -95,6 +95,11 @@ the cluster.
 {{- if not .Values.config.trustedProxies -}}
 {{- fail "config.trustedProxies is required with the Ingress enabled: the ingress controller's pod network, so the hub believes its X-Forwarded-For and X-Forwarded-Proto" -}}
 {{- end -}}
+{{- if and .Values.ingress.joinHost (eq .Values.ingress.joinHost .Values.ingress.host) -}}
+{{- fail "ingress.joinHost must be another host name than ingress.host" -}}
+{{- end -}}
+{{- else if .Values.ingress.joinHost -}}
+{{- fail "ingress.joinHost needs the Ingress enabled; with your own Ingress, set MAITY_JOIN_URL through extraEnv" -}}
 {{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}

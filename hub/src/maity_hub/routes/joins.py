@@ -403,13 +403,21 @@ async def _page(token: str, request: Request) -> Response:
         if not (on_join_host and error.status == 404):
             raise
         markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
+    # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
+    headers = {"Maity-Error": "not_found"} if status == 404 else None
     if "text/html" in request.headers.get("accept", ""):
         return Response(
             _html(markdown, title_text, dashboard),
             status_code=status,
             media_type="text/html; charset=utf-8",
+            headers=headers,
         )
-    return Response(markdown, status_code=status, media_type="text/markdown; charset=utf-8")
+    return Response(
+        markdown,
+        status_code=status,
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
 
 
 @router.get("/join/{token}")
