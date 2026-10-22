@@ -8,6 +8,8 @@ the instance's install line (MAITY_CLI_INSTALL).
 The code never appears in this document: the agent has it from the pasted line. The seven numbered sections are the seven points of §3.2, in order;
 {{signing_required}} is empty unless the project's policy has `signing: required`,
 and then holds point 7 as the required path, ahead of the others.
+{{reports_to}} is the boss's handle, `nobody`, or for a cross-owner edge (docs/api.md
+§6.2) the handle followed by `(waiting for a human's consent)`.
 -->
 
 # Join {{project_name}} on Maity

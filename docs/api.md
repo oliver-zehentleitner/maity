@@ -497,10 +497,18 @@ Additional rules that are not scopes:
 
 - A human may always list and revoke the credentials of the agent
   profiles they own, whatever their role.
+- A human may always set the `reports_to` of an agent they own to
+  `null` or to a member they own (themselves or another of their
+  agents), and withdraw an open cross-owner `reports_to` request for it
+  (§6.2), whatever their role and whether or not they are a member of
+  the project. Nothing else of the membership opens to them this way.
 - A request addressed to a specific member or role (§7) may also be
   answered by that member or by members holding that role — for the
   classes `decision`, `contract` and `info`. A `consent` request is
-  answerable only by holders of `requests:answer`, whatever `to` says.
+  answerable only by holders of `requests:answer`, whatever `to` says —
+  except the two consents for a cross-owner `reports_to` (§6.2), each
+  of which only the owner it is addressed to answers, member of the
+  project or not.
 - No membership answers a request it asked or that was filed on its
   behalf (`self_answer`), whatever its role.
 - `absence` (§6.1) is written only by the owner, the human it concerns.
@@ -655,6 +663,12 @@ URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
 and a join is burned after three wrong codes.
+
+A `reports_to` that would be cross-owner for the agent (§6.2, "Across
+owners") is accepted on the join but not set by the exchange: the
+membership starts with `reports_to: null` and the hub files the consent
+request to the boss's side at the exchange, `asked_by` the join's
+creator; `go` sets the edge.
 
 ### 3.2 The join page (agent or browser)
 
@@ -1252,7 +1266,7 @@ session:
   "id": "agt-b", "kind": "agent", "handle": "agent-b", "display_name": "Agent B",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
-  "role": "member", "reports_to": "agt-a", "areas": ["hub/"], "capabilities": [],
+  "role": "member", "reports_to": "agt-a", "cross_owner": false, "areas": ["hub/"], "capabilities": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
                "client": "maity-cli/0.1.0", "started_at": "2026-10-21T10:12:00Z", "listening": true },
@@ -1312,7 +1326,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -1324,7 +1338,8 @@ chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
 with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
-the project's current members. A join for an agent that is already a
+the project's current members, and again at the `go` of a cross-owner
+edge (below). A join for an agent that is already a
 member must name its current `reports_to` (`differs_from_membership`
 otherwise), and a join for a new agent cannot close a cycle, so a join
 never adds an edge to check.
@@ -1350,6 +1365,107 @@ membership reporting to a former member, and the agent is never refused
 for a boss it cannot change. The exchange makes this check again after
 it has taken the project lock, so a removal cannot commit between the
 check and the new membership.
+
+**Across owners.** An agent may report to a member of another owner
+only with a human's consent (the maintainer's decision of 2026-10-22).
+The edge is **cross-owner** when the subordinate is an agent and
+`reports_to` names either an agent with a different owner, or a human
+who is not the subordinate's owner. A human's `reports_to` is never
+cross-owner (humans have no owner), and an edge to the subordinate's
+own human or to another agent of that human never is.
+
+- **Who consents.** Both owners of the edge: the human who gains a
+  subordinate from another owner (for an agent boss, the boss's owner;
+  for a human boss, that human) and the subordinate's owner. Each answers
+  only the request addressed to them — not `owner`, not a holder of
+  `requests:answer`, not a proxy (`forbidden`, `details.reason:
+  "addressee_only"`), never an agent (`forbidden`, `details.reason:
+  humans_only`), and never the asker (`self_answer`). This is an
+  exception to the `consent` rules of §2.3 and §7.
+- **Own consent.** When the caller who sets the edge is one of the two
+  owners, that owner's action is their consent, as for placements
+  (§15.6): only the other owner is asked. A `PATCH` by the boss's side
+  (typically the project owner placing another human's agent under
+  themselves, with `members:admin`) files the request to the
+  subordinate's owner; one by the subordinate's owner files the request
+  to the boss's side. A caller who is neither (another human with
+  `members:admin`, or an admin agent) files both.
+- **The requests.** The edge does not take effect at once. The hub
+  files, in the same transaction, one `consent` request per owner still
+  to consent: `asked_by` the caller, `to` that human's id, replies
+  `go`/`no`, `while_open: wait`, `task_id` null. The boss's side gets the
+  title `Take <handle> of <owner handle> as a report of <boss handle>`,
+  the subordinate's owner `Let <handle> report to <boss handle> of
+  <boss owner handle>`. Each `summary` names the project, the
+  subordinate, both owners, whether the other owner's consent is still
+  open (with that request's id), and says what the edge does and does
+  not do (below), including that the subordinate's owner can end it at
+  any time. A `go` (only `reply_id: go`; anything else settles as `no`,
+  as in §15.6) records that owner's consent; the edge is set at the
+  `go` that leaves no request of the pair open, in the name of the
+  consenting human(s) as approvers and the asker's as actor, with one
+  `member_updated`. A `no` on either request withdraws the other
+  (`reason: "refused"`) and changes nothing; so does a withdrawal of
+  either.
+- **A consenting human who is not a member** of the project (an agent's
+  owner need not be one, §6.2 `owner`) receives the request in their own
+  cross-project inbox (`GET /requests`), with `project` as for every
+  item, and may `GET` and answer that request by its id under
+  `/projects/{slug}/requests/{id}`. That is all the request opens:
+  every other call into the project stays `not_found` for them (apart
+  from the §2.3 rule for their own agent's `reports_to`), and no
+  event reaches them (`request_created` goes to `member:` audiences
+  only). The summary therefore carries everything the decision needs.
+- **`PATCH`.** A `PATCH` that sets a cross-owner `reports_to` answers
+  `202` with the consent request, as under ᵃ (§2.3) — when two are
+  filed, with the one to the boss's side, whose `summary` names the
+  other; the other fields
+  of the same `PATCH` are applied at once, as without it, and their
+  `member_updated` names only them. When an admin agent's `PATCH` also
+  needs ᵃ's consent (§2.3), the whole `PATCH` waits for that one, and
+  the cross-owner request is filed when it is applied.
+- **Pending.** `reports_to` keeps its current value while a request of
+  the pair is open; nothing else in the member view shows it. The rules
+  apply to the pair as one: a further `PATCH` of that member's
+  `reports_to` withdraws every open request of it (`reason:
+  "superseded"`) and is handled on its own: applied at once, or new
+  requests. Removing either member withdraws them (`reason:
+  "member_removed"`). The cycle check runs again at the `go` that would
+  set the edge, against the members as they are then: such a `go` that
+  would now close a cycle is `invalid` with `details.fields.reports_to:
+  "cycle"`, nothing changes, and the request stays open for a `no` or a
+  withdrawal. Withdrawal of either request is open to the asker, to
+  holders of `requests:answer` and to the subordinate's owner, and
+  withdraws the other as well.
+- **Joins and placements.** A join (§3.1) or a new-profile placement
+  (§15.6) whose `reports_to` would be cross-owner for the agent it
+  creates passes the same consent. Its creator owns the profile, so the
+  creation is the subordinate's owner's consent and only the boss's side
+  is asked: the membership is created by
+  the exchange or the first pickup with `reports_to: null`, and the hub
+  files the request at that moment, `asked_by` the join's or placement's
+  creator. The resume packet carries `reports_to: null` until `go`, and
+  the join page shows the boss followed by `(waiting for a human's
+  consent)` (`docs/join-page.md`).
+- **Ending it.** The subordinate's owner may at any time set their own
+  agent's `reports_to` to `null` or to a member they own, without
+  `members:admin` and whether or not they are a member of the project
+  (§2.3); that needs no consent.
+- **The marker.** Every member view carries `cross_owner` (boolean):
+  `true` while the member's current `reports_to` is cross-owner,
+  `false` otherwise and while a request is pending. It rides in
+  `member_updated` like the rest of the view; it reveals nothing new,
+  since `owner_id` is in every member view. The organisation chart marks
+  the edge.
+- **What the edge does.** It grants the boss no scope, no credential and
+  no pause, removal or answering right over the subordinate. The boss
+  receives exactly one thing from it: the subordinate's `session_paused`
+  events (§8.2), with their session fields (harness, model, session id).
+  The subordinate receives the boss's member id as
+  `membership.reports_to` in its resume packet and on its join page, and
+  may treat the boss's messages as direction — to the subordinate's
+  owner, instructions from outside. Nothing else routes by `reports_to`:
+  cards route by `areas`, requests by `to` (§7).
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
@@ -2339,7 +2455,7 @@ the CLI's; `--json` prints the packet unchanged.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, `role:<role>` or `owner` (the project's owner). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer` |
+| `to` | a member id, `role:<role>` or `owner` (the project's owner). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. The one exception is filed by the hub, never by a caller: the consent for a cross-owner `reports_to` names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time) |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call |
@@ -2354,10 +2470,10 @@ the CLI's; `--json` prints the packet unchanged.
 |---|---|---|
 | `POST /projects/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?}`; `201`. With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
 | `GET /projects/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or `role:<r>` for a role the caller holds, and a request whose `cover.by` is the caller (§6.12). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
-| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. The dashboard's `?scope=all` is accepted and means the same |
-| `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer` | |
-| `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
-| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer` | `{"reason"?}`; status `withdrawn`; the card's status is restored |
+| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2). The dashboard's `?scope=all` is accepted and means the same |
+| `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer` | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
+| `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
+| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the subordinate's owner (§2.3) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
 without `to` goes to `policy.contract_arbiter`; an agent asker whose human
@@ -2439,7 +2555,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:` | the request |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
 | `session_started` | nobody; readable by owner and admins | session fields |
-| `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
+| `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `role:admin`, `member:<coordinator>` (or `role:admin` under the default, §6.12); also `role:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
@@ -3794,10 +3910,15 @@ POST /api/v1/projects/maity/placements
   only — `{"handle", "display_name"}` for a new profile, with `role`,
   `reports_to`, `areas`, `capabilities` and `briefing` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
-  (§15.9). With `{"id"}` those fields must be omitted (`invalid`); a
-  placement never changes a membership. A stored `reports_to` whose member
-  is removed before the membership exists becomes `null` (§6.2); every
-  pickup builds its join from the stored fields as they are then.
+  (§15.9). A cross-owner `reports_to` is applied at `go` of its own
+  consent request to the boss's side (the creator owns the profile, so
+  its consent is the creation), filed at the exchange of the placement's
+  join (§6.2, "Across owners"); that request is separate from the
+  placement's approval. With `{"id"}` those fields must be omitted
+  (`invalid`); a placement never changes a membership. A stored
+  `reports_to` whose member is removed before the membership exists
+  becomes `null` (§6.2); every pickup builds its join from the stored
+  fields as they are then.
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `freeze`/`fixes-only`.
 - Placement creation by a human against a runner without a live
