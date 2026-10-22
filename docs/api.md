@@ -1131,7 +1131,10 @@ The `release` object on the card:
   (`release_not_ready`), computed on the card as it will be stored: a
   `PATCH` that changes `release` and `status` together is judged on the
   new data. A closed release is a record of what shipped: `release.*`
-  and `depends_on` on it are `invalid_transition`. Members with
+  and `depends_on` on it are `invalid_transition`, and when it closes its
+  `pull_requests`, `groups` and `readiness` are frozen into the card and
+  served as stored from then on — later edges, observations or cards do
+  not change them. `ships_with` never names a release card. Members with
   `releases:write` may `PATCH` `release.pull_requests_typed` and
   `release.checklist` on any release, holder or not. The hub never tags, pushes or merges; the
   holder tags in its own session; `tag` is filled by the probe
