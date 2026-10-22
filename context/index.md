@@ -51,7 +51,7 @@ Why Maity is built the way it is.
 ## L
 
 ## M
-- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; reporting across owners only with the consent of the human who gains the subordinate
+- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; reporting across owners only with the consent of both owners
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
