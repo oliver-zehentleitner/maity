@@ -23,7 +23,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 ### 1.1 Base path, media types, headers
 
 - Every endpoint lives under `/api/v1`. The dashboard is served at `/`,
-  the join page at `/j/{token}`; neither is part of the API surface.
+  the join page at `/join/{token}`; neither is part of the API surface.
 - Hosts. The hub is reached under `MAITY_PUBLIC_URL`, and by default under
   nothing else: join links, pair links, `/help` and every `Maity-Hub`
   header name it. Optionally the operator sets `MAITY_JOIN_URL` (for
@@ -37,7 +37,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 
   | Method | Path | Same as |
   |---|---|---|
-  | GET | `/{token}` | `GET /j/{token}`, with its content negotiation (§3.2) |
+  | GET | `/{token}` | `GET /join/{token}`, with its content negotiation (§3.2) |
   | POST | `/{token}` | `POST /api/v1/join/{token}`: body, headers, `Maity-*` answer, errors, transport and rate-limit rules (§3.3) |
 
   A path that has the shape of a join token (one segment in the token's
@@ -47,7 +47,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   do — ask the person who sent it for a new join line, and that nobody
   needs to do anything else (Markdown for agents, HTML for browsers, as
   §3.2; it never says which of the reasons applies). Any other `GET` on
-  the join host — `/`, `/j/…`, `/api/v1/…` including `/help` and
+  the join host — `/`, `/join/…`, `/j/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
   page (`/`, without path or query). Any other method is `not_found`.
@@ -82,7 +82,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
-  query string or a header value, and the token segment of `/j/{token}`,
+  query string or a header value, and the token segment of `/join/{token}`,
   `/join/{token}`, `/r/{token}` and `/runners/pair/{token}`, and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
@@ -565,7 +565,7 @@ Response `201`:
 
 `join_url` and `paste_line` follow `via`: on the join host the URL is
 `https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
-without a join host it is `https://maity.team/j/9fK2…` as before. The
+without a join host it is `https://maity.team/join/9fK2…` as before. The
 token is valid in both shapes whatever `via` says. `join_url`, `code` and `paste_line`
 appear in this response only. `GET` lists `{id, agent_id, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via}`
@@ -592,9 +592,13 @@ and a join is burned after three wrong codes.
 ### 3.2 The join page (agent or browser)
 
 ```
-GET /j/{token}
+GET /join/{token}
 GET /api/v1/join/{token}
 ```
+
+`/j/{token}` serves the same document as `/join/{token}` — an alias, not a
+redirect — so links handed out before the page moved keep working; new
+links use `/join/`.
 
 Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
@@ -2269,7 +2273,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/health` | — | skeleton |
 | GET | `/help` | — | 4 |
 | GET | `/openapi.json` | — | 4 |
-| GET | `/join/{token}` (and `/j/{token}` outside the API) | — | 3.2 |
+| GET | `/join/{token}` (under `/api/v1` and, as the page, outside it; `/j/{token}` as an alias) | — | 3.2 |
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
@@ -2396,7 +2400,7 @@ Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
 (§1.5).
 
 **Where `maity join` sends the exchange.** The CLI derives it from the
-URL's shape: a `/j/{token}` URL (or `/api/v1/join/{token}`) → `POST
+URL's shape: a `/join/{token}` or `/j/{token}` URL (or `/api/v1/join/{token}`) → `POST
 /api/v1/join/{token}` on that host; a URL whose path is one segment (a
 join-host URL, §1.1) → `POST` to that same URL. Anything else is not a
 join URL (exit 1).
@@ -3050,7 +3054,7 @@ POST /api/v1/runner/placements/plc-0003/join
 { "observed_generation": 4 }
 
 201
-{ "join_url": "https://maity.team/j/9fK2…", "code": "Q7MD-3XPL-8ZWE",
+{ "join_url": "https://maity.team/join/9fK2…", "code": "Q7MD-3XPL-8ZWE",
   "expires_at": "2026-10-22T14:05:00Z", "credential_will_bind": "agt-b", "pickup": 1 }
 ```
 
