@@ -92,7 +92,8 @@
       "blocked_by_request": null,
       "ktw_ref": null,
       "report": {
-        "summary": "Skeleton with /health and the migration check.",
+        "summary": "Skeleton with /health and the migration check; @agent-d builds the dashboard on it.",
+        "mentions": [{ "member_id": "agt-d", "handle": "agent-d", "field": "summary", "offset": 47, "length": 8 }],
         "head": "5c1e0aa",
         "branch": "agent-b/hub-skeleton",
         "upstream": "origin/agent-b/hub-skeleton",
@@ -210,6 +211,7 @@
       "title": "Contract: event kinds for chat",
       "body": "",
       "label": null,
+      "rank": "r000016",
       "status": "in_progress",
       "area": "docs/",
       "created_by": "agt-a",

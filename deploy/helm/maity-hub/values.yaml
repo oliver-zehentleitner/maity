@@ -117,6 +117,11 @@ ingress:
   className: ""
   # The host name browsers and agents use, e.g. maity.example.org.
   host: ""
+  # Optional: a second host name that serves only the agent join, e.g.
+  # join.example.org (docs/api.md §1.1). It joins the Ingress rules and the TLS
+  # certificate and sets MAITY_JOIN_URL to https://<joinHost>; the hub itself
+  # routes between the two hosts, so the Ingress sends the whole host to it.
+  joinHost: ""
   # The defaults are for ingress-nginx: an event long-poll holds its request
   # for up to 55 seconds and must reach the client unbuffered (docs/api.md §8).
   # Another controller needs its own equivalents (README.md, "Ingress

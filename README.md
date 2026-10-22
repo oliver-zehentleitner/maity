@@ -60,6 +60,11 @@ decision so far is in [`context/`](context/index.md) and on the
 [dashboard](https://maity.dev/keep-the-why-dashboard/). What is being
 worked on is in [`TASKS.md`](TASKS.md).
 
+## Contact
+
+[info@maity.team](mailto:info@maity.team). Security problems: privately,
+as described in [`SECURITY.md`](SECURITY.md), never as a public issue.
+
 ## Licence
 
 [MIT](LICENSE)

@@ -11,15 +11,15 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, idempotency, inbox, placements
+from maity_hub import clock, idempotency, inbox, mentions, placements
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
-from maity_hub.models import Strict, markdown, title
+from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.views import principal_id, ts
 
 router = APIRouter()
@@ -40,7 +40,7 @@ class NeedsInSessionIn(Strict):
     session_id: str | None = None
 
 
-class RequestCreate(Strict):
+class RequestCreate(Written):
     class_: str = Field(alias="class")
     title: str = title()
     summary: str | None = markdown(default=None)
@@ -55,7 +55,7 @@ class RequestCreate(Strict):
     ktw_ref: str | None = Field(default=None, max_length=255)
 
 
-class AnswerIn(Strict):
+class AnswerIn(Written):
     reply_id: str | None = Field(default=None, max_length=64)
     text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
@@ -107,6 +107,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "title": row.title,
         "summary": row.summary,
         "tried": row.tried,
+        "mentions": row.mentions or [],
         "options": row.options,
         "replies": inbox.replies(klass(row), row.options),
         "priority": row.priority,
@@ -272,6 +273,10 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # Links only: a mention in a request pings nobody (§8.6).
+        found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
+            mentions.resolve(conn, mine.project.id, body.tried, "tried")
+        )
         now = clock.now()
         request_id = new_id("request")
         conn.execute(
@@ -283,6 +288,7 @@ def create_request(
                     "title": body.title,
                     "summary": body.summary,
                     "tried": body.tried,
+                    "mentions": found,
                     "options": [o.model_dump() for o in body.options],
                     "priority": body.priority,
                     "to_kind": to.kind,
@@ -602,6 +608,8 @@ def answer(
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
         _refuse_unless_open(row)
+        if inbox.needs_a_human(row, mine):
+            raise humans_only("under spawn_consent_by: human only a human answers this")
         if not inbox.may_answer(conn, row, mine):
             raise forbidden("requests:answer")
         if inbox.is_asker(row, mine):
@@ -635,6 +643,7 @@ def answer(
             "on_behalf_of": on_behalf,
             "at": clock.rfc3339(now),
             "conversation_id": conversation_id,
+            "mentions": mentions.resolve(conn, mine.project.id, body.text, "text"),
         }
         done = conn.execute(
             update(t.request)
@@ -749,7 +758,7 @@ def close_request(
         )
         kind, extra = "request_withdrawn", {"reason": reason}
     else:
-        stored = {
+        stored: dict[str, Any] = {
             "reply_id": outcome,
             "text": None,
             "talk": False,
@@ -757,6 +766,7 @@ def close_request(
             "on_behalf_of": None,
             "at": clock.rfc3339(now),
             "conversation_id": None,
+            "mentions": [],
         }
         conn.execute(
             update(t.request)

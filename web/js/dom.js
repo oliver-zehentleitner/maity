@@ -57,19 +57,27 @@ window.Maity = window.Maity || {};
   }
 
   // An image the page itself points at: a project's logo or banner on the
-  // hub's own origin (docs/api.md §11.2, built by api.js), or an object URL
-  // of an image chosen in this tab (fixture mode's upload). Never from data.
+  // hub's own origin (docs/api.md §11.2, built by api.js), a member's
+  // avatar there (§6.10, the path the hub gives as avatar_url), or an object
+  // URL of an image chosen in this tab (fixture mode's upload). Never
+  // another origin.
   function isOwnImage(value) {
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     // Object URLs exist only for an upload in fixture mode, a page opened from file://.
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
 
   // A link target from data (a forge URL a member typed, say) is used only
   // when it is plain https; anything else, javascript: included, is no link.
+  // Plain https only: no whitespace, no control, bidi or zero-width
+  // characters (a link that reads one way and goes another), and no user
+  // info before the host (https://bank.example@evil.example).
+  const HIDDEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
   function safeUrl(url) {
-    return typeof url === "string" && /^https:\/\/[^\s]+$/i.test(url) ? url : null;
+    if (typeof url !== "string" || !/^https:\/\/[^\s]+$/i.test(url) || HIDDEN.test(url)) return null;
+    return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
   function clear(el) {
@@ -109,5 +117,40 @@ window.Maity = window.Maity || {};
       text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
   };
 
-  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES };
+  // A scanned text with its stored mentions (docs/api.md §8.6) as text
+  // nodes and member links. Offsets and lengths count code points; only the
+  // stored ones for this field are links, and only where the text there is
+  // "@" + the stored handle; nothing the writer typed becomes a link.
+  function withMentions(text, mentions, field, hrefOf) {
+    const chars = Array.from(String(text || ""));
+    const marks = (mentions || [])
+      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
+      .sort((a, b) => a.offset - b.offset);
+    const out = [];
+    let at = 0;
+    marks.forEach((x) => {
+      if (x.offset < at || x.offset + x.length > chars.length) return;
+      const said = chars.slice(x.offset, x.offset + x.length).join("");
+      if (said !== "@" + x.handle) return;
+      if (x.offset > at) out.push(chars.slice(at, x.offset).join(""));
+      out.push(h("a", { class: "mention", href: hrefOf(x.member_id) }, said));
+      at = x.offset + x.length;
+    });
+    if (at < chars.length) out.push(chars.slice(at).join(""));
+    return out;
+  }
+
+  // An image to upload as the hub reads it (§11.2, §6.10): its type from the
+  // first bytes, at most 1 MiB; null when it is no PNG, JPEG or WebP.
+  const IMAGE_MAX = 1024 * 1024;
+  async function sniffImage(file) {
+    const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const at = (i, bytes) => bytes.every((v, k) => b[i + k] === v);
+    if (at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+    if (at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
+    if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return "image/webp";
+    return null;
+  }
+
+  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX };
 })(window.Maity);

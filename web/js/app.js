@@ -26,6 +26,8 @@ window.Maity = window.Maity || {};
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
+    // No tab: opened from the inbox and from a chat (js/project-message.js).
+    { route: "message", label: "Message the project", tab: false },
     { route: "join", label: "Join an agent", admin: true },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
@@ -68,7 +70,7 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
-    if (parts[0] === "account") return { scope: "account" };
+    if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
     if (parts[0] === "p" && parts[1]) {
@@ -210,21 +212,12 @@ window.Maity = window.Maity || {};
   // humans: what shows now and where it comes from, upload, and removing an
   // upload (the forge's image then applies again). The type is read from the
   // file's first bytes, as the hub reads it; at most 1 MiB.
-  const IMAGE_MAX = 1024 * 1024;
+  const { sniffImage, IMAGE_MAX } = M.dom;
   const SOURCES = { uploaded: "uploaded here", forge: "from the repository's forge" };
   const IMAGE_REASONS = {
     unsupported_type: "not a PNG, JPEG or WebP image",
     too_large: "larger than 1 MiB",
   };
-
-  async function sniffImage(file) {
-    const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-    const at = (i, bytes) => bytes.every((v, k) => b[i + k] === v);
-    if (at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
-    if (at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
-    if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return "image/webp";
-    return null;
-  }
 
   // Set by an upload or a removal; the next header opens the panel with it.
   let imagesNote = null;
@@ -511,7 +504,7 @@ window.Maity = window.Maity || {};
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
         { label: "Profile", href: "#/account" },
-        { label: "Avatar", disabled: true, why: "coming soon" },
+        { label: "Picture", href: "#/account/picture" },
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
@@ -545,7 +538,7 @@ window.Maity = window.Maity || {};
       panelSlot,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
-          NAV.filter((item) => offered(ctx, item)).map((item) => h("a", {
+          NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))
@@ -779,7 +772,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "new") {
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
-        await M.views.account(ctx, root);
+        await M.views.account(ctx, root, where.args);
       } else if (where.scope === "admin-users") {
         await M.views.adminUsers(ctx, root);
       } else if (where.scope === "runners") {
