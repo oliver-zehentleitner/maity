@@ -1141,6 +1141,7 @@ declaration only and refuses nothing.
 | `PUT /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
 | `DELETE /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
+| `GET /projects/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
@@ -1868,6 +1869,140 @@ memory budget); `rate_limited` (the per-avatar limit, or no free decode
 slot); `forbidden` for a runner credential; `not_found` on
 `/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
 `DELETE`: `csrf_mismatch` for a cookie call without a matching token.
+
+### 6.11 Project overview
+
+One page in the dashboard shows the project at a glance. It has links to
+the project's repository and to its Keep the Why dashboard, and a
+summary: members and roles, card counts per board column, open requests,
+recent reports and merges, and the policy preset. The maintainer
+approved it on 2026-10-22. Everything on it is something the caller can
+already read; the page adds no new right and no new stored field.
+
+**Where each part comes from.**
+
+| Part | Source | Notes |
+|---|---|---|
+| name, state, `state_note`, absence, logo | `GET /projects/{slug}` (§6.1) | as in the header |
+| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
+| Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| policy preset | `policy.preset` and the fields it fills (§6.1) | |
+| members and roles | `GET /projects/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
+| board counts, open requests, recent reports | `GET /projects/{slug}/overview` (below) | the only new endpoint |
+
+**Who sets the two links.** Neither link is a new setting.
+
+- **Repository:** the project's `repository`, set with `POST /projects`
+  or `PATCH /projects/{slug}` under `project:admin`. That scope is held
+  by human memberships only (§2.3 ʰ), so an admin agent cannot set or
+  change it. It asks the owner with a request instead.
+- **Keep the Why dashboard:** comes from the repository alone. It is
+  the `dashboard-state:` line of the repository's root `.keep-the-why`,
+  and its children's (§11.3). Whoever maintains that file in the
+  repository decides it. There is still no Maity setting that overrides
+  it. Changing `repository` changes where the hub looks.
+
+**`GET /projects/{slug}/overview`**, scope `project:read` (humans and
+agents alike; the CLI does not call it in V1):
+
+```
+GET /api/v1/projects/maity/overview?closed_after=2026-10-08T00:00:00Z
+```
+
+```json
+{
+  "server_time": "2026-10-22T14:00:00Z",
+  "board": {
+    "counts": { "proposed": 3, "open": 7, "in_progress": 4, "blocked": 1, "review": 2,
+                "done": 18, "cancelled": 1 },
+    "closed_after": "2026-10-08T00:00:00Z"
+  },
+  "requests": {
+    "open": 5, "to_me": 3,
+    "by_priority": { "urgent": 0, "high": 2, "normal": 3, "low": 0 },
+    "oldest_open_at": "2026-10-21T13:20:00Z"
+  },
+  "reports": [
+    { "task": { "id": "tsk-0004", "title": "Hub: credential exchange and storage", "status": "done",
+                "kind": "task", "label": "feature" },
+      "reported_by": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
+                       "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
+      "reported_at": "2026-10-22T13:10:00Z", "code": true, "verification": "signed",
+      "pr": { "number": 7, "url": "https://github.com/…/pull/7" },
+      "pr_state": "merged", "observed_at": "2026-10-22T13:12:00Z", "mismatch": false }
+  ]
+}
+```
+
+- **`board.counts`**: the number of cards per status, all seven always
+  present, every `kind` included. `closed_after` (optional, RFC 3339)
+  works as on `GET …/tasks` (§6.4): `done` and `cancelled` count only
+  cards closed after it, and open statuses always count in full. The
+  dashboard passes its board window, so a number on the overview equals
+  the card count in that board column. Without the parameter the
+  response's `closed_after` is `null` and closed cards count all time.
+- **`requests`**: counted over exactly the requests that `GET
+  …/requests?status=open&to=all` lists for this caller (§7). A holder of
+  `requests:answer` counts every open request. Anyone else counts only
+  what it asked and what is addressed to it. `to_me` is the subset
+  `to=me` would list. `oldest_open_at` is the `created_at` of the oldest
+  counted request, `null` when `open` is 0. Counts only, never a title:
+  the inbox lists them.
+- **`reports`**: the latest report of up to 10 cards, newest
+  `reported_at` first, taken from the cards' `report` field (§6.6). That
+  field is on the card and readable by everyone with `project:read`.
+  Earlier reports of a card exist only as `task_reported` events, whose
+  audience is limited (§8.2), and they never appear here. `pr_state`
+  and `observed_at` are the probe's `report.observed` (§11): a fact,
+  `null` while nothing is observed. A merge is a report with `pr_state:
+  merged`. `pr` is `null` for `code: false` and when `pr_status` is not
+  `found`. `limit` (1–50, default 10) changes the count.
+- No caching beyond the probe's own. The counts are read at call time,
+  in one transaction.
+- Errors: `not_found` across projects as everywhere. `invalid` with
+  `details.fields.closed_after` or `.limit`.
+
+**Why one endpoint, and only for these three.** Project, members and the
+Keep the Why export already come in one call each, and the dashboard
+already holds the first two for the header. The rest has no cheap source:
+
+- a column count would page through every card (`limit=200`, closed
+  cards without bound);
+- an open-request count would page through the request list;
+- "the latest reports" would mean reading cards by `updated_at` and
+  sorting in the browser.
+
+For the hub each one is a single grouped query. The endpoint repeats no
+shape that has a home elsewhere. In particular it does not repeat the
+member view: that view's admin-only fields would then have a second
+place to get wrong.
+
+**Dashboard (web/).** A contract note for the view; the layout is the
+web owner's:
+
+- Route `#/p/<slug>/overview`, a view of the project like the others
+  (`web/README.md`, **Views**). The inbox stays the landing page
+  (`web/context/views.md`).
+- On open: `GET /projects/{slug}` and `…/members` (already held for the
+  header), and `…/overview?closed_after=<the board's window>`. On the
+  project's event poll (`web/README.md`, **Refresh**), `task_*`,
+  `request_*` and `probe_observed` re-read the overview. Member events
+  and `project_updated` use what the header already re-reads. A summary
+  is never being read line by line, so it is redrawn in place without a
+  **Reload** offer.
+- Links open the URL as the hub gave it, in a new tab with
+  `rel="noopener noreferrer"`. A value that is not `https:` is shown as
+  text, not as a link. Names and texts are rendered as text
+  (`web/context/rendering.md`).
+- When `repository` is `null`, an owner or a human admin sees **Set the
+  repository** (Project settings); everyone else sees "No repository".
+  When the export is `null`, the page says that no Keep the Why
+  dashboard is published. For an owner or human admin it adds where the
+  link comes from (the `dashboard-state:` line in the repository's
+  `.keep-the-why`). A member's `error` is shown beside its link (§11.3).
+- A count links to where its items are: a column count to the board
+  column, the request counts to the inbox, a report to its card, a merge
+  to `pr.url`.
 
 ## 7. Requests to humans (the inbox)
 
@@ -2745,6 +2880,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/projects/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
