@@ -101,3 +101,40 @@ window's timing is off by that much at most.
   write would already be stored when the limit refuses it.
 
 **Revisit when:** the hub runs more than one replica.
+
+## Shared environments are computed from live sessions; only announcements are stored
+
+**Id:** 158a2300-873a-41eb-8888-205157b844e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the shared-environment warning (`docs/api.md` §5.3, contract #132), 2026-10-22
+
+Who shares an environment with whom is computed whenever a member view
+asks, from the live agent sessions and the ids their resumes declared.
+`environment_overlap` holds one row per pair only to remember what was
+announced: when the overlap started, the highest level announced, and
+since when the two no longer share an id (`quiet_since`). The rows are
+brought up to date when one member's sessions change: on its resume and
+on a credential's revocation (which member removal goes through). A pair
+that shares again within 10 minutes of `quiet_since` continues its
+overlap; later, it is a new one and is announced again.
+
+`shared_environment_detected` names only humans in its audience (the
+owners and the human `owner`/`admin` members, never `role:admin`), and
+`events.readable_by` refuses it to every agent before the see-all rule of
+owners and admins, and before the actor's own events.
+
+**Reason:** the field must be current on every read. The live sessions are
+the source of truth, and they are few per project. Storing the overlap
+itself would need a writer for every way a session ends. The 10-minute
+rule only matters when the next resume decides between "continues" and
+"new", so it is evaluated there, without a timer. An agent with the
+`admin` role sees every event and would otherwise read the warning about
+itself and its peers, which the contract keeps from agents.
+
+**Rejected alternatives:**
+- A stored overlap kept current by a background sweep. Exact at any
+  moment, but one more worker for a warning, and the view would lag it.
+- Audience `role:admin`. It also reaches admin agents, which may not read it.
+
