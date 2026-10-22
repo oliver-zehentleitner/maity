@@ -192,8 +192,13 @@ The open chat draws its history with a separator per day ("Today",
 "Yesterday", else the date), groups a sender's messages that follow
 within five minutes (the picture and name only on the first), and puts a
 "New messages" line before the first of the agent's messages that were
-unread when the chat was opened. A button back to the newest shows when
-the human has scrolled up, with the count of what arrived meanwhile.
+unread when the chat was opened. The history is read to its end, in
+pages of 200, because the hub returns the oldest page first and the
+unread messages are at the end. A button back to the newest shows when
+the human has scrolled up, with the count of what arrived meanwhile;
+someone else's message never moves the view, and the button hands the
+focus to the composer when it goes. An unread count that cannot be read
+draws no line and is said.
 
 **Reason:** the hub marks a conversation read when its messages are
 returned (docs/api.md §9), so the unread count has to be read from the
