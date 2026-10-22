@@ -961,8 +961,11 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
         page.evaluate("() => document.querySelector('header .bar img.project-mark').naturalWidth")
         == 64
     ), "the logo did not load from the hub"
-    icon = page.evaluate("() => (document.querySelector('link[rel=icon]') || {}).href || ''")
-    assert "/api/v1/projects/e2e-alpha/logo?v=" in icon, icon
+    # The tab's icon follows each header render (one may still carry the
+    # project view from before the upload): wait for it, never read it once.
+    expect(page.locator("head link[rel=icon]")).to_have_attribute(
+        "href", re.compile(r"/api/v1/projects/e2e-alpha/logo\?v=")
+    )
     # The panel opened again by itself to say the logo was uploaded.
     expect(page.locator("#project-panel")).to_contain_text("Logo uploaded.")
     page.locator("#upload-banner").set_input_files(
