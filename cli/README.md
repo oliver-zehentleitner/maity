@@ -523,8 +523,17 @@ covers the tmux server, the clone, the join, the supervised loop and
 stay out of the agents' reach. The layout needs a sudoers rule
 (`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
 both users can run it, and the workspaces writable by the agents' user;
-`maity runner check` tests all three. Agents under one `agent_user` can
-still read each other's files.
+`maity runner check` tests all three. Under the shipped systemd unit
+(`ProtectSystem=strict`), sudo's children share the unit's read-only
+file system: add `~maity-agent/.maity-runner` and the workspaces to its
+`ReadWritePaths` (the unit's comment shows the line), or every start
+fails. `check` run from a login shell cannot see that. sudo logs every
+command it runs, one `tmux list-panes` per tick among them; a
+`Defaults:maity-runner !syslog` line in sudoers quiets it if you want.
+The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
+`check` reads the agents' user's own Claude Code settings, which its
+agents load. Agents under one `agent_user` can still read each other's
+files.
 
 On the runner host, without the hub:
 

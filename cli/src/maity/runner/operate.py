@@ -113,10 +113,10 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
 
     shown = 0
     while True:
-        data = as_user.read(path)
-        if len(data) > shown:
-            emit(data[shown:])
-            shown = len(data)
+        data = as_user.read(path, shown)  # only what is new: the agent sets the log's size
+        if data:
+            emit(data)
+            shown += len(data)
         if not args.follow:
             return 0
         time.sleep(FOLLOW_EVERY)

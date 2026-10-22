@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -332,7 +333,7 @@ class Supervisor:
                 unconfined = (
                     harness is not None
                     and harness.id == "claude-code"
-                    and not capabilities.sandbox_available(harness, self.agent_path())
+                    and not capabilities.sandbox_available(harness, self.agent_path(), self.as_user)
                 )
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
@@ -414,7 +415,7 @@ class Supervisor:
         if harness.id == "codex" and grant.allow:
             return ("harness_refused", None)  # Codex cannot honour a command allowlist
         if harness.require_sandbox and not capabilities.sandbox_available(
-            harness, self.agent_path()
+            harness, self.agent_path(), self.as_user
         ):
             return ("harness_refused", None)  # the operator asked for no run without it
         return None
@@ -536,7 +537,7 @@ class Supervisor:
                 else:
                     rec.enter(now, "exited", crashes=decision.crashes, retry_at=decision.retry_at)
             return
-        hint = f"tmux -S {self.backend.socket} attach -t {name}"
+        hint = attach_hint(self.backend.socket, name, self.as_user)
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
@@ -609,7 +610,7 @@ class Supervisor:
             agent_dir=agent_dir,
             grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
             restart=self.cfg.limits.restart,
-            sandbox=capabilities.sandbox_available(harness, self.agent_path()),
+            sandbox=capabilities.sandbox_available(harness, self.agent_path(), self.as_user),
             hosts=tuple(
                 h
                 for h in (
@@ -767,6 +768,21 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
         found = [Path(p) for p in done.stdout.split("\0") if p] if done.returncode == 0 else []
     own = clone.resolve() / ".git" / "maity"
     return sorted(p for p in found if p != own)
+
+
+def attach_hint(socket: Path, name: str, as_user: AsUser) -> str:
+    """How the runner's owner attaches to a session: through sudo where the socket is the
+    agents' user's. Every word quoted."""
+    attach = ["tmux", "-S", str(socket), "attach", "-t", name]
+    if as_user.user:
+        attach = ["sudo", "-u", as_user.user, *attach]
+    return shlex.join(attach)
+
+
+def agents_user(cfg: config.Config) -> AsUser:
+    """Who runs the agents' commands on this machine: their user in the agent_user layout."""
+    local = cfg.local
+    return AsUser(local.agent_user if local and local.layout == "agent_user" else None)
 
 
 def local_backend(cfg: config.Config) -> Tmux:

@@ -277,7 +277,7 @@ def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch
 
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
-    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary: True)
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["confinement"] == "sandbox" and entry["sandbox"] == "on"
     assert capabilities.sandbox_available(codex)
@@ -290,7 +290,7 @@ def test_codex_whose_sandbox_cannot_start_is_not_advertised_as_sandboxed(
 
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
-    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary: False)
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: False)
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["sandbox"] == "off" and not capabilities.sandbox_available(codex)
 

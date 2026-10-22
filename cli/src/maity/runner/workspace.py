@@ -159,7 +159,8 @@ def prepare(
     command += ["--", repository, str(workspace.path)]
     try:
         if as_user.user:
-            done = as_user.run(command, timeout=CLONE_TIMEOUT)  # the clone is the agents'
+            # The clone is the agents'; no prompt for a login, as proc.run says for ours.
+            done = as_user.run(command, env=dict(proc.NO_PROMPT), timeout=CLONE_TIMEOUT)
         else:
             done = proc.run(command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT)
     except (proc.ToolError, subprocess.TimeoutExpired):

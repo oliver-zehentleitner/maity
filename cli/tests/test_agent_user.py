@@ -185,19 +185,74 @@ def test_logs_are_read_as_the_agents_user(
         == 0
     )
     assert capsysbinary.readouterr().out == b"hello\n"
-    assert "cat --" in fake_sudo.read_text()
+    assert "tail -c +1 --" in fake_sudo.read_text()
 
 
-def test_a_clones_git_directory_is_listed_as_the_agents_user(
-    tmp_path: Path, fake_sudo: Path
+def test_a_log_is_read_from_where_the_last_read_stopped(tmp_path: Path, fake_sudo: Path) -> None:
+    log = tmp_path / "plc.log"
+    log.write_bytes(b"one\ntwo\n")
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert as_user.read(log, 4) == b"two\n" and as_user.read(log, 8) == b""
+
+
+def test_the_agents_commands_never_read_the_runners_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    dot_git = tmp_path / "c" / ".git"
-    (dot_git / "info").mkdir(parents=True)
-    (dot_git / "config").write_text("[core]\n")
-    (dot_git / "commondir").symlink_to("/elsewhere")
-    as_user = AsUser("maity-agent")
-    assert sorted(as_user.tree(dot_git)) == sorted(AsUser().tree(dot_git)) == [
-        ("commondir", "l", len("/elsewhere")), ("config", "f", 7), ("info", "d", 4096),
-    ]  # fmt: skip
-    assert "find" in fake_sudo.read_text()
-    assert operate.not_inspectable(tmp_path / "c", as_user) == ".git/commondir is a symlink"
+    seen: dict[str, Any] = {}
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("maity.runner.asuser.subprocess.run", fake_run)
+    AsUser("maity-agent").run(["true"])
+    assert seen["stdin"] == subprocess.DEVNULL
+
+
+def test_the_clone_as_the_agents_user_never_prompts_for_a_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import proc
+    from maity.runner import workspace
+
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    class Recorder(AsUser):
+        def run(self, argv: Any, env: Any = None, **kwargs: Any) -> Any:  # type: ignore[override]
+            calls.append((list(argv), env))
+            return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+        def exists(self, path: Path, kind: str = "-e") -> bool:
+            return False
+
+        def mkdir(self, path: Path) -> None:
+            pass
+
+    cfg = load(tmp_path, monkeypatch)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    workspace.prepare(cfg, place, "https://github.com/oliver-zehentleitner/maity", "agt-3",
+                      "plc-0003", None, Recorder("maity-agent"))  # fmt: skip
+    clone = next(env for argv, env in calls if "clone" in argv)
+    assert clone is not None and all(clone.get(k) == v for k, v in proc.NO_PROMPT.items())
+
+
+def test_the_attach_hint_goes_through_sudo() -> None:
+    socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
+    assert supervisor.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
+        "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
+        "maity_maity_agent-3"
+    )
+    assert supervisor.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
+
+
+def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
+    agent_bin = tmp_path / "agent-bin"
+    agent_bin.mkdir()
+    tool = agent_bin / "claude"
+    tool.write_text("#!/bin/sh\necho '2.1.308 (Claude Code)'\n")
+    tool.chmod(0o755)
+    harness = config.Harness("claude-code", ("interactive",), "interactive", binary="claude")
+    found = capabilities.probe(harness, f"{agent_bin}:/usr/bin:/bin", AsUser("maity-agent"))
+    assert found.path == str(tool) and found.version == "2.1.308"
+    assert "command -v" in fake_sudo.read_text()  # looked up as maity-agent, not the runner

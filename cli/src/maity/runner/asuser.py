@@ -56,6 +56,8 @@ class AsUser:
             self.argv(argv, env if self.user else None),
             env=full_env,
             input=input,
+            # Never the runner's terminal: a prompt would wait on the operator's keyboard.
+            stdin=subprocess.DEVNULL if input is None else None,
             cwd=cwd if cwd is not None else ("/" if self.user else None),
             capture_output=True,
             text=True,
@@ -85,11 +87,14 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} as {self.user}: {done.stderr.strip()[:200]}")
 
-    def read(self, path: Path) -> bytes:
+    def read(self, path: Path, offset: int = 0) -> bytes:
+        """The file's bytes from `offset` on."""
         if not self.user:
-            return path.read_bytes()
+            with path.open("rb") as fh:
+                fh.seek(offset)
+                return fh.read()
         done = subprocess.run(  # noqa: S603 - fixed argv
-            [*self.prefix, "cat", "--", str(path)],
+            [*self.prefix, "tail", "-c", f"+{offset + 1}", "--", str(path)],
             capture_output=True,
             timeout=TIMEOUT,
             check=False,

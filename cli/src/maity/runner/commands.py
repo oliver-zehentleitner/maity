@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, operate, serve
-from .asuser import AsUser
+from . import capabilities, config, operate, serve, supervisor
+from .asuser import RUNNER, AsUser
 
 STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
@@ -297,11 +297,13 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
-def _check_harness(report: Report, harness: config.Harness, agent_path: str) -> None:
+def _check_harness(
+    report: Report, harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER
+) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    found = capabilities.probe(harness, agent_path)
+    found = capabilities.probe(harness, agent_path, as_user)
     if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
@@ -315,20 +317,27 @@ def _check_harness(report: Report, harness: config.Harness, agent_path: str) -> 
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness)
+        _check_claude_code(report, harness, as_user)
     if harness.id == "codex":
-        login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
-        if not login.is_file():
+        # The login of whoever runs the agents, as the adapter links it.
+        own = None if as_user.user else os.environ.get("CODEX_HOME")
+        home = config.home_of(as_user.user) if as_user.user else Path.home()
+        login = Path(own or home / ".codex") / "auth.json"
+        if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
 
 
-def _check_claude_code(report: Report, harness: config.Harness) -> None:
+def _check_claude_code(report: Report, harness: config.Harness, as_user: AsUser = RUNNER) -> None:
     if sys.platform.startswith("linux"):
         missing = [tool for tool in ("bwrap", "socat") if shutil.which(tool) is None]
         if missing:
             line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
             (report.error if harness.require_sandbox else report.warn)(line)
-    settings = _json_file(Path.home() / ".claude" / "settings.json")
+    # The agents' user's own settings: agents start with --setting-sources user.
+    try:
+        settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
+    except (OSError, KeyError):
+        settings = None
     if settings is None:
         return
     permissions = settings.get("permissions")
@@ -342,10 +351,10 @@ def _check_claude_code(report: Report, harness: config.Harness) -> None:
         report.warn("harness claude-code: ~/.claude/settings.json defines hooks; agents run them")
 
 
-def _json_file(path: Path) -> dict[str, Any] | None:
+def _json_bytes(raw: bytes) -> dict[str, Any] | None:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = json.loads(raw)
+    except ValueError:
         return None
     return data if isinstance(data, dict) else None
 
@@ -392,7 +401,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     else:
         report.ok("maity found on agent_path")
     for harness in cfg.harnesses.values():
-        _check_harness(report, harness, agent_path)
+        _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
