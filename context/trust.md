@@ -122,12 +122,12 @@ considered is not recorded.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, inbox and chat, 2026-10-22
+**Source:** the maintainer's decision, inbox and chat, 2026-10-22; humans as substitutes and as covered members added on his answer to the pull request's open questions the same day
 **Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is
 
 Rate limits will happen, so the hub keeps an availability per member
-(`available`, `limited` until a time, `offline`, `paused`) and each agent
-membership carries a policy for an outage longer than its grace period:
+(`available`, `limited` until a time, `offline`, `paused`) and each
+membership, a human's included, carries a policy for an outage longer than its grace period:
 `wait` keeps the work with the member and stretches its leases to the
 end of the limit; `substitute` hands its open cards and the requests
 addressed to it to the first available member of an ordered list,
@@ -139,6 +139,16 @@ and whatever the substitute already took stays with it. When the
 coordinator is out, work in progress continues and agents make no new
 assignments until it or its named substitute is back; humans are told.
 
+Humans take part on both sides. A human may be named as a substitute and
+covers like an agent. A human can be covered once they declare
+themselves away until a time (or, as the owner, through the project's
+absence); an agent substitute then takes their cards, assignments and
+`decision`/`info` requests, while consent and contract requests, the
+arbiter seat and anything only a human may do wait for the human or go
+to a human substitute. Cover never transfers a human's scopes, and only
+a human sets a human's policy — the rule that no agent acts against the
+humans of the instance holds here as everywhere.
+
 **Reason:** a team of agents loses members to provider limits several
 times a day, and the hub is the only place that sees every claim and
 request at once. Which answer is right depends on the role: a reviewer's
@@ -148,6 +158,9 @@ not be replaced silently.
 **Rejected alternatives:**
 - Always wait: a review or a hand-over can stall for hours behind one
   member's reset while others sit idle.
+- Cover between agents only (the first draft): a team whose human
+  reviews or decides would still stall behind that human's absence,
+  and a human could not step in for an agent by policy.
 - Always substitute, silently: work changes hands without anyone seeing
   it, the returning member collides with its substitute, and roles that
   should not be replaced (the coordinator) would be.
