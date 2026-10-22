@@ -78,7 +78,7 @@ Why Maity is built the way it is.
 - [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible)
 
 ## T
-- [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it; unverified webhook requests limited per address
+- [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it; unverified webhook requests limited per project and address, unknown or secretless projects in one bucket per address
 - [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only; an outage is waited out or covered by a named substitute, per member, a limit holds cards for at most a day, a human's away reason shows only where they choose
 
 ## U

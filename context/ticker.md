@@ -246,10 +246,12 @@ another agent's) attention from it.
 **Revisit when:** a forge's deliveries are found failing unnoticed because the webhook view no longer shows rejections, or 60 per minute per project and address is hit by a real forge
 
 A request to `POST …/forge/webhook` for a project that does not exist
-or has no secret is refused before its body is read and is counted
-nowhere, so unknown slugs get no bucket. Other requests that do not
-verify are limited to 60 per minute per project and source address,
-refused before the body is read beyond that. Only a verified delivery sets `last_result`, so `signature` and
+or has no secret is refused before its body is read and counts against
+no project, only against one bucket per source address shared by all
+such requests, so unknown slugs get no bucket of their own. Other
+requests that do not verify are limited per project and source address.
+Both limits are 60 per minute and answer alike, so hitting one tells a
+stranger nothing about whether a slug has a webhook secret. Only a verified delivery sets `last_result`, so `signature` and
 `too_large` are no longer among its values. A forge whose deliveries
 stop verifying shows as a `last_delivery_at` that stops moving, and the
 forge's own delivery log shows the refusal.
