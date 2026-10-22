@@ -23,6 +23,11 @@ each member's last good export.
 - **What is stored:** the summaries and the entries that need
   attention, cleaned, never the export itself.
 - **Ending:** all of it ends with the process.
+- **Budget:** one read of a family has 30 seconds, configs and exports
+  together. A member not read by then is `timeout`. A request that waits
+  longer than that for another request's read gets the cached answer,
+  or `503` when there is none. Anyone who can push to the repository
+  could otherwise name a slow host and tie up threads.
 
 **Reason:**
 - §11.3 forbids storing the export: Keep the Why stays external, and
