@@ -36,7 +36,9 @@ maity-hub serve       # http://127.0.0.1:8080
 
 `owner create` makes the first human account; it reads the password from
 the terminal (asked twice) or from the first line of standard input,
-never from the command line.
+never from the command line. The earliest human account is the instance
+admin (`docs/api.md` §16): it sees `GET /admin/users` and nothing of a
+project it is not a member of.
 
 ```sh
 curl http://127.0.0.1:8080/api/v1/health
