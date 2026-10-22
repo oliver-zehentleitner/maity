@@ -54,10 +54,11 @@ whose result is not code, the pointer block written into a tracked file.
 **Id:** 5380a247-324f-4ab8-92c6-37350e02b0cb
 **Type:** constraint
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's observation, 2026-10-22
 **Revisit when:** the contract for tracking an agent's environment is decided
+**See:** trust.md#members-sharing-an-environment-are-warned-never-refused — abd84bd0-a085-4d5a-b3b0-f8358c12e444 — as of 2026-10-22
 **See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
 
 Two agent identities working in one shared Codex workspace once mixed up
