@@ -22,7 +22,7 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, not_found
 from maity_hub.models import Written, markdown
 from maity_hub.routes.events import MessageIn, chat_parties, post_message
-from maity_hub.views import principal_id, ts
+from maity_hub.views import principal_id, sees_reasons, ts
 
 router = APIRouter()
 
@@ -36,7 +36,23 @@ class ChatIn(Written):
     body: str = markdown(min_length=1)
 
 
-def message_view(conn: Connection, row: Any) -> dict[str, Any]:
+def _redaction(row: Any, reader: Any) -> dict[str, Any] | None:
+    """`{at, by, reason}` of a redacted message; the reason only as §8.5 allows the
+    reader: the human owners and admins, and the redactor (§9.2)."""
+    if not row.redacted:
+        return None
+    tomb = row.payload or {}
+    mine = reader is not None and tomb.get("by") == reader.principal_id
+    shown = sees_reasons(reader) or mine
+    return {
+        "at": tomb.get("at"),
+        "by": tomb.get("by"),
+        "reason": tomb.get("reason") if shown else None,
+    }
+
+
+def message_view(conn: Connection, row: Any, reader: Any = None) -> dict[str, Any]:
+    """A message as §9.2 shows it to `reader` (a `Membership`; None for its writer)."""
     delivered = conn.execute(
         select(t.message_delivery.c.delivered_at).where(t.message_delivery.c.seq == row.seq)
     ).scalar()
@@ -51,6 +67,8 @@ def message_view(conn: Connection, row: Any) -> dict[str, Any]:
         "sent_at": ts(row.at),
         "delivered_at": ts(delivered),
         "mentions": [],  # a chat is never resolved (§8.6)
+        "redacted": bool(row.redacted),  # as in the list preview (§9.3)
+        "redaction": _redaction(row, reader),
     }
 
 
@@ -199,7 +217,8 @@ def read_messages(
         if rows and caller.kind == "human":
             _remember_read(conn, mine.id, agent_id, rows[-1].seq)
         cursor = rows[-1].seq if rows else after
-        return JSONResponse({"items": [message_view(conn, r) for r in rows], "cursor": cursor})
+        items = [message_view(conn, r, mine) for r in rows]
+        return JSONResponse({"items": items, "cursor": cursor})
 
 
 def _remember_read(conn: Connection, reader: int, agent_id: str, seq: int) -> None:

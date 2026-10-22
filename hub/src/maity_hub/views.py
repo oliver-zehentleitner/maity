@@ -537,7 +537,7 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
     return event_views(conn, [row])[0]
 
 
-def _sees_reasons(reader: Any) -> bool:
+def sees_reasons(reader: Any) -> bool:
     """A redaction's reason reaches the human owners and admins (§8.5); the redactor
     reads its own reason in any case."""
     return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
@@ -549,7 +549,7 @@ def _without_reason(row: Any, reader: Any) -> Any:
     Every other event's `reason` is untouched."""
     payload = row.payload
     redaction = row.kind == "event_redacted" or row.redacted
-    if not redaction or not isinstance(payload, dict) or _sees_reasons(reader):
+    if not redaction or not isinstance(payload, dict) or sees_reasons(reader):
         return payload
     if reader is not None and row.kind == "event_redacted" and row.actor_membership == reader.id:
         return payload  # the redactor's own notice

@@ -234,6 +234,8 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "sent_at",
         "delivered_at",
         "mentions",
+        "redacted",
+        "redaction",
     }
     assert (message["from"], message["to"], message["conversation_id"]) == (
         owner.id,
@@ -321,7 +323,16 @@ def test_a_redacted_chat_message_has_no_body(owner: flow.Human, make_client: Cli
     message = chat(agent, agent.id, "my token is …").json()
     owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "a token"})
     items = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
-    assert items[0]["body"] is None
+    assert items[0]["body"] is None and items[0]["mentions"] == []
+    assert items[0]["redacted"] is True  # as in the list preview (§9.2, §9.3)
+    redaction = items[0]["redaction"]
+    assert (redaction["by"], redaction["reason"]) == (owner.id, "a token") and redaction["at"]
+    # The agent party keeps the message's place, without the reason (§8.5).
+    theirs = agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    assert theirs[0]["redacted"] is True and theirs[0]["redaction"]["reason"] is None
+    assert theirs[0]["redaction"]["by"] == owner.id
+    later = chat(agent, agent.id, "fine now").json()
+    assert (later["redacted"], later["redaction"]) == (False, None)
 
 
 # --- review round ----------------------------------------------------------------------
