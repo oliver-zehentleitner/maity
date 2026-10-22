@@ -156,6 +156,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   expect(chipCount("All projects") === "4" && chipCount("Maity") === "3" && chipCount("Sample shop") === "1", "switcher counts 4 / 3 / 1");
   expect(main.querySelectorAll(".project-label").length === 4, "every entry labelled with its project");
+  const firstRow = main.querySelector("li.entry .entry-row");
+  expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
+    && /^#\/p\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
+    "inbox: each entry's project badge is a link to the project, before the entry");
+  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
+    "inbox: the project's name starts each entry's accessible name");
   // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
   const markOf = (label) => chip(label).querySelector(".project-mark");
   expect(markOf("Maity").tagName === "IMG" && markOf("Maity").getAttribute("src") === "fixtures/maity/logo.png" && markOf("Maity").getAttribute("alt") === "",
@@ -179,6 +185,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(chipCount("All projects") === "3" && chipCount("Maity") === "2", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Maity"), "sort by project");
+  // A project filter and grouping by project.
+  const pf = byId("inbox-project"); pf.value = "sample"; pf.dispatch("change"); await tick();
+  expect(main.querySelectorAll("li.entry").length === 1 && text(main.querySelector("li.entry")).includes("Sample shop"), "inbox: filtered to one project");
+  pf.value = ""; pf.dispatch("change"); await tick();
+  const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
+  const groupHeads = main.querySelectorAll("li.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 3,
+    "inbox: grouped by project, in the switcher's order " + JSON.stringify(groupHeads));
+  grp.checked = false; grp.dispatch("change"); await tick();
 
   await go("#/p/maity/inbox");
   expect(text(header).includes("Build") && text(header).includes("Fixtures") && header.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")), "project header: state, fixtures label, sign out");
