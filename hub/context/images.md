@@ -69,3 +69,65 @@ before the route sees the body, so it lives where the 64 KiB cap does.
 - Keeping `Cache-Control` for `image/*` answers only: misses the 304.
 - Raising the global cap to 1 MiB: every other endpoint would buffer
   1 MiB from anyone who can reach it.
+
+## An avatar is decoded in a process of its own that limits itself
+
+**Id:** 28da8cdf-5d46-4306-a49a-9ef02bb2185d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of avatars (`docs/api.md` §6.10, contract #136), 2026-10-22
+
+The upload is handed to `python -m maity_hub.avatar_decode` on stdin; the
+child imports Pillow, sets its own `RLIMIT_AS` to the operator's memory
+budget before it reads the image, and answers the PNG on stdout or a
+refusal reason with exit code 3. The parent waits at most the time budget
+and kills it past that; a crash or a kill past the memory limit is a
+refusal (`over_budget`). A semaphore sized `MAITY_AVATAR_DECODES` admits
+the decodes; with every slot taken the call is `rate_limited`. The decode
+runs before the transaction, so no lock is held while it runs. The
+answer is rebuilt with `Image.frombytes` before it is saved, because
+Pillow's PNG writer copies an `icc_profile` from the source image's
+`info`; and PNG text chunks over 64 KiB are refused by walking the chunk
+headers first, because Pillow caps a `tEXt` chunk only in the sum.
+
+**Reason:** the contract asks for a memory budget per decode, which only
+a process can enforce, and a time budget that a killed process ends for
+certain where a thread cannot. Starting Python per decode (about 0.2 s)
+is affordable at 10 changes an hour per avatar. A 4096 × 4096 image
+needed between 256 and 384 MiB of address space when measured, so the
+default budget is 512.
+
+**Rejected alternatives:**
+- A `multiprocessing` forkserver, whose children are forked from one
+  clean process. It is quicker per decode, but it re-imports the hub's
+  `__main__` in its server. That depends on how the hub was started, and
+  it failed outright when the main script came from stdin.
+- `subprocess` with `preexec_fn` setting the limit. Python warns against
+  it in a threaded server, which uvicorn's worker is.
+- Decoding in a thread with Pillow's own limits only. There is no memory
+  budget, and an overrunning decode cannot be stopped.
+
+## The avatar change limit is checked before decoding and counts refused images
+
+**Id:** b293dec9-60d0-4e36-b0e9-1c136e04377f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of avatars (`docs/api.md` §6.10, contract #136), 2026-10-22
+
+The 10 changes an hour per avatar are read (without counting) before an
+upload is decoded, so a member over its limit costs no decode. A stored
+upload or a removal counts inside the transaction, and an image the
+decoder refused counts as well. A replay with the same
+`Idempotency-Key` never reaches the counting step and is free, as the
+contract says.
+
+**Reason:** the limit is what keeps one credential from feeding the most
+exposed parser of the hub an image a minute. If refused images did not
+count, a stream of malformed ones would decode for free; checking before
+the decode keeps the limit in front of the parser rather than behind it.
+
+**Alternatives:** counting only accepted changes. It is closer to the
+wording "changes", but it leaves the decoder unguarded.
+
