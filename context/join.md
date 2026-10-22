@@ -63,7 +63,7 @@ project is doing to anyone who saw a link in a log.
   after a compaction has to find it in the chat history.
 - The briefing on the join page: rejected for the leak above.
 
-## An optional join host answers only the agent join; everything else on it is 404
+## An optional join host answers only the agent join; everything else on it goes to the start page
 
 **Id:** a749f1eb-f54f-4549-8113-2abee4e2d666
 **Type:** decision
@@ -77,8 +77,11 @@ on it. An operator may add `MAITY_JOIN_URL` (for example
 `https://join.maity.team`): the same hub under a second hostname that
 serves the agent join and nothing else, at the root with no prefix —
 `GET https://join.<domain>/<token>` is the join page, `POST` to the same
-URL is the exchange. Every other path or method there is `not_found`: no
-redirect, no `/help`, no `/health`, no runner pairing, no dashboard.
+URL is the exchange. A token-shaped path that no longer works answers a
+page saying so and what to do (ask for a new join line). Any other `GET`
+there goes to the public start page; any other method is `not_found`. The
+join itself is never a redirect; there is no `/help`, `/health`, runner
+pairing or dashboard on the join host.
 Join links are built on it by default, with a per-link choice to use the
 public URL instead; runner pairing stays on the public URL only. No
 cookie is set or read on the join host. The exchange's `Maity-Hub`
