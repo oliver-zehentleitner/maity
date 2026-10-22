@@ -272,6 +272,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- web: the e2e waits for the tab's icon to point at the uploaded logo instead of reading it
+  once; a header render from before the upload could still be on screen (seen on #115 and #92)
 - web: the e2e waits until the uploaded logo has finished loading before it reads its width; it read the image while the request was still in flight (seen once in CI, the hub answered 200).
 - web: where a handle, slug or runner name is typed (a new agent profile in **Join an agent**,
   **Create a project**, **Pair a runner**), the hub's rule is said under the field before
