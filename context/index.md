@@ -51,6 +51,7 @@ Why Maity is built the way it is.
 ## L
 
 ## M
+- [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
