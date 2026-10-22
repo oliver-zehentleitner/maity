@@ -325,7 +325,11 @@ counts, open requests and the latest reports. Links and members come
 from what the header already holds. The counts come from one
 `GET …/overview` with the board's window, read again on `task_*`,
 `request_*` and `probe_observed` and redrawn in place, with no Reload
-offer. If that call fails, links and members still show, and the place
+offer. A viewer who is neither owner nor admin is in few of those
+events' audiences (§8.2), so for them the view also re-reads every 60
+seconds and when the tab comes back. A trigger that arrives during a
+read causes one more read after it, and a redraw puts the focus back on
+the same link. If that call fails, links and members still show, and the place
 of the counts says why they are missing.
 
 **Reason:** the inbox is where the human acts. The overview is where
