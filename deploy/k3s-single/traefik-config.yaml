@@ -1,0 +1,27 @@
+# k3s's bundled Traefik, configured through the HelmChartConfig k3s watches.
+# Copy to /var/lib/rancher/k3s/server/manifests/traefik-config.yaml on the host;
+# k3s applies it on its own (docs/install/README.md, "Kubernetes on a single
+# small instance (k3s)").
+#
+# - externalTrafficPolicy Local: the client address survives klipper's
+#   load balancer, so the hub's per-address rate limits see real clients.
+# - Every plain-HTTP request is redirected to HTTPS at the entry point.
+#   (Traefik chart v40 syntax: ports.web.http.redirections.entryPoint.)
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+    ports:
+      web:
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true

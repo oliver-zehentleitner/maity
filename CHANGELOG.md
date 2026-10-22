@@ -48,6 +48,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - ci: the `audit` workflow runs pip-audit (pinned with hashes in `hub/requirements/tools.txt`)
   against all four hub locks on every push to main, every pull request and daily.
 - docs: `docs/join-page.md`, the join page template the hub serves.
+- deploy: `deploy/k3s-single/`, the hub with PostgreSQL 17, cert-manager and a daily
+  `pg_dump` on one small instance with k3s, and its walkthrough in `docs/install/`.
 - docs: `docs/install/`, the entry page for self-hosters: which of the three paths
   when, TLS and `MAITY_TRUSTED_PROXIES` per path (the same-host proxy trap), the
   first account, project and agent, backups per engine, upgrades without downgrade.

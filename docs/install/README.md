@@ -13,6 +13,7 @@ account, backups and upgrades. The commands themselves are in
 | [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB | Python 3.12+, a TLS reverse proxy for anything beyond this machine |
 | [Docker Compose](#docker-compose) | one host with Docker; PostgreSQL included | PostgreSQL 17 in a container | Docker, a TLS reverse proxy on the same host |
 | [Helm on Kubernetes](#helm-on-kubernetes) | a cluster you already run | an existing PostgreSQL, usually managed | ingress controller, TLS (cert-manager), DNS, a registry |
+| [k3s on one small instance](#kubernetes-on-a-single-small-instance-k3s) | one VM, Kubernetes without a cluster to run | PostgreSQL 17 in the same k3s | a VM with a public IPv4 address, DNS |
 
 Every path runs **exactly one hub process**. The long-poll, the nonce
 window and the rate limits live in that process, so a second replica is
@@ -52,6 +53,7 @@ connects from.
 | Plain Python | on the same host, to `127.0.0.1:8080` | `127.0.0.1,::1` |
 | Docker Compose | on the host, to the port published on `127.0.0.1` | the Compose network's gateway (below) |
 | Helm | the ingress controller's pods | the cluster's pod network (`config.trustedProxies`) |
+| k3s | k3s's Traefik pods | `10.42.0.0/16`, k3s's pod network |
 | any | none, the hub is used on this machine only | empty |
 
 The proxy must also do two things:
@@ -165,6 +167,125 @@ cert-manager, step by step. The parts that correspond to this page:
   the VKE options, PROXY protocol or `externalTrafficPolicy: Local`.
   Without one of them every client shares the controller's bucket.
 - **Migrations:** a hook Job runs before every install and upgrade.
+
+## Kubernetes on a single small instance (k3s)
+
+The hub, PostgreSQL and TLS on one VM. 1 vCPU and 2 GB of RAM are enough
+for a team. The manifests are in [`deploy/k3s-single/`](../../deploy/k3s-single/README.md);
+the hub itself comes from the Helm chart, whose
+[`README.md`](../../deploy/helm/maity-hub/README.md) explains every value.
+
+**What it runs:**
+- k3s with its bundled Traefik, published on the host's ports 80 and 443
+  by klipper
+- cert-manager with a Let's Encrypt ClusterIssuer (HTTP-01)
+- PostgreSQL 17 as a StatefulSet on the instance's disk
+- a daily `pg_dump` CronJob
+- the hub chart with a NetworkPolicy that admits only Traefik
+
+**1. The instance.**
+- Create DNS A records for the host name and `www.` pointing at the
+  instance. **No AAAA records**: k3s here is IPv4 only, and an AAAA
+  record breaks every client that prefers IPv6.
+- Open the firewall for ssh, 80 and 443, and for k3s's own pod and
+  service networks. Without the last two, pods cannot reach each other
+  or the API server:
+
+```sh
+ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp
+ufw allow from 10.42.0.0/16 to any   # pods
+ufw allow from 10.43.0.0/16 to any   # services
+```
+
+**2. k3s.** Download the installer, read it, then run it. Pin the version
+with `INSTALL_K3S_VERSION`. Then put the Traefik configuration where k3s
+watches for it:
+
+```sh
+curl -sfL -o k3s-install.sh https://get.k3s.io
+sh k3s-install.sh
+cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
+```
+
+It sets `externalTrafficPolicy: Local`, so the hub's rate limits see real
+client addresses, and redirects plain HTTP to HTTPS at Traefik. Its syntax
+is Traefik chart v40's: `ports.web.http.redirections.entryPoint`.
+
+**3. cert-manager**, from its Helm chart with the CRDs, pinned to a
+version you chose:
+
+```sh
+helm repo add jetstack https://charts.jetstack.io
+helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
+  --version <version> --set crds.enabled=true
+```
+
+**4. Namespace and secrets.**
+- The values go through files made with `umask 077` and never appear on
+  a command line or in the terminal.
+- The password has only letters and digits, so it needs no
+  percent-encoding in the database URL.
+
+```sh
+kubectl create namespace maity
+(umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > pg-password)
+kubectl -n maity create secret generic maity-postgres --from-file=password=./pg-password
+(umask 077; { printf 'postgresql://maity:'; cat pg-password; printf '@maity-postgres:5432/maity'; } > database-url)
+kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url
+rm pg-password database-url
+```
+
+**5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
+`hub-values.yaml` first:
+
+```sh
+kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/backup.yaml \
+  -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
+```
+
+**6. The hub.** Set the image digest in `hub-values.yaml`, then:
+
+```sh
+helm install maity deploy/helm/maity-hub -n maity -f deploy/k3s-single/hub-values.yaml --wait --timeout 10m
+helm test maity -n maity --logs
+```
+
+If the browser gets Traefik's default certificate although the
+Certificate is ready, Traefik loaded the Ingress before the TLS Secret
+existed. Restart it once:
+
+```sh
+kubectl -n kube-system rollout restart deployment traefik
+```
+
+**7. The first account:** as in the chart's README, with the password
+from a file:
+
+```sh
+kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" < password-file
+```
+
+**Backups on this setup:**
+- **Where the dumps are.** The CronJob writes `maity-<UTC time>.dump`
+  every night into the volume `maity-backups`, on the same disk as the
+  database. That protects against a bad upgrade, not against losing the
+  instance. Copy them off the host. k3s's local-path storage keeps the
+  volume under `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
+- **To restore:**
+  1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
+  2. Feed the dump to `pg_restore --clean --if-exists -d maity` inside
+     the postgres pod
+     (`kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump`).
+  3. Scale the hub back to 1.
+- **Upgrades** are `helm upgrade` with the new digest. The chart's hook
+  migrates first ([Upgrades](#upgrades)).
+- **PostgreSQL:** a new minor version of 17 is an image bump. A new
+  major version needs a dump and a restore.
+
+**Worth adding.** No NetworkPolicy guards PostgreSQL here, so any pod in
+the cluster can try its password. A policy that admits only the hub,
+its migrate Job and the backup Job closes that.
 
 ## The first account, project and agent
 

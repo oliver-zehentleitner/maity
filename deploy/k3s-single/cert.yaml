@@ -1,0 +1,34 @@
+# The certificate for the apex and www, and the www → apex redirect.
+# Replace maity.example.org with your host name (three places, plus the
+# regex). The hub's own Ingress comes from the chart (hub-values.yaml) and
+# uses the same Secret.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: maity-tls, namespace: maity}
+spec:
+  secretName: maity-tls
+  issuerRef: {name: letsencrypt, kind: ClusterIssuer}
+  dnsNames: [maity.example.org, www.maity.example.org]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: www-to-apex, namespace: maity}
+spec:
+  redirectRegex:
+    regex: "^https?://www\\.maity\\.example\\.org/(.*)"
+    replacement: "https://maity.example.org/${1}"
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: www-redirect
+  namespace: maity
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: maity-www-to-apex@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{hosts: [www.maity.example.org], secretName: maity-tls}]
+  rules:
+    - host: www.maity.example.org
+      http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: maity-maity-hub, port: {number: 80}}}}]}
