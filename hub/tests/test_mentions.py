@@ -134,16 +134,23 @@ def test_a_write_that_does_not_commit_gives_its_pings_back(migrated: Engine) -> 
 
 
 def test_retry_after_waits_for_room_for_every_ping(
-    make_client: ClientFactory, owner: flow.Human
+    make_client: ClientFactory, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     agent = agent_named(make_client, owner, "agent-a")
     for handle in ("agent-c", "agent-d"):
         agent_named(make_client, owner, handle)
+
+    class Frozen:  # the limiter's clock only: a second boundary would make it 599
+        @staticmethod
+        def monotonic() -> float:
+            return 1000.0
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Frozen)
     for _ in range(29):
         assert say(agent, to=owner.id, body="@agent-c").status_code == 201
     limited = say(agent, to=owner.id, body="@agent-c @agent-d")
     assert limited.status_code == 429
-    assert int(limited.headers["Retry-After"]) == 600  # all 29 were sent just now
+    assert int(limited.headers["Retry-After"]) == 600  # all 29 were sent at this instant
 
 
 def test_a_chat_refuses_mentions_as_read_only(

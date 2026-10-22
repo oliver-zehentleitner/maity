@@ -273,5 +273,28 @@
         }
       }
     ]
-  }
+  },
+  "active_placements": {
+    "rnr-0002": {
+      "maity": 1
+    }
+  },
+  "attachments": [
+    {
+      "id": "ratt-0001",
+      "runner_id": "rnr-0002",
+      "project": "maity",
+      "attached_by": "hum-maintainer",
+      "attached_at": "2026-10-22T13:31:05Z",
+      "detached_at": null
+    },
+    {
+      "id": "ratt-0002",
+      "runner_id": "rnr-0004",
+      "project": "maity",
+      "attached_by": "hum-maintainer",
+      "attached_at": "2026-10-20T09:12:00Z",
+      "detached_at": null
+    }
+  ]
 }

@@ -25,7 +25,7 @@ you hold, and what you missed. `maity --help` lists the other commands.
 
 def repo_root(cwd: Path) -> Path | None:
     try:
-        result = proc.run(["git", "rev-parse", "--show-toplevel"], cwd)
+        result = proc.run([*proc.GIT, "rev-parse", "--show-toplevel"], cwd)
     except proc.ToolError:
         return None
     return Path(result.stdout.strip()) if result.returncode == 0 else None

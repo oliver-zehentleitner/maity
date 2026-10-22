@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import os
 import shlex
-import signal
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from .asuser import AsUser
 
 PREFIX = "maity_"
 CONF = 'set -g update-environment ""\nset -g remain-on-exit on\nset -g history-limit 5000\n'
@@ -73,9 +74,10 @@ class Tmux:
     agent_path: str
     logs: Path
     run: Runner = _run
+    as_user: AsUser = AsUser()  # the agents' user: the server is theirs (§7.6)
 
     def _tmux(self, *args: str) -> list[str]:
-        return ["tmux", "-S", str(self.socket), *args]
+        return [*self.as_user.prefix, "tmux", "-S", str(self.socket), *args]
 
     def _check(self, argv: Sequence[str]) -> str:
         try:
@@ -83,7 +85,8 @@ class Tmux:
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise TmuxError(f"{argv[0]}: {exc}") from None
         if done.returncode != 0:
-            raise TmuxError(f"`{' '.join(argv[3:5])}` failed: {done.stderr.strip()[:200]}")
+            words = list(argv[argv.index("tmux") + 3 :] if "tmux" in argv else argv)[:2]
+            raise TmuxError(f"`tmux {' '.join(words)}` failed: {done.stderr.strip()[:200]}")
         return done.stdout
 
     def environment(self) -> list[str]:
@@ -130,14 +133,16 @@ class Tmux:
         placement: str,
         generation: int,
     ) -> None:
-        self.conf.write_text(CONF, encoding="utf-8")
+        self.as_user.write(self.conf, CONF)
         log = self.logs / f"{placement}.log"
-        self.logs.mkdir(mode=0o700, parents=True, exist_ok=True)
-        log.touch(mode=0o600, exist_ok=True)
+        self.as_user.mkdir(self.logs)
+        if not self.as_user.user:
+            log.touch(mode=0o600, exist_ok=True)
         extra = [arg for key, value in env.items() for arg in ("-e", f"{key}={value}")]
         command = [
-            "env", "-i", *self.environment(),
-            *self._tmux("-f", str(self.conf), "new-session", "-d", "-s", name, "-c", str(cwd)),
+            *self.as_user.prefix, "env", "-i", *self.environment(),
+            "tmux", "-S", str(self.socket), "-f", str(self.conf),
+            "new-session", "-d", "-s", name, "-c", str(cwd),
             *extra, "--", *argv,
         ]  # fmt: skip
         self._check(command)
@@ -161,7 +166,7 @@ class Tmux:
         try:
             if os.getpgid(pid) != pid:
                 return
-            os.killpg(pid, signal.SIGTERM)
+            self.as_user.terminate(pid)
         except (ProcessLookupError, PermissionError):
             pass
 
