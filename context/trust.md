@@ -153,3 +153,28 @@ and the arbiter in particular need a human's go is not recorded.
 - Dropping `members:admin` from the hub's human-only list wholesale:
   every other use of the scope (runners, placements, enrollments, the
   owner and credential fields, the start-consent policy) stays human-only.
+
+## Members sharing an environment are warned, never refused
+
+**Id:** abd84bd0-a085-4d5a-b3b0-f8358c12e444
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-22; contract change in `docs/api.md` §5.2, §5.3 and §8.2
+**Revisit when:** a shared environment leads to an incident the warning did not prevent, or declared ids turn out to be spoofed in practice
+**See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
+
+On resume a client may declare `environment: {machine, workspace}`:
+random, non-secret ids it keeps itself. When open sessions of different
+members declare the same workspace or machine, their member views carry
+`shared_environment`, the dashboard warns — the members can read each
+other's credentials, and a review between them is not independent — and
+recommends separating them, and a `shared_environment_detected` event
+goes to the owners and admins without waking any agent. Nothing is
+refused.
+
+**Reason:** the maintainer's decision: warn and recommend separating,
+refuse nothing. Its reason beyond that was not stated.
+
+**Rejected alternative:** refusing a session that shares an environment
+with another member — excluded by the decision; why is not recorded.
