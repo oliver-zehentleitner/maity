@@ -535,6 +535,50 @@ The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
 agents load. Agents under one `agent_user` can still read each other's
 files.
 
+**ssh backend.** With `[backend] kind = "ssh"` the runner does on each
+configured host what it does locally, over ssh:
+
+```toml
+[backend]
+kind = "ssh"
+
+[backend.ssh]
+known_hosts = "/etc/maity-runner/known_hosts"   # the only known_hosts used; strict checking
+identity = "agent"                              # the operator's ssh agent; or a key file path
+
+[[backend.ssh.hosts]]
+name = "build-1"                                # the target name placements use
+address = "build-1.lan"
+user = "maity"                                  # the remote user the agents run as
+port = 22
+workspaces = "/home/maity/workspaces"           # absolute, on the host
+max_agents = 2
+agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the harness are
+```
+
+Every command is a fixed template sent as one quoted command line, with
+`BatchMode`, `StrictHostKeyChecking=yes`, only the configured
+`known_hosts`, no agent or X11 forwarding and a shared connection
+(`ControlMaster`, sockets in `<state_dir>/ssh`). The ssh agent (or key)
+is used for the connection only; the agents never see it. On each host,
+the tmux socket, logs and harness files live in the remote user's
+`~/.maity-runner/`. The join runs the host's own `maity`, so its
+credential is written on the host and never passes through the runner.
+A placement names a host as its `target`. Without one, the runner takes
+the first reachable host with a free slot, and the placement stays
+there. A target the configuration no longer has is
+`failed`/`harness_refused`/`target_unknown`. While a host does not
+answer, its agents keep running there and their last reported state
+stands. The runner advertises the host as `reachable: false` with
+`unreachable_since` and picks it up again when it answers.
+`maity runner check [--target build-1]` reaches each host and checks
+tmux, git, `maity`, the harnesses and the workspaces there. It warns
+when the remote user has passwordless sudo. `logs` and `stop-all` work
+across the hosts; `stop-all` names a host it could not reach and exits 1.
+`gc` and `workspace claim` are for the local backend in this version.
+`isolation = "own_user"` (one remote user per agent) is not supported
+yet.
+
 On the runner host, without the hub:
 
 ```sh

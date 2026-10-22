@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, sign, state
-from . import capabilities, config, supervisor
+from . import capabilities, config, supervisor, targets
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
 POLL_WAIT = 55
@@ -279,18 +279,34 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
         key = sign.signing_key(state.read_credential(cfg.state_dir))
     except (state.StateError, sign.CredentialFormatError) as exc:
         raise Fatal(str(exc)) from None
-    path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    as_user = supervisor.agents_user(cfg)
-    probes = {h.id: capabilities.probe(h, path, as_user) for h in cfg.harnesses.values()}
-    for harness_id, found in probes.items():
-        if not found.available:
-            log(f"harness {harness_id} is advertised as unavailable ({found.reason})")
-    service = Service(cfg, hub.Client(base, key), capabilities.build(cfg, probes))
-    if cfg.local is not None:
-        # Its own client: reports go out while the connection thread sits in a long-poll.
-        local = supervisor.build(cfg, hub.Client(base, key), log, probes, service.advertised)
-        service.reconcile, service.actual = local.update, local.actual
-        service.supervisor = local
+    probes: dict[str, capabilities.Probe] = {}
+    found_targets = None
+    if cfg.backend == "ssh":
+        # Each host is reached once before the first hello, so what is advertised is what
+        # the hosts have; one that does not answer is advertised unreachable.
+        found_targets = targets.build(cfg, probes)
+        for target in found_targets:
+            try:
+                target.connect(cfg.harnesses)
+                target.reachable = True
+            except OSError as exc:
+                log(f"target {target.name}: unreachable ({exc})")
+    else:
+        path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
+        as_user = supervisor.agents_user(cfg)
+        probes = {h.id: capabilities.probe(h, path, as_user) for h in cfg.harnesses.values()}
+        for harness_id, found in probes.items():
+            if not found.available:
+                log(f"harness {harness_id} is advertised as unavailable ({found.reason})")
+    service = Service(
+        cfg, hub.Client(base, key), capabilities.build(cfg, probes, targets=found_targets)
+    )
+    # Its own client: reports go out while the connection thread sits in a long-poll.
+    sup = supervisor.build(
+        cfg, hub.Client(base, key), log, probes, service.advertised, found_targets
+    )
+    service.reconcile, service.actual = sup.update, sup.actual
+    service.supervisor = sup
     return service
 
 

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -100,7 +99,7 @@ def launch(ctx: Context) -> Launch:
     }
     harness = ctx.harness
     if harness.id == "stub":
-        return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds), env)
+        return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
     if harness.id == "claude-code":
         return _claude_code(ctx, env)
     if harness.id == "codex":
@@ -130,7 +129,7 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             },
         },  # fmt: skip
     )
-    return Launch([sys.executable, "-I", "-m", "maity.runner.loop", "--spec", str(spec)], env)
+    return Launch([*ctx.as_user.runner_module("loop"), "--spec", str(spec)], env)
 
 
 # --- Claude Code ------------------------------------------------------------------------------
@@ -243,7 +242,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     # The login of whoever runs the agents (the operator, or the agents' user), linked so
     # that a token refresh lands in the original; a link left from an earlier launch that
     # points elsewhere, or nowhere, is replaced (AsUser.link).
-    own = None if ctx.as_user.user else os.environ.get("CODEX_HOME")
+    own = None if not ctx.as_user.direct else os.environ.get("CODEX_HOME")
     login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
     if ctx.as_user.exists(login, "-f"):
         ctx.as_user.link(login, home / "auth.json")
