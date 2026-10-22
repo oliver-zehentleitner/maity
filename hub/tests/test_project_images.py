@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import pytest
@@ -408,3 +409,87 @@ def test_a_new_repository_drops_the_old_forge_images(
     assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
     owner.get("/projects/maity/logo")
     assert fake_forge.reads[-2] == "avatar acme/other"
+
+
+# --- a forge that does not answer --------------------------------------------------------------
+
+
+def test_after_a_failed_read_through_gets_answer_503_without_reading_for_a_minute(
+    owner: flow.Human, fake_forge: FakeForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock_now = [1000.0]
+    monkeypatch.setattr(images, "_now", lambda: clock_now[0])
+    fake_forge.forge_down = True
+    flow.project(owner, "maity", repository={"url": REPO})
+    assert owner.get("/projects/maity/logo").status_code == 503
+    reads = len(fake_forge.reads)
+    assert owner.get("/projects/maity/logo").status_code == 503
+    assert len(fake_forge.reads) == reads  # no second read inside the minute
+    clock_now[0] += images.NEGATIVE + 1
+    fake_forge.forge_down = False
+    assert owner.get("/projects/maity/logo").content == PNG
+
+
+def test_concurrent_read_throughs_read_the_forge_once(
+    owner: flow.Human, fake_forge: FakeForge, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow.project(owner, "maity", repository={"url": REPO})
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    slow = threading.Event()
+    original = forge.Forge.owner_avatar
+
+    def owner_avatar(self: forge.Forge, repository: str) -> str | None:
+        slow.wait(0.3)
+        return original(self, repository)
+
+    monkeypatch.setattr(forge.Forge, "owner_avatar", owner_avatar)
+    results: list[bool] = []
+    threads = [
+        threading.Thread(
+            target=lambda: results.append(
+                images.read_through(migrated, forge.Forge(None), project_id, "logo")
+            )
+        )
+        for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert results == [True] * 4
+    assert fake_forge.reads.count("avatar acme/widget") == 1
+
+
+def test_the_worker_backs_off_after_failures(
+    owner: flow.Human, fake_forge: FakeForge, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock_now = [1000.0]
+    monkeypatch.setattr(images, "_now", lambda: clock_now[0])
+    flow.project(owner, "maity", repository={"url": REPO})
+    fake_forge.forge_down = True
+    worker = images.Worker(migrated, forge.Forge(None))
+    worker.sweep()
+    first = len(fake_forge.reads)
+    worker.sweep()
+    assert len(fake_forge.reads) == first  # backing off
+    clock_now[0] += images.INTERVAL + 1
+    worker.sweep()
+    assert len(fake_forge.reads) > first
+    second = len(fake_forge.reads)
+    clock_now[0] += images.INTERVAL + 1  # the second failure doubled the wait
+    worker.sweep()
+    assert len(fake_forge.reads) == second
+    clock_now[0] += images.INTERVAL
+    fake_forge.forge_down = False
+    worker.sweep()
+    with migrated.begin() as conn:
+        assert images.stale(conn) == []
+
+
+def test_every_other_answer_is_still_no_store(owner: flow.Human) -> None:
+    flow.project(owner, "maity")
+    put(owner, "/projects/maity/logo", PNG, "image/png")
+    for path in ("/api/v1/health", "/api/v1/projects/maity", "/api/v1/me", "/"):
+        answer = owner.client.get(path)
+        assert answer.headers["cache-control"] == "no-store", path

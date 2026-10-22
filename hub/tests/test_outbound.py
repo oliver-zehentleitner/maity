@@ -9,6 +9,8 @@ from __future__ import annotations
 import gzip
 import io
 import ipaddress
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -32,6 +34,9 @@ class FakeSocket:
         return io.BufferedReader(io.BytesIO(self.answer))
 
     def settimeout(self, value: float | None) -> None:
+        pass
+
+    def shutdown(self, how: int) -> None:
         pass
 
     def close(self) -> None:
@@ -108,6 +113,11 @@ def net(monkeypatch: pytest.MonkeyPatch) -> Net:
         "64:ff9b::7f00:1",
         "64:ff9b::a9fe:a9fe",
         "64:ff9b:1::a00:1",
+        "fec0::1",
+        "::a00:1",
+        "::7f00:1",
+        "::ffff:0:a00:1",
+        "::ffff:0:7f00:1",
     ],
 )
 def test_addresses_that_are_not_globally_routable_are_refused(address: str) -> None:
@@ -231,8 +241,9 @@ def test_a_gzip_answer_is_decoded(net: Net) -> None:
     assert outbound.read("https://example.org/x", cap=100).body == b"{}"
 
 
-def test_an_encoding_the_hub_did_not_ask_for_is_refused(net: Net) -> None:
-    net.answers.append(response(body=b"x", headers={"Content-Encoding": "br"}))
+@pytest.mark.parametrize("coding", ["br", "deflate"])
+def test_an_encoding_the_hub_did_not_ask_for_is_refused(net: Net, coding: str) -> None:
+    net.answers.append(response(body=b"x", headers={"Content-Encoding": coding}))
     with pytest.raises(outbound.Refused) as refused:
         outbound.read("https://example.org/x", cap=100)
     assert refused.value.reason == "unavailable"
@@ -276,3 +287,51 @@ def test_a_garbled_answer_is_unavailable_and_quotes_nothing(net: Net) -> None:
 def test_tests_never_reach_the_network() -> None:
     with pytest.raises(outbound.Refused):
         outbound.read("https://example.org/x", cap=100)
+
+
+class DrippingSocket(FakeSocket):
+    """A server that sends its status line, then one header byte at a time, forever; a
+    close from another thread ends the read like a closed socket does."""
+
+    def __init__(self) -> None:
+        super().__init__(b"")
+        self.closed = threading.Event()
+
+    def makefile(self, mode: str, *args: Any, **kwargs: Any) -> Any:
+        sock = self
+
+        class Drip(io.RawIOBase):
+            status = list(b"HTTP/1.1 200 X\r\n")
+
+            def readable(self) -> bool:
+                return True
+
+            def readinto(self, buffer: Any) -> int:
+                if self.status:
+                    buffer[0] = self.status.pop(0)
+                    return 1
+                if sock.closed.wait(0.05):
+                    raise OSError("closed")
+                buffer[0] = ord("X")
+                return 1
+
+        return io.BufferedReader(Drip(), buffer_size=1)
+
+    def shutdown(self, how: int) -> None:
+        self.closed.set()
+
+    def close(self) -> None:
+        self.closed.set()
+
+
+def test_a_server_that_drips_its_headers_meets_the_total_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(outbound, "TIMEOUT", 0.5)
+    monkeypatch.setattr(outbound, "resolver", lambda host: [PUBLIC])
+    monkeypatch.setattr(outbound, "connector", lambda host, address, timeout: DrippingSocket())
+    started = time.monotonic()
+    with pytest.raises(outbound.Refused) as refused:
+        outbound.read("https://example.org/x", cap=100)
+    assert refused.value.reason == "timeout"
+    assert time.monotonic() - started < 2
