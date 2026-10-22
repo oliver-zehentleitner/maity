@@ -18,6 +18,7 @@ spec:
     spec:
       backoffLimit: 2
       template:
+        metadata: {labels: {app: maity-pg-dump}}   # admitted by postgres-netpol.yaml
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false

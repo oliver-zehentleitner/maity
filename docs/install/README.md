@@ -179,7 +179,8 @@ the hub itself comes from the Helm chart, whose
 - k3s with its bundled Traefik, published on the host's ports 80 and 443
   by klipper
 - cert-manager with a Let's Encrypt ClusterIssuer (HTTP-01)
-- PostgreSQL 17 as a StatefulSet on the instance's disk
+- PostgreSQL 17 as a StatefulSet on the instance's disk, reachable only
+  by the hub and the backup Job
 - a daily `pg_dump` CronJob
 - the hub chart with a NetworkPolicy that admits only Traefik
 
@@ -197,13 +198,13 @@ ufw allow from 10.42.0.0/16 to any   # pods
 ufw allow from 10.43.0.0/16 to any   # services
 ```
 
-**2. k3s.** Download the installer, read it, then run it. Pin the version
-with `INSTALL_K3S_VERSION`. Then put the Traefik configuration where k3s
-watches for it:
+**2. k3s.** Download the installer, read it, then run it with a pinned
+version (tested: v1.36.5+k3s1). Then put the Traefik configuration where
+k3s watches for it:
 
 ```sh
 curl -sfL -o k3s-install.sh https://get.k3s.io
-sh k3s-install.sh
+INSTALL_K3S_VERSION=v1.36.5+k3s1 sh k3s-install.sh
 cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
 ```
 
@@ -211,13 +212,13 @@ It sets `externalTrafficPolicy: Local`, so the hub's rate limits see real
 client addresses, and redirects plain HTTP to HTTPS at Traefik. Its syntax
 is Traefik chart v40's: `ports.web.http.redirections.entryPoint`.
 
-**3. cert-manager**, from its Helm chart with the CRDs, pinned to a
-version you chose:
+**3. cert-manager**, from its Helm chart with the CRDs, pinned (tested:
+v1.20.4):
 
 ```sh
 helm repo add jetstack https://charts.jetstack.io
 helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --version <version> --set crds.enabled=true
+  --version v1.20.4 --set crds.enabled=true
 ```
 
 **4. Namespace and secrets.**
@@ -239,8 +240,8 @@ rm pg-password database-url
 `hub-values.yaml` first:
 
 ```sh
-kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/backup.yaml \
-  -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
+  -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
 
@@ -283,9 +284,12 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
   major version needs a dump and a restore.
 
-**Worth adding.** No NetworkPolicy guards PostgreSQL here, so any pod in
-the cluster can try its password. A policy that admits only the hub,
-its migrate Job and the backup Job closes that.
+**PostgreSQL is fenced in.** `postgres-netpol.yaml` admits only:
+- the hub and its migrate Job (label `app.kubernetes.io/name: maity-hub`)
+- the backup Job (label `app: maity-pg-dump`)
+
+Any other pod in the cluster gets no answer on 5432. k3s enforces
+NetworkPolicy out of the box.
 
 ## The first account, project and agent
 

@@ -1,0 +1,14 @@
+# Only the hub (and its migrate Job, which carries the same label) and the
+# backup Job may connect to PostgreSQL; any other pod in the cluster gets no
+# answer. Applied and tested on maity.team.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: maity-postgres, namespace: maity}
+spec:
+  podSelector: {matchLabels: {app: maity-postgres}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: maity-hub}}
+        - podSelector: {matchLabels: {app: maity-pg-dump}}
+      ports: [{port: 5432}]

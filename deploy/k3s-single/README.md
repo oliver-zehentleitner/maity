@@ -1,6 +1,7 @@
 # Maity on a single small instance with k3s
 
-The manifests for running the hub on one small VM with k3s:
+The manifests for running the hub on one small VM with k3s. They are
+tested on k3s v1.36.5+k3s1, cert-manager v1.20.4 and PostgreSQL 17.10:
 - Traefik and klipper, bundled with k3s
 - cert-manager with Let's Encrypt
 - PostgreSQL 17 as a StatefulSet
@@ -15,6 +16,7 @@ The walkthrough, with the secrets and the order, is in
 | `traefik-config.yaml` | HelmChartConfig for k3s's Traefik: `externalTrafficPolicy: Local`, HTTP → HTTPS at the entry point. Goes to `/var/lib/rancher/k3s/server/manifests/` on the host |
 | `issuer.yaml` | ClusterIssuer `letsencrypt` (HTTP-01 via Traefik) |
 | `postgres.yaml` | PostgreSQL 17 Service and StatefulSet, password from the Secret `maity-postgres` |
+| `postgres-netpol.yaml` | NetworkPolicy: only the hub, its migrate Job and the backup Job reach PostgreSQL |
 | `backup.yaml` | daily `pg_dump` CronJob into its own volume, the newest 14 kept |
 | `cert.yaml` | the Certificate for the apex and `www`, and the `www` → apex redirect |
 | `hub-values.yaml` | values for [`deploy/helm/maity-hub`](../helm/maity-hub/README.md) |
