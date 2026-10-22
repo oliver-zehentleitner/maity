@@ -12,7 +12,7 @@
   `substitutes` removed — with the events addressed to the project's human owners and admins as
   well.
 - docs/api.md §17.4: a webhook request for an unknown project or one without a secret is refused
-  before the body is read; other requests that do not verify are limited to 60 per minute per
+  before the body is read and limited in one bucket per source address; other requests that do not verify are limited to 60 per minute per
   project and source address and never set `last_result` (`signature` and `too_large` are no
   longer values).
 - docs/api.md §17.3, §17.5, §17.6: a manual post's tokens resolve to `member:` tokens with `why:

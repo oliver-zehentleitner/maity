@@ -6776,16 +6776,20 @@ POST /api/v1/projects/{slug}/forge/webhook
   (`rate_limited`): only a delivery whose signature verifies counts, so
   unsigned or wrongly signed requests cannot use up a project's
   deliveries. A request for a project that does not exist, or for one
-  without a webhook secret, is answered `webhook_signature` at once,
-  before the hub reads the body or counts it anywhere: there is no
-  secret to check, so no body is worth reading, and an unknown slug gets
-  no bucket of its own (the answer is the same as for a wrong signature,
-  so it still tells nobody whether a project exists). The other requests
-  that do not verify — no or a wrong signature, a body over the cap —
-  are limited per project and source address (the client address of
-  §2.5): at most 60 per minute. Beyond that the hub answers
-  `rate_limited` with `Retry-After` before it reads the body, so junk
-  cannot make it read a megabyte per attempt without bound. The limit is
+  without a webhook secret, is answered `webhook_signature` before the
+  hub reads the body: there is no secret to check, so no body is worth
+  reading. It counts against no project's bucket — an unknown slug gets
+  none of its own — but against one bucket per source address (the
+  client address of §2.5) shared by all such requests, at most 60 per
+  minute. The other requests that do not verify — no or a wrong
+  signature, a body over the cap — are limited per project and source
+  address, also at most 60 per minute. Beyond either limit the hub
+  answers `rate_limited` with `Retry-After` before it reads the body, so
+  junk cannot make it read a megabyte per attempt without bound. Both
+  paths answer alike, refusal and limit: the 61st bad request in a
+  minute is `rate_limited` whether the slug exists and has a secret or
+  not, so neither the answer nor the limit tells anyone whether a
+  project exists or has a webhook secret. The limit is
   per project because forges deliver from shared address pools: one
   project's failing deliveries must not refuse another project's
   verified ones from the same address. A request that does not verify never sets `last_result` (below): anyone
