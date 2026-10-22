@@ -1954,8 +1954,10 @@ GET /api/v1/projects/maity/overview?closed_after=2026-10-08T00:00:00Z
   Earlier reports of a card exist only as `task_reported` events, whose
   audience is limited (§8.2), and they never appear here. `pr_state`
   and `observed_at` are the probe's `report.observed` (§11): a fact,
-  `null` while nothing is observed. A merge is a report with `pr_state:
-  merged`. `pr` is `null` for `code: false` and when `pr_status` is not
+  `null` while nothing is observed; so is `mismatch` (§6.6), which is
+  `null` until the probe has looked — not `false`, so an unchecked pull
+  request never reads as "no mismatch". A merge is a report with
+  `pr_state: merged`. `pr` is `null` for `code: false` and when `pr_status` is not
   `found`. `limit` (1–50, default 10) changes the count.
 - No caching beyond the probe's own. The counts are read at call time,
   in one transaction.
@@ -1986,8 +1988,13 @@ web owner's:
 - On open: `GET /projects/{slug}` and `…/members` (already held for the
   header), and `…/overview?closed_after=<the board's window>`. On the
   project's event poll (`web/README.md`, **Refresh**), `task_*`,
-  `request_*` and `probe_observed` re-read the overview. Member events
-  and `project_updated` use what the header already re-reads. A summary
+  `request_*` and `probe_observed` re-read the overview. Those audiences
+  are narrow (§8.2): only owners and admins read every event, so for any
+  other member most board, request and report changes send no event at
+  all. For a viewer who is neither owner nor admin the view therefore
+  also re-reads every 60 seconds while it is open, and when the browser
+  tab regains focus; these are what keep that viewer's counts current. Member events and `project_updated`
+  use what the header already re-reads. A summary
   is never being read line by line, so it is redrawn in place without a
   **Reload** offer.
 - Links open the URL as the hub gave it, in a new tab with
