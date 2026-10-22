@@ -75,8 +75,9 @@ on every platform. They are installed with plain
 `pip install --require-hashes`, and the hub itself goes on top with
 `--no-deps`, so nothing is resolved twice. The wheel and the editable
 install are built without build isolation from the pinned backend.
-`make lock-check` recompiles in CI with the pinned uv and fails on any
-difference.
+`make lock-check` recompiles in CI with the pinned uv, from copies whose
+hash lines are dropped first so every hash is fetched again, and fails on
+any difference.
 
 **Reason:** the image should contain what CI proved, and every download
 should be checked against a hash recorded in review. Requirements files
@@ -87,10 +88,10 @@ file per interpreter.
 
 **Rejected alternatives:**
 - A constraints file (`pip install -c constraints.txt -e .`): pins the
-  same versions and pip checks hashes given there too, but a dependency
+  same versions, but either way it falls short. With hashes, pip 26
+  switches to hash-checking mode, which refuses the editable install of
+  the hub (there is no single file to hash). Without hashes, a dependency
   missing from the file is resolved to the newest release without a word.
-  A requirements file installed with `--require-hashes` turns any
-  unpinned dependency into an error.
 - `uv lock` with `uv.lock`: a full project lock, but pip cannot read it,
   and the image and CI would depend on uv for installing, not only for
   locking.
