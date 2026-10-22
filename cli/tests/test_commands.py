@@ -845,8 +845,6 @@ def test_placement_restart_with_rejoin(joined: Path, fake: fakehub.FakeHub) -> N
     assert fake.signed()[-1].json() == {"rejoin": True}
 
 
-
-
 def test_wait_keep_cursor_acknowledges_nothing(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
