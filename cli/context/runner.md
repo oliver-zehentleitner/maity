@@ -753,8 +753,11 @@ agents run, the supervised loop and the `stub` included, starts through
 the host's own `maity`, on internal subcommands (`maity runner loop`,
 `maity runner stub`). The join runs the host's `maity` too, so the
 agent's credential is written on the host and never passes through the
-runner. Workspace records are keyed `<host>:<path>`. `gc` and
-`workspace claim` stay local-only in this slice.
+runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
+denies are the host's: the remote user's home secrets, its
+`~/.maity-runner` and the other clones' credentials listed on the host,
+never paths of the runner's machine. `gc` and `workspace claim` stay
+local-only in this slice.
 
 **Reason:** the runner's interpreter path means nothing on another
 machine, and the operator's install there (pipx, a virtual environment)
