@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import Message
@@ -403,18 +403,66 @@ class Client:
         if (method in ("POST", "PATCH") or uploads) and not any(p in path for p in NO_IDEMPOTENCY):
             headers["Idempotency-Key"] = uuid.uuid4().hex
         url = f"{self.base}{full_path}" + (f"?{query_string}" if query_string else "")
+        send = data if body is not None or raw is not None else None
+        try:
+            return self._send(
+                method, url, full_path, query_string, data, send, headers, timeout, _json
+            )
+        except ValueError as exc:
+            raise HubError(f"{method} {full_path}: the hub answered with invalid JSON") from exc
+
+    def download(self, path: str, sink: Callable[[bytes], None], limit: int) -> int:
+        """GET `path` and hand the body to `sink` in chunks, at most `limit` bytes and one more,
+        so an answer longer than promised shows as longer without being read to its end.
+        Returns the number of bytes handed over. Nothing of the body is decoded or kept."""
+        if not path.startswith("/") or "?" in path or "#" in path:
+            raise HubError(f"not a plain path: {path!r}")
+        full_path = f"{API}{path}"
+        _guard_payload(b"", "", path)
+        headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
+
+        def stream(response: Any) -> int:
+            total = 0
+            while total <= limit:
+                chunk = response.read(min(CHUNK, limit + 1 - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                try:
+                    sink(chunk)
+                except OSError as exc:  # the local side failed, not the hub: never "cannot reach"
+                    raise _SinkFailed(exc) from exc
+            return total
+
+        url = f"{self.base}{full_path}"
+        try:
+            return int(self._send("GET", url, full_path, "", b"", None, headers, None, stream))
+        except _SinkFailed as failed:
+            raise failed.error from None
+
+    def _send(
+        self,
+        method: str,
+        url: str,
+        full_path: str,
+        query_string: str,
+        data: bytes,
+        send: bytes | None,
+        headers: dict[str, str],
+        timeout: float | None,
+        handle: Callable[[Any], Any],
+    ) -> Any:
+        """Sign and send one request, once more after a clock correction (§2.2); `handle`
+        reads the successful response."""
         for attempt in (1, 2):
             stamp = int(time.time() + self.clock_offset)
             signed = sign.sign_headers(self.key, method, full_path, query_string, data, stamp)
-            request = urllib.request.Request(  # noqa: S310
-                url, data=data if body is not None or raw is not None else None, method=method
-            )
+            request = urllib.request.Request(url, data=send, method=method)  # noqa: S310
             for name, value in {**headers, **signed}.items():
                 request.add_header(name, value)
             try:
                 with self._opener.open(request, timeout=timeout or self.timeout) as response:
-                    answer: bytes = response.read()
-                    return json.loads(answer) if answer else None
+                    return handle(response)
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
                 server = _parse_server_time(err.details.get("server_time"))
@@ -424,6 +472,17 @@ class Client:
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
-            except ValueError as exc:
-                raise HubError(f"{method} {full_path}: the hub answered with invalid JSON") from exc
         raise AssertionError("unreachable")
+
+
+CHUNK = 64 * 1024
+
+
+class _SinkFailed(Exception):
+    def __init__(self, error: OSError) -> None:
+        self.error = error
+
+
+def _json(response: Any) -> Any:
+    answer: bytes = response.read()
+    return json.loads(answer) if answer else None
