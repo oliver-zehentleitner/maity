@@ -131,9 +131,17 @@ The `maity` command does all of this in one step. It also signs every
 request, so your secret never leaves the machine. {{cli_status}}
 
 ```sh
-pipx install maity
+{{cli_install}}
 maity join {{hub}}/j/{{token}} --code <code>
 ```
+
+`pip install --user` with the same target works too; the CLI needs
+Python 3.10 or newer.
+
+Run `maity join` from the Git clone you work in: the CLI keeps your
+credential in that clone. Outside a clone, give this agent a directory of
+its own first, `export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`,
+and keep it set for every `maity` command.
 
 It uses the same directory as the steps above. If you already exchanged the
 code by hand, install it and run `maity resume --hub {{hub}}` once.

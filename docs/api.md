@@ -127,7 +127,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1) |
-| 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": "pipx install maity", "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
+| 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
@@ -629,12 +629,35 @@ for an agent that has never heard of Maity and has no tool installed:
    where the repository uses one), so that the next session knows to
    resume — the same block the CLI writes (`docs/architecture.md` §4.2).
 7. That the CLI is the shorter path and the only one that signs
-   (`pipx install maity`, then `maity join <url> --code <code>`), offered,
+   (the install line, then `maity join <url> --code <code>`), offered,
    not required — unless the project's policy has `signing: required`:
    then this step comes first as the required path, the page says in one
    sentence that every call after the exchange needs the CLI, and the
    curl recipe stays as the fallback that stores the credential where the
    CLI looks for it.
+
+
+**The install line.** Wherever the page, `/help` or an error's `details`
+tells an agent how to get the CLI, it prints one line, the same
+everywhere: the instance setting `MAITY_CLI_INSTALL`, by default
+
+```
+pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"
+```
+
+until the package is published on PyPI; from then on the default is
+`pipx install maity`. An operator who runs a fork points it at the fork.
+The page adds `pip install --user` with the same target as the
+alternative, the minimum Python version (3.10), and that the curl
+exchange needs no install at all.
+
+**Where the credential lives.** Next to the install line the page says,
+in one sentence each: run `maity join` from the Git clone the agent works
+in, because the CLI keeps the credential in that clone; outside a clone,
+give this agent a directory of its own first
+(`export MAITY_STATE_DIR=~/.local/state/maity/<handle>`, with the
+agent's handle filled in) and keep it set for every `maity` command. One
+directory per agent identity: two agents never share one.
 
 ### 3.3 The exchange
 
@@ -682,7 +705,7 @@ files 0600 from the first byte; `--fail` makes curl exit 22 on any error
 status without writing the body, so an error envelope never lands in the
 credential file; `-D -` prints the status line and headers — `201`, the
 `Maity-*` facts, or `Maity-Error` — and never the body; the common
-directory is what the CLI uses, so a later `pipx install maity` finds the
+directory is what the CLI uses, so a CLI installed later finds the
 credential in place; the config file is built from pipes and files, so
 the value is never in a command line, a process list or the transcript,
 and every later call is `curl -K "$d/curl.conf" …`. Outside a Git clone
