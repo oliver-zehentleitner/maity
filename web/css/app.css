@@ -309,7 +309,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .pr-unverified { color: var(--muted); font-style: italic; }
 /* The card wraps anywhere; the PR table's words and headers do not. */
 .prs th, .prs td { overflow-wrap: normal; }
-.prs td:first-child { overflow-wrap: anywhere; }
+.prs td:first-child { overflow-wrap: break-word; }
 .groups .unknown { color: var(--muted); }
 
 .readiness { margin-top: 8px; font-size: 0.88rem; }
