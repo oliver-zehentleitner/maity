@@ -263,6 +263,8 @@ maity placement restart agent-f
 ```
 
 An agent is named by its handle or member id, and a placement by its id.
+An exact id wins. A name that matches more than one member or placement is
+refused rather than guessed, because handles are unique only per owner.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 
