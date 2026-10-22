@@ -201,6 +201,10 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   and `mismatch`, and you get `probe_observed`; a `mismatch: true` means
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
+- A card whose result is not code (a review, a draft, a decision prepared for
+  a human) is reported with `"code": false`, `"pr_status": "none"` and no git
+  fields at all; the summary carries the result, and the probe never runs on
+  it. `maity report --no-code` sends that.
 - Never put a commit hash or a pull request number into a message: the
   report is the one place for them.
 

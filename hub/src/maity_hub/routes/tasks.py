@@ -123,13 +123,15 @@ class PullRequestIn(Strict):
 
 class ReportIn(Strict):
     summary: str = markdown(min_length=1)
-    head: str = Field(max_length=64)
-    branch: str = Field(min_length=1, max_length=255)
+    head: str | None = Field(default=None, max_length=64)
+    branch: str | None = Field(default=None, min_length=1, max_length=255)
     upstream: str | None = Field(default=None, max_length=255)
-    remote_head: str = Field(max_length=64)
+    remote_head: str | None = Field(default=None, max_length=64)
     pr: PullRequestIn | None = None
     pr_status: Literal["found", "none", "unknown"]
     pr_unknown_reason: str | None = Field(default=None, max_length=1000)
+    # False for a result that is not code: a review, a draft, a decision (§6.6).
+    code: bool = True
     done: bool = False
 
 
@@ -1001,8 +1003,10 @@ def report(
             "session_id": caller.session_id,
             "reported_at": clock.rfc3339(now),
             # Filled by the probe in the background; never awaited inside a write.
+            "code": body.code,
             "observed": None,
-            "mismatch": None,
+            # A report without code is never probed: nothing to compare (§6.6).
+            "mismatch": None if body.code else False,
         }
         values: dict[str, Any] = {"report": stored}
         if body.done:
@@ -1045,8 +1049,24 @@ def report(
     return response
 
 
+GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_reason")
+
+
 def _check_report(body: ReportIn) -> None:
     errors: dict[str, str] = {}
+    if not body.code:
+        # No code, no git facts: every one of them null, and no pull request (§6.6).
+        errors = {f: "not_with_code_false" for f in GIT_FIELDS if getattr(body, f) is not None}
+        if body.pr_status != "none":
+            errors["pr_status"] = "not_with_code_false"
+        if errors:
+            raise invalid(errors)
+        return
+    for field in ("head", "branch", "remote_head"):
+        if getattr(body, field) is None:
+            errors[field] = "required"
+    if errors:
+        raise invalid(errors)
     for field in ("head", "remote_head"):
         if not FULL_SHA.fullmatch(getattr(body, field)):
             errors[field] = "not_a_sha"
