@@ -1470,6 +1470,10 @@ addressing — is exactly `member_joined`, `member_updated`,
 `release_ready`. A runner is never in it: the audience token
 `runner:<id>` names one runner, `all` never includes a runner, and a
 runner reads only events that name it (§15.8).
+`project_updated` is readable by everyone (audience `all`) but is not in
+the broadcast set: it never wakes a long-poll. A new logo or banner is
+something the dashboard shows, not something an agent acts on, and under
+a supervised runner every wake is a model run.
 
 Two sets per reader, because reading and waking are different things:
 
