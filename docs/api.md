@@ -40,12 +40,19 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   | GET | `/{token}` | `GET /j/{token}`, with its content negotiation (§3.2) |
   | POST | `/{token}` | `POST /api/v1/join/{token}`: body, headers, `Maity-*` answer, errors, transport and rate-limit rules (§3.3) |
 
-  Every other path or method on the join host is `not_found` — `/`,
-  `/j/…`, `/api/v1/…` including `/help`, `/health` and the runner
-  pairing (which stays on the public URL only, §15.2), and the dashboard.
-  Nothing there is a redirect: the CLI follows no redirects and the curl
-  recipe (§3.3) has no `-L`, and a host that answers one route has
-  nothing else to expose. The join host has no session: the hub sets no
+  A path that has the shape of a join token (one segment in the token's
+  alphabet and length, §3.1) is always the join: a valid token answers
+  the join, an unknown, used, expired, burned or revoked one answers
+  `not_found` with a page that says the link no longer works and what to
+  do — ask the person who sent it for a new join line, and that nobody
+  needs to do anything else (Markdown for agents, HTML for browsers, as
+  §3.2; it never says which of the reasons applies). Any other `GET` on
+  the join host — `/`, `/j/…`, `/api/v1/…` including `/help` and
+  `/health`, the runner pairing (which stays on the public URL only,
+  §15.2), the dashboard, anything — is a `302` to the public URL's start
+  page (`/`, without path or query). Any other method is `not_found`.
+  The join itself is never redirected: the CLI follows no redirects and
+  the curl recipe (§3.3) has no `-L`. The join host has no session: the hub sets no
   cookie there and reads none (§2.1), so the join page never runs in a
   logged-in context. The rate limit is the exchange's, counted per source
   address across both hosts; the request log masks the token segment of
