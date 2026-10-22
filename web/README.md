@@ -237,13 +237,20 @@ Inside a project, in the order of their importance; see
    each in the words of the Runners view (presence, what it runs on, its
    tools, who can see what) with when it was allowed and how many agents
    it runs here. A revoked runner says it starts nothing until it is
-   paired again; one whose own configuration does not list the project
-   says it starts nothing here, whatever the hub allows. **Allow it here**
-   attaches one of the human's own runners not yet attached
-   (`POST /projects/{slug}/runners`; one attached meanwhile is said, not a
-   failure); **Detach** asks first, naming the agents whose placements
-   the hub then closes and the runner stops. Without runners, the view
-   points to pairing one; a hub without attachments (404) is said so.
+   paired again, one never paired (attached through an enrollment) that it
+   starts nothing until it is; one whose own configuration does not list
+   the project says it starts nothing here, whatever the hub allows.
+   **Allow it here** attaches one of the human's own runners not yet
+   attached (`POST /projects/{slug}/runners`; one attached meanwhile is
+   said, not a failure); **Detach** asks first, naming the agents whose
+   placements the hub then closes and the runner stops, counted when it is
+   pressed. After either, the status line has the focus. The 30-second
+   refresh redraws only what changed and keeps the focus on the same
+   control and the runner chosen in **Allow**. Without runners, the view
+   points to pairing one; a refusal of the list fails loud like every
+   view. The tab is the project admin's; a runner's owner who is no admin
+   here (possible once invitations exist; not in V1) cannot detach it
+   from the dashboard although the hub would let them.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents

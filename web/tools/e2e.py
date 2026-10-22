@@ -774,9 +774,6 @@ def scenario(run: Run, page: Page) -> None:
             assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
         run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
-        run.problems = [
-            p for p in run.problems if p != "GET /api/v1/projects/e2e-alpha/runners?limit=200 answered 404"
-        ]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -1384,13 +1381,6 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.locator("h2").first).to_be_visible()
-    # Only a hub without the endpoint is skipped, and the tab has to say so.
-    missing = "GET /api/v1/projects/e2e-alpha/runners?limit=200 answered 404"
-    if missing in run.problems:
-        run.step("project runners: this hub has no attachments yet, and the tab says so")
-        expect(view).to_contain_text("This hub cannot allow runners in projects yet.")
-        run.problems = [p for p in run.problems if p != missing]
-        return
     run.step("project runners: allow the paired runner in a project and detach it")
     card = view.locator("article.runner", has=page.get_by_role("heading", name=name))
 

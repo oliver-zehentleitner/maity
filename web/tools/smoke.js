@@ -565,16 +565,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(prLaptop.includes("online") && prLaptop.includes("1 agent running here") && prLaptop.includes("Claude Code 2.1.308")
     && prLaptop.includes("Agents on home-laptop run as one user, oliver") && !prLaptop.includes("does not allow"),
     "project runners: presence, agents running here, capabilities in plain words");
-  expect(text(prCard("cluster")).includes("cannot start anything until it is paired again"), "project runners: a revoked runner says it starts nothing");
+  expect(text(prCard("cluster")).includes("Its credential was revoked: it starts nothing until it is paired again"), "project runners: a revoked runner says it starts nothing");
+  const prAllN = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAllN(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "cluster" ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { credential_state: "none" }) }) : a)), next_cursor: null }))
+    : prAllN(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(text(prCard("cluster")).includes("It has not been paired yet: it starts nothing until it is") && !text(prCard("cluster")).includes("again"),
+    "project runners: a runner never paired is not told to pair again");
+  win.Maity.api.getAll = prAllN;
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
   const prSelect = byId("allow-runner");
   expect(prSelect && prSelect.querySelectorAll("option").length === 1 && prSelect.value === "rnr-0003", "project runners: only the own runners not attached here are offered");
+  // The 30-second refresh leaves an unchanged Allow form and the focused Detach where they are.
+  const prProto = Object.getPrototypeOf(prSelect);
+  const prFocus = prProto.focus;
+  prProto.focus = function () { document.activeElement = this; };
+  const clusterDetach = btn(prCard("cluster"), "Detach");
+  clusterDetach.focus();
+  const prAll0 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAll0(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "cluster" ? Object.assign({}, a, { active_placements: 3 }) : a)), next_cursor: null }))
+    : prAll0(p));
+  await fireIntervals(); await tick(); await tick();
+  expect(byId("allow-runner") === prSelect && text(prCard("cluster")).includes("3 agents running here") && document.activeElement !== clusterDetach
+    && document.activeElement === btn(prCard("cluster"), "Detach"), "project runners: a refresh redraws a changed card and keeps the Allow form and the focus on the same Detach");
+  win.Maity.api.getAll = prAll0;
   main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(document.activeElement === main.querySelector(".view-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")),
+    "project runners: after an action the status line has the focus");
+  prProto.focus = prFocus; document.activeElement = undefined;
   expect(JSON.stringify(prWrites[0]) === JSON.stringify(["POST", "/projects/maity/runners", { runner_id: "rnr-0003" }]) && prCard("build-box")
     && text(prCard("build-box")).includes("Its own configuration does not allow maity, so it starts nothing here"),
     "project runners: allowed, and warned where its own configuration does not allow the project");
   expect(text(main).includes("All your runners are allowed here."), "project runners: nothing left to allow");
   let prAsked = "";
   const prConfirm = win.confirm;
+  win.confirm = (q) => { prAsked = q; return true; };
+  // The count is read when Detach is pressed: an agent started meanwhile is named.
+  const prAll1 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAll1(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "home-laptop" ? Object.assign({}, a, { active_placements: 2 }) : a)), next_cursor: null }))
+    : prAll1(p));
+  win.confirm = (q) => { prAsked = q; return false; };
+  btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked.includes("of the 2 agents it runs here"), "project runners: the confirmation names the agents running now, not at the last refresh");
+  win.Maity.api.getAll = prAll1;
   win.confirm = (q) => { prAsked = q; return true; };
   btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
   expect(prAsked === "Detach home-laptop from Maity? The hub closes the placement of the 1 agent it runs here, and the runner stops it."
@@ -593,11 +629,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Put the fixtures back for the instance-level view.
   win.Maity.api.post = prPost; win.Maity.api.del = prDel;
   await prPost("/projects/maity/runners", { runner_id: "rnr-0002" });
-  // A hub before attachments; the empty state; no tab for a member.
+  // A refusal fails loud, as in every view; the empty state; no tab for a member.
   const prAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : prAll(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
-  expect(text(main).includes("This hub cannot allow runners in projects yet.") && !main.querySelector(".error"), "project runners: a hub without attachments says so");
+  expect(main.querySelector(".error") && !text(main).includes("cannot allow runners"), "project runners: a 404 is an error, not a missing feature");
   win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" || p === "/runners" ? Promise.resolve({ items: [], next_cursor: null }) : prAll(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
   expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page."),
