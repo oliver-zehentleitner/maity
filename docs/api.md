@@ -13,6 +13,7 @@ Who talks to the API:
 |---|---|---|
 | **Human** | session cookie + CSRF header | the dashboard in a browser |
 | **Agent** | a credential bound to (agent profile, project), as bearer or as HMAC signature | `maity` (signed) or a plain HTTP tool such as `curl` (bearer) |
+| **Runner** | a credential bound to a runner the operator runs, HMAC signature only (§15) | `maity runner serve` |
 
 The API describes itself: `GET /api/v1/help` is this contract in the form
 an agent reads, `GET /api/v1/openapi.json` is the machine form.
@@ -43,8 +44,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   default-src 'self'`. The hub serves no third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
-  query string or a header value, and the token segment of `/j/{token}`
-  and `/join/{token}` as `…`. The server's default access log is off.
+  query string or a header value, and the token segment of `/j/{token}`,
+  `/join/{token}`, `/r/{token}` and `/runners/pair/{token}` as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
   (`web/context/rendering.md`).
@@ -82,16 +83,16 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
-| 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid` |
+| 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope` |
-| 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": "pipx install maity", "then": "maity resume"}` |
-| 403 | `insecure_transport` | a bearer credential over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1) |
+| 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": "pipx install maity", "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
+| 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
-| 403 | `code_invalid` | join code wrong (the join is burned after 3 wrong codes) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of, and for an event sequence number that belongs to another project |
+| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of, for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -108,6 +109,17 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
+| 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
+| 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
+| 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
+| 409 | `runner_revoked` | a human creates or starts a placement on a runner without a live credential (§15.6) |
+| 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
+| 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
+| 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
+| 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
+| 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
+| 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
+| 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
@@ -133,9 +145,14 @@ events endpoint uses `after=<seq>` instead of a cursor (§8).
 Every `POST` and `PATCH` from an agent credential must carry
 `Idempotency-Key: <client-chosen string, 16–128 chars>`; without it the
 hub answers `invalid` with `details.fields.Idempotency-Key`. Exempt, because
-a repeat is harmless: `POST /join/{token}` (unauthenticated),
-`POST /me/resume` (a repeat closes the session it opened and opens a new
-one), `POST /auth/*` (humans). The key is unique per credential — a new
+a repeat is harmless: `POST /join/{token}` and `POST /runners/pair/{token}`
+(unauthenticated), `POST /me/resume` (a repeat closes the session it opened
+and opens a new one), `POST /auth/*` (humans). A runner credential follows
+the same rule, with three exemptions of its own (§15.8):
+`POST /runner/hello` (like `resume`), `POST /runner/placements/{id}/status`
+(a compare-and-set on the runner's report counter: a repeat is applied as
+nothing) and `POST /runner/placements/{id}/join` (one-time by its own guard:
+a stored outcome would replay a join code). `PATCH /runner` carries a key. The key is unique per credential — a new
 session of the same credential replays the same key — and kept for
 24 hours:
 
@@ -239,6 +256,9 @@ exists and the secret verifies), the hub revokes it at once
 the value; a string that merely matches the pattern is refused with 400
 and nothing else happens, so nobody revokes a credential by pasting its
 public id with a guessed secret. The error message carries no excerpt.
+Runner credentials (`mty1.rcrd-….<secret>`, §15.1) match the same pattern
+and are revoked the same way when real; the event is then
+`runner_credential_revoked` with `reason: leaked_in_payload` (§15.10).
 
 Two ways to present it:
 
@@ -340,6 +360,7 @@ below names the scope it needs; the role grants scopes:
 | `events:post` — post messages | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `events:admin` — redact (human memberships only) | ✓ | ✓ʰ | | | |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | ✓ | ✓ʰ | | | |
+| `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | ✓ | ✓ | | | |
 
 ʰ: granted only when the membership is a human's. An agent with the
 `admin` role holds every other scope of the role: it manages the board,
@@ -370,6 +391,10 @@ Additional rules that are not scopes:
 - Scopes are evaluated from the membership at the time of the call. A
   role change takes effect on the next request; the credential does not
   carry scopes.
+- A runner is not a membership and holds no role and no scope: it may
+  call `/runner/*` and nothing else (§15.1). Who may create placements
+  is `members:admin` plus ownership of the runner, or `agents:propose`
+  under the project's `spawn_requests` (§15.6).
 - Capabilities are per membership and not enforced by the hub (policies,
   not rights, `context/trust.md`): V1 knows `tag` (may tag a release).
   They are shown in the resume packet and in the member view; the forge
@@ -383,7 +408,8 @@ holds claims renews their leases (§6.5), with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
 listens keeps showing `online` while its leases run out, so that a
 stuck holder becomes reassignable without anyone guessing. There is no
-heartbeat endpoint.
+heartbeat endpoint. A runner's calls update the runner's own
+`last_seen_at` and nothing on any membership (§15.3).
 
 ### 2.5 Forwarded headers and plain HTTP
 
@@ -400,9 +426,11 @@ setting. The bearer-over-TLS rule (§2.2), the join rate limit per source
 address (§3.1) and the login limit (§2.1) all read the address and scheme
 decided this way.
 
-Without the flag, a login, any cookie-authenticated call, and the join
-exchange (its response is a credential) over plain HTTP from a
-non-loopback address are `insecure_transport`, like a bearer credential. The cookies' `Secure` flag follows the scheme the request
+Without the flag, a login, any cookie-authenticated call, the join
+exchange and the runner pairing exchange (§15.2; both responses are a
+credential) over plain HTTP from a non-loopback address are
+`insecure_transport`, like a bearer credential. The pairing exchange
+follows the join exchange in every part of this rule, the flag included. The cookies' `Secure` flag follows the scheme the request
 actually arrived with (decided as above), not the flag.
 
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
@@ -834,7 +862,9 @@ reason — the logged exemption. There is no gate on labels.
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
-| `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it |
+| `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
+| `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent`, and a project that predates the field reads as `consent` (default pending the maintainer). Stop and restart are not proposals and are allowed under every value |
+| `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -1326,8 +1356,18 @@ by a relay.
 
 `seq` comes from one instance-wide sequence and is monotonic within a
 project; a reader sees gaps, because other projects and audience
-filtering skip numbers. `actor` is `null` for the hub itself (probe
-observations). `payload` is per kind; state and policy changes carry
+filtering skip numbers. Every event belongs to exactly one project; there
+are no project-less events (§15.10). `actor` is `null` for the hub itself
+(probe observations). `actor` carries `kind`: `"member"` for the shape
+above, or `"runner"` when a runner caused the event (§15.10):
+
+```json
+{ "kind": "runner", "id": "rnr-0002", "name": "home-laptop",
+  "credential_id": "rcrd-0002-0001", "session_id": "rses-0002-0007", "via": "signed" }
+```
+
+`kind` is added to the member shape without changing its other fields;
+a client that finds no `kind` reads it as `"member"`. `payload` is per kind; state and policy changes carry
 `old`, `new`, `reason`.
 
 ### 8.2 Kinds, audience, who reads what
@@ -1351,11 +1391,19 @@ observations). `payload` is per kind; state and policy changes carry
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
 | `event_redacted` | `role:owner`, `role:admin` | `seq`, `reason` |
 | `probe_observed` | holder of the affected card, `role:admin` | the observation |
+| `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
+| `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
+| `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
+| `runner_attached`, `runner_detached` | `runner:<id>`, `role:owner` | `runner_id`, `attachment_id`, `project` |
+| `runner_credential_revoked` | `role:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason` |
+| `join_picked_up` | the owner of the agent profile, `role:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
 `state_changed`, `policy_changed`, `absence_changed`, `rules_changed`,
-`release_ready`.
+`release_ready`. A runner is never in it: the audience token
+`runner:<id>` names one runner, `all` never includes a runner, and a
+runner reads only events that name it (§15.8).
 
 Two sets per reader, because reading and waking are different things:
 
@@ -1368,7 +1416,8 @@ Two sets per reader, because reading and waking are different things:
   membership. The admin see-all extension and a session's own echo never
   wake anyone: after `maity ask` the asker's own `request_created` is in
   its audience but does not end its next `wait`; a manager in `wait` is
-  not woken by every checkpoint.
+  not woken by every checkpoint. A session opened with `supervisor` has
+  a narrower wake-relevant set (§15.11).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -1607,6 +1656,24 @@ hub's own interval; an observation that changes a card's state emits
 | GET | `/projects/{slug}/conversations` | human / agent | 9 |
 | GET, POST | `/projects/{slug}/conversations/{agent_id}/messages` | the two parties | 9 |
 | GET | `/projects/{slug}/probe` | `project:read` | 11 |
+| GET, POST | `/runners/enrollments` | human | 15.2 |
+| DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
+| POST | `/runners/pair/{token}` (and `/r/{token}` outside the API, `not_found`) | — | 15.2 |
+| GET | `/runners` | human | 15.3 |
+| GET, PATCH, DELETE | `/runners/{id}` | owner, `members:admin` in an attached project (GET) / owner | 15.3 |
+| POST | `/runners/{id}/revoke` | owner | 15.3 |
+| GET, POST | `/projects/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
+| DELETE | `/projects/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
+| GET, POST | `/projects/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` | 15.6 |
+| GET, PATCH, DELETE | `/projects/{slug}/placements/{id}` | as the list / as `POST`, `desired` also the profile's owner | 15.6 |
+| GET | `/projects/{slug}/placements/{id}/reports` | as the list | 15.6 |
+| POST | `/projects/{slug}/placements/{id}/restart` | as `PATCH` | 15.6 |
+| POST | `/runner/hello` | runner | 15.8 |
+| GET | `/runner/events` | runner | 15.8 |
+| GET | `/runner/placements` | runner | 15.8 |
+| POST | `/runner/placements/{id}/status` | runner | 15.8 |
+| POST | `/runner/placements/{id}/join` | runner | 15.9 |
+| PATCH | `/runner` | runner | 15.8 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
@@ -1622,16 +1689,23 @@ flight, `ready` from observed state only, closed-project refusal, a
 reason on cards and claims in `freeze`/`fixes-only`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
-verified leak, `absence` written by the owner only. Everything else is a
-rule in the rules text, checked by the reviewer role.
+verified leak, `absence` written by the owner only; for runners (§15):
+signed-only runner credentials, a runner admitted to `/runner/*` and
+nothing else, attachment before placement, one active placement per
+membership and per (project, runner, clone), the runner's advertised
+harnesses and repositories, `max_placements`, consent for an agent's
+proposal under `spawn_requests: consent`, no unapproved placement shown
+to a runner, the pickup's guard and limit, closed lists of reported
+codes. Everything else is a rule in the rules text, checked by the
+reviewer role.
 
 ## 13. Mapping to the CLI
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below) |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as the humans wrote it, identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
-| `maity wait [--timeout N]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one) |
+| `maity wait [--timeout N] [--keep-cursor]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S` | `POST /tasks/{id}/report` from git facts; `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
@@ -1641,11 +1715,31 @@ rule in the rules text, checked by the reviewer role.
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
+| `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id |
+| `maity placement list` | `GET /projects/{slug}/placements` |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given) |
+| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart` |
+| `maity runners` | `GET /projects/{slug}/runners` |
+| `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner` |
+| `maity runner check` | `GET /health`; everything else it checks is local |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call |
+| `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
 Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
-`Idempotency-Key` except `POST /me/resume` and `POST /join/{token}` (§1.5).
+`Idempotency-Key` except `POST /me/resume`, `POST /join/{token}`, `POST
+/runners/pair/{token}`, and the runner's `hello`, `status` and `join`
+(§1.5).
+
+`maity placement …` and `maity runners` run in an agent's clone, signed
+with the agent's credential, for agents with `agents:propose`; they never
+create a profile. Humans start agents from the dashboard: a CLI login for
+humans does not exist (open: §12 8 of the design). `maity runner …` runs
+on the runner host as the runner's user, with the runner's credential;
+it never reads `MAITY_STATE_DIR`. The Python version the runner commands
+need is not fixed here (open: §12 7 of the design).
 
 `claim`, `unclaim`, `checkpoint`, `say`, `answer`, `release`, `ask` and
 `report` print a status line or a summary, or the hub's answer with
@@ -1695,3 +1789,688 @@ table; `docs/architecture.md` §12 points here.
 | list responses | `{items}` kept; `next_cursor` added (null in the fixtures) | pagination (§1.4) |
 | refresh | the dashboard may hold one long-poll on `GET /projects/{slug}/events` per cookie session or poll `wait=0`; `/me` for the counts | nothing in the fixtures polls yet |
 | not proposed by the dashboard, needed by it | `GET /auth/session`, `POST /auth/login`, `POST /auth/logout`; `POST /projects/{slug}/joins` (the join line a human copies); `PATCH /projects/{slug}` for state and absence; `PATCH …/members/{id}` for `paused` | the header's project state and the agents view's pause need a writer |
+
+## 15. Runners
+
+A runner is an optional service the operator installs and runs: on a
+machine, reaching ssh hosts, or in a cluster. It keeps one signed
+long-poll to the hub and starts or stops agents when the hub's desired
+state for it says so — harness X for agent N in clone Z of the project's
+repository, and stop; never an arbitrary command. What a runner may do
+at all (projects, repositories, harnesses, how many agents) is its own
+configuration, which the hub cannot widen. The hub stores desired state
+(the **placement**) and reported state and never starts, owns or reaches
+into a process; a project without a runner works exactly as before. The
+decision is `context/scope.md`, "A runner the operator runs may start
+agents; the hub still never does".
+
+### 15.1 The runner as a caller
+
+A runner is a third kind of caller next to human and agent, owned by one
+human. It is not an agent profile and not a membership: it has no role,
+no scopes, no git identity, and is in no project's member list, org
+chart or `all` audience. It serves every project it is attached to
+(§15.4) with one credential and one stream.
+
+| Rule | |
+|---|---|
+| Credential | `mty1.<credential_id>.<secret>` as in §2.2, with ids `rcrd-…`; issued by the pairing exchange (§15.2). The hub stores the verifier only. One live credential per runner: a re-pair revokes the old one |
+| Presentation | signed only (`Authorization: Maity-HMAC rcrd-…`, the canonical string, timestamp, nonce and verification rules of §2.2 unchanged). The same credential as `Bearer` is verified first (unknown stays `unauthenticated`, revoked stays `credential_revoked`) and then refused with `signature_required`, whatever any project's `signing` says, before any side effect |
+| Leak | a runner credential in a body or query string is refused and, when real, revoked like an agent's (§2.2) |
+| Routes it may call | `/runner/*` (§15.8). The unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, the join page and both exchanges) are as for anyone |
+| Routes it may not call | every `/projects/*` route answers `not_found`, as for a project the caller is not a member of, so a runner sees no card, message, request or member by construction; every other authenticated route (`/me`, `/me/resume`, `/runners/*`, `/agents/*`, `/requests`, `/auth/*`, `GET`/`POST /projects`) answers `forbidden` without `details.scope` |
+| Who may call `/runner/*` | runners only: a human or agent caller is `forbidden` there |
+| Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status` and `join` are exempt (§15.8) |
+| Presence | computed like a member's (§5.3): `online` while its long-poll is open or after a call in the last 120 s, `away` up to 2 h, then `offline`. Never stored, never an event |
+
+### 15.2 Pairing
+
+Pairing is the join mechanism for the instance instead of a project:
+token plus code, single use, an exchange that answers with the
+credential as `text/plain`, a file the CLI writes and never prints.
+
+| Endpoint | Caller | Effect |
+|---|---|---|
+| `POST /runners/enrollments` | human | `{name?, ttl_seconds?, attach?: [slug], runner_id?}`; `201` with `{id, runner_id, pair_url, code, pair_line, expires_at}` |
+| `GET /runners/enrollments` | human | the caller's own enrollments, `{id, runner_id, name, attach, created_at, expires_at, used_at, burned, revoked_at}`, nothing that opens one; newest first; paged |
+| `DELETE /runners/enrollments/{id}` | the human who created it | revokes an unused enrollment; idempotence and refusals as for a join (§3.1): `200` with `revoked_at`, a revoked one answers `200` as it is, a used, burned or expired one is `invalid_transition` |
+| `POST /runners/pair/{token}` | unauthenticated | the exchange, below |
+
+- A new runner: `name` (`[a-z0-9][a-z0-9-]{1,30}`) is required and must
+  not be the name of a runner the caller already owns (`invalid`,
+  `details.fields.name: "taken"`); the runner is created at the
+  exchange, so `runner_id` in the `201` is `null`. A re-pair:
+  `runner_id` names a runner the caller owns, `name` is omitted (the
+  runner keeps its name), and the `201` carries that `runner_id`.
+- `ttl_seconds` is 60–900, default 900.
+- `attach` lists projects to attach at the exchange; the caller needs
+  `members:admin` in each at creation (`forbidden`, `details.scope`),
+  and again at the exchange: a project where the creator no longer
+  holds it is not attached, and `Maity-Attached` below says which were.
+- `pair_url`, `code` and `pair_line` appear in the `201` only. Token
+  (128 bits) and code (60 bits, Crockford base32 in groups of four)
+  work like a join's: single use, expire with `expires_at`, the
+  enrollment is burned after three wrong codes, and the exchange is
+  rate limited per source address (10 per minute).
+
+```
+POST /api/v1/runners/enrollments
+{ "name": "home-laptop", "ttl_seconds": 900, "attach": ["maity"] }
+
+201
+{ "id": "renr-0002",
+  "runner_id": null,
+  "pair_url": "https://maity.team/r/Xb7…",
+  "code": "K3PF-9QZD-1MWA",
+  "pair_line": "maity runner pair https://maity.team/r/Xb7… --code K3PF-9QZD-1MWA",
+  "expires_at": "2026-10-22T14:15:00Z" }
+```
+
+**The exchange**, run by `maity runner pair` in a terminal on the runner
+host, never in an agent session:
+
+```
+POST /api/v1/runners/pair/Xb7…
+Content-Type: application/json
+
+{ "code": "K3PF-9QZD-1MWA", "client": "maity-cli/0.3.0" }
+
+HTTP/1.1 201 Created
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-store
+Maity-Credential-Id: rcrd-0002-0001
+Maity-Runner-Id: rnr-0002
+Maity-Attached: maity
+Maity-Hub: https://maity.team
+Maity-Signing: required
+
+mty1.rcrd-0002-0001.…
+```
+
+The body is the credential and nothing else. `Maity-Attached` lists the
+slugs attached at this exchange, comma-separated, empty when none. A
+re-pair revokes the runner's previous credential in the same
+transaction (`revoked_reason: repaired`); attachments and placements
+stay. Errors as for the join exchange (§3.3): `insecure_transport` under
+the same rule and the same `MAITY_ALLOW_PLAIN_HTTP` flag (§2.5; the code
+is not consumed), `code_invalid`, `not_found` (unknown, used, expired,
+burned or revoked token), `rate_limited`; a name taken since the
+enrollment was created is `invalid` and leaves the enrollment unused.
+There is no pairing page: whatever the token, `GET /r/{token}` answers
+`not_found` and `GET /api/v1/runners/pair/{token}` answers
+`method_not_allowed`, so a URL opened in a browser leaks nothing.
+
+### 15.3 Runners and the runner view
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
+| `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
+| `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
+| `POST /runners/{id}/revoke` | the owner | `{"reason"?}`; revokes the live credential, ends its long-poll; placements keep `desired` and show the runner as revoked; returns the runner view. Runner-side effect on its agents: (open: §12 6 of the design) — the hub stops nothing here; a human stops placements first, or uses `DELETE` |
+| `DELETE /runners/{id}` | the owner | revokes the credential, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
+
+```json
+{
+  "id": "rnr-0002", "name": "home-laptop", "owner_id": "hum-maintainer",
+  "presence": "online", "listening": true, "last_seen_at": "2026-10-22T13:59:40Z",
+  "credential_state": "active",
+  "credential": { "id": "rcrd-0002-0001", "created_at": "2026-10-22T13:31:00Z",
+                  "last_used_at": "2026-10-22T13:59:40Z", "revoked_at": null, "revoked_reason": null },
+  "version": "maity-cli/0.3.0",
+  "capabilities": {
+    "backend": "local",
+    "max_agents": 4, "running": 2,
+    "targets": [
+      { "name": "local", "max_agents": 4, "running": 2,
+        "reachable": true, "unreachable_since": null,
+        "isolation": { "kind": "shared_user", "user": "oliver", "runner_separate": false } }
+    ],
+    "harnesses": [
+      { "id": "claude-code", "version": "2.1.308", "available": true, "reason": null,
+        "modes": ["interactive", "supervised"], "default_mode": "interactive",
+        "models": ["opus", "sonnet"], "targets": ["local"], "confinement": "allowlist", "sandbox": "off" },
+      { "id": "opencode", "version": null, "available": false, "reason": "binary_not_found",
+        "modes": ["supervised"], "default_mode": "supervised",
+        "models": [], "targets": ["local"], "confinement": "allowlist", "sandbox": "off" }
+    ],
+    "projects": ["maity", "sample"],
+    "repositories": ["github.com/oliver-zehentleitner/*"],
+    "require_local_approval": false,
+    "reported_at": "2026-10-22T13:40:00Z"
+  },
+  "projects": ["maity"],
+  "created_at": "2026-10-22T13:31:00Z", "updated_at": "2026-10-22T13:31:00Z", "removed_at": null
+}
+```
+
+- `credential_state`: `active`, `revoked` (the latest credential is
+  revoked and no live one exists), `none` (never paired). `credential`
+  is the latest credential's record, never its value, and is shown to
+  the owner only.
+- `presence`, `listening`, `last_seen_at` are computed (§15.1).
+  `version` is the `client` of the last `hello`.
+- `capabilities` is what the runner last advertised (`hello`, `PATCH
+  /runner`, §15.8). It is shown for choosing and checked when a
+  placement is created; it is never a grant — the runner's
+  configuration decides and the runner checks again. Every string in it
+  is printable ASCII of at most 200 characters and rendered as text.
+- `targets[].isolation.kind`: `shared_user` (every agent on the target
+  runs as one OS user; `runner_separate` says whether the runner runs
+  as another user), `own_user` (one OS user per agent), or `pod`. Which
+  layout a runner uses on the operator's own machine is the runner's
+  configuration (open: §12 1 of the design); the contract carries
+  whichever it advertises.
+- `harnesses[].id` is one of `claude-code`, `codex`, `opencode`, `pi`,
+  `hermes`, `kimi`, `cline`, `omp`, `stub`. `confinement`: `allowlist`
+  (the harness's own command allowlist), `pod` (no allowlist; the pod is
+  the only boundary) or `none` (`stub` only). Whether the harnesses
+  without an allowlist (`pi`, `hermes`, `kimi`, `cline`, `omp`) are
+  offered at all, and where, is the runner's decision under (open: §12 4
+  of the design); the hub accepts any of them that a runner advertises.
+  `sandbox`: `on`, `off`, `n/a` — the harness's own OS sandbox.
+  `available: false` comes with `reason` (`binary_not_found`,
+  `version_failed`).
+- `harnesses[].default_mode` is the mode a placement gets when it names
+  none. Which mode each adapter defaults to is the runner's (open: §12 5
+  of the design).
+- `models` are names the runner offers; how the agents get model access
+  (a login on the host, keys, a cluster Secret) is the runner's
+  configuration and never reaches the hub (open: §12 2 of the design).
+- `projects` (top level) are the projects the runner is attached to,
+  limited to those the caller is a member of.
+
+Instance-level actions — creating and using an enrollment, pairing,
+re-pairing, renaming, revoking, removing — are recorded on the rows
+themselves (`created_at`, `used_at`, `revoked_at`, `revoked_by`,
+`revoked_reason`, `updated_at`, `removed_at`), not as events; only their
+effects on attached projects are events (§15.10).
+
+### 15.4 Attaching to projects
+
+A runner does nothing in a project until it is attached. An attachment
+is a row with its own id:
+
+```json
+{ "id": "ratt-0004", "runner": { "…runner view…": "" }, "project": "maity",
+  "attached_by": "hum-maintainer", "attached_at": "2026-10-22T13:31:05Z", "detached_at": null,
+  "active_placements": 2 }
+```
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{slug}/runners` | `project:read` for humans; for agents `agents:propose`, every other agent `forbidden` | `{items}`: the active attachments, ordered by runner name. `capabilities` in the runner view only for `members:admin` and `agents:propose`; `credential` only for the runner's owner |
+| `POST /projects/{slug}/runners` | `members:admin`, and the caller owns the runner | `{runner_id}`; `201` with the attachment; emits `runner_attached`. A runner already attached is `already_attached` (409, `details.attachment`) under a new idempotency key; a replay with the same key answers `201` as usual |
+| `DELETE /projects/{slug}/runners/{runner_id}` | `members:admin`, or the runner's owner | detaches: `detached_at` set, `runner_detached` emitted, and every active placement of that runner in the project is closed the uniform way (`detached`, §15.5); `200` with the attachment; a second `DELETE` answers `200` as it is |
+
+At most one active attachment per (project, runner). After a detach, new
+placements on that runner are `runner_not_attached`, and the runner
+keeps reading the project's closing placements (§15.8) until each is
+closed.
+
+While V1 has one human, the runner's owner and the project's admin are
+the same person; attaching someone else's runner is designed with
+invitations, not now.
+
+### 15.5 Placements
+
+A placement says that agent N should run on runner R with harness X in
+clone Z. It is the only thing the hub asks of a runner.
+
+```json
+{
+  "id": "plc-0003", "project": "maity",
+  "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B" },
+  "runner": { "id": "rnr-0002", "name": "home-laptop" },
+  "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
+  "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120,
+  "approval": { "status": "approved", "request_id": null, "pending_change": null },
+  "credential_id": "crd-b-0007",
+  "reported_current": true,
+  "active": true, "closed_at": null, "closed_reason": null,
+  "created_by": "hum-maintainer", "proposed_by": null,
+  "created_at": "2026-10-22T13:39:02Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-22T13:58:10Z",
+  "reported": {
+    "state": "exited", "reason": null, "detail": null, "exit_code": 1,
+    "observed_generation": 4, "restarts": 2, "retry_at": "2026-10-22T14:02:40Z",
+    "crash_count": 2, "crash_window_seconds": 1800, "deadline_at": null,
+    "since": "2026-10-22T14:02:00Z", "target": "local", "reported_at": "2026-10-22T14:02:01Z"
+  },
+  "session_hint": "tmux -L maity attach -t maity-maity-agent-b",
+  "logs_hint": "maity runner logs plc-0003"
+}
+```
+
+| Field | Values / meaning |
+|---|---|
+| `agent` | `{id, handle, display_name}` of the membership's profile. For a placement that creates a profile, `id` is `null` until the first pickup creates it (§15.9) |
+| `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
+| `target` | `null` (the runner chooses) or a target name the runner advertised |
+| `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
+| `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists, which is also when the credential is carried over |
+| `desired` | `running`, `stopped` |
+| `generation` | starts at 1; incremented on every change of the spec, every restart and every `rejoin`; the runner reports which generation it acted on |
+| `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked: the runner removes the old credential file and picks up a new join |
+| `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
+| `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
+| `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
+| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `runner_removed` |
+| `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
+| `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
+| `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
+| `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
+| `logs_hint` | set by the hub: `maity runner logs <placement id>` |
+
+**Who sees what.**
+
+| Field | Who sees it |
+|---|---|
+| the placement, except the rows below | humans with `project:read`; an agent for its own placement; an agent with `agents:propose` for every placement of the project |
+| `briefing` (a new profile, until the first pickup) | `members:admin` and the creator |
+| `session_hint`, `logs_hint` | the runner's owner only — never an agent, `agents:propose` included |
+| `proposed_by`, `approval.request_id` | everyone who sees the placement |
+
+**Server rules.**
+
+- **One placement per membership.** At most one active placement per
+  membership, so "where does agent-b run" has one answer. A second is
+  `placement_exists`. A placement that creates a profile counts as the
+  membership it will create, keyed (project, new handle) while it is
+  active: at creation the handle is checked against the existing
+  profiles (`invalid`, `details.fields.handle: "taken"`, as at a join,
+  §3.1, §6.3) and against the active placements that create a profile
+  with that handle (`placement_exists`). This is a placement rule: the
+  hub still allows two clones of one agent with two credentials when
+  they are joined by hand (§10).
+- **One placement per clone.** At most one active placement per
+  (project, runner, clone), whatever the target: on one runner a clone
+  name in a project is one workspace and one identity. A second is
+  `placement_exists`.
+- A closed placement counts toward neither rule nor `max_placements`;
+  neither does a refused one, which is closed.
+- **Carried-over credential.** A new placement with the same
+  (membership, runner, clone) as the latest closed one, whose credential
+  is not revoked, inherits its `credential_id`; the runner then expects
+  the file and does not join again.
+- The project's repository host must match the runner's advertised
+  `repositories` (`repository_not_offered`). The runner checks again.
+- In a project that is `accepted` or `archived`, `desired: running` is
+  `project_closed`. In `freeze` and `fixes-only` creating a placement
+  needs a `reason` (§6.1).
+- **Revocation stops the placement.** Revoking the agent credential
+  named by an active placement's `credential_id`, by any path (§10, the
+  leak path of §2.2, member removal), sets `desired: stopped` in the
+  same transaction; it does not close the placement.
+
+**Closing.** A placement closes in one of two ways, by cause:
+
+| Cause | `closed_reason` | How it closes |
+|---|---|---|
+| `DELETE` of the placement | `removed` | uniform: `desired: stopped`; closed by the runner's next terminal report for it — `stopped`, `failed`, or `exited` with `retry_at: null` — or at once if the runner never acted on it (no report yet) or has no live credential (nobody can report) |
+| detaching the runner from the project | `detached` | uniform, as above |
+| the project moves to `archived` | `project_archived` | uniform, as above |
+| consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
+| consent request withdrawn | `withdrawn` | at once, for the same reason |
+| the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
+| the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
+
+A placement closing the uniform way is still active and reads as
+`desired: stopped` until a terminal report closes it: under `desired:
+stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
+`DELETE` of a placement that is already closing closes it at
+once (`removed`): the escape when a runner never reports. `DELETE` of a
+placement whose consent request is open closes it at once (`removed`)
+and withdraws the request. Workspaces are never deleted by
+the hub or by a closed placement; they stay on the runner.
+
+### 15.6 Placement endpoints, proposals and consent
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{slug}/placements` | `project:read`; agents: their own, all with `agents:propose` | `{items}`, active ones, ordered by agent handle; `closed=true` adds those closed in the last 30 days |
+| `POST /projects/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests` | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent` |
+| `GET /projects/{slug}/placements/{id}` | as the list | |
+| `GET /projects/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
+| `PATCH /projects/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec |
+| `POST /projects/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked |
+| `DELETE /projects/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
+
+```
+POST /api/v1/projects/maity/placements
+{
+  "agent": { "handle": "agent-f", "display_name": "Agent F" },
+  "role": "member", "reports_to": "agt-a", "areas": ["web/"], "capabilities": [],
+  "briefing": "You own the dashboard's Runners view: …",
+  "runner": "rnr-0002", "target": null,
+  "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "workspace": { "clone": "agent-f", "branch": "main" },
+  "desired": "running", "stop_grace_seconds": 120,
+  "reason": "second pair of hands on web/ for the runner work"
+}
+```
+
+- `agent` is `{"id"}` of an active member of the project, or — humans
+  only — `{"handle", "display_name"}` for a new profile, with `role`,
+  `reports_to`, `areas`, `capabilities` and `briefing` as in a join
+  (§3.1): validated at creation, stored, applied at the first pickup
+  (§15.9). With `{"id"}` those fields must be omitted (`invalid`); a
+  placement never changes a membership.
+- `desired` defaults to `running`. `reason` is required for a proposal
+  and in `freeze`/`fixes-only`.
+- Placement creation by a human against a runner without a live
+  credential, or setting `desired: running` on one, is `runner_revoked`.
+- Beyond `max_placements` active placements: `placement_quota`.
+
+**Who may do what.**
+
+| Caller | May |
+|---|---|
+| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| the owner of the agent profile | `desired` and restart on that profile's placement |
+| an agent with `agents:propose` | propose a placement for an **existing** membership (never a new profile, never a role, area or briefing), propose a change of spec; stop, start, restart and delete existing placements of the project |
+| everyone else | nothing: `forbidden` |
+
+**Proposals.** What an agent's creation or change of spec does follows
+`policy.spawn_requests` (§6.1):
+
+- `off`: `forbidden`.
+- `consent`: a creation makes the placement with `approval.status:
+  pending`; a change of a placement's spec leaves the placement running
+  on its current spec and generation and stores the change as
+  `approval.pending_change`. Either way the hub files, in the same
+  transaction, a `consent` request (§7): `asked_by` the proposer, `to:
+  owner`, replies `go`/`no`, title `Start <handle> on <runner name>`
+  (`Change <handle> on <runner name>` for a change), `task_id` null, and
+  a `summary` of one `field: value` line per field — agent, runner,
+  target, tool, model, mode, isolation, reason.
+- `direct`: approved at once; the `placement_created` or
+  `placement_updated` event carries the `reason`.
+
+Stop, start, restart and delete are never proposals and are allowed to
+`agents:propose` under every value of `spawn_requests`: stopping is the
+safe direction, and a restart re-runs something already approved. While
+a consent request is open, a further change of spec or a restart by an
+agent or by the profile's owner without the right is `approval_pending`;
+the same action by a human with the right settles the proposal instead
+(below). `desired: stopped` and `DELETE` are never refused.
+
+**Settling.** Answering or withdrawing a request that carries a
+placement, or a human with `members:admin` who owns the runner acting on
+it, settles it in the same transaction:
+
+| Outcome | Creation | Change of spec |
+|---|---|---|
+| `go` | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
+| `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
+| withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
+| the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
+
+Who may answer is the rule for every consent request (§2.3): holders of
+`requests:answer` — the owner, `admin` and `proxy` roles, agents
+included — never the proposer (`self_answer`) (default pending the
+maintainer; open: §12 3 of the design). Requests do not expire; an
+unanswered proposal stays pending.
+
+### 15.7 Reported state
+
+The runner reports what is actually there, one record per placement and
+only when something changes. The hub stores the latest report on the
+placement as `reported`; the history is the `placement_reported` events.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
+| `reason` | `null` or a code from the table below | |
+| `detail` | `null` or a code from the detail list below | never free text |
+| `exit_code` | integer or `null` | the harness process's own code |
+| `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
+| `restarts` | integer | restarts in this generation |
+| `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
+| `crash_count`, `crash_window_seconds` | integers or `null` | quick exits within the window, for `crash_loop` and while counting toward it |
+| `deadline_at` | timestamp or `null` | with `stopping`: when the process is ended if it has not exited |
+| `since` | timestamp | when `state` was entered; clamped by the hub into [the previous `reported_at`, hub time] |
+| `target` | name | where it actually runs |
+| `session_hint` | string ≤ 200, printable ASCII, or `null` | stored on the placement, shown to the runner's owner only (§15.5) |
+| `seq` | integer, per placement, increasing | the runner's report counter (§15.8) |
+| `reported_at` | timestamp | hub time of the report; set by the hub |
+
+| `reason` | `state` | When |
+|---|---|---|
+| `capacity` | `pending` | the runner or the target is at its agent limit; it starts the agent when a slot frees |
+| `awaiting_operator` | `pending` | the runner holds new placements until the operator approves them on the runner host |
+| `harness_refused` | `failed` | harness, mode or model not allowed by the runner's configuration |
+| `repository_refused` | `failed` | the project's repository is not in the runner's allowlist |
+| `project_refused` | `failed` | the project is not in the runner's allowlist |
+| `harness_missing` | `failed` | the binary or image is not there or does not run |
+| `clone_failed` | `failed` | `git clone` failed; `exit_code` from git |
+| `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
+| `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code |
+| `crash_loop` | `failed` | the restart cap was reached |
+| `quota` | `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it |
+| `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
+| `oom_killed`, `evicted`, `image_pull` | `failed`, `exited` | Kubernetes only |
+| `stopped_by_hub` | `stopped` | `desired: stopped` was carried out |
+| `adopted` | `running` | the runner found the session after its own restart and took it over |
+| `orphaned` | `stopped` | the runner found a session it has no placement for and ended it |
+
+| `detail` | With |
+|---|---|
+| `binary_not_found`, `version_failed` | `harness_missing` |
+| `credential_missing` | `join_failed`: a credential was expected (`credential_id` set) and the file is not there |
+| `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `pickup_not_allowed`, `pickup_used`, `network` | `join_failed` |
+| `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
+| `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
+| `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
+| `hot_loop` | `crash_loop` in `supervised` mode |
+| `mode_unsupported`, `model_unsupported` | `harness_refused` |
+
+The lists are closed; a code outside them, or a `reason`/`state` pair
+not in the table, is `invalid`. Adding a code is a contract change.
+
+Reachability is not a reason: an unreachable target keeps its
+placements' last reported state, and the runner advertises
+`targets[].reachable` and `unreachable_since` instead. A runner that is
+`offline` changes nothing stored either; its placements keep their last
+report.
+
+### 15.8 Runner endpoints
+
+Runner credential, signed (§15.1).
+
+| Method | Path | Body / query | Response |
+|---|---|---|---|
+| POST | `/runner/hello` | `{client, capabilities, actual: [{placement_id, generation, state, target}]}` | `200`, the runner packet below. Opens a runner session and ends the previous one. No `Idempotency-Key`: like `resume`, a repeat opens a new session |
+| GET | `/runner/events` | `after`, `wait` (0–55), `limit` | `{items, cursor, superseded, server_time}` as in §8.3, over every project the runner reads |
+| GET | `/runner/placements` | — | `{items}`: every active, approved placement of this runner, the full desired spec as below |
+| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
+| POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
+| PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
+
+```json
+{
+  "server_time": "2026-10-22T13:40:00Z",
+  "runner": { "id": "rnr-0002", "name": "home-laptop", "session_id": "rses-0002-0007" },
+  "projects": [ { "slug": "maity", "name": "Maity",
+                  "repository": "https://github.com/oliver-zehentleitner/maity" } ],
+  "placements": [ { "…placement as the runner reads it…": "" } ],
+  "cursor": 5120
+}
+```
+
+A placement as the runner reads it:
+
+```json
+{
+  "id": "plc-0003", "project": "maity", "generation": 4, "desired": "running",
+  "agent": { "id": "agt-b", "handle": "agent-b", "member": true, "credential_expected": true },
+  "harness": "claude-code", "mode": "interactive", "model": "opus",
+  "target": null,
+  "workspace": { "clone": "agent-b", "branch": null,
+                 "repository": "https://github.com/oliver-zehentleitner/maity" },
+  "rejoin": false,
+  "stop_grace_seconds": 120,
+  "seq": 41
+}
+```
+
+- `agent.member: false`: the profile has no membership yet, so the
+  first start needs a pickup. `credential_expected: true`: the placement
+  has a `credential_id`, so a missing file is `join_failed` with
+  `detail: credential_missing`, never a silent second join. `seq` is
+  the highest report counter the hub has stored. Never in this shape:
+  `briefing`, the join URL or code, `approval`, `created_by`.
+- **What a runner reads.** Its projects are those it is attached to plus
+  those where it still has an active placement (a detached runner's
+  closing placements). `projects` in the packet, `/runner/placements`
+  and `/runner/events` all use that set. A placement or project outside
+  it is `not_found`.
+- **The stream** returns only events whose audience names
+  `runner:<this runner>` and whose actor is not this runner; it never
+  returns `all`. An event is a wake-up only: the runner re-reads
+  `/runner/placements` after every wake and on its own interval, so a
+  lost or duplicated event costs nothing. `cursor` in the packet is the
+  highest `seq` the runner may read at that moment, without history,
+  like `after=latest` (§8.3). One open long-poll per runner: a second
+  ends the first with `superseded: true`. While it is open the runner is
+  `listening`.
+- **Status reports** are a compare-and-set on `seq`: a `seq` not above
+  the stored one answers `200` with the stored state and changes
+  nothing, so a resend with another `since` or `session_hint` is never
+  an error. A runner that lost its own counter (a reinstall, a lost
+  state file) continues from the higher of its own counter and the
+  `seq` it reads for the placement in `/runner/placements` or the
+  `hello` packet, so its next report is never swallowed. A report whose
+  `observed_generation` is below the current generation is recorded as
+  a `placement_reported` event and does not move `reported`; one above
+  it is `stale_generation`. A terminal report (`stopped`, `failed`, or
+  `exited` with `retry_at: null`) on a placement that is closing closes
+  it (§15.5). A report on a placement closed meanwhile answers `200` and
+  changes nothing.
+- `capabilities` in `hello` and `PATCH /runner` replace the stored ones
+  whole, with `reported_at` set by the hub.
+
+Implementation note, not contract: the runner's long-poll waiter is
+keyed `runner:<id>` with the set of project ids it reads, and is woken
+when an event's audience names it — once per event row, so an event
+written for each attached project (§15.10) wakes it once per row. Like
+the agent long-poll, it depends on the one-replica rule (§8.3).
+
+### 15.9 The join pickup
+
+```
+POST /api/v1/runner/placements/plc-0003/join
+{ "observed_generation": 4 }
+
+201
+{ "join_url": "https://maity.team/j/9fK2…", "code": "Q7MD-3XPL-8ZWE",
+  "expires_at": "2026-10-22T14:05:00Z", "credential_will_bind": "agt-b", "pickup": 1 }
+```
+
+- The hub creates a join for the placement's agent, as §3.1 would: for
+  a new profile with the stored join fields (the exchange creates the
+  profile and the membership), for an existing membership a new
+  credential. `ttl_seconds` is 300. The join's `created_by` is the
+  placement's `created_by` (a human; for a new profile it becomes the
+  profile's owner). The join records `placement_id` and `runner_id`.
+  `credential_will_bind` is the member id, or for a new profile the
+  handle.
+- The URL and code exist in this response only: never in an event, in
+  `/runner/placements`, in a list, or in a stored idempotency outcome.
+- Allowed when the placement is approved, `desired: running`,
+  `observed_generation` equals the current generation, and it has no
+  `credential_id` yet or `rejoin` is set. Otherwise
+  `pickup_not_allowed` with `details.why`: `not_running`,
+  `stale_generation`, `credential_issued`.
+- **A lost response is recoverable.** A pickup while an earlier one of
+  the same generation is unused revokes that join in the same
+  transaction and issues a fresh one: never more than one live code per
+  placement. Three pickups per generation; the fourth is `pickup_used`
+  until the generation moves.
+- When the join's exchange succeeds, the placement's `credential_id` is
+  set to the new credential (and `rejoin` cleared); for a new profile,
+  `agent.id` is filled.
+- Emits `join_picked_up` only. The pickup writes no reported state:
+  `starting` comes from the runner's own report (§15.7).
+- The exchange is the ordinary `POST /join/{token}` (§3.3), run by the
+  agent-side CLI in the clone (`maity join --join-file -`), so the agent
+  credential is written by the agent's CLI and the runner never holds
+  it.
+
+### 15.10 Events and audit
+
+The kinds are in §8.2. Rules that apply to all of them:
+
+- **Every event belongs to one project.** An event caused by a runner
+  that concerns several projects (`runner_credential_revoked`,
+  `runner_detached` on `DELETE /runners`) is written once per project
+  the runner is attached to, one row each. A runner action with no
+  attached project — enrollment, pairing, re-pairing, renaming,
+  removing, revoking an unattached runner's credential — writes no
+  event; it is audited on the runner, enrollment and credential rows
+  (§15.3).
+- **A runner can be an actor.** Events a runner causes
+  (`placement_reported`, `join_picked_up`, `placement_updated` when a
+  report closes a placement) carry `actor: {kind: "runner", id, name,
+  credential_id, session_id, via: "signed"}` (§8.1). Events a human or
+  agent causes carry the member actor as before.
+- **`runner:<id>`** is an audience token like `member:<id>`. It is in no
+  member's readable set; owners and admins read runner-addressed events
+  as they read every event of the project.
+- **Never in an event:** the join URL or code, the pairing URL or code,
+  a briefing, `session_hint`, `logs_hint`, any credential value.
+- `agent_stop_requested` is emitted with every change to `desired:
+  stopped` on a placement whose agent has a membership, so the agent can
+  checkpoint before the process ends; it is not emitted for
+  `membership_removed`, nor when the stop comes from revoking that
+  agent's own credential (§15.5) — in neither case could the agent read
+  it.
+- `runner_credential_revoked.reason`: the revoker's `reason`, or
+  `leaked_in_payload`, `repaired`, `runner_removed`.
+
+### 15.11 Changes to existing endpoints
+
+- **Resume** (§5.2) accepts `"supervisor": "maity-runner/<version>"`.
+  With it, `hints.duty` is `"supervised"`, `hints.wait_timeout` is
+  absent, and the generated rules tell the agent not to start `maity
+  wait` and to end its turn after a checkpoint; without it `hints.duty`
+  is `"self"`. The packet gains `membership.placement`: `{id,
+  runner_name, harness, mode, stop_grace_seconds}` or `null`.
+- **Supervised wake set** (§8.2). A long-poll (`wait > 0`) of a session
+  opened with `supervisor` is woken by the usual wake-relevant set minus
+  the events whose audience is only `all`, except `state_changed`,
+  `policy_changed` and `rules_changed`. The others stay readable and
+  appear in the next resume.
+- **Member view** (§6.2) gains `placement`: `{id, state, desired,
+  runner_name}` or `null`.
+- **Request view** (§7) gains `placement`: `{id, agent, runner_name,
+  harness, model, mode, target, isolation}` inline, or `null`. Only the
+  hub sets it; `POST …/requests` does not accept it.
+- **Policy** (§6.1) gains `spawn_requests` and `max_placements`.
+- **Scopes** (§2.3) gain `agents:propose`; no role is added.
+- **Project state.** Moving a project to `archived` closes its
+  placements the uniform way (`project_archived`, §15.5).
+- **Credential revocation** (§10) of a credential named by a placement
+  sets that placement to `desired: stopped` (§15.5).
+- **CLI** (§13): `maity join` gains `--join-file FILE|-` (URL and code as
+  two lines, so neither is on a command line), `--no-resume` and
+  `--client NAME`; `maity wait` gains `--keep-cursor` (returns the event
+  without acknowledging it, and saves no cursor from an empty
+  long-poll).
+
+### 15.12 Open for the maintainer
+
+The places above that depend on a question in §12 of the runner design;
+each is written so that either answer fits.
+
+| Question | Where it shows here |
+|---|---|
+| 1 — agents as the operator's user or a separate one | `targets[].isolation` (§15.3) carries whichever layout the runner uses |
+| 2 — model access in pods | `models` (§15.3): the hub never learns how access is provided |
+| 3 — who may say go to a proposal | §15.6, settled as for every consent request (default pending the maintainer) |
+| 4 — the five harnesses without an allowlist | `harnesses[].id`, `confinement` (§15.3): the hub accepts what a runner advertises |
+| 5 — default modes | `harnesses[].default_mode` (§15.3) |
+| 6 — what revoking a runner's key does to its agents | `POST /runners/{id}/revoke` (§15.3): the hub stops nothing |
+| 7 — the CLI's minimum Python version | `maity runner …` (§13) |
+| 8 — a CLI login for humans | `maity placement …` (§13) is signed with an agent credential; humans use the dashboard |
