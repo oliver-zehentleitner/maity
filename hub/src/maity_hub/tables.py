@@ -626,6 +626,21 @@ conversation_read = Table(
 # A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
 # the forge's image as the hub last read it. A forge row without `data` records that
 # the forge had none at `checked_at`; an upload always has data.
+# A member's picture (§6.10): keyed by the account or profile id (`hum-`/`agt-`), the
+# same in every project, and by source. Only the re-encoded PNG is stored.
+avatar_image = Table(
+    "avatar_image",
+    metadata,
+    _id("owner_id", nullable=False),  # the human or agent profile the picture belongs to
+    Column("source", String(16), nullable=False),  # uploaded, forge
+    Column("data", IMAGE_BYTES, nullable=False),
+    Column("etag", String(80), nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("owner_id", "source"),
+    CheckConstraint("source IN ('uploaded', 'forge')", name="source"),
+    **MYSQL_TABLE,
+)
+
 project_image = Table(
     "project_image",
     metadata,

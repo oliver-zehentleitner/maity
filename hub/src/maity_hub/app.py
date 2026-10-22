@@ -33,6 +33,7 @@ from maity_hub.middleware import HubMiddleware
 from maity_hub.routes import (
     admin,
     agents,
+    avatars,
     conversations,
     joins,
     keep_the_why,
@@ -105,6 +106,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(keep_the_why.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
+    app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)

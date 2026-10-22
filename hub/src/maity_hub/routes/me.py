@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, images
+from maity_hub import avatars, clock, images
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth.caller import Caller
@@ -25,7 +25,8 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
             human = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
             body: dict[str, Any] = {
                 "member": {
-                    **human_member(human),
+                    **human_member(human, avatar_url=None),
+                    **avatars.state(conn, human.id),
                     "instance_admin": is_instance_admin(conn, human.id),
                 },
                 "projects": _human_projects(conn, human.id),
@@ -35,7 +36,7 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                 select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
             ).one()
             body = {
-                "member": agent_member(agent),
+                "member": {**agent_member(agent, avatar_url=None), **avatars.state(conn, agent.id)},
                 "projects": _agent_project(conn, caller),
             }
     body["server_time"] = clock.rfc3339(clock.now())

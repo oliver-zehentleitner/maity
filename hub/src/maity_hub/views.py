@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import clock, forge, policy
+from maity_hub import avatars, clock, forge, policy
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -20,16 +20,24 @@ def ts(moment: datetime | None) -> str | None:
     return clock.rfc3339(moment) if moment is not None else None
 
 
-def human_member(row: Any) -> dict[str, Any]:
-    return {"id": row.id, "kind": "human", "handle": row.handle, "display_name": row.display_name}
+def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
+    """`avatar_url` is the caller's to look up (`avatars.urls`), so a list costs one query."""
+    return {
+        "id": row.id,
+        "kind": "human",
+        "handle": row.handle,
+        "display_name": row.display_name,
+        "avatar_url": avatar_url,
+    }
 
 
-def agent_member(row: Any) -> dict[str, Any]:
+def agent_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     return {
         "id": row.id,
         "kind": "agent",
         "handle": row.handle,
         "display_name": row.display_name,
+        "avatar_url": avatar_url,
         "owner_id": row.owner_id,
     }
 
@@ -262,6 +270,7 @@ def member_views(
         else {}
     )
     principals = principal_ids(conn, (r.reports_to for r in rows))
+    pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -273,9 +282,9 @@ def member_views(
     views = []
     for row in rows:
         head = (
-            agent_member(agents[row.agent_id])
+            agent_member(agents[row.agent_id], avatar_url=pictures[row.agent_id])
             if row.agent_id
-            else human_member(humans[row.human_id])
+            else human_member(humans[row.human_id], avatar_url=pictures[row.human_id])
         )
         view: dict[str, Any] = {
             **head,
@@ -342,8 +351,14 @@ def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any
     owner_ids = {a.owner_id for a in agents.values()}
     if not owner_ids:
         return {}
+    pictures = avatars.urls(conn, owner_ids)
     humans = {
-        h.id: {"id": h.id, "handle": h.handle, "display_name": h.display_name}
+        h.id: {
+            "id": h.id,
+            "handle": h.handle,
+            "display_name": h.display_name,
+            "avatar_url": pictures[h.id],
+        }
         for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
     }
     return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
@@ -393,6 +408,7 @@ def agent_view(conn: Connection, row: Any) -> dict[str, Any]:
         "id": row.id,
         "handle": row.handle,
         "display_name": row.display_name,
+        **avatars.state(conn, row.id),  # avatar_url and avatar_source: only its owner reads this
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "memberships": [{"project": m.slug, "role": m.role} for m in memberships],

@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, events
+from maity_hub import avatars, clock, events
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -130,11 +130,17 @@ def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
             .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
             .where(t.membership.c.id == placement.membership_id)
         ).one()
-        return {"id": found.id, "handle": found.handle, "display_name": found.display_name}
-    return {
+        return {
+            "id": found.id,
+            "handle": found.handle,
+            "display_name": found.display_name,
+            "avatar_url": avatars.urls(conn, [found.id])[found.id],
+        }
+    return {  # a profile still to be created has no picture yet (§6.10)
         "id": None,
         "handle": placement.new_handle,
         "display_name": (placement.new_profile or {}).get("display_name"),
+        "avatar_url": None,
     }
 
 

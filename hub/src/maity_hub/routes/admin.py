@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
+from maity_hub import avatars
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.deps import HumanCaller, engine_of
@@ -66,11 +67,13 @@ def list_users(
             .where(t.agent_profile.c.owner_id.in_(ids))
             .group_by(t.agent_profile.c.owner_id),
         )
+        pictures = avatars.urls(conn, ids)
         items = [
             {
                 "id": r.id,
                 "handle": r.handle,
                 "display_name": r.display_name,
+                "avatar_url": pictures[r.id],
                 "instance_admin": r.id == admin,
                 "disabled": False,
                 "created_at": ts(r.created_at),

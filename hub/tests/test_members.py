@@ -39,6 +39,7 @@ def test_the_member_view_has_the_contract_shape(
         "kind",
         "handle",
         "display_name",
+        "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
         "role",
         "reports_to",
@@ -217,6 +218,8 @@ def test_profiles_belong_to_their_human(
         "id",
         "handle",
         "display_name",
+        "avatar_url",
+        "avatar_source",  # the profile's owner reads it (§6.10)
         "owner_id",
         "git_identity",
         "memberships",

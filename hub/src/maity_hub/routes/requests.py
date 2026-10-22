@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, idempotency, inbox, mentions, placements
+from maity_hub import avatars, clock, idempotency, inbox, mentions, placements
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -85,12 +85,22 @@ def _person(conn: Connection, membership_id: int | None, session_id: str | None)
         name = conn.execute(
             select(t.human.c.display_name).where(t.human.c.id == row.human_id)
         ).scalar()
+    member_id = row.agent_id or row.human_id
     return {
-        "member_id": row.agent_id or row.human_id,
+        "member_id": member_id,
         "display_name": name,
+        "avatar_url": avatars.urls(conn, [member_id])[member_id],
         "role": row.role,
         "session_id": session_id,
     }
+
+
+def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The stored `needs_in_session` with the member's current `avatar_url` (§6.10)."""
+    if needs is None:
+        return None
+    member_id = needs["member_id"]
+    return {**needs, "avatar_url": avatars.urls(conn, [member_id])[member_id]}
 
 
 def request_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -117,7 +127,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "task_id": row.task_id,
         "task": task,
         "while_open": row.while_open,
-        "needs_in_session": row.needs_in_session,
+        "needs_in_session": _with_avatar(conn, row.needs_in_session),
         "ktw_ref": row.ktw_ref,
         "status": row.status,
         "answer": row.answer,

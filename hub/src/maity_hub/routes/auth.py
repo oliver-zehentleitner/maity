@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock
+from maity_hub import avatars, clock
 from maity_hub import tables as t
 from maity_hub.auth import passwords
 from maity_hub.auth.caller import (
@@ -74,7 +74,7 @@ def _clear_cookies(response: JSONResponse, request: Request) -> None:
 
 def _member(conn: Connection, human_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
-    return human_member(row)
+    return human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id])
 
 
 @router.post("/login")
@@ -115,7 +115,11 @@ async def login(body: Login, request: Request) -> JSONResponse:
                 .where(t.human.c.id == row.id)
                 .values(last_seen_at=now, last_login_at=now)
             )
-            return human_member(row), session_id, csrf
+            return (
+                human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id]),
+                session_id,
+                csrf,
+            )
 
     member, session_id, csrf = await run_in_threadpool(run)
     response = JSONResponse({"member": member})
@@ -170,7 +174,8 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             )
             .values(ended_at=clock.now())
         )
-        return JSONResponse({"member": human_member(row)})
+        url = avatars.urls(conn, [row.id])[row.id]
+        return JSONResponse({"member": human_member(row, avatar_url=url)})
 
 
 @router.get("/session")
