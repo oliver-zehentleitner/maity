@@ -821,6 +821,35 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     run.shot(page, "release-open")
     no_problems(run, "release open")
 
+    run.step("release: the owner edits it on the board — a checklist item, its tick, a typed PR")
+    owner_id = json.loads(run.maity(alpha, "resume", "--json"))["me"]["owner"]["id"]
+    card.get_by_role("button", name="Edit checklist", exact=True).click()
+    form = card.locator("form.rows-form")
+    form.get_by_role("button", name="Add", exact=True).click()
+    form.locator("input.item-text").last.fill("e2e: announce it")
+    form.get_by_role("button", name="Save", exact=True).click()
+    item = card.locator("ul.checklist li", has_text="e2e: announce it")
+    expect(item).to_be_visible()
+    item.locator("input[type=checkbox]").check()
+    expect(item).to_contain_text("e2e: announce it · Owner")
+    card.get_by_role("button", name="Typed pull requests", exact=True).click()
+    form = card.locator("form.rows-form")
+    form.get_by_role("button", name="Add", exact=True).click()
+    form.locator("input.pr-number").last.fill("8")
+    form.locator("select.pr-claim").last.select_option("open")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(card.locator("tr", has_text="#8")).to_contain_text("unverified · typed as open")
+    expect(card.locator("tr", has_text="#7")).to_contain_text("unverified · typed as merged")
+    view = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]
+    ticked = next(i for i in view["checklist"] if i["text"] == "e2e: announce it")
+    assert ticked["done"] and ticked["by"] == owner_id, view["checklist"]
+    assert view["pull_requests_typed"] == [
+        {"number": 7, "state": "merged"},
+        {"number": 8, "state": "open"},
+    ], view["pull_requests_typed"]
+    run.shot(page, "release-edited")
+    no_problems(run, "release edited")
+
     run.step("release: cancelled, it is shown as the record frozen at its close")
     run.api(rev, "PATCH", f"/projects/e2e-alpha/tasks/{rel['id']}", {"status": "cancelled"})
     page.reload()
@@ -831,6 +860,19 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     expect(card.locator(".groups")).not_to_contain_text(
         "(in progress)"
     )  # no live status in a record
+    # A closed release offers no editing, and the hub refuses one anyway.
+    expect(card.get_by_role("button", name="Edit checklist", exact=True)).to_have_count(0)
+    expect(card.locator("input[type=checkbox]")).to_have_count(0)
+    out = run.maity_refused(
+        rev,
+        "api",
+        "--json",
+        "-",
+        "PATCH",
+        f"/projects/e2e-alpha/tasks/{rel['id']}",
+        stdin=json.dumps({"release": {"pull_requests_typed": [{"number": 9}]}}),
+    )
+    assert "invalid_transition" in out, out
     run.shot(page, "release-cancelled")
     no_problems(run, "release cancelled")
 

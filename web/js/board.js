@@ -22,6 +22,9 @@ window.Maity = window.Maity || {};
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
 
+  // The roles holding releases:write (docs/api.md §2.3).
+  const RELEASERS = new Set(["owner", "admin", "reviewer"]);
+
   const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round" };
 
   const status = (s) => s.replace("_", " ");
@@ -153,7 +156,143 @@ window.Maity = window.Maity || {};
       + " · " + formatAgo(rel.tag.observed_at));
   }
 
-  function release(ctx, c, byId, closed) {
+  function checklistView(ctx, rel) {
+    if (!rel.checklist || !rel.checklist.length) return null;
+    return h("ul", { class: "checklist" }, rel.checklist.map((item) =>
+      h("li", { class: item.done ? "met" : "unmet" }, (item.done ? "✓ " : "○ ") + item.text, tickedBy(ctx, item))));
+  }
+
+  const tickedBy = (ctx, item) => (item.done && item.by
+    ? h("span", { class: "muted" }, " · " + ctx.nameOf(item.by) + (item.at ? " " + formatAgo(item.at) : ""))
+    : null);
+
+  // The hub's refusals of a release edit (docs/api.md §6.7), in words.
+  function editError(err) {
+    if (err.code === "invalid_transition") return { message: "this release is closed; its record does not change" };
+    const fields = err.code === "invalid" && err.details && err.details.fields;
+    if (fields) {
+      return { message: Object.keys(fields).map((k) => {
+        const why = String(fields[k]);
+        if (why.startsWith("unknown_item:")) return "the checklist changed meanwhile (" + why.slice(13) + " is gone); reload";
+        if (why === "duplicate_id") return "an item is listed twice";
+        return k + ": " + why;
+      }).join("; ") };
+    }
+    return err;
+  }
+
+  // Editing a release for members with releases:write (owner, admin,
+  // reviewer; docs/api.md §2.3, §6.7): tick items, edit the checklist, and
+  // the typed pull requests. The hub's answer redraws this card alone.
+  function releaseEditor(ctx, c, redraw) {
+    const rel = c.release;
+    const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
+    const status = M.statusLine();
+    const patch = async (release, what) => {
+      status.busy("Saving " + what + "…");
+      try {
+        redraw(await M.api.patch(path, { release }));
+      } catch (err) {
+        status.fail(what[0].toUpperCase() + what.slice(1) + " not saved: ", editError(err));
+      }
+    };
+
+    function checklist() {
+      const items = rel.checklist || [];
+      const list = h("ul", { class: "checklist editable" }, items.map((item) => {
+        const id = "chk-" + c.id + "-" + item.id;
+        const box = h("input", { type: "checkbox", id });
+        box.checked = !!item.done;
+        box.addEventListener("change", async () => {
+          box.disabled = true;
+          status.busy(box.checked ? "Ticking…" : "Unticking…");
+          try {
+            redraw(await M.api.post(path + "/checklist/" + encodeURIComponent(item.id), { done: box.checked }));
+          } catch (err) {
+            box.checked = !box.checked;
+            box.disabled = false;
+            status.fail("Not saved: ", editError(err));
+          }
+        });
+        return h("li", { class: item.done ? "met" : "unmet" }, box, h("label", { for: id }, " " + item.text), tickedBy(ctx, item));
+      }));
+      const box = h("div", { class: "release-edit" });
+      append(box,
+        items.length ? list : h("p", { class: "muted" }, "No checklist items."),
+        h("div", { class: "row" },
+          h("button", { type: "button", class: "small", onclick: () => editChecklist(box) }, "Edit checklist"),
+          h("button", { type: "button", class: "small", onclick: () => editTyped(box) }, "Typed pull requests")),
+        status.el);
+      return box;
+    }
+
+    // A list editor: rows of inputs, add and remove, Save sends the list.
+    function rowsEditor(box, title, rows, makeRow, toBody, what) {
+      const list = h("ol", { class: "edit-rows" });
+      const add = (row) => {
+        const li = h("li", null, makeRow(row),
+          h("button", { type: "button", class: "small", onclick: () => li.remove() }, "Remove"));
+        append(list, li);
+      };
+      rows.forEach(add);
+      const form = h("form", {
+        class: "rows-form",
+        onsubmit: (e) => {
+          e.preventDefault();
+          const body = toBody(list);
+          if (body) patch(body, what);
+        },
+      },
+      h("h4", null, title), list,
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "small", onclick: () => add(null) }, "Add"),
+        h("button", { type: "submit" }, "Save"),
+        h("button", { type: "button", onclick: () => redraw(c) }, "Cancel")),
+      status.el);
+      M.dom.clear(box);
+      append(box, form);
+    }
+
+    function editChecklist(box) {
+      rowsEditor(box, "Checklist", rel.checklist || [], (item) => {
+        const input = h("input", { class: "item-text", maxlength: "200", "aria-label": "Checklist item" });
+        input.value = item ? item.text : "";
+        if (item) input.setAttribute("data-id", item.id);
+        return input;
+      }, (list) => {
+        const items = Array.from(list.querySelectorAll("input.item-text")).map((i) => ({ id: i.getAttribute("data-id") || undefined, text: i.value.trim() }))
+          .filter((i) => i.text);
+        // An item keeps its tick by its id; a new one gets the next id from the hub.
+        return { checklist: items.map((i) => (i.id ? { id: i.id, text: i.text } : { text: i.text })) };
+      }, "the checklist");
+    }
+
+    function editTyped(box) {
+      rowsEditor(box, "Typed pull requests", rel.pull_requests_typed || [], (pr) => {
+        const number = h("input", { class: "pr-number", type: "number", min: "1", "aria-label": "Pull request number" });
+        number.value = pr ? String(pr.number) : "";
+        const state = h("select", { class: "pr-claim", "aria-label": "State you attest" },
+          [["", "no state"], ["open", "open"], ["merged", "merged"], ["closed", "closed"]].map(([v, l]) => h("option", { value: v }, l)));
+        state.value = pr && pr.state ? pr.state : "";
+        return h("span", { class: "row" }, "#", number, state);
+      }, (list) => {
+        const rows = Array.from(list.querySelectorAll("li")).map((li) => ({
+          number: Number(li.querySelector("input.pr-number").value),
+          state: li.querySelector("select.pr-claim").value || null,
+        })).filter((r) => r.number);
+        if (rows.some((r) => !Number.isInteger(r.number) || r.number < 1)) {
+          status.fail("Not saved: ", { message: "a pull request number is a whole number from 1" });
+          return null;
+        }
+        return { pull_requests_typed: rows };
+      }, "the typed pull requests");
+    }
+
+    return { checklist };
+  }
+
+  function release(ctx, c, byId, closed, redraw) {
+    const editor = !closed && ctx.canRelease && redraw ? releaseEditor(ctx, c, redraw) : null;
     const rel = c.release;
     const r = rel.readiness || { ready: false, blocking: [] };
     const noProbe = r.blocking.some((b) => b.reason === "probe_not_configured");
@@ -162,11 +301,8 @@ window.Maity = window.Maity || {};
         + "later changes do not alter them.") : null,
       pullRequests(rel),
       shipGroups(c, byId, closed),
-      rel.checklist && rel.checklist.length
-        ? h("ul", { class: "checklist" }, rel.checklist.map((item) =>
-          h("li", { class: item.done ? "met" : "unmet" }, (item.done ? "✓ " : "○ ") + item.text,
-            item.done && item.by ? h("span", { class: "muted" }, " · " + ctx.nameOf(item.by) + (item.at ? " " + formatAgo(item.at) : "")) : null)))
-        : null,
+      editor ? null : checklistView(ctx, rel),
+      editor ? editor.checklist() : null,
       r.ready
         ? h("div", { class: "readiness ready" },
           c.status === "done"
@@ -189,7 +325,14 @@ window.Maity = window.Maity || {};
 
   function card(ctx, c, byId) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
-    return h("article", { class: "card card-" + c.kind, "aria-label": c.title },
+    // The hub's answer to an edit replaces this card in place.
+    const redraw = (updated) => {
+      byId[updated.id] = updated;
+      const fresh = card(ctx, updated, byId);
+      el.parentNode.insertBefore(fresh, el);
+      el.remove();
+    };
+    const el = h("article", { class: "card card-" + c.kind, "aria-label": c.title },
       h("header", null,
         h("span", { class: "card-id" }, c.id),
         KIND_LABELS[c.kind]
@@ -211,10 +354,12 @@ window.Maity = window.Maity || {};
         : null,
       checkpoint(c),
       report(c),
-      c.kind === "release" && c.release ? release(ctx, c, byId, frozen) : null);
+      c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null);
+    return el;
   }
 
   M.views.board = async function (ctx, root) {
+    ctx.canRelease = RELEASERS.has(ctx.role);
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const tasks = await M.api.getAll(ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since));
     const byId = {};

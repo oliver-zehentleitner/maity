@@ -10,7 +10,7 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime } = M.dom;
 
   const ROLES = ["member", "reviewer", "proxy", "admin"];
-  const BRIEFING_BYTES = 16 * 1024; // docs/api.md §3
+  const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
   function joinState(j) {
     if (j.revoked_at) return "revoked " + formatTime(j.revoked_at);
@@ -97,8 +97,8 @@ window.Maity = window.Maity || {};
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
         const text = briefing.value.trim();
-        if (new TextEncoder().encode(text).length > BRIEFING_BYTES) {
-          status.fail("No join created: ", { message: "the briefing is longer than 16 KiB" });
+        if ([...text].length > BRIEFING_CHARS) {
+          status.fail("No join created: ", { message: "the briefing is longer than 16,384 characters" });
           briefing.focus();
           return;
         }

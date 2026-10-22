@@ -86,7 +86,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URLSearchParams, TextEncoder, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URLSearchParams, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -184,6 +184,58 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "release: the ships_with group, incomplete");
   expect(text(relCard).includes("CHANGELOG has a section for this version · ") && text(relCard).includes("Tag v0.1.0: not on the forge"),
     "release: checklist with who ticked it; the tag as observed");
+  // Release editing, for releases:write (the owner here).
+  const relWrites = [];
+  const realPost3 = win.Maity.api.post, realPatch3 = win.Maity.api.patch;
+  win.Maity.api.post = (p, b) => { relWrites.push(["POST", p, b]); return realPost3(p, b); };
+  win.Maity.api.patch = (p, b) => { relWrites.push(["PATCH", p, b]); return realPatch3(p, b); };
+  const rel = () => main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.1.0"));
+  const box2 = byId("chk-rel-0001-chk-2");
+  expect(byId("chk-rel-0001-chk-1").checked === true && box2 && box2.checked === false, "release: checklist items are checkboxes with their state");
+  box2.checked = true; box2.dispatch("change"); await tick(); await tick();
+  expect(relWrites[0][0] === "POST" && relWrites[0][1] === "/projects/maity/tasks/rel-0001/checklist/chk-2" && JSON.stringify(relWrites[0][2]) === JSON.stringify({ done: true })
+    && byId("chk-rel-0001-chk-2").checked === true && text(rel()).includes("live version equals the tag · Maintainer"), "release: ticking an item posts done and shows who ticked it");
+  const box1 = byId("chk-rel-0001-chk-1"); box1.checked = false; box1.dispatch("change"); await tick(); await tick();
+  expect(JSON.stringify(relWrites[1][2]) === JSON.stringify({ done: false }) && byId("chk-rel-0001-chk-1").checked === false
+    && !text(rel()).includes("CHANGELOG has a section for this version · "), "release: unticking an item clears who ticked it");
+  btn(rel(), "Edit checklist").click(); await tick();
+  const texts = rel().querySelectorAll("input.item-text");
+  expect(texts.length === 2 && texts[0].value === "CHANGELOG has a section for this version", "release: the checklist editor starts with the items");
+  texts[1].value = "live version equals the tag v0.1.0";
+  btn(rel(), "Add").click(); await tick();
+  rel().querySelectorAll("input.item-text")[2].value = "  announce it  ";
+  btn(rel(), "Add").click(); await tick();  // an empty row is dropped
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(relWrites[2]) === JSON.stringify(["PATCH", "/projects/maity/tasks/rel-0001", { release: { checklist: [
+    { id: "chk-1", text: "CHANGELOG has a section for this version" }, { id: "chk-2", text: "live version equals the tag v0.1.0" }, { text: "announce it" }] } }])
+    && byId("chk-rel-0001-chk-3") && text(rel()).includes("announce it"), "release: the edited checklist keeps ids, the new item gets the next one");
+  btn(rel(), "Typed pull requests").click(); await tick();
+  const prRows = () => rel().querySelectorAll("form.rows-form li");
+  expect(prRows().length === 4 && prRows()[0].querySelector("input.pr-number").value === "1" && prRows()[0].querySelector("select.pr-claim").value === "merged",
+    "release: the typed PR editor starts with the typed PRs and their states");
+  btn(prRows()[2], "Remove").click(); await tick();
+  btn(rel(), "Add").click(); await tick();
+  prRows()[3].querySelector("input.pr-number").value = "9"; prRows()[3].querySelector("select.pr-claim").value = "merged";
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(relWrites[3][2]) === JSON.stringify({ release: { pull_requests_typed: [
+    { number: 1, state: "merged" }, { number: 2, state: null }, { number: 5, state: "merged" }, { number: 9, state: "merged" }] } })
+    && rel().querySelectorAll("tr").find((tr) => tr.textContent.startsWith("#9")).textContent.includes("unverified · typed as merged")
+    && !rel().querySelectorAll("tr").some((tr) => tr.textContent.startsWith("#4")), "release: typed PRs are saved and a new one shows as unverified");
+  btn(rel(), "Typed pull requests").click(); await tick();
+  prRows()[0].querySelector("input.pr-number").value = "1.5";
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick();
+  expect(relWrites.length === 4 && text(rel()).includes("a pull request number is a whole number from 1"), "release: a bad PR number is refused before sending");
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("closed", 409, "/x", "invalid_transition"));
+  prRows()[0].querySelector("input.pr-number").value = "1";
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
+  expect(text(rel()).includes("this release is closed; its record does not change"), "release: a refusal of a closed release is put in words");
+  win.Maity.api.post = realPost3; win.Maity.api.patch = realPatch3;
+  // No releases:write: no editing.
+  const realGet5 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? realGet5(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : realGet5(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board");
+  expect(!byId("chk-rel-0001-chk-1") && !btn(rel(), "Edit checklist"), "release: no editing without releases:write");
+  win.Maity.api.get = realGet5;
   await go("#/p/sample/board");
   const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
   expect(closedRel && text(closedRel).includes("Closed: its pull requests, groups and readiness are the record frozen when it closed")
@@ -193,6 +245,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(closedRel).includes("tsk-0021 + tsk-0022 (not in this release)") && !text(closedRel).includes("(review)")
     && closedRel.querySelector(".groups li.unknown"),
     "closed release: its group without live statuses, the partner outside depends_on named, neither green nor amber without a probe");
+  expect(!btn(closedRel, "Edit checklist") && !closedRel.querySelectorAll("input").some((i) => i.attrs.type === "checkbox"), "closed release: no editing");
   const contractCard = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label") === "Contract: receipt fields");
   expect(contractCard && text(contractCard).includes("Contract final · arbiter the admins · watched by "),
     "contract card: state, arbiter and watchers");
@@ -225,7 +278,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("briefing-agt-b") && byId("briefing-agt-b").value.startsWith("You build the hub"), "the editor starts with the briefing");
   byId("briefing-agt-b").value = "x".repeat(16 * 1024 + 1);
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick();
-  expect(!patches.length && text(main).includes("the briefing is longer than 16 KiB"), "a briefing over 16 KiB is refused before sending");
+  expect(!patches.length && text(main).includes("the briefing is longer than 16,384 characters"), "a briefing over 16 KiB is refused before sending");
+  // 16,384 characters pass however many bytes they take, as the hub counts.
+  byId("briefing-agt-b").value = "é".repeat(16 * 1024);
+  byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
+  expect(patches.length === 1 && [...patches[0][1].briefing].length === 16384, "a briefing of 16,384 two-byte characters is sent");
+  patches.length = 0;
+  btn(bBox(), "Edit briefing").click(); await tick();
   byId("briefing-agt-b").value = "  Review hub PRs first.  ";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
   expect(patches.length === 1 && patches[0][0] === "/projects/maity/members/agt-b" && JSON.stringify(patches[0][1]) === JSON.stringify({ briefing: "Review hub PRs first." })
@@ -398,7 +457,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { joinPosts.push([p, b]); return realPost2(p, b); };
   byId("join-briefing").value = "x".repeat(16 * 1024 + 1);
   main.querySelector("form").dispatch("submit"); await tick();
-  expect(!joinPosts.length && text(main).includes("the briefing is longer than 16 KiB"), "a join briefing over 16 KiB is refused before sending");
+  expect(!joinPosts.length && text(main).includes("the briefing is longer than 16,384 characters"), "a join briefing over 16 KiB is refused before sending");
   byId("join-briefing").value = "  You review hub/.  ";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");

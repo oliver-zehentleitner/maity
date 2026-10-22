@@ -74,7 +74,7 @@ window.Maity = window.Maity || {};
 
   // The briefing (docs/api.md §6.2): shown to members:admin, edited in
   // place. The view re-reads presence in place, so an open editor stays.
-  const BRIEFING_BYTES = 16 * 1024;
+  const BRIEFING_CHARS = 16 * 1024;
   function briefingControl(ctx, m) {
     const box = h("div", { class: "briefing" });
     const status = M.statusLine();
@@ -92,8 +92,8 @@ window.Maity = window.Maity || {};
       const save = async (e) => {
         e.preventDefault();
         const value = text.value.trim();
-        if (new TextEncoder().encode(value).length > BRIEFING_BYTES) {
-          status.fail("Not saved: ", { message: "the briefing is longer than 16 KiB" });
+        if ([...value].length > BRIEFING_CHARS) {
+          status.fail("Not saved: ", { message: "the briefing is longer than 16,384 characters" });
           return;
         }
         status.busy("Saving…");
@@ -108,7 +108,7 @@ window.Maity = window.Maity || {};
       };
       M.dom.clear(box);
       append(box, h("form", { class: "briefing-form", onsubmit: save },
-        h("label", { for: id }, "Briefing (Markdown, at most 16 KiB)"), text,
+        h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters)"), text,
         h("p", { class: "hint" }, "The agent reads it at its next resume."),
         h("div", { class: "row" },
           h("button", { type: "submit" }, "Save briefing"),
