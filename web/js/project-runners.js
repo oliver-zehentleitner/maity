@@ -26,11 +26,13 @@ window.Maity = window.Maity || {};
     const attached = await M.api.getAll(ctx.base + "/runners");
     status.el.setAttribute("tabindex", "-1");
 
-    async function act(label, call) {
+    // done: what went through, in words, for the status line that gets the focus.
+    async function act(label, done, call) {
       status.busy(label + "…");
       try {
         await call();
         status.done();
+        append(status.el, h("span", { class: "ok" }, done));
       } catch (err) {
         if (err.code === "already_attached") {
           status.done();
@@ -89,7 +91,7 @@ window.Maity = window.Maity || {};
                   + (n === 1 ? "it." : "them.")
                 : "Nothing runs on it here.";
               if (!window.confirm("Detach " + r.name + " from " + projectName + "? " + what)) return;
-              act("Detaching", () => M.api.del(ctx.base + "/runners/" + encodeURIComponent(r.id)));
+              act("Detaching", r.name + " is detached from " + projectName + ".", () => M.api.del(ctx.base + "/runners/" + encodeURIComponent(r.id)));
             },
           }, "Detach")));
     }
@@ -102,6 +104,8 @@ window.Maity = window.Maity || {};
       if (key === freeKey) return;
       freeKey = key;
       const chosen = allow.querySelector("select") ? allow.querySelector("select").value : null;
+      // A focus inside the form comes back to the same control after the rebuild.
+      const had = document.activeElement && allow.contains(document.activeElement) ? document.activeElement.getAttribute("data-focus") : null;
       clear(allow);
       append(allow, h("h3", null, "Allow a runner here"));
       if (!free.length) {
@@ -116,9 +120,12 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          act("Allowing", () => M.api.post(ctx.base + "/runners", { runner_id: select.value }));
+          const name = (free.find((r) => r.id === select.value) || {}).name || "The runner";
+          act("Allowing", name + " is allowed here.", () => M.api.post(ctx.base + "/runners", { runner_id: select.value }));
         },
-      }, h("label", { for: "allow-runner" }, "Runner"), select, h("button", { type: "submit" }, "Allow it here")));
+      }, h("label", { for: "allow-runner" }, "Runner"), select, h("button", { type: "submit", "data-focus": "allow-submit" }, "Allow it here")));
+      const again = had && Array.from(allow.querySelectorAll("select, button")).find((e) => e.getAttribute("data-focus") === had);
+      if (again) again.focus();
     }
 
     // Drawn again only when what it shows changed, and then with the focus

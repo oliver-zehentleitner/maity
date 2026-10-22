@@ -591,9 +591,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("allow-runner") === prSelect && text(prCard("cluster")).includes("3 agents running here") && document.activeElement !== clusterDetach
     && document.activeElement === btn(prCard("cluster"), "Detach"), "project runners: a refresh redraws a changed card and keeps the Allow form and the focus on the same Detach");
   win.Maity.api.getAll = prAll0;
+  // A new runner of one's own changes the Allow form; the focus in it comes back to the select.
+  byId("allow-runner").focus();
+  win.Maity.api.getAll = (p) => (p === "/runners"
+    ? prAll0(p).then((r) => ({ items: r.items.concat([Object.assign({}, r.items.find((x) => x.id === "rnr-0003"), { id: "rnr-0099", name: "spare-box" })]), next_cursor: null }))
+    : prAll0(p));
+  await fireIntervals(); await tick(); await tick();
+  expect(byId("allow-runner") !== prSelect && document.activeElement === byId("allow-runner") && byId("allow-runner").querySelectorAll("option").length === 2,
+    "project runners: a rebuilt Allow form gets the focus back");
+  win.Maity.api.getAll = prAll0;
+  await fireIntervals(); await tick(); await tick();
   main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(document.activeElement === main.querySelector(".view-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")),
-    "project runners: after an action the status line has the focus");
+  expect((document.activeElement === main.querySelector(".view-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")))
+    && text(document.activeElement).includes("build-box is allowed here."), "project runners: after an action the status line has the focus and says what happened");
   prProto.focus = prFocus; document.activeElement = undefined;
   expect(JSON.stringify(prWrites[0]) === JSON.stringify(["POST", "/projects/maity/runners", { runner_id: "rnr-0003" }]) && prCard("build-box")
     && text(prCard("build-box")).includes("Its own configuration does not allow maity, so it starts nothing here"),
@@ -614,7 +624,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = (q) => { prAsked = q; return true; };
   btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
   expect(prAsked === "Detach home-laptop from Maity? The hub closes the placement of the 1 agent it runs here, and the runner stops it."
-    && JSON.stringify(prWrites[1]) === JSON.stringify(["DELETE", "/projects/maity/runners/rnr-0002"]) && !prCard("home-laptop"),
+    && JSON.stringify(prWrites[1]) === JSON.stringify(["DELETE", "/projects/maity/runners/rnr-0002"]) && !prCard("home-laptop")
+    && text(main).includes("home-laptop is detached from Maity."),
     "project runners: detaching names the agents it stops");
   btn(prCard("build-box"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
   expect(prAsked === "Detach build-box from Maity? Nothing runs on it here.", "project runners: detaching a runner with nothing running says so");
