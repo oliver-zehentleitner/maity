@@ -178,3 +178,28 @@ refuse nothing. Its reason beyond that was not stated.
 
 **Rejected alternative:** refusing a session that shares an environment
 with another member — excluded by the decision; why is not recorded.
+
+## The instance admin is the earliest human, sees counts only, and opens no project
+
+**Id:** 705196ad-8610-4905-ba14-d9fbc3aebbad
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract change in `docs/api.md` §6.2 and §16, 2026-10-22
+**Revisit when:** the accounts design lands (granting further admins, suspension, audit)
+
+`instance:admin` is a human-only scope held by the earliest-created
+human — the one `maity-hub owner create` made. It lists the hub's users
+with counts and timestamps only (memberships, agents, last sign-in), and
+never passwords, tokens, credentials or content; being instance admin
+opens no project. For `members:admin` callers, and for an owner on their
+own agents, the member view adds the owner and credential counts, which
+never appear in events.
+
+**Reason:** the earliest human matches the migration the accounts
+design plans; everything else about admins — granting more, suspending,
+audit — waits for that design. Why the list stops at counts and opens
+no project is not stated beyond the contract's rule itself.
+
+**Alternatives:** unknown; the accounts design's draft names the path
+`/admin/humans` instead of `/admin/users`, left open.
