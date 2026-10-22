@@ -907,9 +907,20 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
-    expect(page.locator("header .absence")).to_contain_text(
+    expect(page.locator("header .project-state .away")).to_contain_text(
         re.compile(r"Away until Jan 2, 2030, 10:00")
     )
+    # The state block sits at the projects' right, in their row, behind a separator;
+    # on a phone it goes under them, and nothing scrolls sideways.
+    chips = page.locator("header nav.switcher").bounding_box()
+    block = page.locator("header .project-state").bounding_box()
+    assert block["x"] >= chips["x"] + chips["width"] and abs(block["y"] - chips["y"]) < chips["height"], (chips, block)
+    page.set_viewport_size({"width": 360, "height": 780})
+    block = page.locator("header .project-state").bounding_box()
+    assert block["x"] >= 0 and block["x"] + block["width"] <= 361, block
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the header is {width[0]} px wide at {width[1]} px"
+    page.set_viewport_size({"width": 1280, "height": 900})
     # The switcher's state dot: frozen Alpha differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));

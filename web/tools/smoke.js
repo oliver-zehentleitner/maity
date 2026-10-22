@@ -174,6 +174,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox");
   expect(text(header).includes("Build") && text(header).includes("Fixtures") && text(header).includes("Sign out"), "project header: state, fixtures label, sign out");
   expect(chip("Maity").getAttribute("aria-current") === "page", "switcher marks the current project");
+  const sRow = header.querySelector(".switcher-row");
+  expect(sRow && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "project-state"
+    && sRow.childNodes[1].querySelector(".state") && btn(sRow.childNodes[1], "Project settings") && !header.querySelector(".bar .state"),
+    "header: the state and the settings sit at the projects' right, apart, not in the top bar");
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
@@ -1049,7 +1053,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(header, "Project settings").click(); await tick();
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Away until") && text(header).includes("fixes only"), "absence set");
+  expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
 
   // policy.signing: before required, the agents a bearer token would cut off.
   const sigPatches = [];

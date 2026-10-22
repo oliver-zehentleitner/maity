@@ -163,7 +163,13 @@ nav a {
 nav a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 nav .count { margin-left: 6px; color: var(--accent); }
 
-/* The project switcher: always visible, one chip per project. */
+/* The project switcher: always visible, one chip per project. At its
+   right, behind a separator, the project's state and absence; on a narrow
+   screen that block goes under the chips. */
+.switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+.switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
+.project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+.state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
 .switcher a {
@@ -583,6 +589,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
   .compose > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,

@@ -25,7 +25,10 @@ public site at maity.dev is `docs/index.html`, not this.
 
 One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
-requests waiting for the human, and **All projects** with the total.
+requests waiting for the human, and **All projects** with the total. In a
+project, the project's state, the owner's absence ("Away until …") and
+**Project settings** sit at the switcher's right, behind a separator, in
+the same row; on a narrow screen they go under it.
 
 | Route | What |
 |---|---|

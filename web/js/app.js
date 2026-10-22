@@ -499,8 +499,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "bar" },
         h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
-          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name),
-            stateBadge(ctx.project.state, ctx.project.state_note), toggle]
+          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
@@ -512,10 +511,20 @@ window.Maity = window.Maity || {};
             : null,
           h("a", { href: "#/account", class: "small-link", "aria-current": ctx.scope === "account" ? "page" : null }, "Account"),
           h("button", { type: "button", class: "small", onclick: logout }, "Sign out"))),
-      switcher(ctx),
+      // The projects, and at their right, apart, this project's state and
+      // the owner's absence with the settings that change them.
+      h("div", { class: "switcher-row" },
+        switcher(ctx),
+        ctx.scope === "project"
+          ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
+            stateBadge(ctx.project.state, ctx.project.state_note),
+            absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null,
+            toggle)
+          : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
+      // The time is in the block above; what holds meanwhile, here.
       absence
-        ? h("p", { class: "flag absence" }, "Away until " + formatTime(absence.until) + " — " + absence.scope)
+        ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
       panelSlot,
       ctx.scope === "project"
