@@ -45,7 +45,10 @@ window.Maity = window.Maity || {};
       m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  M.views.members = async function (ctx, root) {
+  // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
+  // its row is marked and takes the focus.
+  M.views.members = async function (ctx, root, args) {
+    const wanted = args && args[0];
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
@@ -162,7 +165,7 @@ window.Maity = window.Maity || {};
     function nameCell(m) {
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
-      return h("th", { scope: "row", role: "rowheader", "data-label": "Name" },
+      return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
         h("span", { class: "member-name" }, m.display_name), h("span", { class: "muted" }, " @" + m.handle),
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
@@ -180,7 +183,7 @@ window.Maity = window.Maity || {};
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
-              const row = h("tr", { class: "member" + (m.paused ? " paused" : ""), role: "row" },
+              const row = h("tr", { class: "member" + (m.paused ? " paused" : "") + (m.id === wanted ? " wanted" : ""), role: "row", "data-member": m.id },
                 nameCell(m),
                 columns.map((c) => {
                   const td = h("td", { "data-label": c.title, role: "cell" }, c.cell(m));
@@ -226,6 +229,14 @@ window.Maity = window.Maity || {};
         + (ctx.canAdmin ? " Manage a row to change its role, pause an agent or remove a member." : "")),
       status.el, box);
     draw();
+    // A member asked for by the URL: its row takes the focus once the view is
+    // in the page; an id that is no member here is said.
+    if (wanted) {
+      const row = Array.from(box.querySelectorAll("tr.member")).find((tr) => tr.getAttribute("data-member") === wanted);
+      const th = row && row.childNodes[0];
+      if (th) window.setTimeout(() => th.focus(), 0);
+      else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
+    }
     ctx.every(PRESENCE_MS, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;

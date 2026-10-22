@@ -109,5 +109,28 @@ window.Maity = window.Maity || {};
       text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
   };
 
-  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES };
+  // A scanned text with its stored mentions (docs/api.md §8.6) as text
+  // nodes and member links. Offsets and lengths count code points; only the
+  // stored ones for this field are links, and only where the text there is
+  // "@" + the stored handle; nothing the writer typed becomes a link.
+  function withMentions(text, mentions, field, hrefOf) {
+    const chars = Array.from(String(text || ""));
+    const marks = (mentions || [])
+      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
+      .sort((a, b) => a.offset - b.offset);
+    const out = [];
+    let at = 0;
+    marks.forEach((x) => {
+      if (x.offset < at || x.offset + x.length > chars.length) return;
+      const said = chars.slice(x.offset, x.offset + x.length).join("");
+      if (said !== "@" + x.handle) return;
+      if (x.offset > at) out.push(chars.slice(at, x.offset).join(""));
+      out.push(h("a", { class: "mention", href: hrefOf(x.member_id) }, said));
+      at = x.offset + x.length;
+    });
+    if (at < chars.length) out.push(chars.slice(at).join(""));
+    return out;
+  }
+
+  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions };
 })(window.Maity);

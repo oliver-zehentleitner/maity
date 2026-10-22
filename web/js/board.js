@@ -87,7 +87,7 @@ window.Maity = window.Maity || {};
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
 
-  function report(c) {
+  function report(ctx, c) {
     const r = c.report;
     if (!r) return null;
     const pr = r.pr ? "PR #" + r.pr.number : (r.pr_status === "none" ? "no PR" : "PR unknown: " + (r.pr_unknown_reason || "—"));
@@ -96,7 +96,7 @@ window.Maity = window.Maity || {};
       : "not observed by the hub";
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
-      h("p", { class: "pre" }, r.summary),
+      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id))),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null);
   }
@@ -394,7 +394,7 @@ window.Maity = window.Maity || {};
           + ((c.contract.watchers || []).length ? " · watched by " + c.contract.watchers.map(ctx.nameOf).join(", ") : ""))
         : null,
       checkpoint(c),
-      report(c),
+      report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
       manage ? h("div", { class: "card-actions" }, E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign)) : null);
     return el;
