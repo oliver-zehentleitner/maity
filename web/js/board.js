@@ -7,7 +7,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, safeUrl, formatAgo, formatTime } = M.dom;
+  const { h, append, clear, safeUrl, formatAgo, formatTime } = M.dom;
 
   const COLUMNS = [
     ["proposed", "Proposed"],
@@ -348,20 +348,32 @@ window.Maity = window.Maity || {};
   // A contract's arbiter may be a role ("role:admin"): named in words.
   const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : ctx.nameOf(a));
 
-  function card(ctx, c, byId) {
+  // manage: { move, assign, drag } from the board, or null (read only).
+  function card(ctx, c, byId, manage) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
     // focusId names the control to focus in the new card (the box just
     // ticked, the button that opened an editor), so the focus is not lost.
     const redraw = (updated, focusId) => {
       byId[updated.id] = updated;
-      const fresh = card(ctx, updated, byId);
+      const fresh = card(ctx, updated, byId, manage);
       el.parentNode.insertBefore(fresh, el);
       el.remove();
       const target = focusId && document.getElementById(focusId);
       if (target) target.focus();
     };
-    const el = h("article", { class: "card card-" + c.kind, "aria-label": c.title },
+    const E = M.boardEdit;
+    const movable = manage && E.targets(ctx, c).length > 0;
+    const el = h("article", {
+      class: "card card-" + c.kind + (movable ? " movable" : ""),
+      "aria-label": c.title,
+      "data-card": c.id,
+      // A pointer may drag it to a column it may move to; the Move menu
+      // below does the same for the keyboard and on a phone.
+      draggable: movable ? "true" : null,
+      ondragstart: movable ? (e) => manage.drag.start(e, c) : null,
+      ondragend: movable ? () => manage.drag.end() : null,
+    },
       h("header", null,
         h("span", { class: "card-id" }, c.id),
         KIND_LABELS[c.kind]
@@ -383,36 +395,203 @@ window.Maity = window.Maity || {};
         : null,
       checkpoint(c),
       report(c),
-      c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null);
+      c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
+      manage ? h("div", { class: "card-actions" }, E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign)) : null);
     return el;
   }
 
   M.views.board = async function (ctx, root) {
     ctx.canRelease = RELEASERS.has(ctx.role);
+    const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    const tasks = await M.api.getAll(ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since));
-    const byId = {};
-    tasks.items.forEach((t) => { byId[t.id] = t; });
-    const known = new Set(COLUMNS.map(([s]) => s));
-    const other = tasks.items.filter((t) => !known.has(t.status));
+    const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
+    let items = (await M.api.getAll(listPath)).items;
+    const status = M.statusLine();
+    status.el.setAttribute("tabindex", "-1");
+    const columnsBox = h("div", { class: "columns" });
+    const formBox = h("div", { class: "new-card-box" });
+    const intro = h("div");
+    const filter = { member: "", area: "" };
 
-    append(root, h("h2", null, "Board"),
-      h("p", { class: "muted" }, "Every open card, and the done and cancelled ones of the last " + CLOSED_WINDOW_DAYS + " days."),
-      tasks.items.length
-        ? null
-        : h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
-          + "areas, claim them and report when they are done. Ask an agent in its chat to propose what it will work on."),
-      h("div", { class: "columns" },
-        COLUMNS.map(([s, label]) => {
-          const cards = tasks.items.filter((t) => t.status === s);
-          return h("section", { class: "column", "aria-label": label },
-            h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
-            cards.length ? cards.map((c) => card(ctx, c, byId)) : h("p", { class: "muted" }, "—"));
-        }),
+    // Focus survives a redraw by key (data-focus), as on the Members view.
+    // A card that left the view (closed and moved out, or filtered away)
+    // takes no focus with it: the status line that says what happened does.
+    function refocus(key) {
+      if (!key) return;
+      const again = Array.from(columnsBox.querySelectorAll("select, button")).find((e) => e.getAttribute("data-focus") === key);
+      (again || status.el).focus();
+    }
+
+    async function reload(focusKey) {
+      items = (await M.api.getAll(listPath)).items;
+      draw();
+      refocus(focusKey);
+    }
+
+    // A write, then the board read again; a failed re-read is no failed write.
+    async function write(label, done, call, focusKey) {
+      status.busy(label + "…");
+      try {
+        await call();
+      } catch (err) {
+        status.fail(label + " failed: ", E.said(err));
+        return false;
+      }
+      status.done();
+      append(status.el, h("span", { class: "ok" }, done));
+      try {
+        await reload(focusKey);
+      } catch (err) {
+        status.fail(done + " Could not refresh: ", err);
+      }
+      return true;
+    }
+
+    const cardPath = (c) => ctx.base + "/tasks/" + encodeURIComponent(c.id);
+    const move = (c, to, focusKey) => write("Moving", c.id + " is now " + to.replace("_", " ") + ".",
+      () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
+      () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
+
+    // Dragging: the columns the card may go to are marked, the others refused.
+    // A browser fires drop only where dragover allowed it, so a card let go
+    // over a refused column ends with dragend alone: the column it was last
+    // over says what was refused.
+    let dragging = null;
+    let over = null;
+    let dropped = false;
+    const drag = {
+      start(e, c) {
+        dragging = c;
+        over = null;
+        dropped = false;
+        if (e.dataTransfer) { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; }
+        const ok = new Set(E.targets(ctx, c));
+        columnsBox.querySelectorAll("section.column").forEach((col) => {
+          const s = col.getAttribute("data-status");
+          col.classList.toggle("drop-ok", ok.has(s));
+          col.classList.toggle("drop-refused", s !== c.status && !ok.has(s));
+        });
+      },
+      end() {
+        const c = dragging;
+        if (c && !dropped && over && over.s !== c.status && !E.targets(ctx, c).includes(over.s)) {
+          status.fail("Not moved: ", { message: c.id + " cannot go to " + over.label + "." });
+        }
+        dragging = null;
+        over = null;
+        columnsBox.querySelectorAll("section.column").forEach((col) => {
+          col.classList.toggle("drop-ok", false);
+          col.classList.toggle("drop-refused", false);
+          col.classList.toggle("drop-over", false);
+        });
+      },
+    };
+    const manage = { move, assign, drag };
+
+    function column(s, label, cards) {
+      const may = () => dragging && E.targets(ctx, dragging).includes(s);
+      const col = h("section", {
+        class: "column",
+        "aria-label": label,
+        "data-status": s,
+        ondragenter: () => { if (dragging) over = { s, label }; },
+        ondragover: (e) => {
+          if (dragging) over = { s, label };
+          if (may()) { e.preventDefault(); col.classList.toggle("drop-over", true); }
+        },
+        ondragleave: () => col.classList.toggle("drop-over", false),
+        ondrop: (e) => {
+          e.preventDefault();
+          const c = dragging;
+          if (c && E.targets(ctx, c).includes(s)) {
+            dropped = true;
+            drag.end();
+            move(c, s);
+          }
+        },
+      },
+      h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
+      cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+      return col;
+    }
+
+    let byId = {};
+    function shown(c) {
+      if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
+      if (filter.area && c.area !== filter.area) return false;
+      return true;
+    }
+
+    function draw() {
+      areaOptions();
+      byId = {};
+      items.forEach((t) => { byId[t.id] = t; });
+      const known = new Set(COLUMNS.map(([s]) => s));
+      const visible = items.filter(shown);
+      const other = visible.filter((t) => !known.has(t.status));
+      clear(intro);
+      if (!items.length) {
+        append(intro, h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
+          + "areas, claim them and report when they are done. Ask an agent in its chat to propose what it will work on, or write one yourself."));
+      } else if (!visible.length) {
+        append(intro, h("p", { class: "muted" }, "No card matches the filter."));
+      }
+      append(clear(columnsBox),
+        COLUMNS.map(([s, label]) => column(s, label, visible.filter((t) => t.status === s))),
         other.length
           ? h("section", { class: "column", "aria-label": "Other" },
             h("h3", { class: "column-head" }, "Unknown status"),
-            other.map((c) => card(ctx, c, byId)))
-          : null));
+            other.map((c) => card(ctx, c, byId, manage)))
+          : null);
+    }
+
+    // Filters, from what is on the board.
+    const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, "everyone"),
+      ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
+    memberSel.value = "";
+    const areaSel = h("select", { id: "board-area" });
+    // The areas on the board now; a chosen one stays offered while filtered.
+    function areaOptions() {
+      const areas = new Set(items.map((t) => t.area).filter(Boolean));
+      if (filter.area) areas.add(filter.area);
+      append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
+      areaSel.value = filter.area;
+    }
+    memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
+    areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
+
+    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, "New card");
+    formBox.id = "new-card-box";
+    const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
+    newButton.addEventListener("click", () => {
+      if (newButton.getAttribute("aria-expanded") === "true") { closeForm(); return; }
+      const f = E.newCardForm(ctx, items, async (body) => {
+        const created = await M.api.post(ctx.base + "/tasks", body);
+        // Created: the form is done, whatever the re-read says.
+        clear(formBox);
+        newButton.setAttribute("aria-expanded", "false");
+        const done = created.id + " created in " + created.status.replace("_", " ") + ".";
+        status.done();
+        append(status.el, h("span", { class: "ok" }, done));
+        try {
+          await reload("move:" + created.id);
+        } catch (err) {
+          status.fail(done + " Could not refresh: ", err);
+        }
+      }, closeForm);
+      append(clear(formBox), f.form);
+      newButton.setAttribute("aria-expanded", "true");
+      f.focus();
+    });
+
+    append(root,
+      h("div", { class: "toolbar" }, h("h2", null, "Board"), newButton),
+      h("p", { class: "muted" }, "Every open card, and the done and cancelled ones of the last " + CLOSED_WINDOW_DAYS + " days."),
+      h("form", { class: "board-filter", role: "search", onsubmit: (e) => e.preventDefault() },
+        h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
+        h("label", { for: "board-area" }, "Area"), areaSel),
+      formBox, status.el, intro, columnsBox);
+    draw();
   };
 })(window.Maity);

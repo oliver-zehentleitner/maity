@@ -21,6 +21,23 @@ class Node_ {
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
   set textContent(v) { this.childNodes = []; if (v !== "") this.appendChild(new Text_(String(v))); }
 }
+// A browser's querySelectorAll answers a NodeList, which has forEach and
+// indices but no find, some or map. The page's own scripts (js/…) get one
+// that throws on those, as a browser would; the tests below may keep
+// using array methods on it.
+const ARRAY_ONLY = new Set(["find", "findIndex", "findLast", "some", "every", "map", "filter", "reduce", "includes", "indexOf",
+  "slice", "concat", "flatMap", "join", "sort"]);
+function nodeList(items) {
+  return new Proxy(items, {
+    get(target, prop, receiver) {
+      if (typeof prop === "string" && ARRAY_ONLY.has(prop)) {
+        const caller = (new Error().stack || "").split("\n")[2] || "";
+        if (/[(\s]js\/[\w-]+\.js:\d+/.test(caller)) throw new TypeError("NodeList has no " + prop + " (" + caller.trim() + ")");
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
 class El extends Node_ {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
@@ -54,10 +71,10 @@ class El extends Node_ {
   all() { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof El) { out.push(c); walk(c); } }); walk(this); return out; }
   querySelectorAll(sel) {
     const parts = sel.split(/\s+(?![^\[]*\])/);
-    if (sel.includes(",")) return this.all().filter((e) => e.matches(sel));
+    if (sel.includes(",")) return nodeList(this.all().filter((e) => e.matches(sel)));
     let set = [this];
     parts.forEach((p) => { set = [...new Set(set.flatMap((n) => n.all().filter((e) => e.matches(p))))]; });
-    return set;
+    return nodeList(set);
   }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
 }
@@ -475,8 +492,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "runners: the starter configuration names the hub, the projects and their repositories, and no secret");
   expect(["state_dir", "workspaces", "tmux_socket", "max_agents", "default_mode", "default_model", "binary"].every((k) => !config.includes(k + " =")),
     "runners: the starter configuration holds only the keys without a default");
-  expect(text(steps).includes("installs the repository's current main") && text(steps).includes("not released yet"),
-    "runners: the install step says what it installs, and that the runner commands are not released yet");
+  expect(text(steps).includes("installs the repository's current main, which has maity runner pair and maity runner check")
+    && text(steps).includes("(with the next runner release; not in the CLI yet)"),
+    "runners: the steps say what the CLI has today and what is still to come");
   const hostile = win.Maity.runnerStarterConfig("https://h.example", [{ slug: "a\"b\\c\u007f\n\ud800", repository: null }]);
   expect(hostile.includes('projects = ["a\\"b\\\\c\\u007f\\u000a\ufffd"]'), "runners: TOML strings escape quotes, backslashes, control characters and DEL; a lone surrogate is replaced");
   expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
@@ -641,6 +659,115 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(profA.querySelector("header").querySelector("svg") && profA.querySelector("header").querySelector("svg").style["--avatar-h"] === "340", "avatars: on the agent's card");
   await go("#/p/maity/org");
   expect(main.querySelectorAll(".org-node svg").length === main.querySelectorAll(".org-node").length, "avatars: in the organisation, one per member");
+  // Managing cards on the board (docs/api.md §6.4).
+  const T = win.Maity.boardEdit.targets;
+  const bctx = { me: { id: "hum-maintainer" }, role: "owner", project: { policy: { done_authority: "reviewer" } } };
+  const tc = (status, extra) => Object.assign({ id: "x", status, created_by: "agt-a", claim: null }, extra || {});
+  expect(JSON.stringify(T(bctx, tc("proposed"))) === JSON.stringify(["open", "cancelled"])
+    && JSON.stringify(T(bctx, tc("review"))) === JSON.stringify(["done", "in_progress", "cancelled"])
+    && JSON.stringify(T(bctx, tc("in_progress"))) === JSON.stringify(["cancelled"]) && !T(bctx, tc("done")).length,
+    "board: an owner's moves, as the hub allows them");
+  const mctx = Object.assign({}, bctx, { role: "member" });
+  expect(!T(mctx, tc("proposed")).length && JSON.stringify(T(mctx, tc("open", { created_by: "hum-maintainer" }))) === JSON.stringify(["proposed", "cancelled"])
+    && !T(mctx, tc("review")).length && JSON.stringify(T(Object.assign({}, mctx, { role: "reviewer" }), tc("review"))) === JSON.stringify(["done", "in_progress"]),
+    "board: a member moves only its own cards; a reviewer has done authority");
+  expect(JSON.stringify(T(Object.assign({}, mctx, { project: { policy: { done_authority: "holder" } } }), tc("in_progress", { claim: { holder: "hum-maintainer" } }))) === JSON.stringify(["done"]),
+    "board: with holder authority the holder moves its card to done");
+  const bWrites = [];
+  const bPatch = win.Maity.api.patch, bPost = win.Maity.api.post;
+  win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };
+  win.Maity.api.post = (p, b) => { bWrites.push(["POST", p, b]); return bPost(p, b); };
+  await go("#/p/maity/board");
+  const bCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
+  const colOf = (id) => main.querySelectorAll("section.column").find((col) => col.querySelectorAll("article.card").some((a) => a.attrs["data-card"] === id));
+  expect(bCard("tsk-0008").attrs.draggable === "true" && !bCard("tsk-0003").attrs.draggable && !bCard("tsk-0003").querySelector("form.card-move"),
+    "board: a card that may move is draggable and has a Move menu; a closed one has neither");
+  const bProto = Object.getPrototypeOf(main);
+  const bFocus = bProto.focus;
+  bProto.focus = function () { document.activeElement = this; };
+  const moveSel = bCard("tsk-0008").querySelector("form.card-move select");
+  expect(JSON.stringify(moveSel.querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Open it", "Cancel it"]), "board: the Move menu offers the allowed moves in words");
+  moveSel.value = "open";
+  bCard("tsk-0008").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[0]) === JSON.stringify(["PATCH", "/projects/maity/tasks/tsk-0008", { status: "open" }])
+    && colOf("tsk-0008").attrs["data-status"] === "open" && text(main).includes("tsk-0008 is now open."), "board: moved with the menu");
+  expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "move:tsk-0008", "board: the focus stays on the moved card's menu");
+  bProto.focus = bFocus; document.activeElement = undefined;
+  // Dragging: allowed columns marked, the others refused; a refused drop sends nothing.
+  bCard("tsk-0008").dispatch("dragstart", { dataTransfer: null });
+  const colEl = (st) => main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === st);
+  expect(colEl("proposed").classList.contains("drop-ok") && colEl("cancelled").classList.contains("drop-ok")
+    && colEl("done").classList.contains("drop-refused") && !colEl("open").classList.contains("drop-refused"), "board: while dragging, the allowed columns are marked, the others refused");
+  colEl("done").dispatch("dragover"); bCard("tsk-0008").dispatch("dragend"); await tick();
+  expect(bWrites.length === 1 && text(main).includes("Not moved: tsk-0008 cannot go to Done.") && !colEl("done").classList.contains("drop-refused"),
+    "board: a drop on a refused column is said, nothing sent");
+  bCard("tsk-0008").dispatch("dragstart", { dataTransfer: null });
+  colEl("proposed").dispatch("drop"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[1]) === JSON.stringify(["PATCH", "/projects/maity/tasks/tsk-0008", { status: "proposed" }]) && colOf("tsk-0008").attrs["data-status"] === "proposed",
+    "board: dropped on an allowed column, moved");
+  // The hub's refusal, in words.
+  win.Maity.api.patch = (p) => Promise.reject(new win.Maity.api.ApiError("no", 409, p, "dependencies_open", { open: ["tsk-0001"] }));
+  bCard("tsk-0005").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(text(main).includes("Moving failed: Not done yet: a card it depends on is still open."), "board: the hub's refusal is said in words");
+  win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };
+  // Assign, and the live lease refused.
+  const asg = bCard("tsk-0006").querySelector("form.card-assign select"); asg.value = "agt-d";
+  bCard("tsk-0006").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0006/assign", { assignee: "agt-d" }])
+    && text(main).includes("tsk-0006 is assigned to Agent D."), "board: assigned");
+  const asg1 = bCard("tsk-0001").querySelector("form.card-assign select"); asg1.value = "agt-b";
+  bCard("tsk-0001").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Assigning failed: It is claimed with a live lease"), "board: a live lease is not taken over, said in words");
+  // Filters by member and area.
+  const fm = byId("board-member"); fm.value = "agt-b"; fm.dispatch("change");
+  const visibleIds = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]).sort();
+  expect(JSON.stringify(visibleIds()) === JSON.stringify(["tsk-0004", "tsk-0005"]), "board: filtered by member " + JSON.stringify(visibleIds()));
+  fm.value = ""; fm.dispatch("change"); const fa = byId("board-area"); fa.value = "cli/"; fa.dispatch("change");
+  expect(JSON.stringify(visibleIds()) === JSON.stringify(["tsk-0006"]), "board: filtered by area");
+  fa.value = "web/"; fa.dispatch("change"); fm.value = "agt-b"; fm.dispatch("change");
+  expect(!visibleIds().length && text(main).includes("No card matches the filter."), "board: no match, said");
+  fm.value = ""; fm.dispatch("change"); fa.value = ""; fa.dispatch("change");
+  // A new card.
+  btn(main, "New card").click(); await tick();
+  const nf = main.querySelector("form.new-card");
+  const shipIds = byId("new-card-ships").querySelectorAll("option").map((o) => o.attrs.value);
+  const depIds = byId("new-card-depends").querySelectorAll("option").map((o) => o.attrs.value);
+  expect(!shipIds.includes("rel-0001") && depIds.includes("rel-0001"), "board: a release is never offered to ship with; it may be depended on");
+  expect(nf && btn(main, "New card").getAttribute("aria-expanded") === "true" && byId("new-card-assigned"), "board: New card opens the form; an admin may assign");
+  nf.dispatch("submit"); await tick();
+  expect(!bWrites.some((w) => w[1] === "/projects/maity/tasks") && text(main).includes("Not created: the card needs a title"), "board: no card without a title");
+  byId("new-card-title").value = "Web: a card from the board";
+  byId("new-card-area").value = "web/board/";
+  byId("new-card-status").value = "open";
+  byId("new-card-label").value = "feature";
+  byId("new-card-assigned").value = "agt-d";
+  byId("new-card-depends").querySelectorAll("option").find((o) => o.attrs.value === "tsk-0007").selected = true;
+  nf.dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
+  const createdW = bWrites.find((w) => w[1] === "/projects/maity/tasks");
+  expect(JSON.stringify(createdW) === JSON.stringify(["POST", "/projects/maity/tasks", { title: "Web: a card from the board", kind: "task", status: "open",
+    label: "feature", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
+    && !main.querySelector("form.new-card"), "board: a new card, created in Open");
+  expect(byId("board-area").querySelectorAll("option").some((o) => o.attrs.value === "web/board/"), "board: the area filter offers a new card's area");
+  // Cancel the new card again with the menu; its menu goes, so the focus goes to what was said.
+  const bProto2 = Object.getPrototypeOf(main);
+  const bFocus2 = bProto2.focus;
+  bProto2.focus = function () { document.activeElement = this; };
+  const nSel = bCard("tsk-f001").querySelector("form.card-move select"); nSel.value = "cancelled";
+  bCard("tsk-f001").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(colOf("tsk-f001").attrs["data-status"] === "cancelled" && !bCard("tsk-f001").querySelector("form.card-move")
+    && document.activeElement && document.activeElement.className.includes("send-status") && text(document.activeElement).includes("tsk-f001 is now cancelled."),
+    "board: cancelled with the menu; the focus goes to the status line");
+  bProto2.focus = bFocus2; document.activeElement = undefined;
+  let relShip = null;
+  try { await bPost("/projects/maity/tasks", { title: "x", ships_with: ["rel-0001"] }); } catch (err) { relShip = err; }
+  expect(relShip && relShip.details.fields.ships_with === "release_card", "board: the mock refuses shipping with a release, as the hub does");
+  win.Maity.api.patch = bPatch; win.Maity.api.post = bPost;
+  // A frozen project asks for a reason.
+  await go("#/p/sample/board");
+  btn(main, "New card").click(); await tick();
+  byId("new-card-title").value = "Something during the freeze";
+  main.querySelector("form.new-card").dispatch("submit"); await tick();
+  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in freeze"), "board: in freeze a new card needs a reason");
 
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
