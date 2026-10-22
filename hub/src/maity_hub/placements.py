@@ -23,8 +23,10 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, events
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.runners import attached_project_ids, human_actor, live_credential_id
 from maity_hub.runners import audience as runner_audience
 from maity_hub.views import principal_id, ts
@@ -80,16 +82,15 @@ DETAILS: dict[str, tuple[str, str]] = {
     "model_unsupported": ("reason", "harness_refused"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
+# Closing at once tells a running agent, except where it never ran or cannot listen:
+# a refused or withdrawn proposal, and a removed membership (§15.10).
+STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed")
 CLOSED_LIST_DAYS = 30
 SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
 
 
-class Refusal(Exception):
-    """A rule of §15.5 or §15.7 refuses the call; the route turns it into the error."""
-
-    def __init__(self, status: int, code: str, message: str, details: Any = None) -> None:
-        super().__init__(message)
-        self.status, self.code, self.message, self.details = status, code, message, details
+class Refusal(ApiError):
+    """A rule of §15.5 or §15.7 refuses the call, wherever the rule is checked."""
 
 
 # --- reading ---------------------------------------------------------------------------
@@ -592,6 +593,9 @@ def close_now(
 ) -> Any:
     if placement.active is None:
         return placement
+    if placement.desired == "running" and closed_reason in STOP_TOLD:
+        # Every change to `desired: stopped` tells the agent (§15.10), a close at once too.
+        _stop_requested(conn, placement, actor, by)
     closed = _write(
         conn,
         placement.id,
@@ -617,11 +621,10 @@ def close_uniform(
         placement.reported is None
         or placement.approval_status != "approved"
         or live_credential_id(conn, placement.runner_id) is None
-        or (terminal(placement.reported) and placement.desired == "stopped")
+        # After a terminal report nothing runs that a stop could end.
+        or (terminal(placement.reported) and is_current(placement))
     )
     if nobody_reports:
-        if placement.desired != "stopped":
-            _stop_requested(conn, placement, actor, by)
         return close_now(conn, placement, closed_reason, actor, by)
     stopping = placement.desired != "stopped"
     changed = _write(conn, placement.id, by, desired="stopped", closing=closed_reason)
@@ -655,6 +658,19 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
     for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
         close_now(conn, placement, "membership_removed", actor, by)
+    # Its proposals for others go with it: a go must not approve what nobody proposes now.
+    proposed = conn.execute(
+        select(t.request).where(
+            t.request.c.asked_by == membership_id,
+            t.request.c.status == "open",
+            t.request.c.placement_id.isnot(None),
+        )
+    ).all()
+    for request in proposed:
+        from maity_hub.routes.requests import close_request
+
+        close_request(conn, request.id, "withdrawn", actor, reason="the proposer was removed")
+        settle(conn, request, "withdrawn", actor, by)
 
 
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
@@ -738,6 +754,8 @@ def settle(
     placement = row(conn, request.placement_id)
     if placement.active is None:
         return
+    if outcome == "go":
+        _still_allowed(conn, placement)
     if placement.pending_change is not None:  # a proposed change of the spec
         change = dict(placement.pending_change)
         cleared = _write(conn, placement.id, by, pending_change=None)
@@ -757,11 +775,29 @@ def settle(
         close_now(conn, row(conn, placement.id), "refused", actor, by)
 
 
+def _still_allowed(conn: Connection, placement: Any) -> None:
+    """A `go` approves what the rules allow now, not what they allowed when it was
+    proposed: the runner still has a live credential and offers the spec, and the project
+    is still open. Otherwise the answer is refused and the request stays open."""
+    if live_credential_id(conn, placement.runner_id) is None:
+        raise Refusal(409, "runner_revoked", "the runner has no live credential")
+    project = conn.execute(select(t.project).where(t.project.c.id == placement.project_id)).one()
+    if project.state in CLOSED_STATES:
+        raise Refusal(409, "project_closed", f"the project is {project.state}")
+    spec = {**view_spec(placement), **(placement.pending_change or {})}
+    runner = _runner(conn, placement.runner_id)
+    check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+    check_repository(runner, project.repository_url)
+
+
 def consent_summary(fields: dict[str, Any]) -> str:
     """One `field: value` line per field, readable where the structured view is missing."""
-    return "\n".join(
-        f"{name}: {value if value is not None else '-'}" for name, value in fields.items()
-    )
+    return "\n".join(f"{name}: {_one_line(value)}" for name, value in fields.items())
+
+
+def _one_line(value: Any) -> str:
+    """A value as one line: a reason cannot add lines that read as fields."""
+    return "-" if value is None else " ".join(str(value).split()) or "-"
 
 
 # --- reports (§15.7, §15.8) ------------------------------------------------------------------

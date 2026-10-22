@@ -120,6 +120,9 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_placement_runner_id"), "placement", ["runner_id"], unique=False)
     op.create_index(
+        op.f("ix_placement_credential_id"), "placement", ["credential_id"], unique=False
+    )
+    op.create_index(
         "ix_event_subject",
         "event",
         ["project_id", "subject_type", "subject_id", "seq"],
@@ -130,6 +133,7 @@ def upgrade() -> None:
         batch_op.create_foreign_key(
             batch_op.f("fk_request_placement_id_placement"), "placement", ["placement_id"], ["id"]
         )
+        batch_op.create_index(batch_op.f("ix_request_placement_id"), ["placement_id"], unique=False)
     with op.batch_alter_table("project", schema=None) as batch_op:
         batch_op.add_column(
             sa.Column(
@@ -150,5 +154,6 @@ def downgrade() -> None:
         batch_op.drop_constraint(
             batch_op.f("fk_request_placement_id_placement"), type_="foreignkey"
         )
+        batch_op.drop_index(batch_op.f("ix_request_placement_id"))
         batch_op.drop_column("placement_id")
     op.drop_table("placement")

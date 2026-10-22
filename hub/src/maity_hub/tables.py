@@ -393,7 +393,7 @@ placement = Table(
     Column("approval_status", String(16), nullable=False),
     Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
     Column("reason", MARKDOWN_TEXT),
-    _ref("credential_id", "credential.id"),
+    _ref("credential_id", "credential.id", index=True),  # the revocation hook looks it up
     # The runner's latest report (§15.7), its counter and the hint; only the runner writes them.
     Column("reported", JSON_VALUE),
     Column("reported_seq", Integer, nullable=False),
@@ -512,7 +512,7 @@ request = Table(
     _membership_ref("on_behalf_of"),
     _ref("task_id", "card.id"),
     # A consent request filed for a placement proposal (§15.6); only the hub sets it.
-    _ref("placement_id", "placement.id"),
+    _ref("placement_id", "placement.id", index=True),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),

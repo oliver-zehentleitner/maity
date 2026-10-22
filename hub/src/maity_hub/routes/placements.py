@@ -34,6 +34,7 @@ from maity_hub.views import event_views
 router = APIRouter()
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+NOT_NULLABLE = frozenset({"desired", "harness", "mode", "stop_grace_seconds"})
 REPORTS_DEFAULT, REPORTS_MAX = 10, 50
 
 
@@ -272,10 +273,10 @@ def create_placement(
             raise invalid({"reason": "required"}, "a proposal says why")
         if project.state in REASON_STATES and not body.reason:
             raise invalid({"reason": "required"}, f"the project is in {project.state}: say why")
-        if body.desired == "running":
-            _require_open(project)
-        if body.desired == "running" or right:
-            _require_live(conn, runner)
+        # Whatever `desired` says: an active placement in a closed project would never
+        # close, and one on a revoked runner never run (§15.5, §15.6).
+        _require_open(project)
+        _require_live(conn, runner)
         if pl.active_count(conn, project.id) >= project.max_placements:
             raise ApiError(
                 409,
@@ -435,6 +436,11 @@ def patch_placement(
     given = body.model_fields_set - {"reason"}
     if not given:
         raise invalid({"body": "empty"}, "say what to change")
+    # Only `model` and `target` take null (the runner's default, the runner's choice).
+    nulls = {k: "not_nullable" for k in given & NOT_NULLABLE if getattr(body, k) is None}
+    if nulls:
+        raise invalid(nulls)
+    stop_only = given == {"desired"} and body.desired == "stopped"
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -447,11 +453,21 @@ def patch_placement(
         spec_change = {k: getattr(body, k) for k in pl.SPEC_FIELDS if k in given}
         if not (right or proposer or (owner and not spec_change)):
             raise forbidden("members:admin" if mine.kind == "human" else "agents:propose")
+        if stop_only and (placement.active is None or placement.closing is not None):
+            # A stop is never refused (§15.6): closed or closing, it is answered as it is.
+            return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
         _transition(placement)
         actor = caller.actor(mine.id)
         by = mine.principal_id
         request_open = pl.open_request_id(conn, placement.id) is not None
         if request_open and right:
+            if stop_only and placement.approval_status == "pending":
+                # Stopping a proposal nobody approved is turning it down, not approving it.
+                pl.withdraw_open_request(conn, placement, "stopped by the runner's owner", actor)
+                placement = pl.close_now(conn, pl.row(conn, placement.id), "withdrawn", actor, by)
+                return idempotency.Outcome(
+                    200, "placement", placement.id, _view(conn, mine, placement)
+                )
             placement = _settle_by_right(conn, placement, actor, by, approve=True)
         if spec_change:
             new_spec = {**pl.view_spec(placement), **spec_change}
@@ -561,11 +577,13 @@ def delete_placement(
             withdrawn = pl.withdraw_open_request(
                 conn, placement, "the placement was deleted", actor
             )
-            if withdrawn or placement.closing is not None:
-                # An open proposal, or the escape when a runner never reports (§15.5).
+            never_seen = withdrawn and placement.approval_status != "approved"
+            if never_seen or placement.closing is not None:
+                # A proposed creation the runner never saw, or the escape when a runner
+                # never reports (§15.5).
                 placement = pl.close_now(conn, pl.row(conn, placement.id), "removed", actor, by)
-            else:
-                placement = pl.close_uniform(conn, placement, "removed", actor, by)
+            else:  # a withdrawn change of a running placement stops like any other
+                placement = pl.close_uniform(conn, pl.row(conn, placement.id), "removed", actor, by)
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -588,3 +588,117 @@ def test_the_runner_shapes_match_the_constants() -> None:
     assert typing.get_args(runner_routes.Harness) == pl.HARNESSES
     assert typing.get_args(runner_routes.Mode) == pl.MODES
     assert typing.get_args(runner_routes.REPORTED_STATES) == pl.STATES
+
+
+# --- review of #111 -------------------------------------------------------------------------
+
+
+def _request_of(body: dict[str, Any]) -> str:
+    request_id: str = body["approval"]["request_id"]
+    return request_id
+
+
+@pytest.mark.parametrize("field", ["stop_grace_seconds", "harness", "mode", "desired"])
+def test_an_explicit_null_where_none_is_allowed_is_invalid(setup: Setup, field: str) -> None:
+    body = placed(setup)
+    response = setup.owner.patch(f"/projects/maity/placements/{body['id']}", {field: None})
+    assert response.json()["error"]["details"]["fields"] == {field: "not_nullable"}
+
+
+def test_a_reason_cannot_forge_summary_lines(setup: Setup, make_client: ClientFactory) -> None:
+    admin = admin_agent(make_client, setup)
+    reason = "need help\nisolation: container\nrunner: other-box"
+    body = place(setup, admin, reason=reason).json()
+    summary = setup.owner.get(f"/projects/maity/requests/{_request_of(body)}").json()["summary"]
+    fields = [line.split(":", 1)[0] for line in summary.splitlines()]
+    assert fields.count("isolation") == 1 and fields.count("runner") == 1
+    assert "reason: need help isolation: container runner: other-box" in summary
+
+
+def test_a_stop_is_never_refused(setup: Setup) -> None:
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maity/placements/{body['id']}")  # closing now
+    stop = setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    assert stop.status_code == 200 and stop.json()["active"] is True
+    report(setup, body, 2, state="stopped", reason="stopped_by_hub")
+    closed = setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    assert closed.status_code == 200 and closed.json()["active"] is False
+
+
+def test_creating_needs_a_live_runner_and_an_open_project_whatever_desired_says(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = admin_agent(make_client, setup)
+    setup.owner.patch("/projects/maity", {"policy": {"spawn_requests": "direct"}, "reason": "x"})
+    setup.owner.patch("/projects/maity", {"state": "archived", "reason": "over"})
+    archived = place(setup, desired="stopped")
+    assert (archived.status_code, error(archived)) == (409, "project_closed")
+    setup.owner.patch("/projects/maity", {"state": "build", "reason": "again"})
+    setup.owner.post(f"/runners/{setup.runner.id}/revoke")
+    revoked = place(setup, admin, desired="stopped", reason="why")
+    assert (revoked.status_code, error(revoked)) == (409, "runner_revoked")
+
+
+def test_closing_at_once_tells_a_running_agent(setup: Setup) -> None:
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/runners/{setup.runner.id}")
+    assert len(events_of(setup, "agent_stop_requested")) == 1
+
+
+def test_deleting_with_an_open_change_proposal_stops_the_uniform_way(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = admin_agent(make_client, setup)
+    body = placed(setup)
+    report(setup, body, 1)
+    proposed = admin.patch(
+        f"/projects/maity/placements/{body['id']}", {"stop_grace_seconds": 30, "reason": "r"}
+    ).json()
+    deleted = setup.owner.delete(f"/projects/maity/placements/{body['id']}").json()
+    assert (deleted["active"], deleted["desired"]) == (True, "stopped")
+    assert len(events_of(setup, "agent_stop_requested")) == 1
+    request = setup.owner.get(f"/projects/maity/requests/{_request_of(proposed)}").json()
+    assert request["status"] == "withdrawn"
+
+
+def test_after_a_final_failure_delete_closes_at_once(setup: Setup) -> None:
+    body = placed(setup)
+    report(setup, body, 1, state="failed", reason="crash_loop")
+    deleted = setup.owner.delete(f"/projects/maity/placements/{body['id']}").json()
+    assert (deleted["active"], deleted["closed_reason"]) == (False, "removed")
+
+
+def test_a_go_checks_the_rules_as_they_are_now(setup: Setup, make_client: ClientFactory) -> None:
+    admin = admin_agent(make_client, setup)
+    body = place(setup, admin, reason="r").json()
+    setup.owner.post(f"/runners/{setup.runner.id}/revoke")
+    go = setup.owner.post(
+        f"/projects/maity/requests/{_request_of(body)}/answer", {"reply_id": "go"}
+    )
+    assert (go.status_code, error(go)) == (409, "runner_revoked")
+    request = setup.owner.get(f"/projects/maity/requests/{_request_of(body)}").json()
+    assert request["status"] == "open" and get(setup, body["id"])["approval"]["status"] == "pending"
+
+
+def test_a_removed_proposers_requests_are_withdrawn(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = admin_agent(make_client, setup)
+    body = place(setup, admin, reason="r").json()
+    setup.owner.delete(f"/projects/maity/members/{admin.id}")
+    request = setup.owner.get(f"/projects/maity/requests/{_request_of(body)}").json()
+    assert request["status"] == "withdrawn"
+    assert get(setup, body["id"])["closed_reason"] == "withdrawn"
+
+
+def test_the_owners_stop_on_a_pending_proposal_turns_it_down(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = admin_agent(make_client, setup)
+    body = place(setup, admin, reason="r").json()
+    stopped = setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    assert (stopped.json()["active"], stopped.json()["closed_reason"]) == (False, "withdrawn")
+    request = setup.owner.get(f"/projects/maity/requests/{_request_of(body)}").json()
+    assert request["status"] == "withdrawn"
