@@ -19,8 +19,6 @@ that need the maintainer are marked **[maintainer]**.
 
 - Signed requests spend their nonce before the authentication transaction, which `retrying` may run again: a deadlock or serialisation failure during authentication turns the retry into `nonce_reused` (seen in the #92 review). Spend the nonce only after the transaction committed, or make the retry keep it.
 - Runner slices after H3 (`docs/api.md` §15): H4 the join pickup, H6 supervised sessions (H5, proposals and consent, came with H3).
-- The join page at `/join/{token}` with `/j/{token}` as an alias (contract #104), once it is merged.
-- The install line `MAITY_CLI_INSTALL` in the join page, `/help` and `signature_required` (contract #113), once it is merged.
 - Mentions (§8.6), the member view's owner and credentials summary, `instance:admin` with `GET /admin/users`, `last_message` on conversations (contract #106).
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).

@@ -42,7 +42,7 @@ from maity_hub.routes.members import validate_assignment
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter()
-page_router = APIRouter()  # /j/{token}, outside the API prefix
+page_router = APIRouter()  # /join/{token} and /j/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
@@ -287,7 +287,7 @@ signs: a call with the bearer credential is refused with `signature_required`.
 Install the CLI and join with it:
 
 ```sh
-pipx install maity
+{{cli_install}}
 maity join {{join_link}} --code <code>
 ```
 
@@ -302,7 +302,7 @@ def join_link(settings: Settings, via: str, token: str) -> str:
     """The join URL on the join host (no prefix, §1.1) or on the public URL."""
     if via == "join" and settings.join_url is not None:
         return f"{settings.join_url}/{token}"
-    return f"{settings.public_url}/j/{token}"
+    return f"{settings.public_url}/join/{token}"
 
 
 def exchange_url(settings: Settings, on_join_host: bool, token: str) -> str:
@@ -342,9 +342,12 @@ def render_page(
         "hub": hub,
         "token": token,
         "join_link": link,
+        "cli_install": settings.cli_install,
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
-            _SIGNING_REQUIRED.replace("{{hub}}", hub).replace("{{join_link}}", link)
+            _SIGNING_REQUIRED.replace("{{hub}}", hub)
+            .replace("{{join_link}}", link)
+            .replace("{{cli_install}}", settings.cli_install)
             if project.signing == "required"
             else ""
         ),
@@ -414,8 +417,14 @@ async def join_page(token: str, request: Request) -> Response:
     return await _page(token, request)
 
 
+@page_router.get("/join/{token}")
+async def public_join_page(token: str, request: Request) -> Response:
+    return await _page(token, request)
+
+
 @page_router.get("/j/{token}")
 async def short_join_page(token: str, request: Request) -> Response:
+    """The links handed out before `/join/` (§3.2): an alias, not a redirect."""
     return await _page(token, request)
 
 

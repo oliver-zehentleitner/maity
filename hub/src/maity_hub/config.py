@@ -21,6 +21,12 @@ class ConfigError(ValueError):
     """A setting is present but unusable. The message never contains a credential."""
 
 
+# Until the package is on PyPI; from then on `pipx install maity` (§3.2).
+DEFAULT_CLI_INSTALL = (
+    'pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"'
+)
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -36,6 +42,9 @@ class Settings:
     forge_github_token: str | None = field(default=None, repr=False)
     # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
     join_url: str | None = None
+    # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
+    # agent how to get it (§3.2).
+    cli_install: str = DEFAULT_CLI_INSTALL
 
     @property
     def join_host(self) -> str | None:
@@ -65,6 +74,7 @@ class Settings:
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
             join_url=parse_join_url(env.get("MAITY_JOIN_URL", ""), public),
+            cli_install=env.get("MAITY_CLI_INSTALL", "").strip() or DEFAULT_CLI_INSTALL,
         )
 
 

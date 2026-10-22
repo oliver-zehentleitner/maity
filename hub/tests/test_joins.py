@@ -54,7 +54,7 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "via",
     }
     assert body["via"] == "public"  # no join host configured
-    assert body["join_url"].startswith("https://hub.example/j/")
+    assert body["join_url"].startswith("https://hub.example/join/")
     assert len(_token(body)) >= 22  # 128 bits, base64url
     assert CODE.match(body["code"])
     assert body["paste_line"] == f"maity join {body['join_url']} --code {body['code']}"

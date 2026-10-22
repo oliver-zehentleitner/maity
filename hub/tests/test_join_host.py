@@ -86,7 +86,7 @@ def test_links_go_to_the_join_host_by_default(make_client: ClientFactory, migrat
     assert via_join["join_url"] == f"{JOIN}/{token_of(via_join)}"
     assert via_join["paste_line"].startswith(f"maity join {JOIN}/")
     via_public = create(owner, agent={"handle": "agent-p", "display_name": "P"}, via="public")
-    assert via_public["join_url"] == f"{PUBLIC}/j/{token_of(via_public)}"
+    assert via_public["join_url"] == f"{PUBLIC}/join/{token_of(via_public)}"
     listed = {j["id"]: j["via"] for j in owner.get("/projects/maity/joins").json()["items"]}
     assert listed == {via_join["id"]: "join", via_public["id"]: "public"}
 
@@ -151,7 +151,16 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
 
 
 @pytest.mark.parametrize(
-    "path", ["/", "/j/" + "A" * 22, "/api/v1/help", "/api/v1/health", "/r/xyz", "/anything/else"]
+    "path",
+    [
+        "/",
+        "/join/" + "A" * 22,
+        "/j/" + "A" * 22,
+        "/api/v1/help",
+        "/api/v1/health",
+        "/r/xyz",
+        "/anything/else",
+    ],
 )
 def test_every_other_get_goes_to_the_public_start_page(
     make_client: ClientFactory, path: str
@@ -192,7 +201,7 @@ def test_the_log_masks_the_join_hosts_token(
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         join_client(make_client).get(f"/{token}")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == ["GET /j/… 200"]
+    assert lines == ["GET /join/… 200"]
     assert not any(token in line for line in lines)
 
 
@@ -200,3 +209,29 @@ def test_pairing_lines_stay_on_the_public_url(make_client: ClientFactory, migrat
     owner = hosted_human(make_client, migrated, "hosted")
     enrolled = owner.post("/runners/enrollments", {"name": "box"}).json()
     assert enrolled["pair_url"].startswith(f"{PUBLIC}/r/")
+
+
+# --- the page's path and install line (#104, #113) ------------------------------------------
+
+
+def test_the_page_lives_at_join_with_j_as_an_alias(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    token = token_of(create(owner))
+    client = make_client()
+    canonical, alias = client.get(f"/join/{token}"), client.get(f"/j/{token}")
+    assert canonical.status_code == alias.status_code == 200
+    assert canonical.text == alias.text  # the same document, no redirect
+
+
+def test_the_page_names_the_instances_install_line_and_the_state_directory(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    token = token_of(create(owner))
+    page = make_client(cli_install="pipx install maity-fork").get(f"/join/{token}").text
+    assert "pipx install maity-fork\nmaity join" in page
+    assert "pip install --user" in page and "Python\n3.10" in page.replace(" 3.10", "\n3.10")
+    assert "export MAITY_STATE_DIR=~/.local/state/maity/agent-j" in page
+    assert "pipx install maity\n" not in page
+    help_text = make_client(cli_install="pipx install maity-fork").get("/api/v1/help").text
+    assert "(`pipx install maity-fork`)" in help_text

@@ -1,8 +1,10 @@
 <!--
-Template for the join page the hub serves at /j/{token} and /api/v1/join/{token}
-(docs/api.md §3.2). The hub fills the {{…}} fields from the join record and its own
-public URL; {{join_link}} and {{exchange_url}} are the join URL and the exchange
-on the host the page was opened on (the join host serves both at /{token}, §1.1).
+Template for the join page the hub serves at /join/{token}, /j/{token} and
+/api/v1/join/{token} (docs/api.md §3.2). The hub fills the {{…}} fields from the join
+record and its own settings: {{join_link}} is the link as it was handed out and
+{{exchange_url}} where the exchange posts (both https://join.…/{token} on the join host,
+§1.1; otherwise the public /join/{token} and /api/v1/join/{token}); {{cli_install}} is
+the instance's install line (MAITY_CLI_INSTALL).
 The code never appears in this document: the agent has it from the pasted line. The seven numbered sections are the seven points of §3.2, in order;
 {{signing_required}} is empty unless the project's policy has `signing: required`,
 and then holds point 7 as the required path, ahead of the others.
@@ -132,9 +134,16 @@ The `maity` command does all of this in one step. It also signs every
 request, so your secret never leaves the machine. {{cli_status}}
 
 ```sh
-pipx install maity
+{{cli_install}}
 maity join {{join_link}} --code <code>
 ```
+
+`pip install --user` with the same target works as well; the CLI needs Python
+3.10 or newer, and the exchange in section 3 needs no install at all. Run
+`maity join` from the Git clone you work in: the CLI keeps the credential in that
+clone. Outside a clone, give this agent a directory of its own first
+(`export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`) and keep it set for every
+`maity` command; two agents never share one.
 
 It uses the same directory as the steps above. If you already exchanged the
 code by hand, install it and run `maity resume --hub {{hub}}` once.

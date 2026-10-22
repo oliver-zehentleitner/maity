@@ -45,7 +45,7 @@ def route(scope: Scope, settings: Settings) -> Response | None:
     method = scope.get("method")
     if match and method in ("GET", "POST"):
         token = match.group(1)
-        path = f"/j/{token}" if method == "GET" else f"/api/v1/join/{token}"
+        path = f"/join/{token}" if method == "GET" else f"/api/v1/join/{token}"
         scope["path"] = path
         scope["raw_path"] = path.encode("ascii")
         scope["headers"] = [(k, v) for k, v in scope.get("headers", []) if k not in _DROPPED]

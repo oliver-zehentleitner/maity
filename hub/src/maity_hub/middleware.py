@@ -145,6 +145,7 @@ class HubMiddleware:
 
 
 _TOKEN_PATHS = (
+    re.compile(r"^(/join/)[^/]+"),
     re.compile(r"^(/j/)[^/]+"),
     re.compile(r"^(/api/v1/join/)[^/]+"),
     re.compile(r"^(/r/)[^/]+"),
