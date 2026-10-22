@@ -27,7 +27,7 @@ PREFIX = "maity_"
 CONF = 'set -g update-environment ""\nset -g remain-on-exit on\nset -g history-limit 5000\n'
 FORMAT = (
     "#{session_name}\t#{pane_dead}\t#{pane_dead_status}\t#{pane_pid}\t"
-    "#{@maity_placement}\t#{@maity_generation}"
+    "#{@maity_placement}\t#{@maity_generation}\t#{window_index}.#{pane_index}"
 )
 TIMEOUT = 15.0
 
@@ -108,9 +108,9 @@ class Tmux:
         found: dict[str, Session] = {}
         for line in done.stdout.splitlines():
             parts = line.split("\t")
-            if len(parts) != 6 or not parts[0].startswith(PREFIX):
-                continue
-            name, dead, status, pid, placement, generation = parts
+            if len(parts) != 7 or not parts[0].startswith(PREFIX) or parts[0] in found:
+                continue  # the agent is the session's first pane; a pane added later is not
+            name, dead, status, pid, placement, generation, _where = parts
             found[name] = Session(
                 name=name,
                 dead=dead == "1",

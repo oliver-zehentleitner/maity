@@ -155,7 +155,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     settle(sup)
     ((name, argv, env),) = backend.started
     assert name == "maity_maity_agent-3" and env == {"MAITY_PLACEMENT": "plc-0003"}
-    assert argv[1:3] == ["-m", "maity.runner.stub"] and argv[-3:] == ["1", "--run-seconds", "5"]
+    assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
+    assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
     sup.tick()
     assert states(reports) == [("starting", None, None), ("running", None, None)]
@@ -546,7 +547,11 @@ def test_tmux_without_a_server_has_no_sessions(tmp_path: Path) -> None:
 
 
 def test_tmux_parses_panes(tmp_path: Path) -> None:
-    out = "maity_maity_agent-3\t1\t2\t123\tplc-0003\t4\nother\t0\t\t5\t\t\n"
+    out = (
+        "maity_maity_agent-3\t1\t2\t123\tplc-0003\t4\t0.0\n"
+        "maity_maity_agent-3\t0\t\t999\tplc-0003\t4\t0.1\n"  # a pane added later masks nothing
+        "other\t0\t\t5\t\t\t0.0\n"
+    )
 
     def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(argv), 0, out, "")
@@ -875,3 +880,37 @@ def test_serve_refuses_unsupported_settings_with_78(
     )
     assert cli.main(["runner", "serve", "--config", str(path)]) == serve.EXIT_CONFIG
     assert "cpu_quota" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"seq": "41"}, {"seq": -1}, {"stop_grace_seconds": 901}, {"stop_grace_seconds": "x"},
+     {"agent": "agt-3"}, {"agent": {"id": 5}}],
+)  # fmt: skip
+def test_more_malformed_placements_are_dropped(world: Any, bad: dict[str, Any]) -> None:
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg, 4)
+    sup.update([placement(3, **bad), placement(4)])
+    settle(sup)
+    assert {path for path, _ in reports.sent} == {"plc-0004"}
+
+
+def test_a_start_that_ends_between_snapshot_and_step_is_not_doubled(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    sup.tick()
+    task = sup.tasks["plc-0003"]
+    task.join(5)
+    stale = dict(backend.live)
+    backend.live.clear()  # the snapshot of the next tick predates the new session
+
+    def snapshot() -> dict[str, Any]:
+        backend.live.update(stale)
+        return {}
+
+    monkeypatch.setattr(backend, "sessions", snapshot)
+    sup.tick()
+    assert len(backend.started) == 1

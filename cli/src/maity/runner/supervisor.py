@@ -59,7 +59,19 @@ def valid(p: Any) -> bool:
         and workspace.TOKEN.match(space["clone"]) is not None
         and isinstance(p.get("harness"), str)
         and HARNESS_ID.match(p["harness"]) is not None
+        and _count(p.get("seq", 0))
+        and _count(p.get("stop_grace_seconds", 0))
+        and p.get("stop_grace_seconds", 0) <= 900
+        and isinstance(p.get("agent", {}), dict)
+        and all(
+            v is None or (isinstance(v, str) and len(v) <= 100)
+            for v in ((p.get("agent") or {}).get("id"), (p.get("agent") or {}).get("handle"))
+        )
     )
+
+
+def _count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def stamp(moment: float | None) -> str | None:
@@ -225,9 +237,9 @@ class Supervisor:
         pid, generation = p["id"], p["generation"]
         task = self.tasks.get(pid)
         if task is not None:
-            if task.is_alive():
-                return 0
-            del self.tasks[pid]
+            if not task.is_alive():
+                del self.tasks[pid]
+            return 0  # this tick's snapshot may predate the session the task just started
         rec = self.records.setdefault(pid, Record(generation=generation, since=now))
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
@@ -245,6 +257,8 @@ class Supervisor:
                           retry_at=None)  # fmt: skip
             return 0
         if mine is None and blocking is not None:
+            if blocking.placement is None:
+                self._wait(rec, f"an unlabelled session {blocking.name} holds its name", pid)
             return 0  # another session holds this name: ended as an orphan first
         if mine is not None and mine.generation != generation:
             if not mine.dead:
@@ -506,7 +520,7 @@ class Supervisor:
                     continue
                 key = rec.key()
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
-                    rec.seq = max(rec.seq, int(p.get("seq") or 0)) + 1
+                    rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
