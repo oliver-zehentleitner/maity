@@ -142,3 +142,32 @@ no move the hub would refuse, and the hub still decides.
 refuse — every refusal would be a round trip and a surprise. Filters as
 query parameters to the hub — the board already holds every card of the
 window, so filtering there is instant and needs no new contract.
+
+## A membership is edited in one form and sent as one PATCH of what changed; a reports-to circle is refused before it is sent
+
+**Id:** ae257555-b3a4-4ba7-add3-1ab051c1f621
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request to set reports_to and areas from the dashboard, relayed by the coordinator, 2026-10-22; contract PR #118 (cycle), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub offers the edit as separate endpoints, or a membership gains fields that need their own confirmation
+
+Members → Manage holds one form for what docs/api.md §6.2 lets an admin
+change: role (owner only for a human), reports to (nobody or another
+member), areas (repository paths, the hub's pattern, never `..`),
+capabilities (`tag`) and, for an agent where the hub shows it, the
+briefing. Save sends one `PATCH` with only the fields that changed. A
+reports-to that would close a circle is refused before sending, in the
+words the hub's `cycle` refusal also gets. Capabilities the page does not
+offer are kept as they are.
+
+**Reason:** one form keeps an admin's change atomic (the hub applies it
+in one write) and the organisation view follows at once. Refusing a
+circle in the page spares a round trip and says why; the hub refuses it
+too. Keeping unknown capabilities means an older page never strips what a
+newer hub added.
+
+**Rejected alternative:** one control per field with its own Save — a
+role and a reports-to change that belong together would land as two
+writes, and a failure in between leaves half a change. Sending every
+field every time — a stale form would overwrite a change made meanwhile.
