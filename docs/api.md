@@ -1134,6 +1134,7 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
+| `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting; set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -2719,8 +2720,30 @@ rule of §13 before it writes anything.
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
-| `POST /runners/{id}/revoke` | the owner | `{"reason"?}`; revokes the live credential, ends its long-poll; placements keep `desired` and show the runner as revoked; returns the runner view. Runner-side effect on its agents: (open: §12 6 of the design) — the hub stops nothing here; a human stops placements first, or uses `DELETE` |
+| `POST /runners/{id}/revoke` | the owner | `{"reason"?}`; revokes the live credential, ends its long-poll; placements keep `desired` and show the runner as revoked; returns the runner view. Effect on its agents follows `on_runner_revoke` (below) per attached project |
 | `DELETE /runners/{id}` | the owner | revokes the credential, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
+
+**On revoking a runner.** What happens to the agents a revoked runner was
+running is a setting, chosen per project within the instance default
+(the maintainer's decision of 2026-10-22: the operator and the project's
+owner choose):
+
+- `on_runner_revoke` in the instance settings (§16, `MAITY_ON_RUNNER_REVOKE`,
+  default `keep`) and in each project's policy (§6.1: `keep`, `stop` or
+  `inherit`, default `inherit`).
+- `keep`: placements keep `desired` and show the runner as revoked; the
+  agents run on until a human stops them on the machine
+  (`maity runner stop-all`) or revokes their own credentials. Nothing is
+  lost mid-step.
+- `stop`: in the same transaction as the revocation, every placement of
+  the runner in that project gets `desired: stopped` and the agent
+  credentials those placements joined with are revoked
+  (`revoked_reason: runner_revoked`), so each agent stops at its next
+  call whatever the machine does. A runner that is still honest learns
+  it from the answer to its next call: `credential_revoked` carries
+  `details.stop: [placement ids]`, and the runner stops those sessions
+  before it exits.
+- The revocation's answer lists, per project, which rule applied.
 
 ```json
 {
