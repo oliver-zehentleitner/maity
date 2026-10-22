@@ -678,7 +678,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert "forbidden" in out and "a human paused you" in out, out
     # A resume clears the agent's own pause, never a human's; the packet
     # tells the agent about it (membership.paused, docs/api.md §5.2).
-    packet = json.loads(run.maity(alpha, "resume"))
+    packet = json.loads(run.maity(alpha, "resume", "--json"))
     paused = packet["membership"].get("paused") or {}
     assert paused.get("by") == owner_id and paused.get("reason") == "e2e: hold on", packet[
         "membership"
@@ -853,7 +853,7 @@ def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents.locator(".briefing")).to_contain_text(
         "You test the dashboard. First: the e2e card."
     )
-    packet = json.loads(run.maity(alpha, "resume"))
+    packet = json.loads(run.maity(alpha, "resume", "--json"))
     assert packet["membership"].get("briefing") == "You test the dashboard. First: the e2e card."
     no_problems(run, "briefing")
 
