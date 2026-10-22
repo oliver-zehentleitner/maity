@@ -109,7 +109,7 @@ one clear message.
 when its host equals the join or pair URL's host, or is that host minus
 its first label and still contains a dot (`join.maity.team` →
 `maity.team`). Grandparents and a single-label parent (`team`) are refused.
-The single-segment join-host shape is not taken for `j`, `r` or `api`, so a
+The single-segment join-host shape is not taken for `j`, `join`, `r` or `api`, so a
 truncated hub URL is an error instead of an exchange.
 
 **Reason:** the header decides where every later signed request and the
