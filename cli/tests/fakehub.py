@@ -73,6 +73,7 @@ class FakeHub:
     # (method, path) -> (status, payload) or (status, payload, headers)
     routes: dict[tuple[str, str], Callable[[Seen], tuple[Any, ...]]] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
+    openapi: dict[str, Any] = field(default_factory=lambda: {"paths": {}})  # GET openapi.json
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -154,6 +155,8 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, "# Maity help\n")
             if path == "/api/v1/health":
                 return self._send(200, {"status": "ok"})
+            if path == "/api/v1/openapi.json":  # unauthenticated, as on the hub (§4)
+                return self._send(200, hub.openapi)
             if path == f"/api/v1/runners/pair/{PAIR_TOKEN}" and self.command == "POST":
                 if hub.pair_used:
                     return self._error(404, "not_found")

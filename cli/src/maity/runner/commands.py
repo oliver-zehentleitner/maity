@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, operate, serve, supervisor
+from . import capabilities, config, loop, operate, serve, stub, supervisor, targets
 from .asuser import RUNNER, AsUser
 
 STATE_FILE = serve.RUNNER_FILE
@@ -190,6 +190,12 @@ DEFAULTS = (
     ("backend.local.layout", "single"),
     ("backend.local.agent_path", "the service's own PATH at start"),
     ("backend.local.memory_max, cpu_quota", "unset (no limit)"),
+    ("backend.ssh.known_hosts", "required; the only known_hosts file used"),
+    ("backend.ssh.identity", '"agent" (the operator\'s SSH_AUTH_SOCK)'),
+    ("backend.ssh.hosts[].port", "22"),
+    ("backend.ssh.hosts[].max_agents", "4"),
+    ("backend.ssh.hosts[].agent_path", "/usr/local/bin:/usr/bin:/bin"),
+    ("backend.ssh.hosts[].isolation", "shared_user (own_user: not yet)"),
     ("harness.<id>.modes", '["supervised"]; default_mode: the first'),
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
     ("harness.<id>.require_sandbox", "false"),
@@ -336,7 +342,12 @@ def _check_claude_code(
         if missing:
             line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
             (report.error if harness.require_sandbox else report.warn)(line)
-    # The agents' user's own settings: agents start with --setting-sources user.
+    _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
+    """The agents' user's own Claude Code settings (here, through sudo, or on a host):
+    agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
         settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
     except (OSError, KeyError):
@@ -347,11 +358,90 @@ def _check_claude_code(
     allow = permissions.get("allow") if isinstance(permissions, dict) else None
     if isinstance(allow, list) and allow:
         report.warn(
-            f"harness claude-code: ~/.claude/settings.json allows {len(allow)} rule(s) of its "
-            "own; every agent this runner starts inherits them"
+            f"{where}harness claude-code: ~/.claude/settings.json allows {len(allow)} rule(s) "
+            "of its own; every agent this runner starts inherits them"
         )
     if settings.get("hooks"):
-        report.warn("harness claude-code: ~/.claude/settings.json defines hooks; agents run them")
+        report.warn(f"{where}harness claude-code: ~/.claude/settings.json defines hooks; "
+                    "agents run them")  # fmt: skip
+
+
+def _check_ssh(report: Report, cfg: config.Config, only: str | None) -> None:
+    """The runner's side of the ssh backend, then each host (§5.4): reached with the
+    runner's own known_hosts only, so an unknown or changed host key fails here."""
+    assert cfg.ssh is not None  # noqa: S101 - the caller checks it
+    if shutil.which("ssh") is None:
+        report.error("ssh is not installed; the ssh backend reaches every host through it")
+        return
+    known = cfg.ssh.known_hosts
+    if not known.is_file():
+        report.error(f"known_hosts {known} does not exist; add each host's key to it")
+    else:
+        _check_config_file(report, known)
+        report.ok(f"known_hosts {known}")
+    if cfg.ssh.identity == "agent":
+        if not os.environ.get("SSH_AUTH_SOCK"):
+            report.error('identity = "agent" needs an ssh agent (SSH_AUTH_SOCK is not set)')
+    elif not Path(cfg.ssh.identity).expanduser().is_file():
+        report.error(f"identity {cfg.ssh.identity} does not exist")
+    else:
+        _private(report, Path(cfg.ssh.identity).expanduser(), "identity")
+    # ssh's %C is 40 hex characters, and ssh binds the master's socket first under a
+    # temporary name: the path plus `.` and 16 random characters must fit as well.
+    socket = cfg.state_dir / "ssh" / ("0" * 40)
+    if len(str(socket).encode()) + targets.CONTROL_SUFFIX >= targets.UNIX_PATH_MAX:
+        report.error(
+            f"state_dir {cfg.state_dir} is too long for ssh's connection sockets "
+            f"(<state_dir>/ssh/<40 hex> plus ssh's {targets.CONTROL_SUFFIX}-byte temporary "
+            f"suffix must stay under {targets.UNIX_PATH_MAX} bytes); "
+            "choose a shorter hub.state_dir"
+        )
+    hosts = [t for t in targets.ssh_hosts(cfg) if only is None or t.name == only]
+    if not hosts:
+        report.error(f"no host named {onboarding.inline(only or '')} in backend.ssh.hosts")
+    for target in hosts:
+        _check_host(report, cfg, target)
+
+
+def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> None:
+    name, as_user = target.name, target.as_user
+    try:
+        as_user.home()
+    except OSError as exc:
+        report.error(f"{name}: {onboarding.inline(str(exc))[:200]}")
+        return
+    report.ok(f"{name}: reached, host key known")
+    tools = ("tmux", "git", "maity")
+    found = as_user.run(["sh", "-c", targets.WHICH, "sh", *tools],
+                        env={"PATH": target.agent_path})  # fmt: skip
+    paths = dict(line.split("\t", 1) for line in found.stdout.splitlines() if "\t" in line)
+    for tool in tools:
+        if paths.get(tool):
+            report.ok(f"{name}: {tool} found on agent_path")
+        else:
+            report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
+    probes, sandbox = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
+    for harness in cfg.harnesses.values():
+        probe = probes[harness.id]
+        if harness.id == "stub":
+            report.ok(f"{name}: harness stub (test adapter)")
+        elif probe.reason is not None:
+            report.error(f"{name}: harness {harness.id}: {probe.reason.replace('_', ' ')}")
+        else:
+            report.ok(f"{name}: harness {harness.id}: {probe.path} ({probe.version})")
+            if harness.id == "claude-code" and not sandbox.get(harness.id):
+                line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
+                (report.error if harness.require_sandbox else report.warn)(line)
+    root = target.workspaces
+    probe_dir = root if as_user.exists(root, "-d") else root.parent
+    if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
+        report.error(f"{name}: workspaces {root} cannot be created or written")
+    else:
+        report.ok(f"{name}: workspaces {root}")
+    if "claude-code" in cfg.harnesses:
+        _check_claude_settings(report, as_user, f"{name}: ")
+    if as_user.run(["sudo", "-n", "true"]).returncode == 0:
+        report.warn(f"{name}: the remote user has sudo without a password; agents have it too")
 
 
 def _json_bytes(raw: bytes) -> dict[str, Any] | None:
@@ -396,15 +486,19 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
+    if cfg.ssh is not None:
+        _check_ssh(report, cfg, getattr(args, "target", None))
+    elif getattr(args, "target", None):
+        report.error("--target is for the ssh backend")
     if cfg.local is not None:
         _check_local(report, cfg.local)
-    agent_path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    if shutil.which("maity", path=agent_path) is None:
-        report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
-    else:
-        report.ok("maity found on agent_path")
-    for harness in cfg.harnesses.values():
-        _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+        agent_path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
+        if shutil.which("maity", path=agent_path) is None:
+            report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
+        else:
+            report.ok("maity found on agent_path")
+        for harness in cfg.harnesses.values():
+            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -513,6 +607,20 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     )
     rsub = p.add_subparsers(dest="runner_command", metavar="<action>", required=True)
 
+    # Internal: what an agent's tmux pane runs on an ssh host, whose interpreter is not the
+    # runner's (no `help`, so not listed).
+    r = rsub.add_parser("loop")
+    r.add_argument("--spec", required=True)
+    r.set_defaults(handler=lambda a: loop.main(["--spec", a.spec]))
+    r = rsub.add_parser("stub")
+    r.add_argument("--exit-code", type=int, default=0)
+    r.add_argument("--run-seconds", type=int, default=30)
+    r.set_defaults(
+        handler=lambda a: stub.main(
+            ["--exit-code", str(a.exit_code), "--run-seconds", str(a.run_seconds)]
+        )
+    )
+
     r = rsub.add_parser(
         "pair",
         help="exchange a pairing code for the runner's credential",
@@ -533,12 +641,15 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         help="validate the configuration and this machine; exits 1 on any error",
         description="Validate the configuration, the state directory, tmux and the workspaces, "
         "each harness's binary and version, sandbox prerequisites and the harness settings "
-        "agents would inherit, then GET /health on the hub. Nothing else is sent.",
+        "agents would inherit, then GET /health on the hub. On the ssh backend each host is "
+        "reached and checked for tmux, git, maity, the harnesses and its workspaces. Nothing "
+        "else is sent.",
         formatter_class=fmt,
     )
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--explain", action="store_true", help="print every key's default and stop")
     r.add_argument("--offline", action="store_true", help="do not contact the hub")
+    r.add_argument("--target", help="ssh backend: check only this host")
     r.set_defaults(handler=cmd_check)
 
     r = rsub.add_parser(

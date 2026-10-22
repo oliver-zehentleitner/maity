@@ -74,6 +74,7 @@ Why Maity is built the way it is.
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
+- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible)
 
 ## T
 - [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it; unverified webhook requests limited per address

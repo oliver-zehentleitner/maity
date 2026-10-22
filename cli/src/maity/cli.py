@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -548,17 +549,30 @@ def cmd_answer(args: argparse.Namespace) -> int:
 CLOSED = ("done", "cancelled")
 
 
+def _next_cursor(page: Any, seen: set[str]) -> str | None:
+    """The page's `next_cursor`, or None on the last page. A cursor that comes back would
+    loop for ever: that is an error, never another round."""
+    cursor = _field(page, "next_cursor")
+    if not isinstance(cursor, str) or not cursor:
+        return None
+    if cursor in seen:
+        raise CommandError("the hub sent the same page cursor twice; stopping")
+    seen.add(cursor)
+    return cursor
+
+
 def _releases(session: Session) -> list[dict[str, Any]]:
     """Every release card of the project, following the pages."""
     items: list[dict[str, Any]] = []
     cursor: str | None = None
+    seen: set[str] = set()
     while True:
         query = [("kind", "release"), ("status", "all"), ("limit", "200")]
         if cursor:
             query.append(("cursor", cursor))
         page = session.client.call("GET", session.project_path("tasks"), query=query)
         items.extend(i for i in _field(page, "items") or [] if isinstance(i, dict))
-        cursor = _field(page, "next_cursor")
+        cursor = _next_cursor(page, seen)
         if not cursor:
             return items
 
@@ -818,35 +832,45 @@ _RFC3339 = re.compile(
 _NO_OFFSET = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?", re.ASCII)
 
 
-def limit_until(value: str, now: float | None = None) -> str:
-    """`--until` as RFC 3339 in UTC with `Z`: a timestamp with an offset (converted), or a
-    duration from now (`90m`, `1h30m`, `2d12h`; §13's grammar, ASCII digits only). A
-    timestamp without an offset is refused, never read as local time: an agent's zone is
-    often not its human's. Nothing but these two forms is accepted."""
+def cli_time(flag: str, value: str, direction: int, now: float | None = None,
+             limit: int | None = None) -> str:  # fmt: skip
+    """A time option as RFC 3339 in UTC with `Z`: a timestamp with an offset (converted), or
+    a duration (`90m`, `1h30m`, `2d12h`; §13's grammar, ASCII digits only) from now, forward
+    (`direction` 1) or back (-1), at most `limit` seconds. A timestamp without an offset is
+    refused, never read as local time: an agent's zone is often not its human's."""
     match = _DURATION.fullmatch(value)
     if value and match and any(match.groups()):
         if any(g is not None and int(g) == 0 for g in match.groups()):
-            raise UsageError(f"--until {value!r}: each part of a duration is a positive number")
+            raise UsageError(f"{flag} {value!r}: each part of a duration is a positive number")
         d, h, m, s = (int(g or 0) for g in match.groups())
         seconds = ((d * 24 + h) * 60 + m) * 60 + s
-        if seconds > LIMIT_MAX:
-            raise UsageError(f"--until {value!r}: at most 7 days ahead")
-        moment = datetime.fromtimestamp((time.time() if now is None else now) + seconds, tz=UTC)
+        if limit is not None and seconds > limit:
+            raise UsageError(f"{flag} {value!r}: at most 7 days ahead")
+        base = time.time() if now is None else now
+        try:
+            moment = datetime.fromtimestamp(base + direction * seconds, tz=UTC)
+        except (ValueError, OverflowError, OSError):
+            raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
         return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
     if _NO_OFFSET.fullmatch(value):
         raise UsageError(
-            f"--until {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
+            f"{flag} {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
         )
     if not _RFC3339.fullmatch(value):
         raise UsageError(
-            f"--until {value!r}: an RFC 3339 time with an offset "
+            f"{flag} {value!r}: an RFC 3339 time with an offset "
             "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
         )
     try:
         moment = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
     except (ValueError, OverflowError):
-        raise UsageError(f"--until {value!r}: not a time this CLI can send") from None
+        raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
     return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def limit_until(value: str, now: float | None = None) -> str:
+    """`--until` for `maity limit`: forward, at most 7 days."""
+    return cli_time("--until", value, 1, now, LIMIT_MAX)
 
 
 def cmd_limit(args: argparse.Namespace) -> int:
@@ -875,6 +899,7 @@ def cmd_note_list(args: argparse.Namespace) -> int:
     state_ = "all" if args.all else args.state
     items: list[dict[str, Any]] = []
     cursor: str | None = None
+    seen: set[str] = set()
     while True:  # every page: a card holds at most 200 notes (§6.16)
         query = [("state", state_), ("limit", "200")]
         if cursor:
@@ -883,7 +908,7 @@ def cmd_note_list(args: argparse.Namespace) -> int:
             "GET", session.project_path("tasks", args.card, "notes"), query=query
         )
         items.extend(n for n in (_field(page, "items") or []) if isinstance(n, dict))
-        cursor = _field(page, "next_cursor")
+        cursor = _next_cursor(page, seen)
         if not cursor:
             break
     if args.json:
@@ -977,6 +1002,153 @@ def cmd_link_remove(args: argparse.Namespace) -> int:
     path = session.project_path("tasks", args.card, "links", args.link)
     link = session.client.call("DELETE", path)
     return _done(args, link, f"removed {args.link} from {args.card}")
+
+
+# --- the change ticker (§17) ----------------------------------------------------------------
+
+TICKER_POST_TYPES = ("note", "deploy", "release")  # merge and decision are the hub's (§17.6)
+TICKER_SUB_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
+
+
+def cmd_ticker(args: argparse.Namespace) -> int:
+    """`GET …/ticker`, one page (§17.9); `more:` names the next one, never followed here."""
+    since = cli_time("--since", args.since, -1) if args.since else None  # refused before anything
+    session = Session()
+    query: list[tuple[str, str]] = [("limit", str(args.limit))]
+    if args.mine:
+        query.append(("for", "me"))
+    if args.type:
+        query.append(("type", ",".join(args.type)))
+    if args.area:
+        query.append(("area", args.area))
+    if since:
+        query.append(("since", since))
+    if args.cursor:
+        query.append(("cursor", args.cursor))
+    page = session.client.call("GET", session.project_path("ticker"), query=query)
+    if args.json:
+        _print_json(page)
+        return EXIT_OK
+    items = [i for i in (_field(page, "items") or []) if isinstance(i, dict)]
+    if not items:
+        print("no ticker items")
+    for item in items:
+        print("\n".join(onboarding.ticker_lines(item)))
+    cursor = _field(page, "next_cursor")
+    if not isinstance(cursor, str) or not cursor:
+        cursor = None
+    elif not (cursor.isascii() and cursor.isprintable()):  # it goes into a command line
+        _err("the hub's next cursor is not printable ASCII; not offering it")
+        cursor = None
+    if cursor:
+        # The same filter set, `--since` as the time it resolved to: a cursor is valid for
+        # one filter set only, and a duration would move.
+        again = ["maity", "ticker", *(["--mine"] if args.mine else [])]
+        again += [w for t in args.type or [] for w in ("--type", t)]
+        again += ["--area", args.area] if args.area else []
+        again += ["--since", since] if since else []
+        again += ["--limit", str(args.limit)] if args.limit != TICKER_LIMIT else []
+        print(f"more: {shlex.join([*again, '--cursor', cursor])}")
+    return EXIT_OK
+
+
+TICKER_LIMIT = 50
+
+
+def _ticker_limit(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number") from None
+    if not 1 <= number <= 200:
+        raise argparse.ArgumentTypeError("1 to 200")
+    return number
+
+
+def cmd_ticker_post(args: argparse.Namespace) -> int:
+    """`POST …/ticker` (§17.6), every flag to its field. Against a hub without the ticker it
+    prints the interim `maity say` line and sends nothing."""
+    to = args.to or []
+    if any(t in ("computed", "all") for t in to) and len(to) > 1:
+        raise UsageError("--to computed or --to all stands alone")
+    body: dict[str, Any] = {"type": args.type, "text": _text(args.text, "the text")}
+    if args.url:
+        body["url"] = args.url
+    if to:
+        body["to"] = to[0] if to[0] in ("computed", "all") else list(to)
+    if args.release:
+        body["release_task_id"] = args.release
+    if args.area:
+        body["areas"] = list(args.area)
+    fields = (("environment", args.env), ("sha", args.sha), ("version", args.version),
+              ("log_url", args.log_url))  # fmt: skip
+    deploy = {key: value for key, value in fields if value}
+    if deploy:
+        body["deploy"] = deploy
+    session = Session()
+    try:
+        event = session.client.call("POST", session.project_path("ticker"), body=body)
+    except hub.HubError as exc:
+        if exc.status != 404:
+            raise
+        try:
+            has_ticker = _hub_has_ticker(session)
+        except (hub.HubError, ValueError):  # no readable openapi.json: the 404 stands as it is
+            raise exc from None
+        if has_ticker:
+            raise
+        line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
+        _err("this hub has no ticker yet; post it as a project message instead:")
+        print(shlex.join(["maity", "say", "all", "--type", "notice", line]))
+        return EXIT_USAGE
+    seq = _field(event, "seq")
+    item = _field(event, "id") or (f"tck-{seq}" if seq is not None else "?")
+    return _done(args, event, f"posted {onboarding.inline(item)} (seq {onboarding.inline(seq)})")
+
+
+def _hub_has_ticker(session: Session) -> bool:
+    """Whether the hub's `openapi.json` (§4) lists a `post` on the ticker path: a 404 alone
+    does not tell a hub without the ticker from a mistyped project."""
+    spec = json.loads(hub.get_text(f"{session.client.base}{hub.API}/openapi.json"))
+    paths = spec.get("paths") if isinstance(spec, dict) else None
+    for path in ("/projects/{slug}/ticker", f"{hub.API}/projects/{{slug}}/ticker"):
+        operations = paths.get(path) if isinstance(paths, dict) else None
+        if isinstance(operations, dict) and "post" in operations:
+            return True
+    return False
+
+
+def cmd_ticker_subscription(args: argparse.Namespace) -> int:
+    """One `PATCH …/ticker/subscription` (§17.8): `follow`/`mute` add, `unfollow`/`unmute`
+    remove, in the list the command names; nothing is read first."""
+    if not args.area and not args.type:
+        raise UsageError("give at least one --area or --type")
+    verb = args.ticker_command
+    action = "remove" if verb.startswith("un") else "add"
+    target = verb.removeprefix("un")
+    change: dict[str, list[str]] = {}
+    if args.area:
+        change["areas"] = list(args.area)
+    if args.type:
+        change["types"] = list(args.type)
+    session = Session()
+    answer = session.client.call(
+        "PATCH", session.project_path("ticker", "subscription"),
+        body={action: {target: change}},
+    )  # fmt: skip
+    if args.json:
+        _print_json(answer)
+        return EXIT_OK
+    for which in ("follow", "mute"):
+        lists = _obj(_field(answer, which))
+        areas = ", ".join(onboarding.inline(a) for a in lists.get("areas") or []) or "-"
+        types = ", ".join(onboarding.inline(t) for t in lists.get("types") or []) or "-"
+        print(f"{which}: areas {areas}; types {types}")
+    follow, mute = _obj(_field(answer, "follow")), _obj(_field(answer, "mute"))
+    for key in ("areas", "types"):
+        for value in [v for v in follow.get(key) or [] if v in (mute.get(key) or [])]:
+            print(f"{onboarding.inline(value)}: followed and muted — listed for you, never woken")
+    return EXIT_OK
 
 
 def cmd_release_show(args: argparse.Namespace) -> int:
@@ -1341,6 +1513,63 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--remove", action="store_true", help="remove the uploaded avatar")
     _json_flag(r)
     r.set_defaults(handler=cmd_profile_avatar)
+
+    p = add(
+        "ticker",
+        "the project's change ticker: list it, post to it, follow or mute",
+        "The change ticker (§17): merges, decisions, deploys and releases, one line each, with "
+        "why an item is for you. Without an action it lists one page, newest first; `more:` "
+        "names the next page and is never followed on its own. `maity wait` stays JSON: only "
+        "this command and `maity resume` show ticker items as text.",
+    )
+    p.add_argument("--mine", action="store_true", help="only items for you (for=me)")
+    p.add_argument("--type", action="append", choices=TICKER_SUB_TYPES,
+                   help="an item type; repeat for more")  # fmt: skip
+    p.add_argument("--area", help="items whose paths or areas fall under this path")
+    p.add_argument(
+        "--since", metavar="TIME",
+        help="RFC 3339 with an offset, or a duration back from now (90m, 1d12h)",
+    )  # fmt: skip
+    p.add_argument(
+        "--limit", type=_ticker_limit, default=TICKER_LIMIT, help="1 to 200, 50 by default"
+    )
+    p.add_argument("--cursor", help="the next page, as a `more:` line names it")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_ticker)
+    tsub = p.add_subparsers(dest="ticker_command", metavar="<action>")
+    r = tsub.add_parser(
+        "post",
+        help="post an item by hand (owner and admin): a note, a deploy, a release",
+        description="`POST …/ticker` (§17.6), every flag to its field. --to and --area repeat, "
+        "one value each; --to computed or --to all stands alone. Against a hub without the "
+        "ticker it prints the `maity say` line to use instead and exits 2, sending nothing.",
+        formatter_class=fmt,
+    )
+    r.add_argument("text", help="1 to 280 characters, plain text")
+    r.add_argument("--type", required=True, choices=TICKER_POST_TYPES,
+                   help="merges and decisions are announced by the hub itself")  # fmt: skip
+    r.add_argument("--url", help="an https link")
+    r.add_argument("--to", action="append", metavar="computed|all|TOKEN",
+                   help="who it is for: member:<id>, role:<role>, area:<path>; repeat")  # fmt: skip
+    r.add_argument("--release", metavar="CARD", help="the release card (type release)")
+    r.add_argument("--area", action="append", help="the note's areas; repeat")
+    r.add_argument("--env", help="the deploy's environment (type deploy)")
+    deployed = r.add_mutually_exclusive_group()
+    deployed.add_argument("--sha", help="the deployed commit")
+    deployed.add_argument("--version", help="the deployed version")
+    r.add_argument("--log-url", dest="log_url", help="the deploy's log, https")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_ticker_post)
+    for verb, what in (("follow", "follow areas or types: listed and woken"),
+                       ("mute", "mute areas or types: not woken"),
+                       ("unfollow", "stop following"), ("unmute", "stop muting")):  # fmt: skip
+        r = tsub.add_parser(verb, help=what, formatter_class=fmt,
+                            description=f"One `PATCH …/ticker/subscription` (§17.8): {what}. "
+                            "At least one --area or --type.")  # fmt: skip
+        r.add_argument("--area", action="append", help="a path; repeat")
+        r.add_argument("--type", action="append", choices=TICKER_SUB_TYPES, help="repeat")
+        _json_flag(r)
+        r.set_defaults(handler=cmd_ticker_subscription)
 
     p = add(
         "limit",

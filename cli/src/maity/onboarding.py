@@ -281,6 +281,8 @@ def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[st
     lines: list[str] = []
     size, last = 0, None
     for event in _items(events.get("items")):
+        if event.get("kind") == "ticker":
+            continue  # printed in the Ticker section (§17.9), never twice
         block = _event(event, slug, names)
         cost = sum(len(line) + 1 for line in block)
         if lines and size + cost > MAX_EVENTS_CHARS:
@@ -291,6 +293,35 @@ def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[st
     if events.get("truncated"):
         cursor = events.get("cursor")
         lines.append(f"  … more events after #{inline(cursor)}: {_read_more(slug, cursor)}")
+    return lines
+
+
+def ticker_lines(item: dict[str, Any]) -> list[str]:
+    """One ticker item in the text form of §17.9: `[ticker] <type>: <text>[ <url>]`, then, for
+    an item that is for the caller, `  for you: <why tokens>[ (muted)]`."""
+    line = f"[ticker] {inline(item.get('type'))}: {inline(item.get('text'))}"
+    if item.get("url"):
+        line += f" {inline(item['url'])}"
+    lines = [line]
+    if item.get("for_me"):
+        why = ", ".join(inline(w) for w in item.get("why") or [] if isinstance(w, str))
+        lines.append(f"  for you: {why}" + (" (muted)" if item.get("muted") else ""))
+    return lines
+
+
+def _ticker(packet: dict[str, Any]) -> list[str]:
+    """The `Ticker` section of `maity resume` (§17.9); empty when the packet has no item."""
+    ticker = _dict(packet.get("ticker"))
+    items = _items(ticker.get("items"))
+    if not items:
+        return []
+    for_me, others = ticker.get("for_me"), ticker.get("others")
+    counts = [n if isinstance(n, int) and not isinstance(n, bool) else 0 for n in (for_me, others)]
+    lines = [f"Ticker ({counts[0]} for you, {counts[1]} others)"]
+    for item in items:
+        lines += ["  " + line for line in ticker_lines(item)]
+    if ticker.get("truncated"):
+        lines.append(f"  {max(sum(counts) - len(items), 0)} more: maity ticker")
     return lines
 
 
@@ -368,6 +399,7 @@ def render(packet: Any, first: bool = False) -> str:
                 for ln in _request(r, names, answering=True)
             ],
         ),
+        *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
         ("Events since your last session:", _events(packet, slug, names)),
     ]
     for title, lines in sections:

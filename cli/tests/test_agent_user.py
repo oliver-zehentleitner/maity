@@ -239,11 +239,11 @@ def test_the_clone_as_the_agents_user_never_prompts_for_a_login(
 
 def test_the_attach_hint_goes_through_sudo() -> None:
     socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
-    assert supervisor.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
+    assert tmux.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
         "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
         "maity_maity_agent-3"
     )
-    assert supervisor.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
+    assert tmux.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
 
 
 def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
@@ -328,8 +328,10 @@ def test_a_limit_file_is_read_from_the_agents_side_as_their_user(
     path = cfg.local.agent_files / "agents" / "plc-0003" / adapters.LIMIT_FILE
     path.parent.mkdir(parents=True)
     path.write_text('{"exit_code": 75}')
-    assert sup._limit_exit_code("plc-0003") == 75
+    assert sup._limit_exit_code("plc-0003", sup.targets["local"]) == 75
     assert "iflag=nofollow,nonblock" in fake_sudo.read_text()
     path.unlink()
     path.symlink_to("/dev/zero")
-    assert sup._limit_exit_code("plc-0003") is None  # a link is never followed
+    assert (
+        sup._limit_exit_code("plc-0003", sup.targets["local"]) is None
+    )  # a link is never followed

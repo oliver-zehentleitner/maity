@@ -22,7 +22,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .asuser import AsUser
+from .asuser import SSH_UNREACHABLE, AsUser, Unreachable
 
 PREFIX = "maity_"
 CONF = 'set -g update-environment ""\nset -g remain-on-exit on\nset -g history-limit 5000\n'
@@ -60,6 +60,18 @@ class Session:
     generation: int | None
 
 
+def attach_words(socket: Path, name: str, as_user: AsUser) -> list[str]:
+    """How the runner's owner attaches to a session: through sudo where the socket is the
+    agents' user's."""
+    attach = ["tmux", "-S", str(socket), "attach", "-t", name]
+    return ["sudo", "-u", as_user.user, *attach] if as_user.user else attach
+
+
+def attach_hint(socket: Path, name: str, as_user: AsUser) -> str:
+    """`attach_words` as one line to paste, every word quoted."""
+    return shlex.join(attach_words(socket, name, as_user))
+
+
 def session_name(project: str, clone: str) -> str:
     """`maity_<project>_<clone>`: the tokens are `[a-z0-9-]`, so `_` keeps two different
     pairs from ever giving one name (`ab` + `cd-ef` and `ab-cd` + `ef` would with `-`)."""
@@ -77,11 +89,17 @@ class Tmux:
     as_user: AsUser = AsUser()  # the agents' user: the server is theirs (§7.6)
 
     def _tmux(self, *args: str) -> list[str]:
-        return [*self.as_user.prefix, "tmux", "-S", str(self.socket), *args]
+        return ["tmux", "-S", str(self.socket), *args]
+
+    def _exec(self, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        """`argv` where the agents' server lives: here, through sudo, or over ssh."""
+        # A remote shell's own PATH may not be the one tmux was checked on (`agent_path`).
+        env = None if self.as_user.here else {"PATH": self.agent_path}
+        return self.run(self.as_user.argv(argv, env))
 
     def _check(self, argv: Sequence[str]) -> str:
         try:
-            done = self.run(argv)
+            done = self._exec(argv)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise TmuxError(f"{argv[0]}: {exc}") from None
         if done.returncode != 0:
@@ -101,9 +119,15 @@ class Tmux:
     def sessions(self) -> dict[str, Session]:
         """Every pane of the server, keyed by session name; empty when no server runs."""
         try:
-            done = self.run(self._tmux("list-panes", "-a", "-F", FORMAT))
-        except (OSError, subprocess.TimeoutExpired) as exc:
+            done = self._exec(self._tmux("list-panes", "-a", "-F", FORMAT))
+        except subprocess.TimeoutExpired:
+            if not self.as_user.here:
+                raise Unreachable("no answer within the timeout") from None
+            raise TmuxError("tmux: no answer within the timeout") from None
+        except OSError as exc:
             raise TmuxError(f"tmux: {exc}") from None
+        if done.returncode == SSH_UNREACHABLE and not self.as_user.here:
+            raise Unreachable(done.stderr.strip()[:200])
         if done.returncode != 0:
             if "no server running" in done.stderr or "error connecting" in done.stderr:
                 return {}
@@ -136,11 +160,11 @@ class Tmux:
         self.as_user.write(self.conf, CONF)
         log = self.logs / f"{placement}.log"
         self.as_user.mkdir(self.logs)
-        if not self.as_user.user:
+        if self.as_user.direct:
             log.touch(mode=0o600, exist_ok=True)
         extra = [arg for key, value in env.items() for arg in ("-e", f"{key}={value}")]
         command = [
-            *self.as_user.prefix, "env", "-i", *self.environment(),
+            "env", "-i", *self.environment(),
             "tmux", "-S", str(self.socket), "-f", str(self.conf),
             "new-session", "-d", "-s", name, "-c", str(cwd),
             *extra, "--", *argv,
@@ -161,11 +185,11 @@ class Tmux:
         the pane's process a session leader, so its pid is the group id; a pid that is not a
         group leader any more (reused) or that is the runner's own group is left alone."""
         pid = session.pid
-        if pid is None or pid <= 1 or pid == os.getpgrp():
+        if pid is None or pid <= 1:
             return
         try:
-            if os.getpgid(pid) != pid:
-                return
+            if self.as_user.here and (pid == os.getpgrp() or os.getpgid(pid) != pid):
+                return  # a remote pid means nothing here; its host checks its own
             self.as_user.terminate(pid)
         except (ProcessLookupError, PermissionError):
             pass

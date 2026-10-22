@@ -218,4 +218,5 @@ def test_maity_runs_git_only_through_its_guarded_paths() -> None:
         ("proc.py", "<module>"),
         ("runner/workspace.py", "prepare"),
         ("runner/operate.py", "<module>"),
+        ("runner/commands.py", "_check_host"),  # names looked up with `command -v` on a host
     }

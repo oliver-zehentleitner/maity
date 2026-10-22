@@ -129,11 +129,11 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `pending_consent` when anyone but the asker or the edge's two owners withdraws a pending cross-owner `reports_to` request, or an agent other than the asker supersedes it with a `PATCH` (§6.2) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
-| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
+| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (the one exception: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
@@ -147,6 +147,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null` |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
@@ -239,6 +240,7 @@ the hub records it on the session.
 |---|---|
 | Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
+| Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
@@ -273,10 +275,10 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password}` | anyone | sets the cookies below; 200 `{"member": …}` or `unauthenticated` |
+| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated` |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
-| `GET /auth/session` | human | the current session: `{member, csrf_token, expires_at, join_url}` |
+| `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
 `maity_csrf` (`Secure; SameSite=Lax; Path=/`, readable by the page). The
@@ -304,12 +306,16 @@ Login is limited to 10 attempts per minute per source address and per
 handle (`rate_limited`), and refuses `Sec-Fetch-Site: cross-site` like
 every cookie request. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
-agent credential on `/auth/*` is `forbidden` without `details.scope`. Passwords are stored with scrypt from the
+agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
+`forbidden` with `details.reason: humans_only` and no `details.scope`,
+the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
 call and 30 days after login regardless. Every call renews the human's
 `last_seen_at`. How the first human account comes to exist is an operator
 command of the hub (`maity-hub owner create`), not part of this contract.
+Signing in without a password — a device code, a link by mail — and the
+list of a human's own sessions are §2.6.
 
 ### 2.2 Agent: the credential
 
@@ -498,6 +504,9 @@ include the scope. No call made with an agent credential may:
 
 - reduce, remove or pause a human's membership, role or scopes;
 - revoke a human's sessions or credentials;
+- obtain a human session with its credential, or take part in one with
+  it: create, redeem, approve or complete a device code, request or use
+  a sign-in link or code, list a human's sessions (§2.6);
 - change instance-admin status (§16);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
@@ -518,6 +527,55 @@ Cover (§6.12) follows the same line: it never moves a `consent` or
 `contract` request addressed to a human, the arbiter seat, or anything
 only a human may do to an agent, and never gives a substitute a human's
 scopes.
+
+**Where this rule ends: a mailbox the agent controls.** The hub
+enforces the rule against agent and runner *credentials*. The sign-in
+endpoints of §2.6 are unauthenticated by nature, and a caller that
+leaves its credential out looks like any browser. A sign-in link by
+mail is therefore exactly as strong as the human's mailbox: an agent
+that can read and send from the mailbox of its human (a mail connector
+is common for personal agents) can request a link, read it and use it,
+and the hub cannot tell that from the human doing the same. This is a
+limit the hub states, not one it closes. What it does instead:
+
+- **The human decides whether the mailbox is a way in.** Sign-in by
+  mail is a per-human setting, on by default, that the human switches
+  off in the account (`email.sign_in_link`, §2.6.3). A human whose
+  agents can read their mail should switch it off; the dashboard says
+  so beside the switch.
+- **Every mail sign-in is shown where the agent cannot hide it.** Every
+  other session of the human shows it in the dashboard at once, with
+  the session and a one-click "End this session" (§2.6.5) — not only by
+  a mail the agent could delete. Only a session that existed before
+  that sign-in can mark it read; the obtained session and every session
+  created after it cannot.
+- **A session the human has not confirmed cannot lock the human
+  out.** A session in good standing — signed in by password, or its
+  own sign-in alert marked read by the human (§2.6.5) — may end any
+  session of the human, a newer one included. A session not in good
+  standing never ends one that is in good standing, and while it is
+  younger than 1 hour it ends no older session at all. So a session
+  obtained through the mailbox cannot end the sessions that show its
+  alert, and a human who signs in again with the password can always
+  end it.
+- **The device code needs a human at a signed-in screen.** Its approval
+  uses number matching and shows what the hub itself observed
+  (§2.6.2); an agent without a human session cannot approve one.
+- **A new address needs the password.** Changing the verified address,
+  which would move the sign-in path to another mailbox, needs the
+  account password in the same request — or, for a human without a
+  password, the approval of a session in good standing that is at
+  least 24 hours old —
+  and tells the old address (§2.6.3). A session obtained through the
+  mailbox, or approved on an unlocked dashboard, therefore cannot move
+  the sign-in path to a mailbox of its own: for a human with a
+  password not at all. For a human without one the guard is an age
+  gate plus good standing: the change goes on only when a session at
+  least 24 hours old approves it, and only one in good standing — whose
+  own sign-in the human confirmed from an earlier session (§2.6.5). A
+  session obtained a moment ago cannot do it, and one that waits a day
+  still cannot while its alert is unread; nor can it reject or replace
+  a change the human filed.
 
 Additional rules that are not scopes:
 
@@ -621,6 +679,583 @@ the routing between the hosts is the hub's (§1.1), so the Ingress sends
 the whole host to the hub. A reverse proxy may in addition restrict the
 join host to `GET` and `POST` on a single path segment at the edge; the
 live `maity.team` restricts its join host in Traefik.
+
+### 2.6 Human: sign-in without a password
+
+The maintainer's decision of 2026-10-22: besides the password (§2.1),
+which stays, a human may sign in with a **device code** approved on a
+device that is already signed in, or with a **sign-in link by mail**.
+Both end in an ordinary session of §2.1 — the same cookies, lifetime,
+CSRF rule and logout — and are for humans only (below and §2.3). The
+mail parts rest on the mail settings, verified addresses and signed
+links of the notifications contract (#160: §16.2, §18.4, §18.6); until
+that is merged, the sign-in link is not offered.
+
+#### 2.6.1 Which methods the login page offers
+
+```
+GET /auth/methods
+```
+
+Unauthenticated, on the public host only. Answers what the login page
+may show; it says nothing about any account:
+
+```json
+{ "password": true, "device_code": true, "email_link": true }
+```
+
+`password` is always `true`. `device_code` is the instance setting
+(§2.6.6). `email_link` is `true` only when the instance setting allows
+it **and** the mail settings are complete and enabled (`complete` and
+`enabled`, §16.2) — otherwise the login page does not show "Email me a
+sign-in link". Whether a given human has a verified address is never
+part of the answer.
+
+#### 2.6.2 Device code ("Sign in another device")
+
+The flow, with the signed-in device as **A** (the desktop) and the new
+one as **B** (the phone):
+
+1. On A, Profile menu → "Sign in another device": `POST
+   /auth/device-codes` (A's cookie session, CSRF) answers a code, a URL
+   and the expiry. The dashboard shows the code in two groups of four
+   (`K7QM-4XPR`), a QR of the URL, and a countdown.
+2. On B, the login page → "Have a code?" → the code (or the QR's URL,
+   which opens that page with the code filled in): `POST
+   /auth/device-login` `{code}`. B shows "Waiting for approval on your
+   other device" and a two-digit **match number** (`47`) — not which
+   account the code belongs to.
+3. A, which waits on `GET /auth/device-codes/{id}?wait=55`, sees the
+   code redeemed and shows "Approve this device?" with what the hub
+   observed — B's IP address and the time of the redemption — beside
+   the browser and operating system B's `User-Agent` claims, and three
+   numbers, one of them B's. The human picks the number B shows
+   (`POST …/approve` `{number}`) or denies (`POST …/deny`).
+4. B, which waits on `GET /auth/device-login?wait=55`, sees `approved`
+   — and only now the account: display name, handle, avatar — and calls `POST /auth/device-login/complete`: the hub sets B's own
+   session cookies (§2.1). B has a new session; A's session is
+   unchanged.
+
+| Endpoint | Caller | Effect |
+|---|---|---|
+| `POST /auth/device-codes` | human (cookie session) | a new code bound to this session and its human; voids an earlier open code of the same session. 201 `{id, code, url, expires_at}` |
+| `GET /auth/device-codes/{id}` `?wait=0–55` | the session that created it | `{id, status, expires_at, device?, choices?}`; with `wait`, held until `status` changes, as §8.3. Any other caller, another session of the same human included, gets `not_found` here and on the three calls below |
+| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed`; the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
+| `POST /auth/device-codes/{id}/deny` | the session that created it | in `waiting` or `redeemed`; 200 with `status: denied`; the code is dead |
+| `DELETE /auth/device-codes/{id}` | the session that created it | cancels; the same as `deny` |
+| `POST /auth/device-login` `{code, next?}` | anyone (the new device) | redeems the code; sets the pending cookie (below); 200 `{status: "redeemed", expires_at, match_number}` — no account |
+| `GET /auth/device-login` `?wait=0–55` | the browser holding the pending cookie | `{status, expires_at, match_number, account?}`; `account` `{handle, display_name, avatar_url}` only once `status` is `approved` |
+| `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved`; sets the session cookies; 200 `{member, next}` (as `POST /auth/login`) |
+
+```json
+{ "id": "dvc-3f9a", "status": "redeemed", "expires_at": "2026-10-22T14:05:00Z",
+  "device": { "ip": "203.0.113.24", "redeemed_at": "2026-10-22T14:01:12Z",
+              "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) …",
+              "browser": "Safari", "os": "iOS", "new_device": true },
+  "choices": [ 18, 47, 83 ] }
+```
+
+- **The code.** 8 characters from Crockford's base32 alphabet
+  (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, 40 bits), drawn from the
+  system's secure random source, shown as `XXXX-XXXX`. Input is read
+  case-insensitively with hyphens and spaces dropped, `I` and `L` read
+  as `1`, `O` as `0`. The hub stores `sha256` of the normalised code,
+  never the code; the code appears in no response but the one that
+  created it.
+- **The URL** is `<MAITY_PUBLIC_URL>/#/sign-in/code?c=K7QM4XPR`: the code
+  sits in the fragment, which the browser never sends, so it reaches no
+  request log, proxy or `Referer`. The page fills the field in and waits
+  for the human's tap; it does not redeem on its own.
+- **States.** `waiting` → `redeemed` (B entered it) → `approved` (A said
+  yes) → `used` (B completed). `denied` and `expired` end it. A code is
+  valid for 5 minutes from its creation; after `approved`, B has 60
+  seconds to complete, else the code is `expired`. Whatever the state,
+  one code yields at most one session.
+- **Single use, first come.** The first `POST /auth/device-login` with
+  the code binds it to that browser (the pending cookie); a second one,
+  from any browser, is `code_invalid`, the same answer as an unknown,
+  expired, denied or used code. When someone else typed a leaked code
+  first, A sees *their* device and denies it; the human then creates a
+  new code.
+- **The approval is the authority.** The code alone grants nothing. Only
+  the session that created the code can approve it — not another session
+  of the same human, not an agent, not an instance admin — and only
+  after a redemption, so the human approves a device they have seen, not
+  a code. Revoking or ending A's session (logout, §2.6.5) kills its open
+  codes.
+- **Bound to the account.** The session B gets belongs to the human who
+  created the code, whoever enters it; a code cannot be redeemed into
+  another account, and B's request names no account. B learns which
+  account it is joining only after A approved, so a guessed or leaked
+  code tells its holder nothing about the account behind it.
+- **Number matching.** At the redemption the hub draws the match
+  number, a value from 10 to 99 from the secure random source, and
+  stores it with the code; B shows it. A's dialog shows `choices`:
+  three distinct values from 10 to 99 in ascending order, B's number
+  and two others drawn the same way. Only the right pick approves; a
+  wrong pick denies the code at once, so a second guess needs a new
+  code. A human whose own phone shows no number, or a number that is
+  not among the three, sees at once that the device in the dialog is
+  not theirs — the case of a code read off a shared screen and typed
+  first by someone else. The dialog says "Only approve a device you are
+  holding now".
+- **`device`** is what the hub observed on B's redemption, and the
+  dialog leads with it: `ip` as decided by §2.5 and `redeemed_at`, the
+  hub's time. `user_agent` (cut at 300 characters, shown as text),
+  `browser` and `os` parsed from it (`null` when unknown) are what B's
+  browser *claims*; the dialog labels them so ("Says it is Safari on
+  iOS") and never shows them alone. `new_device` is `true` when B
+  presented no device cookie of this human (§2.6.5); the dialog says
+  "First sign-in from this browser" — a hint for the human, not a
+  check. V1 shows the IP address and no
+  location: an approximate location needs a GeoIP database the operator
+  would provide, a later revisit that would add a field then (§1.6).
+
+#### 2.6.3 Sign-in link by mail
+
+Offered when `email_link` is `true` in §2.6.1. On the login page,
+"Email me a sign-in link" → an address:
+
+```
+POST /auth/email-link   {"address": "maintainer@example.org", "next"?: "/#/p/maity/board"}
+```
+
+Unauthenticated. **Always** answers `202 {"expires_in": 900}` and sets
+the pending cookie, whether or not the address belongs to anyone: the
+hub answers before it looks the address up, and the lookup and the send
+run in the background, so neither the body, the status, the cookie nor
+the timing tells an address that exists from one that does not. The
+rate limits (§2.6.4) count every address alike for the same reason.
+
+A mail is sent only when, at the time of the lookup, the address is a
+human's verified address (`address_status: verified`, §18.4; compared
+case-insensitively, after trimming), the human's account is not
+disabled, the human has not switched sign-in links off for themselves
+(below), and the method and the mail settings are still on. While the
+instance setting is on but the mail settings are incomplete or
+`enabled: false`, the call still answers `202` and sends nothing — the
+same answer as everywhere else in this flow (`GET /auth/methods`
+already tells the login page not to offer it). A new request voids the
+earlier unused link and code requested from the **same source
+address** for that human; a request from another source address leaves
+them alone, so nobody elsewhere can void the link the human is about to
+use.
+
+**The human's own switch.** Besides the instance setting (§2.6.6), each
+human may turn sign-in links off for their account: `email.sign_in_link`
+in the notification settings (#160, §18.4), `true` by default,
+`PATCH /me/notification-settings` `{"email": {"sign_in_link": false}}`.
+With `false` the hub sends no link and no code to that human —
+`POST /auth/email-link` still answers `202` as for any address, and
+`GET /auth/methods` is unchanged, since it never speaks about an
+account. Turning it off voids an open link and code. The dashboard
+shows the switch with the sentence "Turn this off if an agent or anyone
+else can read this mailbox: whoever reads it can sign in as you"
+(§2.3).
+
+**Changing the verified address.** The verified address is a sign-in
+factor, so changing or removing it (`email.address` in #160, §18.4)
+needs the human's own confirmation in a form that neither a mailbox nor
+a moment at an unlocked dashboard provides. How a session was made or
+how young it is does not count: a device-code session can be approved
+on an unlocked dashboard, and a mail-link session is fresh by
+definition.
+
+- **A human with a password** enters it in the same request:
+  `current_password` beside `email` in the `PATCH` (#160, §18.4).
+  Missing: `invalid` with `details.fields.current_password: "required"`;
+  wrong: `invalid` with `details.fields.current_password: "mismatch"`,
+  counted against the login limit of §2.1 as a wrong `current` of
+  `POST /auth/password` is. Right: the change goes on as #160 §18.4
+  describes (the new address is verified by its link).
+- **A human without a password** (an account that has never set one)
+  needs the change approved from a session of theirs that is **at
+  least 24 hours old**. A `PATCH` from such a session is that approval
+  and goes on at once. From a younger session the change is held:
+  `202` with `email.address_change: {id, address, requested_at,
+  session_id}` — `id` an immutable `adc-<random>` of this one change,
+  the address `null` for a removal — shown with "Approve" and "Reject"
+  in every session of the human that may act on it. Both calls name
+  what they act on and need a session **in good standing** (§2.6.5):
+  `POST /me/notification-settings/email/address-change/approve` `{id,
+  address}` from a session in good standing that is at least 24 hours
+  old lets it go on (younger: `forbidden` with `details.reason:
+  session_too_new`); `POST …/address-change/reject` `{id, address}` from
+  a session in good standing drops it. A session not in good standing
+  can neither approve nor reject a held change, nor replace it with a
+  `PATCH` of its own: each is `forbidden` with `details.reason:
+  not_in_good_standing`; it may file a change only while none is held.
+  A `PATCH` that is itself the approval (from a session at least 24
+  hours old) also needs good standing. A held change exists once per
+  human: a newer `PATCH` of the address from a session in good standing
+  replaces it atomically with a new `id`, and an approval or
+  rejection naming the old `id`, or an `address` that is not the held
+  change's, is `conflict` (§1.3) and changes nothing — so a session
+  that showed address A can never approve an address B that a younger
+  session put in its place. A held change lapses after 7 days. A human
+  with no session that old waits until one is.
+
+The old address is notified as before: when the new address is
+confirmed, or the address is removed, the **old** address
+gets a `security` mail ("The sign-in address of your Maity account was
+changed to m…@example.net at <time> from <browser> on <os>, <ip>; if
+this was not you, sign in and end your other sessions"), with the new
+address masked to its first character and its domain. This mail is
+sent even though the old address no longer receives notifications, and
+whatever `email.kinds.security.mode` says: `off` silences the alerts of
+new sign-ins, never this notice. The change also writes the account
+record `email_address_changed` (below), which is a `security`
+notification in the dashboard.
+**The mail.** Plain text in the human's `language` (§18.4), with the
+rules of §18.5 for headers and content, minus the unsubscribe parts: a
+sign-in mail is a reply to a request, not a notification, so it ignores
+the human's notification modes, quiet hours and the per-human hourly
+cap. Because anyone can ask for one without signing in, sign-in mails
+have **limits of their own**: per source address (§2.6.4) and an
+instance-wide cap, `sign_in_max_per_hour` (#160 §16.2, default 60);
+over either, the request answers `202` as always and nothing is sent.
+Sign-in mails never count against the budget for security mails or the
+one for notifications, so no number of anonymous requests can delay an
+alert, a verification or the old-address notice — those are queued,
+never dropped (#160 §16.2). Subject `[Maity] Sign-in
+link`. Body:
+
+- the link `<MAITY_PUBLIC_URL>/mail/sign-in/{token}`, valid 15 minutes;
+- "Or enter this code in the browser where you asked for it:
+  `482 913`" — six digits;
+- when and from which browser, operating system and address the request
+  came;
+- "If you did not ask for this, ignore this mail; nothing happens
+  without the link or the code." Nothing else: no handle beyond the
+  greeting's display name, no project, no other link.
+
+**The link page.** `/mail/sign-in/{token}` is outside the API, on the
+public host only (a join host answers it with its `302`, §1.1), with the
+rules of §18.6: the request log masks the token as `…`, an invalid,
+expired or used token is the page that says the link no longer works
+(status `not_found`, never which reason).
+
+| Method | Effect |
+|---|---|
+| `GET` | a page "Sign in to Maity as <display name> (<handle>)" with one button "Sign in on this device"; changes nothing, sets nothing but the form cookie below. Mail scanners and link previews open it harmlessly |
+| `POST` | signs in **this** browser: a fresh session (§2.1), then `303` to the stored `next` (§2.6.5) or `/` |
+
+The token follows §18.6: the base64url of `{human id, purpose:
+"sign_in", nonce, expiry}` and an HMAC-SHA-256 over it with
+`MAITY_MAIL_SIGNING_KEY`, so a forged token is refused before any
+lookup. Single use needs state, so the hub also stores `sha256(nonce)`
+with the expiry; using the link or the code marks both used. The
+`POST` must carry the form field the `GET` page put next to a
+`maity_form` cookie (`HttpOnly; Secure; SameSite=Strict;
+Path=/mail/sign-in`, 10 minutes, a random value; the field must match
+it), and a `Sec-Fetch-Site` that is absent or other than `same-origin`
+is refused, so no
+other site can submit it for a visitor.
+
+**The code.** For when the mail is read on another device than the one
+that asked:
+
+```
+POST /auth/email-code   {"code": "482913"}
+```
+
+Valid only in the browser that made the request — the one holding the
+pending cookie of that `POST /auth/email-link` — and only for that
+request's human; it carries no address. Spaces are ignored. A wrong
+code is `code_invalid`; the fifth wrong code voids the code (the link
+stays valid). The 20th wrong mailed code for one human in a day, from
+any source, voids **every** outstanding mailed code of that human at
+once (their links stay valid), and until the day ends mails to that
+human carry the link only and no code: the six digits are the only
+guessable part, and the link — signed and 15 minutes long — is not. So
+a guess spread over many source addresses, each holding a live code of
+its own, gets at most 20 tries per human per day. Right: a fresh session as `POST /auth/login`, 200
+`{member, next}`; the link is then used too. The code is stored as an
+HMAC with the signing key, never in clear.
+
+#### 2.6.4 Rate limits and abuse
+
+| What | Limit |
+|---|---|
+| `POST /auth/device-codes` | 5 per 10 minutes per human |
+| `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 40 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
+| `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
+| Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
+
+Over a limit: `rate_limited` with `Retry-After` (§1.3). For
+`POST /auth/email-link` the per-address limit and the instance cap are
+applied as `202` with nothing sent, like an unknown address — a `429`
+there would tell an address that is being used from one that is not;
+only the per-source-address limit answers `429`. A caller who spends
+the instance cap delays nobody's alert: it stops sign-in mails for the
+rest of the hour, nothing else, and the device code and the password
+are unaffected.
+
+**No lock-out through the limits.** The per-address limit counts per
+(address, source address), so requests from elsewhere do not spend the
+budget of the human's own network: someone who knows the address can
+fill the mailbox with sign-in mails (at most 10 per day per source
+address they control) but cannot spend the human's per-address budget
+nor void the human's link (§2.6.3). Whoever controls enough source
+addresses can spend the instance cap and stop sign-in mails for
+everyone until the hour ends — the same accepted kind of denial as the
+device-code breaker above, limited to the mail link. The device code, the legitimate path
+for a human who is signed in anywhere, has no per-address limit at all
+and is never affected by mail limits; the password is not either.
+
+#### 2.6.5 Rules every method keeps
+
+- **Session fixation.** Every method issues a fresh session id and a
+  fresh CSRF token at the moment it completes, never earlier, and never
+  takes over an id the browser presented. A browser that already holds
+  a session (of any human) has that session ended first. The pending
+  cookie and the form cookie are cleared on completion and never
+  authenticate anything but their own flow.
+- **The pending cookie.** `maity_pending`: `HttpOnly; Secure;
+  SameSite=Strict; Path=/api/v1/auth`, a random value of 32 bytes
+  (stored as `sha256`), lifetime that of its flow (5 minutes for a
+  device code, 15 for a mail). One per browser; a new flow replaces it.
+  It is the only thing that lets B collect the session in §2.6.2 and
+  the only thing that makes a mailed code usable in §2.6.3.
+- **CSRF before a session exists.** `POST /auth/device-login`, `…/complete`,
+  `/auth/email-link` and `/auth/email-code` refuse a `Sec-Fetch-Site`
+  of `cross-site` or `same-site` (`forbidden`), like a login (§2.1), and
+  the pending cookie is `SameSite=Strict`; so no other site can start
+  or finish a sign-in in a visitor's browser. Calls made with a session
+  (`/auth/device-codes/*`, `/auth/sessions/*`) carry `X-CSRF-Token` as
+  every cookie call. What stays: a human who opens someone else's link
+  and presses the button is signed in to that person's account — the
+  page names the account in its heading for that reason.
+- **`next`.** The login page passes its `next` to `POST /auth/login`,
+  `POST /auth/device-login` and `POST /auth/email-link`; the hub
+  stores it with the flow (never in a mail or a URL it sends) and
+  answers it back after checking. Allowed is only a dashboard route on
+  the public host: `/`, or a path that starts with `/#/`, at most 512
+  characters, without a backslash, a control or whitespace character, a
+  second `#`, or `//`. Anything else is replaced by `/` silently. The
+  hub never redirects to a host, a scheme or a path outside the
+  dashboard.
+- **Transport.** Every endpoint here follows §2.5: over plain HTTP from
+  a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` it is
+  `insecure_transport`. On a join host none of them exists (§1.1).
+- **Disabled.** When an instance setting turns a method off (§2.6.6),
+  its open codes and links are void at once and its endpoints answer
+  `forbidden` with `details.reason: method_disabled`; sessions already
+  made stay.
+- **Ended with the password.** `POST /auth/password` ends every other
+  session of the human, however it was made, and voids their open codes
+  and links.
+
+**The session list.** Profile → Sessions:
+
+| Endpoint | Caller | Effect |
+|---|---|---|
+| `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
+| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
+| `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
+
+**Good standing.** A session is **in good standing** when it was
+signed in by password, or when its own `session_created` item has been
+marked read by an allowed session through `ids` (below) — never by
+`up_to`, by age or by the record's expiry. The session list shows it
+(`good_standing`). Good standing is what lets a session end others,
+mark sign-in alerts read and act on a held address change (§2.6.3).
+
+**Who may end which session.**
+
+- A session **in good standing** may end any session of the human, at
+  any age, newer ones included — through `DELETE /auth/sessions/{id}`,
+  `end-others` or the banner's "End this session".
+- A session **not in good standing** never ends a session that is in
+  good standing (`forbidden`, `details.reason: not_in_good_standing`;
+  `end-others` from it ends only the other sessions not in good
+  standing). While it is younger than 1 hour it ends no session older
+  than itself either (`forbidden`, `details.reason: session_too_new`).
+  It may always end itself (a logout).
+
+So a session obtained through a mailbox or a stolen device code cannot
+end the sessions that show the alert of its sign-in, at any age, and a
+human who signs in again with the password gets a session in good
+standing that ends it at once. A password change (§2.1) still ends
+every other session, since it needs the password.
+
+```json
+{ "items": [
+  { "id": "hss-41c0", "current": true, "method": "password",
+    "created_at": "2026-10-22T08:02:11Z", "last_seen_at": "2026-10-22T14:01:30Z",
+    "expires_at": "2026-11-05T14:01:30Z", "browser": "Firefox", "os": "Linux",
+    "ip": "198.51.100.7", "approved_by": null, "good_standing": true },
+  { "id": "hss-41c7", "current": false, "method": "device_code",
+    "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
+    "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
+    "ip": "203.0.113.24", "approved_by": "hss-41c0", "good_standing": false,
+    "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
+    "ended_at": null, "ended_by": null } ] }
+```
+
+`id` is a public id, never the cookie's value. `method` is `password`,
+`device_code`, `email_link` or `email_code`. `approved_by` names the
+session that approved a device code. `ip` is the one of the latest
+call; `created` is the account record of the sign-in (below), with the
+address and browser the session started from. `ended_at` and
+`ended_by` (`logout`, `revoked`, `end_others`, `expired`,
+`password_change`) are set on an ended session. A session of another
+human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
+the current session's `id`.
+
+**The device cookie.** At every completed sign-in the hub sets
+`maity_device` (`HttpOnly; Secure; SameSite=Lax; Path=/`, a random
+32-byte value stored as `sha256` with the human, 400 days, kept on
+logout) unless the browser already holds one of this human; a browser
+shared by two humans holds one value per human. It authenticates
+nothing and has one use only: the device-code approval dialog (§2.6.2)
+says "This browser has signed in to your account before" or "First
+sign-in from this browser" (`device.new_device`). It decides nothing
+about alerts: every mail sign-in is alerted, whatever cookie the
+browser presents (below).
+
+**Telling the human.** Every new session, whichever the method, writes
+`session_created` `{session_id, method, browser, os, ip, approved_by}`
+as an **account record**: an audit record of the human's account, not
+an event — it belongs to no project, so §8 does not carry it and no
+project member, owner, admin, instance admin or agent reads it.
+Account records are the second source of notifications beside events
+(#160, §18.1): ids `acr-<n>` from a sequence of their own, never the
+event sequence, so they leave no gap in any project's `/events` from
+which the sign-ins of humans could be timed; kept 90 days, readable by
+the human alone. The record is shown with its session in Profile →
+Sessions (`created` above), and ending a session writes
+`session_ended` there in the same way. `session_created` becomes a
+notification of the kind `security` (#160, §18.1), title `New sign-in:
+<browser> on <os> (<method>)`, linking to Profile → Sessions.
+
+- **In the dashboard** the `security` notification is always there: it
+  has no browser or mail switch that hides it from the bell, and it
+  counts in `counts.security` (not in `total`).
+- **Who may mark it read.** A `session_created` item is marked read
+  only from a session that **existed before** the sign-in it reports —
+  never from the session it reports on, and never from any session
+  created after it — and only when that earlier session is itself in
+  good standing (above). It is marked read only through `ids` — the
+  explicit "This was me", or the item in the session list — and never
+  through `up_to`: "mark all read" skips every `security` item, so
+  tidying the bell never confirms a sign-in. A `POST
+  /me/notifications/read` from a session that may not mark the item
+  skips it as well, and marks the rest. So a session obtained through a mailbox can hide
+  neither its own alert nor that of a second session it obtains next
+  (by another mail sign-in, or by a device code it approves). An item
+  that no session may mark read — the human had no session in good
+  standing at the time — stays listed and unread in the bell until its
+  record expires (90 days). Security items are exempt from the 30-day
+  rule of #160 §18.2 that counts older items as read: they stay listed
+  and unread until an allowed session marks them read or the record
+  expires. Only that marking grants good standing; age, expiry or any
+  other automatic reading never does — a session whose own item
+  expired unread stays out of good standing.
+- **Every mail sign-in is an alert** — method `email_link` or
+  `email_code`, whatever device cookie the browser presented. It is
+  shown in **every other session** of the human at once, not only in
+  the bell: each open dashboard long-polls the notifications (#160,
+  §18.2) and shows a banner "New sign-in by mail: <browser> on <os>,
+  <ip>, <time>" with **End this session** (`DELETE
+  /auth/sessions/{id}`, one click, no confirmation dialog; it also ends
+  every session the reported one approved by device code, and those
+  approved by them in turn) and, in a session that may mark the item
+  read (above), **This was me**. The banner stays while the item is
+  unread and the reported session, or a session it approved, is still
+  active; a dashboard opened later shows it too. The item carries the
+  new session's id (`target: {type: "session", id}`); the session it
+  reports on shows no banner. So a mail sign-in that an agent with
+  mailbox access made cannot be hidden by deleting a mail, from the
+  session it obtained, or from a session it obtains next (§2.3); and
+  that session, not being in good standing, cannot end the human's
+  sessions in good standing that show the banner, at any age (above).
+- **By mail** it goes to the human's verified address, `immediate` by
+  default; `email.kinds.security.mode` (#160, §18.4) is `immediate` or
+  `off` — no digest, since a delayed alert is no alert — and quiet
+  hours do not hold it. The mail carries the time, method, browser,
+  operating system and IP address of the new session and the link to
+  Profile → Sessions, with the unsubscribe line for its kind (§18.5);
+  never a session id, a code or a link that signs anyone in. A human
+  without a verified address, or an instance without mail, gets the
+  dashboard notification only. The mail counts against the security
+  budget (`security_max_per_hour`, #160 §16.2), not against the
+  notification budget or the sign-in mail cap; over the budget it is
+  queued for the next hour, never dropped.
+
+`session_ended` is not notified.
+
+**Agents and runners.** None of this is for them: an agent or runner
+credential on any endpoint of this section is `forbidden` with
+`details.reason: humans_only` (§2.1, §2.3), and no call with such a
+credential creates, redeems, approves or completes a code, asks for a
+link or uses one, or lists or ends a human's sessions. What the hub
+cannot do is tell an agent that calls these endpoints *without* its
+credential from a browser; for the sign-in link that means an agent
+holding the human's mailbox can sign in as the human, and §2.3 states
+that limit and what the hub does about it.
+
+#### 2.6.6 Instance settings
+
+```
+GET, PATCH /admin/settings/sign-in
+```
+
+Scope `instance:admin`, human only (§16.1). Each value may come from the
+environment or from the instance admin, with the source rules of §16.2:
+the environment wins and a `PATCH` of a value it sets is `invalid` with
+`set_by_environment`.
+
+| Environment | Field | Default | Meaning |
+|---|---|---|---|
+| `MAITY_SIGN_IN_DEVICE_CODE` | `device_code` | `true` | device codes (§2.6.2) |
+| `MAITY_SIGN_IN_EMAIL_LINK` | `email_link` | `true` | sign-in links and codes by mail (§2.6.3); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
+
+```json
+{ "password": { "value": true, "source": "fixed" },
+  "device_code": { "value": true, "source": "default" },
+  "email_link": { "value": true, "source": "admin" },
+  "email_link_available": false, "missing": ["mail"] }
+```
+
+`password` cannot be turned off. `email_link_available` says whether the
+login page offers it right now, `missing` why not. A change is not an
+event; the accounts design's instance audit log records it (pending).
+
+#### 2.6.7 The dashboard's part
+
+- **Login page.** The password form as today; below it "Have a code?"
+  when `device_code` is on, and "Email me a sign-in link" when
+  `email_link` is on (§2.6.1). After the mail request: "If this address
+  belongs to an account, a link is on its way", with a field for the
+  six-digit code. After a device code: "Waiting for approval on your
+  other device"; after the approval, the account (avatar, name, handle)
+  and then signed in.
+- **Profile menu → Sign in another device.** The code, its QR (made in
+  the dashboard's own code, no third-party script, §1.1), a countdown,
+  and then the approval dialog: first what the hub observed (IP
+  address, time), then the browser and operating system the device
+  claims, labelled as claimed; "Only approve a device you are holding
+  now"; the three numbers to pick from, and "Deny" — "Deny" is the
+  default button, and there is no plain "Approve".
+- **Profile → Sessions.** The list of §2.6.5 with "End" per session,
+  "End all other sessions", and the ended sessions of the last 30 days.
+- **The mail sign-in banner** of §2.6.5 in every other open session,
+  with "This was me" only where that session may mark it read.
+- **Notification settings** (#160, §18.8) gain the `security` mail switch
+  and "Allow sign-in links by mail" (`email.sign_in_link`), with the
+  mailbox warning of §2.6.3.
+- **Changing the address** asks for the password in the same form; for
+  a human without one it says the change waits for approval from a
+  session at least 24 hours old, and such sessions show the held change
+  with "Approve" and "Reject" (§2.6.3).
+- **Ending sessions** from a session not in good standing: "End" on a
+  session in good standing is disabled, with "Confirm this session's
+  sign-in from another session first"; and, while it is younger than
+  1 hour, "End" on an
+  older session and "End all other sessions" are disabled, with "This
+  session is too new to end older ones" (§2.6.5).
 
 ## 3. Join
 
@@ -4499,6 +5134,20 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
+| GET | `/auth/methods` | — | 2.6.1 |
+| POST | `/auth/device-codes` | human | 2.6.2 |
+| GET, DELETE | `/auth/device-codes/{id}` | the creating session | 2.6.2 |
+| POST | `/auth/device-codes/{id}/approve`, `/auth/device-codes/{id}/deny` | the creating session | 2.6.2 |
+| GET, POST | `/auth/device-login` | — (the code; then the pending cookie) | 2.6.2 |
+| POST | `/auth/device-login/complete` | — (the pending cookie) | 2.6.2 |
+| POST | `/auth/email-link`, `/auth/email-code` | — (`email-code`: the pending cookie) | 2.6.3 |
+| GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
+| GET | `/auth/sessions` | human | 2.6.5 |
+| DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
+| POST | `/auth/sessions/end-others` | human; from a session not in good standing it ends only the others not in good standing, and not at all while it is younger than 1 hour | 2.6.5 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
+| POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
+| GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent | 5.3 |
@@ -4653,7 +5302,7 @@ reviewer role.
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
-| `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
+| `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{slug}/placements`. |
 | `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
@@ -4666,11 +5315,11 @@ reviewer role.
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
-| `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. *Planned (ticker).* |
-| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. *Planned (ticker).* |
-| `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. *Planned (ticker).* |
+| `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. |
+| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. |
+| `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. |
 | `maity note add <card> "<text>"` | `POST /projects/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
-| `maity note list <card> [--state S \| --all]` | `GET /projects/{slug}/tasks/{id}/notes?state=open` (or `S`, or `all`); each note with its id, state, author and body, its text cleaned of terminal control sequences |
+| `maity note list <card> [--state S \| --all]` | `GET /projects/{slug}/tasks/{id}/notes?state=open&limit=200` (or `S`, or `all`), every page through `next_cursor` (a cursor that comes back is an error); each note with its id, state, author and body, its text cleaned of terminal control sequences |
 | `maity note resolve <card> <note> --incorporated\|--dismissed [--reason R]` | `POST …/notes/{note_id}/resolve` `{state, reason?}` |
 | `maity link add <card> <url> [--plain] [--label L]` | `POST /projects/{slug}/tasks/{id}/links` (§6.13): `{kind: issue\|pr, forge_url}` when the URL has a GitHub issue or pull request shape, else `{kind: url, url, label?}`; `--plain` sends a forge URL as `kind: url`; `--label` only for `kind: url`. The hub decides whether a forge URL belongs to the project's repository |
 | `maity link list <card>` | `GET /projects/{slug}/tasks/{id}`; the card's `links` with what the hub observed |
@@ -4678,10 +5327,8 @@ reviewer role.
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
-A row marked *Planned (ticker)* or *Planned (attachments)* is contract
-the CLI on `main` does not have yet: `maity` answers it with a usage
-error (exit 2). Until the ticker ships, the coordinator's interim posts
-are `maity say all --type notice "[ticker] …"` (§17.6).
+A row marked *Planned (attachments)* is contract the CLI on `main` does
+not have yet: `maity` answers it with a usage error (exit 2).
 
 `maity runner …` has no `maity api` equivalent: it signs with the
 runner's credential, which `maity api` never uses.
@@ -5648,6 +6295,10 @@ attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLI
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
 §2.5, `MAITY_CLI_INSTALL` §3.2).
 
+**Sign-in methods** — device codes and sign-in links by mail — are
+switched by the instance admin or the environment (`MAITY_SIGN_IN_*`,
+§2.6.6); the password cannot be switched off.
+
 ### 16.1 `GET /admin/users`
 
 Scope `instance:admin`, human only — a cookie session (§2.1); an agent or
@@ -5674,8 +6325,8 @@ runner credential is `forbidden`. The humans of the instance, paged
 }
 ```
 
-- `last_login_at` is the time of the human's latest successful `POST
-  /auth/login`, `null` when none; `last_seen_at` is the one every call
+- `last_login_at` is the time of the human's latest new session, by
+  password or without one (§2.1, §2.6), `null` when none; `last_seen_at` is the one every call
   renews (§2.1).
 - `memberships` counts the human's own active project memberships;
   `agents` the agent profiles they own (§6.3). Counts only: which

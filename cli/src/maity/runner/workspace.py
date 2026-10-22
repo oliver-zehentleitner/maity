@@ -48,6 +48,12 @@ class Workspace:
     path: Path
     project: str
     clone: str
+    host: str = ""  # the ssh target; "" on this machine
+
+    @property
+    def key(self) -> str:
+        """The record's key: the path, prefixed with the host for a clone on an ssh host."""
+        return f"{self.host}:{self.path}" if self.host else str(self.path)
 
     @property
     def credential(self) -> Path:
@@ -55,9 +61,13 @@ class Workspace:
         return self.path / ".git" / "maity" / state.CREDENTIAL_FILE
 
 
-def locate(root: Path, project: str, clone: str) -> Workspace:
+def locate(root: Path, project: str, clone: str, host: str = "") -> Workspace:
+    """The clone's path under `root`. On an ssh host `root` is a remote path, validated by
+    the configuration and never resolved here; the tokens cannot leave it either way."""
     if not (TOKEN.match(project) and TOKEN.match(clone)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
+    if host:
+        return Workspace(root / project / clone, project, clone, host)
     base = root.resolve()
     path = (base / project / clone).resolve()
     if path.parent.parent != base:
@@ -79,7 +89,7 @@ def origin(path: Path, as_user: AsUser = RUNNER) -> str | None:
 
 
 def stale_index_lock(path: Path, now: float | None = None, as_user: AsUser = RUNNER) -> bool:
-    if as_user.user:
+    if not as_user.direct:
         return False  # a hint only, and the lock's mtime is the agents' user's to read
     lock = path / ".git" / "index.lock"
     try:
@@ -97,7 +107,7 @@ def records(state_dir: Path) -> dict[str, Any]:
 def record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str) -> None:
     with _lock:
         found = records(state_dir)
-        found[str(workspace.path)] = {
+        found[workspace.key] = {
             "project": workspace.project,
             "agent": agent,
             "placement_id": placement_id,
@@ -117,7 +127,7 @@ def inspect(
     """An existing clone's record, when it is `agent`'s (or was made for this placement,
     which covers the time between a join and the hub naming the new member) and points at
     `repository`; `Refused` otherwise. Reads the record and `.git/config` only."""
-    found = records(cfg.state_dir).get(str(workspace.path))
+    found = records(cfg.state_dir).get(workspace.key)
     if not isinstance(found, dict):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     if found.get("agent") != agent and (
@@ -158,7 +168,7 @@ def prepare(
         command += ["--branch", branch]
     command += ["--", repository, str(workspace.path)]
     try:
-        if as_user.user:
+        if not as_user.direct:
             # The clone is the agents'; no prompt for a login, as proc.run says for ours.
             done = as_user.run(command, env=dict(proc.NO_PROMPT), timeout=CLONE_TIMEOUT)
         else:
@@ -174,7 +184,7 @@ def rebind(state_dir: Path, workspace: Workspace, old: str, new: str) -> None:
     """After the first join the record moves from the handle to the agent's id."""
     with _lock:
         found = records(state_dir)
-        entry = found.get(str(workspace.path))
+        entry = found.get(workspace.key)
         if entry and entry.get("agent") == old:
             entry["agent"] = new
             state.save_state(state_dir, found, name=RECORDS)

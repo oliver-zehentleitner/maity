@@ -204,7 +204,7 @@ def test_loop_exits_map_to_reasons(code: int, expected: tuple[Any, ...]) -> None
                                 "log": staticmethod(lambda line: None)})()  # fmt: skip
     sup.backend = type("B", (), {"kill": staticmethod(lambda name: None)})()
     session: Any = type("S", (), {"name": "maity_p_c", "exit_status": code})()
-    supervisor.Supervisor._exited(sup, rec, session, 100.0)
+    supervisor.Supervisor._exited(sup, rec, session, 100.0, sup.backend)
     assert (rec.state, rec.reason, rec.detail) == expected
 
 
