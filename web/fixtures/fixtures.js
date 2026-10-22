@@ -1309,6 +1309,7 @@ window.MAITY_FIXTURES = {
         "kind": "contract",
         "ktw_ref": null,
         "label": null,
+        "rank": "r000016",
         "release": null,
         "report": null,
         "ships_with": [],

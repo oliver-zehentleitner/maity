@@ -195,6 +195,9 @@ It refuses with exit 4, before anything is sent, on any of these:
 - uncommitted changes to tracked files
 - a detached HEAD
 - a branch without upstream
+- a branch the remote no longer has, unless gh finds its pull request
+  merged with the local head (deleted after the merge): then that head
+  is reported as the remote head
 - a remote head that differs from the local one
 - a pull request whose head differs from the local one
 

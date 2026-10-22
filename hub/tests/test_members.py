@@ -344,12 +344,17 @@ def test_reports_to_never_forms_a_cycle(owner: flow.Human, make_client: ClientFa
     )
 
 
-def test_a_join_for_a_member_checks_the_cycle(
+def test_a_join_for_a_member_names_its_current_reports_to(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
+    # The exchange keeps the membership as it is, so a join adds no edge to the
+    # chain: any other reports_to is refused before the link exists (§6.2).
     a = flow.agent(make_client, owner)
-    response = owner.post("/projects/maity/joins", {"agent": {"id": a.id}, "reports_to": a.id})
-    assert response.json()["error"]["details"]["fields"] == {"reports_to": "cycle"}
+    b = flow.agent(make_client, owner, reports_to=a.id)
+    other = owner.post("/projects/maity/joins", {"agent": {"id": a.id}, "reports_to": b.id})
+    assert other.json()["error"]["details"]["fields"] == {"reports_to": "differs_from_membership"}
+    same = owner.post("/projects/maity/joins", {"agent": {"id": b.id}, "reports_to": a.id})
+    assert same.status_code == 201, same.text
 
 
 def test_removing_a_member_clears_reports_to_on_its_reports(
