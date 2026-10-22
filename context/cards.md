@@ -50,3 +50,28 @@ same reason the release gate is (`integrations.md`).
   directly: notes carry the remark, an editor works it in.
 - The holder resolving notes on its card: ruled out by the contract
   owner; the reason was not stated with the ruling (unknown).
+
+## A card's edit history can be redacted by a human
+
+**Id:** b780ee68-6e79-4b1f-b26a-67e7bb190989
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's ruling of 2026-10-22 on the card history contract, after a review found the history kept a leaked secret for good
+**Revisit when:** the credential check learns to recognise foreign secrets, or history entries need to be deleted rather than tombstoned
+**See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-10-22
+
+A human with `events:admin` redacts a single history entry the way an
+event is redacted: its before, after and diff become a tombstone, who
+and when and which field stay. The credential check covers the history
+as it covers bodies.
+
+**Reason:** the credential check recognises only the hub's own format.
+A forge token, a password or a customer's data pasted into a card body
+passes it, and editing the body leaves the text in the history,
+readable by every member. Redaction is the event log's one tombstone
+for a secret that got in anyway; the history needs the same.
+
+**Rejected alternatives:**
+- A history that is never edited, relying on the credential check: it
+  misses every secret that is not the hub's own.
