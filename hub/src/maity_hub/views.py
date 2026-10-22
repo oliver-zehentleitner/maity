@@ -67,9 +67,13 @@ NO_IMAGE = {"available": False, "source": None}
 
 
 def project_view(
-    project: Any, settings: Settings, shown: dict[str, Any] | None = None
+    project: Any,
+    settings: Settings,
+    shown: dict[str, Any] | None = None,
+    export: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`shown` is what `images.views` says the project shows as logo and banner."""
+    """`shown` is what `images.views` says the project shows as logo and banner, `export`
+    the Keep the Why export as `ktw.export_for_view` holds it."""
     shown = shown or {}
     return {
         "slug": project.slug,
@@ -81,6 +85,7 @@ def project_view(
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "keep_the_why": project.keep_the_why,
+        "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
         "settings": project.settings,

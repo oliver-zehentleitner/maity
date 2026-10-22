@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, policy, releases, rules
+from maity_hub import clock, idempotency, images, ktw, policy, releases, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -126,9 +126,14 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
+def _export(project: Any, request: Request) -> dict[str, Any] | None:
+    """From the cache only: building a view never waits on a read (§11.3)."""
+    return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+
+
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
-    return project_view(project, settings_of(request), shown)
+    return project_view(project, settings_of(request), shown, _export(project, request))
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -152,7 +157,12 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         shown = images.views(conn, [r.id for r in rows])
         return JSONResponse(
-            {"items": [project_view(r, settings, shown[r.id]) for r in rows], "next_cursor": None}
+            {
+                "items": [
+                    project_view(r, settings, shown[r.id], _export(r, request)) for r in rows
+                ],
+                "next_cursor": None,
+            }
         )
 
 
@@ -267,8 +277,10 @@ def patch_project(
                         t.forge_observation.c.project_id == project.id
                     )
                 )
-                # Nor are the forge's images: the new repository's are read afresh.
+                # Nor are the forge's images and the Keep the Why export: the new
+                # repository's are read afresh.
                 images.forget_forge(conn, project.id)
+                ktw.CACHE.forget(project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
         if state_changes:

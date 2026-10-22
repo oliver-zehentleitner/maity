@@ -83,10 +83,19 @@ def _no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A project view schedules a Keep the Why read in the background; in tests that
+    would race the next test's cache. Tests of the scheduling replace this themselves."""
+    from maity_hub import ktw
+
+    monkeypatch.setattr(ktw, "_refresh_later", lambda *args: None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""
-    from maity_hub import clock, forge, images
+    from maity_hub import clock, forge, images, ktw
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.routes import auth, joins, runners
@@ -98,6 +107,7 @@ def _fresh_process_state() -> Iterator[None]:
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()
+    ktw.CACHE.clear()
     yield
     clock.reset()
 

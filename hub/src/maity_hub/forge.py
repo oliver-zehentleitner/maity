@@ -10,6 +10,7 @@ token never leaves for a host the operator did not choose.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.client
 import json
@@ -272,3 +273,24 @@ class Forge:
             return None
         url = repo.get("openGraphImageUrl")
         return url if isinstance(url, str) else None
+
+    # --- files on the default branch (docs/api.md §11.3) ------------------------------------
+
+    def file(self, repository: str, path: str, cap: int) -> bytes | None:
+        """A file on the default branch through the contents API, with the token where the
+        hub holds one and without it for a public repository; None when it is not there.
+        A file over `cap` bytes, or an answer that is not a file, is `ValueError`."""
+        found = self._call(f"/repos/{repository}/contents/{urllib.parse.quote(path)}")
+        if found is None:
+            return None
+        if not isinstance(found, dict) or found.get("type") != "file":
+            raise ValueError("not a file")
+        size = found.get("size")
+        if not isinstance(size, int) or size > cap:
+            raise ValueError("too large")
+        if found.get("encoding") != "base64" or not isinstance(found.get("content"), str):
+            raise ValueError("no content")
+        data = base64.b64decode(found["content"], validate=False)
+        if len(data) > cap:
+            raise ValueError("too large")
+        return data
