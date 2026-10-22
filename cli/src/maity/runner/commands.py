@@ -346,6 +346,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     if cfg.local is not None:
         _check_local(report, cfg.local)
     agent_path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
+    if shutil.which("maity", path=agent_path) is None:
+        report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
+    else:
+        report.ok("maity found on agent_path")
     for harness in cfg.harnesses.values():
         _check_harness(report, harness, agent_path)
     if not args.offline:

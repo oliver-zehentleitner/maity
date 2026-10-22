@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import capabilities, config, restart, stub, workspace
+from . import adapters, capabilities, config, loop, restart, workspace
 from .tmux import Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
@@ -315,7 +315,13 @@ class Supervisor:
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
-                rec.enter(now, "running")
+                harness = self.cfg.harnesses.get(p["harness"])
+                unconfined = (
+                    harness is not None
+                    and harness.id == "claude-code"
+                    and not capabilities.sandbox_available(harness)
+                )
+                rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             return 0
@@ -352,6 +358,12 @@ class Supervisor:
             if rec.started_at is not None
             else now - self.cfg.limits.restart.quick_exit
         )
+        if code == loop.EXIT_REVOKED:
+            rec.enter(now, "failed", "agent_credential_revoked", exit_code=code, retry_at=None)
+            return
+        if code == loop.EXIT_HOT_LOOP:
+            rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
+            return
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
@@ -381,6 +393,8 @@ class Supervisor:
         found = self.probes.get(harness.id)
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
+        if harness.require_sandbox and not capabilities.sandbox_available(harness):
+            return ("harness_refused", None)  # the operator asked for no run without it
         return None
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
@@ -396,8 +410,8 @@ class Supervisor:
             rec.enter(now, "failed", refused[0], detail=refused[1])
             return 0
         harness = self.cfg.harnesses[p["harness"]]
-        if harness.id != "stub":
-            return self._wait(rec, f"the {harness.id} adapter arrives with R5", name)
+        if harness.id not in adapters.READY:
+            return self._wait(rec, f"the {harness.id} adapter arrives with R5b", name)
         if self.cfg.local is None:
             return 0
         try:
@@ -431,9 +445,8 @@ class Supervisor:
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
-        argv = stub.argv(harness.stub_exit_code, harness.stub_run_seconds)
         task = threading.Thread(
-            target=self._start, args=(p, rec, place, name, argv, agent, join, rejoin),
+            target=self._start, args=(p, rec, place, name, harness, agent, join, rejoin),
             daemon=True,
             name=f"maity-start-{p['id']}",
         )  # fmt: skip
@@ -447,7 +460,7 @@ class Supervisor:
         rec: Record,
         place: workspace.Workspace,
         name: str,
-        argv: list[str],
+        harness: config.Harness,
         agent: dict[str, Any],
         join: bool = False,
         rejoin: bool = False,
@@ -475,9 +488,8 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            self.backend.start(
-                name, place.path, argv, {"MAITY_PLACEMENT": p["id"]}, p["id"], p["generation"]
-            )
+            launch = adapters.launch(self._context(p, harness, place))
+            self.backend.start(name, place.path, launch.argv, launch.env, p["id"], p["generation"])
         except workspace.Refused as refused:
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
@@ -542,6 +554,24 @@ class Supervisor:
             return
         if isinstance(member, str) and member != owner:
             workspace.rebind(self.cfg.state_dir, place, owner, member)
+
+    def _context(
+        self, p: dict[str, Any], harness: config.Harness, place: workspace.Workspace
+    ) -> adapters.Context:
+        agent_dir = self.cfg.state_dir / "agents" / p["id"]
+        agent_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        repository = config.normalise_repository(p["workspace"].get("repository") or "")
+        found = self.probes.get(harness.id)
+        return adapters.Context(
+            placement=p,
+            harness=harness,
+            binary=found.path if found else None,
+            clone=place.path,
+            agent_dir=agent_dir,
+            grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
+            restart=self.cfg.limits.restart,
+            sandbox=capabilities.sandbox_available(harness),
+        )
 
     def _wants(self, pid: str, generation: int) -> bool:
         with self.lock:

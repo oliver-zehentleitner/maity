@@ -383,9 +383,23 @@ and runs `maity join --join-file - --no-resume` in the clone. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
-the hub's reason. This slice starts the `stub` harness only (no model,
-for tests: it exits with `exit_code` after `run_seconds`); the real
-harness adapters come next.
+the hub's reason. Harnesses run with the narrowest grant the runner can give them, and the
+project's own harness configuration is never loaded:
+
+- **Claude Code** gets `--setting-sources user`, a settings file written
+  by the runner outside the clone (`maity`, `git`, the repository's
+  `allow` list, file tools inside the clone only, nothing on
+  `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
+  configuration. Its OS sandbox is switched on where bubblewrap and socat
+  are installed.
+- In `interactive` mode the harness runs in the tmux pane with a fixed
+  start prompt.
+- In `supervised` mode `maity.runner.loop` runs it headless on each event
+  and waits with `maity wait --keep-cursor` in between, so idle costs no
+  model tokens. Runs that end without progress stop the loop as
+  `crash_loop`/`hot_loop`.
+
+`stub` (no model, for tests) runs as before. Codex and opencode follow.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the
