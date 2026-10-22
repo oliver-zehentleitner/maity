@@ -570,7 +570,7 @@ needs it.
 |---|---|---|
 | `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
 | `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
-| `ssh` (#172) | the remote user's files on that host, as `single` per host; never the runner host | run git as the remote user in an agent's clone |
+| `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
@@ -603,6 +603,58 @@ The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
 `check` reads the agents' user's own Claude Code settings, which its
 agents load. Agents under one `agent_user` can still read each other's
 files.
+
+**ssh backend.** With `[backend] kind = "ssh"` the runner does on each
+configured host what it does locally, over ssh:
+
+```toml
+[backend]
+kind = "ssh"
+
+[backend.ssh]
+known_hosts = "/etc/maity-runner/known_hosts"   # the only known_hosts used; strict checking
+identity = "agent"                              # the operator's ssh agent; or a key file path
+
+[[backend.ssh.hosts]]
+name = "build-1"                                # the target name placements use
+address = "build-1.lan"
+user = "maity"                                  # the remote user the agents run as
+port = 22
+workspaces = "/home/maity/workspaces"           # absolute, on the host
+max_agents = 2
+agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the harness are
+```
+
+Every command is a fixed template sent as one quoted command line, with
+`BatchMode`, `StrictHostKeyChecking=yes`, only the configured
+`known_hosts`, no agent or X11 forwarding, no port forwarding or local
+command whatever your own ssh configuration says, keep-alives that end a
+call to a dead host within 30 s, and a shared connection (`ControlMaster`,
+sockets in `<state_dir>/ssh`, which must stay short enough for a unix
+socket path; `check` says when it is not). Put each host's key into
+`known_hosts` from the host itself or your provisioning, not from a blind
+`ssh-keyscan`, which trusts whatever answers first; a host on a port
+other than 22 is written `[address]:port`. The remote user's home has to
+be a plain absolute path: the runner refuses a host whose shell start-up
+files report anything else. The ssh agent (or key)
+is used for the connection only; the agents never see it. On each host,
+the tmux socket, logs and harness files live in the remote user's
+`~/.maity-runner/`. The join runs the host's own `maity`, so its
+credential is written on the host and never passes through the runner.
+A placement names a host as its `target`. Without one, the runner takes
+the first reachable host with a free slot, and the placement stays
+there. A target the configuration no longer has is
+`failed`/`harness_refused`/`target_unknown`. While a host does not
+answer, its agents keep running there and their last reported state
+stands. The runner advertises the host as `reachable: false` with
+`unreachable_since` and picks it up again when it answers.
+`maity runner check [--target build-1]` reaches each host and checks
+tmux, git, `maity`, the harnesses and the workspaces there. It warns
+when the remote user has passwordless sudo. `logs` and `stop-all` work
+across the hosts; `stop-all` names a host it could not reach and exits 1.
+`gc` and `workspace claim` are for the local backend in this version.
+`isolation = "own_user"` (one remote user per agent) is not supported
+yet.
 
 On the runner host, without the hub:
 
