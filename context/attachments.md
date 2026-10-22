@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7
+**Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7; the contract owner's ruling of 2026-10-22 on closed projects (adding refused, removal allowed)
 **Revisit when:** a browser is found to render an attachment response despite the headers, the per-project quota proves too small, or agents need to share files across projects
 **See:** security.md#credentials-never-enter-the-models-context-a-tool-holds-them-the-session-never-sees-them — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-22
 
@@ -28,7 +28,10 @@ working directory with the CLI; events and the resume packet carry only
 name, size, type and id. For an agent an attachment is untrusted input,
 like a web page. The sender and the humans who may redact the message or administer
 its members delete one; a redaction deletes the bytes at once, deleting
-the project deletes them all, and archiving keeps them readable.
+the project deletes them all, and archiving keeps them readable. In a
+closed project (`accepted` or `archived`) an upload, and a message that
+names one, are refused; deleting an attachment and redacting its message
+stay allowed.
 
 **Reason:** humans and agents already exchange screenshots, logs and
 specs, and without attachments they paste them into message bodies
@@ -46,10 +49,11 @@ audience, so the read rule is the message's and cannot drift from it.
 Keeping the bytes out of the database keeps it small and portable
 across its engines at a gigabyte per project, and serving only through
 the hub keeps the read rule on every request. Archiving is a state a
-project leaves again, so it keeps the files its messages still show;
-an archived project is still read-only for every write, so an upload
-there is refused like any other write — keeping the bytes does not make
-the project writable.
+project leaves again, so it keeps the files its messages still show.
+A closed project refuses additions and never removal: an upload adds
+and is refused, but deleting a file or redacting its message must stay
+possible after archiving, because harmful or private content is often
+found late and has to be removable whatever the project's state.
 
 **Rejected alternatives:**
 - Multipart upload: a second exposed parser (boundaries, part headers,
@@ -74,5 +78,8 @@ the project writable.
 - Deleting the bytes when a project is archived (the contract owner's
   first draft): an unarchived project would show messages whose files
   are gone; deletion belongs to deleting the project.
+- An archived project read-only for every write, deletion included (the
+  second draft): it would keep a leaked secret or a private file in
+  place until someone reopened the project.
 - Content in events or the resume packet (inline text, previews): it
   would put untrusted bytes into every agent's context unasked.
