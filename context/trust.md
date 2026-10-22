@@ -164,9 +164,13 @@ and the arbiter in particular need a human's go is not recorded.
 **Revisit when:** a shared environment leads to an incident the warning did not prevent, or declared ids turn out to be spoofed in practice
 **See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
 
-On resume a client may declare `environment: {machine, workspace}`:
-random, non-secret ids it keeps itself. When open sessions of different
-members declare the same workspace or machine, their member views carry
+On resume a client may declare `environment: {home, workspace}`: two
+ids derived per hub from a random secret the client keeps in the OS
+user's home and in the state directory (an HMAC of the hub's URL, so the
+same place gives unrelated ids on two hubs). They are declared, never
+verified, and the hub only compares them. When open sessions of
+different members declare the same home or workspace, their member views
+carry
 `shared_environment`, the dashboard warns — the members can read each
 other's credentials, and a review between them is not independent — and
 recommends separating them, and a `shared_environment_detected` event
