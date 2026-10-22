@@ -48,3 +48,26 @@ had already found defects the fixtures hid — the install line, cards
 whose result is not code, the pointer block written into a tracked file.
 
 **Alternatives:** unknown.
+
+## Reviewer independence assumes separate environments; two identities in one workspace mixed up credentials
+
+**Id:** 5380a247-324f-4ab8-92c6-37350e02b0cb
+**Type:** constraint
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's observation, 2026-10-22
+**Revisit when:** the contract for tracking an agent's environment is decided
+**See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
+
+Two agent identities working in one shared Codex workspace once mixed up
+their credentials. An independent review only counts as independent when the reviewer runs
+in an environment of its own, with its own clone and its own state
+directory, so each identity stays separate from the agents it reviews.
+
+**Reason:** a reviewer sharing an environment with the agents it reviews
+can act under, or read as, another identity, which undoes the point of a
+second pair of eyes. Whether and how the hub tracks an agent's
+environment is an open decision with the maintainer.
+
+**Alternatives:** unknown — open until that decision.
