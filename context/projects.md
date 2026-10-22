@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Revisit when:** the change ticker lands: its merge items are then added to `reports`, de-duplicated by pull request number, not a replacement for the card reports; or the overview needs data no existing read has
+**Revisit when:** the hub serves the change ticker's merge items (§17; the contract alone does not count): its merge items are then added to `reports`, de-duplicated by pull request number, not a replacement for the card reports; or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{slug}`: name,
 state, repository URL, the Keep the Why export with its dashboard links,
