@@ -66,26 +66,35 @@ glob language whose matches an operator has to reason about.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's binding answers on the runner configuration, 2026-10-22 (starter file, refusal for another hub); `docs/api.md` §13 (`--code`); implementation of runner slice R1, 2026-10-22 (reading only `[hub]`)
+**Source:** the coordinator's binding answers on the runner configuration, 2026-10-22 (starter file, refusal for another hub); `docs/api.md` §13 (`--code`); implementation of runner slice R1, 2026-10-22 (reading only `[hub]`); the coordinator's review of R1, 2026-10-22 (checks before the exchange, credential first)
 **Revisit when:** pairing needs anything from the configuration beyond the hub and the state directory
 
 `maity runner pair` reads only `hub.url` and `hub.state_dir` of an
 existing configuration, not the whole file. Without one, it writes a
 starter file with those two keys (0600, directory 0700) after a
 successful exchange. A configuration for another hub, or a state
-directory that already holds a credential, is refused with exit 2 before
-the code is sent. The code comes from `--code`, as in the contract, or
+directory that already holds a credential, others can reach or this
+user cannot create, is refused with exit 2 before the code is sent.
+After the exchange the credential is written first, then the
+configuration; an existing configuration directory is taken as it is,
+since the file holds no secret. The code comes from `--code`, as in the contract, or
 `--code-file` (`-` for stdin).
 
 **Reason:** the starter file `pair` writes is incomplete until the
 operator adds limits and harnesses; validating the whole file would make
-re-pairing after a revocation fail on a file `pair` itself wrote. Refusing
-before the exchange keeps a single-use code from being spent on a pairing
-that cannot be stored. `--code-file` keeps the code out of the shell
+re-pairing after a revocation fail on a file `pair` itself wrote. The
+exchange spends the enrollment and the credential exists nowhere else, so
+everything that could stop it being stored is checked before the code is
+sent, and the credential is the first thing written: a configuration that
+cannot be written can be typed by hand, a lost credential means a new
+enrollment and a live runner credential nobody holds. `--code-file` keeps the code out of the shell
 history and the process list.
 
 **Rejected alternatives:**
 - Full validation in `pair`: see the reason; `check` is where the whole
   file is validated.
+- Writing the configuration first and requiring 0700 of its directory
+  (the first version): a `~/.config/maity-runner` made 0775 by the
+  operator failed the pair after the exchange and lost the credential.
 - Overwriting the configuration of another hub: it would orphan that
   runner's credential and state without a word.
