@@ -678,3 +678,16 @@ def test_outside_a_clone_the_error_names_maity_state_dir(
     with pytest.raises(state.StateError) as info:
         state.resolve_state_dir()
     assert "export MAITY_STATE_DIR=~/.local/state/maity/<agent-handle>" in str(info.value)
+
+
+def test_wait_batch_over_the_cap_comes_in_two_calls_each_event_once(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.events += [{"seq": n, "kind": "task_claimed"} for n in range(101, 171)]
+    assert cli.main(["wait", "--timeout", "5", "--batch"]) == cli.EXIT_OK
+    first = [e["seq"] for e in json.loads(capsys.readouterr().out)]
+    assert first == list(range(101, 101 + cli.BATCH_MAX))
+    assert state.load_state(joined)["cursor"] == first[-1]
+    assert cli.main(["wait", "--timeout", "5", "--batch"]) == cli.EXIT_OK
+    second = [e["seq"] for e in json.loads(capsys.readouterr().out)]
+    assert second == list(range(101 + cli.BATCH_MAX, 171))
