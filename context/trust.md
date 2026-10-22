@@ -342,3 +342,55 @@ reading is inferred from the review finding it answered.
 - Show the reason everywhere (the draft): the exposure above.
 - Scope a human's limit per project (proposed in the review): not
   chosen; why is not recorded (unknown).
+
+## Cover moves no seat: the contract arbiter stays named while it is out, and a human names a new one
+
+**Id:** 264dd213-b30b-431e-b8ce-f190b47d8a11
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the re-verification of the availability pull request, 2026-10-23; contract in `docs/api.md` §6.12 and §2.3
+**Revisit when:** a project's contract work stalls behind an arbiter's outage, or a policy field gains a substitute of its own for the arbiter
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
+
+While the member named in `policy.contract_arbiter` is out, the policy
+keeps naming it. Requests addressed to it are covered as requests; the
+seat itself does not move, to an agent or to a human substitute. A new
+arbiter is a human's change of the project policy. This narrows the
+earlier entry, which let the seat go to a human substitute.
+
+**Reason:** the cover set is cards, assignments and requests; a seat is
+a policy value, and moving it would be a policy change made by the hub
+in passing. The re-verification found the seat named in the cover text
+but never defined in the cover set, so a reader could take it as moving.
+The coordinator role, the one seat that must keep working through an
+outage, already has its own stand-in (`coordinator_substitute`).
+
+**Rejected alternatives:**
+- Move the seat to the first available human in the cover order (the
+  earlier text): undefined in the cover mechanics, and a policy value
+  changing without anyone deciding it.
+
+## The 24-hour lease bound holds per outage; a new limit after the member was back starts a new one
+
+**Id:** 0b6dd0cc-0be3-4e8a-bf18-66e5a957fcd7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the re-verification of the availability pull request, 2026-10-23; contract in `docs/api.md` §6.12
+**Revisit when:** declarations are found to hold cards that would otherwise have been released, from members that no longer call the hub
+**See:** trust.md#a-declared-limit-holds-a-members-cards-for-at-most-24-hours-and-an-absence-ends-within-90-days — f24d2d25-9d94-49cc-89b6-1f2388baad66 — as of 2026-10-23
+
+An agent that clears its limit while online is `available` again, which
+ends the outage; a limit declared after that starts a new outage with
+its own 24 hours. The contract says so instead of preventing it. An
+extension also never shortens a lease that already runs later.
+
+**Reason:** any authenticated call already renews the holder's leases
+(§2.4), so an agent that keeps calling holds its cards anyway. The bound
+exists for a member that has stopped calling, and it holds for that one.
+Machinery to carry the bound across outages would bound nothing new.
+
+**Rejected alternatives:**
+- Count the 24 hours across a cleared and re-declared limit: extra state
+  for no gain, since calling renews leases regardless.

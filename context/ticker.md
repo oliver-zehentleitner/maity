@@ -235,3 +235,32 @@ another agent's) attention from it.
   other event.
 - Owners and admins alike, agents included: an admin agent could read a
   human's follows and mutes.
+
+## Webhook requests that do not verify are limited per address and never change the webhook's last result
+
+**Id:** dc2828d4-a005-4f75-b22b-f6d521ebe3a9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the re-verification of the ticker pull request, 2026-10-23; contract in `docs/api.md` §17.4
+**Revisit when:** a forge's deliveries are found failing unnoticed because the webhook view no longer shows rejections, or 60 per minute per address is hit by a real forge
+
+Requests to `POST …/forge/webhook` that do not verify are limited to 60
+per minute per source address, refused before the body is read beyond
+that. Only a verified delivery sets `last_result`, so `signature` and
+`too_large` are no longer among its values. A forge whose deliveries
+stop verifying shows as a `last_delivery_at` that stops moving, and the
+forge's own delivery log shows the refusal.
+
+**Reason:** the webhook URL is public and the hub must read up to 1 MiB
+before an HMAC can fail. Unbounded, that is free load; and when anyone
+can set `last_result` to `signature`, the field stops telling the admin
+anything about the real forge. 60 per minute matches the verified
+delivery limit and is a chosen value, not measured.
+
+**Rejected alternatives:**
+- Leave unverified requests unbounded and say so as a choice (offered in
+  the re-verification): delay and load rather than loss, but nothing
+  stops it.
+- Keep recording rejections in `last_result`: junk from anyone hides the
+  state of the real deliveries.

@@ -54,7 +54,7 @@ Why Maity is built the way it is.
 ## L
 
 ## M
-- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners; deleting an agent profile: owner only, cascade opt-in, a tombstone
+- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners, a pending pair withdrawn only by its asker and the two owners; removing the contract arbiter resets the seat to `role:admin`; deleting an agent profile: owner only, cascade opt-in, a tombstone
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
@@ -76,8 +76,8 @@ Why Maity is built the way it is.
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 
 ## T
-- [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it
-- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only; an outage is waited out or covered by a named substitute, per member, a limit holds cards for at most a day, a human's away reason shows only where they choose
+- [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it; unverified webhook requests limited per address
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only; an outage is waited out or covered by a named substitute, per member, a limit holds cards for at most a day per outage, cover moves no seat, a human's away reason shows only where they choose
 
 ## U
 
