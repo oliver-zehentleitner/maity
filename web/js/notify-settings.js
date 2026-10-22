@@ -16,7 +16,9 @@ window.Maity = window.Maity || {};
     ["mention", "Mentions of you"],
     ["card", "Changes on your cards"],
     ["agent", "An agent of yours stopped"],
+    ["ticker", "Every change in your projects (the change ticker)"],
     ["jour_fixe", "Jour fixe (none yet)"],
+    ["security", "A new sign-in, a changed address"],
   ];
   const PERMISSION = {
     granted: "This browser shows them.",

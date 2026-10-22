@@ -40,7 +40,8 @@ click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen.
 
 **Notifications** (`docs/api.md` §17, `js/notify.js`). Where the hub has
-them, `GET /me/notifications` gives the counts:
+them, `GET /me/notifications?limit=0` gives the counts, per project too
+(`by_project`, computed by the hub):
 - **Switcher pill.** A project's pill counts its open requests plus its
   unread chats and mentions, and its label says which. **All projects**
   shows the hub's `total`.
@@ -48,25 +49,29 @@ them, `GET /me/notifications` gives the counts:
   **Chat** tab its unread chats.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
-- **Per project.** Unread chats and mentions per project are counted from
-  the newest 50 items.
 
-A **bell** left of the menus has the unread count. It opens the latest 20
-items, unread ones marked, each a link to where it happened. The link is
+A **bell** left of the menus has the unread count of every kind but the
+open requests. It reads the latest 20 items when it opens, unread ones
+marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
-marks it read; **Mark all read** marks everything up to the newest. The
-bell links to the settings.
+marks it read; **Mark all read** marks everything up to that answer's
+position (`next_after`, passed back unchanged). A sign-in or an address
+change leads to the account, a personal request of a project one is not
+in to everything waiting. The bell links to the settings.
 
 **Browser notifications** are opt-in on the account
 (`#/account/notifications`). Turning them on is the one place the
 browser's permission is asked, and its answer is shown beside the switch.
 After that:
 - **Delivery.** While a tab is open, also in the background, the page
-  long-polls `?after=<seq>&wait=55` and shows each new item of a kind
+  long-polls `?after=<position>&wait=55` from the counts' `next_after`,
+  taking each answer's `next_after` as the next start, and shows each new item of a kind
   switched on. The item's `id` is the tag, so two tabs show it once.
   Clicking one opens its place.
 - **What is shown.** Nothing for one's own actions. A chat's or a
-  mention's text only where the human allowed it.
+  mention's text (the hub's `content`, cut at 120 characters) only where
+  the human allowed it. The kinds include the change ticker (off by
+  default) and sign-ins and address changes.
 - **Two tabs.** When another tab took over the long-poll (`superseded`),
   this tab waits five minutes.
 
@@ -605,7 +610,7 @@ fails while the bundle is stale.
 ## Refresh
 
 - `GET /me` every 15 seconds and after every answer, for the switcher's
-  counts, with `GET /me/notifications?limit=50` beside it where the hub has
+  counts, with `GET /me/notifications?limit=0` beside it where the hub has
   notifications (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being

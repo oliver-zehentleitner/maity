@@ -12,8 +12,8 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo } = M.dom;
 
   const KIND_WORDS = {
-    inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards",
-    agent: "Agents stopped", jour_fixe: "Jour fixe", system: "Mail delivery",
+    inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards", agent: "Agents stopped",
+    ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§17.2: one per session).
@@ -25,12 +25,18 @@ window.Maity = window.Maity || {};
   const PAUSE_MS = 30 * 1000;
 
   // available: null until read, false when the hub has no notifications.
-  const state = { available: null, counts: null, items: [], byProject: {} };
+  // head: the position (§17.2, "a.b", never built here) the browser's
+  // long-poll starts from.
+  const state = { available: null, counts: null, byProject: {}, head: null, settings: null };
 
-  // The page's address for an item, from its target.
+  // The page's address for an item, from its target. Account records
+  // (a sign-in, the settings) lead to the account; a personal request of a
+  // project one is no member of, to everything waiting.
   function linkOf(item) {
+    const t0 = item.target || {};
+    if (t0.type === "session" || t0.type === "settings") return "#/account/notifications";
     const slug = item.project && item.project.slug;
-    if (!slug) return "#/all";
+    if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
@@ -39,20 +45,15 @@ window.Maity = window.Maity || {};
     return base + "inbox";
   }
 
-  // One read: the counts and the newest 50, from which the unread chats and
-  // mentions per project are told (more than 50 unread show as 50).
+  // The counts, per project too (by_project, computed by the hub over
+  // every unread item, §17.2), and the head for the long-poll; no items.
   async function read() {
     try {
-      const answer = await M.api.get("/me/notifications?limit=50");
+      const answer = await M.api.get("/me/notifications?limit=0");
       state.available = true;
       state.counts = answer.counts;
-      state.items = answer.items || [];
-      state.byProject = {};
-      state.items.filter((x) => !x.read && (x.kind === "chat" || x.kind === "mention")).forEach((x) => {
-        const slug = x.project && x.project.slug;
-        const p = state.byProject[slug] || (state.byProject[slug] = { chat: 0, mention: 0 });
-        p[x.kind] += 1;
-      });
+      state.byProject = answer.by_project || {};
+      if (state.head === null) state.head = answer.next_after || null;
     } catch (err) {
       if (err.status !== 404) throw err;
       state.available = false;
@@ -60,12 +61,11 @@ window.Maity = window.Maity || {};
     return state;
   }
 
-  // What asks for the human in one project: its open requests, and its
-  // unread chats and mentions.
+  // What asks for the human in one project of theirs, as the hub counts it.
   function projectCount(p) {
-    const extra = state.byProject[p.slug] || { chat: 0, mention: 0 };
-    return { requests: p.open_requests || 0, chat: extra.chat, mention: extra.mention,
-      total: (p.open_requests || 0) + extra.chat + extra.mention };
+    const c = state.byProject[p.slug];
+    if (!c || c.member === false) return { requests: p.open_requests || 0, chat: 0, mention: 0, total: p.open_requests || 0 };
+    return { requests: c.inbox || 0, chat: c.chat || 0, mention: c.mention || 0, total: c.total || 0 };
   }
 
   // The tab title: "(6) " before it while anything asks for the human.
@@ -78,7 +78,10 @@ window.Maity = window.Maity || {};
   // link to where it happened, unread ones marked, and Mark all read.
   function bell(ctx, onChange) {
     if (!state.available) return null;
-    const unread = state.items.filter((x) => !x.read).length;
+    // What is unread on the bell: every kind but the open requests, which
+    // the inbox and the switcher show.
+    const counts = state.counts || {};
+    const unread = Object.keys(KIND_WORDS).filter((k) => k !== "inbox").reduce((n, k) => n + (counts[k] || 0), 0);
     const box = h("div", { class: "bell-box" });
     const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
     list.hidden = true;
@@ -94,10 +97,9 @@ window.Maity = window.Maity || {};
       if (refocus) button.focus();
     };
     function outside(e) { if (!box.contains(e.target)) close(false); }
+    let items = [];
+    let top = null;
     function draw() {
-      const items = state.items.slice(0, 20);
-      const counts = state.counts || {};
-      const top = items.length ? items[0].seq : null;
       append(clear(list),
         h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, "Notifications"),
           top !== null && unread ? h("button", {
@@ -133,8 +135,19 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
         status.el);
     }
-    button.addEventListener("click", () => {
+    // The latest 20 are read when the bell opens; "mark all read" marks up to
+    // that answer's position.
+    button.addEventListener("click", async () => {
       if (!list.hidden) { close(true); return; }
+      try {
+        const answer = await M.api.get("/me/notifications?limit=20");
+        items = answer.items || [];
+        top = answer.next_after || null;
+      } catch (err) {
+        items = [];
+        top = null;
+        status.fail("Could not read your notifications: ", err);
+      }
       draw();
       list.hidden = false;
       button.setAttribute("aria-expanded", "true");
@@ -159,7 +172,7 @@ window.Maity = window.Maity || {};
     // A pause ends early when the loop is stopped, so nothing is left waiting.
     const loop = { stopped: false, timer: null, wake: null };
     browserLoop = loop;
-    let after = (state.items[0] && state.items[0].seq) || 0;
+    let after = state.head;
     const pause = (ms) => new Promise((done) => {
       loop.wake = done;
       loop.timer = window.setTimeout(done, ms);
@@ -169,7 +182,8 @@ window.Maity = window.Maity || {};
         const asked = Date.now();
         let answer;
         try {
-          answer = await M.api.get("/me/notifications?after=" + after + "&wait=" + WAIT_S + "&limit=50");
+          if (after === null) after = (await M.api.get("/me/notifications?limit=0")).next_after;
+          answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50");
         } catch (err) {
           await pause(PAUSE_MS);
           continue;
@@ -177,8 +191,9 @@ window.Maity = window.Maity || {};
         if (loop.stopped) return;
         if (answer.superseded) { await pause(SUPERSEDED_MS); continue; }
         const items = answer.items || [];
+        // The hub's next position, passed back unchanged (§17.2).
+        if (answer.next_after) after = answer.next_after;
         items.forEach((x) => {
-          after = Math.max(after, x.seq);
           if (x.read || shown.has(x.id) || !b.kinds[x.kind]) return;
           if (x.actor && x.actor.member_id === ctx.me.id) return;
           shown.add(x.id);

@@ -1913,7 +1913,9 @@ window.MAITY_FIXTURES = {
           "chat": true,
           "inbox": true,
           "jour_fixe": true,
-          "mention": true
+          "mention": true,
+          "security": true,
+          "ticker": false
         }
       },
       "email": null,
@@ -1923,7 +1925,9 @@ window.MAITY_FIXTURES = {
         "mention",
         "card",
         "agent",
-        "jour_fixe"
+        "ticker",
+        "jour_fixe",
+        "security"
       ],
       "mail_available": false
     }

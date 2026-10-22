@@ -38,10 +38,10 @@
       "read": true, "redacted": false }
   ],
   "settings": {
-    "kinds": ["inbox", "chat", "mention", "card", "agent", "jour_fixe"],
+    "kinds": ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security"],
     "browser": {
       "enabled": false,
-      "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "jour_fixe": true },
+      "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "ticker": false, "jour_fixe": true, "security": true },
       "content": { "chat": false, "mention": false }
     },
     "email": null,

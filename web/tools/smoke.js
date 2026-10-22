@@ -2630,12 +2630,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
-  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "Notifications, 4 unread" && text(bellBtn()).includes("4")
+  // Unread on the bell: every kind but the open requests (the inbox shows those).
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread" && text(bellBtn()).includes("3")
     && tabCountOf("Chat") === "1", "notifications: the bell says how many are unread; the chat tab its unread chats");
   const nPosts = [];
   const nPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.startsWith("/me/notifications")) nPosts.push([p, b]); return nPost(p, b); };
-  bellBtn().click(); await tick();
+  const nGets = [];
+  const nGet0 = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/me/notifications")) nGets.push(p); return nGet0(p); };
+  bellBtn().click(); await tick(); await tick();
+  win.Maity.api.get = nGet0;
+  expect(nGets[0] === "/me/notifications?limit=20", "notifications: the bell reads the latest 20 when it opens");
   const bellPanel = header.querySelector(".bell-panel");
   const bellLinks = bellPanel.querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
   expect(!bellPanel.hidden && bellBtn().getAttribute("aria-expanded") === "true"
@@ -2644,12 +2650,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked");
   const maityBefore = Number(chipCount("Maity"));
   bellPanel.querySelectorAll(".bell-items a")[2].click(); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread"
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "Notifications, 2 unread"
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
-  bellBtn().click(); await tick();
+  bellBtn().click(); await tick(); await tick();
   btn(header.querySelector(".bell-panel"), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
   const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: 4241 }]) && bellBtn().getAttribute("aria-label") === "Notifications"
+  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.0" }]) && bellBtn().getAttribute("aria-label") === "Notifications"
     && Number(chipCount("Maity")) === maityOpen,
     "notifications: Mark all read marks up to the newest; the project's count is its open requests again");
   win.Maity.api.post = nPost;
@@ -2684,7 +2690,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("notify-browser").checked = true; byId("notify-browser").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
   expect(asked === 1 && byId("notify-browser").checked && text(main).includes("Browser notifications are on.") && text(main).includes("This browser shows them."),
     "notifications: turning them on asks the browser once, and saves the wish");
-  expect(polls.length >= 1 && /after=\d+&wait=55/.test(polls[0]) && shownNotes.length === 1 && shownNotes[0][0] === "Agent A in agent-a"
+  expect(polls.length >= 1 && /after=4241\.0&wait=55/.test(polls[0]) && shownNotes.length === 1 && shownNotes[0][0] === "Agent A in agent-a"
     && shownNotes[0][1].tag === "ntf-5001" && !shownNotes[0][1].body.includes("secret text"),
     "notifications: a new chat is shown with its id as tag, without its text; a card (off) and one's own are not");
   shownNotes.length = 0;

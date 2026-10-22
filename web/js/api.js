@@ -344,12 +344,25 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
+  // §17.2 counts, overall and per project. The fixtures have events only,
+  // so a position is "<seq>.0".
+  const KINDS = ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security", "system"];
   function notificationCounts() {
-    const counts = { inbox: me().projects.reduce((k, p) => k + openFor(p.slug).length, 0), chat: 0, mention: 0, card: 0, agent: 0, jour_fixe: 0, system: 0 };
-    fixtures()["notifications.json"].items.forEach((x) => { if (!x.read && x.kind !== "inbox") counts[x.kind] += 1; });
+    const counts = {};
+    KINDS.forEach((k) => { counts[k] = 0; });
+    const byProject = {};
+    const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security" && k !== "system").map((k) => ({ [k]: 0 }))));
+    me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.slug).inbox += n; });
+    fixtures()["notifications.json"].items.forEach((x) => {
+      if (x.read || x.kind === "inbox") return;
+      counts[x.kind] += 1;
+      if (x.project && x.kind !== "security" && x.kind !== "system") of(x.project.slug)[x.kind] += 1;
+    });
     counts.total = counts.inbox + counts.chat + counts.mention;
-    return counts;
+    Object.values(byProject).forEach((c) => { c.total = c.inbox + c.chat + c.mention; });
+    return { counts, by_project: byProject };
   }
+  const positionSeq = (pos) => Number(String(pos).split(".")[0]);
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -442,15 +455,22 @@ window.Maity = window.Maity || {};
       const n = fixtures()["notifications.json"];
       const limit = query.get("limit") === null ? 20 : Number(query.get("limit"));
       if (!Number.isInteger(limit) || limit < 0 || limit > 50) fail(400, "invalid", "limit is 0 to 50", path, { fields: { limit: "invalid" } });
-      const counts = notificationCounts();
+      const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       const projects = query.get("project") ? query.get("project").split(",") : null;
       let items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
         && (!kinds || kinds.includes(x.kind)) && (!projects || projects.includes(x.project.slug)));
       const after = query.get("after");
-      if (after !== null) items = items.filter((x) => x.seq > Number(after)).sort((a, b) => a.seq - b.seq);
-      else items = items.slice().sort((a, b) => b.seq - a.seq);
-      return { counts, items: items.slice(0, limit), next_cursor: null, server_time: nowIso() };
+      const head = Math.max(0, ...n.items.map((x) => x.seq));
+      let listed;
+      if (after !== null) {
+        const past = items.filter((x) => x.seq > positionSeq(after)).sort((a, b) => a.seq - b.seq);
+        listed = past.slice(0, limit);
+        const next = past.length > limit ? listed[listed.length - 1].seq : Math.max(head, positionSeq(after));
+        return { counts, by_project: byProject, items: listed, next_cursor: null, next_after: (limit ? next : positionSeq(after)) + ".0", server_time: nowIso() };
+      }
+      listed = items.slice().sort((a, b) => b.seq - a.seq).slice(0, limit);
+      return { counts, by_project: byProject, items: listed, next_cursor: null, next_after: head + ".0", server_time: nowIso() };
     }],
     // §17.3: by ids, or everything up to a seq (of one kind or project).
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
@@ -458,9 +478,9 @@ window.Maity = window.Maity || {};
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
       n.items.forEach((x) => {
         if (body.ids ? body.ids.includes(x.id)
-          : x.seq <= body.up_to && (!body.kind || x.kind === body.kind) && (!body.project || x.project.slug === body.project)) x.read = true;
+          : x.seq <= positionSeq(body.up_to) && (!body.kind || x.kind === body.kind) && (!body.project || x.project.slug === body.project)) x.read = true;
       });
-      return { counts: notificationCounts() };
+      return notificationCounts();
     }],
     // §17.4: the account's settings; a PATCH merges what it names.
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
