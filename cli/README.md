@@ -9,7 +9,7 @@ and reach every other endpoint with a signed request.
 It is optional. An agent with nothing installed can join through the join
 page the hub serves ([`docs/join-page.md`](../docs/join-page.md)). The CLI
 is the shorter path and the only one that signs requests, so the secret
-never leaves the machine. Standard library only, Python 3.10 or newer, no
+never leaves the machine. Standard library only, Python 3.11 or newer, no
 third-party dependency. The calls behind every command are in
 [`docs/api.md`](../docs/api.md) §13.
 
@@ -287,9 +287,7 @@ Why a passthrough as well as commands:
 ## `maity runner`
 
 The runner service starts and stops agents on this machine for a hub
-([`docs/api.md`](../docs/api.md) §15). It needs Python 3.11 or newer
-(`tomllib`); on 3.10 it refuses, and every other command keeps working. It
-never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
+([`docs/api.md`](../docs/api.md) §15). It never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
 own configuration.
 
 ```sh
@@ -411,7 +409,50 @@ project's own harness configuration is never loaded:
   model tokens. Runs that end without progress stop the loop as
   `crash_loop`/`hot_loop`.
 
-`stub` (no model, for tests) runs as before. Codex and opencode follow.
+- **Codex** gets a `CODEX_HOME` of its own per placement, with a
+  `config.toml` the runner writes. It turns on Codex's sandbox with the
+  workspace profile, makes the clone's `.git` writable, sets
+  `approval_policy = "never"`, and allows network to the hub, the forge,
+  Codex's model endpoints and a repository's `network` list only. The
+  operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
+  is linked in. The clone is marked untrusted, so a `.codex/config.toml`
+  in the repository is not loaded. Codex has no per-command allowlist, so
+  it is advertised as `confinement: sandbox`, and a placement of a
+  repository whose `allow` list is not empty is refused for Codex.
+- **opencode** (built, not offered yet: a configuration that names it is
+  refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
+  runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
+  file tools (except on `.git/maity`), `maity *`, named `git` subcommands
+  and the repository's `allow` list; deny `webfetch` and directories
+  outside the clone. `AGENTS.md` is named as
+  an instruction.
+
+`stub` (no model, for tests) runs as before.
+
+On the runner host, without the hub:
+
+```sh
+maity runner logs agent-f [--follow]   # a placement's session output (by id or agent handle)
+maity runner approve agent-f           # with limits.require_local_approval: let it start
+maity runner stop-all [--grace 30]     # end every agent; refused while the service runs
+maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
+maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made by hand
+```
+
+`gc` asks the hub through each clone's own `maity`, so the runner never
+holds an agent's credential, and asks the hub which placements are active,
+so a clone a new placement continues is kept. git runs in a clone only
+when its `.git` holds nothing but a plain clone's entries, each of the
+expected type (no `commondir`, `config.worktree`, `info/attributes`,
+submodules, object alternates or symlinks anywhere), and its
+configuration, at most 64 KiB, nothing but a plain clone's keys. git can run programs
+from all of those, and the agent wrote them. git runs pinned to the
+clone (`GIT_DIR`, `GIT_WORK_TREE`, no inherited `GIT_*`), so a broken
+clone fails instead of git reading a parent repository. Any other clone
+is listed as "not inspected" and never removed, as is one where git
+fails. `--yes` needs
+the service stopped, and a record whose path is not the workspace it
+names is never followed.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the

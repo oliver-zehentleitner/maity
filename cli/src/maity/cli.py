@@ -228,6 +228,18 @@ def cmd_resume(args: argparse.Namespace) -> int:
 BATCH_MAX = 50
 
 
+def _event_line(event: dict[str, Any]) -> str:
+    """`#seq kind subject: title`, cleaned: what woke the wait, before its JSON."""
+    subject = onboarding.get(event, "subject", "id")
+    title = onboarding.get(event, "payload", "title") or onboarding.get(event, "payload", "type")
+    line = f"#{onboarding.inline(event.get('seq'))} {onboarding.inline(event.get('kind'))}"
+    if subject:
+        line += f" {onboarding.inline(subject)}"
+    if title:
+        line += f": {onboarding.inline(title)[:120]}"
+    return line
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -270,6 +282,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
                     _err(note)
+            for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
+                _err(_event_line(event))
             _print_json(taken if args.batch else taken[0])
             return EXIT_OK
         new_cursor = page.get("cursor")
@@ -818,7 +832,8 @@ def build_parser() -> argparse.ArgumentParser:
         "join",
         "pair this clone with a project, using the line a human pasted",
         "Exchange the single-use join code for a session credential, store it in this clone's "
-        "state directory without printing it, write the Maity pointer block into AGENTS.md, then "
+        "state directory without printing it, print the Maity pointer block for AGENTS.md "
+        "(--pointer writes it), then "
         "open the first session and print the onboarding: the briefing the humans wrote for you, "
         "who you are, the project and its rules, and the next step. A clone that already holds a "
         "credential is refused.",

@@ -25,7 +25,7 @@ import time
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +78,8 @@ def run_join(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tupl
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
+APPROVED_FILE = "approved.json"
+LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
@@ -122,7 +124,7 @@ def _count(value: Any) -> bool:
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
-    return datetime.fromtimestamp(moment, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(moment, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -331,6 +333,9 @@ class Supervisor:
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
             return 0
+        if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
+            rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
+            return 0
         if alive >= self.cfg.limits.max_agents:
             rec.enter(now, "pending", "capacity")
             return 0
@@ -394,6 +399,10 @@ class Supervisor:
         found = self.probes.get(harness.id)
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
+        repository = config.normalise_repository(p["workspace"].get("repository") or "")
+        grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
+        if harness.id == "codex" and grant.allow:
+            return ("harness_refused", None)  # Codex cannot honour a command allowlist
         if harness.require_sandbox and not capabilities.sandbox_available(
             harness, self.agent_path()
         ):
@@ -414,7 +423,7 @@ class Supervisor:
             return 0
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
-            return self._wait(rec, f"the {harness.id} adapter arrives with R5b", name)
+            return self._wait(rec, f"no adapter for {harness.id} in this version", name)
         if self.cfg.local is None:
             return 0
         try:
@@ -686,18 +695,29 @@ class Supervisor:
                     rec.acked, rec.pending = pending["key"], None
 
 
-def build(cfg: config.Config, client: hub.Client | None, log: Log,
-          probes: dict[str, capabilities.Probe],
-          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
-    """The supervisor for the local backend of `cfg`."""
+def local_backend(cfg: config.Config) -> Tmux:
+    """The tmux server of `cfg`'s local backend (also for `stop-all`, without the hub)."""
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
-    backend = Tmux(
+    return Tmux(
         socket=cfg.local.tmux_socket,
         conf=cfg.state_dir / "tmux.conf",
         home=os.environ.get("HOME", ""),
         agent_path=capabilities.agent_path(cfg, os.environ.get("PATH", "")),
-        logs=cfg.state_dir / "logs",
+        logs=cfg.state_dir / LOGS,
     )
-    supervisor = Supervisor(cfg, backend, client, log, probes, capabilities=capabilities_)
+
+
+def approved(state_dir: Path) -> dict[str, Any]:
+    """Placements the operator approved on this host (`maity runner approve`)."""
+    return state.load_state(state_dir, name=APPROVED_FILE) if state_dir.is_dir() else {}
+
+
+def build(cfg: config.Config, client: hub.Client | None, log: Log,
+          probes: dict[str, capabilities.Probe],
+          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
+    """The supervisor for the local backend of `cfg`."""
+    supervisor = Supervisor(
+        cfg, local_backend(cfg), client, log, probes, capabilities=capabilities_
+    )
     supervisor.load()
     return supervisor

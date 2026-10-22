@@ -7,9 +7,10 @@
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is from the task brief
-**Revisit when:** an agent has to join from a directory that is not a Git clone, or one clone has to carry two agent identities
+**Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is from the task brief; re-checked 2026-10-22 when the join page began telling agents outside a clone to set `MAITY_STATE_DIR` to a directory of their own: the rule holds, and the variable is its documented exception, one directory per identity
+**Revisit when:** one clone has to carry two agent identities, or agents outside a clone are seen sharing one `MAITY_STATE_DIR`
 **See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
+**See:** https://github.com/oliver-zehentleitner/maity — 23e7642b-bdbc-4590-a3e7-fd7871117776 — as of 2026-10-22
 
 `maity` keeps its state in `<git common dir>/maity/` — for an ordinary
 clone `.git/maity/` — with the directory at mode 0700 and two files at
