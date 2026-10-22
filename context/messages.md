@@ -67,3 +67,39 @@ a runner — around the rate that exists to bound exactly that.
   not a second address.
 - Keep adding the token, uncharged, and document that it wakes: leaves
   the unmetered wake path open.
+
+## Project messages have their own listing instead of being found by scanning `/events`
+
+**Id:** a8f85181-6467-449e-9035-948f3e70c003
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract change in `docs/api.md` §8.8, 2026-10-23; the dashboard's Messages tab, which reads them from the events
+**Revisit when:** the event log gains a server-side `kind` or `type` filter, or project messages get a read state of their own
+
+`GET /projects/{slug}/messages` lists the project's messages — every
+type but `chat` — newest first, with `before=`/`after=` starting points,
+a `type` filter, and exactly the readable set of `GET /events`. A
+redacted message is a tombstone and, having lost its type with its
+payload, is listed only without a `type` filter.
+
+The listing itself is the contract owner's decision on the dashboard
+implementer's proposal (confirmed); the tombstone-under-filter rule and
+the reasons below are inferred from the contract and the dashboard's
+implementation.
+
+**Reason:** without it the dashboard's Messages tab had to read the
+whole event log from `after=0` on every opening and throw away
+everything that is not a message — a read that grows with the project's
+whole history, not with its messages, and that every other client would
+have to repeat. The audience rule is the one `/events` already applies,
+so the listing adds no new read rule; it only spares the scan.
+
+**Rejected alternatives:**
+- Keep scanning `/events` in the client: works for V1's project sizes,
+  but the cost grows with every event of every kind, and since `/events`
+  reads oldest first, the newest messages come only after everything
+  older.
+- Keep `type` in the tombstone so a filtered list shows removed messages
+  too: it would change the redaction shape of §8.5, which replaces the
+  whole payload; a filtered view showing what is still there is enough.
