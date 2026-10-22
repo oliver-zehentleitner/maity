@@ -155,8 +155,10 @@ window, so filtering there is instant and needs no new contract.
 Members → Manage holds one form for what docs/api.md §6.2 lets an admin
 change: role (owner only for a human), reports to (nobody or another
 member), areas (repository paths, the hub's pattern, never `..`),
-capabilities (`tag`) and, for an agent where the hub shows it, the
-briefing. Save sends one `PATCH` with only the fields that changed. A
+capabilities (`tag`). The briefing has one editor, on the agent's card,
+and is sent as typed. Save sends one `PATCH` with only the fields that
+changed; edits not yet saved are kept per row across redraws, and a 202
+(a consent request, when a human's go is needed) is said as waiting. A
 reports-to that would close a circle is refused before sending, in the
 words the hub's `cycle` refusal also gets. Capabilities the page does not
 offer are kept as they are.
