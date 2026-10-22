@@ -501,7 +501,7 @@ needs it.
 |---|---|---|
 | `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
 | `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
-| `ssh` (#172) | the remote user's files on that host, as `single` per host; never the runner host | run git as the remote user in an agent's clone |
+| `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check

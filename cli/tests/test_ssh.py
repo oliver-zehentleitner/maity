@@ -485,3 +485,31 @@ def test_check_refuses_a_state_dir_too_long_for_sshs_sockets(
     deep.mkdir(mode=0o700)
     cli.main(["runner", "check", "--offline", "--config", str(path)])
     assert "too long for ssh's connection sockets" in capsys.readouterr().out
+
+
+def test_a_hosts_deny_lists_name_the_hosts_paths(tmp_path: Path, fake_ssh: Path) -> None:
+    """Remote home secrets, the remote ~/.maity-runner and the other clones' credentials
+    listed on the host; nothing of the runner's own machine."""
+    sup, _, _, _, _ = remote_world(tmp_path, fake_ssh)
+    target = sup.targets["build-2"]
+    place = remote_clone(sup.cfg, "build-2", 3)
+    sibling = remote_clone(sup.cfg, "build-2", 4).credential.parent
+    harness = sup.cfg.harnesses["stub"]
+    ctx = sup._context(placement(target="build-2"), harness, place, target)
+    remote_home = tmp_path / "remote" / "home"
+    assert target.agent_files is not None and target.agent_files in ctx.private
+    assert remote_home / ".ssh" in ctx.private and remote_home / ".codex" in ctx.private
+    assert sibling in ctx.private and place.credential.parent not in ctx.private
+    assert sup.cfg.state_dir not in ctx.private and sup.cfg.state_dir.resolve() not in ctx.private
+    assert "-path" in fake_ssh.read_text()  # listed on the host, over ssh
+
+
+def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> None:
+    cfg = load(tmp_path)
+    codex = tmp_path / "remote" / "bin" / "codex"
+    codex.write_text('#!/bin/sh\n[ "$1" = sandbox ] && exit 1; echo "codex-cli 0.156.1"\n')
+    codex.chmod(0o755)
+    harnesses = {"codex": config.Harness("codex", ("supervised",), "supervised", binary="codex")}
+    target = targets.ssh_hosts(cfg)[1]
+    probes, sandbox = targets.probe_remote(target.as_user, harnesses, target.agent_path)
+    assert probes["codex"].available and sandbox["codex"] is False  # its sandbox fails there

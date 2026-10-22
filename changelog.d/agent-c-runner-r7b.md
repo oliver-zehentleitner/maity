@@ -10,3 +10,9 @@
   `harness_refused`/`target_unknown`; an unreachable host keeps its agents' last state and
   is advertised `reachable: false` with `unreachable_since`; `maity runner check [--target]`
   checks each host; `logs` and `stop-all` work across the hosts.
+- cli runner (ssh): the sandbox read denies are worked out per host (the remote user's home
+  secrets, its `~/.maity-runner`, the other clones' credentials listed over ssh, failing
+  closed on a partial listing) and Codex's sandbox is tried on the host; connections never
+  read the operator's terminal, keep alive, ignore the operator's forwarding and local
+  commands, and need a ControlPath directory the runner now creates; a remote home that is
+  not a plain path refuses the host, and the attach hint is quoted word by word.
