@@ -38,6 +38,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   `release list|show|tick`; `--json` on these and on `ask` and `report` prints
   the hub's answer; an `invalid` answer lists each field with its reason code.
 - ci: a `cli` job runs `make check` in `cli/` on Python 3.10 and 3.13.
+- ci: the `audit` workflow runs pip-audit (pinned with hashes in `hub/requirements/tools.txt`)
+  against all four hub locks on every push to main, every pull request and daily.
 - docs: `docs/join-page.md`, the join page template the hub serves.
 - docs: `docs/install/`, the entry page for self-hosters: which of the three paths
   when, TLS and `MAITY_TRUSTED_PROXIES` per path (the same-host proxy trap), the
