@@ -145,6 +145,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null` |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
@@ -525,10 +526,14 @@ limit the hub states, not one it closes. What it does instead:
   password, the approval of a session that is at least 24 hours old —
   and tells the old address (§2.6.3). A session obtained through the
   mailbox, or approved on an unlocked dashboard, therefore cannot move
-  the sign-in path to a mailbox of its own — for a human with a
-  password not at all, for a human without one not before it has been
-  shown for 24 hours in the human's earlier sessions, where one click
-  ends it.
+  the sign-in path to a mailbox of its own: for a human with a
+  password not at all. For a human without one the guard is an age
+  gate: the change goes on only when a session at least 24 hours old
+  approves it, so a session obtained a moment ago cannot do it, and
+  one that wants to approve its own change must stay signed in for a
+  day — during which it is listed in Profile → Sessions with an unread
+  `security` item in the bell, and, if it came from a mail sign-in,
+  shown as a banner in the human's other sessions (§2.6.5).
 
 Additional rules that are not scopes:
 
@@ -804,15 +809,22 @@ definition.
   needs the change approved from a session of theirs that is **at
   least 24 hours old**. A `PATCH` from such a session is that approval
   and goes on at once. From a younger session the change is held:
-  `202` with `email.address_change: {address, requested_at,
-  session_id}` (the address `null` for a removal), shown with
-  "Approve" and "Reject" in every session of the human that is at
-  least 24 hours old. `POST /me/notification-settings/email/address-change/approve`
-  from such a session lets it go on; from a younger one it is
-  `forbidden` with `details.reason: session_too_new`.
-  `POST …/address-change/reject` (any session of the human) or a new
-  `PATCH` of the address drops it; a held change lapses after 7 days.
-  A human with no session that old waits until one is.
+  `202` with `email.address_change: {id, address, requested_at,
+  session_id}` — `id` an immutable `adc-<random>` of this one change,
+  the address `null` for a removal — shown with "Approve" and "Reject"
+  in every session of the human that is at least 24 hours old. Both
+  calls name what they act on: `POST
+  /me/notification-settings/email/address-change/approve` `{id,
+  address}` from such a session lets it go on (from a younger one it is
+  `forbidden` with `details.reason: session_too_new`);
+  `POST …/address-change/reject` `{id, address}` (any session of the human)
+  drops it. A held change exists once per human: a newer `PATCH` of the
+  address replaces it atomically with a new `id`, and an approval or
+  rejection naming the old `id`, or an `address` that is not the held
+  change's, is `conflict` (§1.3) and changes nothing — so a session
+  that showed address A can never approve an address B that a younger
+  session put in its place. A held change lapses after 7 days. A human
+  with no session that old waits until one is.
 
 The old address is notified as before: when the new address is
 confirmed, or the address is removed, the **old** address
@@ -1049,8 +1061,13 @@ notification of the kind `security` (#160, §17.1), title `New sign-in:
   neither its own alert nor that of a second session it obtains next
   (by another mail sign-in, or by a device code it approves). An item
   that no session may mark read — the human had no session in good
-  standing at the time — stays unread in the bell until its record
-  expires.
+  standing at the time — stays listed and unread in the bell until its
+  record expires (90 days). Security items are exempt from the 30-day
+  rule of #160 §17.2 that counts older items as read: they stay listed
+  and unread until an allowed session marks them read or the record
+  expires. Only that marking grants good standing; age, expiry or any
+  other automatic reading never does — a session whose own item
+  expired unread stays out of good standing.
 - **Every mail sign-in is an alert** — method `email_link` or
   `email_code`, whatever device cookie the browser presented. It is
   shown in **every other session** of the human at once, not only in
@@ -3293,8 +3310,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/auth/sessions` | human | 2.6.5 |
 | DELETE | `/auth/sessions/{id}` | human, own sessions; an older one not from a session younger than 1 hour | 2.6.5 |
 | POST | `/auth/sessions/end-others` | human; not from a session younger than 1 hour | 2.6.5 |
-| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old | 2.6.3 |
-| POST | `/me/notification-settings/email/address-change/reject` | human | 2.6.3 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
+| POST | `/me/notification-settings/email/address-change/reject` | human; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
