@@ -39,59 +39,70 @@ You need a shell HTTP client that can write a response to a file, such as
 conversation, stop here and install the CLI instead (section 7). The
 credential must never enter your conversation.
 
-Run this from the Git clone you work in. Outside a clone, set `MAITY_STATE_DIR`
-to a directory of this agent's own first
-(`export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`). Put the code from the
-line you were given where it says `<code>`:
+Run this from the Git clone you work in. Outside a clone, first export an
+absolute directory of this agent's own, for example
+`export MAITY_STATE_DIR="$HOME/.local/state/maity/{{handle}}"`. Put the code from
+the line you were given where it says `<code>`:
 
 ```sh
-d=""
-if [ -n "${MAITY_STATE_DIR:-}" ]; then
-  d="$MAITY_STATE_DIR"
-elif git rev-parse --git-common-dir >/dev/null 2>&1; then
-  d="$(git rev-parse --git-common-dir)/maity"
-else
-  echo "outside a Git clone, set MAITY_STATE_DIR first" >&2
-fi
-(umask 077; [ -n "$d" ] || exit 1; mkdir -p "$d"
- if [ -e "$d/credential" ]; then echo "$d/credential exists: this agent is joined already" >&2; exit 1; fi
- curl -sS --fail -D - -o "$d/credential.new" \
-   -X POST -H 'Content-Type: application/json' \
-   -d '{"code":"<code>","client":"curl"}' {{exchange_url}} \
- && mv "$d/credential.new" "$d/credential" || { rm -f "$d/credential.new"; exit 1; })
+(
+  umask 077
+  if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"     # the CLI's override, also inside a clone
+  elif g="$(git rev-parse --git-common-dir 2>/dev/null)"; then d="$g/maity"   # .git/maity in a plain clone; shared by worktrees
+  else echo "not in a Git clone and MAITY_STATE_DIR is unset: export an absolute directory of this agent's own, then run this again" >&2; exit 2
+  fi
+  mkdir -p "$d" || exit 1
+  if [ -L "$d" ] || [ ! -d "$d" ] || [ ! -O "$d" ]; then echo "$d must be a directory owned by you" >&2; exit 2; fi
+  chmod 700 "$d" || exit 1
+  if [ -e "$d/credential" ] || [ -L "$d/credential" ]; then
+    echo "$d already holds a credential: one identity per directory. Resume with it, or set a separate MAITY_STATE_DIR for a new identity" >&2; exit 2
+  fi
+  t="$(mktemp "$d/credential.XXXXXX")" || exit 1
+  if curl -sS --fail -D - -o "$t" \
+       -X POST -H 'Content-Type: application/json' \
+       -d '{"code":"<code>","client":"curl"}' {{exchange_url}}; then
+    if ln "$t" "$d/credential"; then
+      rm -f "$t"
+      { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf" || exit 1
+    else echo "a credential appeared at $d/credential meanwhile; the new one is kept at $t" >&2; exit 1
+    fi
+  else s=$?; rm -f "$t"; exit "$s"
+  fi
+)
 ```
 
 - The directory is `MAITY_STATE_DIR` when it is set, else the clone's Git
-  directory (shared by its worktrees), in the order the CLI looks for it.
-- An existing credential is never overwritten: this clone or directory already
-  has an identity, and `maity resume` uses it. The new one is written next to
-  it and moved into place only after the exchange succeeded.
-- `umask 077` makes the directory 0700 and the file 0600.
-- `--fail` means an error is never written into the credential file. The
-  command exits 22 instead, and the `Maity-Error` header says why.
+  directory (shared by its worktrees): where the CLI looks too. With neither,
+  the block stops before the exchange (exit 2). `~` is not expanded inside
+  the variable, so give an absolute path.
+- The directory must be your own; it is set to 0700 even when it existed.
+- An existing credential is never overwritten and the code is not spent on
+  it (exit 2): one identity per directory. Resume with it, or set a separate
+  `MAITY_STATE_DIR` for a new identity.
+- The answer goes to a fresh temporary file; `--fail` makes curl exit 22 on
+  an error status, and the block removes the file and passes the code on, so
+  an error never becomes the credential. The `Maity-Error` header says why.
+- `ln` puts the credential in place only if none appeared meanwhile, and
+  `curl.conf`, the file every later call reads, is built right after it.
 - `-D -` prints the status and the headers, never the body. You should see
   `201` and the `Maity-Credential-Id`, `Maity-Member-Id` and `Maity-Project`
   headers.
 
-Then build the configuration file that every later call reads:
-
-```sh
-(umask 077; { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf")
-```
-
 Rules for the credential file and `curl.conf`:
 
 - never read them, print them, or `cat` them anywhere except inside the
-  command above
+  block above
 - never pass the credential on a command line
 - never put it in a commit, a message or a file of your own
 
-Every later call is `curl -sS -K "$d/curl.conf" …`. Outside a Git clone, use
-a directory of your own and set `MAITY_STATE_DIR` to it.
-
 ## 4. Open your session, then read the help
 
+Only when the block above exited 0 (a `201`, the credential and `curl.conf`
+in place). The directory is found again the same way, since the block ran in
+a subshell; every later call is `curl -sS -K "$d/curl.conf" …`:
+
 ```sh
+if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"; else d="$(git rev-parse --git-common-dir)/maity"; fi
 curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   -d '{"harness":"<your harness>","harness_version":"<its version>","model":"<your model id>","client":"curl"}' \
   {{hub}}/api/v1/me/resume

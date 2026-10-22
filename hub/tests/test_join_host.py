@@ -107,14 +107,14 @@ def test_the_join_page_on_the_join_host(make_client: ClientFactory, owner: flow.
     page = join_client(make_client).get(f"/{token}")
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/markdown")
-    assert f"{JOIN}/{token} \\\n" in page.text  # the exchange posts to the same URL
+    assert f"{JOIN}/{token}; then" in page.text  # the exchange posts to the same URL
     assert f"maity join {JOIN}/{token} --code" in page.text
     assert f"{PUBLIC}/api/v1/help" in page.text  # everything after it is public
     html = join_client(make_client).get(f"/{token}", headers={"Accept": "text/html"})
     assert html.headers["content-type"].startswith("text/html")
     assert f'href="{PUBLIC}/"' in html.text
     public = make_client().get(f"/j/{token}")
-    assert f"{PUBLIC}/api/v1/join/{token} \\\n" in public.text  # both shapes stay valid
+    assert f"{PUBLIC}/api/v1/join/{token}; then" in public.text  # both shapes stay valid
 
 
 def test_the_exchange_on_the_join_host_ignores_credentials_and_cookies(
