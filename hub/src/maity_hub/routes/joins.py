@@ -507,6 +507,20 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
     )
 
 
+def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
+    """The link's `reports_to` while it names an active member, else null (§6.2). Read
+    under the project lock: `row` was read before it, and a removal may have committed
+    in between, so the link's own column cannot be trusted here."""
+    if reports_to is None:
+        return None
+    active = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.id == reports_to, t.membership.c.active.is_(True)
+        )
+    ).first()
+    return reports_to if active is not None else None
+
+
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str]:
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
@@ -538,7 +552,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 project_id=row.project_id,
                 agent_id=row.agent_id,
                 role=row.role,
-                reports_to=row.reports_to,
+                reports_to=_boss_still_here(conn, row.reports_to),
                 areas=row.areas,
                 capabilities=row.capabilities,
                 briefing=row.briefing,
