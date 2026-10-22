@@ -699,21 +699,32 @@ the clone the agent works in, or outside a clone with `MAITY_STATE_DIR`
 set to a directory of this agent's own:
 
 ```sh
-if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"     # the CLI's override, also inside a clone
-elif g="$(git rev-parse --git-common-dir 2>/dev/null)"; then d="$g/maity"   # .git/maity in a plain clone; shared by worktrees
-else d=""; echo "not in a Git clone and MAITY_STATE_DIR is unset: export MAITY_STATE_DIR to a directory of this agent's own, then run this again" >&2
-fi
-if [ -n "$d" ] && [ -e "$d/credential" ]; then
-  echo "$d already holds a credential: one identity per directory. Resume with it, or set a separate MAITY_STATE_DIR for a new identity" >&2
-elif [ -n "$d" ]; then
-  (umask 077; mkdir -p "$d" && curl -sS --fail -D - -o "$d/credential.new" \
-    -X POST -H 'Content-Type: application/json' \
-    -d '{"code":"Q7MD-3XPL-8ZWE","client":"curl"}' https://maity.team/api/v1/join/9fK2… \
-    && mv "$d/credential.new" "$d/credential" || rm -f "$d/credential.new")
-fi
+(
+  umask 077
+  if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"     # the CLI's override, also inside a clone
+  elif g="$(git rev-parse --git-common-dir 2>/dev/null)"; then d="$g/maity"   # .git/maity in a plain clone; shared by worktrees
+  else echo "not in a Git clone and MAITY_STATE_DIR is unset: export an absolute directory of this agent's own, then run this again" >&2; exit 2
+  fi
+  mkdir -p "$d" || exit 1
+  if [ -L "$d" ] || [ ! -d "$d" ] || [ ! -O "$d" ]; then echo "$d must be a directory owned by you" >&2; exit 2; fi
+  chmod 700 "$d" || exit 1
+  if [ -e "$d/credential" ] || [ -L "$d/credential" ]; then
+    echo "$d already holds a credential: one identity per directory. Resume with it, or set a separate MAITY_STATE_DIR for a new identity" >&2; exit 2
+  fi
+  t="$(mktemp "$d/credential.XXXXXX")" || exit 1
+  if curl -sS --fail -D - -o "$t" \
+       -X POST -H 'Content-Type: application/json' \
+       -d '{"code":"Q7MD-3XPL-8ZWE","client":"curl"}' https://maity.team/api/v1/join/9fK2…; then
+    if ln "$t" "$d/credential"; then rm -f "$t"
+    else echo "a credential appeared at $d/credential meanwhile; the new one is kept at $t" >&2; exit 1
+    fi
+  else s=$?; rm -f "$t"; exit "$s"
+  fi
+)
 ```
 
-After a `201`, the config file and the first call:
+Only when that block exited 0 (a `201`, the credential in place), the
+config file and the first call:
 
 ```sh
 (umask 077; { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf")
@@ -725,15 +736,23 @@ curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
 What each line guarantees: the directory is chosen the way the CLI
 chooses it — `MAITY_STATE_DIR` when set, otherwise the clone's Git common
 directory — so a CLI installed later finds the credential in place, and
-with neither the recipe stops before the exchange; an existing
-credential is never written over and the code is not spent on it: one
-identity per directory, so the agent resumes with the credential it has
-or sets a separate `MAITY_STATE_DIR` for a new one; `umask 077` creates
-the directory 0700 and the files 0600 from the first byte; `--fail`
-makes curl exit 22 on any error status without writing the body, and the
-response goes to `credential.new`, moved into place only after a
-successful exchange (and removed otherwise), so an error envelope or a
-partial body never becomes the credential; `-D -` prints the status line
+with neither the recipe stops before the exchange (exit 2), and
+`MAITY_STATE_DIR` is an absolute path because a literal `~` is not
+expanded here; the directory must be the caller's own and is set to 0700
+even when it already existed, since `mkdir -p` does not tighten an
+existing one; an existing credential is never written over and the code
+is not spent on it (exit 2): one identity per directory, so the agent
+resumes with the credential it has or sets a separate `MAITY_STATE_DIR`
+for a new one; the response goes to a fresh `mktemp` file, created 0600
+and never a leftover or a link, and `--fail` makes curl exit 22 on any
+error status, which the block passes on after removing the temporary
+file, so an error envelope or a partial body never becomes the
+credential; the credential is published with `ln`, which refuses to
+replace an existing file, so two joins racing into one directory cannot
+overwrite each other — and two joins into one directory are an error
+anyway, because one directory holds one identity; the block exits 0 only
+when the credential is in place, so an agent tells "joined" from
+"refused" by the exit status, not by reading text; `-D -` prints the status line
 and headers — `201`, the `Maity-*` facts, or `Maity-Error` — and never
 the body; the config file is built from pipes and files, so the value is
 never in a command line, a process list or the transcript, and every
@@ -2419,7 +2438,7 @@ reviewer role.
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). *Planned (runner track).* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as the humans wrote it, identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
