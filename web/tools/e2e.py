@@ -401,7 +401,7 @@ def scenario(run: Run, page: Page) -> None:
         "--class",
         "info",
         "--priority",
-        "urgent",
+        "high",
     )
     no_problems(run, "second project")
 
@@ -429,7 +429,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"#/all$"))
     entries = page.locator("li.entry")
     expect(entries).to_have_count(2)
-    expect(entries.nth(0)).to_contain_text("E2E Alpha")  # urgent first
+    expect(entries.nth(0)).to_contain_text("E2E Alpha")  # high before normal
     expect(entries.nth(0)).to_contain_text("Which colour for alpha?")
     expect(entries.nth(1)).to_contain_text("E2E Beta")
     run.shot(page, "all-projects")

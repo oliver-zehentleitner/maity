@@ -203,10 +203,10 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    goes, `maity wait` exits with `request_answered` for that request, and
    the card is no longer blocked;
 6. a second project, the same agent profile joins it from a second clone
-   and asks there, and asks once more in the first, urgent;
+   and asks there, and asks once more in the first, with priority `high` (`urgent` needs `requests:answer`);
 7. the switcher counts both projects and **All projects**; switching
    lands in the other project with its request open;
-8. `#/all` lists both requests, the urgent first, each with its project,
+8. `#/all` lists both requests, the `high` one first, each with its project,
    and answers them there, one in free text, one with `go`; the agent's
    `maity resume` sees that answer.
 
