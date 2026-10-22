@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -198,6 +199,8 @@ def revoked_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "
         "gpg",  # gpg.program with log.showSignature, run by `git log`
         "alias",
         "include",
+        "commondir",  # config and info/attributes read from wherever commondir points
+        "config.worktree",
     ],
 )
 def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
@@ -214,6 +217,13 @@ def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
             fh.write(f'[filter "x"]\n\tclean = touch {marker}\n')
         elif plant == "gpg":
             fh.write(f"[log]\n\tshowSignature = true\n[gpg]\n\tprogram = touch {marker}\n")
+        elif plant in ("commondir", "config.worktree"):
+            other = tmp_path / "elsewhere"
+            shutil.copytree(place.path / ".git", other)
+            (other / "info" / "attributes").write_text("* filter=x\n")
+            with (other / "config").open("a") as other_fh:
+                other_fh.write(f'[filter "x"]\n\tclean = touch {marker}\n')
+            (place.path / ".git" / plant).write_text(f"{other}\n")
         elif plant == "alias":
             fh.write(f"[alias]\n\tstatus = !touch {marker}\n")
         else:
@@ -222,6 +232,29 @@ def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
     out = capsys.readouterr().out
     assert "not inspected" in out and "not removed" in out
     assert place.path.exists() and not marker.exists()
+
+
+def test_the_operators_git_environment_does_not_hide_a_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    for key, value in {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "status.showUntrackedFiles",
+                       "GIT_CONFIG_VALUE_0": "no"}.items():  # fmt: skip
+        monkeypatch.setenv(key, value)
+    assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
+    assert "?? draft.txt" in capsys.readouterr().out
+
+
+def test_a_clone_without_head_is_not_read_as_its_parent_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    parent = place.path.parent.parent
+    git(parent, "init", "-q")
+    (parent / ".gitignore").write_text("*\n")  # the parent sees nothing to keep
+    (place.path / ".git" / "HEAD").unlink()
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert "git failed" in capsys.readouterr().out and place.path.exists()
 
 
 def test_a_git_failure_keeps_the_clone(

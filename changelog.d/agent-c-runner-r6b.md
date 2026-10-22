@@ -4,6 +4,7 @@
   <placement|agent> [--follow]`, `approve` (with `limits.require_local_approval`, new
   placements wait as `pending`/`awaiting_operator`), `stop-all [--grace N]` (refused while the
   service runs), `gc --revoked [--yes]` (revocation asked through each clone's own CLI,
-  active placements asked of the hub, git run only in a clone whose configuration has a
-  plain clone's keys and no attributes or submodules, nothing removed that git could not
+  active placements asked of the hub, git run only in a clone whose `.git` has a plain
+  clone's entries (no `commondir`, attributes or submodules) and whose configuration has a
+  plain clone's keys, pinned to that clone without the operator's `GIT_*`, nothing removed that git could not
   read; `--yes` with the service stopped) and `workspace claim <project>/<clone> --agent`.

@@ -33,6 +33,15 @@ GIT_ALLOWED = re.compile(
     r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
     r"|user\.(name|email))$"
 )
+# What a clone's `.git` holds at its top level. Anything else may change where git reads its
+# configuration from (`commondir`, `config.worktree`) and is refused rather than understood.
+GIT_ENTRIES = frozenset({
+    "AUTO_MERGE", "BISECT_LOG", "CHERRY_PICK_HEAD", "COMMIT_EDITMSG", "FETCH_HEAD", "HEAD",
+    "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG", "ORIG_HEAD", "REVERT_HEAD", "branches", "config",
+    "description", "gc.log", "hooks", "index", "index.lock", "info", "logs", "maity", "objects",
+    "packed-refs", "rebase-apply", "rebase-merge", "refs", "sequencer", "shallow",
+})  # fmt: skip
+INFO_ENTRIES = frozenset({"exclude", "refs"})
 REVOKED = re.compile(r": credential_revoked:")
 
 
@@ -175,14 +184,21 @@ def credential_revoked(place: workspace.Workspace) -> bool:
 def not_inspectable(path: Path) -> str | None:
     """Why git must not run in this clone, or None. git runs programs named in its
     configuration (filter drivers, gpg.program, fsmonitor, pagers, aliases) and reads
-    `.git/info/attributes` and submodules' own configuration; the agent wrote all of them.
-    Only a configuration made of the keys a plain clone has is read."""
+    `.git/info/attributes`, submodules' own configuration and wherever `.git/commondir`
+    points; the agent wrote all of them. Only a `.git` made of a plain clone's entries, with a
+    configuration made of a plain clone's keys, is read."""
     dot_git = path / ".git"
     if dot_git.is_symlink() or not dot_git.is_dir():
         return "its .git is not a plain directory"
-    for extra in ("info/attributes", "modules"):
-        if (dot_git / extra).exists():
-            return f".git/{extra} exists"
+    try:
+        unexpected = [entry.name for entry in dot_git.iterdir() if entry.name not in GIT_ENTRIES]
+        if (dot_git / "info").is_dir():
+            unexpected += [f"info/{entry.name}" for entry in (dot_git / "info").iterdir()
+                           if entry.name not in INFO_ENTRIES]  # fmt: skip
+    except OSError:
+        return "its .git cannot be listed"
+    if unexpected:
+        return f".git/{onboarding.inline(sorted(unexpected)[0])} is not a plain clone's"
     try:
         text = (dot_git / "config").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -206,7 +222,14 @@ def unsaved_work(path: Path) -> list[str] | None:
     """Uncommitted files and commits on no remote, or None when git could not tell: then
     nothing may be removed. Neither the operator's own git configuration nor the clone's
     hooks, filters, signatures or submodules take part."""
-    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+    # The operator's GIT_* would point git elsewhere or hide files; the repository is pinned,
+    # so a broken one fails instead of git walking up to a parent repository.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(
+        GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_DIR=str(path / ".git"),
+        GIT_COMMON_DIR=str(path / ".git"), GIT_WORK_TREE=str(path),
+        GIT_CEILING_DIRECTORIES=str(path.parent),
+    )  # fmt: skip
     lines: list[str] = []
     for command in (
         [*SAFE_GIT, "-C", str(path), "status", "--porcelain", "--ignore-submodules=all"],
