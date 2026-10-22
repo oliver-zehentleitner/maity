@@ -698,7 +698,13 @@ a process group. Everything the agents' side needs (tmux socket and
 configuration, logs, the harness settings and Codex's home) lives under
 `~<agent_user>/.maity-runner/` and is written as that user. The runner's
 state directory, its credential and its records stay the runner user's
-alone.
+alone. Commands for the agents never get the runner's terminal (stdin is
+`/dev/null`), and the clone runs without any login prompt. Harness
+probes and `check` run as the agents' user, who is the one that must be
+able to start them. Nothing secret may travel as an argument in this
+layout: sudo logs every command line, and `/proc` shows it, so a
+harness `env_file` (R5) has to reach the session another way than
+`env K=V` or `tmux -e`.
 
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds
