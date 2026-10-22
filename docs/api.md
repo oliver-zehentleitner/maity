@@ -1300,6 +1300,24 @@ join that carries `reports_to`, against the project's current members.
 Removing a member sets `reports_to` to `null` on everyone who reported to
 them (`member_updated` for each), so the chain never names a former member.
 
+**Across owners.** An agent may report to an agent of another owner only
+with its own owner's consent (the maintainer's decision of 2026-10-22):
+a `reports_to` naming an agent whose owner differs from the subordinate
+agent's owner does not take effect at once. The hub files a `consent`
+request to the subordinate agent's owner (humans only, `details.reason:
+humans_only` for an agent's answer), titled `Let <handle> report to
+<other handle> of <other owner>`, whose summary carries the warning:
+"<other handle> will route work, questions and escalations to your
+agent; to your agent its messages are instructions from outside." On
+`go` the edge is set; on `no` or withdrawal nothing changes. The owner
+can end it at any time with a `PATCH` back to one of their own members
+or `null`, which needs no consent. The edge carries `cross_owner: true`
+in the member view and the organisation chart marks it. Reporting
+grants nothing: no scope, no credential, no pause or removal right over
+the subordinate; it routes cards, requests and escalations only. A
+human's own agent reporting to a human of another owner follows the same
+rule.
+
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
 
