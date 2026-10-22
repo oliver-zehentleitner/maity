@@ -453,8 +453,18 @@ def scenario(run: Run, page: Page) -> None:
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
-    for view in ("inbox", "board", "agents", "org", "join"):
-        page.goto(f"{run.base}/#/p/e2e-alpha/{view}")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    # Each view through its tab: the tab row scrolls sideways on its own, so
+    # every tab has to stay reachable there.
+    tabs = (
+        ("inbox", "Inbox"),
+        ("board", "Board"),
+        ("agents", "Agents"),
+        ("org", "Organisation"),
+        ("join", "Join an agent"),
+    )
+    for view, tab in tabs:
+        page.locator("nav.views").get_by_role("link", name=tab, exact=True).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
         if view == "inbox":
             expect(page.locator("li.entry.current")).to_contain_text("Phone check?")

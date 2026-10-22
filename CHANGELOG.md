@@ -100,3 +100,5 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   unescaped `-` in a class, which browsers compile with the `v` flag and drop as invalid
 - web: a join for a new agent profile names that profile in the list of joins and
   offers it in the agent select, instead of showing its id until the view is reloaded
+- web: at phone width a credential's or join's Revoke button keeps its label on one line,
+  and a credential's id, client and dates wrap as one text beside it
