@@ -148,7 +148,7 @@ each field it names in `details.fields` (`slug: taken`,
 logo next to its name: in its switcher chip, in the header, on its
 entries in `#/all`, and as the tab's icon of its pages. The image comes
 from the hub's own path (`/api/v1/projects/<slug>/logo?v=<etag>`), read
-from `GET /projects` alongside `/me`. Without one, a monogram stands
+from `/me`'s projects where the hub puts `logo` there (`docs/api.md` §5.1), else from `GET /projects` alongside `/me`. Without one, a monogram stands
 there: the project's initials in white on one of twelve colours (each at
 least 5.2:1), chosen by the slug. The mark is decorative next to the
 project's visible name (`alt=""`, `aria-hidden`); a monogram cannot be the

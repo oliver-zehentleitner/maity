@@ -194,6 +194,9 @@ window.Maity = window.Maity || {};
       data.projects.forEach((p) => {
         p.open_requests = openFor(p.slug).length;
         p.state = project(p.slug, "").state;
+        // §5.1: the logo as the project view has it, without its source.
+        const logo = project(p.slug, "").logo;
+        if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
       });
       data.server_time = nowIso();
       return data;
