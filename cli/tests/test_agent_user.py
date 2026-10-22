@@ -276,3 +276,40 @@ def test_the_deny_lists_come_from_the_agents_side(
     assert cfg.local.agent_files.resolve() in ctx.private
     assert sibling.resolve() in ctx.private
     assert "-path */.git/maity" in fake_sudo.read_text()  # listed as maity-agent
+
+
+def test_a_partial_clone_listing_refuses_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """find exits non-zero when a directory cannot be read, and what it did print may miss
+    a credential: the sandbox must not start without that deny."""
+    from maity.runner import workspace
+
+    ws = tmp_path / "ws"
+    (ws / "maity" / "agent-4" / ".git" / "maity").mkdir(parents=True)
+    locked = ws / "other"
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        for as_user in (AsUser(), AsUser("maity-agent")):
+            with pytest.raises(workspace.Refused) as refused:
+                supervisor.other_credentials(ws, ws / "maity" / "agent-3", as_user)
+            assert refused.value.reason == "harness_refused"
+    finally:
+        locked.chmod(0o700)
+
+
+def test_the_sandbox_tools_are_found_as_the_agents_user(tmp_path: Path, fake_sudo: Path) -> None:
+    agent_bin = tmp_path / "agent-home" / ".local" / "bin"
+    agent_bin.mkdir(parents=True)
+    for name in ("codex", "bwrap", "socat"):
+        (agent_bin / name).write_text("#!/bin/sh\nexit 0\n")
+        (agent_bin / name).chmod(0o755)
+    path = f"{agent_bin}:/usr/bin:/bin"
+    as_user = AsUser("maity-agent")
+    assert capabilities.which("codex", path, as_user) == str(agent_bin / "codex")
+    claude = config.Harness("claude-code", ("interactive",), "interactive", binary="claude")
+    assert capabilities.sandbox_available(claude, path, as_user)
+    codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
+    assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
+    assert "command -v" in fake_sudo.read_text()

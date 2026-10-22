@@ -317,7 +317,7 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user)
+        _check_claude_code(report, harness, as_user, agent_path)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -327,9 +327,12 @@ def _check_harness(
             report.warn(f"harness codex: no login at {login}; agents would start without one")
 
 
-def _check_claude_code(report: Report, harness: config.Harness, as_user: AsUser = RUNNER) -> None:
+def _check_claude_code(
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = ""
+) -> None:
     if sys.platform.startswith("linux"):
-        missing = [tool for tool in ("bwrap", "socat") if shutil.which(tool) is None]
+        # On the agents' PATH, as their user finds it: that is where the sandbox starts.
+        missing = [t for t in ("bwrap", "socat") if not capabilities.which(t, agent_path, as_user)]
         if missing:
             line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
             (report.error if harness.require_sandbox else report.warn)(line)

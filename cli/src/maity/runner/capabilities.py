@@ -50,12 +50,7 @@ def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) ->
     a binary that user cannot run is not available, whatever the runner can run."""
     if harness.id == "stub":
         return Probe(None, None, None)
-    if as_user.user:
-        where = as_user.run(["sh", "-c", 'command -v -- "$1"', "sh", harness.binary or ""],
-                            env={"PATH": agent_path}, timeout=VERSION_TIMEOUT)  # fmt: skip
-        found = where.stdout.strip() or None if where.returncode == 0 else None
-    else:
-        found = shutil.which(harness.binary or "", path=agent_path)
+    found = which(harness.binary or "", agent_path, as_user)
     if found is None:
         return Probe(None, None, "binary_not_found")
     try:
@@ -81,11 +76,21 @@ def sandbox_available(
     once per binary (`codex sandbox -- true`): a host where it cannot start is not
     advertised as sandboxed. Nothing else is switched on yet."""
     if harness.id == "codex":
-        binary = shutil.which(harness.binary or "codex", path=path)
+        binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
     if harness.id != "claude-code" or not sys.platform.startswith("linux"):
         return False
-    return all(shutil.which(tool, path=path) for tool in ("bwrap", "socat"))
+    return all(which(tool, path, as_user) for tool in ("bwrap", "socat"))
+
+
+def which(name: str, path: str | None, as_user: AsUser = RUNNER) -> str | None:
+    """`name` on the agents' PATH as the agents' user finds it: a binary under that user's
+    home, or one only it may run, is found the way its sessions find it."""
+    if not as_user.user:
+        return shutil.which(name, path=path)
+    done = as_user.run(["sh", "-c", 'command -v -- "$1"', "sh", name],
+                       env={"PATH": path or ""}, timeout=VERSION_TIMEOUT)  # fmt: skip
+    return done.stdout.strip() or None if done.returncode == 0 else None
 
 
 @functools.lru_cache(maxsize=8)

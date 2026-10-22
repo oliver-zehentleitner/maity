@@ -597,9 +597,15 @@ class Supervisor:
         # The agents' side, as the agents' user sees it: its home, its files (tmux socket,
         # every agent's log and settings) and the clones it owns.
         home = config.home_of(self.as_user.user) if self.as_user.user else Path.home()
+        try:
+            others = other_credentials(workspaces, place.path, self.as_user)
+        except workspace.Refused:
+            self.log(f"{p['id']}: not every clone under {workspaces} could be listed; not "
+                     "starting an agent whose sandbox might read another's credential")  # fmt: skip
+            raise
         private = private_paths(
             self.cfg.state_dir, home, place.path,
-            other_credentials(workspaces, place.path, self.as_user),
+            others,
             (self.cfg.path, self.cfg.local.agent_files),
         )  # fmt: skip
         return adapters.Context(
@@ -758,14 +764,28 @@ def private_paths(
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now
     (a clone made later is covered from the agent's next start), listed as the agents' user,
-    who owns them and may be the only one able to list them."""
+    who owns them and may be the only one able to list them. A listing that is not complete
+    fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
+    the sandbox would start without its deny."""
     root = workspaces.resolve()
+    refused = workspace.Refused("harness_refused")
     if not as_user.user:
-        found = [d / ".git" / "maity" for d in root.glob("*/*") if (d / ".git" / "maity").is_dir()]
+        found: list[Path] = []
+        try:
+            for project in root.iterdir() if root.is_dir() else ():
+                if project.is_dir() and not project.is_symlink():
+                    found += [d / ".git" / "maity" for d in project.iterdir()
+                              if (d / ".git" / "maity").is_dir()]  # fmt: skip
+        except OSError as exc:
+            raise refused from exc
+    elif not as_user.exists(root, "-d"):
+        found = []  # no clone yet: nothing to hide
     else:
         done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "4", "-type", "d",
                             "-path", "*/.git/maity", "-print0"])  # fmt: skip
-        found = [Path(p) for p in done.stdout.split("\0") if p] if done.returncode == 0 else []
+        if done.returncode != 0:  # some directory could not be read: the list may be short
+            raise refused
+        found = [Path(p) for p in done.stdout.split("\0") if p]
     own = clone.resolve() / ".git" / "maity"
     return sorted(p for p in found if p != own)
 
