@@ -166,6 +166,8 @@ window.Maity = window.Maity || {};
 
   // Messages of one sender this close together are one group.
   const GROUP_MS = 5 * 60 * 1000;
+  // The history is read to its end in pages of this size (the hub's maximum).
+  const HISTORY_PAGE = 200;
   const dayOf = (iso) => { const d = new Date(iso); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
   function dayLabel(iso, now) {
     const d = new Date(iso);
@@ -264,10 +266,20 @@ window.Maity = window.Maity || {};
     append(layout, pane);
 
     const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
-    // How many of the agent's messages were unread, before reading marks them read.
-    const before = await M.api.getAll(ctx.base + "/conversations").catch(() => ({ items: [] }));
+    // How many of the agent's messages were unread, before reading marks them
+    // read. A message arriving between this read and the messages' shifts the
+    // line by one; a failed read draws no line and says so below.
+    let unreadFailed = null;
+    const before = await M.api.getAll(ctx.base + "/conversations").catch((err) => { unreadFailed = err; return { items: [] }; });
     const unreadBefore = ((before.items.find((c) => c.agent_id === agent.id) || {}).unread) || 0;
-    const conv = await M.api.get(path);
+    // The whole history, oldest first, page by page (docs/api.md §9): the
+    // first page is the oldest, and what is unread is at the end.
+    const conv = await M.api.get(path + "?limit=" + HISTORY_PAGE);
+    for (let page = conv; page.items.length === HISTORY_PAGE;) {
+      page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + HISTORY_PAGE);
+      conv.items.push(...page.items);
+      if (page.cursor) conv.cursor = page.cursor;
+    }
     const theirs = conv.items.filter((m) => m.from === agent.id);
     const firstUnread = unreadBefore && theirs.length >= unreadBefore ? theirs[theirs.length - unreadBefore].seq : null;
     // Read after the messages, so that this conversation's unread is gone.
@@ -286,6 +298,8 @@ window.Maity = window.Maity || {};
     const jump = h("button", { type: "button", class: "small jump-latest", hidden: true, onclick: () => {
       messages.scrollTop = messages.scrollHeight;
       unseen = 0;
+      // The button goes away: the focus goes to the composer, not to the page's start.
+      text.focus();
       jump.hidden = true;
     } }, "Newest");
     jump.hidden = true;
@@ -297,6 +311,7 @@ window.Maity = window.Maity || {};
     };
     messages.addEventListener("scroll", showJump);
     const pollStatus = M.statusLine();
+    if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
 
     let checking = false;
     async function checkDelivery() {
@@ -344,7 +359,8 @@ window.Maity = window.Maity || {};
       if (!events.some(mentions)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
-        fresh.items.forEach(add);
+        // Someone else's message never pulls a reader who scrolled up down.
+        fresh.items.forEach((m) => add(m, m.from === ctx.me.id));
         if (fresh.cursor && fresh.cursor > cursor) cursor = fresh.cursor;
         pollStatus.done();
         // The list read on the same event may predate this read.

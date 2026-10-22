@@ -1233,7 +1233,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
   const hGet = win.Maity.api.get;
   const at = (min) => new Date(Date.parse("2026-10-21T10:00:00Z") + min * 60000).toISOString();
-  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/agt-c/messages" ? Promise.resolve({ cursor: 5, items: [
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=") ? Promise.resolve({ cursor: 5, items: [
     { id: "e1", seq: 1, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "one", sent_at: at(0), delivered_at: at(0) },
     { id: "e2", seq: 2, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "two", sent_at: at(2), delivered_at: at(2) },
     { id: "e3", seq: 3, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "later", sent_at: at(20), delivered_at: at(20) },
@@ -1244,6 +1244,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(gl) === JSON.stringify(["day", "msg in", "msg in grouped", "msg in", "day", "msg in"])
     && !main.querySelectorAll("li.msg")[1].querySelector(".msg-avatar"), "chat: within five minutes grouped without the picture again; a new day separated " + JSON.stringify(gl));
   win.Maity.api.get = hGet;
+  // A history longer than a page is read to its end; the unread line stands before the unread ones there.
+  const longMsg = (seq) => ({ id: "l" + seq, seq, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "m" + seq, sent_at: at(seq), delivered_at: at(seq) });
+  const longReads = [];
+  win.Maity.api.get = (p) => {
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 200, items: Array.from({ length: 200 }, (_, i) => longMsg(i + 1)) }); }
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) }); }
+    return hGet(p);
+  };
+  const hAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations"
+    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3 }) : c)), next_cursor: null })) : hAll(p));
+  await go("#/p/maity/chat/agt-c");
+  const histList = main.querySelector("ol.messages");
+  const nl = histList.childNodes.findIndex((li) => li.className === "new-line");
+  expect(longReads.length === 2 && histList.querySelectorAll("li.msg").length === 203 && nl > 0
+    && histList.childNodes[nl + 1].attrs["data-seq"] === "201", "chat: the history is read to its end, the unread line before the first unread at the end");
+  // The unread count that cannot be read draws no line, and says so.
+  win.Maity.api.get = hGet;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
+  await go("#/p/maity/chat/agt-a");
+  expect(!main.querySelector("li.new-line") && text(main).includes("Which messages are new could not be read: down"), "chat: a failed unread read is said");
+  win.Maity.api.getAll = hAll;
   await go("#/p/maity/chat/agt-b");
   expect(text(main.querySelector("ol.messages")).includes("No messages yet.") && text(main.querySelector("ol.messages")).includes("reads what you write here at its next wait or resume"),
     "chat: an empty chat says when the agent reads it");
@@ -1353,6 +1375,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".msg.out").find((li) => li.textContent.includes("One more.")).textContent.includes("reached a session"),
     "the window's focus marks a pending message as picked up");
   win.Maity.api.get = feedStub;
+  // A long chat, scrolled up: arriving messages leave the view where it is (Newest, below).
+  const nGet2 = win.Maity.api.get;
+  let arriving = [];
+  win.Maity.api.get = (p) => {
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) return Promise.resolve({ cursor: 203, items: Array.from({ length: 203 }, (_, i) => longMsg(i + 1)).slice(0, 200) });
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) });
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=")) { const items = arriving; arriving = []; return Promise.resolve({ cursor: 205, items }); }
+    return nGet2(p);
+  };
+  await go("#/p/maity/chat/agt-c");
+  const longList = main.querySelector("ol.messages");
+  // Scrolled up, two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
+  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 100 });
+  arriving = [longMsg(204), longMsg(205)];
+  feed = [{ seq: 204, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const jumpBtn = main.querySelector(".jump-latest");
+  expect(longList.querySelectorAll("li.msg").length === 205 && longList.scrollTop === 100 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
+    "chat: two messages arriving while scrolled up leave the view where it is and count both " + jumpBtn.textContent);
+  const jProto = Object.getPrototypeOf(jumpBtn);
+  const jFocus = jProto.focus;
+  jProto.focus = function () { document.activeElement = this; };
+  jumpBtn.click(); await tick();
+  expect(jumpBtn.hidden && longList.scrollTop === 5000 && document.activeElement === byId("chat-text"), "chat: Newest goes to the end and puts the focus in the composer");
+  jProto.focus = jFocus; document.activeElement = undefined;
+  win.Maity.api.get = nGet2;
 
   // The feed in other views: someone else's card event offers a reload,
   // one's own does not; a request event re-reads the counts at once.
