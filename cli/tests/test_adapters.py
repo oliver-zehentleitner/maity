@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from maity.runner import adapters, config, loop, supervisor
+from maity.runner.asuser import AsUser
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 
@@ -277,7 +278,7 @@ def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch
 
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
-    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary: True)
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["confinement"] == "sandbox" and entry["sandbox"] == "on"
     assert capabilities.sandbox_available(codex)
@@ -290,7 +291,7 @@ def test_codex_whose_sandbox_cannot_start_is_not_advertised_as_sandboxed(
 
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
-    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary: False)
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: False)
     entry = capabilities.harness_entry(codex, capabilities.Probe("/usr/bin/codex", "1.0", None))
     assert entry["sandbox"] == "off" and not capabilities.sandbox_available(codex)
 
@@ -329,8 +330,9 @@ def test_other_clones_credentials_are_private_as_they_stand_at_start(tmp_path: P
     for clone in (own, ws / "maity" / "agent-4", ws / "other" / "agent-5"):
         (clone / ".git" / "maity").mkdir(parents=True)
     (ws / "maity" / "agent-6" / ".git").mkdir(parents=True)  # never joined: nothing to hide
-    found = supervisor.private_paths(tmp_path / "st", tmp_path / "home", own, ws,
-                                     tmp_path / "runner.toml")  # fmt: skip
+    others = supervisor.other_credentials(ws, own, AsUser())
+    found = supervisor.private_paths(tmp_path / "st", tmp_path / "home", own, others,
+                                     (tmp_path / "runner.toml",))  # fmt: skip
     assert ws / "maity" / "agent-4" / ".git" / "maity" in found
     assert ws / "other" / "agent-5" / ".git" / "maity" in found
     assert own / ".git" / "maity" not in found  # its own maity reads it

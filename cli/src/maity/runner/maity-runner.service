@@ -30,8 +30,17 @@ RestartPreventExitStatus=78
 # unit's cgroup, and the default KillMode would end every agent with it.
 KillMode=process
 TimeoutStopSec=30
-# The `single` layout only (design §7.6): the `agent_user` layout runs tmux through sudo,
-# which cannot gain privileges under NoNewPrivileges. Remove this line for that layout.
+# The `single` layout only (design §7.6). The `agent_user` layout runs every agent command
+# through `sudo -n -u <agent_user>`, which cannot gain privileges under NoNewPrivileges:
+# remove this line for that layout, and add the sudoers rule
+#   maity-runner ALL=(maity-agent) NOPASSWD: ALL
+# The agents' files then live in ~maity-agent/.maity-runner, which the agents' user writes,
+# and sudo's children share this unit's read-only file system: add that directory and the
+# workspaces to ReadWritePaths, e.g.
+#   ReadWritePaths=/var/lib/maity-runner /home/maity-agent/.maity-runner /srv/maity/workspaces
+# sudo logs every command it runs (one `tmux list-panes` per tick, among others); a
+# `Defaults:maity-runner !syslog` (or log_allowed off) line quiets that, at the operator's
+# choice.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/maity-runner

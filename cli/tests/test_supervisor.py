@@ -369,7 +369,9 @@ def joining(
     """Replace the child `maity join`: on success it writes what the real one would."""
     calls: list[Any] = []
 
-    def fake(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tuple[bool, str | None]:
+    def fake(
+        place: workspace.Workspace, url: str, code: str, *rest: Any
+    ) -> tuple[bool, str | None]:
         calls.append((place.path.name, url, code))
         if result[0]:
             state.write_credential(place.credential.parent, state.Secret("mty1.crd-x.y"))
@@ -453,7 +455,7 @@ def test_a_rejoin_removes_the_old_credential_first(
     seen: list[bool] = []
 
     def fake(
-        place_: workspace.Workspace, url: str, code: str, cwd: Path
+        place_: workspace.Workspace, url: str, code: str, *rest: Any
     ) -> tuple[bool, str | None]:
         seen.append(place_.credential.exists())
         place_.credential.write_text("mty1.crd-new.y")
@@ -987,7 +989,8 @@ def test_unsupported_settings_are_refused(tmp_path: Path) -> None:
         )
     )
     found = config.unsupported(config.load(path))
-    assert any("agent_user" in f for f in found) and any("memory_max" in f for f in found)
+    assert not any("agent_user" in f for f in found)  # supported since R7a
+    assert any("memory_max" in f for f in found)
 
 
 def test_a_relative_tmux_socket_is_refused(tmp_path: Path) -> None:

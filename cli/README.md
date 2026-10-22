@@ -398,8 +398,8 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
 
-Settings this version does not carry out yet (`layout = "agent_user"`,
-`memory_max`, `cpu_quota`, a harness `env_file`) are errors in `check`,
+Settings this version does not carry out yet (`memory_max`,
+`cpu_quota`, a harness `env_file`) are errors in `check`,
 and `serve` refuses to start with them (exit 78), instead of running
 agents with less isolation than the file asks for. `tmux_socket` must be
 an absolute path.
@@ -500,7 +500,7 @@ needs it.
 | Layout | What an agent can read or act as | What you must not do |
 |---|---|---|
 | `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
-| `agent_user` (#150) | the agents' user's files: every agent of that user reads the others' clones, minus the same denies; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
+| `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
 | `ssh` (#172) | the remote user's files on that host, as `single` per host; never the runner host | run git as the remote user in an agent's clone |
 
 The runner itself runs git in a clone only to clone into a missing
@@ -512,6 +512,28 @@ request instead. The `agent_user` layout keeps you out by itself: git
 refuses another user's repository unless `safe.directory` says
 otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write
 there, and an agent could rewrite its own profile for the next start.
+
+**Layouts.** By default (`layout = "single"`) agents run as the runner's
+own user, which may be the operator's account in a terminal. With
+`layout = "agent_user"` and `agent_user = "maity-agent"`, every agent
+command runs as that user through `sudo -n -u maity-agent --`. That
+covers the tmux server, the clone, the join, the supervised loop and
+`gc`. The agents' files (tmux socket, logs, harness settings) live in
+`~maity-agent/.maity-runner/`. The runner's state directory and credential
+stay out of the agents' reach. The layout needs a sudoers rule
+(`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
+both users can run it, and the workspaces writable by the agents' user;
+`maity runner check` tests all three. Under the shipped systemd unit
+(`ProtectSystem=strict`), sudo's children share the unit's read-only
+file system: add `~maity-agent/.maity-runner` and the workspaces to its
+`ReadWritePaths` (the unit's comment shows the line), or every start
+fails. `check` run from a login shell cannot see that. sudo logs every
+command it runs, one `tmux list-panes` per tick among them; a
+`Defaults:maity-runner !syslog` line in sudoers quiets it if you want.
+The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
+`check` reads the agents' user's own Claude Code settings, which its
+agents load. Agents under one `agent_user` can still read each other's
+files.
 
 On the runner host, without the hub:
 
