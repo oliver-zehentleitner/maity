@@ -2113,8 +2113,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("chat-text") === gcComposer && main.querySelectorAll(".group-chat .send-status").some((el) => text(el).includes("Renamed.")),
     "group chat: a rename is drawn in place, the composer kept and the result said");
   expect(text(main.querySelector(".group-manage")).includes("can read what came before with Show earlier messages"), "group chat: adding says what a latecomer reads");
+  byId("group-rename").value = "Release 0.2, half typed"; byId("group-rename").dispatch("input");
   byId("group-add").value = "agt-c";
   main.querySelectorAll(".group-manage form")[1].dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("group-rename").value === "Release 0.2, half typed", "group chat: a title being typed survives a change of the chat drawn in place");
+  byId("chat-text").value = "@agent-c welcome"; byId("chat-text").dispatch("input");
+  expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: someone just added is reachable by mention at once");
+  byId("chat-text").value = ""; byId("chat-text").dispatch("input");
   expect(JSON.stringify(gcWrites[3]) === JSON.stringify(["POST", "/projects/maity/conversations/cnv-0007/participants", { member_id: "agt-c" }])
     && text(main.querySelector(".group-people-line")).includes("Agent C (agent)"), "group chat: a participant added");
   const gcConfirm = win.confirm;
