@@ -732,3 +732,40 @@ files and credentials; separating them needs one user per agent (ssh
 - Running tmux as the runner with `server-access` for the agents' user:
   tmux 3.3 and later only, and the sessions' processes would still be
   the runner's.
+
+## On the ssh backend each host is a target that runs its own `maity`
+
+**Id:** 256e800f-3ddc-482e-b4ac-e6b09d69fe72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.4; implementation of runner slice R7b, 2026-10-22; tested against a fake `ssh`, not yet against a real host
+**Revisit when:** a live run on a real host shows a step that does not work over ssh, or `gc` and `workspace claim` are extended to ssh hosts
+
+The supervisor works on targets: `local`, or one per configured ssh host.
+Each target has its own command runner, workspaces root, tmux server,
+agent limit and harness probes. Every command for a host is a fixed
+template sent as one command line with every word quoted, over a shared
+connection with strict host keys and no forwarding. The agents' files
+(tmux socket, logs, harness settings) live in the remote user's
+`~/.maity-runner/`. That home is learned on the first connection. What the
+agents run, the supervised loop and the `stub` included, starts through
+the host's own `maity`, on internal subcommands (`maity runner loop`,
+`maity runner stub`). The join runs the host's `maity` too, so the
+agent's credential is written on the host and never passes through the
+runner. Workspace records are keyed `<host>:<path>`. `gc` and
+`workspace claim` stay local-only in this slice.
+
+**Reason:** the runner's interpreter path means nothing on another
+machine, and the operator's install there (pipx, a virtual environment)
+is reached reliably only through its `maity` on the configured
+`agent_path`. Keying records by host keeps the same path on two hosts
+from being one workspace. `gc` reads an agent's git state with a layout
+check written against local files; doing that over ssh needs the same
+care again, so it waits rather than being half done.
+
+**Rejected alternatives:**
+- `python3 -I -m maity.runner.loop` on the host: the system `python3`
+  usually does not have the operator's `maity` installed.
+- Copying the runner's interpreter path to the host: different machines
+  rarely share it.
