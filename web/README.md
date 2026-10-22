@@ -325,6 +325,15 @@ reads it, and sent as the raw body) and removes an upload, after which
 the forge's image applies again. A hub without the fields offers no
 upload and the dashboard draws monograms.
 
+**Repository** (`docs/api.md` §6.1) is in the same panel, for an owner
+or a human admin (`project:admin` is held by humans only). It shows the
+project's repository URL and changes it with `PATCH /projects/{slug}`
+(`repository: {url}`); an empty field removes it (`repository: null`).
+The page accepts only `https://<host>/<owner>/<name>`, drops a trailing
+slash, and says the hub's `not_a_configured_forge` at the field. A
+change or a removal is confirmed first, because the probe, the Keep the
+Why dashboard and the runners' new clones all follow the repository.
+
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
 optional or required, with a reason. Before it becomes required, the
