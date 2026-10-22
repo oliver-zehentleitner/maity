@@ -45,7 +45,7 @@ broker, cost accounting) before the first collaboration happens.
 
 A runner is an optional component the operator installs and runs: a small
 service on a machine (local, reached over ssh) or in a cluster. It joins
-the hub like any client, under a role of its own, keeps one outbound
+the hub like any client, under an identity of its own (not a member, no role), keeps one outbound
 long-poll open, and starts or stops agent sessions when the hub's desired
 state for it says so — the harness, the profile, the clone, nothing else;
 never an arbitrary command. What a runner may do at all (harnesses, how
