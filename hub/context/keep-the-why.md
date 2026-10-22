@@ -40,7 +40,3 @@ each member's last good export.
 - The probe's worker sweeping all families: it exists only with a
   forge token, and a public repository's families are readable without
   one.
-
-**Gap:** §11.3 lists no member reason for a host that does not answer
-at all (refused connection, failed TLS). The hub reports it as
-`timeout`, the nearest "did not answer", until the contract names one.
