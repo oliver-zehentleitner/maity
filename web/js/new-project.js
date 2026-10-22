@@ -13,8 +13,8 @@ window.Maity = window.Maity || {};
   // docs/api.md, "Conventions": projects are addressed by this slug. The
   // hyphen is escaped: browsers compile `pattern` with the v flag, where an
   // unescaped "-" in a class is a syntax error and the pattern is dropped.
-  const SLUG_PATTERN = "[a-z0-9][a-z0-9\\-]{1,62}";
-  const SLUG = new RegExp("^" + SLUG_PATTERN + "$");
+  const SLUG_PATTERN = M.dom.NAME_RULES.slug.pattern;
+  const SLUG = M.dom.NAME_RULES.slug.test;
 
   const PRESETS = [
     ["hierarchical", "Hierarchical: reviewers move cards to done, admins arbitrate contracts"],
@@ -24,7 +24,7 @@ window.Maity = window.Maity || {};
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
     taken: "A project with this slug exists.",
-    string_pattern_mismatch: "Lower-case letters, digits and hyphens; 2 to 63 characters, not starting with a hyphen.",
+    string_pattern_mismatch: M.dom.NAME_RULES.slug.text,
     string_too_short: "Required.",
     string_too_long: "Too long.",
     missing: "Required.",
@@ -41,14 +41,14 @@ window.Maity = window.Maity || {};
   M.views.newProject = async function (ctx, root) {
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-      input.setAttribute("aria-describedby", id + "-error");
-      return { input, error, nodes: [h("label", { for: id }, label), input, hint ? h("p", { class: "hint" }, hint) : null, error] };
+      input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
+      return { input, error, nodes: [h("label", { for: id }, label), input, hint ? h("p", { class: "hint", id: id + "-hint" }, hint) : null, error] };
     };
 
     const name = field("project-name", "Name", h("input", { id: "project-name", required: true, maxlength: "200", autocomplete: "off" }));
     const slug = field("project-slug", "Slug",
       h("input", { id: "project-slug", required: true, pattern: SLUG_PATTERN, maxlength: "63", autocomplete: "off", spellcheck: "false" }),
-      "Used in links and by the CLI; it cannot be changed later.");
+      M.dom.NAME_RULES.slug.text + " Used in links and by the CLI; it cannot be changed later.");
     const repository = field("project-repository", "Repository (optional)",
       h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
     const ktw = h("input", { id: "project-ktw", type: "checkbox" });

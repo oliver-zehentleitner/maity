@@ -100,7 +100,8 @@ Inside a project, in the order of their importance; see
    in the feed, or the window getting the focus back, re-reads the
    messages from the oldest pending one on.
 6. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
-   for an existing agent profile or a new one, optionally with a briefing
+   for an existing agent profile or a new one (its handle's rule said under
+   the field and checked before sending), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
    once, with a copy button; open joins can be revoked.
@@ -141,7 +142,8 @@ agent, or a pod each); which projects and repositories its own
 configuration allows; its credential's id and dates, never its value.
 **Pair a runner** creates a pairing (`POST /runners/enrollments`) with a
 name, the projects to allow it in and how long the line stays valid, and
-shows the steps for the machine: install the CLI (from the repository's
+shows the steps for the machine (the name follows the handle rule, said
+under the field): install the CLI (from the repository's
 current main; the page says the runner commands are not released yet),
 save the **starter configuration** generated in the browser as
 `~/.config/maity-runner/runner.toml`, run the pairing line (shown once,
@@ -168,7 +170,7 @@ session of this human was signed out while this one stays signed in.
 
 **Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
-checked before sending), an optional repository URL, Keep the Why, and
+its rule said under the field and checked before sending), an optional repository URL, Keep the Why, and
 the policy preset (`hierarchical` or `solo`). The creator becomes the
 owner. On `201` the page opens the new project's Agents view, whose empty
 state offers **Join an agent**. The hub's `invalid` answer is shown under

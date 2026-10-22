@@ -13,8 +13,10 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo, formatTime } = M.dom;
 
   const PRESENCE_MS = 30000;
-  const NAME_PATTERN = "[a-z0-9][a-z0-9\\-]{1,30}";
-  const NAME = /^[a-z0-9][a-z0-9-]{1,30}$/;
+  // A runner's name follows the rule for handles.
+  const NAME_PATTERN = M.dom.NAME_RULES.handle.pattern;
+  const NAME = M.dom.NAME_RULES.handle.test;
+  const NAME_RULE = M.dom.NAME_RULES.handle.text;
   // Until the CLI is on PyPI it is installed from the repository's cli/,
   // at its current main; the page says so.
   const CLI_INSTALL = "pipx install 'git+https://github.com/oliver-zehentleitner/maity.git#subdirectory=cli'";
@@ -250,7 +252,7 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const name = nameInput.value.trim();
-          if (!NAME.test(name)) { status.fail("Not renamed: ", { message: "lower-case letters, digits and hyphens, 2 to 31 characters" }); return; }
+          if (!NAME.test(name)) { status.fail("Not renamed: ", { message: NAME_RULE }); return; }
           if (name === r.name) return;
           act("Renaming", () => M.api.patch("/runners/" + encodeURIComponent(r.id), { name }));
         },
@@ -321,7 +323,8 @@ window.Maity = window.Maity || {};
     }
 
     function pairForm() {
-      const name = h("input", { id: "pair-name", required: true, pattern: NAME_PATTERN, placeholder: "e.g. home-laptop", autocomplete: "off" });
+      const name = h("input", { id: "pair-name", required: true, pattern: NAME_PATTERN, maxlength: "31", placeholder: "e.g. home-laptop",
+        autocomplete: "off", spellcheck: "false", "aria-describedby": "pair-name-rule" });
       const ttl = h("select", { id: "pair-ttl" },
         [[900, "15 minutes"], [600, "10 minutes"], [300, "5 minutes"]].map(([v, l]) => h("option", { value: String(v) }, l)));
       ttl.value = "900";
@@ -335,7 +338,7 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const n = name.value.trim();
-          if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name is lower-case letters, digits and hyphens, 2 to 31 characters" }); name.focus(); return; }
+          if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name: " + NAME_RULE }); name.focus(); return; }
           const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.slug);
           const chosen = adminProjects.filter((p) => attach.includes(p.slug));
           // A hub before attachments (docs/api.md §15.4) refuses `attach`: pair
@@ -355,7 +358,7 @@ window.Maity = window.Maity || {};
       h("h3", null, "Pair a runner"),
       h("p", { class: "hint" }, "A runner is a small service on one of your machines that starts agents for you, in the projects you allow. "
         + "The hub never starts anything itself."),
-      h("label", { for: "pair-name" }, "Name of the machine's runner"), name,
+      h("label", { for: "pair-name" }, "Name of the machine's runner"), name, h("p", { class: "hint", id: "pair-name-rule" }, NAME_RULE),
       boxes.length ? h("fieldset", { class: "pair-projects" }, h("legend", null, "Allow it in"),
         boxes.map(({ p, box }) => h("label", { class: "check", for: box.id }, box, " " + p.name))) : null,
       h("label", { for: "pair-ttl" }, "The pairing line is valid for"), ttl,
