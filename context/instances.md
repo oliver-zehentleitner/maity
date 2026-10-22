@@ -36,3 +36,34 @@ different handles; instances are for a team with the same role.
   credential (as the contract allowed before, "one per clone"): the work
   of two clones could not be told apart, which is what "individually
   identifiable" rules out.
+
+## Each team has a rulebook set by a human: size, work distribution, who a team message wakes, review within the team
+
+**Id:** e42155de-c20d-43cc-a042-4151f860e25d
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.12
+**Revisit when:** a team needs a distribution or wake rule the three values do not cover, or review between instances proves independent enough to allow by default
+**See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
+**See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
+
+Every membership carries its team's rulebook: the maximum number of
+instances; how work is distributed (`free` claiming, a `lead` instance
+assigning, or `round_robin`); which instance a message to the team
+wakes (`all`, the `lead`, or the `next_free`); and whether instances may
+review each other's work, which by default they may not. A human with
+`members:admin` sets it; an admin agent only within the limits that
+already bound its management of agent memberships, and never by
+creating joins.
+
+**Reason:** a team under one handle needs its own answer to how work
+reaches its instances and how many of them a message wakes, and the
+maintainer decided it per team and in a human's hands (confirmed). Why
+review within a team is off by default was not stated with the
+decision (unknown, hence the entry's grade); the related constraint is that an independent review needs a
+separate environment (the process entry linked above), which instances
+of one team do not guarantee.
+
+**Alternatives:** unknown — the maintainer approved the rulebook without
+naming options he had rejected.
