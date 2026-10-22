@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -16,6 +18,7 @@ from typing import Any
 
 from .. import hub, onboarding, state
 from . import capabilities, config, operate, serve
+from .asuser import AsUser
 
 STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
@@ -183,7 +186,7 @@ DEFAULTS = (
     ("limits.require_local_approval", "false"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
-    ("backend.local.tmux_socket", "<state_dir>/tmux.sock"),
+    ("backend.local.tmux_socket", "<state_dir>/tmux.sock; agent_user: ~<user>/.maity-runner/"),
     ("backend.local.layout", "single"),
     ("backend.local.agent_path", "the service's own PATH at start"),
     ("backend.local.memory_max, cpu_quota", "unset (no limit)"),
@@ -244,12 +247,48 @@ def _check_local(report: Report, local: config.Local) -> None:
         report.error("tmux is not installed; the local backend runs every agent in tmux")
     else:
         report.ok("tmux found")
+    if local.layout == "agent_user" and local.agent_user:
+        _check_agent_user(report, local)
+        return
     workspaces = local.workspaces
     existing = workspaces if workspaces.exists() else _existing_parent(workspaces)
     if not existing.is_dir() or not os.access(existing, os.W_OK | os.X_OK):
         report.error(f"workspaces {workspaces} cannot be created or written by this user")
     else:
         report.ok(f"workspaces {workspaces}")
+
+
+def _check_agent_user(report: Report, local: config.Local) -> None:
+    """What the agent_user layout needs (§7.6): sudo to the agents' user without a password,
+    `maity` importable as that user, and the workspaces and the agents' files writable by it."""
+    user = local.agent_user or ""
+    as_user = AsUser(user)
+    try:
+        sudo = as_user.run(["true"], timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        report.error("sudo is not installed; the agent_user layout runs every agent through it")
+        return
+    if sudo.returncode != 0:
+        report.error(
+            f"`sudo -n -u {user} -- true` fails; the agent_user layout needs a sudoers rule "
+            f"like `{getpass.getuser()} ALL=({user}) NOPASSWD: ALL`"
+        )
+        return
+    report.ok(f"sudo to {user}")
+    importable = as_user.run([sys.executable, "-I", "-c", "import maity"], timeout=30)
+    if importable.returncode != 0:
+        report.error(
+            f"{user} cannot run {sys.executable} with maity; install maity where both users "
+            "can run it (pipx --global, or a system-wide virtual environment)"
+        )
+    else:
+        report.ok(f"{user} can run maity")
+    for what, path in (("workspaces", local.workspaces), ("agents' files", local.agent_files)):
+        probe = path if as_user.exists(path) else _existing_parent(path)
+        if as_user.run(["test", "-w", str(probe)]).returncode != 0:
+            report.error(f"{what} {path} cannot be created or written by {user}")
+        else:
+            report.ok(f"{what} {path} (as {user})")
 
 
 def _existing_parent(path: Path) -> Path:

@@ -122,7 +122,7 @@ def test_gc_lists_and_only_removes_with_yes(
     git(place.path, "init", "-q")
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # no placement any more
-    monkeypatch.setattr(operate, "credential_revoked", lambda p: True)
+    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
     monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
     out = capsys.readouterr().out
@@ -187,7 +187,7 @@ def revoked_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "
     git(place.path, "init", "-q")
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
-    monkeypatch.setattr(operate, "credential_revoked", lambda p: True)
+    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
     monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
     return path, place
 

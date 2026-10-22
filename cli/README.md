@@ -513,6 +513,19 @@ refuses another user's repository unless `safe.directory` says
 otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write
 there, and an agent could rewrite its own profile for the next start.
 
+**Layouts.** By default (`layout = "single"`) agents run as the runner's
+own user, which may be the operator's account in a terminal. With
+`layout = "agent_user"` and `agent_user = "maity-agent"`, every agent
+command runs as that user through `sudo -n -u maity-agent --`. That
+covers the tmux server, the clone, the join, the supervised loop and
+`gc`. The agents' files (tmux socket, logs, harness settings) live in
+`~maity-agent/.maity-runner/`. The runner's state directory and credential
+stay out of the agents' reach. The layout needs a sudoers rule
+(`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
+both users can run it, and the workspaces writable by the agents' user;
+`maity runner check` tests all three. Agents under one `agent_user` can
+still read each other's files.
+
 On the runner host, without the hub:
 
 ```sh

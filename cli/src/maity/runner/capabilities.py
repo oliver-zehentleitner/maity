@@ -110,6 +110,8 @@ def harness_entry(harness: config.Harness, found: Probe, path: str | None = None
 def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dict[str, Any]:
     """The `capabilities` object of `hello` and `PATCH /runner`."""
     limits = cfg.limits
+    local = cfg.local
+    agents_user = local.agent_user if local and local.layout == "agent_user" else None
     return {
         "backend": cfg.backend,
         "max_agents": limits.max_agents,
@@ -122,9 +124,9 @@ def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dic
                 "reachable": True,
                 "unreachable_since": None,
                 "isolation": {
-                    "kind": "shared_user",
-                    "user": ascii_text(getpass.getuser()),
-                    "runner_separate": False,
+                    "kind": "shared_user",  # every agent of the target as one OS user
+                    "user": ascii_text(agents_user or getpass.getuser()),
+                    "runner_separate": agents_user is not None,
                 },
             }
         ],

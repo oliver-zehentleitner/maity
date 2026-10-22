@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import state
 from . import config, stub
+from .asuser import AsUser
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -77,6 +77,7 @@ class Context:
     extra_env: dict[str, str] = field(default_factory=dict)  # e.g. declared machine ids
     private: tuple[Path, ...] = ()  # never readable from the sandbox: runner state, secrets
     workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
+    as_user: AsUser = AsUser()  # who the agents run as (§7.6)
 
 
 @dataclass(frozen=True)
@@ -109,16 +110,15 @@ def launch(ctx: Context) -> Launch:
     raise NotYet(f"no adapter for {harness.id}")
 
 
-def _write(path: Path, data: Any) -> Path:
-    state.write_file(path, json.dumps(data, indent=2) + "\n")
-    return path
+def _write(ctx: Context, path: Path, data: Any) -> Path:
+    """A file for the agents' side, written as the agents' user (§7.6)."""
+    return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
 
 
 def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str, str]) -> Launch:
     """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen."""
     policy = ctx.restart
-    spec = _write(
-        ctx.agent_dir / "loop.json",
+    spec = _write(ctx, ctx.agent_dir / "loop.json",
         {
             "first": first,
             "again": again,
@@ -175,8 +175,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
 
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    settings = _write(ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
-    mcp = _write(ctx.agent_dir / "claude-mcp.json", {"mcpServers": {}})
+    settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
+    mcp = _write(ctx, ctx.agent_dir / "claude-mcp.json", {"mcpServers": {}})
     base = [
         ctx.binary,
         "--setting-sources", "user",  # the project's .claude/ is not loaded, hooks included
@@ -239,17 +239,15 @@ def codex_config(ctx: Context) -> str:
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     home = ctx.agent_dir / "codex-home"
-    home.mkdir(mode=0o700, exist_ok=True)
-    state.write_file(home / "config.toml", codex_config(ctx))
-    login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
-    link = home / "auth.json"
-    if login.is_file() and not (link.is_symlink() and link.resolve() == login.resolve()):
-        # The operator's own login, linked so that a token refresh lands in the original. A
-        # link left from an earlier launch that points elsewhere, or nowhere, is replaced.
-        if link.is_symlink() or link.exists():
-            link.unlink()
-        link.symlink_to(login)
-    (ctx.clone / ".git" / "maity").mkdir(mode=0o700, parents=True, exist_ok=True)
+    ctx.as_user.write(home / "config.toml", codex_config(ctx))
+    # The login of whoever runs the agents (the operator, or the agents' user), linked so
+    # that a token refresh lands in the original; a link left from an earlier launch that
+    # points elsewhere, or nowhere, is replaced (AsUser.link).
+    own = None if ctx.as_user.user else os.environ.get("CODEX_HOME")
+    login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
+    if ctx.as_user.exists(login, "-f"):
+        ctx.as_user.link(login, home / "auth.json")
+    ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")
     chosen = ["-m", model] if model else []
@@ -295,7 +293,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
 
 def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    path = _write(ctx.agent_dir / "opencode.json", opencode_config(ctx))
+    path = _write(ctx, ctx.agent_dir / "opencode.json", opencode_config(ctx))
     # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
     # .opencode/ directories bring agents, commands and plugins.
     env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}

@@ -165,8 +165,9 @@ def test_inside_codexs_sandbox_an_agent_reaches_only_itself(tmp_path: Path) -> N
         assert denied.returncode == 1 and content not in denied.stdout
     # The agent plants commondir and a config with fsmonitor, and runs git without the pin:
     # the program runs, but in the sandbox, and cannot write outside it.
-    outside = tmp_path / "outside"
-    outside.mkdir()
+    # Codex's workspace profile can always write /tmp (where tmp_path may be): the marker
+    # goes into another clone, which the profile hides.
+    outside = tmp_path / "ws" / "maity" / "agent-4"
     evil = clone / "evil"
     script = (
         f"cp -r .git {evil} && printf '[core]\\n\\tfsmonitor = touch {outside}/ran\\n' >> "
