@@ -719,7 +719,11 @@ def scenario(run: Run, page: Page) -> None:
     expect(entries.nth(0)).to_contain_text("E2E Beta")
     page.locator("#inbox-project").select_option("")
     page.locator("#inbox-group").check()
-    expect(page.locator("li.entry-group")).to_have_count(2)
+    # One section per project, its heading and its own list of entries.
+    groups = page.locator("section.entry-group")
+    expect(groups).to_have_count(2)
+    expect(groups.nth(0).get_by_role("heading")).to_contain_text("E2E Alpha")
+    expect(groups.nth(0).locator("ol.entries > li.entry")).to_have_count(1)
     run.a11y(page, "#/all grouped by project")
     page.locator("#inbox-group").uncheck()
     expect(entries).to_have_count(2)
