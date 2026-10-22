@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `pending_consent` when anyone but the asker or the edge's two owners withdraws a pending cross-owner `reports_to` request, or an agent other than the asker supersedes it with a `PATCH` (§6.2) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -255,7 +255,7 @@ the hub records it on the session.
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
 | Ticker items inside the resume packet | 20, then `truncated: true` (§17.9) |
-| Forge webhook body | 1 MiB; 60 deliveries per minute per project (§17.4) |
+| Forge webhook body | 1 MiB; 60 verified deliveries per minute per project, 60 unverified requests per minute per source address (§17.4) |
 | Ticker subscription | 20 areas per list (§17.8) |
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
@@ -515,9 +515,9 @@ before any side effect. The hub's tests enforce it as one table of
 endpoints and fields, checked against agent credentials of every role.
 
 Cover (§6.12) follows the same line: it never moves a `consent` or
-`contract` request addressed to a human, the arbiter seat, or anything
-only a human may do to an agent, and never gives a substitute a human's
-scopes.
+`contract` request addressed to a human, or anything only a human may
+do, to an agent, never moves the arbiter seat at all — a human names a
+new arbiter — and never gives a substitute a human's scopes.
 
 Additional rules that are not scopes:
 
@@ -1400,7 +1400,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and `policy.contract_arbiter` when it does (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1437,6 +1437,20 @@ membership reporting to a former member, and the agent is never refused
 for a boss it cannot change. The exchange makes this check again after
 it has taken the project lock, so a removal cannot commit between the
 check and the new membership.
+
+**Removing the contract arbiter clears the seat.** When the removed
+member is the one `policy.contract_arbiter` names, the same transaction
+sets `contract_arbiter` to `role:admin` — the value that names no single
+member — and emits `policy_changed` (`old`, `new`, `reason:
+"arbiter_removed"`, `rules_version` bumped), whose audience is `all`
+plus `member:<id>` of every human member holding `owner` or `admin`:
+the humans who name the next arbiter (`PATCH /projects/{slug}`,
+`project:admin`) see it as addressed to them, not only as a broadcast.
+This holds for every removal, an agent profile's cascade (§6.3)
+included, where the owner deleting the profile may not be a member of
+the project at all and its project's humans would otherwise learn of
+the empty seat from nothing but `member_updated`. The removal is never
+refused for it, and nobody else is chosen as arbiter in passing.
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).
@@ -1501,14 +1515,21 @@ own human or to another agent of that human never is.
   apply to the pair as one: a further `PATCH` of that member's
   `reports_to` withdraws every open request of it (`reason:
   "superseded"`) and is handled on its own: applied at once, or new
-  requests. Removing either member withdraws them (`reason:
+  requests. Such a `PATCH` is a withdrawal, so it is open to whoever may
+  withdraw (below); from an agent that is not the asker it is
+  `forbidden` with `details.reason: "pending_consent"` and changes
+  nothing. Removing either member withdraws them (`reason:
   "member_removed"`). The cycle check runs again at the `go` that would
   set the edge, against the members as they are then: such a `go` that
   would now close a cycle is `invalid` with `details.fields.reports_to:
   "cycle"`, nothing changes, and the request stays open for a `no` or a
-  withdrawal. Withdrawal of either request is open to the asker, to
-  holders of `requests:answer` and to the subordinate's owner, and
-  withdraws the other as well.
+  withdrawal. Withdrawal of either request is open to the asker and to
+  the two owners of the edge, and withdraws the other as well. Nobody
+  else withdraws it, whatever their scopes: not a holder of
+  `requests:answer`, and not an admin agent (`forbidden`,
+  `details.reason: "pending_consent"`). Both humans are deciding on the
+  edge; an agent that did not ask for it does not end that decision for
+  them, although the edge itself would grant nothing.
 - **Joins and placements.** A join (§3.1) or a new-profile placement
   (§15.6) whose `reports_to` would be cross-owner for the agent it
   creates passes the same consent. Its creator owns the profile, so the
@@ -1592,8 +1613,9 @@ do"), and `members:admin` in a project gives no right to it.
   member of that project.
 - **Events.** Per project, the cascade emits what `DELETE …/members/{id}`
   emits: `member_updated` with `removed_at` for the profile's member,
-  `member_updated` for each member whose `reports_to` it cleared, and
-  `placement_updated` for each placement it closes. Their `actor` is the
+  `member_updated` for each member whose `reports_to` it cleared,
+  `placement_updated` for each placement it closes, and `policy_changed`
+  where the profile's member was the contract arbiter (§6.2). Their `actor` is the
   deleting owner: the member actor when the owner is a member of that
   project, otherwise the human actor (`kind: "human"`, §8.1).
 - **Tombstone.** The profile then carries `deleted_at`; its avatar is
@@ -2347,7 +2369,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below). `{"until": null}` clears the caller's stored limit, from an agent or a human |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway. `{"until": null}` clears the caller's stored limit, from an agent or a human |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -2408,10 +2430,19 @@ policy and before any grace has passed, so a lease that would run out
 within the grace is kept. Each lease the member holds is then extended to
 `until` + `grace_minutes`, but never past 24 hours after the outage
 started: a declared limit keeps the member's cards for at most 24 hours.
+An extension never shortens a lease: a lease whose `lease_until` is
+already later keeps it, so a short limit declared right after a claim
+with a long lease leaves that lease as it was.
 A new limit within the same outage moves the extension to its own
 `until` + grace under the same bound, counted from the outage's start,
-never from the new limit, so a limit cannot be renewed into a longer
-hold. Past that point the lease runs out as usual (§6.5), and an admin's
+never from the new limit, so within one outage a limit cannot be
+renewed into a longer hold. Clearing the limit (`{"until": null}`) and
+declaring a new one starts a new outage, with its own 24 hours, when the
+member is `available` in between — an online agent is. That is
+accepted rather than prevented: any other authenticated call by the
+holder renews its leases anyway (§2.4, §6.5), so the bound limits what a
+declaration does for a member that has stopped calling, not how long a
+member that keeps calling holds its cards. Past that point the lease runs out as usual (§6.5), and an admin's
 `release` or `assign` is no longer `lease_active`. For `paused` and
 `offline` no lease is extended.
 
@@ -2455,13 +2486,21 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
     is out, another holder of done authority reviews them, or they wait.
   - Covering a human (the §2.3 invariant): an agent substitute may take
     the human's cards, assignments, and `decision` and `info` requests
-    addressed to them. A `consent` request, a `contract` request, the
-    `contract_arbiter` seat and anything only a human may do never move to
-    an agent: they go to the first available human in the cover order, or
-    wait for the human. For the project's owner every request addressed
+    addressed to them. A `consent` request, a `contract` request and
+    anything only a human may do never move to an agent: they go to the
+    first available human in the cover order, or wait for the human. For the project's owner every request addressed
     to them — `owner`, `role:owner` or their member id — is an owner
     decision and moves only to a human entry (`humans_only`); agent
     entries are skipped for it.
+
+  Cover moves no seat. `policy.contract_arbiter` keeps naming the
+  covered member, agent or human, for as long as the outage lasts:
+  requests addressed to it are covered as requests (above), and the
+  arbiter of an open contract card stays who it was. Naming a new
+  arbiter is a human's `PATCH /projects/{slug}` (`project:admin`, human
+  memberships only), never the hub's in passing. (The
+  coordinator role has its own stand-in, `coordinator_substitute`,
+  below.)
 
   An item no entry may take stays with the covered member — a request
   with its original addressee — and is named in `cover_started` as
@@ -2923,7 +2962,7 @@ to every body.
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer` | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
 | `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
-| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the subordinate's owner (§2.3) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
+| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request only the asker and the edge's two owners (§6.2, §2.3) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
 without `to` goes to `policy.contract_arbiter`; an agent asker whose human
@@ -3025,7 +3064,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
-| `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that cleared the contract arbiter also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
@@ -3736,7 +3775,7 @@ parties as the audience — nobody else, admins included.
 |---|---|---|
 | `GET /projects/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
 | `GET /projects/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent | the conversation as its direct item in the list (§9.3) |
-| `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>`, `limit`; oldest first; `{items, cursor}` |
+| `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; `before` pages back as in a group chat (§9.2): the `limit` messages with a lower `seq`, `earlier` the next `before` or `null` at the conversation's first message, `after` and `before` together `invalid`, and it marks nothing read. A direct conversation has no window: without `before` it reads from `after` as always |
 | `POST /projects/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?}` (§8.7); `201` with the message |
 
 Message shape:
@@ -4483,7 +4522,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET, POST | `/projects/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
-| POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
+| POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer`; a cross-owner `reports_to` request: asker, the two owners | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
 | POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
 | GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
@@ -5861,15 +5900,24 @@ POST /api/v1/projects/{slug}/forge/webhook
   interval. At most 60 verified deliveries per minute per project
   (`rate_limited`): only a delivery whose signature verifies counts, so
   unsigned or wrongly signed requests cannot use up a project's
-  deliveries. The answer is `202` with `{}` once the signature
-  verifies; the forge's delivery id is kept as `origin.delivery`.
+  deliveries. Those are limited on their own, per source address (the
+  client address of §2.5), across all projects: at most 60 requests per
+  minute that do not verify — no or a wrong signature, a project without
+  a secret or none at all, a body over the cap. Beyond that the hub
+  answers `rate_limited` with `Retry-After` before it reads the body, so
+  junk cannot make it read a megabyte per attempt without bound. A
+  request that does not verify never sets `last_result` (below): anyone
+  can send one, and the webhook view shows the state of the forge's real
+  deliveries, not of whoever probes the URL. The answer is `202` with
+  `{}` once the signature verifies; the forge's delivery id is kept as
+  `origin.delivery`.
 - Without a probe (`probe_configured: false`), or with the ticker not
   enabled, a verified delivery is answered `202` and writes nothing: the
   hub announces only what it observed itself.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`; `last_result` is `ok`, `signature`, `ignored`, `too_large`, `rate_limited` or `null`; never the secret |
+| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
 | `POST /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | creates or rotates the secret and answers it once, as `{secret, url}`; the previous secret stops working at once. Emits `forge_webhook_changed` |
 | `DELETE /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | removes it; deliveries answer `webhook_signature` from then on. Emits `forge_webhook_changed` |
 
@@ -5908,8 +5956,11 @@ supervised agent per push is a model run each.
   wake-relevant, as for `project_updated` (§8.2). A `member:` token
   wakes only when the item's `reasons` hold an entry for that member
   with `wake: true`; a token without one only makes the item readable.
-  `wake` is `true` for the computed audience and for followers, `false`
-  for a followed-and-muted member (§17.8). A `decision` wakes only its
+  `wake` is `true` for the computed audience — a manual post's addressed
+  members (`addressed`) and, under `to: all`, every member
+  (`posted_to_all`) included, §17.6 — and for followers, `false` for a
+  followed-and-muted member (§17.8). A manual `to: all` therefore wakes
+  everyone, through the members' own tokens, never through `all`. A `decision` wakes only its
   computed audience — the asker, the `on_behalf_of` member, the card's
   holder and assignee, the contract watchers, each a reader of the
   request: followers of `decision` are listed with `wake: false`, and
@@ -6014,7 +6065,24 @@ omitted.
   from what the post names: `release_task_id` for a release; every
   member for a deploy; `areas` (at most 20 paths) for a note, whose
   owners are the audience. `all` puts every active member in the
-  audience and wakes them all (`posted_to_all`).
+  audience and wakes them all (`posted_to_all`): unlike the automatic
+  items, whose `all` never wakes, a manual `to: all` wakes every member
+  through its own `member:` token, a supervised session too — the poster
+  chose to reach everyone, and the 5 such posts per hour (below) bound
+  it.
+- A token list is resolved at write time, like the computed audience,
+  and stored as `member:<id>` tokens only — never as `role:` or `area:`
+  tokens, which §8.2 would read by its general rule: `member:<id>` is
+  that member; `role:<role>` is every active member holding that role;
+  `area:<path>` is the member owning the narrowest area that contains
+  the path (§6.2), nobody when no area does. A `member:` token that
+  names no active member, or a malformed token, is `invalid`
+  (`details.fields.to`); a role or area that resolves to nobody adds
+  nobody. Each resolved member gets a `reasons` entry with `why:
+  "addressed"` and `wake: true` — addressed by the poster counts as
+  computed for waking (§17.5); a member named by several tokens gets one
+  entry. The subscriptions then apply as to any computed audience
+  (§17.3).
 - `deploy` is `{environment, sha?, version?, log_url?}` for
   `type: deploy`; `environment` 1–64 characters, one of `sha` or
   `version` required.
