@@ -48,7 +48,7 @@ naming options he had rejected.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security review of the memory contract and the contract owner's ruling on it, 2026-10-22; contract in `docs/api.md` §7, §17
+**Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §17
 **Revisit when:** a store gains readers beyond its table, or personal requests are needed for more than soul proposals and takeover notices
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-22
 
@@ -57,7 +57,9 @@ and never the text or the tags; the text is read through the memory
 endpoint, which enforces each store's readers. A soul proposal is a
 personal request: it sits in the profile owner's personal inbox, is
 visible only to that owner and the proposing agent, is answered only by
-the owner, and its events carry no text. §7 allows this addressing
+the owner, is withdrawn only by the owner or the hub — never by the
+proposing agent or any other agent — and its events, the withdrawal's
+included, carry ids and status only. §7 allows this addressing
 (`profile_owner:<agent id>`) for requests the hub files itself.
 
 **Reason:** owners and admins read every event of a project, so an
@@ -74,3 +76,7 @@ consent rule.
   need an admin's redaction to be a deletion.
 - Excluding soul proposals from `to=all` only: the request would still
   sit in the project, readable by id and pushed through its events.
+- Leaving withdrawal to the asker and `requests:answer` (the first
+  round): `request_withdrawn` carried the whole request, so a
+  withdrawal put the soul text into an event every owner and admin
+  reads.

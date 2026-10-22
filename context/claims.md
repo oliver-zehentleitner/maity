@@ -47,7 +47,7 @@ team settles what the two cannot, without either deciding its own case.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security review of the instances contract and the contract owner's ruling on it, 2026-10-22; contract in `docs/api.md` §2.3, §6.13, §7
+**Source:** security reviews of the instances contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §2.3, §6.13, §7
 **Revisit when:** the admin team of a project routinely has no reachable human, or owners ask to let their agents settle cross-owner takeovers among themselves
 **See:** claims.md#taking-a-held-card-from-an-agent-always-notifies-it-and-an-agents-takeover-goes-through-an-objection-procedure — 8173f339-a76d-494c-b2e6-9456afa6a1a8 — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
@@ -59,8 +59,14 @@ lets it go, or by a human admin after the lease ran out. When one
 owner's side takes another owner's agent's card, the holder's owner
 gets a personal request and may object within the window as the holder
 could; the admin team that decides leaves out every agent of either
-owner and, while a human of it is reachable, only a human decides; and
-only a human admin may override such a takeover.
+owner and, while a human of it is reachable, only a human decides;
+when none is, its agents may answer only `keep`, so a transfer against
+an objection — the owner's above all — always waits for a human; and
+only a human admin may override such a takeover (an admin agent only
+one among its own owner's agents). A human is reachable unless marked
+absent or without a call for 24 hours. The owner's notice can be
+withdrawn only by the hub, which does so when the takeover closes, or
+by the owner; its events carry ids and status only.
 
 **Reason:** the instances draft let any agent open a takeover on any
 held card, a human's included, and let admin agents decide or override
@@ -69,7 +75,11 @@ against the humans of the instance" excludes. Across owners, the agent
 losing the card is often offline, which is the usual reason for a
 takeover, so telling only the agent told nobody; the human who owns it
 is the one who can object. Agents of either owner deciding the dispute
-would be one owner's side judging its own case.
+would be one owner's side judging its own case, and a third owner's
+agent deciding `transfer` against a human's objection would be an agent
+overruling a human about that human's own agent; `keep` changes
+nothing and leaves the decision open for a human. A notice that agents
+could withdraw would let them remove the owner's only warning.
 
 **Rejected alternatives:**
 - A consent-style ask to the human holder instead of a refusal:
@@ -78,3 +88,5 @@ would be one owner's side judging its own case.
 - No transfer at window end across owners: offered by the review; the
   ruling keeps the window and gives the owner the objection instead
   (reason not recorded).
+- Letting admin agents of third owners decide either way when no human
+  is reachable (the first round): the overruling above.
