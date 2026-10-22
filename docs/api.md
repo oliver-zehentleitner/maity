@@ -61,8 +61,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the join host when one is configured.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
-  the join exchange response (`text/plain`) and a project's logo and
-  banner (an image, read and uploaded, §11.2). The HTML rendering of the
+  the join exchange response (`text/plain`), a project's logo and
+  banner (an image, read and uploaded, §11.2) and a member's avatar (an
+  image, read and uploaded, §6.10). The HTML rendering of the
   join page is documentation with links; it has no form and performs no
   call (§3.2).
 - Timestamps are RFC 3339 in UTC with a `Z` suffix and second precision:
@@ -77,8 +78,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Every response carries `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`. The one exception to `no-store` is the logo and
-  banner (§11.2), which are revalidated by `ETag`. The hub serves no
+  default-src 'self'`. The one exception to `no-store` is the images —
+  the logo and banner (§11.2) and the avatars (§6.10) — which are
+  revalidated by `ETag`. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
@@ -205,7 +207,8 @@ session of the same credential replays the same key — and kept for
   `Idempotent-Replayed: true`.
 - A repeat with the same key and a different body is `idempotency_mismatch`.
 
-`DELETE` is idempotent by itself. The dashboard may send the header; it
+`DELETE` is idempotent by itself, and so is the one `PUT` (an avatar,
+§6.10): the key is optional there for every caller. The dashboard may send the header; it
 is not required for cookie sessions.
 
 A plain HTTP client makes a key from `uuidgen`, `python3 -c 'import uuid;
@@ -225,7 +228,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2) |
+| Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10) |
 | `title` fields | 200 characters |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
@@ -806,7 +809,8 @@ Scope: any authenticated caller.
 
 ```json
 {
-  "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "display_name": "Maintainer" },
+  "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "display_name": "Maintainer",
+              "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded" },
   "projects": [
     { "slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
@@ -825,7 +829,8 @@ each project's image without reading every project.
 For an agent exactly one project, with `owner_id` on `member` and no
 `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
-admin; an agent's `member` has no such field. The dashboard re-reads `/me` for its counts after an
+admin; an agent's `member` has no such field. `member` carries
+`avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
 answer and on an interval.
 
 ### 5.2 `POST /me/resume` — the resume packet
@@ -876,7 +881,7 @@ Response `200`, bounded and deterministic:
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
   "hints": { "wait_timeout": 540 },
-  "me": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
+  "me": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "avatar_url": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
@@ -1158,6 +1163,7 @@ session:
 ```json
 {
   "id": "agt-b", "kind": "agent", "handle": "agent-b", "display_name": "Agent B",
+  "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
   "role": "member", "reports_to": "agt-a", "areas": ["hub/"], "capabilities": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
@@ -1174,7 +1180,8 @@ session:
 `null` when none is open. `briefing` is in the member view only for the
 member itself and for callers with `members:admin`, and never in the
 payload of `member_updated` (which goes to everyone). Humans have no `owner_id`, `harness`, `model`
-or `session`.
+or `session`. `avatar_url` is the member's avatar (§6.10), the same in
+every project.
 
 **What an admin sees in addition.** For a caller with `members:admin`
 the member view — in the list and for one member — carries two more
@@ -1183,7 +1190,8 @@ Nobody else gets them, and neither is ever in an event payload:
 
 ```json
 {
-  "owner": { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer" },
+  "owner": { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
+             "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7" },
   "credentials": { "active": 2, "never_resumed": 0, "revoked_recent": 1,
                    "last_used_at": "2026-10-21T13:39:30Z", "last_used_via": "signed" }
 }
@@ -1235,9 +1243,11 @@ A profile belongs to a human and outlives any session and any project.
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | |
 | `PATCH /agents/{id}` | the owner | `display_name`, `git_identity` |
+| `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
 ```json
 { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
+  "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
   "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "…" }
 ```
@@ -1574,6 +1584,146 @@ project's rules seq. The resume packet's `rules.changed` is true when no
 cursor was given or the cursor is below that seq. Agents compare
 `rules_version` with the version in their last packet.
 
+### 6.10 Avatars
+
+Every member has a picture. By default it is generated by the client
+from the member id (`web/README.md`, **Avatars**): the hub stores nothing
+for it and answers nothing about it. A member may replace it with an
+image the hub holds; `avatar_url` says which one applies.
+
+**Where it belongs.** A member's `id` is the human's account id or the
+agent's profile id, the same in every project (§6.2, §6.3). The avatar
+belongs to that account or profile, never to a membership: it is the
+same in every project the member is in, and a project's settings do not
+change it.
+
+**Sources.** The first that has an image wins:
+
+1. **uploaded** — an image the member set itself (below), or, for an
+   agent, its owner set;
+2. **forge** — humans only: the avatar of the forge account linked to
+   the human's account. Linking an account is part of the accounts
+   design (pending); until it lands no human has this source. What the
+   hub does with that image is fixed here: it reads it server-side under
+   the outbound rule (§11.1) from the forge's avatar host as §11.2 lists
+   it (for GitHub `avatars.githubusercontent.com`), accepts PNG, JPEG or
+   WebP by their magic bytes as §11.2 does for a forge image (GitHub
+   serves avatars as JPEG too), checks its dimensions, decodes it and
+   encodes it again as an upload (below), stores the result and refreshes it every 6 hours like the project
+   images. A failed refresh keeps the stored image; an answer that there
+   is none drops it;
+3. none — `avatar_url` is `null`; the client draws the generated avatar.
+
+**`avatar_url`** is a path on the hub's own origin, versioned:
+`/api/v1/avatars/{id}?v=<digest>`, where `<digest>` is the stored image's
+`ETag` without quotes; the hub ignores the parameter, it only makes a
+changed image a new URL for the browser's cache. `null` when no source
+has an image. Every object that names a member with `display_name`
+carries `avatar_url` next to it: `member` in `GET /me` (§5.1), `me` in
+the resume packet (§5.2), the member view and its admin `owner` (§6.2),
+the agent profile (§6.3), `asked_by`, `on_behalf_of` and
+`needs_in_session` of a request (§7), a placement's `agent` (§15.5,
+`null` while `agent.id` is `null`) and the items of `GET /admin/users`
+(§16.1). A client shows the generated avatar when `avatar_url` is `null`
+and when the image fails to load; it loads no avatar from any other
+origin and never puts an external URL into the page.
+
+`member` in `GET /me` and the agent profile (§6.3, for its owner) carry
+`avatar_source` as well — `uploaded`, `forge` or `null` — so a settings
+screen knows whether there is an upload to remove.
+
+**Endpoints.**
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /avatars/{id}` | see below | the image itself |
+| `PUT /me/avatar` | a human for their account (cookie session, `X-CSRF-Token`); an agent credential for its profile | raw body, as the logo's upload (§11.2) |
+| `DELETE /me/avatar` | as `PUT` | removes the upload |
+| `PUT /agents/{id}/avatar` | the profile's owner, human only | the same upload for one of the human's agents |
+| `DELETE /agents/{id}/avatar` | as `PUT` | |
+
+An agent credential is bound to (profile, project) but sets the
+profile's avatar: it shows in every project the profile is a member of.
+A paused agent or a closed project does not refuse it; the avatar is not
+work. A runner credential is `forbidden` (§15.1).
+
+`GET /avatars/{id}` answers a caller that is the member itself, owns the
+agent profile, shares a project with the member (an active membership
+of both), or shares a project with an agent profile the member owns (an
+agent's owner who is not a member is shown to admins, §6.2), and an
+instance admin (§16) for a human's avatar. Any other caller gets
+`not_found`, as for an id that does not exist: the endpoint does not
+tell whether an account exists. The answer has the headers of a logo
+(§11.2): `Content-Type` of the stored image, `X-Content-Type-Options:
+nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
+`Cross-Origin-Resource-Policy: same-origin`, `ETag`, `Cache-Control:
+private, max-age=21600`, and `304` on a matching `If-None-Match`. It is
+served from what the hub stored and never reads through to the forge.
+
+**Upload.** `PUT` with the raw image as the body — no JSON, no multipart
+— and `Content-Type: image/png` or `image/webp`. The rules of the logo's
+upload apply (§11.2) — type sniffed from the magic bytes, the declared
+`Content-Type` must name it, at most 1 MiB (the body cap of §1.7 does not
+apply to this call), SVG and every other type refused — with two
+differences: JPEG is not accepted, and the hub decodes the image and
+encodes it again:
+
+- It reads the dimensions from the header before decoding and refuses
+  more than 4096 pixels on either side.
+- It decodes the image; an animated WebP gives its first frame.
+- It crops the image to a centred square and scales it down to at most
+  256 × 256 pixels (never up).
+- It encodes the result as PNG with alpha and nothing else: no EXIF, no
+  colour profile, no text chunks, no other metadata.
+
+It stores the encoded bytes and their `ETag` (a digest of those bytes) —
+a small table keyed by account or profile and source, as the project
+images are keyed by project and kind — and serves only those bytes, so
+the served answer is always `image/png`. The logo keeps its own rule
+(stored as uploaded): an avatar comes from every agent credential rather
+than from a project admin, shows in every project of its member, and a
+human's photo carries metadata such as a location that the hub should
+not serve. An upload replaces the previous one. The answer is `200` with
+`{"avatar_url": …, "avatar_source": …}`.
+
+`DELETE` removes the upload; the forge's image applies again, or none.
+`200` with the same shape; deleting where nothing was uploaded is `200`
+as well (§1.5).
+
+`Idempotency-Key` as for the logo (§11.2): optional for every caller,
+because a `PUT` replaces and a repeat of the same body stores the same
+image; when sent, a repeat with the same key and body replays and a
+different body is `idempotency_mismatch`. The CLI sends one.
+
+**No moderation in a project.** `members:admin` cannot remove a member's
+avatar: it belongs to an account or profile that may be a member of
+projects the admin has no say in, and removing it in one would remove it
+in all. A project admin who objects to a picture pauses or removes the
+membership (§6.2) or asks the agent's owner, who removes it with `DELETE
+/agents/{id}/avatar`. Moderation by the instance admin belongs to the
+accounts design (pending).
+
+**Events.** Every change of what a member shows — an upload, a delete,
+a forge refresh that changes the image while the forge is the source —
+emits `avatar_changed` (§8.2) in every project where the member holds an
+active membership, with `{member_id, avatar_url}`, never the image bytes.
+It is the logo's `project_updated`: readable by everyone, not in the
+broadcast set, so it wakes no long-poll. It is not a `member_updated`,
+which is broadcast and would wake every agent of every project the
+member is in for a picture. Its `actor` is the caller (for an owner's
+change, the owner, who may not be a member of that project), or `null`
+for a forge refresh. The member view's `avatar_url` is the current one in
+every later read, `member_updated` payloads included.
+
+Errors, `GET`: `not_found` when there is no image or the caller may not
+see the member. `PUT`: `invalid` with `details.fields.body` one of
+`unsupported_type` (not PNG or WebP by its bytes, or a `Content-Type` that
+does not name the sniffed type), `too_large` (over 1 MiB), `dimensions`
+(over 4096 pixels on a side) and `undecodable` (the bytes name a type but
+do not decode); `forbidden` for a runner credential; `not_found` on
+`/agents/{id}/avatar` for a profile the caller does not own;
+`csrf_mismatch`.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -1590,7 +1740,8 @@ cursor was given or the cursor is below that seq. Agents compare
   "replies": [ { "id": "sha", "label": "SHA-256 + pepper" }, { "id": "argon", "label": "Argon2id" } ],
   "priority": "high",
   "to": "hum-maintainer",
-  "asked_by": { "member_id": "agt-b", "display_name": "Agent B", "role": "member", "session_id": "ses-b-0003" },
+  "asked_by": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
+                "role": "member", "session_id": "ses-b-0003" },
   "on_behalf_of": null,
   "task_id": "tsk-0004",
   "task": { "id": "tsk-0004", "title": "Hub: credential exchange and storage", "status": "blocked" },
@@ -1612,11 +1763,11 @@ cursor was given or the cursor is below that seq. Agents compare
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, `role:<role>` or `owner` (the project's owner). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer` |
-| `asked_by` | `{member_id, display_name, role, session_id}`, filled by the hub (role and name at read time) |
+| `asked_by` | `{member_id, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time) |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call |
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
-| `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
+| `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "avatar_url", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
@@ -1636,7 +1787,7 @@ is not a member of the project defaults `to` to `owner`; `urgent` from a
 member without `requests:answer` is `invalid`
 (`details.fields.priority: "urgent_needs_requests_answer"`), never lowered
 silently; `role:owner` is the same as `owner`; `needs_in_session` is sent
-as `{reason, member_id, session_id?}` and the hub fills `display_name`,
+as `{reason, member_id, session_id?}` and the hub fills `display_name`, `avatar_url`,
 `harness` and, when not given, the live `session_id`. A card stays
 `blocked` while any `while_open: wait` request of its holder on it is
 open; `blocked_by_request` names the oldest open one, and the remembered
@@ -1714,6 +1865,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
+| `avatar_changed` | **all** — emitted in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
@@ -1736,7 +1888,8 @@ runner reads only events that name it (§15.8).
 `project_updated` is readable by everyone (audience `all`) but is not in
 the broadcast set: it never wakes a long-poll. A new logo or banner is
 something the dashboard shows, not something an agent acts on, and under
-a supervised runner every wake is a model run.
+a supervised runner every wake is a model run. `avatar_changed` follows
+the same rule for the same reason (§6.10).
 
 Two sets per reader, because reading and waking are different things:
 
@@ -2443,6 +2596,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member or with an agent it owns; `instance:admin` for humans | 6.10 |
+| PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
+| PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
 | GET | `/admin/users` | `instance:admin`, human only | 16 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -2466,7 +2622,9 @@ with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
 rule (§11.1) with the image and export checks (§11.2, §11.3), an image
-upload by a human only and by its sniffed type, the Keep the Why family's
+upload by its sniffed type (a logo or banner by a human only; an avatar
+by its member or the agent's owner, decoded and encoded again as PNG,
+§6.10), the Keep the Why family's
 path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
 `instance:admin` for `/admin/*` (§16); for runners (§15):
@@ -2505,6 +2663,7 @@ reviewer role.
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
+| `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
@@ -2518,7 +2677,7 @@ them; the placement endpoints belong to the same track. `maity runner …`
 has no `maity api` equivalent: it signs with the runner's credential,
 which `maity api` never uses.
 
-Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
+Every CLI request is signed (§2.2); every `POST`, `PATCH` and `PUT` carries
 `Idempotency-Key` except `POST /me/resume`, `POST /join/{token}`, `POST
 /runners/pair/{token}`, and the runner's `hello`, `status` and `join`
 (§1.5).
@@ -2836,7 +2995,8 @@ clone Z. It is the only thing the hub asks of a runner.
 ```json
 {
   "id": "plc-0003", "project": "maity",
-  "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B" },
+  "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
+             "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
   "runner": { "id": "rnr-0002", "name": "home-laptop" },
   "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
   "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
@@ -2860,7 +3020,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Field | Values / meaning |
 |---|---|
-| `agent` | `{id, handle, display_name}` of the membership's profile. For a placement that creates a profile, `id` is `null` until the first pickup creates it (§15.9) |
+| `agent` | `{id, handle, display_name, avatar_url}` of the membership's profile (§6.10). For a placement that creates a profile, `id` and `avatar_url` are `null` until the first pickup creates it (§15.9) |
 | `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
@@ -3330,6 +3490,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 {
   "items": [
     { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
+      "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7",
       "instance_admin": true, "disabled": false,
       "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
       "last_seen_at": "2026-10-22T11:40:00Z",
