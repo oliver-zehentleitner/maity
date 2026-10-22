@@ -888,6 +888,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: a member reads the list without actions; the owner from the members");
   win.Maity.api.get = mGet;
 
+  // Message the project (docs/api.md §8.4): from the inbox, no tab of its own.
+  await go("#/p/maity/inbox");
+  const msgLink = main.querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  expect(msgLink && msgLink.getAttribute("href") === "#/p/maity/message"
+    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the inbox, no tab");
+  const msgPosts = [];
+  const mPost0 = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
+  await go("#/p/maity/message");
+  const toOpts = byId("message-to").querySelectorAll("option").map((o) => o.attrs.value);
+  expect(document.title === "Message the project · Maity · Maity" && toOpts[0] === "all" && toOpts.includes("role:reviewer") && toOpts.includes("agt-b")
+    && !toOpts.includes("hum-maintainer") && byId("message-type").value === "notice", "message: to everyone, a role or a member (not oneself); a notice by default");
+  main.querySelector("form.message-form").dispatch("submit"); await tick();
+  expect(!msgPosts.length && text(main).includes("Not sent: the message is empty"), "message: an empty one is not sent");
+  byId("message-to").value = "role:reviewer"; byId("message-type").value = "handover"; byId("message-card").value = "tsk-0006";
+  byId("message-body").value = "Please look at the join path, @agent-b; mail x@agent-c is no mention.";
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(msgPosts[0]) === JSON.stringify(["/projects/maity/events", { kind: "message", type: "handover", to: "role:reviewer",
+    body: "Please look at the join path, @agent-b; mail x@agent-c is no mention.", task_id: "tsk-0006" }]), "message: the POST as §8.4 has it, no mentions sent");
+  expect(text(main).includes("Sent to every reviewer; mentioned and notified: Agent B.") && byId("message-body").value === "",
+    "message: sent, with whom the hub's mentions told");
+  win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("too many", 400, p, "invalid", { fields: { body: "too_many_mentions" } }));
+  byId("message-body").value = "@agent-a @agent-b";
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(text(main).includes("Not sent: too many mentions: at most 10 members"), "message: the hub's mention cap, in words");
+  win.Maity.api.post = mPost0;
+  // Opened from a chat with the @name in it.
+  await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
+  expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
+
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
   const convs = () => main.querySelectorAll(".chat-list a.conv");

@@ -452,6 +452,34 @@ window.Maity = window.Maity || {};
       const after = query.get("after");
       return { items: [], cursor: after === "latest" ? 0 : Number(after || 0), server_time: nowIso(), superseded: false };
     }],
+    // §8.4: a message. The fixture resolves mentions as §8.6 says (a word
+    // boundary, members only, never in code, no group mentions) and keeps
+    // nothing: there is no feed in fixture mode.
+    ["POST", /^\/projects\/([^/]+)\/events$/, (m, body, path) => {
+      project(m[1], path);
+      const errors = {};
+      if (body.kind !== "message") errors.kind = "unknown";
+      if (!["interface_change", "blocker", "go_request", "review_result", "handover", "notice", "chat"].includes(body.type)) errors.type = "unknown";
+      if (!body.body || !String(body.body).trim()) errors.body = "missing";
+      if ("mentions" in body) errors.mentions = "read_only";
+      const members = file(m[1], "members.json", path).items;
+      if (!(body.to === "all" || /^role:[a-z]+$/.test(body.to || "") || members.some((x) => x.id === body.to))) errors.to = "not_a_member";
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      const text = String(body.body);
+      const code = M.mentionCode ? M.mentionCode(text) : [];
+      const mentions = [];
+      const re = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
+      for (let x = re.exec(text); x; x = re.exec(text)) {
+        const at = x.index + x[1].length;
+        if (body.type === "chat" || code.some(([a, b]) => at >= a && at < b)) continue;
+        const hits = members.filter((mm) => mm.handle === x[2]);
+        if (hits.length !== 1 || ["all", "here", "everyone", "owner"].includes(x[2])) continue;
+        mentions.push({ member_id: hits[0].id, handle: x[2], field: "body", offset: Array.from(text.slice(0, at)).length, length: x[2].length + 1 });
+      }
+      if (new Set(mentions.map((x) => x.member_id)).size > 10 || mentions.length > 50) fail(400, "invalid", "too many mentions", path, { fields: { body: "too_many_mentions" } });
+      return { seq: 9000, kind: "message", at: nowIso(), actor: { member_id: me().member.id },
+        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions } };
+    }],
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path, query) => {
       const keep = statusFilter(query, "open");
       return { items: file(m[1], "requests.json", path).items.filter(keep), next_cursor: null };
