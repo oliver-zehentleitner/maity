@@ -213,3 +213,33 @@ grace deadline by that step, which NTP-synced hosts keep small.
 review proposed. Every persisted value would need converting at save
 and load, and that conversion breaks at a reboot, which is exactly when
 the records matter.
+
+## Agents' tmux runs on a socket in the state directory, sessions named with underscores
+
+**Id:** b4254a67-3690-4365-9e8a-e0daaa3a2425
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.4 (first `-L maity`, `maity-<project>-<clone>`); the coordinator's review of runner slice R3, 2026-10-22 (the name collision); `docs/api.md` §15.5 as amended to `-S`
+**Revisit when:** agents run as their own OS user (the `agent_user` layout), where the server belongs to that user and its socket must lie where both can reach it
+
+The runner's tmux server listens on `tmux -S <state_dir>/tmux.sock`, by
+default (an absolute `tmux_socket` overrides it), not `tmux -L maity`.
+Sessions are named `maity_<project>_<clone>` and matched by their
+`@maity_placement` label, not by name.
+
+**Reason:** `-L` puts the socket in `/tmp/tmux-<uid>/`, which the
+operator's own tmux shares and which a service's private `/tmp` would
+hide after a restart. In the runner's 0700 state directory the socket is
+the runner's alone and survives a service restart along with the agents.
+Project slugs and clone names may both contain `-`, so `maity-ab-cd-ef`
+could be `ab` + `cd-ef` or `ab-cd` + `ef`. One project's live agent would
+then be read as the other's orphan and killed. Both tokens are
+`[a-z0-9-]`, so `_` cannot occur in either, and the label settles any
+doubt.
+
+**Rejected alternatives:**
+- `-L maity`, as first designed: shared directory, and lost under
+  `PrivateTmp`.
+- Keeping `-` and parsing names more cleverly: the split is ambiguous
+  by construction.
