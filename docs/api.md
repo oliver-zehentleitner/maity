@@ -26,7 +26,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the join page at `/j/{token}`; neither is part of the API surface.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
-  the join exchange response (`text/plain`). The HTML rendering of the
+  the join exchange response (`text/plain`) and a project's logo and
+  banner (an image, §11.2). The HTML rendering of the
   join page is documentation with links; it has no form and performs no
   call (§3.2).
 - Timestamps are RFC 3339 in UTC with a `Z` suffix and second precision:
@@ -41,7 +42,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Every response carries `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`. The hub serves no third-party script: the
+  default-src 'self'`. The one exception to `no-store` is the logo and
+  banner (§11.2), which are revalidated by `ETag`. The hub serves no third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/j/{token}`,
@@ -120,10 +122,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
+| 409 | `ktw_not_configured` | the project names no Keep the Why export: no `settings.keep_the_why.state_url`, and the repository has no `.keep-the-why` or no `dashboard-state:` line in it (§11.3) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
+| 503 | `ktw_unavailable` | the Keep the Why export could not be read or was refused (§11.3); `details.reason`, `details.last` holds the last good answer if any |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
@@ -817,13 +821,26 @@ declaration only and refuses nothing.
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true },
+  "logo": { "available": true, "banner": false, "etag": "\"9f2c41d0\"" },
   "keep_the_why": true,
+  "keep_the_why_export": {
+    "source": "repository",
+    "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+    "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+    "observed_at": "2026-10-22T11:40:00Z",
+    "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
+                 "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+                             "superseded": 0, "other": 0 },
+                 "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
+    "error": null
+  },
   "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200 },
   "absence": null,
   "settings": { "release_checklist": ["CHANGELOG has a section for this version",
-                                       "live version equals the tag"] },
+                                       "live version equals the tag"],
+                "keep_the_why": { "state_url": null } },
   "rules_version": 7,
   "created_at": "2026-10-21T07:50:00Z"
 }
@@ -836,11 +853,38 @@ declaration only and refuses nothing.
 | `GET /projects/{slug}` | `project:read` | |
 | `PATCH /projects/{slug}` | `project:admin`; `absence` only by the owner | any of `name`, `repository`, `keep_the_why`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; `reason` required when `state` or `policy` changes |
 | `GET /projects/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and role brief for the caller |
+| `GET /projects/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
+| `GET /projects/{slug}/keep-the-why` | `project:read` | the export's summary and the entries that need attention (§11.3) |
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
 `probe_configured` says whether the hub holds a token for that forge.
 One repository per project in V1.
+
+**Logo** says what the dashboard may ask for instead of drawing a
+monogram: `available` — `GET …/logo` has an image, `banner` — `GET
+…/banner` has one, `etag` — the logo's current `ETag` (absent when
+`available` is false), so a changed image is a new URL for the browser's
+cache (`…/logo?v=<etag>`, the hub ignores the parameter). Both are
+`false` until the hub's first read has an answer. Where the images come
+from and how they are fetched is §11.2.
+
+**Keep the Why export** is the project's published Keep the Why
+dashboard state as the hub last read it (§11.3); `null` when the project
+names none (the `ktw_not_configured` case). `source` is `setting` when
+`settings.keep_the_why.state_url` is set, `repository` when the URL came
+from the repository's `.keep-the-why`. `error` is `null` or
+`{code, reason}` (`ktw_unavailable`, §11.3) — the project view itself
+never fails on the export; `summary` then holds the last good read, or is
+`null`. It is independent of `keep_the_why` (whether joining agents are
+told to use the skill): a project may show the export of a Keep the Why
+it does not ask its agents to maintain.
+
+**Settings**: `release_checklist` (§6.7) and `keep_the_why.state_url` —
+`null` (read the URL from the repository) or an `https` URL that
+overrides it, at most 2048 characters, a host name (no address literal),
+no user info, no port other than 443, otherwise `invalid`. Changing it
+drops the cached export.
 
 **State** is one of `build`, `freeze`, `fixes-only`, `accepted`,
 `archived`; any transition is allowed with a `reason`. It is in every
@@ -1613,6 +1657,184 @@ exists). The same reads feed `report.observed` and
 hub's own interval; an observation that changes a card's state emits
 `probe_observed`.
 
+### 11.1 Outbound reads
+
+Every read the hub makes on its own — the probe, the logo and banner
+(§11.2), the Keep the Why export (§11.3) — follows one transport rule:
+
+- `https` on port 443 only. TLS is verified against the host name.
+- The host is fixed per read: the forge's API host (`api.github.com` for
+  GitHub), the forge's image hosts (§11.2), or the host of the export's
+  state URL. The forge token goes to the API host only; an image host or
+  an export host gets no token, no cookie and no `Authorization` header.
+  Every read carries `User-Agent: maity-hub`.
+- Redirects are followed only to `https` on the same host and port, at
+  most 3; any other redirect ends the read as refused. A state URL must
+  therefore be the final one (a GitHub Pages site that moved to its own
+  domain is named by that domain).
+- No private addresses: the hub resolves the host, refuses the read when
+  any resolved address is not globally routable — loopback, unspecified,
+  private (`10/8`, `172.16/12`, `192.168/16`), shared (`100.64/10`),
+  link-local (`169.254/16` with the cloud metadata address, `fe80::/10`),
+  unique local (`fc00::/7`), multicast, reserved and documentation
+  ranges, and the IPv4-mapped, 6to4 and NAT64 forms of any of them — and
+  connects to the address it checked, never resolving twice. The forge
+  hosts the operator configures are exempt (a self-hosted forge on a
+  private network is the operator's choice); a host a project member or
+  a repository names never is.
+- 10 seconds per read, connect to last byte. The body is read up to its
+  cap and the read is refused at the first byte past it; the cap counts
+  the decoded bytes when the answer is compressed.
+- A failure is reported by a reason code, never by the upstream's body
+  or error text.
+
+The probe's fixed host satisfies the rule as it is; the rule matters for
+the reads whose host comes from data.
+
+### 11.2 Logo and banner
+
+```
+GET /projects/{slug}/logo
+GET /projects/{slug}/banner
+```
+
+Scope `project:read`. The dashboard shows each project with its own image
+in place of Maity's logo. The hub reads the image server-side through the
+forge reader and serves it from its own origin; the browser never loads
+an image from the forge. The project view says whether there is one
+(`logo`, §6.1).
+
+| Forge | Square logo | Banner |
+|---|---|---|
+| GitHub | the owner's avatar: `owner.avatar_url` of `GET /repos/{owner}/{repo}` (GitHub has no repository avatar; this is what `https://github.com/<owner>.png` shows) | the social preview: `openGraphImageUrl` of the GraphQL `repository` object, only when `usesCustomOpenGraphImage` is true (GitHub's generated card is not a banner) |
+| GitLab | the project's `avatar_url`, else the namespace's | none |
+| Gitea, Forgejo (Codeberg) | the repository's `avatar_url`, else the owner's | none |
+
+GitHub is the one forge of V1 (§11); the other rows apply when the
+operator can configure those forges. Image hosts: for GitHub
+`avatars.githubusercontent.com` (avatars) and
+`repository-images.githubusercontent.com` (social previews); for the
+others the forge's own host. An image URL on any other host (a Gravatar
+fallback, a CDN the hub does not know) is no image. The forge token is
+used for the API reads where the hub holds one; without one the hub reads
+without a token where the forge allows it (a public repository on GitHub:
+the REST read works, GraphQL does not, so there is no banner without a
+token), and otherwise has no image. The GraphQL read is a `POST` that
+only queries; the hub still never writes to the forge.
+
+What the hub accepts, whatever the forge said:
+
+- PNG, JPEG or WebP, recognised by their magic bytes (`89 50 4E 47 0D 0A
+  1A 0A`; `FF D8 FF`; `RIFF` … `WEBP`), never by the upstream
+  `Content-Type`. SVG, GIF, HTML and everything else is no image. The hub
+  does not decode or re-encode the image.
+- At most 1 MiB, under the transport rule of §11.1.
+
+The answer is the image bytes with `Content-Type` from the sniffed type
+(`image/png`, `image/jpeg`, `image/webp`), `X-Content-Type-Options:
+nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
+`Cross-Origin-Resource-Policy: same-origin`, `ETag` (a digest of the
+bytes) and `Cache-Control: private, max-age=21600`. A request with a
+matching `If-None-Match` is `304` without a body. The hub keeps an image
+for 6 hours and then reads it again; a failed refresh keeps the last
+image, an answer that there is none drops it.
+
+Errors: `not_found` when there is no image — no repository, nothing at
+the forge, an image the rules above refuse (the dashboard then draws a
+monogram; that is the client's, not the hub's); `probe_unavailable` when
+the forge did not answer and the hub holds no earlier image.
+
+### 11.3 The Keep the Why export
+
+```
+GET /projects/{slug}/keep-the-why
+GET /projects/{slug}/keep-the-why?max_age=0
+```
+
+Scope `project:read`. The project's published Keep the Why dashboard
+state (`state.json`), read-only: the hub reads what the project already
+publishes and never reads or writes `context/` (`context/scope.md`: Keep
+the Why stays external). It holds the export in memory only, never in
+its database, and keeps no copy of the entries beyond the cache below.
+
+**Where the URL comes from.** `settings.keep_the_why.state_url` when set
+(§6.1, `project:admin`); otherwise the `dashboard-state:` line inside the
+`keep-the-why:config` block of the repository's root `.keep-the-why` on
+the default branch, read through the forge's contents API
+(`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with the
+token where the hub holds one, without it where the forge allows (a
+public repository), at most 64 KiB. Neither present: `ktw_not_configured`.
+A URL from the repository must pass the same checks as the setting
+(§6.1), else `ktw_unavailable` with reason `state_url_invalid`.
+
+**The read.** The transport rule of §11.1, at most 1 MiB,
+`Accept: application/json`. The `.keep-the-why` line and the export are
+cached for `max_age` seconds (default 600; `0` forces a fresh read, at
+most one per project every 30 seconds — a closer one answers from the
+cache with `fresh: false`). A failed read keeps the last good answer for
+`details.last` until the hub restarts.
+
+**What the hub relies on.** Unknown keys are ignored, at every level;
+`bodies`, `authors`, `project`, each entry's `git`, `refs`, `see` and the
+rest are never read.
+
+| Key | Used as | Missing or wrong |
+|---|---|---|
+| `state-json` | the export's version: an integer, or a string whose part before the first `.` is one; the hub knows major `2` | `ktw_unavailable`, reason `state_json_version`, `details.version` |
+| `generated` | `summary.generated` when it is an RFC 3339 time | `null` |
+| `entries` | an array of objects | `ktw_unavailable`, reason `shape` |
+| `entries[].id` | a string; the entry's identity | the entry is skipped and counted in `skipped` |
+| `entries[].uuid` | a string; preferred for the link | the link uses `id` |
+| `entries[].title` | a string | `id` |
+| `entries[].type` | a string or an array of strings | `[]` |
+| `entries[].status` | `active`, `open`, `needs-review`, `pending-confirmation`, `superseded` | counted as `other` |
+| `entries[].file`, `entries[].line` | the topic file, and the order within it | `null` |
+| `topics[].file`, `topics[].title` | the topic title of an entry's file | `topic: null` |
+| `findings.errors`, `findings.warnings` | the linter's counts, integers ≥ 0 | `null` |
+
+**Untrusted strings.** Everything from the export is data from outside
+the hub: control characters are removed, `id` is cut at 300 characters,
+`uuid` at 64, `title`, `file` and `topic` at 200, each `type` at 40 and
+the list at 8, a cut string ends in `…`. The hub answers JSON only and
+the dashboard renders these strings as text (`web/context/rendering.md`),
+never as HTML. The hub takes no URL from the export: `dashboard_url` is
+the state URL without its last path segment, query and fragment, and an
+entry's `link` is `dashboard_url` + `#entry/` + the percent-encoded
+`uuid` (else `id`) — the published dashboard's own entry anchor.
+
+```json
+{
+  "source": "repository",
+  "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+  "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+  "observed_at": "2026-10-22T11:40:00Z",
+  "fresh": true,
+  "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
+               "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+                           "superseded": 0, "other": 0 },
+               "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
+  "attention": [
+    { "id": "hub.md#…", "uuid": "…", "title": "…", "type": ["question"], "status": "open",
+      "file": "hub.md", "topic": "Hub", "link": "https://maity.dev/keep-the-why-dashboard/#entry/…" }
+  ],
+  "truncated": false,
+  "skipped": 0
+}
+```
+
+`summary` is the same object the project view carries (§6.1).
+`summary.entries` counts the entries read, `summary.attention` those with
+status `open`, `needs-review` or `pending-confirmation`. `attention`
+lists them — `needs-review` first, then `pending-confirmation`, then
+`open`, each by `file` and `line` — at most 200, then `truncated: true`.
+
+Errors: `ktw_not_configured`; `ktw_unavailable` with `details.reason`
+one of `forge_unavailable` (the `.keep-the-why` read failed),
+`state_url_invalid`, `address_refused`, `redirect_refused`, `timeout`,
+`http_status` (with `details.status`), `too_large`, `not_json`,
+`state_json_version`, `shape`, and `details.last` — the last good answer
+in the shape above — when there is one.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -1674,6 +1896,8 @@ hub's own interval; an observation that changes a card's state emits
 | POST | `/runner/placements/{id}/status` | runner | 15.8 |
 | POST | `/runner/placements/{id}/join` | runner | 15.9 |
 | PATCH | `/runner` | runner | 15.8 |
+| GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
+| GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
@@ -1689,7 +1913,8 @@ flight, `ready` from observed state only, closed-project refusal, a
 reason on cards and claims in `freeze`/`fixes-only`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
-verified leak, `absence` written by the owner only; for runners (§15):
+verified leak, `absence` written by the owner only, the outbound read
+rule (§11.1) with the image and export checks (§11.2, §11.3); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
