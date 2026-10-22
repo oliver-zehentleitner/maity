@@ -123,6 +123,50 @@ window.Maity = window.Maity || {};
     return r;
   }
 
+  let taskSerial = 0;
+  // tasks:admin and tasks:review, by the human's role in a project (§2.3).
+  const roleIn = (slug) => (me().projects.find((p) => p.slug === slug) || {}).role;
+  const tasksAdmin = (slug) => ["owner", "admin"].includes(roleIn(slug));
+  const tasksReview = (slug) => ["owner", "admin", "reviewer"].includes(roleIn(slug));
+
+  // A card's PATCH as the hub checks it (hub cards.check_transition).
+  function patchCard(slug, id, body, path) {
+    const list = file(slug, "tasks.json", path).items;
+    const card = list.find((x) => x.id === id);
+    if (!card) fail(404, "not_found", "no such card", path);
+    const meId = me().member.id;
+    const holds = !!(card.claim && card.claim.holder === meId);
+    const keys = Object.keys(body);
+    const reviewMove = keys.length === 1 && keys[0] === "status" && card.status === "review" && ["done", "in_progress"].includes(body.status);
+    const authority = project(slug, path).policy.done_authority;
+    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : tasksAdmin(slug);
+    const editor = holds || card.created_by === meId || tasksAdmin(slug);
+    if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
+    if ("status" in body && body.status !== card.status) {
+      const from = card.status;
+      const to = body.status;
+      const closed = ["done", "cancelled"];
+      if (to === "cancelled" && !closed.includes(from)) {
+        if (!(tasksAdmin(slug) || (from === "open" && card.created_by === meId))) fail(403, "forbidden", "cancelling this card needs tasks:admin", path, { scope: "tasks:admin" });
+      } else if ((from === "proposed" && to === "open") || (from === "open" && to === "proposed")) {
+        // the simple ones
+      } else if (from === "review" && (to === "done" || to === "in_progress")) {
+        if (!hasAuthority) fail(403, "forbidden", "this needs done authority", path, { scope: "tasks:review" });
+      } else if (!(from === "in_progress" && to === "done" && authority === "holder" && holds)) {
+        fail(409, "invalid_transition", "not a transition the hub allows", path, { from, to });
+      }
+      if (to === "done") {
+        const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
+        if (open.length) fail(409, "dependencies_open", "a dependency is open", path, { open });
+      }
+      card.status = to;
+      card.closed_at = closed.includes(to) ? nowIso() : null;
+    }
+    ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    card.updated_at = nowIso();
+    return card;
+  }
+
   // A release card that may still change: closed ones are a record.
   function releaseCard(slug, id, path) {
     const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
@@ -422,6 +466,7 @@ window.Maity = window.Maity || {};
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
+      if (!body.release) return patchCard(m[1], m[2], body, path);
       const card = releaseCard(m[1], m[2], path);
       const rel = card.release;
       if (body.release && body.release.checklist) {
@@ -455,6 +500,44 @@ window.Maity = window.Maity || {};
         });
         rel.pull_requests = kept.sort((a, b) => a.number - b.number);
       }
+      card.updated_at = nowIso();
+      return card;
+    }],
+    // §6.4: a new card. assigned_to needs tasks:admin; freeze and fixes-only need a reason.
+    ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
+      const proj = project(m[1], path);
+      if (["accepted", "archived"].includes(proj.state)) fail(409, "project_closed", "the project is closed", path);
+      const list = file(m[1], "tasks.json", path).items;
+      const errors = {};
+      if (!body.title || !String(body.title).trim()) errors.title = "missing";
+      if (body.label && !["fix", "feature", "chore"].includes(body.label)) errors.label = "unknown";
+      if (body.status && !["proposed", "open"].includes(body.status)) errors.status = "unknown";
+      if (["freeze", "fixes-only"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
+      if (body.assigned_to) {
+        if (!tasksAdmin(m[1])) fail(403, "forbidden", "assigning needs tasks:admin", path, { scope: "tasks:admin" });
+        if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assigned_to)) errors.assigned_to = "not_a_member";
+      }
+      [...(body.depends_on || []), ...(body.ships_with || [])].forEach((id) => { if (!list.some((t) => t.id === id)) errors.depends_on = "unknown"; });
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      taskSerial += 1;
+      const at = nowIso();
+      const card = { id: "tsk-f" + String(taskSerial).padStart(3, "0"), kind: body.kind || "task", title: body.title.trim(), body: body.body || "",
+        label: body.label || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
+        assigned_to: body.assigned_to || null, claim: null, checkpoint: null, depends_on: body.depends_on || [], ships_with: body.ships_with || [],
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, mentions: [], created_at: at, updated_at: at, closed_at: null };
+      // ships_with is symmetric: the hub mirrors it on the other card.
+      card.ships_with.forEach((id) => { const o = list.find((t) => t.id === id); o.ships_with = [...new Set([...(o.ships_with || []), card.id])]; });
+      list.unshift(card);
+      return card;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/assign$/, (m, body, path) => {
+      if (!tasksAdmin(m[1])) fail(403, "forbidden", "assigning needs tasks:admin", path, { scope: "tasks:admin" });
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assignee)) fail(400, "invalid", "not a member", path, { fields: { assignee: "not_a_member" } });
+      if (card.claim && !card.claim.expired && card.claim.holder !== body.assignee) fail(409, "lease_active", "the claim's lease is live", path);
+      card.assigned_to = body.assignee;
+      if (card.claim && card.claim.expired) card.claim = Object.assign({}, card.claim, { holder: body.assignee, expired: false });
       card.updated_at = nowIso();
       return card;
     }],

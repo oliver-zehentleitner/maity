@@ -712,6 +712,7 @@ def scenario(run: Run, page: Page) -> None:
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
     images_step(run, page, alpha)
+    board_cards_step(run, page)
 
     why_step(run, page, alpha)
     runners_step(run, page)
@@ -1130,6 +1131,38 @@ def runners_step(run: Run, page: Page) -> None:
     expect(page.locator("article.runner")).to_have_count(0)
     run.shot(page, "runners-removed")
     no_problems(run, "runners")
+
+
+def board_cards_step(run: Run, page: Page) -> None:
+    """Cards from the board (docs/api.md §6.4): create, move by menu and by dragging."""
+    run.step("board: the owner writes a card, moves it with the menu, drags it to a refused and an allowed column")
+    page.goto(f"{run.base}/#/p/e2e-alpha/board")
+    page.get_by_role("button", name="New card", exact=True).click()
+    page.locator("#new-card-title").fill("E2E: a card from the board")
+    page.locator("#new-card-area").fill("web/")
+    page.locator("#new-card-status").select_option("proposed")
+    run.a11y(page, "board, new card")
+    page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
+    view = page.locator("main section.view-board")
+    expect(view.locator(".send-status").first).to_contain_text("created in proposed")
+    card = page.locator("article.card", has_text="E2E: a card from the board")
+    proposed = page.locator('section.column[data-status="proposed"]')
+    expect(proposed.locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
+    # The menu, the keyboard's way: proposed to open, the focus stays on the menu.
+    card.locator("form.card-move select").select_option("open")
+    card.locator("form.card-move").get_by_role("button", name="Move", exact=True).click()
+    opened = page.locator('section.column[data-status="open"]').locator("article.card", has_text="E2E: a card from the board")
+    expect(opened).to_be_visible()
+    expect(opened.locator("form.card-move select")).to_be_focused()
+    # Dragging to a column it may not go to is refused, and nothing is sent.
+    opened.drag_to(page.locator('section.column[data-status="done"]'))
+    expect(view.locator(".send-status").first).to_contain_text("cannot go to Done")
+    expect(page.locator('section.column[data-status="open"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
+    # And to one it may: cancelled.
+    opened.drag_to(page.locator('section.column[data-status="cancelled"]'))
+    expect(page.locator('section.column[data-status="cancelled"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
+    run.shot(page, "board-cards")
+    no_problems(run, "board cards")
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:

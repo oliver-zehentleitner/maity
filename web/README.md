@@ -79,6 +79,25 @@ Inside a project, in the order of their importance; see
    Without a forge probe the hub observes nothing, and the card says so:
    such a release is never ready and can be cancelled but not done. A
    closed release is marked as the record frozen at its close.
+
+   **Managing cards** (`docs/api.md` §6.4). **New card** opens a form:
+   title, body (Markdown), kind (task or context round), label, area (the
+   members' areas offered), proposed or open, assigned to (only with
+   `tasks:admin`; else the hub routes by area), depends on and ships
+   with, and — in `freeze` or `fixes-only` — the reason the hub asks for.
+   Each card a human may move has a **Move** menu with exactly the moves
+   the hub allows them (mirroring its transition check): proposed ↔ open
+   for its creator, holder or an admin; review → done or back to work
+   with done authority under the policy; cancel for an admin, or the
+   creator of an open card. A pointer can drag the card instead: the
+   columns it may go to are marked while dragging and the others
+   dimmed; a drop on one of those is refused in words and sends nothing.
+   There is no order within a column. With `tasks:admin` a card can be
+   assigned or reassigned (`POST …/assign`; a live lease is said, not
+   taken over). The hub's refusals (`invalid_transition`,
+   `dependencies_open`, …) are said in words; after a move the board is
+   read again and the focus stays on the card's menu. The board can be
+   filtered by member (assigned or holding) and by area.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
@@ -479,6 +498,7 @@ web/
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all
+├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
 ├── js/agents.js      (3) agents and presence
 ├── js/org.js         (4) organisation tree

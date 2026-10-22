@@ -326,6 +326,19 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prs td:first-child { overflow-wrap: break-word; }
 .groups .unknown { color: var(--muted); }
 .release-edit { margin-top: 6px; }
+/* Managing cards: the actions at the card's foot, the drop targets while dragging. */
+.card-actions { display: grid; gap: 6px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.card-move, .card-assign { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.card-move label, .card-assign label { font-size: 0.8rem; color: var(--muted); margin-inline-end: auto; }
+.card-move select, .card-assign select { flex: 1 1 8rem; min-width: 0; }
+.card.movable { cursor: grab; }
+.column.drop-ok { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.column.drop-over { background: var(--surface-2); }
+.column.drop-refused { opacity: 0.45; }
+.board-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.board-filter label { font-size: 0.85rem; color: var(--muted); }
+.new-card { margin-bottom: 16px; }
+.new-card select[multiple] { min-height: 5rem; }
 .release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
