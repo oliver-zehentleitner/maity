@@ -85,6 +85,7 @@ human = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("password_hash", String(255), nullable=False),  # scrypt, with parameters and salt
     Column("created_at", UtcDateTime, nullable=False),
+    Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
     **MYSQL_TABLE,
 )
@@ -444,6 +445,7 @@ card = Table(
     Column("kind", String(32), nullable=False),
     Column("title", String(TITLE), nullable=False),
     Column("body", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
     Column("status_before_block", String(16)),
@@ -503,6 +505,7 @@ request = Table(
     Column("title", String(TITLE), nullable=False),
     Column("summary", MARKDOWN_TEXT),
     Column("tried", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),  # resolved from `summary` and `tried` (§8.6)
     Column("options", JSON_VALUE, nullable=False),
     Column("priority", String(16), nullable=False),
     # `to`: a member, a role, or the project's owner.

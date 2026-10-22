@@ -51,6 +51,7 @@ def test_a_message_is_an_event_to_its_addressees_and_its_sender(
         "body": "the contract is unclear",
         "conversation_id": None,
         "task_id": card["id"],
+        "mentions": [],
     }
     assert event["actor"]["member_id"] == agent.id
     assert event["subject"] == {"type": "task", "id": card["id"]}

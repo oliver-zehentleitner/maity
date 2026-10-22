@@ -209,16 +209,23 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
     return live, latest
 
 
-def member_view(conn: Connection, row: Any, *, briefing: bool = False) -> dict[str, Any]:
+def member_view(
+    conn: Connection, row: Any, *, briefing: bool = False, details: bool = False
+) -> dict[str, Any]:
     """The member view of §6.2: the principal, the membership, the live session.
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
-    an event that goes to everyone; the caller decides."""
-    return member_views(conn, [row], briefing=briefing)[0]
+    an event that goes to everyone; the caller decides. `details` adds `owner` and
+    `credentials`, for `members:admin` and an agent's owner, never in an event."""
+    return member_views(conn, [row], briefing=briefing, details=details)[0]
 
 
 def member_views(
-    conn: Connection, rows: Sequence[Any], *, briefing: bool | Callable[[Any], bool] = False
+    conn: Connection,
+    rows: Sequence[Any],
+    *,
+    briefing: bool | Callable[[Any], bool] = False,
+    details: bool | Callable[[Any], bool] = False,
 ) -> list[dict[str, Any]]:
     """`member_view` for several membership rows, with a fixed number of queries;
     `briefing` for every row, or per row through a predicate."""
@@ -244,6 +251,11 @@ def member_views(
     principals = principal_ids(conn, (r.reports_to for r in rows))
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
+    detailed = [
+        r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
+    ]
+    owners = _owners(conn, {r.agent_id: agents[r.agent_id] for r in detailed})
+    counted = _credential_counts(conn, {r.id for r in detailed})
     views = []
     for row in rows:
         head = (
@@ -292,8 +304,61 @@ def member_views(
             view["removed_at"] = ts(row.removed_at)
         if briefing(row) if callable(briefing) else briefing:
             view["briefing"] = row.briefing
+        if details(row) if callable(details) else details:
+            view["owner"] = owners.get(row.agent_id) if row.agent_id else None
+            view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
         views.append(view)
     return views
+
+
+NO_CREDENTIALS = {
+    "active": 0,
+    "never_resumed": 0,
+    "revoked_recent": 0,
+    "last_used_at": None,
+    "last_used_via": None,
+}
+REVOKED_LISTED = timedelta(days=30)  # how long §10 keeps listing a revoked credential
+
+
+def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Per agent profile its human as `{id, handle, display_name}` (§6.2)."""
+    owner_ids = {a.owner_id for a in agents.values()}
+    if not owner_ids:
+        return {}
+    humans = {
+        h.id: {"id": h.id, "handle": h.handle, "display_name": h.display_name}
+        for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
+    }
+    return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
+
+
+def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
+    """Counts and times of a membership's agent credentials, never an id or a secret."""
+    if not membership_ids:
+        return {}
+    recent = clock.now() - REVOKED_LISTED
+    counted: dict[int, dict[str, Any]] = {}
+    for c in conn.execute(
+        select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
+    ):
+        found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
+        if c.revoked_at is not None:
+            if c.revoked_at >= recent:
+                found["revoked_recent"] += 1
+            continue
+        found["active"] += 1
+        if c.resumed_at is None:
+            found["never_resumed"] += 1
+        if c.last_used_at is not None and (
+            found["last_used_at"] is None or c.last_used_at > found["_latest"]
+        ):
+            found["_latest"] = c.last_used_at
+            found["last_used_at"] = ts(c.last_used_at)
+            found["last_used_via"] = c.last_used_via
+    for found in counted.values():
+        found.pop("_latest", None)
+    return counted
 
 
 def human_paused(row: Any) -> bool:
@@ -407,6 +472,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "kind": row.kind,
                 "title": row.title,
                 "body": row.body,
+                "mentions": row.mentions or [],
                 "label": row.label,
                 "status": row.status,
                 "area": row.area,
