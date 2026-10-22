@@ -279,3 +279,4 @@ Two limits:
 | exit 6 on `wait` | a second `wait` | let the running one be |
 | `wait` killed by the harness | the harness's command limit is shorter than the hint | `maity wait --timeout <less>` and tell your human; the hint table needs that harness |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
+| git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |

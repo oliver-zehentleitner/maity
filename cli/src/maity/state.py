@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import stat
 import tempfile
 from pathlib import Path
@@ -68,7 +69,7 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
         return Path(override).expanduser().resolve()
     base = cwd or Path.cwd()
     try:
-        result = proc.run(["git", "rev-parse", "--git-common-dir"], base)
+        result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)
     except proc.ToolError as exc:
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
@@ -137,6 +138,32 @@ def write_file(path: Path, text: str) -> Path:
     is created 0700 when missing and taken as it is otherwise."""
     _atomic_write(path, text, private_dir=False)
     return path
+
+
+def secret_once(path: Path) -> str:
+    """A random secret kept in `path` (0600, its directory 0700): created on first use, by
+    exactly one of two processes that race for it, and read back afterwards. Refused like a
+    credential when others can reach it."""
+    if not path.exists():
+        _ensure_dir(path.parent)
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(secrets.token_hex(32) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            try:
+                os.link(tmp, path)  # fails when another process was first: theirs stands
+            except FileExistsError:
+                pass
+        finally:
+            tmp.unlink(missing_ok=True)
+    check_private(path, "delete it, and a new one is made")
+    value = path.read_text(encoding="utf-8").strip()
+    if len(value) < 32:
+        raise StateError(f"{path} does not hold a secret; delete it, and a new one is made")
+    return value
 
 
 def credential_path(state_dir: Path) -> Path:

@@ -179,6 +179,16 @@ window.Maity = window.Maity || {};
     return card;
   }
 
+  let attachSerial = 0;
+  const activeAttachments = (slug) => runnersFile().attachments
+    .filter((a) => a.project === slug && !a.detached_at)
+    .sort((x, y) => runnerOf(x.runner_id, "").name.localeCompare(runnerOf(y.runner_id, "").name));
+  function attachmentView(a) {
+    const counts = (runnersFile().active_placements || {})[a.runner_id] || {};
+    return { id: a.id, runner: runnerOf(a.runner_id, ""), project: a.project, attached_by: a.attached_by,
+      attached_at: a.attached_at, detached_at: a.detached_at, active_placements: a.detached_at ? 0 : counts[a.project] || 0 };
+  }
+
   // A release card that may still change: closed ones are a record.
   function releaseCard(slug, id, path) {
     const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
@@ -416,8 +426,39 @@ window.Maity = window.Maity || {};
         r.credential_state = "revoked";
         r.removed_at = nowIso();
         r.projects = [];
+        runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
       return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+    }],
+    // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
+    ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: activeAttachments(m[1]).map(attachmentView), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      const r = runnersFile().items.find((x) => x.id === body.runner_id && !x.removed_at);
+      if (!r || r.owner_id !== me().member.id) fail(400, "invalid", "attach one of your own runners", path, { fields: { runner_id: "not_yours" } });
+      const open = activeAttachments(m[1]).find((a) => a.runner_id === r.id);
+      if (open) fail(409, "already_attached", "the runner is attached already", path, { attachment: attachmentView(open) });
+      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: m[1],
+        attached_by: me().member.id, attached_at: nowIso(), detached_at: null };
+      runnersFile().attachments.push(a);
+      r.projects = (r.projects || []).concat(m[1]);
+      return attachmentView(a);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/runners\/([^/]+)$/, (m, body, path) => {
+      const all = runnersFile().attachments.filter((x) => x.project === m[1] && x.runner_id === m[2]);
+      if (!all.length) fail(404, "not_found", "the runner was never attached here", path);
+      const a = all.find((x) => !x.detached_at) || all[all.length - 1];
+      if (!a.detached_at) {
+        a.detached_at = nowIso();
+        const r = runnerOf(m[2], path);
+        r.projects = (r.projects || []).filter((s) => s !== m[1]);
+        const counts = (runnersFile().active_placements || {})[r.id];
+        if (counts) delete counts[m[1]];
+      }
+      return attachmentView(a);
     }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
@@ -501,6 +542,17 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if ("repository" in body) {
+        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
+        if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
+        }
+        const same = p.repository && p.repository.url === url;
+        p.repository = url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        // The export follows the repository; a new one has not been read yet.
+        if (!same && "keep_the_why_export" in p) p.keep_the_why_export = null;
+      }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
         if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });

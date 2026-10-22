@@ -214,3 +214,70 @@ newer hub added.
 role and a reports-to change that belong together would land as two
 writes, and a failure in between leaves half a change. Sending every
 field every time — a stale form would overwrite a change made meanwhile.
+
+## The chat's history: days apart, a sender's run grouped, and the line before what was unread when it opened
+
+**Id:** abe93ad2-1a75-4abc-a5d0-70e074d17335
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's chat feedback relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub gives a conversation a read marker of its own (then the line comes from it), or group chats need another grouping
+
+The open chat draws its history with a separator per day ("Today",
+"Yesterday", else the date), groups a sender's messages that follow
+within five minutes (the picture and name only on the first), and puts a
+"New messages" line before the first of the agent's messages that were
+unread when the chat was opened. The history is read to its end, in
+pages of 200, because the hub returns the oldest page first and the
+unread messages are at the end. A button back to the newest shows when
+the human has scrolled up, with the count of what arrived meanwhile;
+someone else's message never moves the view, and the button hands the
+focus to the composer when it goes. An unread count that cannot be read
+draws no line and is said.
+
+**Reason:** the hub marks a conversation read when its messages are
+returned (docs/api.md §9), so the unread count has to be read from the
+conversation list before the messages are; that count is "the agent's
+last n messages", which is where the line goes. Five minutes keeps a
+burst of an agent's replies together without merging separate exchanges.
+
+**Rejected alternative:** a "new" line kept from the last visit in this
+browser — it would disagree with the unread count the list shows, and
+another device would never see it. Grouping by a fixed number of
+messages — a long pause would hide that the agent came back later.
+
+## Project → Runners is the project admin's tab; refreshes redraw in place, and a missing list fails loud
+
+**Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+
+The tab is offered to owner and admin only (`members:admin`), although
+the hub also lets a runner's owner detach it. In V1 the only human is
+the owner, so nobody is left out yet. Allowing is the hub's grant; the
+runner checks its own `[limits] projects` again. A runner the hub allows
+but whose configuration does not list the project is therefore warned
+about: it starts nothing here.
+
+Presence and placements send no events, so the view re-reads every 30
+seconds. A card is redrawn only when its data changed, the focus stays
+on the same control, and the Allow form is rebuilt only when the set of
+free runners changes, keeping the runner chosen. Detach reads the count
+of agents again before it asks. A 404 on the list is an error like any
+other: the dashboard ships with its hub, which has attachments.
+
+**Reason:** a redraw every 30 seconds that rebuilds the form takes the
+choice and the focus away from someone using a keyboard or a screen
+reader, and an Enter after it could allow the wrong runner. A 404 that
+reads as "not yet" would hide a broken route now that the hub has it.
+
+**Rejected alternative:** the tab for every member, with Detach where
+the hub allows it. In V1 that only adds a view nobody else can use, and
+an Allow nobody but the admin may send. Treating a 404 as an older hub:
+that was right before the hub had attachments, and today it only
+covers a regression.

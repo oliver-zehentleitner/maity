@@ -550,6 +550,101 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "users: no link and no list for anyone else");
   win.Maity.api.get = uGet;
   await go("#/p/maity/inbox");
+  // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
+  const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
+  expect(prTab() && prTab().getAttribute("href") === "#/p/maity/runners", "project runners: a tab for the project's admin");
+  const prWrites = [];
+  const prPost = win.Maity.api.post, prDel = win.Maity.api.del;
+  win.Maity.api.post = (p, b) => { prWrites.push(["POST", p, b]); return prPost(p, b); };
+  win.Maity.api.del = (p) => { prWrites.push(["DELETE", p]); return prDel(p); };
+  await go("#/p/maity/runners"); await tick();
+  const prCard = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
+  expect(document.title === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
+    "project runners: the attached runners, by name");
+  const prLaptop = text(prCard("home-laptop"));
+  expect(prLaptop.includes("online") && prLaptop.includes("1 agent running here") && prLaptop.includes("Claude Code 2.1.308")
+    && prLaptop.includes("Agents on home-laptop run as one user, oliver") && !prLaptop.includes("does not allow"),
+    "project runners: presence, agents running here, capabilities in plain words");
+  expect(text(prCard("cluster")).includes("Its credential was revoked: it starts nothing until it is paired again"), "project runners: a revoked runner says it starts nothing");
+  const prAllN = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAllN(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "cluster" ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { credential_state: "none" }) }) : a)), next_cursor: null }))
+    : prAllN(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(text(prCard("cluster")).includes("It has not been paired yet: it starts nothing until it is") && !text(prCard("cluster")).includes("again"),
+    "project runners: a runner never paired is not told to pair again");
+  win.Maity.api.getAll = prAllN;
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  const prSelect = byId("allow-runner");
+  expect(prSelect && prSelect.querySelectorAll("option").length === 1 && prSelect.value === "rnr-0003", "project runners: only the own runners not attached here are offered");
+  // The 30-second refresh leaves an unchanged Allow form and the focused Detach where they are.
+  const prProto = Object.getPrototypeOf(prSelect);
+  const prFocus = prProto.focus;
+  prProto.focus = function () { document.activeElement = this; };
+  const clusterDetach = btn(prCard("cluster"), "Detach");
+  clusterDetach.focus();
+  const prAll0 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAll0(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "cluster" ? Object.assign({}, a, { active_placements: 3 }) : a)), next_cursor: null }))
+    : prAll0(p));
+  await fireIntervals(); await tick(); await tick();
+  expect(byId("allow-runner") === prSelect && text(prCard("cluster")).includes("3 agents running here") && document.activeElement !== clusterDetach
+    && document.activeElement === btn(prCard("cluster"), "Detach"), "project runners: a refresh redraws a changed card and keeps the Allow form and the focus on the same Detach");
+  win.Maity.api.getAll = prAll0;
+  main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(document.activeElement === main.querySelector(".view-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")),
+    "project runners: after an action the status line has the focus");
+  prProto.focus = prFocus; document.activeElement = undefined;
+  expect(JSON.stringify(prWrites[0]) === JSON.stringify(["POST", "/projects/maity/runners", { runner_id: "rnr-0003" }]) && prCard("build-box")
+    && text(prCard("build-box")).includes("Its own configuration does not allow maity, so it starts nothing here"),
+    "project runners: allowed, and warned where its own configuration does not allow the project");
+  expect(text(main).includes("All your runners are allowed here."), "project runners: nothing left to allow");
+  let prAsked = "";
+  const prConfirm = win.confirm;
+  win.confirm = (q) => { prAsked = q; return true; };
+  // The count is read when Detach is pressed: an agent started meanwhile is named.
+  const prAll1 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners"
+    ? prAll1(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "home-laptop" ? Object.assign({}, a, { active_placements: 2 }) : a)), next_cursor: null }))
+    : prAll1(p));
+  win.confirm = (q) => { prAsked = q; return false; };
+  btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked.includes("of the 2 agents it runs here"), "project runners: the confirmation names the agents running now, not at the last refresh");
+  win.Maity.api.getAll = prAll1;
+  win.confirm = (q) => { prAsked = q; return true; };
+  btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked === "Detach home-laptop from Maity? The hub closes the placement of the 1 agent it runs here, and the runner stops it."
+    && JSON.stringify(prWrites[1]) === JSON.stringify(["DELETE", "/projects/maity/runners/rnr-0002"]) && !prCard("home-laptop"),
+    "project runners: detaching names the agents it stops");
+  btn(prCard("build-box"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked === "Detach build-box from Maity? Nothing runs on it here.", "project runners: detaching a runner with nothing running says so");
+  win.confirm = () => false;
+  btn(prCard("cluster"), "Detach").click(); await tick();
+  expect(prWrites.length === 3 && prCard("cluster"), "project runners: a declined detach sends nothing");
+  win.confirm = prConfirm;
+  // A runner attached meanwhile (another tab): said, and the list re-read.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("the runner is attached already", 409, p, "already_attached", {}));
+  main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("It was allowed here already."), "project runners: already attached is no failure");
+  // Put the fixtures back for the instance-level view.
+  win.Maity.api.post = prPost; win.Maity.api.del = prDel;
+  await prPost("/projects/maity/runners", { runner_id: "rnr-0002" });
+  // A refusal fails loud, as in every view; the empty state; no tab for a member.
+  const prAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : prAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(main.querySelector(".error") && !text(main).includes("cannot allow runners"), "project runners: a 404 is an error, not a missing feature");
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" || p === "/runners" ? Promise.resolve({ items: [], next_cursor: null }) : prAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page."),
+    "project runners: the empty state points to pairing");
+  win.Maity.api.getAll = prAll;
+  const prGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : prGet(p));
+  await go("#/p/maity/runners"); await tick();
+  expect(!prTab() && text(main).includes("No such view."), "project runners: no tab and no view for a member");
+  win.Maity.api.get = prGet;
+  await go("#/p/maity/agents");
 
   // Runners (docs/api.md §15): the instance-level view.
   const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
@@ -1276,8 +1371,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
     "chat: Quote puts the message into the composer as a quote");
   byId("chat-text").value = ""; byId("chat-text").dispatch("input");
+  // The history: a day separator, the line before what was unread, the agent's picture.
+  const histItems = main.querySelector("ol.messages").childNodes.map((li) => li.className);
+  expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
+    "chat: a day separator, then 'New messages' before the agent's unread reply " + JSON.stringify(histItems));
+  expect(main.querySelector("li.msg.in .msg-avatar svg") && !main.querySelector("li.msg.out .msg-avatar"), "chat: the agent's messages carry its picture, one's own none");
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
+  // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
+  const hGet = win.Maity.api.get;
+  const at = (min) => new Date(Date.parse("2026-10-21T10:00:00Z") + min * 60000).toISOString();
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=") ? Promise.resolve({ cursor: 5, items: [
+    { id: "e1", seq: 1, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "one", sent_at: at(0), delivered_at: at(0) },
+    { id: "e2", seq: 2, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "two", sent_at: at(2), delivered_at: at(2) },
+    { id: "e3", seq: 3, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "later", sent_at: at(20), delivered_at: at(20) },
+    { id: "e4", seq: 4, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "next day", sent_at: at(24 * 60), delivered_at: at(24 * 60) },
+  ] }) : hGet(p));
+  await go("#/p/maity/chat/agt-c");
+  const gl = main.querySelector("ol.messages").childNodes.map((li) => li.className);
+  expect(JSON.stringify(gl) === JSON.stringify(["day", "msg in", "msg in grouped", "msg in", "day", "msg in"])
+    && !main.querySelectorAll("li.msg")[1].querySelector(".msg-avatar"), "chat: within five minutes grouped without the picture again; a new day separated " + JSON.stringify(gl));
+  win.Maity.api.get = hGet;
+  // A history longer than a page is read to its end; the unread line stands before the unread ones there.
+  const longMsg = (seq) => ({ id: "l" + seq, seq, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "m" + seq, sent_at: at(seq), delivered_at: at(seq) });
+  const longReads = [];
+  win.Maity.api.get = (p) => {
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 200, items: Array.from({ length: 200 }, (_, i) => longMsg(i + 1)) }); }
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) }); }
+    return hGet(p);
+  };
+  const hAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations"
+    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3 }) : c)), next_cursor: null })) : hAll(p));
+  await go("#/p/maity/chat/agt-c");
+  const histList = main.querySelector("ol.messages");
+  const nl = histList.childNodes.findIndex((li) => li.className === "new-line");
+  expect(longReads.length === 2 && histList.querySelectorAll("li.msg").length === 203 && nl > 0
+    && histList.childNodes[nl + 1].attrs["data-seq"] === "201", "chat: the history is read to its end, the unread line before the first unread at the end");
+  // The unread count that cannot be read draws no line, and says so.
+  win.Maity.api.get = hGet;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
+  await go("#/p/maity/chat/agt-a");
+  expect(!main.querySelector("li.new-line") && text(main).includes("Which messages are new could not be read: down"), "chat: a failed unread read is said");
+  win.Maity.api.getAll = hAll;
+  await go("#/p/maity/chat/agt-b");
+  expect(text(main.querySelector("ol.messages")).includes("No messages yet.") && text(main.querySelector("ol.messages")).includes("reads what you write here at its next wait or resume"),
+    "chat: an empty chat says when the agent reads it");
+  await go("#/p/maity/chat/agt-a");
   // A draft per chat survives switching to another chat and back.
   main.querySelector("textarea").value = "half a thought"; main.querySelector("textarea").dispatch("input");
   await go("#/p/maity/chat/agt-d");
@@ -1383,6 +1523,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".msg.out").find((li) => li.textContent.includes("One more.")).textContent.includes("reached a session"),
     "the window's focus marks a pending message as picked up");
   win.Maity.api.get = feedStub;
+  // A long chat, scrolled up: arriving messages leave the view where it is (Newest, below).
+  const nGet2 = win.Maity.api.get;
+  let arriving = [];
+  win.Maity.api.get = (p) => {
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) return Promise.resolve({ cursor: 203, items: Array.from({ length: 203 }, (_, i) => longMsg(i + 1)).slice(0, 200) });
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) });
+    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=")) { const items = arriving; arriving = []; return Promise.resolve({ cursor: 205, items }); }
+    return nGet2(p);
+  };
+  await go("#/p/maity/chat/agt-c");
+  const longList = main.querySelector("ol.messages");
+  // Scrolled up, two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
+  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 100 });
+  arriving = [longMsg(204), longMsg(205)];
+  feed = [{ seq: 204, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const jumpBtn = main.querySelector(".jump-latest");
+  expect(longList.querySelectorAll("li.msg").length === 205 && longList.scrollTop === 100 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
+    "chat: two messages arriving while scrolled up leave the view where it is and count both " + jumpBtn.textContent);
+  const jProto = Object.getPrototypeOf(jumpBtn);
+  const jFocus = jProto.focus;
+  jProto.focus = function () { document.activeElement = this; };
+  jumpBtn.click(); await tick();
+  expect(jumpBtn.hidden && longList.scrollTop === 5000 && document.activeElement === byId("chat-text"), "chat: Newest goes to the end and puts the focus in the composer");
+  jProto.focus = jFocus; document.activeElement = undefined;
+  win.Maity.api.get = nGet2;
 
   // The feed in other views: someone else's card event offers a reload,
   // one's own does not; a request event re-reads the counts at once.
@@ -1630,6 +1796,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "logo: without logos on /me, the project views are read and the logo still shows");
   win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
+  // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the forge.
+  const repoPatches = [];
+  const repoRealPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if ("repository" in b) repoPatches.push(b); return repoRealPatch(p, b); };
+  await go("#/p/maity/inbox"); await projectSettings();
+  const repoIn = () => byId("repo-url");
+  const repoSave = async () => { header.querySelector("form.repository-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  expect(repoIn() && repoIn().value === "https://github.com/oliver-zehentleitner/maity", "repository: Project settings shows the project's repository");
+  repoIn().value = "http://github.com/a/b"; await repoSave();
+  expect(!repoPatches.length && text(byId("repo-url-error")).startsWith("Must be https://") && repoIn().getAttribute("aria-invalid") === "true",
+    "repository: anything but an https forge URL is refused at its field, nothing sent");
+  repoIn().value = "https://gitlab.com/a/b"; await repoSave();
+  expect(repoPatches.length === 1 && text(byId("repo-url-error")).startsWith("Must be https://"), "repository: the hub's not_a_configured_forge is said at the field");
+  let repoAsked = null;
+  win.confirm = (q) => { repoAsked = q; return true; };
+  repoIn().value = "https://github.com/acme/widget/"; await repoSave();
+  const repoNow = (await win.Maity.api.get("/projects/maity")).repository;
+  expect(JSON.stringify(repoPatches[1]) === JSON.stringify({ repository: { url: "https://github.com/acme/widget" } }) && repoNow.url === "https://github.com/acme/widget"
+    && /^Change the repository to https:\/\/github\.com\/acme\/widget\?/.test(repoAsked), "repository: a change asks first, then is sent without the trailing slash");
+  await projectSettings();
+  repoIn().value = ""; await repoSave();
+  expect(JSON.stringify(repoPatches[2]) === JSON.stringify({ repository: null }) && (await win.Maity.api.get("/projects/maity")).repository === null
+    && repoAsked.startsWith("Remove the repository?"), "repository: emptied, it is removed after asking");
+  win.confirm = () => true;
+  await repoRealPatch("/projects/maity", { repository: { url: "https://github.com/oliver-zehentleitner/maity" } });
+  win.Maity.api.patch = repoRealPatch;
   // Account: change the password (docs/api.md §2.1).
   // The profile menu: the avatar, the account, what is still to come, signing out (js/menu.js).
   const profileButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: "));

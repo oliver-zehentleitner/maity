@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -116,7 +116,20 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     for key in ("harness", "harness_version", "model", "cursor"):
         if session.data.get(key) is not None:
             body[key] = session.data[key]
-    packet = session.client.call("POST", "/me/resume", body=body)
+    declared = environment.ids(session.client.base, session.dir)
+    if declared is not None:
+        body["environment"] = declared
+    try:
+        packet = session.client.call("POST", "/me/resume", body=body)
+    except hub.HubError as exc:
+        # A hub from before §5.3 refuses the field: resume without it, saying so.
+        fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
+        if "environment" not in body or exc.code != "invalid" or not isinstance(fields, dict) \
+                or not any(str(k).startswith("environment") for k in fields):  # fmt: skip
+            raise
+        _err("this hub does not take the session's environment yet; resuming without it")
+        del body["environment"]
+        packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges

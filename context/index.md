@@ -51,7 +51,7 @@ Why Maity is built the way it is.
 ## L
 
 ## M
-- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; reporting across owners only with the consent of both owners
+- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
@@ -61,6 +61,7 @@ Why Maity is built the way it is.
 
 ## P
 - [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule
+- [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings
 
 ## Q
 
@@ -72,7 +73,7 @@ Why Maity is built the way it is.
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 
 ## T
-- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only; an outage is waited out or covered by a named substitute, per member, a limit holds cards for at most a day, a human's away reason shows only where they choose
 
 ## U
 
