@@ -277,7 +277,8 @@ window.Maity = window.Maity || {};
       if (body.release && body.release.checklist) {
         const old = {};
         rel.checklist.forEach((i) => { old[i.id] = i; });
-        let next = rel.checklist.reduce((n, i) => Math.max(n, Number(i.id.slice(4)) || 0), 0) + 1;
+        // A counter, never max+1, as the hub keeps it: a removed id is not given out again.
+        let next = rel.next_item || rel.checklist.reduce((n, i) => Math.max(n, Number(i.id.slice(4)) || 0), 0) + 1;
         rel.checklist = body.release.checklist.map((i) => {
           if (i.id) {
             if (!old[i.id]) fail(400, "invalid", "unknown checklist item", path, { fields: { "release.checklist": "unknown_item:" + i.id } });
@@ -287,9 +288,13 @@ window.Maity = window.Maity || {};
           next += 1;
           return item;
         });
+        rel.next_item = next;
       }
       if (body.release && body.release.pull_requests_typed) {
-        rel.pull_requests_typed = body.release.pull_requests_typed.map((p) => ({ number: p.number, state: p.state || null }));
+        // One entry per number, the last one winning, sorted by number, as the hub stores them.
+        const byNumber = new Map();
+        body.release.pull_requests_typed.forEach((p) => byNumber.set(p.number, { number: p.number, state: p.state || null }));
+        rel.pull_requests_typed = Array.from(byNumber.values()).sort((a, b) => a.number - b.number);
         const typed = new Set(rel.pull_requests_typed.map((p) => p.number));
         const kept = rel.pull_requests.filter((p) => p.source !== "typed" || typed.has(p.number));
         rel.pull_requests_typed.forEach((p) => {

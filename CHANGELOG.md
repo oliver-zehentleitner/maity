@@ -177,6 +177,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   option is long (the join view's agent list, the create view's presets)
 - web: a briefing's 16 KiB limit is counted in characters, as the hub counts it, not in
   UTF-8 bytes
+- web: the typed-PR editor refuses 0, numbers above 2^31 and a number listed twice
+  before sending; a tick on an item removed meanwhile says it is gone; the focus
+  stays on the control after a release card is redrawn
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
 - web: the project switcher's state dot shows the state's colour; a later `.dot` rule
   had made every dot grey

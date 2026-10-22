@@ -82,7 +82,7 @@ Inside a project, in the order of their importance; see
    clears the pause; the form says in one line what a human's pause does
    (`docs/api.md` §5.3): the agent is told at once and gets no new work,
    and can still park its work and talk. An owner or admin also reads and
-   edits the agent's **briefing** (Markdown, at most 16 KiB, `PATCH
+   edits the agent's **briefing** (Markdown, at most 16,384 characters, `PATCH
    …/members/{id}`), which the agent gets in its resume packet; the
    editor is offered only where the hub's member view has the field.
    Credentials are shown as id, client, dates and a

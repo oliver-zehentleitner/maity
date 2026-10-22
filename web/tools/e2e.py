@@ -846,11 +846,36 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     view = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]
     ticked = next(i for i in view["checklist"] if i["text"] == "e2e: announce it")
     assert ticked["done"] and ticked["by"] == owner_id, view["checklist"]
+    # The contract's core point: saving the list again keeps an item's id, and
+    # with the id its tick (docs/api.md §6.7).
+    card.get_by_role("button", name="Edit checklist", exact=True).click()
+    form = card.locator("form.rows-form")
+    form.locator("input.item-text").last.fill("e2e: announce it on the list")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(
+        card.locator("ul.checklist li", has_text="e2e: announce it on the list")
+    ).to_contain_text("· Owner")
+    again = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]["checklist"]
+    kept = next(i for i in again if i["id"] == ticked["id"])
+    assert kept["text"] == "e2e: announce it on the list", again
+    assert (kept["done"], kept["by"], kept["at"]) == (True, owner_id, ticked["at"]), again
     assert view["pull_requests_typed"] == [
         {"number": 7, "state": "merged"},
         {"number": 8, "state": "open"},
     ], view["pull_requests_typed"]
     run.shot(page, "release-edited")
+    # One open editor at phone width: it stays inside the screen.
+    page.set_viewport_size({"width": 390, "height": 844})
+    card.get_by_role("button", name="Typed pull requests", exact=True).click()
+    expect(card.locator("form.rows-form input.pr-number")).to_have_count(2)
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the open editor is {width[0]} px wide at {width[1]} px"
+    card.scroll_into_view_if_needed()
+    page.screenshot(path=str(run.artifacts / f"{run.shots + 1:02d}-phone-release-editor.png"))
+    run.shots += 1
+    print(f"   screenshot {run.shots:02d}-phone-release-editor.png", flush=True)
+    card.get_by_role("button", name="Cancel", exact=True).click()
+    page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "release edited")
 
     run.step("release: cancelled, it is shown as the record frozen at its close")

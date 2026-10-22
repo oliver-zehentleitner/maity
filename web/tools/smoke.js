@@ -225,11 +225,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   prRows()[0].querySelector("input.pr-number").value = "1.5";
   rel().querySelector("form.rows-form").dispatch("submit"); await tick();
   expect(relWrites.length === 4 && text(rel()).includes("a pull request number is a whole number from 1"), "release: a bad PR number is refused before sending");
+  const prInput = (i) => prRows()[i].querySelector("input.pr-number");
+  expect(prRows()[0].querySelector("input.pr-number").attrs["aria-label"] === "Pull request number, row 1"
+    && prRows()[1].querySelector("input.pr-number").attrs["aria-label"] === "Pull request number, row 2", "release: each row's controls have their own label");
+  for (const [value, says] of [["0", "(not 0)"], ["2147483649", "(not 2147483649)"], ["abc", "(not abc)"]]) {
+    prInput(0).value = value;
+    rel().querySelector("form.rows-form").dispatch("submit"); await tick();
+    expect(relWrites.length === 4 && text(rel()).includes("Not saved: a pull request number is a whole number from 1 to 2147483648 " + says),
+      "release: PR number " + value + " is refused before sending");
+  }
+  prInput(0).value = "2";
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick();
+  expect(relWrites.length === 4 && text(rel()).includes("Not saved: #2 is listed twice"), "release: a PR number twice is refused before sending");
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("closed", 409, "/x", "invalid_transition"));
   prRows()[0].querySelector("input.pr-number").value = "1";
   rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
   expect(text(rel()).includes("this release is closed; its record does not change"), "release: a refusal of a closed release is put in words");
   win.Maity.api.post = realPost3; win.Maity.api.patch = realPatch3;
+  // A tick on an item removed meanwhile: the hub answers 404.
+  btn(rel(), "Cancel").click(); await tick();
+  win.Maity.api.post = () => Promise.reject(new win.Maity.api.ApiError("Not found", 404, "/x", "not_found"));
+  const box3 = byId("chk-rel-0001-chk-3"); box3.checked = true; box3.dispatch("change"); await tick(); await tick();
+  expect(byId("chk-rel-0001-chk-3").checked === false && text(rel()).includes("Not saved: this item is gone (removed meanwhile); reload the board"),
+    "release: a tick on a removed item says it is gone");
+  win.Maity.api.post = realPost3;
+  // The fixture keeps the hub's counter: a removed id is never given out again.
+  btn(rel(), "Edit checklist").click(); await tick();
+  btn(rel().querySelectorAll("form.rows-form li")[2], "Remove").click(); await tick();
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
+  btn(rel(), "Edit checklist").click(); await tick();
+  btn(rel(), "Add").click(); await tick();
+  rel().querySelectorAll("input.item-text")[2].value = "another";
+  rel().querySelector("form.rows-form").dispatch("submit"); await tick(); await tick();
+  expect(!byId("chk-rel-0001-chk-3") && byId("chk-rel-0001-chk-4"), "fixtures: a removed checklist id is not reused");
   // No releases:write: no editing.
   const realGet5 = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? realGet5(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : realGet5(p));
