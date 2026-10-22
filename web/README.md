@@ -284,6 +284,21 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
 
+**Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
+checked against its pinned sha512 and read without npm; `context/stack.md`)
+runs on each view as the scenario reaches it: sign-in, the empty state,
+Agents (empty, with an agent, with a human pause, with a briefing where
+the hub has one), Join with a paste line, the board (a claimed card, a
+release with a contract, the release edited, a typed-PR editor open),
+the inbox with an open request, `#/all` with requests, chat, the header
+in freeze with an absence, Organisation and Create a project. Each check
+runs at 1280 and 390 px in the light scheme and at 1280 px dark, with the
+tags WCAG 2.0/2.1 A and AA, WCAG 2.2 AA and best practices. A serious or
+critical violation fails the run after the last step; every finding is in
+`a11y.json` and `a11y.txt` next to the screenshots. `--axe-cache` names
+where the tarball is kept between runs (default: a directory in the
+system temp dir).
+
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
 default a temp directory, kept), with the join line painted over; the
 hub's output (`migrate`, `owner create`, `serve`) goes to `hub.log` next

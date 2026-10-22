@@ -15,7 +15,10 @@ git clones. The path, one screenshot per step:
   "needs you" view (#/all) -> answered there.
 
 Every browser console error, page error and failed API call (status >= 400,
-apart from the signed-out session check) fails the run.
+apart from the signed-out session check) fails the run. Each view is also
+checked with axe-core at 1280 and 390 px, and dark at 1280 px; a serious or critical violation
+fails the run after the last step, and every finding is written to
+a11y.json and a11y.txt in the artifacts.
 
 Needs `maity-hub` and `maity` on PATH and Playwright for Python with its
 Chromium (see web/README.md, "Browser end-to-end test"):
@@ -31,6 +34,9 @@ and it is stopped by its own PID; nothing else is touched.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import io
 import json
 import os
 import re
@@ -39,6 +45,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.request
@@ -53,6 +60,18 @@ TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
 COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
 WAIT_S = 60  # the agent's `maity wait`
 
+# axe-core, the accessibility engine: the npm package's tarball, pinned by the
+# registry's sha512 integrity and read without npm (web/context/stack.md).
+AXE_VERSION = "4.14.0"
+AXE_URL = f"https://registry.npmjs.org/axe-core/-/axe-core-{AXE_VERSION}.tgz"
+AXE_SHA512 = (
+    "9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ=="
+)
+AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]
+AXE_FAIL = {"serious", "critical"}
+# Light at desktop and phone width, then dark at desktop width.
+PASSES = ((1280, 900, "light"), (390, 844, "light"), (1280, 900, "dark"))
+
 # The caller's own MAITY_* settings (a state dir, a forge token) never reach
 # the throwaway hub or the scratch clones.
 CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("MAITY_")}
@@ -65,6 +84,57 @@ class Run:
         self.base = base
         self.shots = 0
         self.problems: list[str] = []
+        self.axe = ""
+        self.a11y_findings: list[dict] = []
+
+    def a11y(self, page: Page, view: str) -> None:
+        """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
+        for width, height, scheme in PASSES:
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
+            if not page.evaluate("typeof window.axe === 'object'"):
+                page.evaluate(self.axe)
+            result = page.evaluate(
+                "tags => axe.run(document, {runOnly: {type: 'tag', values: tags},"
+                " resultTypes: ['violations']})",
+                AXE_TAGS,
+            )
+            for v in result["violations"]:
+                self.a11y_findings.append(
+                    {
+                        "view": view,
+                        "width": width,
+                        "scheme": scheme,
+                        "id": v["id"],
+                        "impact": v["impact"],
+                        "help": v["help"],
+                        "url": v["helpUrl"],
+                        "nodes": [n["target"] for n in v["nodes"]][:10],
+                        "count": len(v["nodes"]),
+                    }
+                )
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+        print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
+
+    def a11y_report(self) -> list[dict]:
+        """Write every finding; return the ones that fail the run."""
+        (self.artifacts / "a11y.json").write_text(json.dumps(self.a11y_findings, indent=2) + "\n")
+        order = sorted(
+            self.a11y_findings, key=lambda f: (f["impact"] not in AXE_FAIL, f["id"], f["view"])
+        )
+        lines = [
+            f"{f['impact']:<8} {f['id']:<28} {f['view']} @ {f['width']} px {f['scheme']}:"
+            f" {f['help']} ({f['count']} node(s), e.g. {f['nodes'][:3]})"
+            for f in order
+        ]
+        (self.artifacts / "a11y.txt").write_text(
+            f"axe-core {AXE_VERSION}, tags {', '.join(AXE_TAGS)}\n"
+            + ("\n".join(lines) or "no findings")
+            + "\n"
+        )
+        return [f for f in self.a11y_findings if f["impact"] in AXE_FAIL]
 
     def step(self, text: str) -> None:
         print(f"\n== {text}", flush=True)
@@ -152,6 +222,27 @@ class Run:
         path = self.work / name
         subprocess.run(["git", "init", "-q", str(path)], check=True, env=CLEAN_ENV)
         return path
+
+
+def axe_source(cache: Path) -> str:
+    """axe.min.js from the pinned tarball, downloaded once and checked every time."""
+    tgz = cache / f"axe-core-{AXE_VERSION}.tgz"
+    if not tgz.exists():
+        cache.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(AXE_URL, timeout=60) as response:
+            data = response.read()
+        part = tgz.with_suffix(".part")
+        part.write_bytes(data)
+        part.rename(tgz)
+    data = tgz.read_bytes()
+    digest = base64.b64encode(hashlib.sha512(data).digest()).decode()
+    if digest != AXE_SHA512:
+        raise SystemExit(f"e2e: {tgz} does not match the pinned sha512 of axe-core {AXE_VERSION}")
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        member = tar.extractfile("package/axe.min.js")  # read in memory, nothing extracted
+        if member is None:
+            raise SystemExit("e2e: the axe-core tarball has no package/axe.min.js")
+        return member.read().decode("utf-8")
 
 
 def free_port() -> int:
@@ -338,6 +429,12 @@ def main() -> int:
     )
     parser.add_argument("--port", type=int, help="the hub's port (default: a free one)")
     parser.add_argument("--headed", action="store_true", help="show the browser")
+    parser.add_argument(
+        "--axe-cache",
+        type=Path,
+        default=Path(tempfile.gettempdir()) / "maity-e2e-axe",
+        help="where the axe-core tarball is kept between runs",
+    )
     args = parser.parse_args()
 
     for tool in ("maity-hub", "maity", "git"):
@@ -354,6 +451,7 @@ def main() -> int:
     artifacts.mkdir(parents=True, exist_ok=True)
     base = f"http://127.0.0.1:{port}"
     run = Run(artifacts, work, base)
+    run.axe = axe_source(args.axe_cache)
     run.step(f"hub on {base}, SQLite in {work}")
     hub = start_hub(work, artifacts, port)
     try:
@@ -368,6 +466,15 @@ def main() -> int:
                 scenario(run, page)
             finally:
                 browser.close()
+                failing = run.a11y_report()
+        if failing:
+            raise AssertionError(
+                f"{len(failing)} serious or critical accessibility finding(s); see a11y.txt:\n  "
+                + "\n  ".join(
+                    f"{f['impact']} {f['id']} {f['view']} @ {f['width']} px {f['scheme']}"
+                    for f in failing
+                )
+            )
     except Exception:
         print(
             f"\ne2e: FAILED; screenshots and hub.log in {artifacts}",
@@ -389,12 +496,14 @@ def scenario(run: Run, page: Page) -> None:
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
     run.shot(page, "sign-in")
+    run.a11y(page, "sign-in")
     page.locator("#login-handle").fill(OWNER)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.get_by_role("heading", name="No projects yet", exact=True)).to_be_visible()
     expect(page.locator("header .me")).to_contain_text("Owner")
     run.shot(page, "empty-state")
+    run.a11y(page, "empty state (#/all, no projects)")
     no_problems(run, "sign-in")
 
     run.step("create a project")
@@ -405,11 +514,13 @@ def scenario(run: Run, page: Page) -> None:
         cls = page.locator(nav).get_attribute("class") or ""
         assert "more-" not in cls, f"{nav} shows a scroll cue at 1280 px ({cls!r})"
     run.shot(page, "project-created")
+    run.a11y(page, "agents, empty")
     no_problems(run, "create a project")
 
     run.step("join line in the dashboard, the agent joins with the CLI")
     url, code = join_line(run, page, "e2e-alpha", "e2e-agent")
     run.shot(page, "join-line")
+    run.a11y(page, "join with a paste line")
     alpha = run.clone("clone-alpha")
     out = run.maity(
         alpha,
@@ -433,6 +544,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(agents).to_contain_text("member")
     expect(agents).to_contain_text("Online")
     run.shot(page, "agent-joined")
+    run.a11y(page, "agents")
     no_problems(run, "join")
 
     run.step("the agent claims a card; the open board offers a reload")
@@ -454,6 +566,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(card).to_contain_text("Claimed by")
     expect(card).to_contain_text("E2E Agent")
     run.shot(page, "card-claimed")
+    run.a11y(page, "board")
     no_problems(run, "board")
 
     run.step("the agent asks, blocking its card; its maity wait runs")
@@ -496,6 +609,7 @@ def scenario(run: Run, page: Page) -> None:
         expect(entry).to_contain_text("Ship the e2e card?")
         expect(entry).to_contain_text("The test asks this.")
         run.shot(page, "inbox-request")
+        run.a11y(page, "inbox with an open request")
         page.locator("nav.views").get_by_role("link", name="Board", exact=True).click()
         expect(board_card(page, "E2E card")).to_contain_text(request_id)
         run.shot(page, "card-blocked")
@@ -576,6 +690,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(entries.nth(0)).to_contain_text("Which colour for alpha?")
     expect(entries.nth(1)).to_contain_text("E2E Beta")
     run.shot(page, "all-projects")
+    run.a11y(page, "#/all with requests")
     current = page.locator("li.entry.current")
     current.locator("textarea").fill("Blue.")
     current.get_by_role("button", name="Send", exact=True).click()
@@ -631,6 +746,7 @@ def scenario(run: Run, page: Page) -> None:
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
     assert width[0] <= width[1], f"#/new is {width[0]} px wide at {width[1]} px"
     run.shot(page, "phone-new")
+    run.a11y(page, "create a project")
     no_problems(run, "phone width")
 
 
@@ -652,6 +768,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("ol.messages li.msg.out")).to_contain_text("Hello back from the owner.")
     run.shot(page, "chat")
+    run.a11y(page, "chat")
     event = run.wait_event(wait)
     print(f"   maity wait woke on {event.get('kind')}: {(event.get('payload') or {}).get('body')}")
     assert event.get("kind") == "message", event
@@ -677,6 +794,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents).to_contain_text("The agent was told at once and gets no new work")
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
     run.shot(page, "paused")
+    run.a11y(page, "agents with a human pause")
     out = run.maity_refused(alpha, "api", "--json", "-", "PATCH", "/me", stdin='{"paused": null}')
     assert "forbidden" in out and "a human paused you" in out, out
     # A resume clears the agent's own pause, never a human's; the packet
@@ -729,6 +847,10 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     })""")
     assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
     run.shot(page, "freeze-absence")
+    run.a11y(page, "header in freeze with absence")
+    page.locator("nav.views").get_by_role("link", name="Organisation", exact=True).click()
+    expect(page.locator("main section.view-org")).to_be_visible()
+    run.a11y(page, "organisation")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
     assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
@@ -822,6 +944,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     expect(ctr).to_contain_text("watched by E2E Agent")
     expect(ctr).to_contain_text("Contract proposed · arbiter ")
     run.shot(page, "release-open")
+    run.a11y(page, "board with a release and a contract")
     no_problems(run, "release open")
 
     run.step("release: the owner edits it on the board — a checklist item, its tick, a typed PR")
@@ -864,6 +987,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
         {"number": 8, "state": "open"},
     ], view["pull_requests_typed"]
     run.shot(page, "release-edited")
+    run.a11y(page, "board, release edited")
     # One open editor at phone width: it stays inside the screen.
     page.set_viewport_size({"width": 390, "height": 844})
     card.get_by_role("button", name="Typed pull requests", exact=True).click()
@@ -874,6 +998,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     page.screenshot(path=str(run.artifacts / f"{run.shots + 1:02d}-phone-release-editor.png"))
     run.shots += 1
     print(f"   screenshot {run.shots:02d}-phone-release-editor.png", flush=True)
+    run.a11y(page, "board, typed-PR editor open")
     card.get_by_role("button", name="Cancel", exact=True).click()
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "release edited")
@@ -923,6 +1048,7 @@ def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents.locator(".briefing")).to_contain_text(
         "You test the dashboard. First: the e2e card."
     )
+    run.a11y(page, "agents with a briefing")
     packet = json.loads(run.maity(alpha, "resume", "--json"))
     assert packet["membership"].get("briefing") == "You test the dashboard. First: the e2e card."
     no_problems(run, "briefing")

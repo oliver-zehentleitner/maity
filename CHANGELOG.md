@@ -91,6 +91,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   and a human's pause say in one line what the pause does
 - web: members with `releases:write` edit an open release on the board: tick checklist
   items, edit the checklist, and the typed pull requests
+- web: the browser test checks every view with axe-core at 1280 and 390 px and in the
+  dark scheme, and fails on serious or critical findings
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -180,6 +182,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: the typed-PR editor refuses 0, numbers above 2^31 and a number listed twice
   before sending; a tick on an item removed meanwhile says it is gone; the focus
   stays on the control after a release card is redrawn
+- web: links meet WCAG AA contrast on the page background (accent `#1a66d9`), the release's
+  PR table is reachable by keyboard when it scrolls, the page has one `h1` (the product
+  name), and the inbox's subheadings follow its heading levels
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
 - web: the project switcher's state dot shows the state's colour; a later `.dot` rule
   had made every dot grey
