@@ -225,7 +225,7 @@ window.Maity = window.Maity || {};
           h("p", { class: "first-hint" }, ctx.scope === "all"
             ? "Requests from the agents of every project land here: a decision, a consent or a question only you can answer. Each one shows its project."
             : "Your agents ask here when they need you: a decision, a consent or a question only you can answer. "
-              + "An agent that waits for an answer says so, and its card on the board shows it.")));
+              + "When an agent waits for the answer, its card on the board shows it.")));
         return;
       }
       shown.forEach((req) => {

@@ -69,7 +69,7 @@ window.Maity = window.Maity || {};
       append(clear(result), h("div", { class: "flag" },
         h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + "."),
         h("p", null, line),
-        h("p", { class: "first-hint" }, "Send it to the agent as a message (Claude Code, Codex, …) in its clone of the "
+        h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
           + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
           + "You can also run it yourself in a terminal in that clone."),
         copy,

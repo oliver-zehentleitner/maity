@@ -135,8 +135,10 @@ fails while the bundle is stale.
 - `GET /me` every 15 seconds and after every answer, for the switcher's
   counts. When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
-  reading; a list with no open entry on screen, where nothing is being
-  read or typed, reloads on its own. Only the switcher is redrawn: an open **State & absence** panel,
+  reading. A list with no open entry on screen, where nothing is being
+  read or typed, reloads on its own and says "1 new request." in its
+  status line, for a screen reader too, unless the **State & absence**
+  panel is open or a header control has the focus. Only the switcher is redrawn: an open **State & absence** panel,
   what is typed in it, and how far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its

@@ -270,6 +270,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick(); await tick();
   expect(!text(main).includes("What waits for you changed") && gets.slice(beforeQuiet).some((p) => p.startsWith("/projects/maity/requests")),
     "a changed count reloads an empty list on its own, without a notice");
+  expect(main.querySelector(".notice") && main.querySelector(".notice").getAttribute("role") === "status" && text(main.querySelector(".notice")).includes("1 new request."),
+    "the quiet reload says \"1 new request.\" in the status notice");
+  // The same with the State & absence panel open and typed in: no reload, the offer instead.
+  win.Maity.api.get = realGet2; await go("#/p/maity/board"); await go("#/p/maity/inbox");
+  btn(header, "State & absence").click(); await tick();
+  byId("state-reason").value = "typed, not sent";
+  win.Maity.api.get = bump("maity");
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
+    "with the State & absence panel open the empty list is not reloaded; the panel and its text stay");
+  btn(header, "State & absence").click(); await tick();
   // An open entry on screen: the change is offered as a reload instead.
   win.Maity.api.get = realGet2;
   await go("#/p/sample/inbox");
@@ -289,7 +300,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-x";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(text(main).includes("Send it to the agent as a message") && text(main).includes("follows the join page"), "the paste line says where it goes");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   btn(main, "Revoke").click(); await tick(); await tick();
