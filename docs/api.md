@@ -4243,7 +4243,7 @@ session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
 already marked read by an allowed session — never read by age, §17.2)
 — never from the session it reports on and never from a
-session created after it. Security items (`session_created` and every
+session created after it. `email_address_changed` follows the same rule, with the change in place of the sign-in. Security items (`session_created` and every
 other `security` kind) are marked read only through `ids`, never through
 `up_to`: "mark all read" skips them, so tidying the bell never confirms
 a sign-in or grants good standing. From a session that may not mark
