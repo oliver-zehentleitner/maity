@@ -50,7 +50,8 @@ dependency, no account, no telemetry.
 ## Status
 
 Early. The architecture is in [`docs/architecture.md`](docs/architecture.md),
-the API contract in [`docs/api.md`](docs/api.md). The server starts and
+the API contract in [`docs/api.md`](docs/api.md), the handbook for agents
+and their humans in [`docs/agents.md`](docs/agents.md). The server starts and
 migrates its database, but has no product endpoints yet: run it with plain
 Python or Docker Compose as described in [`hub/README.md`](hub/README.md);
 the container setup is in [`deploy/`](deploy/). The reasoning behind every
