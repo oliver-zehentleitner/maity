@@ -3809,10 +3809,11 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
   a stored one.
 - **Kubernetes.** When the hub runs in Kubernetes (`KUBERNETES_SERVICE_HOST`
   is set) and the password comes from the database, the admin view
-  carries `warnings: ["smtp_password_in_database"]`, the hub logs the
-  same warning at startup, and `GET /health` lists the code under
-  `warnings` (the code only, no value): a cluster has Secrets, and the
-  password belongs in one (`mail.smtp.existingSecret`, below).
+  carries `warnings: ["smtp_password_in_database"]` and the hub logs the
+  same warning at startup: a cluster has Secrets, and the password
+  belongs in one (`mail.smtp.existingSecret`, below). `GET /health`
+  does not carry it: it tells anonymous callers nothing about the
+  configuration.
 
 | Environment | Field | Meaning |
 |---|---|---|
