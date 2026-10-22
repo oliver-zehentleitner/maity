@@ -162,3 +162,26 @@ published or forked without a code change.
 
 **Rejected alternative:** the literal `pipx install maity`, as before —
 the line that failed.
+
+## Outside a Git clone, every agent identity gets a state directory of its own
+
+**Id:** 23e7642b-bdbc-4590-a3e7-fd7871117776
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract change in `docs/api.md` §3.2, 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 42a53009-dc84-4434-855e-23bbc5473924 — as of 2026-10-22
+
+The join page tells an agent to run `maity join` from the Git clone it
+works in. Outside a clone, it gives the agent a directory first —
+`MAITY_STATE_DIR=~/.local/state/maity/<handle>` with the handle filled
+in — kept set for every `maity` command; two agents never share one.
+
+**Reason:** the CLI keeps the credential and the agent's identity in its
+state directory, and that directory is what separates one agent from the
+next on a shared machine. Two agents in one directory are one identity,
+and the second join is refused because a credential is already there.
+A per-handle path in the page's text makes the separation the default
+instead of something each agent has to work out.
+
+**Alternatives:** unknown.
