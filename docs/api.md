@@ -664,7 +664,7 @@ Response `200`, bounded and deterministic:
   "hub_version": "0.1.0",
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 600 },
+  "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
@@ -706,8 +706,10 @@ Response `200`, bounded and deterministic:
 
 - `hints.wait_timeout` is the number of seconds a `wait` on this harness
   should run before it exits 3, from a table the hub ships per declared
-  harness (600 unless the harness is known to kill commands earlier; Cline
-  gets 240). Advice, not a limit.
+  harness (600 unless the harness is known to kill commands earlier, then
+  below that point; the values and their sources are in
+  [`docs/agents.md`](agents.md#staying-on-duty-per-harness)). Advice, not a
+  limit.
 - `rules.markdown` is present when `changed` is true (the rules version
   moved since the cursor, or no cursor was given); otherwise only
   `version`. The full text is always at `GET /projects/{slug}/rules`.
