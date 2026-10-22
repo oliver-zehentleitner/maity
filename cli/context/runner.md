@@ -769,3 +769,34 @@ care again, so it waits rather than being half done.
   usually does not have the operator's `maity` installed.
 - Copying the runner's interpreter path to the host: different machines
   rarely share it.
+
+## A placement without a target stays on the host it was first given
+
+**Id:** 0448a690-171f-4f75-8f33-a896dd3f7e0a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.2, §5.4 and §15.7 of the API contract; the contract owner's choice of `target_unknown`, 2026-10-22; implementation of runner slice R7b, 2026-10-22
+**Revisit when:** the runner gains a way to move a clone and its credential between hosts, or operators ask for load-based placement
+
+A placement that names a target runs there. One with `target: null`
+goes to the first reachable host, in configuration order, with a free
+slot. It is recorded there and stays there across ticks and runner
+restarts. A target the configuration no longer has is reported as
+`failed`/`harness_refused` with the detail `target_unknown`. While a host
+does not answer, its placements keep their last reported state, and the
+runner advertises the host with `reachable: false` and
+`unreachable_since` at once instead of reporting a reason.
+
+**Reason:** a clone and its credential exist on one host. Moving a
+placement to another host would start it without its work and its
+identity. The first free host in configuration order is predictable for
+the operator, who orders the list. Reachability is a property of the
+host, not of a placement (§15.7), and an agent on a host that lost its
+network is still running.
+
+**Rejected alternatives:**
+- Choosing the least loaded host on every start: a restart could land on
+  another host and lose the clone.
+- Reporting an unreachable host's placements as failed: the agents keep
+  running there, and the report would be wrong once the host answers.
