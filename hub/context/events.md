@@ -116,7 +116,9 @@ asks, from the live agent sessions and the ids their resumes declared.
 announced: when the overlap started, the highest level announced, and
 since when the two no longer share an id (`quiet_since`). The rows are
 brought up to date when one member's sessions change: on its resume and
-on a credential's revocation (which member removal goes through). A pair
+on a credential's revocation (which member removal goes through), under
+the project lock, so that two members' changes cannot both read the pair
+before either writes it. A pair
 that shares again within 10 minutes of `quiet_since` continues its
 overlap; later, it is a new one and is announced again.
 
