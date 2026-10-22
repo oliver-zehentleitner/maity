@@ -27,6 +27,7 @@ TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 RECORDS = "workspaces.json"
 CLONE_TIMEOUT = 600.0
 STALE_LOCK = 600.0
+PROTOCOLS = ("https", "ssh")
 _lock = threading.Lock()
 
 
@@ -102,14 +103,21 @@ def _record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str
 
 
 def inspect(
-    cfg: config.Config, workspace: Workspace, repository: str, agent: str
+    cfg: config.Config,
+    workspace: Workspace,
+    repository: str,
+    agent: str,
+    placement_id: str | None = None,
 ) -> dict[str, Any]:
-    """An existing clone's record, when it is `agent`'s and points at `repository`;
-    `Refused` otherwise. Reads the record and `.git/config` only."""
+    """An existing clone's record, when it is `agent`'s (or was made for this placement,
+    which covers the time between a join and the hub naming the new member) and points at
+    `repository`; `Refused` otherwise. Reads the record and `.git/config` only."""
     record = records(cfg.state_dir).get(str(workspace.path))
     if not isinstance(record, dict):
         raise Refused("workspace_in_use", "workspace_unrecorded")
-    if record.get("agent") != agent:
+    if record.get("agent") != agent and (
+        placement_id is None or record.get("placement_id") != placement_id
+    ):
         raise Refused("workspace_in_use", "other_agent")
     found = origin(workspace.path)
     if found is None or config.normalise_repository(found) != config.normalise_repository(
@@ -130,12 +138,18 @@ def prepare(
     """Make sure the clone exists and belongs to `agent`; clone it when it is missing.
     `Refused` otherwise. `agent` is the agent's id, or its handle before the first join."""
     if workspace.path.exists():
-        record = inspect(cfg, workspace, repository, agent)
+        record = inspect(cfg, workspace, repository, agent, placement_id)
         if record.get("placement_id") != placement_id:
             _record(cfg.state_dir, workspace, agent, placement_id)
         return
     workspace.path.parent.mkdir(parents=True, exist_ok=True)
-    command = ["git", "clone", "--quiet"]
+    if not config.repository_url_ok(repository):
+        raise Refused("repository_refused")
+    # Only these transports, whatever the URL or a submodule says (no file://, no ext::).
+    command = ["git", "-c", "protocol.allow=never"]
+    for protocol in PROTOCOLS:
+        command += ["-c", f"protocol.{protocol}.allow=always"]
+    command += ["clone", "--quiet"]
     if branch:
         command += ["--branch", branch]
     command += ["--", repository, str(workspace.path)]
