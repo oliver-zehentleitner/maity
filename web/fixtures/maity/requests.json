@@ -112,7 +112,7 @@
       "needs_in_session": null,
       "ktw_ref": null,
       "status": "answered",
-      "answer": { "reply_id": "keep", "text": null, "talk": false, "by": "hum-maintainer", "on_behalf_of": null, "at": "2026-10-21T10:20:00Z", "conversation_id": null },
+      "answer": { "reply_id": "keep", "text": "Keep it; @agent-d sorts the tabs.", "mentions": [{ "member_id": "agt-d", "handle": "agent-d", "field": "text", "offset": 9, "length": 8 }], "talk": false, "by": "hum-maintainer", "on_behalf_of": null, "at": "2026-10-21T10:20:00Z", "conversation_id": null },
       "created_at": "2026-10-21T10:05:00Z",
       "answered_at": "2026-10-21T10:20:00Z"
     }

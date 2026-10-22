@@ -626,6 +626,16 @@ def scenario(run: Run, page: Page) -> None:
 
         run.step("the owner answers in the inbox; the agent's wait wakes")
         page.locator("nav.views").get_by_role("link", name="Inbox", exact=True).click()
+        # The @ picker in the free text, open, under axe; then cleared again.
+        free = page.locator("li.entry.current .free-text textarea")
+        free.fill("@e2e")
+        picker = page.locator("li.entry.current .mention-list")
+        expect(picker.locator("li.mention-option").first).to_contain_text("@e2e-agent")
+        expect(free).to_have_attribute("aria-expanded", "true")
+        run.a11y(page, "inbox, @ picker open")
+        free.press("Escape")
+        expect(picker).to_be_hidden()
+        free.fill("")
         page.locator("li.entry.current").get_by_role("button", name="Ship it", exact=True).click()
         expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
         expect(

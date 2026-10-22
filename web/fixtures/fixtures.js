@@ -1000,10 +1000,19 @@ window.MAITY_FIXTURES = {
           "at": "2026-10-21T10:20:00Z",
           "by": "hum-maintainer",
           "conversation_id": null,
+          "mentions": [
+            {
+              "field": "text",
+              "handle": "agent-d",
+              "length": 8,
+              "member_id": "agt-d",
+              "offset": 9
+            }
+          ],
           "on_behalf_of": null,
           "reply_id": "keep",
           "talk": false,
-          "text": null
+          "text": "Keep it; @agent-d sorts the tabs."
         },
         "answered_at": "2026-10-21T10:20:00Z",
         "asked_by": {
