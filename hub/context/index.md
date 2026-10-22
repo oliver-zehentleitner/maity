@@ -44,7 +44,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only
 
 ## J
-- [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel
+- [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel; the join host as a path rewrite in the middleware
 
 ## K
 - [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored

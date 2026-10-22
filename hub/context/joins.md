@@ -48,3 +48,31 @@ contract describes.
 **Rejected alternative:** a copy inside the package — no build-time
 step, but two files that drift the first time someone edits the one in
 `docs/`.
+
+## The join host is a path rewrite in the middleware, not a second app
+
+**Id:** 605569db-5baa-4fdf-ae94-d730590a354a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the join host (`docs/api.md` §1.1), 2026-10-22, PR #148
+
+A request whose `Host` is the join host is handled by `maity_hub/join_host.py`,
+called from the middleware after the body cap and the credential filter:
+`GET`/`POST /{token}` get their path rewritten to the public join page and
+exchange (`/join/{token}`, `/api/v1/join/{token}`), with `Cookie` and
+`Authorization` dropped; anything else is answered there (`302` or
+`not_found`) and never reaches a route.
+
+**Reason:** the join on the join host must be exactly the public join, the
+same code, rate limit, transport rule and answer; a rewrite reuses all of
+it and adds one place that decides what the join host serves at all.
+Running after the middleware's own checks keeps the body cap, the
+credential filter and the request log (whose mask then sees `/join/…`)
+for the join host too.
+
+**Rejected alternative:** a second FastAPI app or a Starlette host router
+mounted for the join host. It would need the join routes registered twice
+or factored out, and every later route added to the main app would have to
+be kept off the join host deliberately; with the rewrite, nothing but the
+two token paths can be reached there by construction.
