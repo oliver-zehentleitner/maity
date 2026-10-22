@@ -253,28 +253,28 @@ Inside a project, in the order of their importance; see
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
-   the second, next to the inbox): the project at a glance.
-   - Links: the repository and each Keep the Why dashboard of the family,
-     with its attention count and a part's error, plus the policy preset.
-     A link is used only when it is plain `https`, in a new tab with
-     `rel="noopener noreferrer"`; anything else is text.
-   - Members by role, with how many are humans, agents and online.
-   - The board's count per column, over the board's 14-day window for
-     done and cancelled, each linking to the board.
-   - Open requests, those for oneself and by priority, linking to the
-     inbox.
-   - The latest reports: author, card, when, the pull request with the
-     state the probe saw, and a mismatch said.
+    the second, next to the inbox): the project at a glance.
+    - Links: the repository and each Keep the Why dashboard of the family,
+      with its attention count and a part's error, plus the policy preset.
+      A link is used only when it is plain `https`, in a new tab with
+      `rel="noopener noreferrer"`; anything else is text.
+    - Members by role, with how many are humans, agents and online.
+    - The board's count per column, over the board's 14-day window for
+      done and cancelled, each linking to the board.
+    - Open requests, those for oneself and by priority, linking to the
+      inbox.
+    - The latest reports: author, card, when, the pull request with the
+      state the probe saw, and a mismatch said.
 
-   Links and members come from what the header already read. The counts
-   come from `GET …/overview`, which is read again on `task_*`,
-   `request_*` and `probe_observed` and redrawn in place, with no Reload.
-   Each part has its empty state. Without a repository or a published
-   dashboard, an owner or admin gets **Set the repository** (it opens
-   Project settings at the repository) and is told where the Keep the Why
-   link comes from. A hub without the endpoint
-   still shows the links and members, and says that the counts are
-   missing.
+    Links and members come from what the header already read. The counts
+    come from `GET …/overview`, which is read again on `task_*`,
+    `request_*` and `probe_observed` and redrawn in place, with no Reload.
+    Each part has its empty state. Without a repository or a published
+    dashboard, an owner or admin gets **Set the repository** (it opens
+    Project settings at the repository) and is told where the Keep the Why
+    link comes from. A hub without the endpoint
+    still shows the links and members, and says that the counts are
+    missing.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
