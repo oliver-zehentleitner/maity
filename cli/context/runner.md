@@ -709,7 +709,10 @@ side too: the agents' user's home secrets, its `~/.maity-runner` (every
 agent's socket, log and settings, which the single layout keeps in the
 hidden state directory) and the other clones' credentials, listed as
 that user because the runner cannot list a 0700 directory it does not
-own. Codex's sandbox probe runs as that user as well.
+own; a listing that is not complete refuses the start
+(`harness_refused`) rather than leave a credential readable. Binaries and
+sandbox tools are looked up, and Codex's sandbox tried, as that user on
+the agents' PATH as well.
 
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds
