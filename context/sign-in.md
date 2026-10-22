@@ -79,14 +79,16 @@ mailbox; every mail sign-in, whatever browser it comes from, appears at
 once as a banner with a one-click "End this session" in every other
 session of the human, and only a session that existed before that
 sign-in (and is itself signed in by password or already confirmed) can
-mark it read; a session younger than an hour cannot end older ones;
+mark it read, and no alert is ever read by age — it stays unread until
+such a session reads it or its record expires; a session younger than an hour cannot end older ones;
 changing the verified address needs the account password in the same
 request, or, for a human without a password, approval from a session
-at least a day old, and tells the old address; sign-in mails, which
+at least a day old for exactly the change it was shown, and tells the
+old address; sign-in mails, which
 anyone can trigger, have a cap of their own, and security alerts have a
 budget that queues instead of dropping.
 
-The decision is the contract owner's rulings (two rounds); the reasons
+The decision is the contract owner's rulings (three rounds); the reasons
 below are this contract's reading of them.
 
 **Reason:** an overclaimed invariant is worse than a stated limit — an
