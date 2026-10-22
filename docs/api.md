@@ -1009,7 +1009,7 @@ Response `200`, bounded and deterministic:
   from scopes and project state (a closed project removes `claim`).
 - `ticker` (not in the example above): `{items, for_me, others,
   truncated}`, the change ticker's items after the cursor, at most 20,
-  those whose audience names the agent first (§17.9).
+  those `for_me` first (§17.9).
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -2771,7 +2771,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
 | GET | `/admin/users` | `instance:admin`, human only | 16 |
 | GET, POST | `/projects/{slug}/ticker` | `project:read` / `ticker:post` | 17.6, 17.9 |
-| GET, PUT | `/projects/{slug}/ticker/subscription` | the caller's own membership | 17.8 |
+| GET, PATCH | `/projects/{slug}/ticker/subscription` | the caller's own membership | 17.8 |
 | POST | `/projects/{slug}/forge/webhook` | — (signed by the forge) | 17.4 |
 | GET | `/projects/{slug}/forge/webhook` | `project:admin`, human only | 17.4 |
 | POST, DELETE | `/projects/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
@@ -2843,9 +2843,9 @@ reviewer role.
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
-| `maity ticker [--mine] [--type T] [--area A] [--since TIME]` | `GET /projects/{slug}/ticker` with `for=me` under `--mine`; one line per item, `[ticker] <type>: <text> <url>`, and the reasons for the caller's own items. *Planned (ticker).* |
-| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN…] [--pr N] [--release CARD] [--area A…] [--env E --sha S\|--version V]` | `POST /projects/{slug}/ticker` (§17.6); against a hub without the path it prints the interim `maity say all --type notice "[ticker] …"` line and exits 2, sending nothing. *Planned (ticker).* |
-| `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A…] [--type T…]` | `GET`, then `PUT /projects/{slug}/ticker/subscription` with the list changed; prints the subscription. *Planned (ticker).* |
+| `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. *Planned (ticker).* |
+| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--pr N] [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. *Planned (ticker).* |
+| `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. *Planned (ticker).* |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
@@ -4060,6 +4060,47 @@ releases.
   "to": "computed", "areas": ["hub/"] }
 ```
 
+The body, every field top-level:
+
+| Field | Type | With `type` | |
+|---|---|---|---|
+| `type` | string | — | required: `note`, `deploy`, `merge`, `release` |
+| `text` | string | all | required, 1–280 code points |
+| `url` | string | all | optional, absolute `https`, ≤ 2048 characters |
+| `to` | `"computed"`, `"all"` or an array of 1–20 tokens | all | optional, default `"computed"` |
+| `pr` | integer | `merge` only, required there | the pull request number |
+| `release_task_id` | string | `release` only, required there | the release card's id |
+| `areas` | array of 1–20 paths | `note` only; required with `to: computed` | the note's areas |
+| `deploy` | object `{environment, sha?, version?, log_url?}` | `deploy` only, required there | `log_url` absolute `https`, ≤ 2048 characters |
+
+A field given for a type that does not take it is `invalid`
+(`details.fields.<field>: "not_for_type"`); a required one missing is
+`invalid` (`"required"`). Two more examples:
+
+```json
+{ "type": "deploy", "text": "Deployed 0.3.0-rc.2 to staging",
+  "deploy": { "environment": "staging", "version": "0.3.0-rc.2",
+              "log_url": "https://github.com/oliver-zehentleitner/maity/actions/runs/123" } }
+```
+
+```json
+{ "type": "merge", "text": "#212 hub: the claim lease survives a restart — merged into main",
+  "url": "https://github.com/oliver-zehentleitner/maity/pull/212", "pr": 212,
+  "to": ["role:admin", "area:cli/"] }
+```
+
+`maity ticker post` maps its flags one to one: the text argument →
+`text`, `--type` → `type`, `--url` → `url`, `--to` → `to`, `--pr` →
+`pr`, `--release` → `release_task_id`, `--area` → `areas`, `--env`,
+`--sha`, `--version`, `--log-url` → `deploy.environment`, `.sha`,
+`.version`, `.log_url`. `--to` and `--area` are repeatable flags, one
+value each, and become arrays in the order given; a value is never split
+on commas or spaces. `--to computed` or `--to all` stands alone: given
+twice, or together with a token, it is refused locally (exit 2); the hub
+answers an array that contains `computed` or `all` with `invalid`. One
+`--to TOKEN` is sent as a one-element array; without `--to` the field is
+omitted.
+
 - `type` is `note`, `deploy`, `merge` or `release`; a `decision` is never
   posted by hand (the inbox writes it). `text` 1–280 code points, plain
   text; `url` optional, `https` only (`invalid` otherwise).
@@ -4084,10 +4125,21 @@ releases.
 
 **Until the hub has `/ticker`**, the coordinator posts each item as a
 project message: `maity say all --type notice "[ticker] <type>: <text>
-<url>"`. Such a message is not a ticker item and is not converted into
-one later. `maity ticker post` against a hub that answers `not_found` on
-the path prints that `maity say` line and exits 2; it never sends a
-message on its own.
+<url>"`, and without a URL `"[ticker] <type>: <text>"`, with no trailing
+space. Such a message is not a ticker item and is not converted into one
+later.
+
+A `not_found` on `POST …/ticker` alone does not say that the hub lacks
+the ticker: a mistyped project answers the same. The CLI therefore asks
+the contract's existing machine form instead of guessing: on a `404`
+from that call it reads `GET /api/v1/openapi.json` (§4, unauthenticated)
+and looks for the path `/projects/{slug}/ticker` with a `post`
+operation. Absent: the hub has no ticker; the CLI prints the interim
+`maity say` line for this post and exits 2. Present: the `not_found` is
+a real one (project, card or pull request); the CLI prints the error and
+exits as for any failed call. It never sends a message on its own. The
+hub adds nothing for this: a hub with the ticker lists the path in
+`openapi.json`, one without does not.
 
 ### 17.7 Dedupe
 
@@ -4125,7 +4177,17 @@ another member's — no admin, no owner, and no agent a human's (§2.3).
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{slug}/ticker/subscription` | the caller's own membership | the shape above, empty lists when never set |
-| `PUT /projects/{slug}/ticker/subscription` | the caller's own membership | the object without `updated_at`, replacing it. `areas` are paths in the form of §6.2 (not necessarily an existing area), at most 20 per list; `types` from `merge`, `contract`, `decision`, `deploy`, `release`, `note`, where `contract` means a merge with `contract` set. An area or type in both lists is `invalid`. Emits `ticker_subscription_changed` |
+| `PATCH /projects/{slug}/ticker/subscription` | the caller's own membership | `{"add"?: {"follow"?: {"areas"?, "types"?}, "mute"?: {…}}, "remove"?: {…the same…}}`, applied in one transaction; answers `200` with the whole subscription. Adding a value already there or removing one that is not there is a no-op; the same value in `add` and `remove` of the same list is `invalid`. `areas` are paths in the form of §6.2 (not necessarily an existing area), at most 20 per list after the change (`invalid`, `details.fields.<list>: "too_many"`); `types` from `merge`, `contract`, `decision`, `deploy`, `release`, `note`, where `contract` means a merge with `contract` set. A value may be in `follow` and `mute` at once (below). Emits `ticker_subscription_changed` when something changed |
+
+There is no replace: two sessions of the same member that change the
+subscription at the same time both land, because each call names only
+what it adds or removes; nothing is read first. Example — follow `web/`
+and stop muting notes:
+
+```json
+PATCH /projects/maity/ticker/subscription
+{ "add": { "follow": { "areas": ["web/"] } }, "remove": { "mute": { "types": ["note"] } } }
+```
 
 A follow or mute by area matches a merge or note whose `paths` or
 `areas` fall under the path; by type, items of that type. A mute removes
@@ -4133,6 +4195,15 @@ the member from the computed audience (§17.3, with the `decision`
 exception). Subscriptions act when an item is written, never on items
 already written; a muted item stays readable in the listing and the
 packet.
+
+**Followed and muted at once.** When an item matches both a follow and a
+mute of the same member, the mute wins for waking and the follow still
+lists: the member gets no `member:` token in the audience (never woken,
+and no notification, §17.10), but keeps an entry in `reasons` with
+`muted: true`, so the item is `for_me` in the listing and the packet. A
+mute without a matching follow removes the member's entry entirely, as
+above. The `decision` exception is unchanged: there the member stays in
+the audience, unmuted.
 
 ### 17.9 Listing, the resume packet, the dashboard
 
@@ -4144,18 +4215,22 @@ Scope `project:read`. The items the caller may read (§17.5), newest
 first, paged (§1.4); with `after=<seq>` instead of a cursor, oldest
 first, as on the events endpoint (§8.3), without `wait`. Filters: `type`
 (comma list; `contract` as in §17.8), `area` (items whose `paths` or
-`areas` fall under it), `for` = `me` (items whose audience names the
-caller) or `all` (default), `since` (RFC 3339). Each item:
+`areas` fall under it), `for` = `me` (items whose `reasons` hold an entry
+for the caller, muted ones included, §17.8) or `all` (default), `since`
+(RFC 3339 with an offset; without one `invalid`). Paging as for every
+listing (§1.4): `limit` default 50, maximum 200, `next_cursor` `null` on
+the last page, a cursor valid for one filter set. Each item:
 
 ```json
 { "id": "tck-4302", "seq": 4302, "at": "2026-10-22T15:02:40Z", "type": "merge",
   "text": "…", "url": "…", "actor": null, "subject": { "type": "pull_request", "id": "212" },
   "areas": ["hub/", "/"], "contract": { "sections": ["6.5", "13"], "sections_unknown": false },
   "tasks": ["tsk-0031"], "for_me": true, "why": ["area_owner:hub/", "card_holder:tsk-0031"],
-  "detail": null, "redacted": false }
+  "muted": false, "detail": null, "redacted": false }
 ```
 
-`for_me` and `why` are the caller's own (§17.5). The full payload is the
+`for_me`, `why` and `muted` are the caller's own (§17.5, §17.8); `why`
+is `[]` and `muted` `false` when the item is not for the caller. The full payload is the
 event's (`GET /events`); this is its compact form. Reading the listing
 acknowledges nothing and moves no cursor.
 
@@ -4167,8 +4242,27 @@ and `others` count all such items, `truncated` says there are more
 as readable events; `maity resume` prints the `ticker` section and leaves
 them out of "missed events", so nothing is printed twice.
 
-**`maity wait`** prints a ticker item as one line,
-`[ticker] <type>: <text> <url>`; with `--json`, the event as it is.
+**Text form** (the CLI's choice; used by `maity ticker` and the `Ticker`
+section of `maity resume`, and by nothing else). One line per item,
+`[ticker] <type>: <text>`, then ` <url>` when there is one; for an item
+that is `for_me`, an indented second line `  for you: <why>` with the
+`why` tokens as the API writes them, joined by `, `
+(`  for you: area_owner:hub/, card_holder:tsk-0031`), and ` (muted)` at
+its end when `muted` is true. The words of the dashboard ("you own
+hub/") are the dashboard's. `maity ticker` prints the page in the
+listing's order and, when `next_cursor` is not `null`, a last line
+`more: maity ticker <the same flags> --cursor <next_cursor>`; it never
+follows the cursor on its own. `maity resume` prints a section headed
+`Ticker (<for_me> for you, <others> others)`, then the packet's items in
+the packet's order, then, when `truncated` is true, one line
+`<n> more: maity ticker`, `n` being `for_me` + `others` minus the items
+printed; with no items it prints no section.
+
+**`maity wait`** prints a ticker item like every other event: as the
+event's JSON, alone or inside the `--batch` array, unchanged in shape. It
+never renders a ticker item as text and has no flag that would; the
+supervised loop and every script that parses `wait` see one more `kind`,
+nothing else.
 
 **The dashboard** has a Ticker view per project: the listing, newest
 first, with the filters above and "for me" / "everything" as the two
