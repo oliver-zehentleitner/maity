@@ -781,7 +781,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     page.reload()
     card = page.locator("article.card", has=page.get_by_role("heading", name="0.1.0 — e2e"))
     expect(page.get_by_role("region", name="Cancelled")).to_contain_text("0.1.0 — e2e")
-    expect(card).to_contain_text("Closed: this is the record frozen when it closed")
+    expect(card).to_contain_text("are the record frozen when it closed")
     expect(card).not_to_contain_text("it can be cancelled but not marked done")
     expect(card.locator(".groups")).not_to_contain_text(
         "(in progress)"
