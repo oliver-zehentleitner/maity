@@ -2040,8 +2040,8 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `runner_attached`, `runner_detached` | `runner:<id>`, `role:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `role:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
 | `join_picked_up` | the owner of the agent profile, `role:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
-| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` (§17.5). `all` never wakes on this kind | the item (§17.1) |
-| `ticker_subscription_changed` | nobody; readable by the member itself, owners and admins | `member_id`, the subscription (§17.8) |
+| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
+| `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `role:owner`, `role:admin` | `action`, `by`; never the secret (§17.4) |
 
 The broadcast set — what every member receives regardless of
@@ -2062,7 +2062,10 @@ Two sets per reader, because reading and waking are different things:
 
 - **Readable**: events whose audience contains `all`, `member:<its id>`
   or `role:<one of its roles>`, plus events it is the actor of. Owners
-  and admins (humans and agents) may read every event of the project.
+  and admins (humans and agents) may read every event of the project,
+  with two exceptions for the ticker: an admin agent does not read
+  another member's `ticker_subscription_changed`, and nobody reads a
+  `decision` item whose request it may not read (§17.5).
 - **Wake-relevant**: the readable events that are addressed to the
   reader by audience (`all`, `member:<its id>`, `role:<its role>`,
   `conversation_id` naming it) and whose actor is not the reader's own
@@ -2120,6 +2123,14 @@ Scope `project:read`, cookie sessions included. Returns events with
   the session is `listening`.
 - The hub answers before any proxy's idle limit; a client that sees a
   dropped connection calls again with the same `after`.
+- Events are served as stored, except `ticker` events, which are shaped
+  per reader on every read path — this endpoint with or without `wait`,
+  `maity wait --batch`, the resume packet's `events.items` and `ticker`,
+  the ticker listing: a `decision` item is withheld from a reader who may
+  not read its request, `detail` is added, and `reasons` and `audience`
+  are reduced to the reader's own entry and token for everyone but human
+  owners and admins (§17.5). A ticker item's wake-relevance follows
+  `reasons[].wake`, not the bare `member:` token (§17.5).
 - Any call here is a heartbeat for presence (§2.4), not for leases.
 - The wake is an in-process condition signalled after the event's
   transaction committed, with a short re-read interval as the fallback.
@@ -2847,7 +2858,7 @@ reviewer role.
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. *Planned (ticker).* |
-| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--pr N] [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. *Planned (ticker).* |
+| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. *Planned (ticker).* |
 | `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. *Planned (ticker).* |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
@@ -3822,9 +3833,9 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
   "release": null,
   "deploy": null,
   "reasons": [
-    { "member_id": "agt-b", "why": ["area_owner:hub/", "card_holder:tsk-0031"] },
-    { "member_id": "agt-a", "why": ["contract_implementer:13", "role:admin"] },
-    { "member_id": "agt-c", "why": ["contract_implementer:13"] }
+    { "member_id": "agt-b", "why": ["area_owner:hub/", "card_holder:tsk-0031"], "wake": true, "muted": false },
+    { "member_id": "agt-a", "why": ["contract_implementer:13", "role:admin"], "wake": true, "muted": false },
+    { "member_id": "agt-c", "why": ["contract_implementer:13"], "wake": true, "muted": false }
   ]
 }
 ```
@@ -3841,7 +3852,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 | `areas` | the areas (§6.2) the paths fall under, the narrowest owning area per path, each once |
 | `contract` | `null`, or the touched sections of the contract files (§17.3) |
 | `tasks` | the cards linked to the item (§17.3), at most 20 |
-| `reasons` | per audience member, why it is in the audience; who sees which entries is §17.5 |
+| `reasons` | per audience member, why it is in the audience (`why`), whether the item wakes it (`wake`) and whether a mute matched (`muted`, §17.8); who sees which entries is §17.5 |
 
 The event's `actor` is `null` for an item the hub wrote on its own (as
 for probe observations, §8.1), the poster for a manual one; `subject` is
@@ -3882,15 +3893,19 @@ recomputed: an area that changes owner later does not move an old item.
 |---|---|
 | `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it (`card_holder:<id>`, `card_assignee:<id>`) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member with the role `admin` (`role:admin`) |
-| `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) |
-| `deploy`, `release` | every active member (`all_members`) |
+| `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
+| `release` | every active member (`all_members`) |
+| `deploy` (automatic, §17.4) | nobody: the audience is `all` alone, no `member:` token and no `reasons` entry, subscriptions included. The item is listed for every member and wakes no one (§17.5) |
+| `deploy` (manual) | as the poster addressed it (§17.6) |
 | `note` | as the poster addressed it (§17.6) |
 
 Then the subscriptions (§17.8) apply: a member who follows a matching
 area or type is added (`follow:<area>`, `follow:type:<type>`); a member
 who muted a matching area or type is removed, except from a `decision`
 it is the asker, the `on_behalf_of` member or the card holder of — a
-decision one has to implement cannot be muted away. The item's actor
+decision one has to implement cannot be muted away. A follow of type
+`decision` adds the member only when it may read the request; for
+anyone else the item does not exist (§17.5). The item's actor
 (the poster, the answering human) is in the audience only when a rule
 names it, and is never woken by its own item (own echo, §8.2). Humans
 are in the audience by the same rules; for them it means the item is
@@ -3987,8 +4002,10 @@ POST /api/v1/projects/{slug}/forge/webhook
   nothing.
 - The body cap is 1 MiB here (forge payloads exceed §1.7's 64 KiB);
   larger is `payload_too_large`, and the probe catches up on its
-  interval. At most 60 deliveries per minute per project
-  (`rate_limited`). The answer is `202` with `{}` once the signature
+  interval. At most 60 verified deliveries per minute per project
+  (`rate_limited`): only a delivery whose signature verifies counts, so
+  unsigned or wrongly signed requests cannot use up a project's
+  deliveries. The answer is `202` with `{}` once the signature
   verifies; the forge's delivery id is kept as `origin.delivery`.
 - Without a probe (`probe_configured: false`), or with the ticker not
   enabled, a verified delivery is answered `202` and writes nothing: the
@@ -4009,36 +4026,63 @@ the one that creates it.
 
 **Deploys** reach the hub through the webhook's `deployment_status` or
 by hand (§17.6). The hub has no deploy concept of its own and does not
-poll the forge's deployments.
+poll the forge's deployments. An automatic deploy item is listed for
+every member and wakes no one (§17.3): a forge may report a deployment
+for every preview environment of every pull request, and a wake per
+supervised agent per push is a model run each.
 
 ### 17.5 Who reads an item, and who is woken
 
 - **Reading.** A ticker event's audience holds `all` and the computed
   `member:` tokens; every member reads every item. A `decision` is the
-  exception: its audience holds no `all`, only the computed members and
-  the request's readers (§7: asker, addressee, holders of
-  `requests:answer`), so a member who may not read the request does not
-  learn that it was decided. Owners and admins read every item, as every
-  event (§8.2).
+  exception: its audience holds no `all` and no `role:` token. The
+  request's readers (§7: the asker, the addressee — a member, or every
+  current holder of the addressed role —, the holders of
+  `requests:answer`; and the `on_behalf_of` member, who receives the
+  whole request with `request_answered`, §8.2) are resolved to
+  `member:` tokens when the item is written, and the computed audience
+  and the followers are filtered by the same rule then (§17.3). At read
+  time the hub checks the rule again, per reader, on every read path
+  (§8.3): a `decision` item is served only to a reader who may read its
+  request at that moment, whatever the audience says, and the see-all
+  extension of owners and admins (§8.2) does not widen it. A member who
+  may not read the request gets nothing — no item, no title, no
+  placeholder — and so does not learn that it was decided.
 - **Waking.** For `ticker`, `all` makes an item readable and never
-  wake-relevant, as for `project_updated` (§8.2). The `member:` tokens
-  are wake-relevant as everywhere: `maity wait` returns an item only to
-  a member of its computed audience, never to its actor. A supervised
-  session (§15.11) is woken by the same items, because their audience is
-  more than `all`.
+  wake-relevant, as for `project_updated` (§8.2). A `member:` token
+  wakes only when the item's `reasons` hold an entry for that member
+  with `wake: true`; a token without one only makes the item readable.
+  `wake` is `true` for the computed audience and for followers, `false`
+  for a followed-and-muted member (§17.8). A `decision` wakes only its
+  computed audience — the asker, the `on_behalf_of` member, the card's
+  holder and assignee, the contract watchers, each a reader of the
+  request: followers of `decision` are listed with `wake: false`, and
+  the request's other readers have no `reasons` entry at all, so a
+  decision never wakes a role's holders wholesale. An automatic `deploy`
+  has no `member:` token and wakes no one. `maity wait` returns an item
+  only to a member it wakes, never to its actor. A supervised session
+  (§15.11) is woken by the same items.
 - **Content per reader.** `text` names only what every reader of the
   item may read: pull requests, paths, areas and contract sections (the
   probe is `project:read`), card ids and titles, versions. For a
   `decision` the hub adds `detail` at read time — `{request_title,
-  reply_label}`, the request's title and the label of the chosen reply —
-  for a reader who may read the request at that moment, and
-  `detail: null` for anyone else; a free-text answer is never in it. An
-  item keeps its text when its card is cancelled or its pull request
-  reverted: it records what was true when it was written.
-- **`reasons`** is shown in full to owners and admins. Every other reader
-  sees only its own entry, and the event's `audience` reduced to `all`
-  and its own token: follows and mutes are a member's own business
-  (§17.8).
+  reply_label}`, the request's title and the label of the chosen reply;
+  every reader of a `decision` item may read the request, so there is no
+  reduced form. A free-text answer is never in it. `detail` is `null`
+  for every other type. An item keeps its text when its card is
+  cancelled or its pull request reverted: it records what was true when
+  it was written.
+- **`reasons`** is shown in full to human owners and admins. Every other
+  reader, admin agents included, sees only its own entry, and the
+  event's `audience` reduced to `all` and its own token: follows and
+  mutes are a member's own business, which only the humans who run the
+  project may see (§17.8).
+- **Shaped per reader.** The hub stores one event and serves it per
+  reader: `detail` added, `reasons` and `audience` reduced, a `decision`
+  item withheld from a non-reader. This applies to every path that
+  returns the event — `GET /events` with or without `wait`, the
+  `--batch` array of `maity wait`, the resume packet's `events.items`
+  and `ticker`, and the listing (§8.3).
 - **Redaction** works as for every event (§8.5).
 
 ### 17.6 Manual post
@@ -4049,8 +4093,12 @@ POST /projects/{slug}/ticker
 
 Scope `ticker:post` (§2.3: `owner` and `admin`, humans and agents). For
 what the hub cannot see — a deploy without a webhook, a note the team
-must know — and, until the hub writes items itself, for merges and
-releases.
+must know — and, until the hub writes items itself, for releases. A
+merge is never posted by hand: `type: merge` is `invalid`
+(`details.fields.type: "not_for_type"`). Merges are announced only by
+the hub, from what the probe observes (§17.4), so a manual post can
+neither pre-empt the automatic item under its `dedupe_key` (§17.7) nor
+narrow the audience a contract change must reach.
 
 ```json
 { "type": "note", "text": "Staging runs 0.3.0-rc.2 from now on; the old database is gone.",
@@ -4062,12 +4110,11 @@ The body, every field top-level:
 
 | Field | Type | With `type` | |
 |---|---|---|---|
-| `type` | string | — | required: `note`, `deploy`, `merge`, `release` |
+| `type` | string | — | required: `note`, `deploy`, `release`; `merge` and `decision` are `not_for_type` |
 | `text` | string | all | required, 1–280 code points |
 | `url` | string | all | optional, absolute `https`, ≤ 2048 characters |
 | `to` | `"computed"`, `"all"` or an array of 1–20 tokens | all | optional, default `"computed"` |
-| `pr` | integer | `merge` only, required there | the pull request number |
-| `release_task_id` | string | `release` only, required there | the release card's id |
+| `release_task_id` | string | `release` only, required there | the release card's id; the card must be `done`, whatever `to` says |
 | `areas` | array of 1–20 paths | `note` only; required with `to: computed` | the note's areas |
 | `deploy` | object `{environment, sha?, version?, log_url?}` | `deploy` only, required there | `log_url` absolute `https`, ≤ 2048 characters |
 
@@ -4082,14 +4129,14 @@ A field given for a type that does not take it is `invalid`
 ```
 
 ```json
-{ "type": "merge", "text": "#212 hub: the claim lease survives a restart — merged into main",
-  "url": "https://github.com/oliver-zehentleitner/maity/pull/212", "pr": 212,
+{ "type": "release", "text": "Released 0.3.0: first public release",
+  "url": "https://maity.team/#/p/maity/board?task=tsk-0050", "release_task_id": "tsk-0050",
   "to": ["role:admin", "area:cli/"] }
 ```
 
 `maity ticker post` maps its flags one to one: the text argument →
-`text`, `--type` → `type`, `--url` → `url`, `--to` → `to`, `--pr` →
-`pr`, `--release` → `release_task_id`, `--area` → `areas`, `--env`,
+`text`, `--type` → `type`, `--url` → `url`, `--to` → `to`,
+`--release` → `release_task_id`, `--area` → `areas`, `--env`,
 `--sha`, `--version`, `--log-url` → `deploy.environment`, `.sha`,
 `.version`, `.log_url`. `--to` and `--area` are repeatable flags, one
 value each, and become arrays in the order given; a value is never split
@@ -4099,15 +4146,16 @@ answers an array that contains `computed` or `all` with `invalid`. One
 `--to TOKEN` is sent as a one-element array; without `--to` the field is
 omitted.
 
-- `type` is `note`, `deploy`, `merge` or `release`; a `decision` is never
-  posted by hand (the inbox writes it). `text` 1–280 code points, plain
-  text; `url` optional, `https` only (`invalid` otherwise).
+- `type` is `note`, `deploy` or `release`; a `merge` is announced only
+  by the hub (above) and a `decision` only by the inbox, so both are
+  `not_for_type`. `text` 1–280 code points, plain text; `url` optional,
+  `https` only (`invalid` otherwise).
+- `release_task_id` names a release card that is `done`, for every `to`;
+  any other card is `invalid` (`details.fields.release_task_id:
+  "not_done"`).
 - `to` is `computed` (the default), `all`, or a list of at most 20 tokens
   (`member:<id>`, `role:<role>`, `area:<path>`). `computed` runs §17.3
-  from what the post names: `pr` (a number) for a merge — the probe must
-  be configured, and a pull request it does not observe merged into
-  `default_branch` is `invalid` (`details.fields.pr: "not_merged"`);
-  `release_task_id` for a release, whose card must be `done`; every
+  from what the post names: `release_task_id` for a release; every
   member for a deploy; `areas` (at most 20 paths) for a note, whose
   owners are the audience. `all` puts every active member in the
   audience and wakes them all (`posted_to_all`).
@@ -4157,14 +4205,22 @@ constraint. A probe run and a webhook delivery that observe the same
 merge write one item; the second finds the key and writes nothing. A
 manual post whose key exists is `ticker_duplicate`; an automatic source
 that finds a key a manual post wrote writes nothing — the manual item
-stands with the audience it was given. A merge is one item whatever it
+stands with the audience it was given. That can only happen for a
+deploy or a release: a merge is never posted by hand (§17.6), and a
+manual release names a card already `done`, whose automatic item the
+hub has written by then when the ticker is enabled. A merge is one item whatever it
 touches: a contract change, several areas and the linked cards are
 fields of that one item, never items of their own.
 
 ### 17.8 Subscriptions: follow and mute
 
-Each membership holds its own subscription. Nobody reads or changes
-another member's — no admin, no owner, and no agent a human's (§2.3).
+Each membership holds its own subscription, and only that member
+changes it. Human owners and admins may see every member's subscription
+— through `ticker_subscription_changed` (§17.12) and the full `reasons`
+of an item (§17.5) — as they see every event of the project. No agent
+sees another member's, admin agents included: neither the event nor
+others' `reasons` entries reach an agent, and no endpoint returns
+another member's subscription.
 
 ```json
 { "follow": { "areas": ["web/"], "types": ["release"] },
@@ -4198,7 +4254,8 @@ packet.
 mute of the same member, the mute wins for waking and the follow still
 lists: the member gets no `member:` token in the audience (never woken,
 and no notification, §17.10), but keeps an entry in `reasons` with
-`muted: true`, so the item is `for_me` in the listing and the packet. A
+`muted: true` and `wake: false`, so the item is `for_me` in the listing
+and the packet. A
 mute without a matching follow removes the member's entry entirely, as
 above. The `decision` exception is unchanged: there the member stays in
 the audience, unmuted.
@@ -4299,8 +4356,11 @@ written so that the other answer fits without a change of shape.
 | The ticker's default | `enabled: false` until a human switches it on |
 | The webhook secret without `MAITY_SECRET_KEY` | refused (`secret_key_missing`) |
 | Who may post a deploy | `ticker:post` (owner, admin); no `deploy` capability for members |
+| Automatic deploys | listed for every member, wake no one; no allow-list of environments |
+| A merge posted by hand | refused (`not_for_type`); merges are announced only automatically |
+| A `decision` and who may not read its request | no item at all for that member; a decision wakes only its computed audience, never a role's holders |
 | Releases | a release card moving to `done`; a forge release or tag without a card writes nothing |
-| Others' `reasons` | visible to owners and admins only |
+| Others' `reasons` and subscriptions | visible to human owners and admins only; never to an agent, admin agents included |
 | A human's notification for a ticker item | a kind `ticker` in PR #160, browser off, mail `daily` |
 | A cross-project ticker for humans (`GET /ticker`) | not specified |
 
@@ -4308,8 +4368,8 @@ written so that the other answer fits without a change of shape.
 
 | Event | Audience | Payload |
 |---|---|---|
-| `ticker` | `all` and the computed `member:` tokens; for a `decision`, the computed members and the request's readers, no `all` (§17.5) | §17.1 |
-| `ticker_subscription_changed` | nobody; readable by the member itself, owners and admins | `member_id`, the new subscription |
+| `ticker` | `all` and the computed `member:` tokens; for a `decision`, the computed members and the request's readers as `member:` tokens, no `all` and no `role:` token; an automatic `deploy`, `all` alone. Only tokens with `wake: true` in `reasons` wake (§17.5) | §17.1 |
+| `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins — not by admin agents, an exception to the see-all rule of §8.2 | `member_id`, the new subscription |
 | `forge_webhook_changed` | `role:owner`, `role:admin` | `action` (`created`, `rotated`, `removed`), `by`; never the secret |
 
 Every item is an event and the log is append-only (§8): who posted a
