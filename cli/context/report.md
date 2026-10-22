@@ -4,7 +4,7 @@
 
 **Id:** 66da7721-2f51-4105-b82f-4c06cbb9e984
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the refusal on mismatch is from the task brief
 **Revisit when:** the hub's forge probe makes the agent-side check redundant, or agents routinely hit a refusal that is not a real mismatch
