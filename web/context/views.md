@@ -118,7 +118,7 @@ leaked line is pasted.
 
 **Id:** c285771a-0b3a-4867-b66b-a1c7faa837de
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22
 **Revisit when:** the contract gives cards an order within a column, or the hub exposes the moves a caller may make
