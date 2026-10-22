@@ -536,3 +536,25 @@ def test_wait_is_quiet_about_someone_elses_pause(
     _wait_for(fake, event)
     assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
     assert capsys.readouterr().err == ""
+
+
+def test_report_no_code_reads_and_sends_no_git_facts(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    from maity import gitfacts
+
+    def untouched(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("no git facts with --no-code")
+
+    monkeypatch.setattr(gitfacts, "collect", untouched)
+    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-7/report")] = lambda seen: (
+        200, {"id": "tsk-7", "status": "review"}
+    )  # fmt: skip
+    (joined.parent.parent / "dirty.txt").write_text("uncommitted")
+    code = cli.main(["report", "--task", "tsk-7", "--summary", "The draft: …", "--no-code"])
+    assert code == cli.EXIT_OK, capsys.readouterr().err
+    body = fake.signed()[-1].json()
+    assert body["code"] is False and body["pr_status"] == "none"
+    assert all(body[k] is None for k in ("head", "branch", "upstream", "remote_head", "pr"))
+    assert "(no code)" in capsys.readouterr().out

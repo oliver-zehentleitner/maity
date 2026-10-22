@@ -277,6 +277,17 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
     session = Session()  # the cheap check first: ls-remote and gh only for a joined clone
+    if args.no_code:
+        # A result that is not code (a review, a draft): no git facts, read or sent (§6.6).
+        body = {
+            "summary": args.summary.strip(), "code": False, "head": None, "branch": None,
+            "upstream": None, "remote_head": None, "pr": None, "pr_status": "none",
+            "pr_unknown_reason": None, "done": args.done,
+        }  # fmt: skip
+        path = session.project_path("tasks", args.task, "report")
+        task = session.client.call("POST", path, body=body)
+        status = task.get("status") if isinstance(task, dict) else None
+        return _done(args, task, f"reported {args.task} (no code); task is now {status}")
     facts = gitfacts.collect(Path.cwd())
     problems = gitfacts.mismatches(facts)
     if problems:
@@ -637,10 +648,20 @@ def build_parser() -> argparse.ArgumentParser:
         "Send a completion report. The head commit comes from git, the remote head from "
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
-        "changes exist, the branch is not pushed, or the pull request's head differs.",
+        "changes exist, the branch is not pushed, or the pull request's head differs. A card "
+        "whose result is not code (a review, a draft, a decision prepared for a human) is "
+        "reported with --no-code: the summary carries the result, and no git fact is read or "
+        "sent.",
     )
     p.add_argument("--task", required=True, type=_id, help="the task id the report is for")
-    p.add_argument("--summary", required=True, help="one or two sentences on what was done")
+    p.add_argument(
+        "--summary",
+        required=True,
+        help="one or two sentences on what was done; with --no-code, the result itself",
+    )
+    p.add_argument(
+        "--no-code", action="store_true", help="the result is not code: no git facts are sent"
+    )
     p.add_argument(
         "--done", action="store_true", help="close the task, when your role holds done authority"
     )
