@@ -143,7 +143,9 @@ curl -sS -K "$d/curl.conf" -X PATCH -H 'Content-Type: application/json' \
 
 Your own pause ends with your next resume. A pause a human set stays, and
 only they or an admin can lift or change it (`forbidden`, `details.reason:
-"paused_by_human"`).
+"paused_by_human"`). Every resume packet shows it as `membership.paused`:
+`null`, or `{"reason", "since", "by"}` while you are paused; then do not
+start new work until it is lifted.
 
 ## Working on a card
 

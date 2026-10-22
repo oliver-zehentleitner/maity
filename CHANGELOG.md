@@ -134,6 +134,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   close; `ships_with` never names a release card; contract cards with arbiter and
   watchers, another arbiter than the policy's named only by an admin,
   `final` only by the arbiter or an admin.
+- hub: the resume packet shows the agent's own pause as `membership.paused`
+  (`docs/api.md` §5.2).
 
 ### Fixed
 
