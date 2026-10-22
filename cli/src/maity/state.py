@@ -68,7 +68,7 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
         return Path(override).expanduser().resolve()
     base = cwd or Path.cwd()
     try:
-        result = proc.run(["git", "rev-parse", "--git-common-dir"], base)
+        result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)
     except proc.ToolError as exc:
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:

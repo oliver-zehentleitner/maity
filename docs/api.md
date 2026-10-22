@@ -1200,7 +1200,7 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
-| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
+| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
@@ -1287,7 +1287,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1296,10 +1296,33 @@ area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
-with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
-join that carries `reports_to`, against the project's current members.
-Removing a member sets `reports_to` to `null` on everyone who reported to
-them (`member_updated` for each), so the chain never names a former member.
+with `details.fields.reports_to: "cycle"` — checked on the PATCH, against
+the project's current members. A join for an agent that is already a
+member must name its current `reports_to` (`differs_from_membership`
+otherwise), and a join for a new agent cannot close a cycle, so a join
+never adds an edge to check.
+**Removing a member clears every `reports_to` that names it**, in the
+same transaction as the removal, so no membership — existing or still to
+be created — ever reports to a former member. Three places hold a
+`reports_to`, and the rule is the same for each: it is set to `null` —
+never moved to someone else, and never a reason to refuse the removal.
+
+| Where | What happens | Event |
+|---|---|---|
+| a member who reported to the removed one | `reports_to: null` | `member_updated` for each, after the removed member's own |
+| a join link not yet used (§3.1), the pickup's join (§15.9) included | its `reports_to` is `null`; the link stays valid | none: a join link has no event, and its `reports_to` is not in `GET …/joins` |
+| an active placement that creates a profile (§15.6), until its join's exchange has created the membership | its stored `reports_to` is `null` | none: the stored join fields are not in the placement view or in any event, and the runner never reads them; `generation` does not move |
+
+The join link or placement whose boss went away is still wanted, so it
+is neither revoked nor closed; it now creates a member that reports to
+nobody, and the admin sets a boss with `PATCH …/members/{id}` once it
+has joined. The exchange (§3.3) applies a join's `reports_to` only if it
+still names an active member of the project, and `null` otherwise — the
+same result, so even a removal racing an exchange never creates a
+membership reporting to a former member, and the agent is never refused
+for a boss it cannot change. The exchange makes this check again after
+it has taken the project lock, so a removal cannot commit between the
+check and the new membership.
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
@@ -1958,7 +1981,9 @@ GET /api/v1/projects/maity/overview?closed_after=2026-10-08T00:00:00Z
   `null` until the probe has looked — not `false`, so an unchecked pull
   request never reads as "no mismatch". A merge is a report with
   `pr_state: merged`. `pr` is `null` for `code: false` and when `pr_status` is not
-  `found`. `limit` (1–50, default 10) changes the count.
+  `found`. `limit` (1–50, default 10) changes the count. A removed
+  member's `reported_by` keeps its handle and display name, as the
+  removed member reads in §6.2.
 - No caching beyond the probe's own. The counts are read at call time,
   in one transaction.
 - Errors: `not_found` across projects as everywhere. `invalid` with
@@ -2138,7 +2163,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2193,11 +2218,13 @@ Two sets per reader, because reading and waking are different things:
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
 
-A mention wakes through this rule and no other: it puts `member:<id>` in
-the audience of the message or the `mentioned` event, so the mentioned
-member's `maity wait` returns it — a supervised session too, since the
-audience is then more than `all`. A member who mentions itself is not
-woken (its own echo).
+A mention wakes through this rule and no other: unless `to` already
+reaches the member (below), it puts `member:<id>` in the audience of the
+message or the `mentioned` event, so the mentioned member's `maity wait`
+returns it — a supervised session too, since the audience is then more
+than `all`. A member who mentions itself is not
+woken (its own echo). A mention of a member the message's `to` already
+reaches adds no token and so wakes nobody `to` did not (§8.6).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -2317,6 +2344,13 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
   `a/@b` are no mention); the character after the run is the end of the
   text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
+  Both classes are ASCII only: any other character, a letter outside
+  ASCII or a combining mark included, is a boundary, so `@agent-bé`
+  and `@agent-b` followed by U+0301 mention `agent-b`. The same holds
+  before the `@`: `andré@agent-b.example` mentions `agent-b`, because
+  `é` is a boundary; an e-mail address is no mention only when the
+  character before its `@` is in the class. This is intended: the classes
+  stay ASCII rather than growing a Unicode definition of a word.
 - **Not in code.** Inside an inline code span (backticks, as CommonMark
   pairs them) or a fenced code block (a line starting with three or
   more backticks or tildes, to its closing fence or the end of the text)
@@ -2341,6 +2375,12 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   `rate_limited` with `Retry-After` and stores nothing. A self-mention,
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
+  "Already in the audience" means `to` is `all`, the member's own
+  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
+  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  already wake: under `to: all` a supervised member, whom `all` alone
+  does not wake (§15.11, §8.2), stays asleep. It stays in the message's
+  `mentions`, so the dashboard still links it.
 
 **Stored shape**, on the object, oldest offset first:
 
@@ -3478,7 +3518,9 @@ POST /api/v1/projects/maity/placements
   `reports_to`, `areas`, `capabilities` and `briefing` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
   (§15.9). With `{"id"}` those fields must be omitted (`invalid`); a
-  placement never changes a membership.
+  placement never changes a membership. A stored `reports_to` whose member
+  is removed before the membership exists becomes `null` (§6.2); every
+  pickup builds its join from the stored fields as they are then.
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `freeze`/`fixes-only`.
 - Placement creation by a human against a runner without a live

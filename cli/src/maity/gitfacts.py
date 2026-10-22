@@ -41,6 +41,7 @@ class Facts:
     dirty: bool
     pr: PullRequest | None
     pr_unknown_reason: str | None = None
+    branch_merged: bool = False  # the branch is gone; its merged pull request has this head
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -52,13 +53,13 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 def _git(cwd: Path, *args: str) -> str | None:
     """For lookups where a non-zero exit is an answer (no such ref, no such key): None."""
-    result = _run(["git", *args], cwd)
+    result = _run([*proc.GIT, *args], cwd)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
 def _git_required(cwd: Path, *args: str) -> str:
     """For questions that must be answered; a failure is an error, never an empty answer."""
-    result = _run(["git", *args], cwd)
+    result = _run([*proc.GIT, *args], cwd)
     if result.returncode != 0:
         detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
         raise FactsError(f"git {args[0]} failed: {detail}")
@@ -140,6 +141,7 @@ def collect(cwd: Path) -> Facts:
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
     branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
     remote = remote_branch = remote_head = None
@@ -155,6 +157,17 @@ def collect(cwd: Path) -> Facts:
 
     unknown = _forge_unknown(cwd, remote)
     pr = _pull_request(cwd, remote_branch or branch) if unknown is None and branch else None
+    # Merged and deleted: the forge still has this head, as the merged pull request's. It
+    # stands in for the branch, and the hub's probe compares only the pull request then.
+    merged = (
+        remote_branch is not None
+        and remote_head is None
+        and pr is not None
+        and pr.state.upper() == "MERGED"
+        and pr.head == head
+    )
+    if merged:
+        remote_head = head
     return Facts(
         head=head,
         branch=branch,
@@ -164,6 +177,7 @@ def collect(cwd: Path) -> Facts:
         dirty=dirty,
         pr=pr,
         pr_unknown_reason=unknown,
+        branch_merged=merged,
     )
 
 
@@ -178,7 +192,12 @@ def mismatches(facts: Facts) -> list[str]:
     if facts.remote is None or facts.remote_branch is None:
         problems.append(f"branch {facts.branch} has no upstream; push it with `git push -u`")
     elif facts.remote_head is None:
-        problems.append(f"branch {facts.remote_branch} does not exist on {facts.remote}; push it")
+        problems.append(
+            f"branch {facts.remote_branch} does not exist on {facts.remote}; push it. If it was "
+            "deleted after its pull request was merged, report from the merged head (gh finds "
+            "the merged pull request by the branch name); a result that is not code is "
+            "reported with --no-code"
+        )
     elif facts.remote_head != facts.head:
         problems.append(
             f"{facts.remote}/{facts.remote_branch} is at {facts.remote_head[:12]}, "

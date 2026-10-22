@@ -348,7 +348,7 @@ window.Maity = window.Maity || {};
   // A contract's arbiter may be a role ("role:admin"): named in words.
   const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : ctx.nameOf(a));
 
-  // manage: { move, assign, drag } from the board, or null (read only).
+  // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
   function card(ctx, c, byId, manage) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
@@ -363,7 +363,8 @@ window.Maity = window.Maity || {};
       if (target) target.focus();
     };
     const E = M.boardEdit;
-    const movable = manage && E.targets(ctx, c).length > 0;
+    // Movable to another column, or within its own by tasks:admin.
+    const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const el = h("article", {
       class: "card card-" + c.kind + (movable ? " movable" : ""),
       "aria-label": c.title,
@@ -396,7 +397,8 @@ window.Maity = window.Maity || {};
       checkpoint(c),
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
-      manage ? h("div", { class: "card-actions" }, E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign)) : null);
+      manage ? h("div", { class: "card-actions" }, E.moveControl(ctx, c, manage.move),
+        E.orderControl(ctx, c, manage.columnOf(c), manage.place), E.assignControl(ctx, c, manage.assign)) : null);
     return el;
   }
 
@@ -429,11 +431,20 @@ window.Maity = window.Maity || {};
     }
 
     // A write, then the board read again; a failed re-read is no failed write.
-    async function write(label, done, call, focusKey) {
+    // stale(err), where given, tells a refusal that only a fresh read can
+    // settle (a neighbour that moved meanwhile): the board is read again, and
+    // what it returns is called with the fresh cards for the words to say.
+    async function write(label, done, call, focusKey, stale) {
       status.busy(label + "…");
       try {
         await call();
       } catch (err) {
+        const words = stale && stale(err);
+        if (words) {
+          try { await reload(focusKey); } catch (ignored) { /* the refusal below is what matters */ }
+          status.fail(label + " failed: ", { message: words(items) });
+          return false;
+        }
         status.fail(label + " failed: ", E.said(err));
         return false;
       }
@@ -450,6 +461,25 @@ window.Maity = window.Maity || {};
     const cardPath = (c) => ctx.base + "/tasks/" + encodeURIComponent(c.id);
     const move = (c, to, focusKey) => write("Moving", c.id + " is now " + to.replace("_", " ") + ".",
       () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    // Within a column (§6.4): the order changes once the hub has answered,
+    // never before; a neighbour gone or moved to another column meanwhile
+    // re-reads the board.
+    const PLACED = { before: "above", after: "below" };
+    const place = (c, how, focusKey) => write("Reordering",
+      c.id + (how.to ? " is now at the " + how.to : " is now " + PLACED[Object.keys(how)[0]] + " " + Object.values(how)[0]) + ".",
+      () => M.api.post(cardPath(c) + "/move", how), focusKey || "order:" + c.id,
+      (err) => {
+        if (err.code !== "not_found" && err.code !== "invalid") return null;
+        // A not_found with the card and its neighbour still where they were
+        // is a hub without the endpoint, not a race.
+        const near = how.before || how.after;
+        return (fresh) => {
+          const here = (id) => fresh.some((t) => t.id === id && t.status === c.status);
+          return err.code === "not_found" && here(c.id) && (!near || here(near))
+            ? "this hub does not order cards yet."
+            : "the card next to it moved or changed meanwhile; the board shows the order as it is now.";
+        };
+      });
     const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 
@@ -467,11 +497,27 @@ window.Maity = window.Maity || {};
         dropped = false;
         if (e.dataTransfer) { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; }
         const ok = new Set(E.targets(ctx, c));
+        if (E.orderable(ctx, c)) ok.add(c.status);
         columnsBox.querySelectorAll("section.column").forEach((col) => {
           const s = col.getAttribute("data-status");
           col.classList.toggle("drop-ok", ok.has(s));
           col.classList.toggle("drop-refused", s !== c.status && !ok.has(s));
         });
+      },
+      // Over a card of its own column: above or below it, by the pointer's
+      // half of that card; anywhere else in the column: to the bottom.
+      spot(e) {
+        let el = e.target;
+        while (el && !(el.getAttribute && el.getAttribute("data-card"))) el = el.parentNode;
+        const id = el ? el.getAttribute("data-card") : null;
+        if (!id || id === dragging.id) return id ? null : { to: "bottom" };
+        const box = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+        const above = !box || typeof e.clientY !== "number" || e.clientY < box.top + box.height / 2;
+        return { [above ? "before" : "after"]: id, el };
+      },
+      mark(spot) {
+        columnsBox.querySelectorAll("article.card").forEach((a) => { a.classList.toggle("drop-before", false); a.classList.toggle("drop-after", false); });
+        if (spot && spot.el) spot.el.classList.toggle(spot.before ? "drop-before" : "drop-after", true);
       },
       end() {
         const c = dragging;
@@ -485,12 +531,17 @@ window.Maity = window.Maity || {};
           col.classList.toggle("drop-refused", false);
           col.classList.toggle("drop-over", false);
         });
+        drag.mark(null);
       },
     };
-    const manage = { move, assign, drag };
+    // The cards of each column as drawn, in order: the neighbours a place names.
+    let columns = {};
+    const columnOf = (c) => columns[c.status] || [];
+    const manage = { move, assign, place, columnOf, drag };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
+      const within = () => dragging && dragging.status === s && E.orderable(ctx, dragging);
       const col = h("section", {
         class: "column",
         "aria-label": label,
@@ -499,11 +550,19 @@ window.Maity = window.Maity || {};
         ondragover: (e) => {
           if (dragging) over = { s, label };
           if (may()) { e.preventDefault(); col.classList.toggle("drop-over", true); }
+          if (within()) { const spot = drag.spot(e); if (spot) e.preventDefault(); drag.mark(spot); }
         },
         ondragleave: () => col.classList.toggle("drop-over", false),
         ondrop: (e) => {
           e.preventDefault();
           const c = dragging;
+          if (within()) {
+            const spot = drag.spot(e);
+            dropped = true;
+            drag.end();
+            if (spot) { delete spot.el; place(c, spot); }
+            return;
+          }
           if (c && E.targets(ctx, c).includes(s)) {
             dropped = true;
             drag.end();
@@ -530,6 +589,8 @@ window.Maity = window.Maity || {};
       const known = new Set(COLUMNS.map(([s]) => s));
       const visible = items.filter(shown);
       const other = visible.filter((t) => !known.has(t.status));
+      columns = {};
+      COLUMNS.forEach(([s]) => { columns[s] = visible.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
       if (!items.length) {
         append(intro, h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
@@ -538,7 +599,7 @@ window.Maity = window.Maity || {};
         append(intro, h("p", { class: "muted" }, "No card matches the filter."));
       }
       append(clear(columnsBox),
-        COLUMNS.map(([s, label]) => column(s, label, visible.filter((t) => t.status === s))),
+        COLUMNS.map(([s, label]) => column(s, label, columns[s])),
         other.length
           ? h("section", { class: "column", "aria-label": "Other" },
             h("h3", { class: "column-head" }, "Unknown status"),

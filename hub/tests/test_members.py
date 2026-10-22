@@ -323,3 +323,60 @@ def test_removing_twice_answers_the_removed_member(
     assert [(c["id"], c["revoked_reason"]) for c in items] == [
         (agent.credential_id, "member_removed")
     ]
+
+
+# --- §6.2 the reports_to chain is a tree -----------------------------------------------
+
+
+def test_reports_to_never_forms_a_cycle(owner: flow.Human, make_client: ClientFactory) -> None:
+    a = flow.agent(make_client, owner)
+    b = flow.agent(make_client, owner, reports_to=a.id)
+    c = flow.agent(make_client, owner, reports_to=b.id)
+    cases = [(a, a), (a, b), (a, c), (b, c)]
+    for member, boss in cases:
+        response = owner.patch(f"/projects/maity/members/{member.id}", {"reports_to": boss.id})
+        assert response.status_code == 400, (member.id, boss.id)
+        assert response.json()["error"]["details"]["fields"] == {"reports_to": "cycle"}
+    # Across the tree is fine, and so is reporting to a human.
+    assert owner.patch(f"/projects/maity/members/{c.id}", {"reports_to": a.id}).status_code == 200
+    assert (
+        owner.patch(f"/projects/maity/members/{a.id}", {"reports_to": owner.id}).status_code == 200
+    )
+
+
+def test_a_join_for_a_member_names_its_current_reports_to(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    # The exchange keeps the membership as it is, so a join adds no edge to the
+    # chain: any other reports_to is refused before the link exists (§6.2).
+    a = flow.agent(make_client, owner)
+    b = flow.agent(make_client, owner, reports_to=a.id)
+    other = owner.post("/projects/maity/joins", {"agent": {"id": a.id}, "reports_to": b.id})
+    assert other.json()["error"]["details"]["fields"] == {"reports_to": "differs_from_membership"}
+    same = owner.post("/projects/maity/joins", {"agent": {"id": b.id}, "reports_to": a.id})
+    assert same.status_code == 201, same.text
+
+
+def test_removing_a_member_clears_reports_to_on_its_reports(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    boss = flow.agent(make_client, owner)
+    first = flow.agent(make_client, owner, reports_to=boss.id)
+    second = flow.agent(make_client, owner, reports_to=boss.id)
+    other = flow.agent(make_client, owner, reports_to=owner.id)
+    pending = flow.join(owner, "maity", reports_to=boss.id)
+    with migrated.connect() as conn:
+        before = conn.execute(select(t.event.c.seq).order_by(t.event.c.seq.desc())).scalar()
+    assert owner.delete(f"/projects/maity/members/{boss.id}").status_code == 200
+    for member in (first, second):
+        assert owner.get(f"/projects/maity/members/{member.id}").json()["reports_to"] is None
+    assert owner.get(f"/projects/maity/members/{other.id}").json()["reports_to"] == owner.id
+    with migrated.connect() as conn:
+        events = conn.execute(
+            select(t.event).where(t.event.c.seq > before, t.event.c.kind == "member_updated")
+        ).all()
+        link = conn.execute(select(t.join_link).where(t.join_link.c.id == pending["id"])).one()
+    updated = sorted(e.payload["id"] for e in events)
+    assert updated == sorted([boss.id, first.id, second.id])
+    assert all(e.payload["reports_to"] is None for e in events if e.payload["id"] != boss.id)
+    assert link.reports_to is None

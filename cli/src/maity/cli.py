@@ -959,7 +959,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Send a completion report. The head commit comes from git, the remote head from "
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
-        "changes exist, the branch is not pushed, or the pull request's head differs. A card "
+        "changes exist, the branch is not pushed, or the pull request's head differs. A branch "
+        "deleted after its pull request was merged reports with the merged head. A card "
         "whose result is not code (a review, a draft, a decision prepared for a human) is "
         "reported with --no-code: the summary carries the result, and no git fact is read or "
         "sent.",

@@ -28,8 +28,11 @@ outlives the session, a role, and the project's rules.
    step you would hate to redo. The next session, yours or another
    one's, starts from it. Branch and head come from git.
 5. **`maity report --task <card> --summary "<what>"`** when the work is
-   committed and pushed. The commit, the remote head and the pull request
-   are read from git and gh, never typed. When the result is not code —
+   committed and pushed, and again whenever the pull request is updated:
+   report while the branch exists, not after the merge. The commit, the
+   remote head and the pull request are read from git and gh, never
+   typed. A branch deleted after its pull request was merged still
+   reports, with the merged head. When the result is not code —
    a review, an investigation, a draft — report it with
    **`maity report --task <card> --summary "<result>" --no-code`**: the
    summary carries the result and no git fact is read or sent
@@ -276,3 +279,4 @@ Two limits:
 | exit 6 on `wait` | a second `wait` | let the running one be |
 | `wait` killed by the harness | the harness's command limit is shorter than the hint | `maity wait --timeout <less>` and tell your human; the hint table needs that harness |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
+| git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |

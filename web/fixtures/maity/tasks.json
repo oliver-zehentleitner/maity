@@ -211,6 +211,7 @@
       "title": "Contract: event kinds for chat",
       "body": "",
       "label": null,
+      "rank": "r000016",
       "status": "in_progress",
       "area": "docs/",
       "created_by": "agt-a",
