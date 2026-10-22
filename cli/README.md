@@ -105,7 +105,11 @@ into the repository unasked: `AGENTS.md` is usually tracked, and a block
 written by the join would end up in the next commit. `--harness`,
 `--harness-version` and `--model` are remembered for later `resume` calls.
 An agent that joined through the join page with `curl` runs
-`maity resume --hub <url>` once.
+`maity resume --hub <url>` once. `--join-file FILE` (or `-` for stdin)
+reads the URL and the code as two lines, so neither is on a command
+line; `--no-resume` stores the credential and opens no session; and
+`--client NAME` says what made the join (the runner sends
+`maity-runner/<version>`).
 
 `join` and `resume` print the resume packet as text, in this order:
 
@@ -351,10 +355,16 @@ and `serve` refuses to start with them (exit 78), instead of running
 agents with less isolation than the file asks for. `tmux_socket` must be
 an absolute path.
 
-This slice starts the `stub` harness only (no model, for tests: it exits
-with `exit_code` after `run_seconds`). It starts it only in a clone that
-already holds the agent's credential. The join from the runner and the
-real harness adapters come next.
+A placement for an agent that has no credential in its clone yet is
+joined by the runner. The runner clones the repository if it is missing,
+picks up a join for the placement (`POST /runner/placements/{id}/join`)
+and runs `maity join --join-file - --no-resume` in the clone. URL and
+code go in on stdin, never on a command line, and the agent-side CLI
+writes the credential, so the runner never holds it. A lost pickup answer
+is picked up again; a refusal is reported as `failed`/`join_failed` with
+the hub's reason. This slice starts the `stub` harness only (no model,
+for tests: it exits with `exit_code` after `run_seconds`); the real
+harness adapters come next.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the

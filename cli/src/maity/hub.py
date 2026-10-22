@@ -275,12 +275,14 @@ class JoinResult:
     hub: str | None
 
 
-def _exchange(url: str, code: str, what: str, timeout: float) -> tuple[Secret, Message]:
+def _exchange(
+    url: str, code: str, what: str, timeout: float, client: str = CLIENT
+) -> tuple[Secret, Message]:
     """POST a single-use code to an exchange whose answer body is a credential and nothing
     else (§3.3, §15.2). The body is checked for the credential format and handed back as a
     `Secret`; it is never decoded into anything that could be printed, and an error body is
     never mistaken for it."""
-    body = json.dumps({"code": code, "client": CLIENT}).encode("utf-8")
+    body = json.dumps({"code": code, "client": client}).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
     request = urllib.request.Request(url, data=body, method="POST", headers=headers)  # noqa: S310
     try:
@@ -297,9 +299,9 @@ def _exchange(url: str, code: str, what: str, timeout: float) -> tuple[Secret, M
     return Secret(value), facts
 
 
-def exchange(url: str, code: str, timeout: float = 30.0) -> JoinResult:
+def exchange(url: str, code: str, timeout: float = 30.0, client: str = CLIENT) -> JoinResult:
     """The join exchange (§3.3) at `url`, from `join_target()`."""
-    credential, facts = _exchange(url, code, "join", timeout)
+    credential, facts = _exchange(url, code, "join", timeout, client)
     return JoinResult(
         credential=credential,
         credential_id=facts.get("Maity-Credential-Id"),
