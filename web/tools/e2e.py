@@ -728,6 +728,9 @@ def scenario(run: Run, page: Page) -> None:
         ("org", "Organisation"),
         ("join", "Join an agent"),
     )
+    # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
+    if page.locator("nav.views").get_by_role("link", name="Why", exact=True).count():
+        tabs += (("why", "Why"),)
     for view, tab in tabs:
         page.locator("nav.views").get_by_role("link", name=tab, exact=True).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
@@ -748,6 +751,7 @@ def scenario(run: Run, page: Page) -> None:
         if view == "agents":
             assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
+        run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -1003,6 +1007,14 @@ def fixture_views(run: Run, browser) -> None:
             run.a11y(page, f"fixtures: {name}")
             # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
             errors.clear()
+        # The family at phone width: the summary, the entries, the table that scrolls.
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.goto(f"{index}#/p/maity/why")
+        expect(page.locator("main section.view-why")).to_contain_text("1 entry needs attention")
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
+        assert not errors, errors
+        run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
 

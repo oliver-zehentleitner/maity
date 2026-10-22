@@ -109,9 +109,11 @@ Inside a project, in the order of their importance; see
    need attention (open, needs review, pending confirmation) out of how
    many, in how many parts of the family (the repository's root and the
    children its `.keep-the-why` names), with the linter's counts and when
-   the hub read it; **Read again** asks for a fresh read (`max_age=0`).
+   the hub read it; **Read again** asks for a fresh read (`max_age=0`), in
+   every state, and is off while its read runs.
    The entries that need attention follow, grouped by part, each linking
-   to its entry in the published dashboard; then one row per part with its
+   to its entry in the published dashboard (only a link under that part's
+   own dashboard is used); then one row per part with its
    counts and a link to its dashboard. A part that could not be read is
    named with the reason in words and its last good read. When the root
    cannot be read, the last good answer is shown and said so; when the
@@ -345,7 +347,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 15. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
-16. at phone width (390 px) the inbox, board, agents, organisation and join
+16. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither

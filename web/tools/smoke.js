@@ -387,15 +387,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable", last: Object.assign({}, baseAnswer, { fresh: false }) }))
     : realGet6(p));
   await go("#/p/maity/board"); await go("#/p/maity/why");
-  expect(text(main).includes("The hub could not read the project's root .keep-the-why just now (its .keep-the-why could not be read from the forge). Shown is its last good read")
+  expect(text(main).includes("The hub could not read the project's root .keep-the-why just now (the forge did not give the hub the repository's root .keep-the-why). Shown is its last good read")
     && main.querySelectorAll(".why-members tbody tr").length === 4, "why: the root unreadable, the last good read is shown and said so");
   win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why")
     ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable" })) : realGet6(p));
   await go("#/p/maity/board"); await go("#/p/maity/why");
-  expect(text(main).includes("could not read the project's root .keep-the-why") && !main.querySelector(".why-members"), "why: no last read, only the note");
+  expect(text(main).includes("could not read the project's root .keep-the-why") && !main.querySelector(".why-members") && btn(main, "Read again"),
+    "why: no last read, only the note, and Read again");
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : realGet6(p));
+  await go("#/p/maity/board"); await go("#/p/maity/why");
+  expect(main.querySelector(".error") && btn(main, "Read again"), "why: any other error, with Read again");
+  // Read again is off while its read runs.
+  let release;
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why?max_age=0") ? new Promise((r) => { release = () => r(baseAnswer); }) : realGet6(p));
+  const again = btn(main, "Read again"); again.click(); await tick();
+  expect(again.disabled === true, "why: Read again is disabled while a read runs");
+  release(); await tick(); await tick();
+  expect(btn(main, "Read again") && !btn(main, "Read again").disabled, "why: and on again after it");
+  // Linter counts per field; an entry link outside its part's dashboard is no link.
+  const odd2 = JSON.parse(JSON.stringify(baseAnswer));
+  odd2.members[1].summary.findings = { errors: 2, warnings: null };
+  odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
+    link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
+  await go("#/p/maity/board"); await go("#/p/maity/why");
+  expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
+  const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
+  expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
   win.Maity.api.get = realGet6;
   await go("#/p/sample/why");
-  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line"),
+  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line") && btn(main, "Read again"),
     "why: not configured, said so with what the hub reads");
   // A hub that does not know the export: no tab.
   win.Maity.api.get = (p) => (p === "/projects/maity" ? realGet6(p).then((v) => { delete v.keep_the_why_export; return v; }) : realGet6(p));

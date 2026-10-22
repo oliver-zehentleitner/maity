@@ -109,6 +109,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: a Why view per project shows its published Keep the Why family: the summary, the
   entries that need attention by part with links into the published dashboard, one row
   per part, and honest states when it is not configured, unreadable or a part fails
+- web: the Why view offers Read again in every state and turns it off while a read runs,
+  shows a missing linter count per field, words an unreadable root on its own, and links
+  an entry only into its own part's dashboard
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

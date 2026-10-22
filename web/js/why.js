@@ -34,6 +34,11 @@ window.Maity = window.Maity || {};
     shape: "its state.json does not have the expected shape",
   };
 
+  // The root's own read failed (ktw_unavailable on the call): said of the root.
+  const ROOT_REASONS = {
+    forge_unavailable: "the forge did not give the hub the repository's root .keep-the-why",
+  };
+
   const memberName = (m) => (m.path === "" ? "the project root" : (m.name || m.path));
 
   function reasonText(err) {
@@ -46,6 +51,11 @@ window.Maity = window.Maity || {};
 
   const link = (url, text) => (safeUrl(url) ? h("a", { href: safeUrl(url), rel: "noopener noreferrer" }, text) : text);
 
+  // An entry's link is used only where it points into its own part's
+  // published dashboard (the hub builds it as dashboard_url + "#entry/…").
+  const entryLink = (a, member, text) => (member && typeof a.link === "string" && safeUrl(member.dashboard_url)
+    && a.link.startsWith(member.dashboard_url + "#entry/") ? link(a.link, text) : text);
+
   function counts(summary) {
     if (!summary) return h("span", { class: "muted" }, "no read yet");
     const parts = STATUSES.filter((s) => summary.status && summary.status[s])
@@ -54,10 +64,12 @@ window.Maity = window.Maity || {};
       + (parts.length ? " (" + parts.join(", ") + ")" : ""));
   }
 
+  // Each count is null when that export does not carry it: said per field.
   function findings(summary) {
     const f = summary && summary.findings;
     if (!f || (f.errors === null && f.warnings === null)) return "—";
-    return (f.errors || 0) + " errors, " + (f.warnings || 0) + " warnings";
+    const n = (v) => (v === null || v === undefined ? "—" : String(v));
+    return n(f.errors) + " errors, " + n(f.warnings) + " warnings";
   }
 
   function summaryBox(answer) {
@@ -102,17 +114,21 @@ window.Maity = window.Maity || {};
       h("h3", null, memberName(m)[0].toUpperCase() + memberName(m).slice(1)),
       h("ul", { class: "why-entries" }, byMember[m.path].map((a) => h("li", null,
         h("span", { class: "badge why-" + a.status }, STATUS_LABELS[a.status] || a.status),
-        " ", link(a.link, a.title),
+        " ", entryLink(a, m, a.title),
         h("span", { class: "muted" }, " · " + [a.topic || a.file, (a.type || []).join(", ")].filter(Boolean).join(" · "))))))),
     answer.truncated ? h("p", { class: "muted" }, "Only the first 200 are listed.") : null];
+  }
+
+  // The view's title row: Read again is there in every state, and off while a read runs.
+  function toolbar(root, ctx) {
+    const again = h("button", { type: "button", class: "small", onclick: () => { again.disabled = true; load(root, ctx, true); } }, "Read again");
+    return h("div", { class: "toolbar" }, h("h2", null, "Why"), again);
   }
 
   function render(root, answer, ctx, note) {
     clear(root);
     append(root,
-      h("div", { class: "toolbar" },
-        h("h2", null, "Why"),
-        h("button", { type: "button", class: "small", onclick: () => load(root, ctx, true) }, "Read again")),
+      toolbar(root, ctx),
       h("p", { class: "muted" }, "The project's decisions and their reasons, as its published Keep the Why dashboard shows them. "
         + "The hub reads them from the repository; nothing here changes them."),
       note || null,
@@ -130,7 +146,7 @@ window.Maity = window.Maity || {};
     } catch (err) {
       clear(root);
       if (err.code === "ktw_not_configured") {
-        append(root, h("h2", null, "Why"), h("div", { class: "empty-state why-empty" },
+        append(root, toolbar(root, ctx), h("div", { class: "empty-state why-empty" },
           h("p", null, "This project publishes no Keep the Why dashboard yet."),
           h("p", { class: "muted" }, ctx.project.repository
             ? "The hub reads the dashboard-state line of the repository's root .keep-the-why, and that line is missing (or the file is)."
@@ -139,14 +155,15 @@ window.Maity = window.Maity || {};
       }
       if (err.code === "ktw_unavailable") {
         const last = err.details && err.details.last;
+        const why = err.details && err.details.reason;
         const note = h("p", { class: "flag" }, "The hub could not read the project's root .keep-the-why just now ("
-          + (REASONS[err.details && err.details.reason] || (err.details && err.details.reason) || "unavailable") + ")."
+          + (ROOT_REASONS[why] || REASONS[why] || why || "unavailable") + ")."
           + (last ? " Shown is its last good read, from " + formatAgo(last.observed_at) + "." : ""));
         if (last) { render(root, last, ctx, note); return; }
-        append(root, h("h2", null, "Why"), note);
+        append(root, toolbar(root, ctx), note);
         return;
       }
-      append(root, h("h2", null, "Why"), M.errorBox(err));
+      append(root, toolbar(root, ctx), M.errorBox(err));
     }
   }
 
