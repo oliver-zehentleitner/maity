@@ -2198,8 +2198,10 @@ reports are not messages: the board shows status. Returns
 POST /projects/{slug}/events/{seq}/redact   {"reason": "…"}
 ```
 
-Scope `events:admin` (human memberships). `not_found` unless the event
-belongs to `{slug}`. A chat message (§9) is redacted only by the human party
+Scope `events:admin` (human memberships), with two exceptions below: a
+group-chat message needs no scope, only a place in the chat, and the
+blind redaction in a closed group chat needs `members:admin`.
+`not_found` unless the event belongs to `{slug}`. A chat message (§9) is redacted only by the human party
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
 two parties, not to `role:owner`/`role:admin`. A group-chat message is
@@ -2218,7 +2220,12 @@ participant left, so there the redaction passes to humans outside it:
 every former human participant may redact any message of the chat it
 could read (its readable set of `GET /events`), and a human with
 `members:admin` may redact a message of the chat by its `seq` without
-being able to read it, acting on a report. Its `event_redacted` then goes
+being able to read it, acting on a report — the blind redaction, the
+one redaction that needs `members:admin` rather than `events:admin`. A
+blind redaction answers `200` with `{"seq": …, "redacted": true}` only,
+never the event: its `actor` and `audience` would tell the admin who
+wrote in the chat and who was in it, which it could not read before.
+Its `event_redacted` then goes
 to the remaining participants, every former human participant and, for
 an admin's redaction, that admin. When an admin redacted, the `reason`,
 in the tombstone and in the event, is shown only to that admin and the
@@ -3441,7 +3448,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee | 7 |
 | POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
-| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin` | 8.5 |
+| POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind) | 8.5 |
 | GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{slug}/conversations` | human | 9.2 |
 | GET, PATCH | `/projects/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |

@@ -111,8 +111,8 @@ everyone in it.
 **Id:** ed8201ef-0ae5-4959-8bff-bb3a8c236b29
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the contract owner's ruling of 2026-10-22 on the re-verification of the group-chat contract (`docs/api.md` §8.5, §9.2)
+**Evidence:** confirmed
+**Source:** the contract owner's ruling of 2026-10-22 on the re-verification of the group-chat contract, and its reason given the same day (`docs/api.md` §8.5, §9.2)
 **Revisit when:** admins redact closed chats they cannot read often enough that the participants' privacy suffers, or former participants misuse the right
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-22
 
@@ -121,20 +121,19 @@ participant who could redact in it. In a closed chat every former human
 participant may redact any message it could read, and a human with
 `members:admin` may redact a message by its id without reading it,
 acting on a report. The reason of an admin's redaction is shown only to
-that admin and the chat's former human participants. Agents still
-redact nothing, and observers stay read-only.
+that admin and the chat's former human participants, and the admin's
+call answers only that the message is redacted, never the event. Agents
+still redact nothing, and observers stay read-only.
 
-**Reason:** without it a secret said in a group chat stays for good
-once the last human left: the remaining agents and their owners keep
-reading it, and redaction is the only tombstone the log offers. That is
-the case the closed-project rule exists for (removal must stay possible
-whatever the state). The ruling was given without an explicit reason;
-this one is derived from the review finding it answered and from that
-rule, hence `inferred`.
+**Reason:** a secret pasted into a chat must stay removable after
+everyone left. Without this, it stays for good once the last human
+left: the remaining agents and their owners keep reading it, and
+redaction is the only tombstone the log offers. Observers stay
+read-only because they never were part of the conversation.
 
 **Rejected alternatives:**
 - No redaction in a closed chat (the first draft): the secret stays.
 - Observers redacting: offered by the review beside former
-  participants; the ruling chose former participants and admins and
-  kept observers read-only, as everywhere else in the chat. Why
-  observers lost beyond that consistency: unknown.
+  participants; rejected because observers never were part of the
+  conversation, so they stay read-only here as everywhere else in the
+  chat.
