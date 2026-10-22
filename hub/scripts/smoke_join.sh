@@ -169,7 +169,18 @@ maity checkpoint "$held" -m "paused mid-way" --next "continue after the pause"
 human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/smoke/members/$cli_agent"
 maity claim "$spare"
 
+step "probe: without a forge token both agents get probe_not_configured"
+cd "$work/clone-curl"
+code="$(curl -sS -o "$work/probe-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/projects/smoke/probe?pr=1")"
+[ "$code" = 409 ] && json '"curl agent: " + d["error"]["code"]' <"$work/probe-curl" | tee "$work/probe" \
+    && grep -q "probe_not_configured$" "$work/probe"
+cd "$work/clone-cli"
+if maity api GET /projects/smoke/probe --query pr=1 >"$work/probe-cli" 2>&1; then
+    echo "smoke: maity api answered a probe without a token" >&2; exit 1
+fi
+grep -q probe_not_configured "$work/probe-cli" && echo "cli agent: probe_not_configured"
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, and the cli agent was paused and resumed\n'
+printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, the cli agent was paused and resumed, and asked the probe\n'
