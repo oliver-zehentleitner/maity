@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, ktw, policy, releases, rules
+from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -39,6 +39,8 @@ class PolicyIn(Strict):
     steward_writes: str | None = None
     lease_seconds: int | None = None
     signing: str | None = None
+    spawn_requests: str | None = None
+    max_placements: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -94,9 +96,9 @@ def _apply_policy(
     if change.preset is not None:
         if change.preset not in policy.PRESETS:
             raise invalid({"policy.preset": "unknown"})
-        # A preset refills every field but `signing`: switching presets must not
-        # quietly drop a required signature (§6.1); only `policy.signing` changes it.
-        proposed = {**policy.filled(change.preset, owner_id), "signing": current["signing"]}
+        # A preset refills every field but those it must not loosen or reset (§6.1).
+        kept = {name: current[name] for name in policy.KEPT_ON_PRESET}
+        proposed = {**policy.filled(change.preset, owner_id), **kept}
     errors: dict[str, str] = {}
     for name, choices in policy.CHOICES.items():
         value = getattr(change, name)
@@ -108,6 +110,10 @@ def _apply_policy(
         if not policy.LEASE_MIN <= change.lease_seconds <= policy.LEASE_MAX:
             errors["policy.lease_seconds"] = "out_of_range"
         proposed["lease_seconds"] = change.lease_seconds
+    if change.max_placements is not None:
+        if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
+            errors["policy.max_placements"] = "out_of_range"
+        proposed["max_placements"] = change.max_placements
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
@@ -298,6 +304,8 @@ def patch_project(
                 {"old": project.state, "new": body.state, "reason": body.reason},
                 actor=actor,
             )
+            if body.state == "archived":  # its placements close the uniform way (§15.5)
+                placements.project_archived(conn, project.id, actor, mine.principal_id)
         elif "state_note" in given and body.state_note != project.state_note:
             conn.execute(
                 update(t.project)

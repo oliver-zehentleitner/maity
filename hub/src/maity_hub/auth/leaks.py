@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock
+from maity_hub import clock, placements
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import is_runner_credential
@@ -92,6 +92,9 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
         .where(t.agent_session.c.credential_id == credential_id, t.agent_session.c.live.is_(True))
         .values(live=None, ended_at=now)
     )
+    # Every path ends here (the leak, §10's revoke, member removal): a placement that
+    # names the credential stops in the same transaction (§15.5).
+    placements.credential_revoked(conn, credential_id, by)
 
 
 def _revoke_leaked_runners(
@@ -116,6 +119,10 @@ def _revoke_leaked_runners(
         ):
             continue
         revoke_runner_credential(conn, row.id, REASON, by=None)
+        runner_id = conn.execute(
+            select(t.runner_credential.c.runner_id).where(t.runner_credential.c.id == row.id)
+        ).scalar_one()
+        placements.runner_credential_gone(conn, runner_id, None)
         revoked.append(row.id)
     return revoked
 

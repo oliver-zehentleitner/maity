@@ -145,6 +145,32 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     return "offline"
 
 
+def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
+    """Per agent membership its active placement, as the Agents list needs it (§15.11)."""
+    if not membership_ids:
+        return {}
+    rows = conn.execute(
+        select(
+            t.placement.c.membership_id,
+            t.placement.c.id,
+            t.placement.c.desired,
+            t.placement.c.reported,
+            t.runner.c.name,
+        )
+        .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .where(t.placement.c.membership_id.in_(membership_ids), t.placement.c.active.is_(True))
+    ).all()
+    return {
+        r.membership_id: {
+            "id": r.id,
+            "state": (r.reported or {}).get("state"),
+            "desired": r.desired,
+            "runner_name": r.name,
+        }
+        for r in rows
+    }
+
+
 def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any], dict[int, Any]]:
     """Per membership: the newest live session, and the newest session of any kind."""
     if not membership_ids:
@@ -217,6 +243,7 @@ def member_views(
     )
     principals = principal_ids(conn, (r.reports_to for r in rows))
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     views = []
     for row in rows:
         head = (
@@ -258,6 +285,7 @@ def member_views(
                 "presence": presence(row, session, is_listening),
                 "paused": paused(row),
                 "joined_at": ts(row.joined_at),
+                "placement": placed.get(row.id),  # always null for a human
             }
         )
         if row.removed_at is not None:

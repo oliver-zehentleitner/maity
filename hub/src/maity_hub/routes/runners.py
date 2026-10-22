@@ -20,7 +20,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, paging
+from maity_hub import clock, events, idempotency, paging, placements
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -28,7 +28,7 @@ from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.db import retrying
-from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, Strict, markdown
@@ -101,8 +101,18 @@ def load_attachment(conn: Connection, attachment_id: str, request: Request) -> d
 
 
 def _load_removal(conn: Connection, runner_id: str, request: Request) -> dict[str, Any]:
-    # Placements come with §15.5; until then nothing of a runner can still be running.
-    return {**load_runner(conn, runner_id, _viewer(request)), "still_running": []}
+    """The removed runner, with the placements it closed whose last report said they
+    were still running: the operator's to end now (§15.3)."""
+    closed = conn.execute(
+        select(t.placement.c.id, t.placement.c.reported)
+        .where(
+            t.placement.c.runner_id == runner_id,
+            t.placement.c.closed_reason == "runner_removed",
+        )
+        .order_by(t.placement.c.id)
+    ).all()
+    still = [r.id for r in closed if (r.reported or {}).get("state") in placements.RUNNING_STATES]
+    return {**load_runner(conn, runner_id, _viewer(request)), "still_running": still}
 
 
 idempotency.LOADERS["runner_enrollment"] = idempotency.plain(load_enrollment)
@@ -537,6 +547,7 @@ def revoke_runner(
         live = live_credential_id(conn, runner_id)
         if live is not None:  # none live: answered as it is
             revoke_runner_credential(conn, live, reason, by=caller.principal_id)
+            placements.runner_credential_gone(conn, runner_id, caller.principal_id)
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
@@ -550,6 +561,7 @@ def remove_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSON
         row = _own_runner(conn, caller, runner_id, lock=True)
         if row.removed_at is None:
             now = clock.now()
+            placements.runner_removed(conn, runner_id, caller.principal_id)
             live = live_credential_id(conn, runner_id)
             if live is not None:
                 revoke_runner_credential(conn, live, "runner_removed", by=caller.principal_id)
@@ -581,11 +593,11 @@ def remove_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSON
 
 
 @router.get("/projects/{slug}/runners")
-def list_project_runners(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
-    # Agents read a project's runners with `agents:propose` (§15.6), which no role grants yet.
+def list_project_runners(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        mine.require("project:read")
+        # Agents only to propose placements (§15.4); every other agent is refused.
+        mine.require("project:read" if mine.kind == "human" else "agents:propose")
         rows = conn.execute(
             select(t.runner_attachment)
             .join(t.runner, t.runner.c.id == t.runner_attachment.c.runner_id)
@@ -595,7 +607,7 @@ def list_project_runners(slug: str, request: Request, caller: HumanCaller) -> JS
             )
             .order_by(t.runner.c.name, t.runner.c.id)
         ).all()
-        admin = mine.may("members:admin")
+        admin = mine.may("members:admin") or mine.may("agents:propose")
         items = [attachment_view(conn, r, mine.principal_id, capabilities=admin) for r in rows]
         return JSONResponse({"items": items, "next_cursor": None})
 
@@ -636,6 +648,10 @@ def detach_runner(slug: str, runner_id: str, request: Request, caller: HumanCall
         if owner != caller.principal_id:
             mine.require("members:admin")
         row = detach(conn, mine.project.id, runner_id, caller.principal_id)
+        if row is not None:  # its placements here close the uniform way (§15.5)
+            placements.detached(
+                conn, mine.project.id, runner_id, caller.actor(mine.id), caller.principal_id
+            )
         if row is None:  # detached already: answered as it is
             row = conn.execute(
                 select(t.runner_attachment)
