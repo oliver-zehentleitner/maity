@@ -124,6 +124,7 @@ window.Maity = window.Maity || {};
   }
 
   let taskSerial = 0;
+  let consentSerial = 0;
   // tasks:admin and tasks:review, by the human's role in a project (§2.3).
   const roleIn = (slug) => (me().projects.find((p) => p.slug === slug) || {}).role;
   const tasksAdmin = (slug) => ["owner", "admin"].includes(roleIn(slug));
@@ -643,21 +644,58 @@ window.Maity = window.Maity || {};
         });
       }) };
     }],
+    // §6.2 as the hub does it: every field checked first, each bad one
+    // named at once, then one write. A reports-to circle or self is `cycle`
+    // (#118). An agent caller may not do what is a human's (humans_only,
+    // §2.3); a reports-to onto another owner's agent waits for that owner's
+    // consent and answers 202 with the request (#159).
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
+      if (me().member.kind === "agent" && ("capabilities" in body || body.role === "proxy")) {
+        fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
+      }
       if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
-      if ("briefing" in body) {
-        if (body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) {
-          fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
-        }
-        target.briefing = body.briefing || null;
-      }
+      const all = file(m[1], "members.json", path).items;
+      const errors = {};
+      if ("briefing" in body && body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) errors.briefing = "string_too_long";
       if ("role" in body) {
-        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) fail(400, "invalid", "unknown role", path, { fields: { role: "unknown" } });
-        if (body.role === "owner" && target.kind !== "human") fail(400, "invalid", "only a human is an owner", path, { fields: { role: "owner_is_human" } });
-        const owners = file(m[1], "members.json", path).items.filter((x) => x.role === "owner");
-        if (target.role === "owner" && body.role !== "owner" && owners.length === 1) fail(400, "invalid", "the last owner cannot be demoted", path, { fields: { role: "last_owner" } });
-        target.role = body.role;
+        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) errors.role = "unknown";
+        else if (body.role === "owner" && target.kind !== "human") errors.role = "owner_is_human";
+        else if (target.role === "owner" && body.role !== "owner" && all.filter((x) => x.role === "owner").length === 1) errors.role = "last_owner";
+      }
+      let boss = null;
+      if ("reports_to" in body && body.reports_to !== null) {
+        boss = all.find((x) => x.id === body.reports_to);
+        if (!boss) errors.reports_to = "not_a_member";
+        else {
+          const seen = new Set();
+          for (let at = body.reports_to; at && !seen.has(at); at = (all.find((x) => x.id === at) || {}).reports_to) {
+            if (at === target.id) { errors.reports_to = "cycle"; break; }
+            seen.add(at);
+          }
+        }
+      }
+      if ("areas" in body) {
+        if ((body.areas || []).length > 50) errors.areas = "too_long";
+        else if ((body.areas || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.areas = "invalid_path";
+      }
+      if ("capabilities" in body) {
+        if ((body.capabilities || []).length > 20) errors.capabilities = "too_long";
+        else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
+      }
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if (boss && target.kind === "agent" && boss.kind === "agent" && boss.owner_id && boss.owner_id !== target.owner_id) {
+        return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: boss.owner_id,
+          title: "Let " + target.handle + " report to " + boss.handle, created_at: nowIso() };
+      }
+      if ("role" in body) target.role = body.role;
+      if ("reports_to" in body) target.reports_to = body.reports_to;
+      if ("areas" in body) target.areas = [...new Set(body.areas)];
+      if ("capabilities" in body) target.capabilities = [...new Set(body.capabilities)];
+      if ("briefing" in body) {
+        target.briefing = body.briefing || null;
+        target.briefing_by = { kind: me().member.kind, id: me().member.id, handle: me().member.handle };
+        target.briefing_version = (target.briefing_version || 1) + 1;
       }
       if ("paused" in body) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
@@ -683,6 +721,7 @@ window.Maity = window.Maity || {};
       });
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
       list.items = list.items.filter((x) => x !== target);
+      list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
       const removed = Object.assign({}, target, { removed_at: at });
       list.removed.push(removed);
       return removed;

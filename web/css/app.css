@@ -469,11 +469,26 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .members tr.paused > :first-child { border-left: 3px solid var(--warn); }
 .members .member-actions { text-align: right; white-space: nowrap; }
 .member-manage td { background: var(--surface); }
-.member-manage form, .member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
+.member-manage .member-edit { margin: 4px 0 8px; }
+.member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .member-manage .hint { flex-basis: 100%; margin: 0; }
 .member-manage label { font-size: 0.85rem; color: var(--muted); }
 .member-manage .member-remove { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
+.member-edit .member-fields { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; }
+.member-edit .member-fields .hint { grid-column: 2; margin: 0; }
+.member-edit .member-fields .label { font-size: 0.85rem; color: var(--muted); }
+.member-edit textarea { width: 100%; }
+.member-caps label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.member-edit .member-fields .field-error { grid-column: 2; }
+.member-edit fieldset.member-caps { grid-column: 1 / -1; margin: 4px 0 0; padding: 4px 0 0; border: 0; border-top: 1px solid var(--border); }
+.member-edit fieldset.member-caps legend { font-size: 0.85rem; color: var(--muted); padding: 0; }
+.member-edit .member-briefing { grid-column: 1 / -1; margin: 4px 0 0; }
+/* A row of buttons: at the right edge, the primary one last. */
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
 @media (max-width: 600px) {
+  .member-edit .member-fields { grid-template-columns: minmax(0, 1fr); }
+  .member-edit .member-fields .hint, .member-edit .member-fields .field-error { grid-column: 1; }
+  .actions > button { flex: 1 1 100%; }
   .members, .members tbody, .members tr, .members th, .members td { display: block; width: auto; }
   .members thead { display: none; }
   .members tr.member { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 4px 0; }

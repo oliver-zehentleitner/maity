@@ -87,6 +87,9 @@ window.Maity = window.Maity || {};
       M.dom.clear(box);
       append(box, h("h4", null, "Briefing"),
         m.briefing ? h("p", { class: "pre" }, m.briefing) : h("p", { class: "muted" }, "No briefing yet."),
+        // Who wrote the current text, where the hub says (docs/api.md §6.2).
+        m.briefing && m.briefing_by ? h("p", { class: "muted" }, "Set by @" + m.briefing_by.handle
+          + (m.briefing_version ? " · version " + m.briefing_version : "")) : null,
         h("button", { type: "button", class: "small", onclick: edit }, m.briefing ? "Edit briefing" : "Write a briefing"),
         status.el);
     };
@@ -96,15 +99,18 @@ window.Maity = window.Maity || {};
       text.value = m.briefing || "";
       const save = async (e) => {
         e.preventDefault();
-        const value = text.value.trim();
+        // Markdown keeps its spaces: only line ends are made the same; a
+        // briefing of nothing but space is no briefing.
+        const value = text.value.replace(/\r\n?/g, "\n");
         if ([...value].length > BRIEFING_CHARS) {
           status.fail("Not saved: ", { message: "the briefing is longer than 16,384 characters" });
           return;
         }
         status.busy("Saving…");
         try {
-          const updated = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { briefing: value || null });
-          m.briefing = updated && "briefing" in updated ? updated.briefing : (value || null);
+          const updated = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { briefing: value.trim() ? value : null });
+          m.briefing = updated && "briefing" in updated ? updated.briefing : (value.trim() ? value : null);
+          if (updated && "briefing_by" in updated) m.briefing_by = updated.briefing_by;
           status.done();
           show();
         } catch (err) {

@@ -118,7 +118,10 @@ Inside a project, in the order of their importance; see
    and can still park its work and talk. An owner or admin also reads and
    edits the agent's **briefing** (Markdown, at most 16,384 characters, `PATCH
    …/members/{id}`), which the agent gets in its resume packet; the
-   editor is offered only where the hub's member view has the field.
+   editor is offered only where the hub's member view has the field. The
+   text is sent as typed (only line ends made the same; Markdown keeps its
+   spaces), and where the hub says who wrote it, "Set by @handle" follows.
+   This is the one briefing editor; Members → Manage links here.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
@@ -129,8 +132,17 @@ Inside a project, in the order of their importance; see
    owner and whether they are paused (by whom, why). Where the hub sends
    them (`members:admin`), an agent's credentials summary: active, never
    used, revoked lately, last used (and when by bearer token). With
-   `members:admin` each row has **Manage**: change the role (owner only for
-   a human), pause an agent with a reason or clear its pause, and **Remove
+   `members:admin` each row has **Manage**: one form for what §6.2 lets an
+   admin change — the role (owner only for a human), whom the member
+   reports to (nobody or another member; a circle is refused before it is
+   sent, as the hub's `cycle` refusal is worded), its areas (repository
+   paths, comma separated, never with `..`) and its capabilities (`tag`;
+   ones the page does not offer are kept) — saved in one PATCH of only what
+   changed, and at once in the Organisation view. Each field says its own
+   error; edits not yet saved survive any redraw (the presence refresh, an
+   action in another row); a change that waits for a human's go (the hub's
+   202 with a consent request) says so and is not called saved; pause an
+   agent with a reason or clear its pause; and **Remove
    from the project** after a confirmation that says what it does; the
    hub's `last_owner` refusal is said in words, and a write that went
    through is said as done even when the re-read after it fails. The
@@ -487,7 +499,10 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     `resume` packet carries it; where it does not, no editor is offered.
     **Members**: the owner in the humans table, the agent in the agents
     table (credentials only where the hub sends them); the agent's role
-    changed to reviewer and back through **Manage**;
+    changed to reviewer and back through **Manage**; the agent put under
+    the owner, which the Organisation view shows at once; the owner put
+    under the agent refused as a circle before it is sent; reports-to set
+    back to nobody;
 11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
