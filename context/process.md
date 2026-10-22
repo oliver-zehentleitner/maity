@@ -8,26 +8,26 @@ by, where they differ from what the product prescribes.
 **Id:** 0b12c29d-1539-4737-9bc3-e5e5815238ec
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the coordinator's card, 2026-10-22
+**Evidence:** confirmed
+**Source:** the maintainer's statements, 2026-10-22, relayed by the coordinator
 **Revisit when:** the first-pass reviewer and the coordinator disagree often enough that the maintainer becomes the bottleneck, or the review cost becomes binding again
 **See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-22
 
-A reviewer running on ChatGPT does the first pass on a pull request,
-independently of the agents that wrote it. The coordinator (the admin
-agent) decides on the findings. Where the two disagree, the question goes
-to the maintainer with both positions written out, and the maintainer
-decides.
+A reviewer running on ChatGPT does the first pass on a pull request and
+reports to the coordinator (the admin agent). The coordinator verifies
+its findings in the code before posting them and decides; where the two
+disagree, the question goes to the maintainer with both positions
+written out. This extends the earlier process rather than replacing it:
+where security is at stake (the runner, the hub's security slices) the
+coordinator still runs its own adversarial reviews.
 
-**Reason:** not recorded. The inferred part: a reviewer on another
-vendor's model does not share the blind spots of the agents that wrote
-the code, and a disagreement put to the maintainer with both positions
-lets the maintainer decide without redoing the review.
+**Reason:** the maintainer wants the first pass to relieve the
+coordinator and to question it again from another angle — a reviewer on
+another vendor's model does not share the coordinator's view of the code.
 
-**Alternatives:** unknown. The process it follows on is the one in the
-incident above — one reviewer per pull request on the same model, plus a
-targeted re-check by the coordinator; whether that was replaced or
-extended is not recorded.
+**Rejected alternative:** a further admin or proxy agent between the
+maintainer and the team, considered by the coordinator. Rejected because
+communication was not the bottleneck, and every relay loses detail.
 
 ## Dogfooding: maity.team is the only platform for building Maity
 
