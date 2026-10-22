@@ -6,6 +6,7 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -18,6 +19,12 @@ _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
 class ConfigError(ValueError):
     """A setting is present but unusable. The message never contains a credential."""
+
+
+# Until the package is on PyPI; from then on `pipx install maity` (§3.2).
+DEFAULT_CLI_INSTALL = (
+    'pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"'
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,18 @@ class Settings:
     allow_plain_http: bool = False
     # Never logged, never in a response; only whether it is set is shown (§11).
     forge_github_token: str | None = field(default=None, repr=False)
+    # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
+    join_url: str | None = None
+    # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
+    # agent how to get it (§3.2).
+    cli_install: str = DEFAULT_CLI_INSTALL
+
+    @property
+    def join_host(self) -> str | None:
+        """The join URL's hostname, lower case and without a trailing dot, or None."""
+        if self.join_url is None:
+            return None
+        return (urlsplit(self.join_url).hostname or "").lower().rstrip(".")
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -40,13 +59,14 @@ class Settings:
         host, port = parse_bind(env.get("MAITY_BIND", DEFAULT_BIND))
         public_url = env.get("MAITY_PUBLIC_URL")
         web_dir_env = env.get("MAITY_WEB_DIR")
+        public = (public_url or derive_public_url(host, port)).rstrip("/")
         return cls(
             database_url=normalize_database_url(
                 env.get("MAITY_DATABASE_URL", DEFAULT_DATABASE_URL)
             ),
             host=host,
             port=port,
-            public_url=(public_url or derive_public_url(host, port)).rstrip("/"),
+            public_url=public,
             public_url_guessed=not public_url and host in _WILDCARD_HOSTS,
             web_dir=Path(web_dir_env) if web_dir_env else checkout_web_dir(),
             web_dir_required=bool(web_dir_env),
@@ -55,7 +75,46 @@ class Settings:
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
+            join_url=parse_join_url(env.get("MAITY_JOIN_URL", ""), public),
+            cli_install=parse_cli_install(env.get("MAITY_CLI_INSTALL", "")),
         )
+
+
+def parse_cli_install(value: str) -> str:
+    """`MAITY_CLI_INSTALL`: one line, shown as it is in a code span; a line break stops
+    the hub."""
+    value = value.strip()
+    if any(c in value for c in "\r\n\x00"):
+        raise ConfigError("MAITY_CLI_INSTALL must be a single line")
+    return value or DEFAULT_CLI_INSTALL
+
+
+def parse_join_url(value: str, public_url: str) -> str | None:
+    """`MAITY_JOIN_URL`: https, a host and nothing else, and not the public URL's host
+    (§1.1). Anything else stops the hub."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018  a malformed port raises here
+    except ValueError:
+        raise ConfigError(f"MAITY_JOIN_URL is not a URL: {value!r}") from None
+    if (
+        parts.scheme != "https"
+        or not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise ConfigError(f"MAITY_JOIN_URL must be https://<host> with no path, got {value!r}")
+    if parts.hostname.lower().rstrip(".") == (urlsplit(public_url).hostname or "").lower().rstrip(
+        "."
+    ):
+        raise ConfigError("MAITY_JOIN_URL must name another host than MAITY_PUBLIC_URL")
+    return value.rstrip("/")
 
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
