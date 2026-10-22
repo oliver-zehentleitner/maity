@@ -54,7 +54,7 @@ def load_event(conn: Connection, seq: str) -> dict[str, Any]:
     return event_view(conn, row)
 
 
-idempotency.LOADERS["event"] = load_event
+idempotency.LOADERS["event"] = idempotency.plain(load_event)
 
 
 # --- reading and waiting -------------------------------------------------------------------

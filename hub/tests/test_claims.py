@@ -281,6 +281,18 @@ def test_a_report_moves_the_card_to_review_and_keeps_the_claim(
         ({"pr_status": "found"}, "pr_status"),
         ({"pr_status": "unknown"}, "pr_unknown_reason"),
         ({"head": "not-a-sha", "remote_head": "not-a-sha"}, "head"),
+        ({"head": "d91e294", "remote_head": "d91e294"}, "head"),
+        (
+            {
+                "pr": {
+                    "number": 7,
+                    "url": "https://github.com/a/b/pull/7",
+                    "head": "d91e294",
+                    "state": "open",
+                }
+            },
+            "pr.head",
+        ),
     ],
 )
 def test_a_report_must_agree_with_itself(

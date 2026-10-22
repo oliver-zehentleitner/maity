@@ -67,6 +67,7 @@ def _entry(
         "url": attested.get("url"),
         "title": attested.get("title"),
         "task_id": task_id,
+        "found": None,
         "state": attested.get("state"),
         "checks": None,
         "head_sha": attested.get("head"),
@@ -78,7 +79,7 @@ def _entry(
         for key in ("url", "title"):
             if observed.get(key) is not None:
                 entry[key] = observed[key]
-        for key in ("state", "checks", "head_sha", "merged_at", "observed_at"):
+        for key in ("found", "state", "checks", "head_sha", "merged_at", "observed_at"):
             entry[key] = observed.get(key)
     return entry
 
@@ -147,19 +148,21 @@ def readiness(
         number = entry["number"]
         if entry["observed_at"] is None:
             blocking.append({"reason": "pr_unverified", "pr": number})
+        elif not entry["found"]:
+            blocking.append({"reason": "pr_not_found", "pr": number})
         elif entry["state"] != "merged":
             blocking.append({"reason": "pr_open", "pr": number})
         merged[number] = entry["observed_at"] is not None and entry["state"] == "merged"
-    # A reported head the forge does not show; once per PR, a short head as a prefix.
+    # A reported head the forge does not show; once per PR, heads compared whole.
     by_number = {entry["number"]: entry for entry in prs}
     reported: dict[int, set[str]] = {}
     for item in shipped:
         pr = (item.report or {}).get("pr")
         if pr and item.report.get("pr_status") == "found" and pr.get("head"):
-            reported.setdefault(int(pr["number"]), set()).add(str(pr["head"]).lower())
+            reported.setdefault(int(pr["number"]), set()).add(pr["head"])
     for number, heads in sorted(reported.items()):
-        seen = by_number[number]["head_sha"] if by_number[number]["observed_at"] else None
-        if seen and not all(seen.lower().startswith(head) for head in heads):
+        seen = by_number[number]["head_sha"] if by_number[number]["found"] else None
+        if seen and heads != {seen}:
             blocking.append({"reason": "pr_mismatch", "pr": number})
     # A group is complete when all its cards ship here and all their PRs are observed merged.
     by_card = {item.id: item for item in shipped}
@@ -180,26 +183,28 @@ def readiness(
     return {"ready": not blocking, "blocking": blocking}
 
 
-def probe_configured(conn: Connection, project_id: str) -> bool:
+def probe_configured(conn: Connection, project_id: str, fg: forge.Forge) -> bool:
     url = conn.execute(
         select(t.project.c.repository_url).where(t.project.c.id == project_id)
     ).scalar()
-    return forge.configured_for(url)
+    return fg.configured_for(url)
 
 
-def _live(conn: Connection, card: Any) -> dict[str, Any]:
+def _live(conn: Connection, card: Any, fg: forge.Forge) -> dict[str, Any]:
     """Pull requests, groups and readiness as the release stands now."""
     shipped = _shipped(conn, card.id)
     prs = pull_requests(conn, card, shipped)
     grouped = groups(conn, shipped)
-    ready = readiness(card, shipped, prs, grouped, probe_configured(conn, card.project_id))
+    ready = readiness(card, shipped, prs, grouped, probe_configured(conn, card.project_id, fg))
     return {"pull_requests": prs, "groups": grouped, "readiness": ready}
 
 
 _UNREAD = object()  # release_view's `tag` when the caller did not read it ahead
 
 
-def release_view(conn: Connection, card: Any, tag: Any = _UNREAD) -> dict[str, Any]:
+def release_view(
+    conn: Connection, card: Any, fg: forge.Forge, tag: Any = _UNREAD
+) -> dict[str, Any]:
     """The release object; a closed release serves what was frozen at its close (§6.7).
 
     `tag` is the tag observation when the caller read it already (`tags`): a page
@@ -207,7 +212,7 @@ def release_view(conn: Connection, card: Any, tag: Any = _UNREAD) -> dict[str, A
     """
     data = card.release_data or {}
     version = data.get("version") or card.release_version
-    computed = data.get("frozen") or _live(conn, card)
+    computed = data.get("frozen") or _live(conn, card, fg)
     if tag is _UNREAD:
         tag = _observation(conn, card.project_id, "tag", f"v{version}")
     return {
@@ -244,7 +249,7 @@ def tags(conn: Connection, cards: Sequence[Any]) -> dict[str, dict[str, Any] | N
     return found
 
 
-def close(conn: Connection, card_id: str) -> None:
+def close(conn: Connection, card_id: str, fg: forge.Forge) -> None:
     """Called by the write that closes a release, after its own update.
 
     A release that turned ready in this very write is announced here (the
@@ -255,7 +260,7 @@ def close(conn: Connection, card_id: str) -> None:
     """
     card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
     data = dict(card.release_data or {})
-    live = _live(conn, card)
+    live = _live(conn, card, fg)
     if card.status == "done" and live["readiness"]["ready"] and not data.get("ready_announced"):
         data["ready_announced"] = True
         _announce(conn, card, data.get("version") or card.release_version)
@@ -274,7 +279,7 @@ def _announce(conn: Connection, card: Any, version: str) -> None:
     )
 
 
-def recheck(conn: Connection, project_id: str) -> None:
+def recheck(conn: Connection, project_id: str, fg: forge.Forge) -> None:
     """Announce `release_ready` when the open release turned ready (§6.7).
 
     Called after anything readiness reads changed. The announcement is kept on
@@ -287,7 +292,7 @@ def recheck(conn: Connection, project_id: str) -> None:
     ).first()
     if card is None:
         return
-    view = release_view(conn, card)
+    view = release_view(conn, card, fg)
     data = dict(card.release_data or {})
     announced = bool(data.get("ready_announced"))
     ready = bool(view["readiness"]["ready"])

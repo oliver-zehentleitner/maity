@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock, forge
+from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.config import Settings
+from maity_hub.probe import Worker
 from maity_hub.routes import tasks as tasks_routes
 from tests import flow
 from tests.conftest import ClientFactory
@@ -39,10 +42,19 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 @pytest.fixture
+def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
+    """The operator's forge token, as the environment sets it, for the tests that
+    ask for the probe; the others run without one."""
+    if {"probe", "github"} & set(request.fixturenames):
+        return replace(settings, forge_github_token="test-token")
+    return settings
+
+
+@pytest.fixture
 def probe(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A forge token as the operator would set it; observations are inserted by hand."""
-    monkeypatch.setattr(forge, "_token", "test-token")
-    monkeypatch.setattr(forge, "configure", lambda token: None)
+    """A forge token as the operator would set it (`settings` below); observations are
+    inserted by hand, so the worker never starts."""
+    monkeypatch.setattr(Worker, "start", lambda self: None)
 
 
 def task(who: Any, **body: Any) -> dict[str, Any]:
@@ -72,7 +84,7 @@ def _reported(engine: Engine, card: dict[str, Any], number: int, head: str = SHA
 
 
 def _observe(engine: Engine, number: int, state: str = "merged", head: str = SHA) -> None:
-    data = {"state": state, "checks": "success", "head_sha": head, "merged_at": None}
+    data = {"found": True, "state": state, "checks": "success", "head_sha": head, "merged_at": None}
     with engine.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar()
         conn.execute(
@@ -452,11 +464,15 @@ def test_an_observation_replaces_the_attested_state(
         f"/projects/maity/tasks/{card['id']}",
         {"release": {"pull_requests_typed": [{"number": 5, "state": "merged"}]}},
     )
-    with migrated.begin() as conn:  # the forge said nothing about the state
+    with migrated.begin() as conn:  # the forge has the PR but said nothing about the state
         project_id = conn.execute(select(t.project.c.id)).scalar()
         conn.execute(
             insert(t.forge_observation).values(
-                project_id=project_id, kind="pr", ref="5", observed_at=clock.now(), data={}
+                project_id=project_id,
+                kind="pr",
+                ref="5",
+                observed_at=clock.now(),
+                data={"found": True},
             )
         )
     entry = _get(owner, card)["release"]["pull_requests"][0]
@@ -464,11 +480,11 @@ def test_an_observation_replaces_the_attested_state(
     assert {"reason": "pr_open", "pr": 5} in _blocking(owner, card)
 
 
-def test_a_short_head_is_compared_as_a_prefix_once_per_pr(
+def test_heads_are_compared_whole_once_per_pr(
     owner: flow.Human, migrated: Engine, probe: None
 ) -> None:
     first, second = task(owner), task(owner)
-    _reported(migrated, first, 7, head=SHA[:7])
+    _reported(migrated, first, 7, head=SHA)
     _reported(migrated, second, 7, head=OTHER_SHA)
     _observe(migrated, 7)
     card = release(owner, depends_on=[first["id"], second["id"]])
@@ -620,3 +636,27 @@ def test_a_lost_race_on_the_constraints_is_still_a_409(
     )
     assert taken.status_code == 409, taken.text
     assert taken.json()["error"]["code"] == "version_exists"
+
+
+def test_a_pull_request_the_forge_does_not_have_blocks_as_not_found(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    card = release(owner)
+    path = f"/projects/maity/tasks/{card['id']}"
+    owner.patch(path, {"release": {"pull_requests_typed": [{"number": 77}]}})
+    assert _get(owner, card)["release"]["pull_requests"][0]["found"] is None  # not yet observed
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.forge_observation).values(
+                project_id=conn.execute(select(t.project.c.id)).scalar(),
+                kind="pr",
+                ref="77",
+                observed_at=clock.now(),
+                data={"number": 77, "found": False},
+            )
+        )
+    entry = _get(owner, card)["release"]["pull_requests"][0]
+    assert (entry["found"], entry["state"], entry["observed_at"] is not None) == (False, None, True)
+    assert [b for b in _blocking(owner, card) if b.get("pr")] == [
+        {"reason": "pr_not_found", "pr": 77}
+    ]

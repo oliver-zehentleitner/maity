@@ -32,9 +32,15 @@ RETENTION = timedelta(hours=24)
 EXEMPT_PREFIXES = ("/api/v1/join/", "/api/v1/auth/")
 EXEMPT_PATHS = ("/api/v1/me/resume",)
 
-# resource type -> loader(conn, id) -> the resource as GET returns it
-Loader = Callable[[Connection, str], dict[str, Any]]
+# resource type -> loader(conn, id, request) -> the resource as GET returns it; the
+# request gives a loader what its view needs from the app (settings, the forge reader)
+Loader = Callable[[Connection, str, Request], dict[str, Any]]
 LOADERS: dict[str, Loader] = {}
+
+
+def plain(load: Callable[[Connection, str], dict[str, Any]]) -> Loader:
+    """A loader whose view needs nothing from the app."""
+    return lambda conn, resource_id, _request: load(conn, resource_id)
 
 
 @dataclass(frozen=True)
@@ -78,7 +84,7 @@ def run(
     def attempt() -> JSONResponse | None:
         try:
             with events.transaction(engine) as conn:
-                replay = _replay(conn, who, key, body_hash) if key else None
+                replay = _replay(conn, who, key, body_hash, request) if key else None
                 if replay is not None:
                     return replay
                 # The action's own errors (a unique conflict included) propagate.
@@ -107,7 +113,9 @@ class _KeyTaken(Exception):
     pass
 
 
-def _replay(conn: Connection, who: str, key: str, body_hash: str) -> JSONResponse | None:
+def _replay(
+    conn: Connection, who: str, key: str, body_hash: str, request: Request
+) -> JSONResponse | None:
     row = conn.execute(
         select(t.idempotency_key).where(
             t.idempotency_key.c.caller == who,
@@ -123,7 +131,7 @@ def _replay(conn: Connection, who: str, key: str, body_hash: str) -> JSONRespons
         )
     body: dict[str, Any] = {}
     if row.resource_type is not None and row.resource_id is not None:
-        body = LOADERS[row.resource_type](conn, row.resource_id)
+        body = LOADERS[row.resource_type](conn, row.resource_id, request)
     return JSONResponse(body, status_code=row.status_code, headers={"Idempotent-Replayed": "true"})
 
 

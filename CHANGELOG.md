@@ -188,6 +188,25 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   packet's peers included; closed releases serve their frozen record and
   read their tags in one query per page; `scripts/measure_board.py`
   measures it.
+- hub: the forge probe (`docs/api.md` §11) — `GET …/probe` for pull
+  requests, branches and tags on GitHub with the token from
+  `MAITY_FORGE_GITHUB_TOKEN`, sent only to `api.github.com` and never
+  across a redirect to another host; observations cached for `max_age`;
+  `probe_not_configured` and `probe_unavailable` with the last
+  observation; a worker thread that fills `report.observed` and
+  `mismatch` right after a report and refreshes the open release's pull
+  requests and tag on an interval, with `probe_observed` and release
+  readiness from what it saw; a pull request the forge does not have is a
+  report `mismatch` and blocks a release as `pr_not_found`, a branch
+  deleted after the merge is no mismatch; `checks` from check runs (all
+  pages) and commit statuses; a change is announced by whichever read sees
+  it first.
+
+### Changed
+
+- hub: a report's `head`, `remote_head` and `pr.head` are the full 40-hex
+  commit (`not_a_sha` otherwise), and reported heads are compared whole,
+  never as a prefix.
 
 ### Fixed
 

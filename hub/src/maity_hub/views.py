@@ -47,7 +47,9 @@ def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
         "forge": forge_of(project.repository_url),
-        "probe_configured": forge.configured_for(project.repository_url),
+        "probe_configured": forge.Forge(settings.forge_github_token).configured_for(
+            project.repository_url
+        ),
     }
 
 
@@ -309,20 +311,22 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
     }
 
 
-def _release(conn: Connection, row: Any, tags: dict[str, Any]) -> dict[str, Any] | None:
+def _release(
+    conn: Connection, row: Any, fg: forge.Forge, tags: dict[str, Any]
+) -> dict[str, Any] | None:
     if row.kind != "release":
         return None
     from maity_hub.releases import release_view
 
-    return release_view(conn, row, tags.get(row.id))
+    return release_view(conn, row, fg, tags.get(row.id))
 
 
-def task_view(conn: Connection, row: Any) -> dict[str, Any]:
+def task_view(conn: Connection, row: Any, fg: forge.Forge) -> dict[str, Any]:
     """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
-    return task_views(conn, [row])[0]
+    return task_views(conn, [row], fg)[0]
 
 
-def task_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members."""
     if not rows:
         return []
@@ -371,7 +375,7 @@ def task_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,
-                "release": _release(conn, row, release_tags),
+                "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
                 "created_at": ts(row.created_at),
                 "updated_at": ts(row.updated_at),

@@ -10,8 +10,8 @@ profiles, joins with the join page, the resume packet and credentials of
 `docs/api.md` are in: an agent can join and open sessions. Cards with
 claims, leases, checkpoints and reports, requests to humans with the
 cross-project inbox, events with the long-poll, messages and conversations
-are in, and release and contract cards with their checklist. The forge
-probe follows; until then no release is ready.
+are in, and release and contract cards with their checklist, and the
+forge probe.
 
 ## Run it locally with plain Python
 
@@ -115,7 +115,7 @@ All settings come from the environment.
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
-| `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token the probe will use. Today only whether it is set shows, as `probe_configured`; it is never logged or returned. |
+| `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 The hub logs each request as method, path and status on the

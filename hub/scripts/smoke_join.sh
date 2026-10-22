@@ -97,11 +97,13 @@ for id in $(printf '%s' "$inbox" | json '" ".join(r["id"] for r in d["items"])')
     human -o /dev/null -d "{\"reply_id\":\"$reply\"}" "$hub/api/v1/projects/smoke/requests/$id/answer"
 done
 maity resume --json | json '"cli agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
-    | tee "$work/cli-answers" && grep -q "got 1 answer" "$work/cli-answers"
+    | tee "$work/cli-answers"
+grep -q "got 1 answer" "$work/cli-answers"
 cd "$work/clone-curl"
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -d '{"client":"curl"}' \
     "$hub/api/v1/me/resume" | json '"curl agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
-    | tee "$work/curl-answers" && grep -q "got 1 answer" "$work/curl-answers"
+    | tee "$work/curl-answers"
+grep -q "got 1 answer" "$work/curl-answers"
 
 step "events: each agent waits, its human writes to it, the wait wakes"
 cli_agent="$(grep -o 'agt-[0-9a-z]*' "$work/cli-join.out" | head -1)"
@@ -136,12 +138,14 @@ curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
     -d '{"done":true}' "$hub/api/v1/projects/smoke/tasks/$rel/checklist/chk-1" \
     | json '"release " + d["release"]["version"] + ": checklist done " + str(d["release"]["checklist"][0]["done"]) + ", blocking " + ",".join(b["reason"] for b in d["release"]["readiness"]["blocking"])' \
-    | tee "$work/release" && grep -q "done True, blocking probe_not_configured$" "$work/release"
+    | tee "$work/release"
+grep -q "done True, blocking probe_not_configured$" "$work/release"
 ctr="$(printf '{"title":"Shape of /probe","kind":"contract","contract":{"arbiter":"%s","watchers":["%s"]}}' \
     "$cli_agent" "$curl_agent" | human -d @- "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
 cd "$work/clone-cli"
 printf '{"contract":{"state":"final"}}' | maity api PATCH "/projects/smoke/tasks/$ctr" --json - \
-    | json '"contract " + d["id"] + " is " + d["contract"]["state"]' | tee "$work/final" && grep -q "is final$" "$work/final"
+    | json '"contract " + d["id"] + " is " + d["contract"]["state"]' | tee "$work/final"
+grep -q "is final$" "$work/final"
 
 step "pause: the human pauses the cli agent; it is told, takes no new work, and can still park its card"
 cd "$work/clone-cli"
@@ -169,7 +173,20 @@ maity checkpoint "$held" -m "paused mid-way" --next "continue after the pause"
 human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/smoke/members/$cli_agent"
 maity claim "$spare"
 
+step "probe: without a forge token both agents get probe_not_configured"
+cd "$work/clone-curl"
+code="$(curl -sS -o "$work/probe-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/projects/smoke/probe?pr=1")"
+[ "$code" = 409 ]
+json '"curl agent: " + d["error"]["code"]' <"$work/probe-curl" | tee "$work/probe"
+grep -q "probe_not_configured$" "$work/probe"
+cd "$work/clone-cli"
+if maity api GET /projects/smoke/probe --query pr=1 >"$work/probe-cli" 2>&1; then
+    echo "smoke: maity api answered a probe without a token" >&2; exit 1
+fi
+grep -q probe_not_configured "$work/probe-cli"
+echo "cli agent: probe_not_configured"
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, and the cli agent was paused and resumed\n'
+printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, the cli agent was paused and resumed, and asked the probe\n'

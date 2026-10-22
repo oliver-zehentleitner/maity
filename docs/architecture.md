@@ -37,7 +37,7 @@ turntable and a toolbox.
 
 | Part | Directory | What it is | Talks to |
 |---|---|---|---|
-| Hub server | `hub/` | One Python process: FastAPI, the REST API under `/api/v1`, `/api/v1/help` as Markdown, OpenAPI at `/api/v1/openapi.json` (the machine form only; the interactive page would load a third-party script onto the hub's origin and is off), the static dashboard at `/`, the forge probe as a background task | The database; the forge, read-only |
+| Hub server | `hub/` | One Python process: FastAPI, the REST API under `/api/v1`, `/api/v1/help` as Markdown, OpenAPI at `/api/v1/openapi.json` (the machine form only; the interactive page would load a third-party script onto the hub's origin and is off), the static dashboard at `/`, the forge probe as a worker thread in the same process | The database; the forge, read-only |
 | Agent CLI and skill | `cli/` | `maity`, a standard-library Python command run inside the agent's clone; the agent skill that tells a session when to run what | The hub, over HTTPS, with signed requests |
 | Dashboard | `web/` | Static HTML, vanilla JavaScript, CSS; no framework, no build step; served by the hub, opens from the file system against fixtures | The hub's API on the same origin, with a cookie session |
 | Forge probe | inside `hub/` | A read-only poller for the project's repository: pull request state, head SHA, branch heads, checks, merge time, tags | The forge's API with a read-only token from the operator's environment |
@@ -175,7 +175,7 @@ editing dies within a day.
 
 **Release card**: `version` (unique per project), the pull request list
 assembled from completion reports and typed references, each with the
-probe's observation (`state`, `checks`, `head_sha`, `merged_at`,
+probe's observation (`found`, `state`, `checks`, `head_sha`, `merged_at`,
 `observed_at`), `ships_with` groups, a checklist (changelog verified by
 the repository's CI check, smoke updated for behaviour changes, manual
 steps listed with an owner, "live version equals tag" at close), `ready`

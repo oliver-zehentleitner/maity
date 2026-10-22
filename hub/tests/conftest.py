@@ -59,9 +59,21 @@ def client(settings: Settings, engine: Engine) -> Iterator[TestClient]:
 
 
 @pytest.fixture(autouse=True)
+def _no_forge_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test ever reaches the real forge, whatever token a test sets."""
+    from maity_hub import forge
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise forge.ForgeUnavailableError("no network in tests")
+
+    monkeypatch.setattr(forge._opener, "open", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
-    """In-process state (limits, nonces, clock) must not leak between tests."""
-    from maity_hub import clock
+    """In-process state (limits, nonces, clock, the forge's repository visibility)
+    must not leak between tests."""
+    from maity_hub import clock, forge
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.routes import auth, joins
@@ -70,6 +82,7 @@ def _fresh_process_state() -> Iterator[None]:
     joins.EXCHANGE_BY_ADDRESS.reset()
     auth.LOGIN_BY_HANDLE.reset()
     caller.NONCES = NonceWindow()
+    forge._visible.clear()
     yield
     clock.reset()
 

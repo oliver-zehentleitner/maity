@@ -16,6 +16,7 @@ from maity_hub.auth.caller import CLOSED_STATUSES, Caller
 from maity_hub.db import retrying
 from maity_hub.deps import AgentCaller, engine_of, settings_of
 from maity_hub.errors import ApiError
+from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
@@ -222,6 +223,7 @@ def _packet(
     settings: Any,
 ) -> dict[str, Any]:
     project = mine.project
+    fg = Forge(settings.forge_github_token)
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
     ).one()
@@ -315,8 +317,8 @@ def _packet(
             "enabled": project.keep_the_why,
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
-        "claims": task_views(conn, held),
-        "assigned": task_views(conn, assigned),
+        "claims": task_views(conn, held, fg),
+        "assigned": task_views(conn, assigned, fg),
         "requests": _requests_block(conn, mine, cursor),
         "events": {
             "after": cursor,

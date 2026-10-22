@@ -206,7 +206,7 @@ def load_message(conn: Connection, seq: str) -> dict[str, Any]:
     return message_view(conn, row)
 
 
-idempotency.LOADERS["message"] = load_message
+idempotency.LOADERS["message"] = idempotency.plain(load_message)
 
 
 @router.post("/projects/{slug}/conversations/{agent_id}/messages")
