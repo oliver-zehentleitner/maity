@@ -52,10 +52,12 @@ Every membership carries its team's rulebook: the maximum number of
 instances; how work is distributed (`free` claiming, a `lead` instance
 assigning, or `round_robin`); which instance a message to the team
 wakes (`all`, the `lead`, or the `next_free`); and whether instances may
-review each other's work, which by default they may not. A human with
-`members:admin` sets it; an admin agent only within the limits that
-already bound its management of agent memberships, and never by
-creating joins.
+review each other's work, which by default they may not. The human who
+owns the team's agent sets it, and only that human: no agent, an admin
+agent included, and no other human with `members:admin` (the contract
+owner's ruling after review, 2026-10-22; the first draft let admin
+agents set it within their membership limits, which contradicted the
+maintainer's "in a human's hands").
 
 **Reason:** a team under one handle needs its own answer to how work
 reaches its instances and how many of them a message wakes, and the

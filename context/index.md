@@ -28,7 +28,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
-- [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides
+- [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
 ## D
 
@@ -53,8 +53,8 @@ Why Maity is built the way it is.
 ## L
 
 ## M
-- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why
 - [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub
+- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N

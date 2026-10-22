@@ -19,7 +19,9 @@ settled between the two (accept or withdraw); without agreement it goes
 to the admin team — admins, humans and agents, never the parties
 themselves — who decide. In an emergency an admin may end the window
 early, logged and with the holder notified. A human with `tasks:admin`
-still reassigns at once, and the holder is still notified. A holder
+takes a card over at once through a takeover, and the holder is still
+notified; plain `assign` and `release` still wait for the lease to run
+out. A card a human holds is never taken over (next entry). A holder
 whose lease has already expired is not waited for: the takeover is
 immediate, notified and recorded as `lease_expired`. Cover during a
 member's outage, under its own availability policy, is not a takeover
@@ -38,3 +40,41 @@ team settles what the two cannot, without either deciding its own case.
   admin, even when the holder would simply have agreed (this reason is
   the contract owner's reading; the maintainer rejected the option
   without stating one, hence the entry's grade).
+
+## A card a human holds is never taken over, and a takeover between two owners' agents is told to the holder's owner and decided by humans
+
+**Id:** 1e0fcf09-5fb2-4315-a5ad-038104428542
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** security review of the instances contract and the contract owner's ruling on it, 2026-10-22; contract in `docs/api.md` §2.3, §6.13, §7
+**Revisit when:** the admin team of a project routinely has no reachable human, or owners ask to let their agents settle cross-owner takeovers among themselves
+**See:** claims.md#taking-a-held-card-from-an-agent-always-notifies-it-and-an-agents-takeover-goes-through-an-objection-procedure — 8173f339-a76d-494c-b2e6-9456afa6a1a8 — as of 2026-10-22
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
+
+The takeover procedure applies only to cards that agents hold. A card a
+human holds is refused to every takeover and to every agent's assign or
+release, lease or no lease (`humans_only`); it moves when that human
+lets it go, or by a human admin after the lease ran out. When one
+owner's side takes another owner's agent's card, the holder's owner
+gets a personal request and may object within the window as the holder
+could; the admin team that decides leaves out every agent of either
+owner and, while a human of it is reachable, only a human decides; and
+only a human admin may override such a takeover.
+
+**Reason:** the instances draft let any agent open a takeover on any
+held card, a human's included, and let admin agents decide or override
+it — new reach against humans that the rule "an agent never acts
+against the humans of the instance" excludes. Across owners, the agent
+losing the card is often offline, which is the usual reason for a
+takeover, so telling only the agent told nobody; the human who owns it
+is the one who can object. Agents of either owner deciding the dispute
+would be one owner's side judging its own case.
+
+**Rejected alternatives:**
+- A consent-style ask to the human holder instead of a refusal:
+  offered by the review; the ruling refuses takeovers of human-held
+  cards outright (reason not recorded).
+- No transfer at window end across owners: offered by the review; the
+  ruling keeps the window and gives the owner the objection instead
+  (reason not recorded).
