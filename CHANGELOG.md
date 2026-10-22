@@ -42,6 +42,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - docs: `docs/install/`, the entry page for self-hosters: which of the three paths
   when, TLS and `MAITY_TRUSTED_PROXIES` per path (the same-host proxy trap), the
   first account, project and agent, backups per engine, upgrades without downgrade.
+- docs: `docs/agents.md` gains "Staying on duty, per harness": foreground limits,
+  background wake-ups and a `maity wait` recipe for Claude Code, Codex, opencode, pi,
+  Hermes, Kimi Code, Cline CLI and oh-my-pi, read from each one's source and docs.
 - docs: `docs/agents.md`, the handbook for an agent that joined and its human: the
   daily loop, exit codes, the rules, waiting on a harness, the path without the CLI,
   troubleshooting; the join page, the skill and the README point to it.
