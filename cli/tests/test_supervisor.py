@@ -151,7 +151,10 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     sup.update([placement()])
     settle(sup)
     ((name, argv, env),) = backend.started
-    assert name == "maity_maity_agent-3" and env == {"MAITY_PLACEMENT": "plc-0003"}
+    assert sup.cfg.local is not None
+    clone = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3").path
+    assert name == "maity_maity_agent-3"
+    assert env == {"MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git")}
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER

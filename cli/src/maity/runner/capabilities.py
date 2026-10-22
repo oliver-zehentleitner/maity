@@ -7,6 +7,7 @@ printable ASCII of at most 200 characters.
 
 from __future__ import annotations
 
+import functools
 import getpass
 import os
 import re
@@ -62,13 +63,24 @@ def probe(harness: config.Harness, agent_path: str) -> Probe:
 
 def sandbox_available(harness: config.Harness, path: str | None = None) -> bool:
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
-    needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Nothing else is
-    switched on yet."""
+    needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Codex's is tried
+    once per binary (`codex sandbox -- true`): a host where it cannot start is not
+    advertised as sandboxed. Nothing else is switched on yet."""
     if harness.id == "codex":
-        return True  # its own sandbox, always on with the runner's profile (§6.1)
+        binary = shutil.which(harness.binary or "codex", path=path)
+        return binary is not None and _codex_sandbox_starts(binary)
     if harness.id != "claude-code" or not sys.platform.startswith("linux"):
         return False
     return all(shutil.which(tool, path=path) for tool in ("bwrap", "socat"))
+
+
+@functools.lru_cache(maxsize=8)
+def _codex_sandbox_starts(binary: str) -> bool:
+    try:
+        done = proc.run([binary, "sandbox", "--", "true"], cwd=Path.home(), timeout=30)
+    except proc.ToolError:
+        return False
+    return done.returncode == 0
 
 
 def agent_path(cfg: config.Config, environ_path: str) -> str:

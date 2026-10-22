@@ -591,6 +591,8 @@ class Supervisor:
                 )
                 if h
             ),
+            private=private_paths(self.cfg.state_dir, Path.home(), place.path),
+            workspaces=self.cfg.local.workspaces.resolve() if self.cfg.local else None,
         )
 
     def agent_path(self) -> str:
@@ -693,6 +695,22 @@ class Supervisor:
             with self.lock:
                 if rec.pending is pending:
                     rec.acked, rec.pending = pending["key"], None
+
+
+# In the agents' home: logins and keys a sandboxed command never needs. The forge login (gh)
+# is not among them: pushing needs it, and the agents share the operator's in this layout.
+HOME_SECRETS = (
+    ".ssh", ".gnupg", ".codex", ".claude", ".claude.json", ".git-credentials", ".netrc",
+    ".config/maity-runner", ".local/state/maity-runner",
+)  # fmt: skip
+
+
+def private_paths(state_dir: Path, home: Path, clone: Path) -> tuple[Path, ...]:
+    """What no sandboxed command may read: the runner's state and the secrets in the agents'
+    home. A path that contains the clone is left out: it would hide the clone itself."""
+    found = [state_dir.resolve(), *(home / name for name in HOME_SECRETS)]
+    clone = clone.resolve()
+    return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
 def local_backend(cfg: config.Config) -> Tmux:

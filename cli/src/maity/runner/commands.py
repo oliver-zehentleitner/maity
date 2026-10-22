@@ -277,6 +277,10 @@ def _check_harness(report: Report, harness: config.Harness, agent_path: str) -> 
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
         _check_claude_code(report, harness)
+    if harness.id == "codex":
+        login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+        if not login.is_file():
+            report.warn(f"harness codex: no login at {login}; agents would start without one")
 
 
 def _check_claude_code(report: Report, harness: config.Harness) -> None:

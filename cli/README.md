@@ -392,13 +392,19 @@ project's own harness configuration is never loaded:
   its OS sandbox is switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
-  repository's `network` list. `git` is granted by subcommand, and
-  `-c`, `--no-index` and paths under `.git/maity` are denied.
+  repository's `network` list. Sandboxed commands cannot read the
+  runner's state directory or the logins and keys in the agents' home
+  (`~/.ssh`, `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.git-credentials`,
+  `~/.netrc`). They can still read other clones, other agents'
+  credentials included. `git` is granted by subcommand, and `-c`,
+  `--no-index` and paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. In the `single` layout an agent with a shell can do
-  what the runner's user can, so run it on an account you would trust
-  with the agent's work.
+  security boundary. `git diff /dev/null <file>` reads a file outside the
+  work tree without saying `--no-index`, and allowed build and test
+  commands run repository code. In the `single` layout an agent with a
+  shell can do what the runner's user can, so run it on an account you
+  would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
@@ -408,7 +414,13 @@ project's own harness configuration is never loaded:
 
 - **Codex** gets a `CODEX_HOME` of its own per placement, with a
   `config.toml` the runner writes. It turns on Codex's sandbox with the
-  workspace profile, makes the clone's `.git` writable, sets
+  workspace profile (checked with `codex sandbox -- true`: a host where
+  it cannot start is advertised `sandbox: off`), makes the clone's
+  `.git` writable but its `config` and `hooks` read-only, and hides the
+  workspaces root (every other clone), the runner's state directory and
+  the logins and keys in the agents' home from it. The clone's own
+  credential stays readable, because the agent's `maity` runs inside the
+  sandbox. It sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
   Codex's model endpoints and a repository's `network` list only. The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
@@ -419,12 +431,31 @@ project's own harness configuration is never loaded:
 - **opencode** (built, not offered yet: a configuration that names it is
   refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (except on `.git/maity`), `maity *`, named `git` subcommands
+  file tools, `grep` and `glob` (none of them on `.git/maity`), `maity *`, named `git` subcommands
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
 
 `stub` (no model, for tests) runs as before.
+
+**What an agent can and cannot reach.** git keeps lock files in `.git`,
+so an agent can always write there, `.git/commondir` included, which
+points git at another directory's configuration. Every agent session
+therefore gets `GIT_COMMON_DIR=<clone>/.git` from the runner. The
+harness's own git calls, which run outside its sandbox, read the clone's
+real `.git` and ignore anything planted. An agent can unset the variable
+for its own commands, but those stay in its sandbox. The forge login
+(`gh`, a credential helper) stays readable, because pushing needs it. In
+the `single` layout the agents share the operator's. The runner itself
+runs git in a clone only to clone into a missing directory and in `gc`,
+with the pinned environment and the layout check above. **Never run git
+in an agent's clone as yourself in the `single` layout:** a planted
+`.git/commondir`, hook or configuration runs as you. Look at the work
+through the pushed branch or the pull request instead. The `agent_user`
+layout keeps you out by itself: git refuses another user's repository
+unless `safe.directory` says otherwise. Keep `hub.state_dir` out of
+`/tmp`: Codex's sandbox can write there, and an agent could rewrite its
+own profile for the next start.
 
 On the runner host, without the hub:
 
