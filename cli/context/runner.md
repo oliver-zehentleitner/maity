@@ -739,7 +739,7 @@ files and credentials; separating them needs one user per agent (ssh
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §5.4; implementation of runner slice R7b, 2026-10-22; tested against a fake `ssh`, not yet against a real host
+**Source:** runner design v2 §5.4; implementation of runner slice R7b, 2026-10-22; the independent review of #172 (an sshd test found that ssh cannot create its ControlPath directory), 2026-10-22; tested against a fake `ssh` and against a real sshd on localhost, not yet against a remote host
 **Revisit when:** a live run on a real host shows a step that does not work over ssh, or `gc` and `workspace claim` are extended to ssh hosts
 
 The supervisor works on targets: `local`, or one per configured ssh host.
