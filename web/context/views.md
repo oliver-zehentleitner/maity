@@ -84,3 +84,32 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
+
+**Id:** b8c3a4f4-1e21-4de1-9a82-7abe86456259
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of an expired join still listed as open, relayed by the coordinator, 2026-10-22; web PR #107 and its review, 2026-10-22
+**Revisit when:** the hub sends a join's state itself, or a join's lifetime becomes much shorter than a minute
+
+Join an agent lists each join with the state its fields give, in the
+hub's order: revoked, used, burned (three wrong codes), expired; open
+joins first, the others muted and labelled. Expiry is judged by the
+hub's clock: this browser's clock corrected by the `Maity-Server-Time`
+of the last answer (docs/api.md §1.2), re-judged every 10 s while the
+view is open. A join that expired less than a minute ago keeps Revoke,
+and a Revoke the hub refuses (`invalid_transition`) is said and the list
+re-read.
+
+**Reason:** Revoke is the safety valve for a leaked line. A browser whose
+clock runs ahead would hide Revoke while the hub still accepts the line;
+the hub's time, and a minute's grace in which the hub decides, keep the
+valve where it is needed. The order mirrors the hub's, so the page never
+calls "expired" what the hub calls "used".
+
+**Rejected alternative:** the browser's clock alone — wrong by the
+client's skew, which on a laptop can be minutes. Hiding Revoke exactly at
+`expires_at` — the second the hub and the page disagree is the second a
+leaked line is pasted.
