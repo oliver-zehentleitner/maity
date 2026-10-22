@@ -666,6 +666,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector("textarea").value === "" && text(conv("Agent A")).includes("Draft: half a thought"), "chat: switching keeps the draft, shown in the list");
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelector("textarea").value === "half a thought", "chat: the draft is back in its chat");
+  expect(!text(conv("Agent A")).includes("Draft:"), "chat: the open chat's draft is in its composer, not in its row");
+  expect(conv("Agent D").getAttribute("aria-label").startsWith("Agent D, online, last message ") && conv("Agent D").getAttribute("aria-label").includes(", You: Keep the inbox"),
+    "chat: a row's accessible name has its parts apart");
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
@@ -678,7 +681,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     : { items: r.items.map((c) => { const o = Object.assign({}, c); delete o.last_message; return o; }), next_cursor: null }));
   await go("#/p/maity/chat");
   expect(convs().length === 5 && !main.querySelector(".chat-list .preview"), "chat: a hub without last_message shows no preview");
+  // A refresh asked for while a read runs is read once more after it.
+  let convReads = 0;
+  win.Maity.api.getAll = (p) => {
+    if (p !== "/projects/maity/conversations") return cAll(p);
+    convReads += 1;
+    return new Promise((r) => setTimeout(r, 40)).then(() => cAll(p));
+  };
+  await go("#/p/maity/chat"); await new Promise((r) => setTimeout(r, 120));
+  convReads = 0;
+  await fireIntervals(); await fireIntervals(); await new Promise((r) => setTimeout(r, 150));
+  expect(convReads === 2, "chat: two refreshes during one read make one more read, not none " + convReads);
   win.Maity.api.getAll = cAll;
+  // Agents appearing later fill an empty list.
+  const cGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? cGet(p).then((r) => ({ items: r.items.filter((m) => m.kind === "human"), next_cursor: null })) : cGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat");
+  expect(text(main).includes("You own no agents in this project.") && !convs().length, "chat: no agents, said");
+  win.Maity.api.get = cGet;
+  await fireIntervals(); await tick(); await tick();
+  expect(convs().length === 5 && main.querySelector(".chat-list-pane p.muted").hidden, "chat: agents that appear fill the list");
   await go("#/p/maity/chat/agt-a");
   main.querySelector("textarea").value = "Thanks.";
   main.querySelector("form").dispatch("submit"); await tick();

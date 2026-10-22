@@ -22,6 +22,8 @@ window.Maity = window.Maity || {};
   // Unsent text per conversation ("<slug>/<agent id>"), kept while the
   // human switches between them in this tab; never stored or sent.
   const drafts = new Map();
+  // Signing out ends them; the next human in this tab starts empty.
+  M.clearChatDrafts = () => drafts.clear();
 
   // A chat as the list shows it: today one per owned agent (docs/api.md §9),
   // shaped for chats with several participants (a title, their avatars).
@@ -51,31 +53,41 @@ window.Maity = window.Maity || {};
 
   // Under the title: who and how present, then an unsent draft, else the
   // last message where the hub sends it (`last_message`), else nothing.
-  function subline(ctx, chat) {
+  // The open chat's own draft is in its composer, not repeated here.
+  function sublines(ctx, chat, current) {
     const who = chat.participants.length === 1
       ? PRESENCE_LABELS[chat.participants[0].presence] || chat.participants[0].presence
       : chat.participants.map((m) => m.display_name).join(", ");
-    const draft = drafts.get(ctx.slug + "/" + chat.id);
+    const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;
     let line = null;
-    if (draft) line = h("span", { class: "preview draft" }, "Draft: " + draft);
-    else if (last && last.redacted) line = h("span", { class: "preview" }, "A message was removed.");
-    else if (last) line = h("span", { class: "preview" }, (last.from === ctx.me.id ? "You: " : "") + last.body);
-    return [h("span", { class: "conv-sub" }, who), line];
+    if (draft) line = "Draft: " + draft;
+    else if (last && last.redacted) line = "A message was removed.";
+    else if (last) line = (last.from === ctx.me.id ? "You: " : "") + last.body;
+    return { who, line, draft: !!draft };
   }
 
   function listItem(ctx, chat, currentId) {
     const current = chat.id === currentId;
+    // The open chat is read: its unread is gone even before the list says so.
+    const unread = current ? 0 : chat.unread;
+    const sub = sublines(ctx, chat, current);
+    const when = chat.last_message_at ? formatAgo(chat.last_message_at) : "";
+    // One readable name for the row, instead of its parts run together.
+    const label = [chat.title, sub.who, unread ? unread + " unread" : null, when ? "last message " + when : null, sub.line]
+      .filter(Boolean).join(", ");
     return h("li", null, h("a", {
       href: ctx.link("chat", chat.id),
-      class: "conv" + (current ? " current" : "") + (chat.unread ? " unread" : ""),
+      class: "conv" + (current ? " current" : "") + (unread ? " unread" : ""),
       "aria-current": current ? "page" : null,
+      "aria-label": label,
     },
     avatars(chat),
     h("span", { class: "conv-title" }, chat.title),
-    h("span", { class: "conv-time" }, chat.last_message_at ? formatAgo(chat.last_message_at) : ""),
-    chat.unread ? h("span", { class: "count", "aria-label": chat.unread + " unread" }, String(chat.unread)) : null,
-    subline(ctx, chat)));
+    h("span", { class: "conv-time" }, when),
+    unread ? h("span", { class: "count" }, String(unread)) : null,
+    h("span", { class: "conv-sub" }, sub.who),
+    sub.line ? h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line) : null));
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
@@ -84,30 +96,50 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
+    const none = h("p", { class: "muted" }, "You own no agents in this project.");
     const draw = () => {
+      // A redraw keeps the keyboard where it was: on the same chat's link.
+      const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
+        ? document.activeElement.getAttribute("href") : null;
       clear(ul);
       ordered(chatsOf(mine, byAgent)).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
+      none.hidden = mine.length > 0;
+      if (focused) {
+        const again = ul.querySelectorAll("a.conv").find((a) => a.getAttribute("href") === focused);
+        if (again) again.focus();
+      }
     };
+    // One read at a time; a refresh asked for while one runs (it may
+    // predate what the caller just changed) runs once more after it.
     let reading = null;
+    let again = null;
+    const read = (withMembers) => Promise.all([
+      M.api.getAll(ctx.base + "/conversations"),
+      withMembers ? M.api.getAll(ctx.base + "/members") : null,
+    ]).then(([list, members]) => {
+      byAgent = {};
+      list.items.forEach((c) => { byAgent[c.agent_id] = c; });
+      if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
+      draw();
+      status.done();
+    }).catch((err) => status.fail("The conversations could not be read: ", err));
     const refresh = (withMembers) => {
-      if (reading) return reading;
-      reading = Promise.all([
-        M.api.getAll(ctx.base + "/conversations"),
-        withMembers ? M.api.getAll(ctx.base + "/members") : null,
-      ]).then(([list, members]) => {
-        byAgent = {};
-        list.items.forEach((c) => { byAgent[c.agent_id] = c; });
-        if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
-        draw();
-        status.done();
-      }).catch((err) => status.fail("The conversations could not be read: ", err))
-        .finally(() => { reading = null; });
+      if (reading) {
+        again = { withMembers: (again && again.withMembers) || withMembers };
+        return reading;
+      }
+      reading = read(withMembers).then(() => {
+        reading = null;
+        if (!again) return null;
+        const next = again;
+        again = null;
+        return refresh(next.withMembers);
+      });
       return reading;
     };
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
-      h("h2", null, "Chat"),
-      mine.length ? ul : h("p", { class: "muted" }, "You own no agents in this project."),
-      status.el);
+      h("h2", null, "Chat"), none, ul, status.el);
+    none.hidden = mine.length > 0;
     return { el, refresh };
   }
 
@@ -120,6 +152,29 @@ window.Maity = window.Maity || {};
     if (own && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = metaText(ctx, fresh, true); });
     return h("li", { class: "msg " + (own ? "out" : "in") }, h("p", { class: "pre" }, msg.body), meta);
   }
+
+  // The chat fills the screen below the header, so that only its history
+  // scrolls and the composer stays at the bottom; the visual viewport
+  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
+  function fitToScreen(layout) {
+    const fit = () => {
+      if (layout.isConnected === false) {
+        window.removeEventListener("resize", fit);
+        if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
+        return;
+      }
+      const header = document.getElementById("header");
+      const top = header && header.getBoundingClientRect ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+      const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      if (layout.style.setProperty) layout.style.setProperty("--chat-h", Math.max(240, Math.floor(height - top - 16)) + "px");
+    };
+    window.addEventListener("resize", fit);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+    fit();
+  }
+
+  // Stays at the newest message unless the human scrolled up to read.
+  const atBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -183,12 +238,14 @@ window.Maity = window.Maity || {};
       checkDelivery();
     };
 
-    function add(msg) {
+    function add(msg, own) {
       if (shown.has(msg.seq)) return;
       shown.add(msg.seq);
+      const follow = own || atBottom(messages);
       const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
       append(messages, message(ctx, msg, pending));
+      if (follow) messages.scrollTop = messages.scrollHeight;
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
@@ -224,7 +281,7 @@ window.Maity = window.Maity || {};
       status.busy("Sending…");
       try {
         const msg = await M.api.post(path, { body });
-        add(msg);
+        add(msg, true);
         text.value = "";
         drafts.delete(key);
         status.done();
@@ -240,10 +297,11 @@ window.Maity = window.Maity || {};
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(e);
     });
 
+    const heading = h("h2", { tabindex: "-1" }, "Chat with " + agent.display_name);
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },
-        h("h2", null, "Chat with " + agent.display_name),
+        heading,
         h("span", { class: "muted" }, agent.session
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
           : "no session — picked up when it resumes")),
@@ -252,5 +310,9 @@ window.Maity = window.Maity || {};
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
         text, button, status.el));
+    fitToScreen(layout);
+    messages.scrollTop = messages.scrollHeight;
+    // On a phone the chat replaced the list: take the focus to its heading.
+    if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
   };
 })(window.Maity);
