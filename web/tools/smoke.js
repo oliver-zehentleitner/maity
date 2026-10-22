@@ -86,7 +86,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -350,6 +350,108 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "an agent's own pause is a declaration, without that line");
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
+
+  // Runners (docs/api.md §15): the instance-level view.
+  const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
+  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: a link beside the projects");
+  const rWrites = [];
+  const rPost = win.Maity.api.post, rPatch = win.Maity.api.patch, rDel = win.Maity.api.del;
+  win.Maity.api.post = (p, b) => { rWrites.push(["POST", p, b]); return rPost(p, b); };
+  win.Maity.api.patch = (p, b) => { rWrites.push(["PATCH", p, b]); return rPatch(p, b); };
+  win.Maity.api.del = (p) => { rWrites.push(["DELETE", p]); return rDel(p); };
+  await go("#/runners"); await tick();
+  const card = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
+  expect(document.title === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
+  const laptop = text(card("home-laptop"));
+  expect(laptop.includes("online") && laptop.includes("this machine") && laptop.includes("Allowed in maity.")
+    && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
+    && laptop.includes("opencode is not installed on home-laptop")
+    && laptop.includes("Agents on home-laptop run as one user, oliver, and can see each other's files, as the runner itself does.")
+    && laptop.includes("Credential rcrd-0002-0001"), "runners: a local runner in plain words, its tools and who can see what");
+  const box = text(card("build-box"));
+  expect(box.includes("hosts build-1, build-2") && box.includes("host build-2: 0 of 2 agents running · unreachable since")
+    && box.includes("Each agent on build-1 runs as its own user") && box.includes("in its OS sandbox")
+    && box.includes("every new agent waits for approval on that machine") && box.includes("Not allowed in any project yet"),
+    "runners: an ssh runner: hosts, an unreachable one, own users, local approval");
+  const cluster = text(card("cluster"));
+  expect(cluster.includes("revoked") && cluster.includes("pods in maity-agents") && cluster.includes("pi 0.9.1 · without a command allowlist: its pod is the only boundary")
+    && cluster.includes("Each agent on maity-agents runs in its own pod"), "runners: a revoked cluster runner, a tool without an allowlist");
+  expect(!text(main).includes("Open pairings"), "runners: an expired pairing is not listed as open");
+  // Pair: the name is checked first; the line is shown once, with the starter configuration.
+  byId("pair-name").value = "New Laptop";
+  main.querySelector("form.pair-form").dispatch("submit"); await tick();
+  expect(!rWrites.length && text(main).includes("lower-case letters, digits and hyphens"), "runners: a bad name is refused before sending");
+  byId("pair-name").value = "new-laptop";
+  main.querySelector("form.pair-form").dispatch("submit"); await tick(); await tick(); await tick();
+  expect(JSON.stringify(rWrites[0]) === JSON.stringify(["POST", "/runners/enrollments", { name: "new-laptop", ttl_seconds: 900, attach: ["maity", "sample"] }]),
+    "runners: pairing asks for an enrollment that allows the chosen projects");
+  const steps = main.querySelector(".pair-steps");
+  const config = text(steps.querySelector(".runner-config"));
+  expect(text(steps).includes("maity runner pair https://maity.example/r/FIXTURE-") && text(steps).includes("pipx install")
+    && text(steps).includes("maity runner check") && text(steps).includes("maity runner serve"), "runners: the steps: install, configure, pair, check, serve");
+  expect(config.includes('url = "https://maity.example"') && config.includes('projects = ["maity", "sample"]')
+    && config.includes('"github.com/oliver-zehentleitner/maity"') && config.includes('"github.com/example/sample-shop"')
+    && config.includes("[harness.claude-code]") && config.includes('layout = "single"') && !config.includes("FIXT-URE0") && !config.includes("/r/FIXTURE"),
+    "runners: the starter configuration names the hub, the projects and their repositories, and no secret");
+  expect(["state_dir", "workspaces", "tmux_socket", "max_agents", "default_mode", "default_model", "binary"].every((k) => !config.includes(k + " =")),
+    "runners: the starter configuration holds only the keys without a default");
+  expect(text(steps).includes("installs the repository's current main") && text(steps).includes("not released yet"),
+    "runners: the install step says what it installs, and that the runner commands are not released yet");
+  const hostile = win.Maity.runnerStarterConfig("https://h.example", [{ slug: "a\"b\\c\u007f\n\ud800", repository: null }]);
+  expect(hostile.includes('projects = ["a\\"b\\\\c\\u007f\\u000a\ufffd"]'), "runners: TOML strings escape quotes, backslashes, control characters and DEL; a lone surrogate is replaced");
+  expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
+  expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
+  // A hub before attachments refuses `attach`: paired without it, and said.
+  const rPost2 = win.Maity.api.post;
+  const attachTries = [];
+  win.Maity.api.post = (p, b) => {
+    attachTries.push(b);
+    return p === "/runners/enrollments" && b.attach && b.attach.length
+      ? Promise.reject(new win.Maity.api.ApiError("attachments are not available yet", 400, p, "invalid", { fields: { attach: "not_supported_yet" } }))
+      : rPost2(p, b);
+  };
+  byId("pair-name").value = "older-hub";
+  main.querySelector("form.pair-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(attachTries.length === 2 && !("attach" in attachTries[1]) && main.querySelector(".pair-steps")
+    && text(main).includes("cannot allow the runner in projects while pairing yet"), "runners: without attachments in the hub, paired without them and said so");
+  win.Maity.api.post = rPost2;
+  await go("#/all"); await go("#/runners"); await tick();
+  expect(!main.querySelector(".pair-steps") && !text(main).includes("FIXT-URE0-RUNR"), "runners: the pairing line is gone after leaving the view");
+  // Re-pair keeps the runner and the configuration.
+  btn(card("home-laptop"), "Re-pair").click(); await tick(); await tick(); await tick();
+  expect(rWrites.some((w) => JSON.stringify(w[2]) === JSON.stringify({ runner_id: "rnr-0002" })) && text(main.querySelector(".pair-steps")).includes("Keep your existing configuration"),
+    "runners: re-pairing asks for a line for the same runner");
+  await fireIntervals(); await tick();
+  expect(text(main.querySelector(".pair-wait")).includes("Waiting for the runner") && main.querySelector(".pair-line-step pre"),
+    "runners: a re-pair waits for the new credential, not the old one");
+  const rAll0 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => rAll0(p).then((a) => (p !== "/runners" ? a : { items: a.items.map((r) => (r.id !== "rnr-0002" ? r
+    : Object.assign({}, r, { credential: Object.assign({}, r.credential, { id: "rcrd-0002-0002" }) }))), next_cursor: null }));
+  await fireIntervals(); await tick();
+  expect(text(main.querySelector(".pair-wait")).includes("home-laptop is online.") && !main.querySelector(".pair-line-step pre")
+    && text(main.querySelector(".pair-line-step")).includes("Paired; the line is used up."), "runners: the used line leaves the page once paired");
+  win.Maity.api.getAll = rAll0;
+  // Rename, revoke, remove.
+  byId("runner-name-rnr-0003").value = "home-laptop";
+  card("build-box").querySelector("form.rename").dispatch("submit"); await tick(); await tick(); await tick();
+  expect(text(main).includes("Renaming failed") && text(main).includes("you have a runner of that name"), "runners: a taken name is refused by the hub");
+  byId("runner-name-rnr-0003").value = "builder";
+  card("build-box").querySelector("form.rename").dispatch("submit"); await tick(); await tick(); await tick();
+  expect(card("builder") && JSON.stringify(rWrites.find((w) => w[0] === "PATCH" && w[2].name === "builder")) === JSON.stringify(["PATCH", "/runners/rnr-0003", { name: "builder" }]),
+    "runners: renamed");
+  btn(card("builder"), "Revoke").click(); await tick(); await tick(); await tick();
+  expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: revoked, no second Revoke");
+  btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
+  expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("Agent B · running")
+    && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
+  win.Maity.api.post = rPost; win.Maity.api.patch = rPatch; win.Maity.api.del = rDel;
+  const realAll2 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/runners" || p === "/runners/enrollments" ? Promise.resolve({ items: [], next_cursor: null }) : realAll2(p));
+  await go("#/all"); await go("#/runners"); await tick();
+  expect(text(main).includes("No runner yet. A runner is a small service on your machine that starts agents for you.") && byId("pair-name"),
+    "runners: the empty state, with the pairing form");
+  win.Maity.api.getAll = realAll2;
+  await go("#/p/maity/inbox");
 
   // Why: the Keep the Why export (docs/api.md §11.3), from the published maity.dev family.
   const whyTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Why");

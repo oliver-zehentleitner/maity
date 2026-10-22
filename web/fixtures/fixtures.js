@@ -1474,6 +1474,298 @@ window.MAITY_FIXTURES = {
     ],
     "server_time": "2026-10-21T13:42:00Z"
   },
+  "runner-enrollments.json": {
+    "items": [
+      {
+        "attach": [],
+        "burned": false,
+        "created_at": "2026-10-21T10:00:00Z",
+        "expires_at": "2026-10-21T10:15:00Z",
+        "id": "renr-0001",
+        "name": "old-desktop",
+        "revoked_at": null,
+        "runner_id": null,
+        "used_at": null
+      }
+    ]
+  },
+  "runners.json": {
+    "items": [
+      {
+        "capabilities": {
+          "backend": "local",
+          "harnesses": [
+            {
+              "available": true,
+              "confinement": "allowlist",
+              "default_mode": "interactive",
+              "id": "claude-code",
+              "models": [
+                "opus",
+                "sonnet"
+              ],
+              "modes": [
+                "interactive",
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "off",
+              "targets": [
+                "local"
+              ],
+              "version": "2.1.308"
+            },
+            {
+              "available": false,
+              "confinement": "allowlist",
+              "default_mode": "supervised",
+              "id": "opencode",
+              "models": [],
+              "modes": [
+                "supervised"
+              ],
+              "reason": "binary_not_found",
+              "sandbox": "off",
+              "targets": [
+                "local"
+              ],
+              "version": null
+            }
+          ],
+          "max_agents": 4,
+          "projects": [
+            "maity",
+            "sample"
+          ],
+          "reported_at": "2026-10-22T13:40:00Z",
+          "repositories": [
+            "github.com/oliver-zehentleitner/*"
+          ],
+          "require_local_approval": false,
+          "running": 2,
+          "targets": [
+            {
+              "isolation": {
+                "kind": "shared_user",
+                "runner_separate": false,
+                "user": "oliver"
+              },
+              "max_agents": 4,
+              "name": "local",
+              "reachable": true,
+              "running": 2,
+              "unreachable_since": null
+            }
+          ]
+        },
+        "created_at": "2026-10-22T13:31:00Z",
+        "credential": {
+          "created_at": "2026-10-22T13:31:00Z",
+          "id": "rcrd-0002-0001",
+          "last_used_at": "2026-10-22T13:59:40Z",
+          "revoked_at": null,
+          "revoked_reason": null
+        },
+        "credential_state": "active",
+        "id": "rnr-0002",
+        "last_seen_at": "2026-10-22T13:59:40Z",
+        "listening": true,
+        "name": "home-laptop",
+        "owner_id": "hum-maintainer",
+        "presence": "online",
+        "projects": [
+          "maity"
+        ],
+        "removed_at": null,
+        "updated_at": "2026-10-22T13:31:00Z",
+        "version": "maity-cli/0.3.0"
+      },
+      {
+        "capabilities": {
+          "backend": "ssh",
+          "harnesses": [
+            {
+              "available": true,
+              "confinement": "allowlist",
+              "default_mode": "supervised",
+              "id": "codex",
+              "models": [
+                "gpt-5.5"
+              ],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "on",
+              "targets": [
+                "build-1",
+                "build-2"
+              ],
+              "version": "0.156.1"
+            }
+          ],
+          "max_agents": 4,
+          "projects": [
+            "sample"
+          ],
+          "reported_at": "2026-10-22T12:00:00Z",
+          "repositories": [
+            "github.com/example/*"
+          ],
+          "require_local_approval": true,
+          "running": 1,
+          "targets": [
+            {
+              "isolation": {
+                "kind": "own_user",
+                "runner_separate": true,
+                "user": null
+              },
+              "max_agents": 2,
+              "name": "build-1",
+              "reachable": true,
+              "running": 1,
+              "unreachable_since": null
+            },
+            {
+              "isolation": {
+                "kind": "own_user",
+                "runner_separate": true,
+                "user": null
+              },
+              "max_agents": 2,
+              "name": "build-2",
+              "reachable": false,
+              "running": 0,
+              "unreachable_since": "2026-10-22T11:05:00Z"
+            }
+          ]
+        },
+        "created_at": "2026-10-21T18:00:00Z",
+        "credential": {
+          "created_at": "2026-10-21T18:00:00Z",
+          "id": "rcrd-0003-0002",
+          "last_used_at": "2026-10-22T12:20:00Z",
+          "revoked_at": null,
+          "revoked_reason": null
+        },
+        "credential_state": "active",
+        "id": "rnr-0003",
+        "last_seen_at": "2026-10-22T12:20:00Z",
+        "listening": false,
+        "name": "build-box",
+        "owner_id": "hum-maintainer",
+        "presence": "away",
+        "projects": [],
+        "removed_at": null,
+        "updated_at": "2026-10-21T18:00:00Z",
+        "version": "maity-cli/0.2.9"
+      },
+      {
+        "capabilities": {
+          "backend": "k8s",
+          "harnesses": [
+            {
+              "available": true,
+              "confinement": "allowlist",
+              "default_mode": "supervised",
+              "id": "claude-code",
+              "models": [
+                "sonnet"
+              ],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "off",
+              "targets": [
+                "maity-agents"
+              ],
+              "version": "2.1.308"
+            },
+            {
+              "available": true,
+              "confinement": "pod",
+              "default_mode": "supervised",
+              "id": "pi",
+              "models": [
+                "sonnet"
+              ],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "n/a",
+              "targets": [
+                "maity-agents"
+              ],
+              "version": "0.9.1"
+            }
+          ],
+          "max_agents": 8,
+          "projects": [
+            "maity"
+          ],
+          "reported_at": "2026-10-21T19:30:00Z",
+          "repositories": [
+            "github.com/oliver-zehentleitner/maity"
+          ],
+          "require_local_approval": false,
+          "running": 0,
+          "targets": [
+            {
+              "isolation": {
+                "kind": "pod",
+                "runner_separate": true,
+                "user": null
+              },
+              "max_agents": 8,
+              "name": "maity-agents",
+              "reachable": true,
+              "running": 0,
+              "unreachable_since": null
+            }
+          ]
+        },
+        "created_at": "2026-10-21T19:00:00Z",
+        "credential": {
+          "created_at": "2026-10-21T19:00:00Z",
+          "id": "rcrd-0004-0001",
+          "last_used_at": "2026-10-21T20:00:00Z",
+          "revoked_at": "2026-10-21T20:10:00Z",
+          "revoked_reason": "maintenance"
+        },
+        "credential_state": "revoked",
+        "id": "rnr-0004",
+        "last_seen_at": "2026-10-21T20:00:00Z",
+        "listening": false,
+        "name": "cluster",
+        "owner_id": "hum-maintainer",
+        "presence": "offline",
+        "projects": [
+          "maity"
+        ],
+        "removed_at": null,
+        "updated_at": "2026-10-21T20:10:00Z",
+        "version": "maity-cli/0.3.0"
+      }
+    ],
+    "still_running": {
+      "rnr-0002": [
+        {
+          "agent": {
+            "display_name": "Agent B",
+            "handle": "agent-b",
+            "id": "agt-b"
+          },
+          "id": "plc-0003",
+          "reported": {
+            "state": "running"
+          }
+        }
+      ]
+    }
+  },
   "sample/conversations.json": {
     "agt-s1": {
       "cursor": null,

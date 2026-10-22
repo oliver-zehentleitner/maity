@@ -31,6 +31,7 @@ requests waiting for the human, and **All projects** with the total.
 |---|---|
 | `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/account` | the signed-in human's account: name, handle, **Change password**; **Account** beside **Sign out** in the header |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -127,6 +128,35 @@ their content comes from (the agents' requests; the cards the agents
 propose), the paste line of a join says where it goes (to the agent as a
 message, or run in a terminal in the agent's clone), and a tab row wider
 than the screen fades on the side where more entries are.
+
+**Runners** (`#/runners`, `docs/api.md` §15.2–§15.3). One card per runner
+in plain words: online, away or offline with when it was last seen, or
+revoked; what it runs on (this machine, hosts, or pods in a namespace);
+for each host or pool how many agents run of how many, and whether it is
+reachable; its tools with versions, how each is kept in bounds (its
+command allowlist, or only its pod) and how it runs (a session you can
+attach to, or woken by events with no open session), and the ones that
+are not installed; who can see what (one user for all agents, a user per
+agent, or a pod each); which projects and repositories its own
+configuration allows; its credential's id and dates, never its value.
+**Pair a runner** creates a pairing (`POST /runners/enrollments`) with a
+name, the projects to allow it in and how long the line stays valid, and
+shows the steps for the machine: install the CLI (from the repository's
+current main; the page says the runner commands are not released yet),
+save the **starter configuration** generated in the browser as
+`~/.config/maity-runner/runner.toml`, run the pairing line (shown once,
+gone after leaving the view, and replaced by a note once it is used or
+expired), then `maity runner check` and `maity runner serve`. The
+configuration holds only the keys without a default: this pairing's hub
+URL, the chosen projects and their repositories, the local backend's
+layout and Claude Code's modes and models; no secret. Its "copy as a
+command" form never overwrites an existing file (`set -C`). The panel
+says when the runner has paired (for a re-pair: when its credential is a
+new one) and when it is online (the view re-reads every 30 s). Open pairings are listed and
+revocable. Each runner can be renamed, re-paired (a new line for the same
+runner; the old credential ends at the exchange), revoked, and removed;
+removing lists the agents that were still running on it, which are then
+the operator's to end on that machine (`maity runner stop-all`).
 
 **Change password** (`#/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
@@ -344,11 +374,19 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     banner heads the inbox; the hub's project view says both are
     uploaded; removing the logo brings the monogram back. Without the
     fields, monograms and no upload;
-15. **Why**, where the hub has the export: the e2e project has no
+15. **Runners**: the empty view; a pairing for `e2e-runner` with the
+    starter configuration (this hub, both projects) and the line; the
+    line's exchange done as `maity runner pair` would (`POST
+    /runners/pair/{token}`), after which the panel says the runner is
+    paired and its card says offline, never connected, with the credential
+    id from the exchange; rename; re-pair, whose exchange replaces the
+    credential; revoke; remove with nothing left running. Only a hub
+    that answers 404 on `GET /runners` skips this step;
+16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
-16. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
-    views, each reached through its tab, load without an error, none of
+17. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
+    views, each reached through its tab, and the Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
@@ -405,6 +443,7 @@ web/
 ├── js/why.js         (7) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
+├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

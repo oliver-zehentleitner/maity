@@ -113,6 +113,16 @@ window.Maity = window.Maity || {};
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
 
+  function runnersFile() {
+    return fixtures()["runners.json"];
+  }
+
+  function runnerOf(id, path) {
+    const r = runnersFile().items.find((x) => x.id === id);
+    if (!r) fail(404, "not_found", "no such runner", path);
+    return r;
+  }
+
   // A release card that may still change: closed ones are a record.
   function releaseCard(slug, id, path) {
     const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
@@ -202,6 +212,70 @@ window.Maity = window.Maity || {};
       return data;
     }],
     ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    // Runners (docs/api.md §15.2–§15.3), instance level.
+    ["GET", /^\/runners$/, () => ({ items: runnersFile().items.filter((r) => !r.removed_at), next_cursor: null })],
+    ["GET", /^\/runners\/enrollments$/, () => ({ items: fixtures()["runner-enrollments.json"].items.slice().reverse(), next_cursor: null })],
+    ["POST", /^\/runners\/enrollments$/, (m, body, path) => {
+      const ttl = body.ttl_seconds === undefined ? 900 : body.ttl_seconds;
+      if (ttl < 60 || ttl > 900) fail(400, "invalid", "ttl out of range", path, { fields: { ttl_seconds: "out_of_range" } });
+      let runnerId = null;
+      let name = body.name || null;
+      if (body.runner_id) {
+        runnerOf(body.runner_id, path);
+        runnerId = body.runner_id;
+        name = null;
+      } else {
+        if (!name || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(name)) fail(400, "invalid", "a runner needs a name", path, { fields: { name: name ? "string_pattern_mismatch" : "missing" } });
+        if (runnersFile().items.some((r) => !r.removed_at && r.name === name)) fail(400, "invalid", "you have a runner of that name", path, { fields: { name: "taken" } });
+      }
+      const admin = me().projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.slug);
+      (body.attach || []).forEach((slug) => { if (!admin.includes(slug)) fail(403, "forbidden", "members:admin needed in " + slug, path, { scope: "members:admin" }); });
+      const id = localId("renr");
+      const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+      fixtures()["runner-enrollments.json"].items.push({ id, runner_id: runnerId, name, attach: body.attach || [], created_at: nowIso(),
+        expires_at: expires, used_at: null, burned: false, revoked_at: null });
+      const url = "https://maity.example/r/FIXTURE-" + id;
+      return { id, runner_id: runnerId, pair_url: url, code: "FIXT-URE0-RUNR", pair_line: "maity runner pair " + url + " --code FIXT-URE0-RUNR", expires_at: expires };
+    }],
+    ["DELETE", /^\/runners\/enrollments\/([^/]+)$/, (m, body, path) => {
+      const e = fixtures()["runner-enrollments.json"].items.find((x) => x.id === m[1]);
+      if (!e) fail(404, "not_found", "no such enrollment", path);
+      if (e.used_at || e.burned || Date.parse(e.expires_at) <= Date.now()) {
+        if (!e.revoked_at) fail(409, "invalid_transition", "used, burned or expired", path);
+      }
+      e.revoked_at = e.revoked_at || nowIso();
+      return e;
+    }],
+    ["GET", /^\/runners\/([^/]+)$/, (m, body, path) => runnerOf(m[1], path)],
+    ["PATCH", /^\/runners\/([^/]+)$/, (m, body, path) => {
+      const r = runnerOf(m[1], path);
+      if (r.removed_at) fail(409, "invalid_transition", "the runner was removed", path, { from: "removed", to: null });
+      if (runnersFile().items.some((x) => x !== r && !x.removed_at && x.name === body.name)) fail(400, "invalid", "you have a runner of that name", path, { fields: { name: "taken" } });
+      r.name = body.name;
+      r.updated_at = nowIso();
+      return r;
+    }],
+    ["POST", /^\/runners\/([^/]+)\/revoke$/, (m, body, path) => {
+      const r = runnerOf(m[1], path);
+      if (r.credential && !r.credential.revoked_at) {
+        r.credential.revoked_at = nowIso();
+        r.credential.revoked_reason = body.reason || "revoked";
+      }
+      r.credential_state = r.credential ? "revoked" : "none";
+      r.presence = "offline";
+      r.listening = false;
+      return r;
+    }],
+    ["DELETE", /^\/runners\/([^/]+)$/, (m, body, path) => {
+      const r = runnerOf(m[1], path);
+      if (!r.removed_at) {
+        if (r.credential && !r.credential.revoked_at) { r.credential.revoked_at = nowIso(); r.credential.revoked_reason = "runner_removed"; }
+        r.credential_state = "revoked";
+        r.removed_at = nowIso();
+        r.projects = [];
+      }
+      return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+    }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
     ["GET", /^\/requests$/, () => ({

@@ -68,6 +68,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account" };
+    if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "p" && parts[1]) {
       return { scope: "project", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -432,7 +433,8 @@ window.Maity = window.Maity || {};
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
       count(p.open_requests))),
-    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
+    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"),
+    h("a", { href: "#/runners", class: "runners-link", "aria-current": ctx.scope === "runners" ? "page" : null }, "Runners"));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -496,7 +498,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name),
             stateBadge(ctx.project.state, ctx.project.state_note), toggle]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -731,10 +733,10 @@ window.Maity = window.Maity || {};
     renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = where.scope === "all" || where.scope === "new" || where.scope === "account"
+    const known = ["all", "new", "account", "runners"].includes(where.scope)
       || (item && own(M.views, item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (where.scope === "all" || where.scope === "new" || where.scope === "account") viewName = where.scope;
+    if (["all", "new", "account", "runners"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -746,6 +748,8 @@ window.Maity = window.Maity || {};
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
         await M.views.account(ctx, root);
+      } else if (where.scope === "runners") {
+        await M.views.runners(ctx, root);
       } else if (known) {
         await M.views[item.route](ctx, root, where.args);
       } else {
@@ -763,6 +767,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "all") label = "All projects";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
+    else if (where.scope === "runners") label = "Runners";
     else if (known) label = item.label + " · " + ctx.project.name;
     document.title = label + " · Maity";
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
