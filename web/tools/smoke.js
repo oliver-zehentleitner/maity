@@ -381,8 +381,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   ud.value = ""; ud.dispatch("change"); await tick(); await tick();
   expect(userRows().length === 1 && btn(main, "Load more") && text(main).includes("1+ account"), "users: one page, and more to load");
+  const uProto = Object.getPrototypeOf(main);
+  const uFocus = uProto.focus;
+  uProto.focus = function () { document.activeElement = this; };
   btn(main, "Load more").click(); await tick(); await tick();
   expect(userRows().length === 2 && uPaths[uPaths.length - 1].includes("cursor=1"), "users: Load more reads the next page by its cursor");
+  expect(document.activeElement === userRows()[1].querySelector("th"), "users: after Load more the focus is on the first new row");
+  uProto.focus = uFocus; document.activeElement = undefined;
+  // A cursor belongs to its filter: typing ends the old paging at once, and the
+  // next page then asks with the filter it was read with, not what is typed.
+  uq.value = "a"; uq.dispatch("input");
+  expect(!btn(main, "Load more"), "users: a filter edit takes Load more away at once");
+  await new Promise((r) => setTimeout(r, 350)); await tick(); await tick();
+  uq.value = "m"; uq.dispatch("input"); uq.value = "a";
+  btn(main, "Load more") && btn(main, "Load more").click();
+  await tick(); await tick();
+  expect(!uPaths.some((p) => p.includes("cursor=") && p.includes("q=m")), "users: no next page is read with a filter it was not given for");
+  // A slower, older answer never replaces a newer one.
+  let slow = true;
+  win.Maity.api.get = (p) => {
+    if (!p.startsWith("/admin/users")) return uGet(p);
+    const answer = uGet(p);
+    if (slow && p.includes("q=guest")) { slow = false; return new Promise((r) => setTimeout(r, 500)).then(() => answer); }
+    return answer;
+  };
+  uq.value = "guest"; uq.dispatch("input"); await new Promise((r) => setTimeout(r, 330));
+  uq.value = "ops"; uq.dispatch("input"); await new Promise((r) => setTimeout(r, 400)); await tick();
+  const sawOps = JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]);
+  await new Promise((r) => setTimeout(r, 300)); await tick();
+  expect(sawOps && JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: a delayed older search answer, arriving after the newer one, is dropped " + JSON.stringify(userNames()));
+  // The endpoint itself refusing (403) is said, not hidden.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("instance:admin needed", 403, p, "forbidden")) : uGet(p));
+  await go("#/all"); await go("#/admin/users"); await tick();
+  expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
+  uq.value = "";
   // A hub without the list, and someone who is not the instance admin.
   win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
   await go("#/all"); await go("#/admin/users"); await tick();

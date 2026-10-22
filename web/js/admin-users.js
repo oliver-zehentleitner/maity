@@ -28,11 +28,15 @@ window.Maity = window.Maity || {};
     let rows = [];
     let next = null;
     let seq = 0;
+    // A cursor belongs to the filter it was read with (docs/api.md §1.4):
+    // the next page asks with that filter, never with what is typed since.
+    let shownFilter = null;
 
-    const query = (cursor) => {
+    const filterNow = () => ({ q: q.value.trim(), disabled: disabled.value });
+    const query = (filter, cursor) => {
       const p = new URLSearchParams();
-      if (q.value.trim()) p.set("q", q.value.trim());
-      if (disabled.value) p.set("disabled", disabled.value);
+      if (filter.q) p.set("q", filter.q);
+      if (filter.disabled) p.set("disabled", filter.disabled);
       p.set("limit", String(PAGE));
       if (cursor) p.set("cursor", cursor);
       return "/admin/users?" + p.toString();
@@ -48,7 +52,7 @@ window.Maity = window.Maity || {};
               ["Name", "Admin", "Status", "Created", "Last sign-in", "Last seen", "Projects", "Agents"]
                 .map((t) => h("th", { scope: "col", role: "columnheader" }, t)))),
             h("tbody", { role: "rowgroup" }, rows.map((u) => h("tr", { role: "row", class: u.disabled ? "disabled" : "" },
-              h("th", { scope: "row", role: "rowheader", "data-label": "Name" },
+              h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: "-1" },
                 h("span", { class: "user-name" }, u.display_name), h("span", { class: "muted" }, " @" + u.handle),
                 u.id === ctx.me.id ? h("span", { class: "muted" }, " (you)") : null),
               h("td", { role: "cell", "data-label": "Admin" }, u.instance_admin ? "instance admin" : "—"),
@@ -59,20 +63,27 @@ window.Maity = window.Maity || {};
               h("td", { role: "cell", "data-label": "Projects" }, String(u.memberships)),
               h("td", { role: "cell", "data-label": "Agents" }, String(u.agents))))))) : null);
       clear(more);
-      if (next) append(more, h("button", { type: "button", onclick: () => load(next) }, "Load more"));
+      if (next) append(more, h("button", { type: "button", onclick: () => load(shownFilter, next) }, "Load more"));
     }
 
     // A newer search wins over an older answer still on its way.
-    async function load(cursor) {
+    async function load(filter, cursor) {
       const mine = ++seq;
       status.busy(cursor ? "Loading more…" : "Loading…");
       try {
-        const page = await M.api.get(query(cursor));
+        const page = await M.api.get(query(filter, cursor));
         if (mine !== seq) return;
+        const before = cursor ? rows.length : 0;
         rows = cursor ? rows.concat(page.items) : page.items;
         next = page.next_cursor || null;
+        shownFilter = filter;
         draw();
         status.done();
+        // Load more is gone or redrawn: the focus goes to the first new row.
+        if (cursor && rows.length > before) {
+          const first = box.querySelectorAll("tbody tr")[before];
+          if (first) first.querySelector("th").focus();
+        }
       } catch (err) {
         if (mine !== seq) return;
         if (err.status === 404 && err.code === "not_found" && !cursor && !rows.length) {
@@ -85,20 +96,23 @@ window.Maity = window.Maity || {};
       }
     }
 
+    // Any change of the filter ends paging of the old one at once.
+    const changed = () => { next = null; clear(more); };
     let timer = null;
     q.addEventListener("input", () => {
+      changed();
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => load(null), SEARCH_MS);
+      timer = window.setTimeout(() => load(filterNow(), null), SEARCH_MS);
     });
-    disabled.addEventListener("change", () => load(null));
+    disabled.addEventListener("change", () => { changed(); load(filterNow(), null); });
 
     append(root, h("h2", null, "Users of this hub"),
       h("p", { class: "muted" }, "The people with an account here, for you as the instance admin: when they came, signed in and "
         + "were last seen, how many projects they are in and how many agents they own. Being the instance admin opens no project."),
-      h("form", { class: "users-filter", role: "search", onsubmit: (e) => { e.preventDefault(); load(null); } },
+      h("form", { class: "users-filter", role: "search", onsubmit: (e) => { e.preventDefault(); changed(); load(filterNow(), null); } },
         h("label", { for: "users-q" }, "Search by handle or name"), q,
         h("label", { for: "users-disabled" }, "Show"), disabled),
       status.el, box, more);
-    await load(null);
+    await load(filterNow(), null);
   };
 })(window.Maity);

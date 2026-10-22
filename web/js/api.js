@@ -223,8 +223,11 @@ window.Maity = window.Maity || {};
         .filter((u) => !q || (u.handle + "\n" + u.display_name).toLowerCase().includes(q.toLowerCase()))
         .filter((u) => d === null || String(u.disabled) === d)
         .sort((a, b) => a.handle.localeCompare(b.handle));
+      // §1.4: limit 1–200, the cursor one this list gave out.
       const limit = Number(query.get("limit") || 50);
       const start = Number(query.get("cursor") || 0);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) fail(400, "invalid", "limit is 1 to 200", path, { fields: { limit: "out_of_range" } });
+      if (!Number.isInteger(start) || start < 0) fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid_cursor" } });
       const items = all.slice(start, start + limit);
       return { items, next_cursor: start + limit < all.length ? String(start + limit) : null };
     }],
