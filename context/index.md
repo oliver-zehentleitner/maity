@@ -53,6 +53,7 @@ Why Maity is built the way it is.
 ## L
 
 ## M
+- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
