@@ -110,7 +110,9 @@ window.Maity = window.Maity || {};
 
     // A write and the re-read after it are told apart: a write that went
     // through is said as done even when the list cannot be read afterwards.
-    async function act(label, done, call, focusKey) {
+    // `settled` runs once the hub has taken the call (a change or a consent
+    // request), before the list is read again and drawn.
+    async function act(label, done, call, focusKey, settled) {
       status.busy(label + "…");
       let answer;
       try {
@@ -125,14 +127,14 @@ window.Maity = window.Maity || {};
         ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
           + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
         : h("span", { class: "ok" }, done));
-      if (isConsent(answer)) return "consent";
+      if (settled) settled();
       try {
         await reload();
         redraw(focusKey);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
       }
-      return true;
+      return isConsent(answer) ? "consent" : true;
     }
 
     function manage(m, rowId) {
@@ -142,6 +144,8 @@ window.Maity = window.Maity || {};
       if (m.kind === "agent") {
         const reasonId = "member-pause-" + m.id;
         const reason = keyed("reason:" + m.id, h("input", { id: reasonId, placeholder: "Why it stops, e.g. quota", autocomplete: "off" }));
+        reason.value = (edits.get(m.id) || {}).reason || "";
+        reason.addEventListener("input", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { reason: reason.value })); });
         const words = M.pauseWords || { effect: "", paused: "" };
         parts.push(m.paused
           ? h("div", { class: "member-pause" }, h("span", null, pausedText(m)),
@@ -156,7 +160,8 @@ window.Maity = window.Maity || {};
             onsubmit: (e) => {
               e.preventDefault();
               if (!reason.value.trim()) { reason.focus(); return; }
-              act("Pausing", m.display_name + " is paused.", () => M.api.patch(memberPath, { paused: { reason: reason.value.trim() } }), "unpause:" + m.id);
+              act("Pausing", m.display_name + " is paused.", () => M.api.patch(memberPath, { paused: { reason: reason.value.trim() } }), "unpause:" + m.id,
+                () => { const d = edits.get(m.id); if (d) delete d.reason; });
             },
           }, h("label", { for: reasonId }, "Pause with a reason"), reason,
           h("button", { type: "submit" }, "Pause"),
@@ -209,7 +214,14 @@ window.Maity = window.Maity || {};
       const reports = keyed("reports:" + m.id, h("select", { id: id("reports") }, h("option", { value: "" }, "nobody"),
         others.map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")")),
         listed ? null : h("option", { value: m.reports_to }, nameOf(m.reports_to) + " (not in this list)")));
-      reports.value = draft.reports !== undefined ? draft.reports : (m.reports_to || "");
+      reports.value = m.reports_to || "";
+      // A drafted boss who has left since is dropped, and said: a select that
+      // fell back to "nobody" would clear the member's boss on the next save.
+      let bossGone = null;
+      if (draft.reports !== undefined) {
+        if (!draft.reports || others.some((x) => x.id === draft.reports) || draft.reports === m.reports_to) reports.value = draft.reports;
+        else { bossGone = nameOf(draft.reports); delete draft.reports; }
+      }
       const areas = keyed("areas:" + m.id, h("input", { id: id("areas"), placeholder: "hub/, docs/", autocomplete: "off", spellcheck: "false" }));
       areas.value = draft.areas !== undefined ? draft.areas : (m.areas || []).join(", ");
       const caps = CAPABILITIES.map(([cap, label]) => {
@@ -224,6 +236,7 @@ window.Maity = window.Maity || {};
       // Each field says its own error, tied to it (as on the account view).
       const errorOf = (what) => h("p", { class: "field-error", id: id(what) + "-error", role: "alert" });
       const errors = { role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
+      if (bossGone) errors.reports.textContent = bossGone + ", whom you picked, is no longer a member; reports to is back to what it is.";
       [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
         + (k === "areas" ? " " + id("areas") + "-hint" : "")));
       const clearErrors = () => [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
@@ -253,9 +266,8 @@ window.Maity = window.Maity || {};
           const said = { role: "role", reports_to: "reports to", areas: "areas", capabilities: "capabilities" };
           save.disabled = true;
           const saved = await act("Saving", "Saved for " + m.display_name + ": " + Object.keys(body).map((k) => said[k]).join(", ") + ".",
-            () => M.api.patch(memberPath, body), "role:" + m.id);
+            () => M.api.patch(memberPath, body), "role:" + m.id, () => edits.delete(m.id));
           save.disabled = false;
-          if (saved === true) edits.delete(m.id);
           // Demoting oneself changes what this page may offer: re-render it.
           if (saved === true && self && body.role) ctx.refresh();
         },
@@ -311,7 +323,8 @@ window.Maity = window.Maity || {};
                   "aria-controls": expanded ? rowId : null,
                   "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
                   onclick: () => {
-                    if (open.has(m.id)) { open.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                    // Done closes the row and drops its unsaved edits.
+                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
                   },
                 }, expanded ? "Done" : "Manage"))) : null);
               return expanded ? [row, manage(m, rowId)] : row;
