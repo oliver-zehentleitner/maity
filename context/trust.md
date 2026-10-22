@@ -88,3 +88,30 @@ would mostly leave work half done without a checkpoint.
   agent that ignores the rules just carries on picking up cards.
 - A hard stop refusing every write: strands work without a checkpoint
   and still cannot stop git, tests or deploys outside the hub.
+
+## `reports_to` forms a tree; removing a member clears it on everyone who reported to them
+
+**Id:** b242eda7-abc7-489f-af49-d7b7d7bf37c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract change in `docs/api.md` §6.2, 2026-10-22, for the maintainer's need to re-hang members in the organisation chart
+**Revisit when:** a member has to report to more than one member, or the organisation needs a relation a tree cannot express
+**See:** https://github.com/oliver-zehentleitner/maity — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-10-22
+
+A `reports_to` that names the member itself, or a member that already
+reports up to it, is `invalid` (`details.fields.reports_to: "cycle"`),
+checked on the PATCH and on a join that carries `reports_to`, against the
+project's current members. Removing a member sets `reports_to` to `null`
+on everyone who reported to them, with a `member_updated` event for each.
+
+**Reason:** the maintainer re-hangs members in the organisation chart,
+and the dashboard got an edit dialog for it; until then the hub accepted
+any `reports_to`, cycles included. The contract states the aim of the
+removal rule — the chain never names a former member; why a cycle is
+refused beyond that is not written down (an organisation view drawn from
+the chain could not place a member inside one).
+
+**Alternatives:** unknown — for the removal in particular, whether
+re-hanging the reports onto the removed member's own `reports_to` was
+considered is not recorded.
