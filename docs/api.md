@@ -229,6 +229,7 @@ the hub records it on the session.
 | What | Cap |
 |---|---|
 | Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10) |
+| Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | `title` fields | 200 characters |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
@@ -257,7 +258,7 @@ Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
 `maity_csrf` (`Secure; SameSite=Lax; Path=/`, readable by the page). The
 `Secure` flag follows the scheme the hub is reached under: it is dropped
 only when the hub runs with `MAITY_ALLOW_PLAIN_HTTP` (§2.5). Every `POST`,
-`PATCH` and `DELETE` made with a cookie session must carry `X-CSRF-Token`;
+`PATCH`, `PUT` and `DELETE` made with a cookie session must carry `X-CSRF-Token`;
 the hub compares it with the token stored on the session, not with the
 cookie the request happens to carry, otherwise `csrf_mismatch`. The hub
 also refuses cookie requests whose `Sec-Fetch-Site` is `cross-site`. When
@@ -1606,27 +1607,27 @@ change it.
    design (pending); until it lands no human has this source. What the
    hub does with that image is fixed here: it reads it server-side under
    the outbound rule (§11.1) from the forge's avatar host as §11.2 lists
-   it (for GitHub `avatars.githubusercontent.com`), accepts PNG, JPEG or
-   WebP by their magic bytes as §11.2 does for a forge image (GitHub
-   serves avatars as JPEG too), checks its dimensions, decodes it and
-   encodes it again as an upload (below), stores the result and refreshes it every 6 hours like the project
-   images. A failed refresh keeps the stored image; an answer that there
-   is none drops it;
+   it (for GitHub `avatars.githubusercontent.com`), accepts the types an
+   upload accepts (below; JPEG is pending with them — GitHub serves
+   avatars as JPEG too, so without JPEG many forge avatars are no image),
+   processes it as an upload, stores the result and refreshes it every
+   6 hours like the project images. A failed refresh keeps the stored
+   image; an answer that there is none drops it;
 3. none — `avatar_url` is `null`; the client draws the generated avatar.
 
 **`avatar_url`** is a path on the hub's own origin, versioned:
 `/api/v1/avatars/{id}?v=<digest>`, where `<digest>` is the stored image's
 `ETag` without quotes; the hub ignores the parameter, it only makes a
-changed image a new URL for the browser's cache. `null` when no source
-has an image. Every object that names a member with `display_name`
-carries `avatar_url` next to it: `member` in `GET /me` (§5.1), `me` in
-the resume packet (§5.2), the member view and its admin `owner` (§6.2),
-the agent profile (§6.3), `asked_by`, `on_behalf_of` and
-`needs_in_session` of a request (§7), a placement's `agent` (§15.5,
-`null` while `agent.id` is `null`) and the items of `GET /admin/users`
-(§16.1). A client shows the generated avatar when `avatar_url` is `null`
-and when the image fails to load; it loads no avatar from any other
-origin and never puts an external URL into the page.
+changed image a new URL. `null` when no source has an image. Every
+object that names a member with `display_name` carries `avatar_url` next
+to it: `member` in `GET /me` (§5.1), `me` in the resume packet (§5.2),
+the member view and its admin `owner` (§6.2), the agent profile (§6.3),
+`asked_by`, `on_behalf_of` and `needs_in_session` of a request (§7), a
+placement's `agent` (§15.5, `null` while `agent.id` is `null`) and the
+items of `GET /admin/users` (§16.1). A client shows the generated avatar
+when `avatar_url` is `null` and when the image fails to load (a `404`
+included); it loads no avatar from any other origin and never puts an
+external URL into the page.
 
 `member` in `GET /me` and the agent profile (§6.3, for its owner) carry
 `avatar_source` as well — `uploaded`, `forge` or `null` — so a settings
@@ -1637,54 +1638,94 @@ screen knows whether there is an upload to remove.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /avatars/{id}` | see below | the image itself |
-| `PUT /me/avatar` | a human for their account (cookie session, `X-CSRF-Token`); an agent credential for its profile | raw body, as the logo's upload (§11.2) |
+| `PUT /me/avatar` | a human for their account; an agent credential for its profile | raw body, as the logo's upload (§11.2) |
 | `DELETE /me/avatar` | as `PUT` | removes the upload |
 | `PUT /agents/{id}/avatar` | the profile's owner, human only | the same upload for one of the human's agents |
 | `DELETE /agents/{id}/avatar` | as `PUT` | |
 
-An agent credential is bound to (profile, project) but sets the
-profile's avatar: it shows in every project the profile is a member of.
-A paused agent or a closed project does not refuse it; the avatar is not
-work. A runner credential is `forbidden` (§15.1).
+A human calls these with the cookie session; `PUT` and `DELETE` carry
+`X-CSRF-Token` like every state-changing cookie call (§2.1). An agent
+credential is bound to (profile, project) but sets the profile's
+avatar: it shows in every project the profile is a member of. A paused
+agent or a closed project does not refuse it; the avatar is not work. A
+runner credential is `forbidden` (§15.1).
 
-`GET /avatars/{id}` answers a caller that is the member itself, owns the
-agent profile, shares a project with the member (an active membership
-of both), or shares a project with an agent profile the member owns (an
-agent's owner who is not a member is shown to admins, §6.2), and an
-instance admin (§16) for a human's avatar. Any other caller gets
-`not_found`, as for an id that does not exist: the endpoint does not
-tell whether an account exists. The answer has the headers of a logo
-(§11.2): `Content-Type` of the stored image, `X-Content-Type-Options:
+**Who may read an image.** `GET /avatars/{id}` answers:
+
+- the member itself;
+- the owner of the agent profile;
+- a caller that shares a project with the member (an active membership
+  of both);
+- a caller with `members:admin` in a project where an agent profile the
+  member owns is a member — the agent's owner is shown to admins only
+  (§6.2), and so is the owner's picture;
+- an instance admin (§16), for a human's avatar.
+
+Any other caller gets `not_found`, as for an id that does not exist: the
+endpoint does not tell whether an account exists. The hub authorizes
+first and only then compares `If-None-Match`: a caller who may not see
+the image gets `not_found`, never `304`. The answer has the headers of a
+logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
-`Cross-Origin-Resource-Policy: same-origin`, `ETag`, `Cache-Control:
-private, max-age=21600`, and `304` on a matching `If-None-Match`. It is
-served from what the hub stored and never reads through to the forge.
+`Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
+caching: `Cache-Control: private, no-cache`. The browser keeps the image
+but revalidates it on every use, so access ends with the session, the
+membership or the account switch, not six hours later; the revalidation
+is a `304` without a body. It is served from what the hub stored and
+never reads through to the forge.
 
 **Upload.** `PUT` with the raw image as the body — no JSON, no multipart
 — and `Content-Type: image/png` or `image/webp`. The rules of the logo's
 upload apply (§11.2) — type sniffed from the magic bytes, the declared
 `Content-Type` must name it, at most 1 MiB (the body cap of §1.7 does not
 apply to this call), SVG and every other type refused — with two
-differences: JPEG is not accepted, and the hub decodes the image and
-encodes it again:
+differences: only PNG and WebP are accepted, and the hub decodes the
+image and encodes it again. Whether JPEG is accepted as well is pending
+with the maintainer; until it is decided it is refused.
 
-- It reads the dimensions from the header before decoding and refuses
-  more than 4096 pixels on either side.
-- It decodes the image; an animated WebP gives its first frame.
-- It crops the image to a centred square and scales it down to at most
-  256 × 256 pixels (never up).
-- It encodes the result as PNG with alpha and nothing else: no EXIF, no
-  colour profile, no text chunks, no other metadata.
+The decoder is the most exposed parser of the hub: it runs on bytes any
+agent credential can send. The rules below follow the image library's
+own guidance (Pillow, *Security*:
+https://pillow.readthedocs.io/en/stable/handbook/security.html):
 
-It stores the encoded bytes and their `ETag` (a digest of those bytes) —
-a small table keyed by account or profile and source, as the project
-images are keyed by project and kind — and serves only those bytes, so
-the served answer is always `image/png`. The logo keeps its own rule
-(stored as uploaded): an avatar comes from every agent credential rather
-than from a project admin, shows in every project of its member, and a
-human's photo carries metadata such as a location that the hub should
-not serve. An upload replaces the previous one. The answer is `200` with
-`{"avatar_url": …, "avatar_source": …}`.
+- Only the PNG and WebP decoders are enabled for this path; the type is
+  chosen from the sniffed bytes, never by the library guessing.
+- The dimensions are read from the header before decoding; more than
+  4096 pixels on either side is refused.
+- Only the first frame is decoded; an animated WebP or APNG gives that
+  frame and the others are never read.
+- After decoding, the hub checks the decoded image's real size against
+  the same limit and against the header; a mismatch is refused.
+- PNG text chunks (`tEXt`, `zTXt`, `iTXt`) are capped: none of them is
+  kept, and a single chunk over 64 KiB or all of them over 256 KiB after
+  decompression refuses the image, so compressed metadata cannot inflate
+  memory.
+- Each decode runs under a time and a memory budget, and the hub runs at
+  most a fixed number of decodes at once; the hub's operator sets all
+  three (`hub/` documents the settings and their defaults). A decode
+  over a budget is refused; a call that finds every decode slot taken is
+  `rate_limited` with `Retry-After`.
+- Changes are rate-limited per account or profile, not per credential:
+  at most 10 `PUT` or `DELETE` per hour for one avatar, whichever of its
+  credentials (or its owner) makes them; beyond it `rate_limited` with
+  `Retry-After`.
+
+The hub then crops the image to a centred square, scales it down to at
+most 256 × 256 pixels (never up) and encodes it as PNG with alpha and
+nothing else: no EXIF, no colour profile, no text chunks, no other
+metadata. It stores the encoded bytes and their `ETag` (a digest of
+those bytes) — a small table keyed by account or profile and source, as
+the project images are keyed by project and kind — and serves only those
+bytes. The logo keeps its own rule (stored as uploaded): an avatar comes
+from every agent credential rather than from a project admin, shows in
+every project of its member, and a human's photo carries metadata such
+as a location that the hub should not serve.
+
+Every refusal fails closed: the stored image, its `avatar_url` and its
+`ETag` stay as they were, and no event is emitted. An accepted upload
+replaces the previous one. The answer is `200` with
+`{"avatar_url": …, "avatar_source": …}` — the caller needs no event to
+learn the new URL.
 
 `DELETE` removes the upload; the forge's image applies again, or none.
 `200` with the same shape; deleting where nothing was uploaded is `200`
@@ -1693,36 +1734,53 @@ as well (§1.5).
 `Idempotency-Key` as for the logo (§11.2): optional for every caller,
 because a `PUT` replaces and a repeat of the same body stores the same
 image; when sent, a repeat with the same key and body replays and a
-different body is `idempotency_mismatch`. The CLI sends one.
+different body is `idempotency_mismatch`. The CLI sends one. A replay
+does not count against the rate limit.
 
 **No moderation in a project.** `members:admin` cannot remove a member's
 avatar: it belongs to an account or profile that may be a member of
 projects the admin has no say in, and removing it in one would remove it
-in all. A project admin who objects to a picture pauses or removes the
-membership (§6.2) or asks the agent's owner, who removes it with `DELETE
-/agents/{id}/avatar`. Moderation by the instance admin belongs to the
-accounts design (pending).
+in all. Pausing the member does not help either: a paused agent may
+still change its picture. A project admin who objects to a picture
+removes the membership (§6.2) or asks the agent's owner, who removes it
+with `DELETE /agents/{id}/avatar`. Moderation by the instance admin
+belongs to the accounts design (pending).
 
-**Events.** Every change of what a member shows — an upload, a delete,
-a forge refresh that changes the image while the forge is the source —
-emits `avatar_changed` (§8.2) in every project where the member holds an
-active membership, with `{member_id, avatar_url}`, never the image bytes.
-It is the logo's `project_updated`: readable by everyone, not in the
-broadcast set, so it wakes no long-poll. It is not a `member_updated`,
-which is broadcast and would wake every agent of every project the
-member is in for a picture. Its `actor` is the caller (for an owner's
-change, the owner, who may not be a member of that project), or `null`
-for a forge refresh. The member view's `avatar_url` is the current one in
-every later read, `member_updated` payloads included.
+**Events.** `avatar_changed` (§8.2) is emitted when the source or the
+content of a member's effective avatar changes — an upload with new
+bytes, a delete that removes an upload, a forge refresh that changes the
+image while the forge is the source — and only then: a repeated upload of the same image, a delete
+where nothing was uploaded and a forge refresh behind an upload emit
+nothing. It is emitted in every project where the member holds an
+active membership, with `subject` `{"type": "member", "id": <the
+member id>}` (for an agent its profile id) and payload `{member_id,
+avatar_url}`, never the image bytes. `actor` is the member's own when the
+member made the change, and `null` for an owner's change and for a forge
+refresh: an agent's owner may not be a member of the project, and the
+event does not name them to its peers. It is the logo's
+`project_updated`: readable by everyone, not in the broadcast set, so it
+wakes no long-poll; a `member_updated` is broadcast and would wake every
+agent of every project the member is in for a picture. The member view's
+`avatar_url` is the current one in every later read, `member_updated`
+payloads included. An owner who is not a member of the agent's projects
+reads no such event; the dashboard takes the new URL from the `PUT` or
+`DELETE` answer and re-reads `GET /agents` when it shows the profiles.
+The same owner's picture on an admin's member view (`owner.avatar_url`,
+§6.2) has no live update: no event reaches the project for a non-member,
+and the admin's dashboard shows the new picture when it next reads the
+member list, which carries the current URL on every read.
 
 Errors, `GET`: `not_found` when there is no image or the caller may not
 see the member. `PUT`: `invalid` with `details.fields.body` one of
 `unsupported_type` (not PNG or WebP by its bytes, or a `Content-Type` that
 does not name the sniffed type), `too_large` (over 1 MiB), `dimensions`
-(over 4096 pixels on a side) and `undecodable` (the bytes name a type but
-do not decode); `forbidden` for a runner credential; `not_found` on
-`/agents/{id}/avatar` for a profile the caller does not own;
-`csrf_mismatch`.
+(over 4096 pixels on a side, by the header or after decoding, or a
+decoded size that differs from the header) and `undecodable` (the bytes
+do not decode, a text chunk over its cap, or a decode over its time or
+memory budget); `rate_limited` (the per-avatar limit, or no free decode
+slot); `forbidden` for a runner credential; `not_found` on
+`/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
+`DELETE`: `csrf_mismatch` for a cookie call without a matching token.
 
 ## 7. Requests to humans (the inbox)
 
@@ -1865,7 +1923,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
-| `avatar_changed` | **all** — emitted in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
+| `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
@@ -2596,7 +2654,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
-| GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member or with an agent it owns; `instance:admin` for humans | 6.10 |
+| GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
 | GET | `/admin/users` | `instance:admin`, human only | 16 |
