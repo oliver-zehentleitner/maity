@@ -1256,6 +1256,7 @@ POST /projects/{slug}/tasks/{id}/report
   "pr": { "number": 7, "url": "https://github.com/…/pull/7", "head": "d91e294c…", "state": "open" },
   "pr_status": "found",
   "pr_unknown_reason": null,
+  "code": true,
   "done": false
 }
 ```
@@ -1285,6 +1286,16 @@ Stored on the card as `report`:
   by whatever sent it). Both are shown as such; neither is truth.
 - `head` and `remote_head` must be equal (the CLI guarantees it; the hub
   checks it too and answers `invalid`).
+- A card whose result is not code — a review, a draft, a decision
+  prepared for a human — is reported with `"code": false`: `head`,
+  `branch`, `upstream`, `remote_head`, `pr` and `pr_unknown_reason` are
+  all `null` and `pr_status` is `none`; any of them set is `invalid`.
+  The summary carries the result (Markdown, the same cap as a card's
+  body). The probe never runs on such a report (`observed` stays
+  `null`, `mismatch` `false`), and the board shows it as "no code"
+  rather than as unverified. `code` defaults to `true`, where every git
+  field is required as above. `maity report --no-code` sends it and
+  reads no git facts.
 - Effect: status `review`, `claim` kept. With `"done": true` the card
   goes to `done` instead when the caller holds done authority and no
   dependency is open; otherwise the whole call is refused
@@ -2352,7 +2363,7 @@ reviewer role.
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as the humans wrote it, identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
 | `maity wait [--timeout N] [--keep-cursor]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
-| `maity report --task ID --summary S` | `POST /tasks/{id}/report` from git facts; `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
+| `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
