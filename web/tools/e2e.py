@@ -1154,12 +1154,25 @@ def board_cards_step(run: Run, page: Page) -> None:
     opened = page.locator('section.column[data-status="open"]').locator("article.card", has_text="E2E: a card from the board")
     expect(opened).to_be_visible()
     expect(opened.locator("form.card-move select")).to_be_focused()
-    # Dragging to a column it may not go to is refused, and nothing is sent.
-    opened.drag_to(page.locator('section.column[data-status="done"]'))
+    # Dragging, as the browser's drag events: the page's handlers in a real
+    # browser, without a mouse drag across columns that may lie off screen.
+    def drag(target: str, drop: bool) -> None:
+        moving = page.locator("article.card", has_text="E2E: a card from the board")
+        column = page.locator(f'section.column[data-status="{target}"]')
+        dt = page.evaluate_handle("() => new DataTransfer()")
+        moving.dispatch_event("dragstart", {"dataTransfer": dt})
+        column.dispatch_event("dragenter", {"dataTransfer": dt})
+        column.dispatch_event("dragover", {"dataTransfer": dt})
+        if drop:
+            column.dispatch_event("drop", {"dataTransfer": dt})
+        page.locator("article.card", has_text="E2E: a card from the board").dispatch_event("dragend", {"dataTransfer": dt})
+
+    # Let go over a column it may not go to: refused, and nothing is sent.
+    drag("done", drop=False)
     expect(view.locator(".send-status").first).to_contain_text("cannot go to Done")
     expect(page.locator('section.column[data-status="open"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
-    # And to one it may: cancelled.
-    opened.drag_to(page.locator('section.column[data-status="cancelled"]'))
+    # Dropped on one it may go to: cancelled.
+    drag("cancelled", drop=True)
     expect(page.locator('section.column[data-status="cancelled"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
