@@ -158,6 +158,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
   expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
+  expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Neither — let's talk", "no", "go"]),
+    "the replies at the right edge: Later and talk first, the primary one last");
   expect(main.querySelectorAll("button").every((b) => !/reply-/.test(b.className)), "no reply id becomes a class");
   expect(text(c2).includes("Needs you in the session") && text(c2).includes("ses-a-0007"), "needs_in_session with member and session");
   btn(c2, "Neither — let's talk").click(); await tick(); await tick();

@@ -152,16 +152,19 @@ window.Maity = window.Maity || {};
     const textId = "reply-" + req.slug + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
     append(body,
+      // Right-aligned, the secondary ones first: Later, talk, then the replies.
       h("div", { class: "replies" },
-        (req.replies || []).map((r) =>
-          h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label)),
-        h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
         h("button", {
           type: "button",
           class: "reply later",
           title: "Moves it down this list in this tab; it stays open and nothing is sent",
           onclick: () => onLater(req),
-        }, "Later")),
+        }, "Later"),
+        h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
+        // The primary reply last, the others in the hub's order before it.
+        [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
+          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
+          h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
       h("div", { class: "free-text" },
         h("label", { for: textId }, "Free text"),
         text,

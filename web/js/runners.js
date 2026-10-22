@@ -189,7 +189,7 @@ window.Maity = window.Maity || {};
         h("li", null, "Check it: ", h("code", null, "maity runner check"), " says what is still missing, such as the tool's login."),
         h("li", null, "Start it: ", h("code", null, "maity runner serve"), ".")),
       h("p", { class: "muted pair-wait" }, "Waiting for the runner to pair…"),
-      h("button", { type: "button", onclick: onHide }, "Hide"));
+      h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, "Hide")));
   }
 
   // ---- the view --------------------------------------------------------------
@@ -283,7 +283,7 @@ window.Maity = window.Maity || {};
           r.credential_state === "active"
             ? h("button", {
               type: "button",
-              class: "danger",
+              class: "danger separated",
               onclick: () => {
                 if (!window.confirm("Revoke " + r.name + "'s credential? It stops talking to the hub at once; its agents keep running until you stop them.")) return;
                 act("Revoking", () => M.api.post("/runners/" + encodeURIComponent(r.id) + "/revoke", {}));
@@ -292,7 +292,7 @@ window.Maity = window.Maity || {};
             : null,
           h("button", {
             type: "button",
-            class: "danger",
+            class: "danger" + (r.credential_state === "active" ? "" : " separated"),
             onclick: () => {
               if (!window.confirm("Remove " + r.name + "? Its credential is revoked, it leaves every project and the hub closes its placements; "
                 + "agents still running on that machine are yours to stop there (maity runner stop-all).")) return;
@@ -312,7 +312,7 @@ window.Maity = window.Maity || {};
           h("ul", null, still.map((p) => h("li", null, (p.agent && (p.agent.display_name || p.agent.handle)) || p.id,
             p.reported ? " · " + p.reported.state : "")))]
           : h("p", null, "Nothing was running on it."),
-        h("button", { type: "button", onclick: () => clear(panel) }, "Hide")));
+        h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, "Hide"))));
     }
 
     function showPairing(enrollment, config, waiting, note) {

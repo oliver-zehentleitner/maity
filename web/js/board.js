@@ -260,8 +260,8 @@ window.Maity = window.Maity || {};
           const first = li.querySelector("input");
           if (first) first.focus();
         } }, "Add"),
-        h("button", { type: "submit" }, "Save"),
-        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel")),
+        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel"),
+        h("button", { type: "submit" }, "Save")),
       status.el);
       M.dom.clear(box);
       append(box, form);

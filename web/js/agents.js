@@ -116,8 +116,8 @@ window.Maity = window.Maity || {};
         h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters)"), text,
         h("p", { class: "hint" }, "The agent reads it at its next resume."),
         h("div", { class: "row" },
-          h("button", { type: "submit" }, "Save briefing"),
-          h("button", { type: "button", onclick: show }, "Cancel")),
+          h("button", { type: "button", onclick: show }, "Cancel"),
+          h("button", { type: "submit" }, "Save briefing")),
         status.el));
       text.focus();
     };
