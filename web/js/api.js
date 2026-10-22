@@ -1037,6 +1037,9 @@ window.Maity = window.Maity || {};
       // §9.2: an owner outside the project sees only the chats its agents are
       // in, and only with observed=true; no direct chat, nothing else.
       const outside = !me().projects.some((p) => p.slug === m[1]);
+      // Neither a member nor an agent there: the route does not say the project exists (§9.2).
+      if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
+        && (a.memberships || []).some((x) => x.project === m[1]))) fail(404, "not_found", "Not found", path);
       const direct = outside ? [] : Object.keys(all).map((agentId) => {
         const items = all[agentId].items;
         const last = items.length ? items[items.length - 1] : null;
@@ -1145,7 +1148,18 @@ window.Maity = window.Maity || {};
       // yet, everything said so far lies before it.
       const first = items.length ? items[0].seq : (win.length ? win[0].seq : (c.items.length ? c.items[c.items.length - 1].seq + 1 : null));
       const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
-      return { items: items.map(messageView), cursor: items.length ? items[items.length - 1].seq : null, earlier };
+      // An admin's reason is shown to it and the chat's former humans only (§8.5).
+      const shown = (x) => {
+        const v = messageView(x);
+        if (v.redaction && v.redaction.admin_reason) {
+          const r = Object.assign({}, v.redaction);
+          delete r.admin_reason;
+          if (item.access === "observer" || me().member.kind !== "human") r.reason = null;
+          v.redaction = r;
+        }
+        return v;
+      };
+      return { items: items.map(shown), cursor: items.length ? items[items.length - 1].seq : null, earlier };
     }],
     ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path) => {
       const c = groupChat(m[1], m[2], path);
@@ -1161,35 +1175,42 @@ window.Maity = window.Maity || {};
       c.read[me().member.id] = msg.seq;
       return msg;
     }],
-    // §8.5: a chat message redacted by a human in the room (or the direct chat's human).
+    // §8.5: a chat message redacted by a human in the room, the direct chat's
+    // human party with events:admin, or blind in a closed group chat.
     ["POST", /^\/projects\/([^/]+)\/events\/(\d+)\/redact$/, (m, body, path) => {
       const seq = Number(m[2]);
       const chats = groupChats(m[1]);
+      const meId = me().member.id;
+      const admin = ["owner", "admin"].includes(roleIn(m[1]));
       let msg = null;
       let chat = null;
+      let direct = null;
       Object.values(chats).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; chat = c; } });
-      if (!msg) Object.values(file(m[1], "conversations.json", path)).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) msg = x; });
+      if (!msg) Object.entries(file(m[1], "conversations.json", path)).forEach(([agentId, c]) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; direct = agentId; } });
+      // expect (#206): only a closed group chat's message, else nothing changes.
+      if (body.expect !== undefined && !(chat && chat.view.closed_at)) fail(400, "invalid", "not a closed group chat's message", path, { fields: { expect: "mismatch" } });
       if (!msg) fail(404, "not_found", "Not found", path);
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      const stamp = (extra) => Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: Object.assign({ at: nowIso(), by: meId, reason: body.reason }, extra) });
+      const event = () => ({ seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: meId, at: nowIso() } });
       if (chat) {
         const item = groupItem(m[1], chat, path);
-        // §8.5: in a closed group chat its former human participants remove
-        // what they read, and an owner or admin removes blind, by seq, and
-        // learns nothing but that it is removed.
-        const former = (chat.former || []).includes(me().member.id);
-        if (chat.view.closed_at && (former || ["owner", "admin"].includes(roleIn(m[1])))) {
-          if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
-          Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { at: nowIso(), by: me().member.id, reason: body.reason } });
-          return { seq, redacted: true };
-        }
+        const former = (chat.former || []).includes(meId);
+        if (chat.view.closed_at && former) { stamp(); return event(); }
+        // The blind removal: an admin who cannot read the chat learns only
+        // that it is removed; its reason is shown to it and the former humans.
+        if (chat.view.closed_at && admin && (!item || item.access !== "participant")) { stamp({ admin_reason: true }); return { seq, redacted: true }; }
         if (!item) fail(404, "not_found", "Not found", path);
-        if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
+        if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "observer" });
+        stamp();
+        return event();
       }
-      // §8.5: the reason is required, as the hub's own check has it.
-      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
-      // …/messages shows a removed message as body null, redacted true and
-      // its redaction {at, by, reason} (§9, #206).
-      Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { at: nowIso(), by: me().member.id, reason: body.reason } });
-      return { seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: me().member.id, at: nowIso() } };
+      // A direct chat: its human party, holding events:admin (§8.5).
+      const agent = file(m[1], "members.json", path).items.find((x) => x.id === direct);
+      if (!agent || agent.owner_id !== meId) fail(404, "not_found", "Not found", path);
+      if (!admin) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
+      stamp();
+      return event();
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);

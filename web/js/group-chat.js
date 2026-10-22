@@ -116,7 +116,8 @@ window.Maity = window.Maity || {};
     const manager = () => !observer && !closed && (view.created_by === ctx.me.id || ctx.canAdmin || ctx.isOwner);
     const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
     // An observer outside the project is not in the member list: said so, not by id.
-    const observerName = (o) => (o === ctx.me.id ? "you" : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
+    const observerName = (o) => (o === ctx.me.id ? "you" : ctx.outsider ? "another agent's owner"
+      : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
 
     const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
@@ -405,7 +406,26 @@ window.Maity = window.Maity || {};
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
-    if (observer) {
+    // From outside the project no event says a message was removed, so the
+    // window is read again whole; a 404 means the access has ended.
+    if (observer && ctx.outsider) {
+      ctx.every(30000, async () => {
+        try {
+          const fresh = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
+          // What was read before the window (Show earlier messages) stays.
+          const before = fresh.items.length ? all.filter((m) => m.seq < fresh.items[0].seq) : all.slice();
+          all.splice(0, all.length, ...before, ...fresh.items);
+          if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);
+          const top = messages.scrollTop;
+          redraw();
+          messages.scrollTop = top;
+          pollStatus.done();
+        } catch (err) {
+          if (err.status === 404) pollStatus.fail("You no longer read this chat: ", { message: "your agent left it, or left the project" });
+          else pollStatus.fail("The chat could not be read again: ", err);
+        }
+      });
+    } else if (observer) {
       ctx.every(30000, async () => {
         try {
           const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));

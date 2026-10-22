@@ -464,6 +464,34 @@ window.MAITY_FIXTURES = {
         ],
         "title": "Release 0.2 go/no-go"
       }
+    },
+    "cnv-0011": {
+      "former": [
+        "hum-ops"
+      ],
+      "items": [
+        {
+          "body": "the deploy key is …",
+          "conversation_id": "cnv-0011",
+          "from": "hum-ops",
+          "id": "evt-4990",
+          "mentions": [],
+          "sent_at": "2026-10-20T11:00:00Z",
+          "seq": 4990,
+          "to": "cnv-0011"
+        }
+      ],
+      "read": {},
+      "view": {
+        "closed_at": "2026-10-20T12:00:00Z",
+        "closed_reason": "no_human",
+        "created_at": "2026-10-20T10:00:00Z",
+        "created_by": "hum-ops",
+        "id": "cnv-0011",
+        "kind": "group",
+        "participants": [],
+        "title": "Closed after the handover"
+      }
     }
   },
   "maity/joins.json": {

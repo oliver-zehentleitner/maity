@@ -216,16 +216,20 @@ window.Maity = window.Maity || {};
         const n = seq.value.trim();
         if (!/^\d+$/.test(n)) { status.fail("Not removed: ", { message: "the message number is a whole number" }); seq.focus(); return; }
         if (!reason.value.trim()) { status.fail("Not removed: ", { message: "a reason is needed" }); reason.focus(); return; }
-        if (!window.confirm("Remove message " + n + " for everyone who can read it? Its text is replaced by a note.")) return;
+        if (!window.confirm("Remove the closed group chat's message with number " + n + " for everyone who can read it? Its text is replaced by a note.")) return;
         status.busy("Removing…");
         try {
-          await M.api.post(ctx.base + "/events/" + encodeURIComponent(n) + "/redact", { reason: reason.value.trim() });
+          // expect: the hub removes only a message of a closed group chat, so
+          // a mistyped number never takes out another event (§8.5, #206).
+          await M.api.post(ctx.base + "/events/" + encodeURIComponent(n) + "/redact", { reason: reason.value.trim(), expect: "closed_chat_message" });
           seq.value = "";
           reason.value = "";
           status.done();
           append(status.el, h("span", { class: "ok" }, "Message " + n + " is removed."));
         } catch (err) {
-          status.fail("Not removed: ", err.code === "not_found" ? { message: "no message " + n + " that you may remove in this project" } : err);
+          const mismatch = err.code === "invalid" && err.details && err.details.fields && err.details.fields.expect === "mismatch";
+          status.fail("Not removed: ", mismatch || err.code === "not_found"
+            ? { message: "number " + n + " is no message of a closed group chat in this project; nothing was removed" } : err);
         }
       },
     },
@@ -866,6 +870,9 @@ window.Maity = window.Maity || {};
     try {
       if (empty) {
         M.views.noProjects(ctx, root);
+        // Without a project of one's own, one's agents may still be in others'.
+        const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
+        if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
         await M.views.inbox(ctx, root, []);
         // Where one's agents are in projects one is not: read along there.

@@ -340,7 +340,8 @@ window.Maity = window.Maity || {};
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
     // The human party removes a message of the chat, the agent's or their own (§8.5).
-    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: redactDirect });
+    // §8.5: it needs events:admin too, which owner and admin hold.
+    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: ctx.canAdmin ? redactDirect : null });
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map(draw)
         : h("li", { class: "empty" }, h("p", null, "No messages yet."),
@@ -442,6 +443,9 @@ window.Maity = window.Maity || {};
         markRemoved(msg.seq, ctx.me.id, reason);
         status.done();
         append(status.el, h("span", { class: "ok" }, "Removed."));
+        // The button that had the focus is gone with the text.
+        status.el.setAttribute("tabindex", "-1");
+        status.el.focus();
         list.refresh(false);
       } catch (err) {
         status.fail("Not removed: ", err);

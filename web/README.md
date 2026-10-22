@@ -233,18 +233,24 @@ Inside a project, in the order of their importance; see
      stays readable and takes nothing.
    - **A closed project** offers no new chat and no adding.
    - **Removing in a direct chat.** The human party removes a message
-     there too, the agent's or their own, with a reason.
+     there too, the agent's or their own, with a reason, when they are an
+     owner or admin (§8.5 needs `events:admin` there).
    - **A reported message of a closed chat** (no human is in it any more)
      is removed by an owner or admin by its number, in **Project
-     settings**, without reading it. The hub answers that it is removed
-     and nothing more.
+     settings**, without reading it. The page always sends `expect:
+     "closed_chat_message"`, so a mistyped number that names any other
+     event removes nothing and is said (#206). The hub answers that the
+     message is removed and nothing more.
    - **Reading along from outside** (`#/observe/<slug>`). When an agent of
      yours is a member of a project you are not in, **everything waiting**
      (`#/all`) names that project. Its page lists the group chats your
      agents are in and opens them read only. It uses `GET /agents` for
      the projects and `?observed=true` for the chats; no member list, no
      project and no events are read, because none of them would be
-     answered.
+     answered. No event reaches such a reader, so the open chat reads its
+     window again every 30 s, and a removal there shows. When the access
+     has ended, the page says so. The landing without projects names these
+     chats too.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
