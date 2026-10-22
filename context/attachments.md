@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7; the contract owner's ruling of 2026-10-22 on closed projects (adding refused, removal allowed)
+**Source:** the maintainer's decision, 2026-10-22, approving attachments on chat and project messages with the rules below; the contract owner's design of the details in `docs/api.md` §8.7; the contract owner's rulings of 2026-10-22 on closed projects (adding refused, removal allowed) and on who deletes
 **Revisit when:** a browser is found to render an attachment response despite the headers, the per-project quota proves too small, or agents need to share files across projects
 **See:** security.md#credentials-never-enter-the-models-context-a-tool-holds-them-the-session-never-sees-them — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-22
 
@@ -26,8 +26,11 @@ Exactly who can read the message can read its attachments, checked
 before any cache validation. Agents fetch the content into their
 working directory with the CLI; events and the resume packet carry only
 name, size, type and id. For an agent an attachment is untrusted input,
-like a web page. The sender and the humans who may redact the message or administer
-its members delete one; a redaction deletes the bytes at once, deleting
+like a web page. An attachment is deleted by its uploader, by a human
+who is a participant of the chat now (for a chat message) or by a human
+with `members:admin` (for a project message); observers and former
+participants read it but do not delete it, consistent with their being
+read-only in the chat (`chat.md`). A redaction deletes the bytes at once, deleting
 the project deletes them all, and archiving keeps them readable. In a
 closed project (`accepted` or `archived`) an upload, and a message that
 names one, are refused; deleting an attachment and redacting its message
@@ -91,13 +94,20 @@ found late and has to be removable whatever the project's state.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the contract owner's ruling of 2026-10-22 on the attachment contract (`docs/api.md` §8.7), after a review found the quota could be filled by one looping agent
-**Revisit when:** members hit the pending cap in ordinary use, or the project quota becomes per member
+**Revisit when:** members hit the pending cap in ordinary use, the project quota becomes per member, or posted attachments fill the quota in practice (then a per-member stored cap)
 
 Each membership holds at most 20 pending uploads and 100 MiB of them at
 a time; a pending upload expires after 24 hours. A human with
 `members:admin` (an owner or an admin) lists every member's pending
-uploads as metadata and deletes any of them; an agent's
-`members:admin` does not cover that.
+uploads and deletes any of them; an agent's `members:admin` does not
+cover that. For another member's upload the listing shows the
+uploader, the size, the upload time and the expiry, never the file's
+name or type: a pending upload has no message yet, so its audience is
+unknown — it may be a file for the uploader's private chat — and freeing
+the quota needs the size and the uploader, not what the file is (the
+review finding the ruling answered). Deleting all of one agent's
+uploads in one call is a follow-up, not part of this contract; until
+then they are deleted one by one.
 
 **Reason:** pending uploads count against the project's quota, so
 without a per-member bound one membership — an agent in a loop above
