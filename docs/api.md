@@ -2152,7 +2152,11 @@ redacts its `note_added` event (§6.14): that field's value in the
 payload becomes the tombstone of §8.5 — for a `created` entry every
 field value the event carries — while `fields`, `history` and the
 values of the event's other fields stay. A `body` value is never in an
-event, so only the history holds it. Redacting a redacted entry answers
+event, so only the history holds it. A card's title also travels as
+`task.title` in the `mentioned` and `note_added` events written while
+it was the title (§8.2); the history redaction does not reach those, and
+a human with `events:admin` removes it there by redacting each such
+event (§8.5). Redacting a redacted entry answers
 `200` with it as it is. It emits
 `event_redacted` with `history_id` and `task_id` instead of `seq`
 (audience as for every redaction: `role:owner`, `role:admin`). It is
