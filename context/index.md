@@ -61,6 +61,7 @@ Why Maity is built the way it is.
 
 ## P
 - [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule
+- [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings
 
 ## Q
 
