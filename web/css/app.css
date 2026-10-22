@@ -258,8 +258,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-row .project-label { flex: none; padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); text-decoration: none; }
 .entry-row .project-label:hover, .entry-row .project-label:focus-visible { border-color: var(--accent); }
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
-.entry-group { list-style: none; margin: 14px 0 4px; }
-.entry-group h3 { margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.entries-box { display: grid; gap: 8px; }
+.entry-group { margin: 6px 0 0; }
+.entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 
 .prio-high { color: var(--high); }

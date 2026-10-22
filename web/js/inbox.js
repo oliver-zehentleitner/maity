@@ -225,27 +225,42 @@ window.Maity = window.Maity || {};
     // The cross-project view lists what is waiting, nothing else.
     const show = () => (ctx.scope === "all" ? "open" : ui.show);
 
-    const list = h("ol", { class: "entries" });
+    // The project filter is the cross-project view's only; a project no
+    // longer in the switcher is no filter (it would empty the list for good).
+    if (ui.project && !ctx.projects.some((p) => p.slug === ui.project)) ui.project = "";
+    const projectFilter = () => (ctx.scope === "all" ? ui.project : "");
+    const grouped = () => ctx.scope === "all" && ui.group;
+    const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
-    ctx.quietReload = () => !visible().some((r) => r.status === "open");
+    ctx.quietReload = () => !ordered().some((r) => r.status === "open");
+
+    // The entries in the order they are on screen: shown, filtered, sorted,
+    // and grouped by project in the switcher's order. draw(), the next
+    // entry after an answer, and the quiet reload all use this one order.
+    function ordered() {
+      const sorted = items
+        .filter((r) => show() === "all" || r.status === "open")
+        .filter((r) => !projectFilter() || r.slug === projectFilter())
+        .sort(comparator(names));
+      if (!grouped()) return sorted;
+      const at = (slug) => { const i = ctx.projects.findIndex((p) => p.slug === slug); return i < 0 ? ctx.projects.length : i; };
+      return sorted.map((r, i) => [r, i]).sort((a, b) => at(a[0].slug) - at(b[0].slug) || a[1] - b[1]).map(([r]) => r);
+    }
 
     function draw() {
-      const shown = items
-        .filter((r) => show() === "all" || r.status === "open")
-        .filter((r) => !ui.project || r.slug === ui.project)
-        .sort(comparator(names));
+      const shown = ordered();
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
       if (!shown.length) {
-        append(list, h("li", { class: "empty" }, "Nothing waits for you.",
+        append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, "Nothing waits for you.",
           h("p", { class: "first-hint" }, ctx.scope === "all"
             ? "Requests from the agents of every project land here: a decision, a consent or a question only you can answer. Each one shows its project."
             : "Your agents ask here when they need you: a decision, a consent or a question only you can answer. "
-              + "When an agent waits for the answer, its card on the board shows it.")));
+              + "When an agent waits for the answer, its card on the board shows it."))));
         return;
       }
       const entry = (req) => {
@@ -262,16 +277,19 @@ window.Maity = window.Maity || {};
             }),
           expanded ? entryBody(ctx, req, names, answer, later) : null);
       };
-      if (ctx.scope === "all" && ui.group) {
-        // One section per project, in the switcher's order, each in the chosen order within.
-        ctx.projects.forEach((p) => {
-          const own = shown.filter((r) => r.slug === p.slug);
-          if (!own.length) return;
-          append(list, h("li", { class: "entry-group" }, h("h3", null, p.name, h("span", { class: "count" }, String(own.length)))));
-          own.forEach((req) => append(list, entry(req)));
+      if (grouped()) {
+        // One section per project, its heading and its own list, so that a
+        // list's items are its entries only.
+        const slugs = [...new Set(shown.map((r) => r.slug))];
+        slugs.forEach((slug) => {
+          const own = shown.filter((r) => r.slug === slug);
+          const id = "inbox-group-" + slug;
+          append(list, h("section", { class: "entry-group", "aria-labelledby": id },
+            h("h3", { id }, names.project(own[0]), h("span", { class: "count" }, String(own.length))),
+            h("ol", { class: "entries" }, own.map(entry))));
         });
       } else {
-        shown.forEach((req) => append(list, entry(req)));
+        append(list, h("ol", { class: "entries" }, shown.map(entry)));
       }
     }
 
@@ -284,19 +302,15 @@ window.Maity = window.Maity || {};
       ui.current = pick ? keyOf(pick) : null;
     }
 
-    const visible = () => items
-      .filter((r) => show() === "all" || r.status === "open")
-      .sort(comparator(names));
-
     function later(req) {
-      const order = visible();
+      const order = ordered();
       ui.later.add(keyOf(req));
       next(order, req);
       draw();
     }
 
     async function answer(req, payload) {
-      const order = visible();
+      const order = ordered();
       const updated = await M.api.post("/projects/" + encodeURIComponent(req.slug)
         + "/requests/" + encodeURIComponent(req.id) + "/answer", payload);
       updated.slug = req.slug;
@@ -332,7 +346,8 @@ window.Maity = window.Maity || {};
       id: "inbox-project",
       onchange: (e) => { ui.project = e.target.value; ui.current = null; draw(); },
     }, h("option", { value: "" }, "every project"),
-    ctx.projects.map((p) => h("option", { value: p.slug }, p.name + (p.open_requests ? " (" + p.open_requests + ")" : "")))) : null;
+    // No counts in the options: the switcher beside it has them, kept current.
+    ctx.projects.map((p) => h("option", { value: p.slug }, p.name))) : null;
     if (projectSelect) projectSelect.value = ui.project;
     const groupBox = ctx.scope === "all" ? h("input", { type: "checkbox", id: "inbox-group", onchange: (e) => { ui.group = e.target.checked; draw(); } }) : null;
     if (groupBox) groupBox.checked = ui.group;

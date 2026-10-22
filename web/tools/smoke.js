@@ -186,13 +186,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Maity"), "sort by project");
   // A project filter and grouping by project.
-  const pf = byId("inbox-project"); pf.value = "sample"; pf.dispatch("change"); await tick();
+  const pf = byId("inbox-project");
+  expect(pf.querySelectorAll("option").map((o) => o.textContent).join("|") === "every project|Maity|Sample shop", "inbox: the project options carry no counts that could go stale");
+  pf.value = "sample"; pf.dispatch("change"); await tick();
   expect(main.querySelectorAll("li.entry").length === 1 && text(main.querySelector("li.entry")).includes("Sample shop"), "inbox: filtered to one project");
-  pf.value = ""; pf.dispatch("change"); await tick();
+  // The filter is the cross-project view's: a project's own inbox shows its entries.
+  await go("#/p/maity/inbox");
+  const maityOpenNow = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
+  expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter");
+  await go("#/all");
+  expect(byId("inbox-project").value === "sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
+  byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
-  const groupHeads = main.querySelectorAll("li.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 3,
-    "inbox: grouped by project, in the switcher's order " + JSON.stringify(groupHeads));
+  const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 3
+    && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
+    "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
+  // The entry expanded is the first on screen, not the first of the ungrouped order.
+  // (By priority, Sample shop's urgent one leads the ungrouped order; grouped, Maity comes first.)
+  byId("inbox-sort").value = "priority"; byId("inbox-sort").dispatch("change"); await tick();
+  expect(main.querySelectorAll("li.entry")[0].className.includes("current") && !main.querySelectorAll("section.entry-group")[1].querySelector("li.current"),
+    "inbox: grouped, the expanded entry is the first on screen");
   grp.checked = false; grp.dispatch("change"); await tick();
 
   await go("#/p/maity/inbox");
