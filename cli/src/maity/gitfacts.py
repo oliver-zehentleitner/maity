@@ -53,13 +53,13 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 def _git(cwd: Path, *args: str) -> str | None:
     """For lookups where a non-zero exit is an answer (no such ref, no such key): None."""
-    result = _run(["git", *args], cwd)
+    result = _run([*proc.GIT, *args], cwd)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
 def _git_required(cwd: Path, *args: str) -> str:
     """For questions that must be answered; a failure is an error, never an empty answer."""
-    result = _run(["git", *args], cwd)
+    result = _run([*proc.GIT, *args], cwd)
     if result.returncode != 0:
         detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
         raise FactsError(f"git {args[0]} failed: {detail}")
@@ -141,6 +141,7 @@ def collect(cwd: Path) -> Facts:
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
     branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
     remote = remote_branch = remote_head = None

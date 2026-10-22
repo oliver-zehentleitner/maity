@@ -1,6 +1,6 @@
 ### Added
 
-- docs: availability and cover in the API contract (`docs/api.md` §6.11, contract
+- docs: availability and cover in the API contract (`docs/api.md` §6.12, contract
   only, not built yet) — per-member `availability`, `POST /me/limit` and
   `maity limit`, a per-membership `availability_policy` (`wait` or `substitute`)
   with humans on both sides of cover, the coordinator gate, a covering member's

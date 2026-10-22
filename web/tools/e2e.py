@@ -1290,15 +1290,17 @@ def board_order_step(run: Run, page: Page) -> None:
         page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
         expect(view.locator(".send-status").first).to_contain_text("created in open")
     column = page.locator('section.column[data-status="open"]')
-    second = column.locator("article.card", has_text="E2E order: second")
-
-    def order() -> list[str]:
-        return [t for t in column.locator("article.card h3").all_inner_texts() if t.startswith("E2E order")]
-
-    assert order() == ["E2E order: first", "E2E order: second"], order()
-    second.locator("form.card-order select").select_option("up")
-    second.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
-    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now above|does not order cards yet"))
+    titles = column.locator("article.card h3").filter(has_text=re.compile(r"^E2E order: "))
+    # Two cards made in the same second have no rank yet and tie on
+    # created_at, so their id decides (§6.4): read the order, never assume it.
+    expect(titles).to_have_count(2)
+    upper, lower = titles.all_inner_texts()
+    lower_card = column.locator("article.card", has_text=lower)
+    # The lower one goes up: "up" when it is right below, else "To the top".
+    ways = lower_card.locator("form.card-order select option").evaluate_all("(os) => os.map((o) => o.value)")
+    lower_card.locator("form.card-order select").select_option("up" if "top" not in ways else "top")
+    lower_card.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
+    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now (above|at the top)|does not order cards yet"))
     if "does not order cards yet" in view.locator(".send-status").first.inner_text():
         # Only a hub without the endpoint is skipped, and the board has to say so.
         run.step("board order: this hub has no move endpoint yet, and the board says so")
@@ -1306,18 +1308,19 @@ def board_order_step(run: Run, page: Page) -> None:
         no_problems(run, "board order")
         return
     run.step("board order: the owner moves a card up with Place, then drags it back below")
-    expect(column.locator("article.card", has_text="E2E order: second").locator("form.card-order select")).to_be_focused()
-    assert order() == ["E2E order: second", "E2E order: first"], order()
+    # The status line speaks before the board is read again: wait for the order itself.
+    expect(titles).to_have_text([lower, upper])
+    expect(column.locator("article.card", has_text=lower).locator("form.card-order select")).to_be_focused()
     dt = page.evaluate_handle("() => new DataTransfer()")
-    moving = column.locator("article.card", has_text="E2E order: second")
-    target = column.locator("article.card", has_text="E2E order: first")
+    moving = column.locator("article.card", has_text=lower)
+    target = column.locator("article.card", has_text=upper)
     box = target.bounding_box()
     moving.dispatch_event("dragstart", {"dataTransfer": dt})
     target.dispatch_event("dragover", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
     target.dispatch_event("drop", {"dataTransfer": dt, "clientY": box["y"] + box["height"] - 2})
     moving.dispatch_event("dragend", {"dataTransfer": dt})
     expect(view.locator(".send-status").first).to_contain_text("is now below")
-    assert order() == ["E2E order: first", "E2E order: second"], order()
+    expect(titles).to_have_text([upper, lower])
     run.a11y(page, "board, order")
     no_problems(run, "board order")
 

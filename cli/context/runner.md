@@ -310,7 +310,7 @@ network domains start empty, so the hub and the forge have to be named, or
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
@@ -615,3 +615,120 @@ placement that waits for something this runner will never do.
 **Rejected alternative:** keeping such a placement pending without a
 report, as while the adapters were missing: it would wait forever on a
 runner that refuses the harness by configuration.
+
+## Sandboxed agents: git redirects are pinned, other clones and secrets unreadable
+
+**Id:** ea36c196-f8e6-43ae-bc47-49c8d5379a65
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
+
+Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
+environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. Git then ignores
+a `.git/commondir` the agent wrote from inside its sandbox, and does not
+run a program from a nested repository the agent registered as a
+submodule (whose configuration the pin does not reach). That covers the
+harness's own git calls, which run outside the sandbox, and any other git
+started from the session. `maity`'s own git carries the same settings on
+its command line whatever its environment, because for Claude Code
+`maity` runs outside the sandbox. Codex's profile reads nothing under
+the workspaces root but its own clone, nothing in the runner's state and
+configuration, and none of a list of logins and keys in the agents'
+home. Claude Code's sandbox gets the same read denies except the
+workspaces root, plus the credential of every other clone that exists
+when the agent starts. A clone made later stays readable to it until its
+next start. Both keep the clone's own credential readable, because the
+agent's `maity` needs it. The forge login stays readable, because pushing
+needs it. opencode's `grep` and `glob` are off: opencode checks them
+against the pattern typed, not the path searched. maity and the runner
+run git only through `proc.GIT`, a clone into a missing directory, and
+`gc`'s pinned read; a test pins that.
+
+**Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
+`.git`, so the directory has to stay writable, and an agent that can
+write there can write `commondir`. Read-only `config` and `hooks` meant
+nothing once git read them from elsewhere. The variable is part of the
+harness process's environment, which a sandboxed command cannot change.
+An agent that unsets it for its own git runs the planted program as
+itself, inside its own sandbox, which it could do anyway. Without read
+denies, one agent read another's credential (another identity on the
+hub), the operator's ssh keys and the model login, and could send them
+to an allowed host. For Claude Code the workspaces root is left
+readable: re-opening the clone inside it with `allowRead` may re-open
+the clone's credential as well, and that order could not be checked
+without a model run. Denying each other clone's credential by name at
+the start avoids the question, at the cost of clones made later. The
+home list is a list: the README says that any other secret in the
+agents' home stays readable.
+
+**Rejected alternatives:**
+- A read-only `.git` with write access to `objects`, `refs` and the
+  index only: git creates its lock files and `ORIG_HEAD` in `.git`
+  itself, so commits fail.
+- Denying writes to each redirecting file (`commondir`,
+  `config.worktree`, `info/attributes`): files that do not exist yet
+  cannot be bound read-only reliably, and it is the enumeration the gc
+  fix already moved away from.
+- Hiding the whole home from Codex: the agent's `maity`, `git` and
+  toolchains are often installed there.
+- `--ignore-submodules=all` on `maity`'s own `git status`: it also hides
+  a newly staged submodule, so `report` would miss a change. The
+  configuration setting keeps git out of the submodule and still shows
+  the staged gitlink.
+
+## In the `agent_user` layout everything on the agents' side belongs to the agents' user
+
+**Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user
+**See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
+**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), or a live run shows a harness writing where the agents' user cannot
+
+With `layout = "agent_user"`, every command for the agents runs as
+`sudo -n -u <agent_user> --`, with only the environment it needs passed
+explicitly. That covers the tmux server and its sessions, the clone, the
+join, the supervised loop, `gc`'s git and its revocation check, and stopping
+a process group. Everything the agents' side needs (tmux socket and
+configuration, logs, the harness settings and Codex's home) lives under
+`~<agent_user>/.maity-runner/` and is written as that user. The runner's
+state directory, its credential and its records stay the runner user's
+alone. Commands for the agents never get the runner's terminal (stdin is
+`/dev/null`), and the clone runs without any login prompt. Harness
+probes and `check` run as the agents' user, who is the one that must be
+able to start them. Nothing secret may travel as an argument in this
+layout: sudo logs every command line, and `/proc` shows it, so a
+harness `env_file` (R5) has to reach the session another way than
+`env K=V` or `tmux -e`. The sandbox read denies are worked out from this
+side too: the agents' user's home secrets, its `~/.maity-runner` (every
+agent's socket, log and settings, which the single layout keeps in the
+hidden state directory) and the other clones' credentials, listed as
+that user because the runner cannot list a 0700 directory it does not
+own; a listing that is not complete refuses the start
+(`harness_refused`) rather than leave a credential readable. Binaries and
+sandbox tools are looked up, and Codex's sandbox tried, as that user on
+the agents' PATH as well.
+
+**Reason:** the layout exists so that agents, and any repository code
+they run, cannot read the runner's credential or state. That only holds
+if nothing the agents need has to be inside the runner's 0700 state
+directory. Harness settings written as the agents' user can be changed
+by that user, but under this layout the OS user is the boundary. A
+setting an agent widens only reaches what that same user could already
+do with a shell. Agents under one `agent_user` still see each other's
+files and credentials; separating them needs one user per agent (ssh
+`own_user`, or pods).
+
+**Rejected alternatives:**
+- Harness settings owned by the runner and readable by the agents: they
+  would need a runner-owned directory the agents can traverse, and
+  Claude Code still loads the agents' user's own settings, which that
+  user can write.
+- Running tmux as the runner with `server-access` for the agents' user:
+  tmux 3.3 and later only, and the sessions' processes would still be
+  the runner's.

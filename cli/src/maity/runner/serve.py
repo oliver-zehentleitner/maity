@@ -280,7 +280,8 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     except (state.StateError, sign.CredentialFormatError) as exc:
         raise Fatal(str(exc)) from None
     path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    probes = {h.id: capabilities.probe(h, path) for h in cfg.harnesses.values()}
+    as_user = supervisor.agents_user(cfg)
+    probes = {h.id: capabilities.probe(h, path, as_user) for h in cfg.harnesses.values()}
     for harness_id, found in probes.items():
         if not found.available:
             log(f"harness {harness_id} is advertised as unavailable ({found.reason})")

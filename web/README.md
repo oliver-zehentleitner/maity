@@ -180,7 +180,15 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. Messages
+   back; opening a chat there moves the focus to its heading. The history
+   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   sender's messages within five minutes grouped (the agent's picture and
+   name only on the first), and a "New messages" line before what was
+   unread when the chat was opened; scrolled up, a **Newest** button (with
+   the count of what arrived meanwhile; arriving messages leave the view
+   where it is) goes back to the end and puts the focus in the composer.
+   An unread count that cannot be read is said. An empty chat
+   says that the agent reads it at its next wait or resume. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
    headings as strong lines, lists, quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
@@ -324,6 +332,15 @@ at most 1 MiB; the type is read from the file's first bytes, as the hub
 reads it, and sent as the raw body) and removes an upload, after which
 the forge's image applies again. A hub without the fields offers no
 upload and the dashboard draws monograms.
+
+**Repository** (`docs/api.md` §6.1) is in the same panel, for an owner
+or a human admin (`project:admin` is held by humans only). It shows the
+project's repository URL and changes it with `PATCH /projects/{slug}`
+(`repository: {url}`); an empty field removes it (`repository: null`).
+The page accepts only `https://<host>/<owner>/<name>`, drops a trailing
+slash, and says the hub's `not_a_configured_forge` at the field. A
+change or a removal is confirmed first, because the probe, the Keep the
+Why dashboard and the runners' new clones all follow the repository.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:

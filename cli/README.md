@@ -398,8 +398,8 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
 
-Settings this version does not carry out yet (`layout = "agent_user"`,
-`memory_max`, `cpu_quota`, a harness `env_file`) are errors in `check`,
+Settings this version does not carry out yet (`memory_max`,
+`cpu_quota`, a harness `env_file`) are errors in `check`,
 and `serve` refuses to start with them (exit 78), instead of running
 agents with less isolation than the file asks for. `tmux_socket` must be
 an absolute path.
@@ -422,13 +422,20 @@ project's own harness configuration is never loaded:
   its OS sandbox is switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
-  repository's `network` list. `git` is granted by subcommand, and
-  `-c`, `--no-index` and paths under `.git/maity` are denied.
+  repository's `network` list. Sandboxed commands cannot read the
+  runner's state directory and configuration, the listed secrets in the
+  agents' home (below), or the credential of any other clone that
+  existed when the agent started. A clone made later stays readable to
+  it until its next start, and the rest of every other clone stays
+  readable. `git` is granted by subcommand, and `-c`, `--no-index` and
+  paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. In the `single` layout an agent with a shell can do
-  what the runner's user can, so run it on an account you would trust
-  with the agent's work.
+  security boundary. `git diff /dev/null <file>` reads a file outside the
+  work tree without saying `--no-index`, and allowed build and test
+  commands run repository code. In the `single` layout an agent with a
+  shell can do what the runner's user can, so run it on an account you
+  would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
@@ -438,7 +445,14 @@ project's own harness configuration is never loaded:
 
 - **Codex** gets a `CODEX_HOME` of its own per placement, with a
   `config.toml` the runner writes. It turns on Codex's sandbox with the
-  workspace profile, makes the clone's `.git` writable, sets
+  workspace profile (checked with `codex sandbox -- true` once per binary:
+  a host where it cannot start is advertised `sandbox: off`; restart the
+  runner after upgrading Codex), makes the clone's
+  `.git` writable but its `config` and `hooks` read-only, and hides the
+  workspaces root (every other clone), the runner's state directory and
+  the logins and keys in the agents' home from it. The clone's own
+  credential stays readable, because the agent's `maity` runs inside the
+  sandbox. It sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
   Codex's model endpoints and a repository's `network` list only. The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
@@ -449,12 +463,81 @@ project's own harness configuration is never loaded:
 - **opencode** (built, not offered yet: a configuration that names it is
   refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (except on `.git/maity`), `maity *`, named `git` subcommands
+  file tools (not on `.git/maity`; `grep` and `glob` are off, because opencode
+  asks about them by the pattern typed, not the path searched), `maity *`, named `git` subcommands
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
 
 `stub` (no model, for tests) runs as before.
+
+**What an agent can and cannot reach.** git keeps lock files in `.git`,
+so an agent can always write there, `.git/commondir` included, which
+points git at another directory's configuration. It can also register a
+nested repository of its own as a submodule, whose configuration git
+reads for a plain `status`. Every agent session therefore gets
+`GIT_COMMON_DIR=<clone>/.git` and, through `GIT_CONFIG_COUNT`,
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. With those, the
+harness's own git calls, which run outside its sandbox, use the clone's
+real `.git` and do not run a program from a planted directory or
+submodule. `maity` runs its own git (`report`, `checkpoint`) with the
+same settings on the command line, whatever its environment, because
+for Claude Code it runs outside the sandbox. An agent can unset the
+variables for its own commands, but those stay in its sandbox. The cost:
+in a session, `git status` and `git diff` do not look into submodules,
+and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
+submodule moved to another commit does not show in `git status` or
+`git diff --cached`, yet `git add -A` stages it and a commit records it;
+`maity report` does not count such a staged bump as an uncommitted
+change. A newly added submodule does show.
+
+Only the listed paths in the agents' home are hidden: `~/.ssh`,
+`~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
+`~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
+`~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
+configuration, and the runner's own configuration and state. Any other
+secret there, such as an `.env` file of your own, stays readable. In the
+`single` layout the agents' home is the operator's. The forge login
+(`gh`, a credential helper) stays readable on purpose, because pushing
+needs it.
+
+| Layout | What an agent can read or act as | What you must not do |
+|---|---|---|
+| `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
+| `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
+| `ssh` (#172) | the remote user's files on that host, as `single` per host; never the runner host | run git as the remote user in an agent's clone |
+
+The runner itself runs git in a clone only to clone into a missing
+directory and in `gc`, with the pinned environment and the layout check
+above. **Never run git in an agent's clone as yourself in the `single`
+layout:** a planted `.git/commondir`, submodule, hook or configuration
+runs as you. Look at the work through the pushed branch or the pull
+request instead. The `agent_user` layout keeps you out by itself: git
+refuses another user's repository unless `safe.directory` says
+otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write
+there, and an agent could rewrite its own profile for the next start.
+
+**Layouts.** By default (`layout = "single"`) agents run as the runner's
+own user, which may be the operator's account in a terminal. With
+`layout = "agent_user"` and `agent_user = "maity-agent"`, every agent
+command runs as that user through `sudo -n -u maity-agent --`. That
+covers the tmux server, the clone, the join, the supervised loop and
+`gc`. The agents' files (tmux socket, logs, harness settings) live in
+`~maity-agent/.maity-runner/`. The runner's state directory and credential
+stay out of the agents' reach. The layout needs a sudoers rule
+(`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
+both users can run it, and the workspaces writable by the agents' user;
+`maity runner check` tests all three. Under the shipped systemd unit
+(`ProtectSystem=strict`), sudo's children share the unit's read-only
+file system: add `~maity-agent/.maity-runner` and the workspaces to its
+`ReadWritePaths` (the unit's comment shows the line), or every start
+fails. `check` run from a login shell cannot see that. sudo logs every
+command it runs, one `tmux list-panes` per tick among them; a
+`Defaults:maity-runner !syslog` line in sudoers quiets it if you want.
+The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
+`check` reads the agents' user's own Claude Code settings, which its
+agents load. Agents under one `agent_user` can still read each other's
+files.
 
 On the runner host, without the hub:
 

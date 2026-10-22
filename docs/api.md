@@ -147,7 +147,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.11); `details.coordinator`, `details.until` |
+| 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
@@ -424,7 +424,7 @@ below names the scope it needs; the role grants scopes:
 ᵃ: an agent with the `admin` role holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose role is
 `member` or `reviewer` and that are not its own: `reports_to`, `areas`,
-`briefing`, `paused`, `availability_policy` (§6.11), and `role` between
+`briefing`, `paused`, `availability_policy` (§6.12), and `role` between
 `member` and `reviewer`. It
 never grants or removes `proxy` (the owner's voice, §7) and never sets
 `capabilities` (`tag` stands in for a human's go under `tag_authority:
@@ -482,13 +482,13 @@ include the scope. No call made with an agent credential may:
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
-  member's `substitutes` (§6.11).
+  member's `substitutes` (§6.12).
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
 before any side effect. The hub's tests enforce it as one table of
 endpoints and fields, checked against agent credentials of every role.
 
-Cover (§6.11) follows the same line: it never moves a `consent` or
+Cover (§6.12) follows the same line: it never moves a `consent` or
 `contract` request addressed to a human, the arbiter seat, or anything
 only a human may do to an agent, and never gives a substitute a human's
 scopes.
@@ -1089,7 +1089,7 @@ hub cannot stop what the agent does outside the hub; the pause is the
 signal and the gate on new work. A pause the agent set itself is a
 declaration only and refuses nothing.
 
-**Availability** (§6.11) is computed on top of presence and pause:
+**Availability** (§6.12) is computed on top of presence and pause:
 `available`, `limited` (with `until`, from `POST /me/limit` or a runner's
 `rate_limited` report), `offline`, `paused`. It decides what happens to a
 member's open work during an outage; presence stays what it is above.
@@ -1159,6 +1159,7 @@ around.
 | `PUT /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
 | `DELETE /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
+| `GET /projects/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
@@ -1217,11 +1218,11 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
-| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
+| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
-| `coordinator` | agent member id or `role:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.11); `role:admin` is the project's agent members with role `admin`, out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
-| `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.11); it takes over no cards |
+| `coordinator` | agent member id or `role:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `role:admin` is the project's agent members with role `admin`, out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
+| `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -1233,7 +1234,7 @@ it.
 **Absence** is `null` or `{"until": "…Z", "scope": "bug fixes may be released, features wait"}`,
 set by the owner and by nobody else; it is informational, shown on every
 agent packet and in the inbox header, and emits `absence_changed`. With
-an `until` it also makes the owner `limited` for cover (§6.11); `until`
+an `until` it also makes the owner `limited` for cover (§6.12); `until`
 is at most 90 days ahead (`invalid`, `details.fields.absence: "too_far"`,
 otherwise), so an absence cannot hold the project's cover open without
 end. The
@@ -1311,9 +1312,9 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.11); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1327,8 +1328,28 @@ the project's current members. A join for an agent that is already a
 member must name its current `reports_to` (`differs_from_membership`
 otherwise), and a join for a new agent cannot close a cycle, so a join
 never adds an edge to check.
-Removing a member sets `reports_to` to `null` on everyone who reported to
-them (`member_updated` for each), so the chain never names a former member.
+**Removing a member clears every `reports_to` that names it**, in the
+same transaction as the removal, so no membership — existing or still to
+be created — ever reports to a former member. Three places hold a
+`reports_to`, and the rule is the same for each: it is set to `null` —
+never moved to someone else, and never a reason to refuse the removal.
+
+| Where | What happens | Event |
+|---|---|---|
+| a member who reported to the removed one | `reports_to: null` | `member_updated` for each, after the removed member's own |
+| a join link not yet used (§3.1), the pickup's join (§15.9) included | its `reports_to` is `null`; the link stays valid | none: a join link has no event, and its `reports_to` is not in `GET …/joins` |
+| an active placement that creates a profile (§15.6), until its join's exchange has created the membership | its stored `reports_to` is `null` | none: the stored join fields are not in the placement view or in any event, and the runner never reads them; `generation` does not move |
+
+The join link or placement whose boss went away is still wanted, so it
+is neither revoked nor closed; it now creates a member that reports to
+nobody, and the admin sets a boss with `PATCH …/members/{id}` once it
+has joined. The exchange (§3.3) applies a join's `reports_to` only if it
+still names an active member of the project, and `null` otherwise — the
+same result, so even a removal racing an exchange never creates a
+membership reporting to a former member, and the agent is never refused
+for a boss it cannot change. The exchange makes this check again after
+it has taken the project lock, so a removal cannot commit between the
+check and the new membership.
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
@@ -1450,7 +1471,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 
 `cover` is `null` or `{for, by, since}`: the card was handed from the
-member `for` to its substitute `by` during an outage (§6.11). Only the hub
+member `for` to its substitute `by` during an outage (§6.12). Only the hub
 sets it.
 
 `mentions` holds the resolved `@handle` mentions of the card's `body`
@@ -1904,7 +1925,150 @@ slot); `forbidden` for a runner credential; `not_found` on
 `/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
 `DELETE`: `csrf_mismatch` for a cookie call without a matching token.
 
-### 6.11 Availability and cover
+### 6.11 Project overview
+
+One page in the dashboard shows the project at a glance. It has links to
+the project's repository and to its Keep the Why dashboard, and a
+summary: members and roles, card counts per board column, open requests,
+recent reports and merges, and the policy preset. The maintainer
+approved it on 2026-10-22. Everything on it is something the caller can
+already read; the page adds no new right and no new stored field.
+
+**Where each part comes from.**
+
+| Part | Source | Notes |
+|---|---|---|
+| name, state, `state_note`, absence, logo | `GET /projects/{slug}` (§6.1) | as in the header |
+| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
+| Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| policy preset | `policy.preset` and the fields it fills (§6.1) | |
+| members and roles | `GET /projects/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
+| board counts, open requests, recent reports | `GET /projects/{slug}/overview` (below) | the only new endpoint |
+
+**Who sets the two links.** Neither link is a new setting.
+
+- **Repository:** the project's `repository`, set with `POST /projects`
+  or `PATCH /projects/{slug}` under `project:admin`. That scope is held
+  by human memberships only (§2.3 ʰ), so an admin agent cannot set or
+  change it. It asks the owner with a request instead.
+- **Keep the Why dashboard:** comes from the repository alone. It is
+  the `dashboard-state:` line of the repository's root `.keep-the-why`,
+  and its children's (§11.3). Whoever maintains that file in the
+  repository decides it. There is still no Maity setting that overrides
+  it. Changing `repository` changes where the hub looks.
+
+**`GET /projects/{slug}/overview`**, scope `project:read` (humans and
+agents alike; the CLI does not call it in V1):
+
+```
+GET /api/v1/projects/maity/overview?closed_after=2026-10-08T00:00:00Z
+```
+
+```json
+{
+  "server_time": "2026-10-22T14:00:00Z",
+  "board": {
+    "counts": { "proposed": 3, "open": 7, "in_progress": 4, "blocked": 1, "review": 2,
+                "done": 18, "cancelled": 1 },
+    "closed_after": "2026-10-08T00:00:00Z"
+  },
+  "requests": {
+    "open": 5, "to_me": 3,
+    "by_priority": { "urgent": 0, "high": 2, "normal": 3, "low": 0 },
+    "oldest_open_at": "2026-10-21T13:20:00Z"
+  },
+  "reports": [
+    { "task": { "id": "tsk-0004", "title": "Hub: credential exchange and storage", "status": "done",
+                "kind": "task", "label": "feature" },
+      "reported_by": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
+                       "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
+      "reported_at": "2026-10-22T13:10:00Z", "code": true, "verification": "signed",
+      "pr": { "number": 7, "url": "https://github.com/…/pull/7" },
+      "pr_state": "merged", "observed_at": "2026-10-22T13:12:00Z", "mismatch": false }
+  ]
+}
+```
+
+- **`board.counts`**: the number of cards per status, all seven always
+  present, every `kind` included. `closed_after` (optional, RFC 3339)
+  works as on `GET …/tasks` (§6.4): `done` and `cancelled` count only
+  cards closed after it, and open statuses always count in full. The
+  dashboard passes its board window, so a number on the overview equals
+  the card count in that board column. Without the parameter the
+  response's `closed_after` is `null` and closed cards count all time.
+- **`requests`**: counted over exactly the requests that `GET
+  …/requests?status=open&to=all` lists for this caller (§7). A holder of
+  `requests:answer` counts every open request. Anyone else counts only
+  what it asked, what is addressed to it and what it covers. `to_me` is the subset
+  `to=me` would list. `oldest_open_at` is the `created_at` of the oldest
+  counted request, `null` when `open` is 0. Counts only, never a title:
+  the inbox lists them.
+- **`reports`**: the latest report of up to 10 cards, newest
+  `reported_at` first, taken from the cards' `report` field (§6.6). That
+  field is on the card and readable by everyone with `project:read`.
+  Earlier reports of a card exist only as `task_reported` events, whose
+  audience is limited (§8.2), and they never appear here. `pr_state`
+  and `observed_at` are the probe's `report.observed` (§11): a fact,
+  `null` while nothing is observed; so is `mismatch` (§6.6), which is
+  `null` until the probe has looked — not `false`, so an unchecked pull
+  request never reads as "no mismatch". A merge is a report with
+  `pr_state: merged`. `pr` is `null` for `code: false` and when `pr_status` is not
+  `found`. `limit` (1–50, default 10) changes the count. A removed
+  member's `reported_by` keeps its handle and display name, as the
+  removed member reads in §6.2.
+- No caching beyond the probe's own. The counts are read at call time,
+  in one transaction.
+- Errors: `not_found` across projects as everywhere. `invalid` with
+  `details.fields.closed_after` or `.limit`.
+
+**Why one endpoint, and only for these three.** Project, members and the
+Keep the Why export already come in one call each, and the dashboard
+already holds the first two for the header. The rest has no cheap source:
+
+- a column count would page through every card (`limit=200`, closed
+  cards without bound);
+- an open-request count would page through the request list;
+- "the latest reports" would mean reading cards by `updated_at` and
+  sorting in the browser.
+
+For the hub each one is a single grouped query. The endpoint repeats no
+shape that has a home elsewhere. In particular it does not repeat the
+member view: that view's admin-only fields would then have a second
+place to get wrong.
+
+**Dashboard (web/).** A contract note for the view; the layout is the
+web owner's:
+
+- Route `#/p/<slug>/overview`, a view of the project like the others
+  (`web/README.md`, **Views**). The inbox stays the landing page
+  (`web/context/views.md`).
+- On open: `GET /projects/{slug}` and `…/members` (already held for the
+  header), and `…/overview?closed_after=<the board's window>`. On the
+  project's event poll (`web/README.md`, **Refresh**), `task_*`,
+  `request_*` and `probe_observed` re-read the overview. Those audiences
+  are narrow (§8.2): only owners and admins read every event, so for any
+  other member most board, request and report changes send no event at
+  all. For a viewer who is neither owner nor admin the view therefore
+  also re-reads every 60 seconds while it is open, and when the browser
+  tab regains focus; these are what keep that viewer's counts current. Member events and `project_updated`
+  use what the header already re-reads. A summary
+  is never being read line by line, so it is redrawn in place without a
+  **Reload** offer.
+- Links open the URL as the hub gave it, in a new tab with
+  `rel="noopener noreferrer"`. A value that is not `https:` is shown as
+  text, not as a link. Names and texts are rendered as text
+  (`web/context/rendering.md`).
+- When `repository` is `null`, an owner or a human admin sees **Set the
+  repository** (Project settings); everyone else sees "No repository".
+  When the export is `null`, the page says that no Keep the Why
+  dashboard is published. For an owner or human admin it adds where the
+  link comes from (the `dashboard-state:` line in the repository's
+  `.keep-the-why`). A member's `error` is shown beside its link (§11.3).
+- A count links to where its items are: a column count to the board
+  column, the request counts to the inbox, a report to its card, a merge
+  to `pr.url`.
+
+### 6.12 Availability and cover
 
 Rate limits will happen. The hub keeps, per member, whether it can work
 right now, and per membership — a human's too — what happens to its
@@ -1936,7 +2100,7 @@ only when that project's slug is in the limit's `show_reason_in`;
 everywhere else, for every reader, the view shows only that they are
 away and until when (`state`, `since`, `until`, `source`). The human
 reads their own `reason` in `GET /me`. An agent's `reason` is shown as
-sent.
+sent. The resume packet's `peers[].availability` follows the same rule.
 
 **The limit.** An agent that sees its provider's limit coming declares it
 before it stops; a human declares that they are away until a time the
@@ -2184,15 +2348,15 @@ the CLI's; `--json` prints the packet unchanged.
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
-| `cover` | `null` or `{for, by, since}`, set by the hub (§6.11): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
+| `cover` | `null` or `{for, by, since}`, set by the hub (§6.12): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `POST /projects/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?}`; `201`. With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
-| `GET /projects/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or `role:<r>` for a role the caller holds, and a request whose `cover.by` is the caller (§6.11). With `to=all`, members with `requests:answer` see every request; others see what they asked and what is addressed to them |
+| `GET /projects/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or `role:<r>` for a role the caller holds, and a request whose `cover.by` is the caller (§6.12). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. The dashboard's `?scope=all` is accepted and means the same |
-| `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.11) or `requests:answer` | |
-| `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.11) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
+| `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer` | |
+| `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
 | `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer` | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
@@ -2266,7 +2430,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2278,9 +2442,9 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
-| `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `role:admin`, `member:<coordinator>` (or `role:admin` under the default, §6.11); also `role:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
-| `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.11) |
-| `member_limit_ended` | the coordinator (§6.11), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
+| `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `role:admin`, `member:<coordinator>` (or `role:admin` under the default, §6.12); also `role:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
+| `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
+| `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
@@ -2324,11 +2488,13 @@ Two sets per reader, because reading and waking are different things:
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
 
-A mention wakes through this rule and no other: it puts `member:<id>` in
-the audience of the message or the `mentioned` event, so the mentioned
-member's `maity wait` returns it — a supervised session too, since the
-audience is then more than `all`. A member who mentions itself is not
-woken (its own echo).
+A mention wakes through this rule and no other: unless `to` already
+reaches the member (below), it puts `member:<id>` in the audience of the
+message or the `mentioned` event, so the mentioned member's `maity wait`
+returns it — a supervised session too, since the audience is then more
+than `all`. A member who mentions itself is not
+woken (its own echo). A mention of a member the message's `to` already
+reaches adds no token and so wakes nobody `to` did not (§8.6).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -2448,6 +2614,13 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
   `a/@b` are no mention); the character after the run is the end of the
   text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
+  Both classes are ASCII only: any other character, a letter outside
+  ASCII or a combining mark included, is a boundary, so `@agent-bé`
+  and `@agent-b` followed by U+0301 mention `agent-b`. The same holds
+  before the `@`: `andré@agent-b.example` mentions `agent-b`, because
+  `é` is a boundary; an e-mail address is no mention only when the
+  character before its `@` is in the class. This is intended: the classes
+  stay ASCII rather than growing a Unicode definition of a word.
 - **Not in code.** Inside an inline code span (backticks, as CommonMark
   pairs them) or a fenced code block (a line starting with three or
   more backticks or tildes, to its closing fence or the end of the text)
@@ -2472,6 +2645,12 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   `rate_limited` with `Retry-After` and stores nothing. A self-mention,
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
+  "Already in the audience" means `to` is `all`, the member's own
+  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
+  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  already wake: under `to: all` a supervised member, whom `all` alone
+  does not wake (§15.11, §8.2), stays asleep. It stays in the message's
+  `mentions`, so the dashboard still links it.
 
 **Stored shape**, on the object, oldest offset first:
 
@@ -2968,7 +3147,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent | 5.3 |
-| POST | `/me/limit` | agent / human | 6.11 |
+| POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
 | GET, POST | `/agents` | human | 6.3 |
 | GET, PATCH | `/agents/{id}` | owner | 6.3 |
@@ -3019,6 +3198,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/projects/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -3041,7 +3221,7 @@ own request; no default on `consent`), addressing by member and role,
 `done` refused with open `depends_on`, unique version and one release in
 flight, `ready` from observed state only, closed-project refusal, the
 coordinator gate on agents' assignments and cover's moves of claims,
-assignments and requests (§6.11), a reason on cards and claims in `freeze`/`fixes-only`, append-only events
+assignments and requests (§6.12), a reason on cards and claims in `freeze`/`fixes-only`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
@@ -3066,7 +3246,7 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.11) the `Availability` block given there follows the pause |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
@@ -3615,7 +3795,9 @@ POST /api/v1/projects/maity/placements
   `reports_to`, `areas`, `capabilities` and `briefing` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
   (§15.9). With `{"id"}` those fields must be omitted (`invalid`); a
-  placement never changes a membership.
+  placement never changes a membership. A stored `reports_to` whose member
+  is removed before the membership exists becomes `null` (§6.2); every
+  pickup builds its join from the stored fields as they are then.
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `freeze`/`fixes-only`.
 - Placement creation by a human against a runner without a live
@@ -3743,14 +3925,14 @@ time the harness gave (or its own backoff, with `detail: reset_unknown`);
 never more than 7 days ahead. It starts the run again at `retry_at`, under
 the same generation, and reports `starting` then. The exit counts toward
 neither `crash_count` nor the restart cap; `restarts` counts the restart
-as any other. The hub stores the report as the agent's limit (§6.11):
+as any other. The hub stores the report as the agent's limit (§6.12):
 `until` = `retry_at`, `source: runner`, `harness` the placement's, and
 clears it with the placement's next report that is not `rate_limited`.
 A harness exit the runner does not recognise as a limit stays a crash.
 `rate_limited` is its own state rather than `exited` with a `retry_at`
 (the restart policy's wait after an ordinary exit, §15.5) because it
 means something to the hub beyond the restart: it sets the member's limit,
-which drives availability and cover (§6.11), and it is outside the crash
+which drives availability and cover (§6.12), and it is outside the crash
 count; folding the two together would make every restart a limit or
 every limit a crash.
 
@@ -3777,7 +3959,7 @@ every limit a crash.
   the session for limits: the placement stays `running`, and the limit
   is declared from inside the session — by the agent with `maity limit`
   (§13), or by the human in the pane running the same command — which
-  sets the member's limit with `source: self` (§6.11) and leaves the
+  sets the member's limit with `source: self` (§6.12) and leaves the
   placement's state alone. If an interactive harness does exit and the
   adapter recognises the exit as its limit, the runner reports
   `rate_limited` as in `supervised` mode.
@@ -3794,7 +3976,7 @@ every limit a crash.
   toward `max_agents` of the runner and of its target, as a running
   placement does, until it starts again or is stopped, so another placement waits with `pending`/`capacity` and the
   restart at `retry_at` never does. Its member is `limited`, never
-  `available` (§6.11).
+  `available` (§6.12).
 
 Reachability is not a reason: an unreachable target keeps its
 placements' last reported state, and the runner advertises
@@ -3949,7 +4131,7 @@ The kinds are in §8.2. Rules that apply to all of them:
   as they read every event of the project.
 - **Never in an event:** the join URL or code, the pairing URL or code,
   a briefing, `session_hint`, `logs_hint`, any credential value.
-- A `rate_limited` report sets the agent's limit (§6.11) and emits
+- A `rate_limited` report sets the agent's limit (§6.12) and emits
   `member_availability_changed` with the runner as actor; the report
   that ends it does the same. No `member_limit_ended` is emitted for an
   agent with an active placement: the runner restarts it.
