@@ -1930,7 +1930,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; `{"until": null}` from a human clears it |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; `{"until": null}` from a human clears it |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -2063,7 +2063,29 @@ starts that agent again. Under a runner the restart is the runner's
 `covering` (`[{member_id, since}]`). The dashboard shows who is out, until
 when, and who covers whom from these fields. The resume packet's
 `membership` gains `availability_policy` and `covering`; each of `peers`
-gains `availability`. Availability changes never emit `member_updated`.
+gains `availability` and `covered_by`. Availability changes never emit
+`member_updated`.
+
+**`maity resume`** prints this as one block, `Availability`, right after
+the pause and before the briefing, and only when there is something in
+it — the caller covers someone, or a peer is not `available`:
+
+```text
+Availability
+  covering @agent-c since 2026-10-22T14:05:00Z: tsk-0004, tsk-0007, req-0012
+  @agent-b limited until 2026-10-22T17:00:00Z, covered by @agent-a
+  @oz-agent-review offline
+```
+
+One `covering` line per entry of `membership.covering`, with the ids of
+the packet's cards and requests whose `cover.for` is that member; then
+one line per peer whose state is not `available`: `@<handle> <state>`,
+` until <until>` when there is one, `, covered by @<handle>` when
+`covered_by` is set. Peers in the packet's `peers` order. A card or
+request in the work and requests sections whose `cover` is set gets
+` (cover for @<handle>)` after its title. The caller's own
+`availability_policy` is not printed (it is in `--json`). This format is
+the CLI's; `--json` prints the packet unchanged.
 
 ## 7. Requests to humans (the inbox)
 
@@ -2993,7 +3015,7 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.11) the `Availability` block given there follows the pause |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
@@ -3014,7 +3036,7 @@ reviewer role.
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
-| `maity limit --until <time> [--reason R]` | `POST /me/limit`; `<time>` is RFC 3339 or a duration from now (`90m`, `3h`), sent as RFC 3339. Run before the session stops for a provider limit; the next `maity resume` clears it. *Planned (availability).* Until it ships: `maity api POST /me/limit --json -` |
+| `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. *Planned (availability).* Until it ships: `maity api POST /me/limit --json -` |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
@@ -3677,6 +3699,39 @@ as any other. The hub stores the report as the agent's limit (§6.11):
 `until` = `retry_at`, `source: runner`, `harness` the placement's, and
 clears it with the placement's next report that is not `rate_limited`.
 A harness exit the runner does not recognise as a limit stays a crash.
+
+- **Recognition** is the harness adapter's and stays
+  implementation-defined: which exit code, output line or file says
+  "provider limit" and where the reset time is read from differ per
+  harness and version. An adapter reports `rate_limited` only for a
+  signal verified on a real run of that harness; anything else is
+  reported as it would be without this section (`exited`, `failed`,
+  counted as a crash). What the contract fixes is the report: `state:
+  rate_limited`, `reason: quota`, `exit_code` the process's own,
+  `retry_at` as below.
+- **`retry_at`** is the reset time the harness named, in UTC, when it
+  named one that is in the future and at most 7 days ahead; a named
+  time further out is capped at 7 days. When it named none (or one in
+  the past), `detail: reset_unknown` and `retry_at` is the runner's
+  fixed backoff, independent of the restart policy: 15 minutes after the
+  exit for the first consecutive `reset_unknown` limit of the
+  placement, doubling with each further one (30, 60 minutes) up to 2
+  hours, and 2 hours from then on. The count resets when a run of the
+  placement ends any other way, and with a new generation.
+- **Interactive mode.** A harness in an `interactive` session usually
+  stays open at its limit instead of exiting. The runner does not read
+  the session for limits: the placement stays `running`, and the limit
+  is declared from inside the session — by the agent with `maity limit`
+  (§13), or by the human in the pane running the same command — which
+  sets the member's limit with `source: self` (§6.11) and leaves the
+  placement's state alone. If an interactive harness does exit and the
+  adapter recognises the exit as its limit, the runner reports
+  `rate_limited` as in `supervised` mode.
+- **Capacity.** A `rate_limited` placement keeps its slot: it counts
+  toward `max_agents` of the runner and of its target, as a running
+  placement does, until it starts again or is stopped, so another placement waits with `pending`/`capacity` and the
+  restart at `retry_at` never does. Its member is `limited`, never
+  `available` (§6.11).
 
 Reachability is not a reason: an unreachable target keeps its
 placements' last reported state, and the runner advertises
