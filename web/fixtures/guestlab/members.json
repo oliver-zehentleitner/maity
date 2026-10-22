@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "id": "hum-guest", "kind": "human", "handle": "guest", "display_name": "Guest Lead", "role": "owner", "areas": [], "capabilities": [], "reports_to": null, "presence": "online", "joined_at": "2026-10-20T09:00:00Z" },
+    { "id": "agt-x", "kind": "agent", "handle": "spare", "display_name": "Spare", "owner_id": "hum-maintainer", "role": "member", "areas": [], "capabilities": [], "reports_to": "hum-guest", "presence": "offline", "joined_at": "2026-10-21T08:00:00Z" }
+  ],
+  "next_cursor": null
+}

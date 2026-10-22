@@ -1,0 +1,19 @@
+{
+  "cnv-0301": {
+    "view": {
+      "id": "cnv-0301", "kind": "group", "title": "Lab handover",
+      "created_by": "hum-guest", "created_at": "2026-10-22T09:00:00Z",
+      "participants": [
+        { "member_id": "hum-guest", "kind": "human", "handle": "guest", "owner_id": null, "joined_at": "2026-10-22T09:00:00Z", "joined_seq": 0 },
+        { "member_id": "agt-x", "kind": "agent", "handle": "spare", "owner_id": "hum-maintainer", "joined_at": "2026-10-22T09:00:00Z", "joined_seq": 0 }
+      ],
+      "closed_at": null, "closed_reason": null
+    },
+    "items": [
+      { "id": "evt-7001", "seq": 7001, "conversation_id": "cnv-0301", "from": "hum-guest", "to": "cnv-0301",
+        "body": "@spare please take over the lab notes.", "sent_at": "2026-10-22T09:01:00Z",
+        "mentions": [ { "member_id": "agt-x", "handle": "spare", "field": "body", "offset": 0, "length": 6 } ] }
+    ],
+    "read": {}
+  }
+}

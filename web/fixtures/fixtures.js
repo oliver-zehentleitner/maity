@@ -135,7 +135,12 @@ window.MAITY_FIXTURES = {
         "git_identity": null,
         "handle": "spare",
         "id": "agt-x",
-        "memberships": [],
+        "memberships": [
+          {
+            "project": "guestlab",
+            "role": "member"
+          }
+        ],
         "owner_id": "hum-maintainer"
       }
     ],
@@ -150,6 +155,89 @@ window.MAITY_FIXTURES = {
       "id": "hum-maintainer",
       "kind": "human"
     }
+  },
+  "guestlab/conversations.json": {},
+  "guestlab/group-chats.json": {
+    "cnv-0301": {
+      "items": [
+        {
+          "body": "@spare please take over the lab notes.",
+          "conversation_id": "cnv-0301",
+          "from": "hum-guest",
+          "id": "evt-7001",
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "spare",
+              "length": 6,
+              "member_id": "agt-x",
+              "offset": 0
+            }
+          ],
+          "sent_at": "2026-10-22T09:01:00Z",
+          "seq": 7001,
+          "to": "cnv-0301"
+        }
+      ],
+      "read": {},
+      "view": {
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-22T09:00:00Z",
+        "created_by": "hum-guest",
+        "id": "cnv-0301",
+        "kind": "group",
+        "participants": [
+          {
+            "handle": "guest",
+            "joined_at": "2026-10-22T09:00:00Z",
+            "joined_seq": 0,
+            "kind": "human",
+            "member_id": "hum-guest",
+            "owner_id": null
+          },
+          {
+            "handle": "spare",
+            "joined_at": "2026-10-22T09:00:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-x",
+            "owner_id": "hum-maintainer"
+          }
+        ],
+        "title": "Lab handover"
+      }
+    }
+  },
+  "guestlab/members.json": {
+    "items": [
+      {
+        "areas": [],
+        "capabilities": [],
+        "display_name": "Guest Lead",
+        "handle": "guest",
+        "id": "hum-guest",
+        "joined_at": "2026-10-20T09:00:00Z",
+        "kind": "human",
+        "presence": "online",
+        "reports_to": null,
+        "role": "owner"
+      },
+      {
+        "areas": [],
+        "capabilities": [],
+        "display_name": "Spare",
+        "handle": "spare",
+        "id": "agt-x",
+        "joined_at": "2026-10-21T08:00:00Z",
+        "kind": "agent",
+        "owner_id": "hum-maintainer",
+        "presence": "offline",
+        "reports_to": "hum-guest",
+        "role": "member"
+      }
+    ],
+    "next_cursor": null
   },
   "maity/conversations.json": {
     "agt-a": {

@@ -44,6 +44,7 @@ stay on screen.
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
+| `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
@@ -231,6 +232,19 @@ Inside a project, in the order of their importance; see
      the project is shown as such, since the chat names them only by id. A closed chat
      stays readable and takes nothing.
    - **A closed project** offers no new chat and no adding.
+   - **Removing in a direct chat.** The human party removes a message
+     there too, the agent's or their own, with a reason.
+   - **A reported message of a closed chat** (no human is in it any more)
+     is removed by an owner or admin by its number, in **Project
+     settings**, without reading it. The hub answers that it is removed
+     and nothing more.
+   - **Reading along from outside** (`#/observe/<slug>`). When an agent of
+     yours is a member of a project you are not in, **everything waiting**
+     (`#/all`) names that project. Its page lists the group chats your
+     agents are in and opens them read only. It uses `GET /agents` for
+     the projects and `?observed=true` for the chats; no member list, no
+     project and no events are read, because none of them would be
+     answered.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
@@ -741,6 +755,7 @@ web/
 ├── js/project-message.js message the project (§8.4)
 ├── js/chat.js        (6) chat
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
+├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/overview.js    (10) overview: the project at a glance

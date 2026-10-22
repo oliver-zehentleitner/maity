@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
     const manager = () => !observer && !closed && (view.created_by === ctx.me.id || ctx.canAdmin || ctx.isOwner);
     const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
     // An observer outside the project is not in the member list: said so, not by id.
-    const observerName = (o) => (ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
+    const observerName = (o) => (o === ctx.me.id ? "you" : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
 
     const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
@@ -141,16 +141,14 @@ window.Maity = window.Maity || {};
     // observer, and no agent uses this page.
     const mayRedact = !observer;
     async function redact(msg) {
-      // The hub needs a reason (§8.5): asked again until one is given, or cancelled.
-      let reason = window.prompt("Remove this message for everyone in the chat? Its text is replaced by a note. Say why:", "");
-      while (reason !== null && !reason.trim()) reason = window.prompt("A reason is needed to remove a message. Say why, or cancel:", "");
+      const reason = parts.askReason("Remove this message for everyone in the chat? Its text is replaced by a note. Say why:");
       if (reason === null) return;
       status.busy("Removing…");
       try {
-        await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason: reason.trim() });
+        await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
         // The answer is the event (§8.5); the message shows its tombstone.
         const at = all.findIndex((m) => m.seq === msg.seq);
-        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason: reason.trim() } });
+        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason } });
         redraw();
         status.done();
         append(status.el, h("span", { class: "ok" }, "Removed."));

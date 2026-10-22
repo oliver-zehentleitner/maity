@@ -1034,7 +1034,10 @@ window.Maity = window.Maity || {};
       const members = file(m[1], "members.json", path).items;
       const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
         sent_at: last.sent_at, redacted: !!last.redacted };
-      const direct = Object.keys(all).map((agentId) => {
+      // §9.2: an owner outside the project sees only the chats its agents are
+      // in, and only with observed=true; no direct chat, nothing else.
+      const outside = !me().projects.some((p) => p.slug === m[1]);
+      const direct = outside ? [] : Object.keys(all).map((agentId) => {
         const items = all[agentId].items;
         const last = items.length ? items[items.length - 1] : null;
         const agent = members.find((x) => x.id === agentId);
@@ -1118,6 +1121,7 @@ window.Maity = window.Maity || {};
       const gone = c.view.participants.find((x) => x.member_id === m[3]);
       if (!gone) fail(404, "not_found", "no such participant", path);
       c.view.participants = c.view.participants.filter((x) => x !== gone);
+      if (gone.kind === "human") c.former = (c.former || []).concat(gone.member_id);
       // The last human gone: the chat closes (§9.2).
       if (!c.view.participants.some((x) => x.kind === "human")) { c.view.closed_at = nowIso(); c.view.closed_reason = "no_human"; }
       return { conversation_id: m[2], member_id: m[3], joined_at: gone.joined_at, left_at: nowIso(), by: me().member.id, reason: self ? "left" : "removed" };
@@ -1149,7 +1153,9 @@ window.Maity = window.Maity || {};
       if (!item) fail(404, "not_found", "Not found", path);
       if (item.access === "observer") fail(403, "forbidden", "an observer does not post", path, { reason: "observer" });
       if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
-      const last = Math.max(5000, ...c.items.map((x) => x.seq), ...Object.values(file(m[1], "conversations.json", path)).flatMap((x) => x.items.map((y) => y.seq)));
+      // One sequence for the project's messages, as the event log has it.
+      const last = Math.max(5000, ...Object.values(groupChats(m[1])).flatMap((x) => x.items.map((y) => y.seq)),
+        ...Object.values(file(m[1], "conversations.json", path)).flatMap((x) => x.items.map((y) => y.seq)));
       const msg = { id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2], from: me().member.id, to: m[2], body: body.body, sent_at: nowIso(), mentions: [] };
       c.items.push(msg);
       c.read[me().member.id] = msg.seq;
@@ -1166,6 +1172,15 @@ window.Maity = window.Maity || {};
       if (!msg) fail(404, "not_found", "Not found", path);
       if (chat) {
         const item = groupItem(m[1], chat, path);
+        // §8.5: in a closed group chat its former human participants remove
+        // what they read, and an owner or admin removes blind, by seq, and
+        // learns nothing but that it is removed.
+        const former = (chat.former || []).includes(me().member.id);
+        if (chat.view.closed_at && (former || ["owner", "admin"].includes(roleIn(m[1])))) {
+          if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+          Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { at: nowIso(), by: me().member.id, reason: body.reason } });
+          return { seq, redacted: true };
+        }
         if (!item) fail(404, "not_found", "Not found", path);
         if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
       }
