@@ -1058,7 +1058,8 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     project = run.api(alpha, "GET", "/projects/e2e-alpha")
     if "signing" not in (project.get("policy") or {}):
         run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
-        page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+        # Agents, not the inbox: the next step reaches the inbox through its tab.
+        page.goto(f"{run.base}/#/p/e2e-alpha/agents")
         page.get_by_role("button", name="State & absence", exact=True).click()
         expect(page.locator("#state-select")).to_be_visible()
         expect(page.locator("#signing-select")).to_have_count(0)
