@@ -704,7 +704,12 @@ probes and `check` run as the agents' user, who is the one that must be
 able to start them. Nothing secret may travel as an argument in this
 layout: sudo logs every command line, and `/proc` shows it, so a
 harness `env_file` (R5) has to reach the session another way than
-`env K=V` or `tmux -e`.
+`env K=V` or `tmux -e`. The sandbox read denies are worked out from this
+side too: the agents' user's home secrets, its `~/.maity-runner` (every
+agent's socket, log and settings, which the single layout keeps in the
+hidden state directory) and the other clones' credentials, listed as
+that user because the runner cannot list a 0700 directory it does not
+own. Codex's sandbox probe runs as that user as well.
 
 **Reason:** the layout exists so that agents, and any repository code
 they run, cannot read the runner's credential or state. That only holds
