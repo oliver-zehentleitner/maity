@@ -716,6 +716,7 @@ def scenario(run: Run, page: Page) -> None:
 
     chat_pause_state(run, page, alpha, agent_id)
     members_step(run, page)
+    message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
     images_step(run, page, alpha)
@@ -1252,6 +1253,50 @@ def board_cards_step(run: Run, page: Page) -> None:
     expect(page.locator('section.column[data-status="cancelled"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
+
+
+def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
+    """Message the project (docs/api.md §8.4): the owner writes to everyone; the agent's wait has it."""
+    run.step("message: the owner writes to the project from the inbox; the agent's maity wait gets it")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    page.get_by_role("link", name="Message the project", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/message$"))
+    wait = run.wait_start(alpha)
+    page.locator("#message-type").select_option("notice")
+    page.locator("#message-body").fill("The board is yours today, @e2e-agent.")
+    run.a11y(page, "message the project")
+    page.locator("form.message-form").get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator(".message-result")).to_contain_text("Sent to everyone")
+    event = run.wait_event(wait)
+    assert event.get("kind") == "message", event
+    payload = event.get("payload") or {}
+    assert payload.get("type") == "notice" and payload.get("body") == "The board is yours today, @e2e-agent.", payload
+    # Where the hub resolves mentions (§8.6), the page says whom it told, and a
+    # mention reaches a member the message is not addressed to.
+    resolves = bool(payload.get("mentions"))
+    if resolves:
+        assert [m.get("handle") for m in payload["mentions"]] == ["e2e-agent"], payload["mentions"]
+        expect(page.locator(".message-result")).to_contain_text("mentioned and notified: E2E Agent")
+        wait = run.wait_start(alpha)
+        page.locator("#message-to").select_option("role:reviewer")
+        page.locator("#message-body").fill("Reviewers: @e2e-agent has the join path.")
+        page.locator("form.message-form").get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(".message-result")).to_contain_text("Sent to every reviewer; mentioned and notified: E2E Agent")
+        event = run.wait_event(wait)
+        assert event.get("kind") == "message" and event["payload"].get("to") == "role:reviewer", event
+    run.shot(page, "message-the-project")
+    # In a private chat an @name tells nobody: the hub resolves nothing there.
+    wait = run.wait_start(alpha)
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    page.locator("#chat-text").fill("Ask @e2e-agent about it later.")
+    hint = page.locator(".mention-hint")
+    expect(hint).to_contain_text("In this chat @e2e-agent notifies nobody.")
+    expect(hint.get_by_role("link")).to_have_attribute("href", "#/p/e2e-alpha/message/%40e2e-agent")
+    page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    event = run.wait_event(wait)
+    assert event.get("kind") == "message" and event["payload"].get("type") == "chat", event
+    assert not event["payload"].get("mentions"), event["payload"]
+    no_problems(run, "message")
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:

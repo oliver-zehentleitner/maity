@@ -614,6 +614,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .send-status .ok { color: var(--ok); }
 [aria-invalid="true"] { border-color: var(--bad); }
 .empty-state { max-width: 32rem; margin: 8vh auto 0; }
+/* A link that opens a view from a toolbar, drawn as a quiet button. */
+.button-link { padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; font-size: 0.88rem; }
+.button-link:hover { border-color: var(--accent); }
+.message-form textarea { width: 100%; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
 .switcher .new-project { color: var(--muted); }
 .reply.later { color: var(--muted); }

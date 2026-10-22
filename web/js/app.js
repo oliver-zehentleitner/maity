@@ -26,6 +26,8 @@ window.Maity = window.Maity || {};
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
+    // No tab: opened from the inbox and from a chat (js/project-message.js).
+    { route: "message", label: "Message the project", tab: false },
     { route: "join", label: "Join an agent", admin: true },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
@@ -545,7 +547,7 @@ window.Maity = window.Maity || {};
       panelSlot,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
-          NAV.filter((item) => offered(ctx, item)).map((item) => h("a", {
+          NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))

@@ -266,9 +266,24 @@ window.Maity = window.Maity || {};
     const key = ctx.slug + "/" + agent.id;
     const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
     text.value = drafts.get(key) || "";
+    // In a chat a mention is plain text and tells nobody (docs/api.md §8.6).
+    // When one is being written, the page says so and offers a project
+    // message with it, where it would reach the member.
+    const mentionHint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
+    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]+)/;
+    function hintMention() {
+      const found = MENTIONED.exec(text.value);
+      clear(mentionHint);
+      mentionHint.hidden = !found;
+      if (!found) return;
+      append(mentionHint, "In this chat @" + found[2] + " notifies nobody. ",
+        h("a", { href: ctx.link("message", "@" + found[2]) }, "Write a project message to draw them in"), ".");
+    }
     text.addEventListener("input", () => {
       if (text.value.trim()) drafts.set(key, text.value); else drafts.delete(key);
+      hintMention();
     });
+    hintMention();
     const status = M.statusLine();
     const button = h("button", { type: "submit" }, "Send");
 
@@ -283,6 +298,7 @@ window.Maity = window.Maity || {};
         add(msg, true);
         text.value = "";
         drafts.delete(key);
+        hintMention();
         status.done();
         list.refresh(false);
       } catch (err) {
@@ -308,7 +324,7 @@ window.Maity = window.Maity || {};
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
-        text, button, status.el));
+        text, mentionHint, button, status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

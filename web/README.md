@@ -303,6 +303,18 @@ that carries an `avatar_url` the page may load (the hub's own images
 today) shows that one instead. On the agents' cards, in the
 organisation and in the chat list.
 
+**Message the project** (`#/p/<slug>/message`, no tab: **Message the
+project** in the inbox's toolbar, and from a chat: an `@name` typed there
+is said to notify nobody, with a link to a project message that has it
+already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
+§8.4): to everyone, a role or one member (never oneself), of one of the
+hub's types (a notice by default), optionally about an open card. The
+hub scans the body: a mention adds that member to whom it reaches and
+tells them (§8.6), and the page says whom, from the event's mentions; it
+never sends a mentions list. The @ picker is there where the page has it.
+An empty message, or one over 16,384 characters, is not sent; the hub's
+mention cap and rate are said in words.
+
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
 Later, "Neither — let's talk", the replies with the primary one last;
@@ -561,6 +573,7 @@ web/
 ├── js/agents.js      (3) agents and presence
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree
+├── js/project-message.js message the project (§8.4)
 ├── js/chat.js        (6) chat
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
