@@ -22,6 +22,9 @@ window.Maity = window.Maity || {};
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
 
+  // The hub's bound on a pull request number (docs/api.md §6.7).
+  const PR_MAX = 2 ** 31;
+
   // The roles holding releases:write (docs/api.md §2.3).
   const RELEASERS = new Set(["owner", "admin", "reviewer"]);
 
@@ -188,12 +191,12 @@ window.Maity = window.Maity || {};
     const rel = c.release;
     const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
     const status = M.statusLine();
-    const patch = async (release, what) => {
+    const patch = async (release, what, focusId) => {
       status.busy("Saving " + what + "…");
       try {
-        redraw(await M.api.patch(path, { release }));
+        redraw(await M.api.patch(path, { release }), focusId);
       } catch (err) {
-        status.fail(what[0].toUpperCase() + what.slice(1) + " not saved: ", editError(err));
+        status.fail("Not saved: ", editError(err));
       }
     };
 
@@ -207,11 +210,12 @@ window.Maity = window.Maity || {};
           box.disabled = true;
           status.busy(box.checked ? "Ticking…" : "Unticking…");
           try {
-            redraw(await M.api.post(path + "/checklist/" + encodeURIComponent(item.id), { done: box.checked }));
+            redraw(await M.api.post(path + "/checklist/" + encodeURIComponent(item.id), { done: box.checked }), id);
           } catch (err) {
             box.checked = !box.checked;
             box.disabled = false;
-            status.fail("Not saved: ", editError(err));
+            status.fail("Not saved: ", err.status === 404
+              ? { message: "this item is gone (removed meanwhile); reload the board" } : editError(err));
           }
         });
         return h("li", { class: item.done ? "met" : "unmet" }, box, h("label", { for: id }, " " + item.text), tickedBy(ctx, item));
@@ -220,19 +224,24 @@ window.Maity = window.Maity || {};
       append(box,
         items.length ? list : h("p", { class: "muted" }, "No checklist items."),
         h("div", { class: "row" },
-          h("button", { type: "button", class: "small", onclick: () => editChecklist(box) }, "Edit checklist"),
-          h("button", { type: "button", class: "small", onclick: () => editTyped(box) }, "Typed pull requests")),
+          h("button", { type: "button", class: "small", id: "edit-checklist-" + c.id, onclick: () => editChecklist(box) }, "Edit checklist"),
+          h("button", { type: "button", class: "small", id: "edit-typed-" + c.id, onclick: () => editTyped(box) }, "Typed pull requests")),
         status.el);
       return box;
     }
 
     // A list editor: rows of inputs, add and remove, Save sends the list.
-    function rowsEditor(box, title, rows, makeRow, toBody, what) {
+    // Each row's controls are labelled with their row number; after Save or
+    // Cancel the focus goes back to the button that opened the editor.
+    function rowsEditor(box, title, rows, makeRow, toBody, what, opener) {
       const list = h("ol", { class: "edit-rows" });
+      let n = 0;
       const add = (row) => {
-        const li = h("li", null, makeRow(row),
-          h("button", { type: "button", class: "small", onclick: () => li.remove() }, "Remove"));
+        n += 1;
+        const li = h("li", null, makeRow(row, n),
+          h("button", { type: "button", class: "small", "aria-label": "Remove row " + n, onclick: () => li.remove() }, "Remove"));
         append(list, li);
+        return li;
       };
       rows.forEach(add);
       const form = h("form", {
@@ -240,22 +249,28 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const body = toBody(list);
-          if (body) patch(body, what);
+          if (body) patch(body, what, opener);
         },
       },
       h("h4", null, title), list,
       h("div", { class: "row" },
-        h("button", { type: "button", class: "small", onclick: () => add(null) }, "Add"),
+        h("button", { type: "button", class: "small", onclick: () => {
+          const li = add(null);
+          const first = li.querySelector("input");
+          if (first) first.focus();
+        } }, "Add"),
         h("button", { type: "submit" }, "Save"),
-        h("button", { type: "button", onclick: () => redraw(c) }, "Cancel")),
+        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel")),
       status.el);
       M.dom.clear(box);
       append(box, form);
+      const first = list.querySelector("input");
+      if (first) first.focus();
     }
 
     function editChecklist(box) {
-      rowsEditor(box, "Checklist", rel.checklist || [], (item) => {
-        const input = h("input", { class: "item-text", maxlength: "200", "aria-label": "Checklist item" });
+      rowsEditor(box, "Checklist", rel.checklist || [], (item, n) => {
+        const input = h("input", { class: "item-text", maxlength: "200", "aria-label": "Checklist item " + n });
         input.value = item ? item.text : "";
         if (item) input.setAttribute("data-id", item.id);
         return input;
@@ -264,28 +279,37 @@ window.Maity = window.Maity || {};
           .filter((i) => i.text);
         // An item keeps its tick by its id; a new one gets the next id from the hub.
         return { checklist: items.map((i) => (i.id ? { id: i.id, text: i.text } : { text: i.text })) };
-      }, "the checklist");
+      }, "the checklist", "edit-checklist-" + c.id);
     }
 
     function editTyped(box) {
-      rowsEditor(box, "Typed pull requests", rel.pull_requests_typed || [], (pr) => {
-        const number = h("input", { class: "pr-number", type: "number", min: "1", "aria-label": "Pull request number" });
+      rowsEditor(box, "Typed pull requests", rel.pull_requests_typed || [], (pr, n) => {
+        const number = h("input", { class: "pr-number", type: "number", min: "1", max: String(PR_MAX), "aria-label": "Pull request number, row " + n });
         number.value = pr ? String(pr.number) : "";
-        const state = h("select", { class: "pr-claim", "aria-label": "State you attest" },
+        const state = h("select", { class: "pr-claim", "aria-label": "State you attest, row " + n },
           [["", "no state"], ["open", "open"], ["merged", "merged"], ["closed", "closed"]].map(([v, l]) => h("option", { value: v }, l)));
         state.value = pr && pr.state ? pr.state : "";
         return h("span", { class: "row" }, "#", number, state);
       }, (list) => {
+        // A row with neither number nor state is dropped; anything else must
+        // be a whole number from 1 to 2^31, each number once (docs/api.md §6.7).
         const rows = Array.from(list.querySelectorAll("li")).map((li) => ({
-          number: Number(li.querySelector("input.pr-number").value),
+          raw: li.querySelector("input.pr-number").value.trim(),
           state: li.querySelector("select.pr-claim").value || null,
-        })).filter((r) => r.number);
-        if (rows.some((r) => !Number.isInteger(r.number) || r.number < 1)) {
-          status.fail("Not saved: ", { message: "a pull request number is a whole number from 1" });
+        })).filter((r) => r.raw || r.state);
+        const bad = rows.find((r) => !/^[0-9]+$/.test(r.raw) || Number(r.raw) < 1 || Number(r.raw) > PR_MAX);
+        if (bad) {
+          status.fail("Not saved: ", { message: "a pull request number is a whole number from 1 to " + PR_MAX + (bad.raw ? " (not " + bad.raw + ")" : "") });
           return null;
         }
-        return { pull_requests_typed: rows };
-      }, "the typed pull requests");
+        const seen = new Set();
+        const twice = rows.find((r) => seen.has(Number(r.raw)) || !seen.add(Number(r.raw)));
+        if (twice) {
+          status.fail("Not saved: ", { message: "#" + Number(twice.raw) + " is listed twice" });
+          return null;
+        }
+        return { pull_requests_typed: rows.map((r) => ({ number: Number(r.raw), state: r.state })) };
+      }, "the typed pull requests", "edit-typed-" + c.id);
     }
 
     return { checklist };
@@ -326,11 +350,15 @@ window.Maity = window.Maity || {};
   function card(ctx, c, byId) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
-    const redraw = (updated) => {
+    // focusId names the control to focus in the new card (the box just
+    // ticked, the button that opened an editor), so the focus is not lost.
+    const redraw = (updated, focusId) => {
       byId[updated.id] = updated;
       const fresh = card(ctx, updated, byId);
       el.parentNode.insertBefore(fresh, el);
       el.remove();
+      const target = focusId && document.getElementById(focusId);
+      if (target) target.focus();
     };
     const el = h("article", { class: "card card-" + c.kind, "aria-label": c.title },
       h("header", null,
