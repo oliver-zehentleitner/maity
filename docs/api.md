@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: reauth_required` for a change that needs a sign-in within the last 10 minutes (§2.6.3) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -506,17 +506,29 @@ limit the hub states, not one it closes. What it does instead:
   off in the account (`email.sign_in_link`, §2.6.3). A human whose
   agents can read their mail should switch it off; the dashboard says
   so beside the switch.
-- **A mail sign-in from a new device is shown where the agent cannot
-  hide it.** Every other active session of the human shows it in the
-  dashboard at once, with the session and a one-click "End this
-  session" (§2.6.5) — not only by a mail the agent could delete.
+- **Every mail sign-in is shown where the agent cannot hide it.** Every
+  other session of the human shows it in the dashboard at once, with
+  the session and a one-click "End this session" (§2.6.5) — not only by
+  a mail the agent could delete. Only a session that existed before
+  that sign-in can mark it read; the obtained session and every session
+  created after it cannot.
+- **A fresh session cannot lock the human out.** A session younger
+  than 1 hour cannot end the human's older sessions (§2.6.5), so a
+  session obtained through the mailbox cannot end the sessions that
+  show the alert before the human has seen it.
 - **The device code needs a human at a signed-in screen.** Its approval
   uses number matching and shows what the hub itself observed
   (§2.6.2); an agent without a human session cannot approve one.
-- **A new address needs a fresh sign-in.** Changing the verified
-  address, which would move the sign-in path to another mailbox, needs
-  a sign-in within the last 10 minutes and tells the old address
-  (§2.6.3).
+- **A new address needs the password.** Changing the verified address,
+  which would move the sign-in path to another mailbox, needs the
+  account password in the same request — or, for a human without a
+  password, the approval of a session that is at least 24 hours old —
+  and tells the old address (§2.6.3). A session obtained through the
+  mailbox, or approved on an unlocked dashboard, therefore cannot move
+  the sign-in path to a mailbox of its own — for a human with a
+  password not at all, for a human without one not before it has been
+  shown for 24 hours in the human's earlier sessions, where one click
+  ends it.
 
 Additional rules that are not scopes:
 
@@ -671,7 +683,7 @@ one as **B** (the phone):
 { "id": "dvc-3f9a", "status": "redeemed", "expires_at": "2026-10-22T14:05:00Z",
   "device": { "ip": "203.0.113.24", "redeemed_at": "2026-10-22T14:01:12Z",
               "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) …",
-              "browser": "Safari", "os": "iOS" },
+              "browser": "Safari", "os": "iOS", "new_device": true },
   "choices": [ 18, 47, 83 ] }
 ```
 
@@ -724,7 +736,10 @@ one as **B** (the phone):
   hub's time. `user_agent` (cut at 300 characters, shown as text),
   `browser` and `os` parsed from it (`null` when unknown) are what B's
   browser *claims*; the dialog labels them so ("Says it is Safari on
-  iOS") and never shows them alone. V1 shows the IP address and no
+  iOS") and never shows them alone. `new_device` is `true` when B
+  presented no device cookie of this human (§2.6.5); the dialog says
+  "First sign-in from this browser" — a hint for the human, not a
+  check. V1 shows the IP address and no
   location: an approximate location needs a GeoIP database the operator
   would provide, a later revisit that would add a field then (§1.6).
 
@@ -772,23 +787,56 @@ else can read this mailbox: whoever reads it can sign in as you"
 
 **Changing the verified address.** The verified address is a sign-in
 factor, so changing or removing it (`email.address` in #160, §17.4)
-needs a **fresh sign-in**: the calling session must have been created
-within the last 10 minutes, by any method; otherwise the call is
-`forbidden` with `details.reason: reauth_required`, and the dashboard
-asks the human to sign in again and repeats the change. When the new
-address is confirmed, or the address is removed, the **old** address
+needs the human's own confirmation in a form that neither a mailbox nor
+a moment at an unlocked dashboard provides. How a session was made or
+how young it is does not count: a device-code session can be approved
+on an unlocked dashboard, and a mail-link session is fresh by
+definition.
+
+- **A human with a password** enters it in the same request:
+  `current_password` beside `email` in the `PATCH` (#160, §17.4).
+  Missing: `invalid` with `details.fields.current_password: "required"`;
+  wrong: `invalid` with `details.fields.current_password: "mismatch"`,
+  counted against the login limit of §2.1 as a wrong `current` of
+  `POST /auth/password` is. Right: the change goes on as #160 §17.4
+  describes (the new address is verified by its link).
+- **A human without a password** (an account that has never set one)
+  needs the change approved from a session of theirs that is **at
+  least 24 hours old**. A `PATCH` from such a session is that approval
+  and goes on at once. From a younger session the change is held:
+  `202` with `email.address_change: {address, requested_at,
+  session_id}` (the address `null` for a removal), shown with
+  "Approve" and "Reject" in every session of the human that is at
+  least 24 hours old. `POST /me/notification-settings/email/address-change/approve`
+  from such a session lets it go on; from a younger one it is
+  `forbidden` with `details.reason: session_too_new`.
+  `POST …/address-change/reject` (any session of the human) or a new
+  `PATCH` of the address drops it; a held change lapses after 7 days.
+  A human with no session that old waits until one is.
+
+The old address is notified as before: when the new address is
+confirmed, or the address is removed, the **old** address
 gets a `security` mail ("The sign-in address of your Maity account was
 changed to m…@example.net at <time> from <browser> on <os>, <ip>; if
 this was not you, sign in and end your other sessions"), with the new
 address masked to its first character and its domain. This mail is
-sent even though the old address no longer receives notifications.
+sent even though the old address no longer receives notifications, and
+whatever `email.kinds.security.mode` says: `off` silences the alerts of
+new sign-ins, never this notice. The change also writes the account
+record `email_address_changed` (below), which is a `security`
+notification in the dashboard.
 **The mail.** Plain text in the human's `language` (§17.4), with the
 rules of §17.5 for headers and content, minus the unsubscribe parts: a
 sign-in mail is a reply to a request, not a notification, so it ignores
 the human's notification modes, quiet hours and the per-human hourly
-cap. It counts against the instance's budget for security mails
-(`security_max_per_hour`, #160 §16.2), which notification mail cannot
-use up; over that budget it is not sent. Subject `[Maity] Sign-in
+cap. Because anyone can ask for one without signing in, sign-in mails
+have **limits of their own**: per source address (§2.6.4) and an
+instance-wide cap, `sign_in_max_per_hour` (#160 §16.2, default 60);
+over either, the request answers `202` as always and nothing is sent.
+Sign-in mails never count against the budget for security mails or the
+one for notifications, so no number of anonymous requests can delay an
+alert, a verification or the old-address notice — those are queued,
+never dropped (#160 §16.2). Subject `[Maity] Sign-in
 link`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/mail/sign-in/{token}`, valid 15 minutes;
@@ -834,10 +882,13 @@ Valid only in the browser that made the request — the one holding the
 pending cookie of that `POST /auth/email-link` — and only for that
 request's human; it carries no address. Spaces are ignored. A wrong
 code is `code_invalid`; the fifth wrong code voids the code (the link
-stays valid). After 20 wrong mailed codes for one human in a day,
-from any source, mails to that human carry the link only and no code
-until the day ends: the six digits are the only guessable part, and the
-link — signed and 15 minutes long — is not. Right: a fresh session as `POST /auth/login`, 200
+stays valid). The 20th wrong mailed code for one human in a day, from
+any source, voids **every** outstanding mailed code of that human at
+once (their links stay valid), and until the day ends mails to that
+human carry the link only and no code: the six digits are the only
+guessable part, and the link — signed and 15 minutes long — is not. So
+a guess spread over many source addresses, each holding a live code of
+its own, gets at most 20 tries per human per day. Right: a fresh session as `POST /auth/login`, 200
 `{member, next}`; the link is then used too. The code is stored as an
 HMAC with the signing key, never in clear.
 
@@ -847,22 +898,28 @@ HMAC with the signing key, never in clear.
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 40 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
-| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address |
-| `POST /auth/email-code` | 5 wrong codes per mailed code; 10 per minute per source address, shared with the login limit of §2.1 |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
+| `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
 Over a limit: `rate_limited` with `Retry-After` (§1.3). For
-`POST /auth/email-link` the limit is applied as `202` with nothing sent,
-like an unknown address — a `429` there would tell an address that is
-being used from one that is not; only the per-source-address limit
-answers `429`.
+`POST /auth/email-link` the per-address limit and the instance cap are
+applied as `202` with nothing sent, like an unknown address — a `429`
+there would tell an address that is being used from one that is not;
+only the per-source-address limit answers `429`. A caller who spends
+the instance cap delays nobody's alert: it stops sign-in mails for the
+rest of the hour, nothing else, and the device code and the password
+are unaffected.
 
 **No lock-out through the limits.** The per-address limit counts per
 (address, source address), so requests from elsewhere do not spend the
 budget of the human's own network: someone who knows the address can
 fill the mailbox with sign-in mails (at most 10 per day per source
-address they control) but cannot stop the human's own requests, nor
-void the human's link (§2.6.3). The device code, the legitimate path
+address they control) but cannot spend the human's per-address budget
+nor void the human's link (§2.6.3). Whoever controls enough source
+addresses can spend the instance cap and stop sign-in mails for
+everyone until the hour ends — the same accepted kind of denial as the
+device-code breaker above, limited to the mail link. The device code, the legitimate path
 for a human who is signed in anywhere, has no per-address limit at all
 and is never affected by mail limits; the password is not either.
 
@@ -917,6 +974,17 @@ and is never affected by mail limits; the password is not either.
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
 
+**A young session cannot end older ones.** A session younger than 1
+hour cannot end any session of the human that is older than itself:
+`POST /auth/sessions/end-others` from it, and `DELETE
+/auth/sessions/{id}` on an older session, are `forbidden` with
+`details.reason: session_too_new` and end nothing. It may end itself
+(a logout) and sessions younger than itself. So a session obtained
+through a mailbox or a stolen device code cannot end the sessions that
+show the alert of its sign-in before the human has had an hour to see
+it. A password change (§2.1) still ends every other session, since it
+needs the password.
+
 ```json
 { "items": [
   { "id": "hss-41c0", "current": true, "method": "password",
@@ -926,7 +994,7 @@ and is never affected by mail limits; the password is not either.
   { "id": "hss-41c7", "current": false, "method": "device_code",
     "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
     "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
-    "ip": "203.0.113.24", "approved_by": "hss-41c0", "new_device": true,
+    "ip": "203.0.113.24", "approved_by": "hss-41c0",
     "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
     "ended_at": null, "ended_by": null } ] }
 ```
@@ -935,53 +1003,72 @@ and is never affected by mail limits; the password is not either.
 `device_code`, `email_link` or `email_code`. `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
-address and browser the session started from. `new_device` is `true`
-when the browser presented no device cookie of this human at sign-in
-(below). `ended_at` and `ended_by` (`logout`, `revoked`, `end_others`,
-`expired`, `password_change`) are set on an ended session. A session
-of another human is `not_found`. `GET /auth/session` (§2.1) gains
-`session_id`, the current session's `id`.
+address and browser the session started from. `ended_at` and
+`ended_by` (`logout`, `revoked`, `end_others`, `expired`,
+`password_change`) are set on an ended session. A session of another
+human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
+the current session's `id`.
 
-**New device.** At every completed sign-in the hub sets `maity_device`
-(`HttpOnly; Secure; SameSite=Lax; Path=/`, a random 32-byte value
-stored as `sha256` with the human, 400 days, kept on logout) unless
-the browser already holds one of this human. A sign-in from a browser
-that presents no device cookie of this human is a sign-in from a **new
-device**. The cookie authenticates nothing; it only tells a browser
-the human used before from one they did not.
+**The device cookie.** At every completed sign-in the hub sets
+`maity_device` (`HttpOnly; Secure; SameSite=Lax; Path=/`, a random
+32-byte value stored as `sha256` with the human, 400 days, kept on
+logout) unless the browser already holds one of this human; a browser
+shared by two humans holds one value per human. It authenticates
+nothing and has one use only: the device-code approval dialog (§2.6.2)
+says "This browser has signed in to your account before" or "First
+sign-in from this browser" (`device.new_device`). It decides nothing
+about alerts: every mail sign-in is alerted, whatever cookie the
+browser presents (below).
 
 **Telling the human.** Every new session, whichever the method, writes
-`session_created` `{session_id, method, browser, os, ip, approved_by,
-new_device}` as an **account record**: an audit record of the human's
-account, not an event — it belongs to no project, so §8 does not carry
-it and no project member, owner, admin, instance admin or agent reads
-it. Account records are the second source of notifications beside
-events (#160, §17.1: id `acr-<n>` from the instance's account-record
-sequence, kept 90 days, readable by the human alone). The record is
-shown with its session in Profile → Sessions (`created` above), and
-ending a session writes `session_ended` there in the same way. The
-record becomes a notification of the kind `security` (#160, §17.1),
-title `New sign-in: <browser> on <os> (<method>)`, linking to
-Profile → Sessions.
+`session_created` `{session_id, method, browser, os, ip, approved_by}`
+as an **account record**: an audit record of the human's account, not
+an event — it belongs to no project, so §8 does not carry it and no
+project member, owner, admin, instance admin or agent reads it.
+Account records are the second source of notifications beside events
+(#160, §17.1): ids `acr-<n>` from a sequence of their own, never the
+event sequence, so they leave no gap in any project's `/events` from
+which the sign-ins of humans could be timed; kept 90 days, readable by
+the human alone. The record is shown with its session in Profile →
+Sessions (`created` above), and ending a session writes
+`session_ended` there in the same way. `session_created` becomes a
+notification of the kind `security` (#160, §17.1), title `New sign-in:
+<browser> on <os> (<method>)`, linking to Profile → Sessions.
 
 - **In the dashboard** the `security` notification is always there: it
   has no browser or mail switch that hides it from the bell, and it
   counts in `counts.security` (not in `total`).
-- **A mail sign-in from a new device** — method `email_link` or
-  `email_code` with `new_device: true` — is shown in **every other
-  active session** of the human at once, not only in the bell: each
-  open dashboard long-polls the notifications (#160, §17.2) and shows
-  a banner that stays until it is answered: "New sign-in by mail link
-  on a new device: <browser> on <os>, <ip>, <time>", with **End this
-  session** (`DELETE /auth/sessions/{id}`, one click, no confirmation
-  dialog) and **This was me** (marks the item read). A dashboard
-  opened later shows the banner too until the item is read. The item
-  carries the new session's id (`target: {type: "session", id}`); the
-  session it reports on shows no banner, and a `POST
-  /me/notifications/read` made from that session does not mark this
-  item read — only another session of the human can. So a mail
-  sign-in that an agent with mailbox access made cannot be hidden by
-  deleting a mail or from the session it obtained (§2.3).
+- **Who may mark it read.** A `session_created` item is marked read
+  only from a session that **existed before** the sign-in it reports —
+  never from the session it reports on, and never from any session
+  created after it — and only when that earlier session is itself in
+  good standing: signed in by password, or its own `session_created`
+  item already marked read. A `POST /me/notifications/read` from any
+  other session skips the item, through `ids` and `up_to` alike, and
+  marks the rest. So a session obtained through a mailbox can hide
+  neither its own alert nor that of a second session it obtains next
+  (by another mail sign-in, or by a device code it approves). An item
+  that no session may mark read — the human had no session in good
+  standing at the time — stays unread in the bell until its record
+  expires.
+- **Every mail sign-in is an alert** — method `email_link` or
+  `email_code`, whatever device cookie the browser presented. It is
+  shown in **every other session** of the human at once, not only in
+  the bell: each open dashboard long-polls the notifications (#160,
+  §17.2) and shows a banner "New sign-in by mail: <browser> on <os>,
+  <ip>, <time>" with **End this session** (`DELETE
+  /auth/sessions/{id}`, one click, no confirmation dialog; it also ends
+  every session the reported one approved by device code, and those
+  approved by them in turn) and, in a session that may mark the item
+  read (above), **This was me**. The banner stays while the item is
+  unread and the reported session, or a session it approved, is still
+  active; a dashboard opened later shows it too. The item carries the
+  new session's id (`target: {type: "session", id}`); the session it
+  reports on shows no banner. So a mail sign-in that an agent with
+  mailbox access made cannot be hidden by deleting a mail, from the
+  session it obtained, or from a session it obtains next (§2.3); and
+  for its first hour that session cannot end the sessions that show
+  the banner (above).
 - **By mail** it goes to the human's verified address, `immediate` by
   default; `email.kinds.security.mode` (#160, §17.4) is `immediate` or
   `off` — no digest, since a delayed alert is no alert — and quiet
@@ -992,7 +1079,8 @@ Profile → Sessions.
   without a verified address, or an instance without mail, gets the
   dashboard notification only. The mail counts against the security
   budget (`security_max_per_hour`, #160 §16.2), not against the
-  notification budget.
+  notification budget or the sign-in mail cap; over the budget it is
+  queued for the next hour, never dropped.
 
 `session_ended` is not notified.
 
@@ -1051,12 +1139,18 @@ event; the accounts design's instance audit log records it (pending).
   default button, and there is no plain "Approve".
 - **Profile → Sessions.** The list of §2.6.5 with "End" per session,
   "End all other sessions", and the ended sessions of the last 30 days.
-- **The new-device banner** of §2.6.5 in every other open session.
+- **The mail sign-in banner** of §2.6.5 in every other open session,
+  with "This was me" only where that session may mark it read.
 - **Notification settings** (#160, §17.8) gain the `security` mail switch
   and "Allow sign-in links by mail" (`email.sign_in_link`), with the
   mailbox warning of §2.6.3.
-- **Changing the address** asks for a fresh sign-in when the session is
-  older than 10 minutes (§2.6.3).
+- **Changing the address** asks for the password in the same form; for
+  a human without one it says the change waits for approval from a
+  session at least 24 hours old, and such sessions show the held change
+  with "Approve" and "Reject" (§2.6.3).
+- **Ending sessions** from a session younger than 1 hour: "End" on an
+  older session and "End all other sessions" are disabled, with "This
+  session is too new to end older ones" (§2.6.5).
 
 ## 3. Join
 
@@ -3197,8 +3291,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/auth/email-link`, `/auth/email-code` | — (`email-code`: the pending cookie) | 2.6.3 |
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
-| DELETE | `/auth/sessions/{id}` | human, own sessions | 2.6.5 |
-| POST | `/auth/sessions/end-others` | human | 2.6.5 |
+| DELETE | `/auth/sessions/{id}` | human, own sessions; an older one not from a session younger than 1 hour | 2.6.5 |
+| POST | `/auth/sessions/end-others` | human; not from a session younger than 1 hour | 2.6.5 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old | 2.6.3 |
+| POST | `/me/notification-settings/email/address-change/reject` | human | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
