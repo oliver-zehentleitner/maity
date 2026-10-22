@@ -51,7 +51,8 @@ class of request.
 
 **Id:** cd93203d-f56f-4860-8cc8-7564db18ae7e
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 22e17362-56cb-4bf7-94fa-c245119e6eac
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.6 and the runner design's open question 3, 2026-10-22; the hub review of PR #111
 
@@ -69,3 +70,34 @@ again at the `go` whether the runner and the spec are still allowed.
 discussion: only the runner's owner may give a placement's go.
 
 **Revisit when:** the maintainer answers the design's question 3.
+
+## A placement's consent needs a human unless the project says otherwise
+
+**Id:** 22e17362-56cb-4bf7-94fa-c245119e6eac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.1 and §15.6 (contract #137), 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-10-22
+
+`policy.spawn_consent_by` decides who answers a placement's consent
+request. Under `human` (the default, and what every project made before it
+gets) only a human holding `requests:answer` does; an agent's answer is
+`forbidden` with `details.reason: humans_only`, checked before
+`self_answer`, and the request is left out of the agent's `to_answer`.
+Under `role` the rule of every other consent request applies: any holder of
+`requests:answer`, agents included, never the proposer. Only a human sets
+the field, and a preset change keeps it.
+
+**Reason:** the maintainer's decision: starting an agent spends compute and
+model budget, so a human gives the go unless the project's admins agree
+otherwise. `humans_only` first because under `human` no agent may answer at
+all; `self_answer` would name a narrower reason than the real one. Kept on
+a preset change like `signing` and `spawn_requests`, the fields that govern
+what humans decide: a preset must not loosen it in passing. The contract
+does not list it among the kept fields; this is the hub's reading.
+
+**Rejected alternative:** only the runner's owner gives the go (the open
+question this replaces). Not chosen by the maintainer; the policy names a
+class of answerer, not one person.
+
