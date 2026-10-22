@@ -3217,19 +3217,25 @@ one redaction that needs `members:admin` rather than `events:admin`. A
 blind redaction answers `200` with `{"seq": …, "redacted": true}` only,
 never the event: its `actor` and `audience` would tell the admin who
 wrote in the chat and who was in it, which it could not read before.
-Because the admin cannot see what the number names, the body may carry
-`"expect": "closed_chat_message"`: the hub then redacts only when `seq`
-is a message of a closed group chat of `{slug}`, and answers anything
-else with `invalid` (`details.fields.expect: "mismatch"`) and changes
-nothing, so a mistyped number never tombstones another event. A client
-that offers redaction by number always sends it.
 Its `event_redacted` then goes
 to the remaining participants, every former human participant and, for
 an admin's redaction, that admin. When an admin redacted, the `reason`,
 in the tombstone and in the event, is shown only to that admin and the
 chat's former human participants; everyone else who reads the message
 (the remaining agents, the owners reading along) sees `reason: null`.
-Agents and observers stay as above. Replaces `payload` with
+Agents and observers stay as above.
+Because the admin cannot see what the number names, the body may carry
+`"expect": "closed_chat_message"`. The hub first runs every check of
+this section as without `expect`: `not_found` unless the event belongs to
+`{slug}` and the caller could read or blind-redact it, `forbidden` where
+this section says so. Only an event the caller could otherwise redact is
+compared with `expect`: a message of a closed group chat of `{slug}` is
+redacted; any other answers `invalid` (`details.fields.expect:
+"mismatch"`) and changes nothing, so a mistyped number never tombstones
+another event. `mismatch` therefore answers only a caller who could have
+redacted that event anyway, and `expect` never tells anyone who could not
+redact it whether a `seq` is a closed-chat message. A client that offers
+redaction by number always sends it. A redaction replaces `payload` with
 `{"redacted": true, "reason": "…", "by": "…", "at": "…"}` and sets
 `redacted: true`; `seq`, `kind`, `actor`, `subject`, `audience` stay, and
 the hub emits `event_redacted` so that the one mutation the log allows is
@@ -3736,12 +3742,20 @@ Message shape:
 ```json
 { "id": "evt-4237", "seq": 4237, "conversation_id": "agt-a", "from": "hum-maintainer", "to": "agt-a",
   "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z",
-  "mentions": [], "attachments": [] }
+  "mentions": [], "attachments": [], "redacted": false, "redaction": null }
 ```
 
 `mentions` is always `[]`: a `@handle` in a chat is plain text, never
 resolved, never a ping, and never widens the two-party audience (§8.6).
 `attachments` is the metadata of §8.7, readable by the same two.
+
+A redacted message (§8.5) keeps its place with `body: null`,
+`mentions: []`, `attachments: []` (redaction deletes their bytes and
+tombstones them, §8.7), `redacted: true` (as in the list preview, §9.3)
+and `redaction: {"at": "…", "by": "<member id>", "reason": "…"|null}`,
+`reason` shown as §8.5 allows the reader. An unredacted message has
+`redacted: false` and `redaction: null`. Group chats (§9.2) use the same
+shape.
 
 `last_message` in the list is the conversation's newest message as a
 preview, or `null` when there is none:
@@ -3790,7 +3804,7 @@ request (§7) always points here.
 | `PATCH /projects/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
 | `POST /projects/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id}`; `200` with the conversation; emits `conversation_updated` |
 | `DELETE /projects/{slug}/conversations/{id}/participants/{member_id}` | as `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
-| `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below |
+| `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below; a redacted message keeps its place as in §9.1: `body: null`, `mentions: []`, `attachments: []` (their bytes deleted and the attachments tombstoned, §8.7), `redacted: true` and its `redaction` |
 | `POST /projects/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body, attachments?}` (§8.7); `201` with the message |
 
 The conversation view:
@@ -3955,7 +3969,7 @@ read receipts are not modelled):
 { "id": "evt-5020", "seq": 5020, "conversation_id": "cnv-0007", "from": "hum-maintainer", "to": "cnv-0007",
   "body": "@agent-a can we tag today?", "sent_at": "2026-10-21T13:30:00Z",
   "mentions": [ { "member_id": "agt-a", "handle": "agent-a", "field": "body", "offset": 0, "length": 8 } ],
-  "attachments": [] }
+  "attachments": [], "redacted": false, "redaction": null }
 ```
 
 `attachments` is the metadata of §8.7, readable by whoever reads the
