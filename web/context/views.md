@@ -157,8 +157,13 @@ change: role (owner only for a human), reports to (nobody or another
 member), areas (repository paths, the hub's pattern, never `..`),
 capabilities (`tag`). The briefing has one editor, on the agent's card,
 and is sent as typed. Save sends one `PATCH` with only the fields that
-changed; edits not yet saved are kept per row across redraws, and a 202
-(a consent request, when a human's go is needed) is said as waiting. A
+changed; edits not yet saved are kept per row across redraws (Done drops
+them), and a 202 (a consent request, when a human's go is needed) is said
+as waiting, the draft dropped and the form drawn from the hub's state, so a
+second Save files no second request. A drafted boss who has left the
+project since is dropped and said at the field: a select that silently
+fell back to "nobody" would send `reports_to: null` and clear the boss the
+member has. A
 reports-to that would close a circle is refused before sending, in the
 words the hub's `cycle` refusal also gets. Capabilities the page does not
 offer are kept as they are.
