@@ -82,7 +82,7 @@ def test_lists_cost_the_same_for_3_rows_and_for_30(
     agents = [factory.agent(migrated, project_id, owner.id)]
     resumer = make_client()
     bearer = {"Authorization": f"Bearer {agents[0].value}"}
-    calls = {
+    calls: dict[str, Callable[[], Any]] = {
         "tasks": lambda: owner.get("/projects/maity/tasks?status=all&limit=200"),
         "events": lambda: owner.get("/projects/maity/events?after=0&limit=200"),
         "members": lambda: owner.get("/projects/maity/members"),
