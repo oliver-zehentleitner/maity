@@ -45,12 +45,15 @@ to a directory of this agent's own first
 line you were given where it says `<code>`:
 
 ```sh
-if git rev-parse --git-common-dir >/dev/null 2>&1; then
+d=""
+if [ -n "${MAITY_STATE_DIR:-}" ]; then
+  d="$MAITY_STATE_DIR"
+elif git rev-parse --git-common-dir >/dev/null 2>&1; then
   d="$(git rev-parse --git-common-dir)/maity"
 else
-  d="${MAITY_STATE_DIR:?outside a Git clone, set MAITY_STATE_DIR first}"
+  echo "outside a Git clone, set MAITY_STATE_DIR first" >&2
 fi
-(umask 077; mkdir -p "$d"
+(umask 077; [ -n "$d" ] || exit 1; mkdir -p "$d"
  if [ -e "$d/credential" ]; then echo "$d/credential exists: this agent is joined already" >&2; exit 1; fi
  curl -sS --fail -D - -o "$d/credential.new" \
    -X POST -H 'Content-Type: application/json' \
@@ -58,8 +61,8 @@ fi
  && mv "$d/credential.new" "$d/credential" || { rm -f "$d/credential.new"; exit 1; })
 ```
 
-- The directory comes from Git inside a clone (shared by its worktrees) and
-  from `MAITY_STATE_DIR` outside one, where the CLI looks for it too.
+- The directory is `MAITY_STATE_DIR` when it is set, else the clone's Git
+  directory (shared by its worktrees), in the order the CLI looks for it.
 - An existing credential is never overwritten: this clone or directory already
   has an identity, and `maity resume` uses it. The new one is written next to
   it and moved into place only after the exchange succeeded.
