@@ -46,7 +46,10 @@ audience, so the read rule is the message's and cannot drift from it.
 Keeping the bytes out of the database keeps it small and portable
 across its engines at a gigabyte per project, and serving only through
 the hub keeps the read rule on every request. Archiving is a state a
-project leaves again, so it keeps the files its messages still show.
+project leaves again, so it keeps the files its messages still show;
+an archived project is still read-only for every write, so an upload
+there is refused like any other write — keeping the bytes does not make
+the project writable.
 
 **Rejected alternatives:**
 - Multipart upload: a second exposed parser (boundaries, part headers,
