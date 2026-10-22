@@ -539,6 +539,13 @@ window.Maity = window.Maity || {};
         if (first) first.focus();
       }
     }
+    // Views open the panel too (the overview's Set the repository), at the
+    // repository field where the panel has one.
+    ctx.openSettings = mayConfigure ? () => {
+      if (!panelOpen) togglePanel();
+      const repo = document.getElementById("repo-url");
+      if (repo) repo.focus();
+    } : null;
     // Settings: this project's (with the rights for it) and the hub's.
     const settings = M.menuButton({
       label: "Settings",

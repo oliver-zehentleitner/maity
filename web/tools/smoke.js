@@ -2108,6 +2108,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ovPart("overview-board")).includes("No cards yet.") && text(ovPart("overview-requests")).includes("Nothing waits for an answer.")
     && text(ovPart("overview-links")).includes("No repository.") && text(ovPart("overview-links")).includes("No Keep the Why dashboard is published.")
     && text(ovPart("overview-links")).includes("dashboard-state line"), "overview: empty states, and for an owner where the Keep the Why link comes from");
+  btn(ovPart("overview-links"), "Set the repository").click(); await tick();
+  expect(header.all().some((e) => e.id === "project-panel"), "overview: Set the repository opens Project settings");
   const badPr = ovPart("overview-reports").querySelector("li");
   expect(!badPr.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").startsWith("javascript")) && text(badPr).includes("PR #9 merged")
     && text(badPr).includes("does not match what was reported"), "overview: a pull request URL that is no https link stays text; a mismatch is said");

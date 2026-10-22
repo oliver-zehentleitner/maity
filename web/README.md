@@ -270,8 +270,9 @@ Inside a project, in the order of their importance; see
    come from `GET …/overview`, which is read again on `task_*`,
    `request_*` and `probe_observed` and redrawn in place, with no Reload.
    Each part has its empty state. Without a repository or a published
-   dashboard, an owner or admin is told where each one comes from: the
-   dashboard cannot set the repository yet. A hub without the endpoint
+   dashboard, an owner or admin gets **Set the repository** (it opens
+   Project settings at the repository) and is told where the Keep the Why
+   link comes from. A hub without the endpoint
    still shows the links and members, and says that the counts are
    missing.
 

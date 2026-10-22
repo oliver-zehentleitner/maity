@@ -33,7 +33,7 @@ window.Maity = window.Maity || {};
     const exp = p.keep_the_why_export;
     const rows = [h("dt", null, "Repository"),
       h("dd", null, repo ? out(repo, repo) : "No repository.",
-        !repo && admin ? h("span", { class: "muted" }, " The hub takes it as the project's repository (PATCH /projects); this page cannot set it yet.") : null)];
+        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
     rows.push(h("dt", null, "Keep the Why"));
     if (!exp) {
       rows.push(h("dd", null, "No Keep the Why dashboard is published.",
