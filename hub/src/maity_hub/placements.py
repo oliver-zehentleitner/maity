@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, events
 from maity_hub import tables as t
@@ -477,18 +478,22 @@ def create(
 ) -> Any:
     placement_id = new_id("placement")
     now = clock.now()
-    conn.execute(
-        insert(t.placement).values(
-            id=placement_id,
-            generation=1,
-            rejoin=False,
-            reported_seq=0,
-            created_at=now,
-            updated_at=now,
-            active=True,
-            **values,
-        )
-    )
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.placement).values(
+                    id=placement_id,
+                    generation=1,
+                    rejoin=False,
+                    reported_seq=0,
+                    created_at=now,
+                    updated_at=now,
+                    active=True,
+                    **values,
+                )
+            )
+    except IntegrityError:  # the checks passed, a concurrent placement got there first
+        raise Refusal(409, "placement_exists", "an active placement holds this") from None
     announce(conn, placement_id, "placement_created", actor, reason)
     return row(conn, placement_id)
 

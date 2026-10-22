@@ -18,7 +18,7 @@ that need the maintainer are marked **[maintainer]**.
 ## Agent B (`hub/`)
 
 - Signed requests spend their nonce before the authentication transaction, which `retrying` may run again: a deadlock or serialisation failure during authentication turns the retry into `nonce_reused` (seen in the #92 review). Spend the nonce only after the transaction committed, or make the retry keep it.
-- Runner slices after H2 (`docs/api.md` §15): H3 placements, H4 the join pickup, H5 proposals and consent, H6 supervised sessions.
+- Runner slices after H3 (`docs/api.md` §15): H4 the join pickup, H6 supervised sessions (H5, proposals and consent, came with H3).
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
 - Dependency update automation for `hub/requirements/`: Renovate or Dependabot on the uv-compiled files. Advisories are caught by the `audit` workflow; the bump itself is still manual (`make lock-upgrade PACKAGE=<name>`, hub/README.md "Dependencies").

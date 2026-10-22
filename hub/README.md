@@ -13,8 +13,10 @@ cross-project inbox, events with the long-poll, messages and conversations
 are in, and release and contract cards with their checklist, and the
 forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
 signed-only caller confined to `/runner/*`, the owner's runner calls,
-attaching runners to projects, and the runner's hello, event stream and
-capabilities are in; placements and the join pickup follow.
+attaching runners to projects, the runner's hello, event stream and
+capabilities, and placements (desired and reported state, agents'
+proposals with consent, the closing rules) are in; the join pickup and
+supervised sessions follow.
 
 ## Run it locally with plain Python
 

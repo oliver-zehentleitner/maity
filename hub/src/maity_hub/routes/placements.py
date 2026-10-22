@@ -259,17 +259,15 @@ def create_placement(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         project = events.lock_project(conn, mine.project.id)
+        mine.require("members:admin" if mine.kind == "human" else "agents:propose")
         runner = _runner(conn, body.runner)
-        right = _has_right(mine, runner)
-        if not right:
-            if mine.kind == "human":
-                mine.require("members:admin")
-                raise forbidden(message="only the runner's owner places agents on it")
-            mine.require("agents:propose")
-            if project.spawn_requests == "off":
-                raise forbidden(message="this project takes no placement proposals")
         if runner is None or active_attachment(conn, project.id, runner.id) is None:
             raise ApiError(409, "runner_not_attached", "the runner is not attached here")
+        right = _has_right(mine, runner)
+        if mine.kind == "human" and not right:
+            raise forbidden(message="only the runner's owner places agents on it")
+        if not right and project.spawn_requests == "off":
+            raise forbidden(message="this project takes no placement proposals")
         if not right and not body.reason:
             raise invalid({"reason": "required"}, "a proposal says why")
         if project.state in REASON_STATES and not body.reason:
@@ -322,7 +320,10 @@ def create_placement(
             "proposed_by": None if right else mine.id,
         }
         actor = caller.actor(mine.id)
-        placement = pl.create(conn, values, actor, None if right or proposed else body.reason)
+        try:
+            placement = pl.create(conn, values, actor, None if right or proposed else body.reason)
+        except pl.Refusal as refusal:
+            raise _refused(refusal) from None
         if proposed:
             _file(conn, mine, caller, placement, runner, "Start", body.reason, spec)
         return idempotency.Outcome(201, "placement", placement.id, _view(conn, mine, placement))
