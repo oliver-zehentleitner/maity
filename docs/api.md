@@ -27,7 +27,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
   the join exchange response (`text/plain`) and a project's logo and
-  banner (an image, §11.2). The HTML rendering of the
+  banner (an image, read and uploaded, §11.2). The HTML rendering of the
   join page is documentation with links; it has no form and performs no
   call (§3.2).
 - Timestamps are RFC 3339 in UTC with a `Z` suffix and second precision:
@@ -43,7 +43,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The one exception to `no-store` is the logo and
-  banner (§11.2), which are revalidated by `ETag`. The hub serves no third-party script: the
+  banner (§11.2), which are revalidated by `ETag`. The hub serves no
+  third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/j/{token}`,
@@ -122,12 +123,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
-| 409 | `ktw_not_configured` | the project names no Keep the Why export: no `settings.keep_the_why.state_url`, and the repository has no `.keep-the-why` or no `dashboard-state:` line in it (§11.3) |
+| 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
-| 503 | `ktw_unavailable` | the Keep the Why export could not be read or was refused (§11.3); `details.reason`, `details.last` holds the last good answer if any |
+| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
@@ -188,7 +189,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB |
+| Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2) |
 | `title` fields | 200 characters |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
@@ -353,7 +354,7 @@ below names the scope it needs; the role grants scopes:
 | Scope | owner | admin | proxy | reviewer | member |
 |---|---|---|---|---|---|
 | `project:read` — read the project, members, tasks, events in my audience, probe | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `project:admin` — state, policy, rules text, settings, repository (human memberships only) | ✓ | ✓ʰ | | | |
+| `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only) | ✓ | ✓ʰ | | | |
 | `members:admin` — joins, roles, areas, capabilities, pause, remove members (human memberships only) | ✓ | ✓ʰ | | | |
 | `tasks:write` — create, claim, checkpoint, report, edges on own cards | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `tasks:review` — move a card from `review` to `done` when the policy says reviewer | ✓ | ✓ | | ✓ | |
@@ -821,17 +822,31 @@ declaration only and refuses nothing.
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true },
-  "logo": { "available": true, "banner": false, "etag": "\"9f2c41d0\"" },
+  "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
+  "banner": { "available": false, "source": null },
   "keep_the_why": true,
   "keep_the_why_export": {
-    "source": "repository",
-    "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
-    "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
     "observed_at": "2026-10-22T11:40:00Z",
-    "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
-                 "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+    "summary": { "members": 4, "failed": 0, "entries": 57,
+                 "status": { "active": 55, "open": 2, "needs-review": 0, "pending-confirmation": 0,
                              "superseded": 0, "other": 0 },
-                 "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
+                 "attention": 2, "findings": { "errors": 0, "warnings": 0 } },
+    "members": [
+      { "path": "", "id": "oliver-zehentleitner---maity", "name": null,
+        "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+        "observed_at": "2026-10-22T11:40:00Z",
+        "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
+                     "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+                                 "superseded": 0, "other": 0 },
+                     "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
+        "error": null },
+      { "path": "hub", "id": "oliver-zehentleitner---maity---hub", "name": "hub",
+        "state_url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/hub/",
+        "observed_at": "2026-10-22T11:40:01Z", "summary": { "…": "…" }, "error": null }
+    ],
+    "family_truncated": false,
     "error": null
   },
   "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
@@ -839,8 +854,7 @@ declaration only and refuses nothing.
               "lease_seconds": 7200 },
   "absence": null,
   "settings": { "release_checklist": ["CHANGELOG has a section for this version",
-                                       "live version equals the tag"],
-                "keep_the_why": { "state_url": null } },
+                                       "live version equals the tag"] },
   "rules_version": 7,
   "created_at": "2026-10-21T07:50:00Z"
 }
@@ -854,37 +868,44 @@ declaration only and refuses nothing.
 | `PATCH /projects/{slug}` | `project:admin`; `absence` only by the owner | any of `name`, `repository`, `keep_the_why`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; `reason` required when `state` or `policy` changes |
 | `GET /projects/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and role brief for the caller |
 | `GET /projects/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
-| `GET /projects/{slug}/keep-the-why` | `project:read` | the export's summary and the entries that need attention (§11.3) |
+| `PUT /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
+| `DELETE /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
+| `GET /projects/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
 `probe_configured` says whether the hub holds a token for that forge.
 One repository per project in V1.
 
-**Logo** says what the dashboard may ask for instead of drawing a
-monogram: `available` — `GET …/logo` has an image, `banner` — `GET
-…/banner` has one, `etag` — the logo's current `ETag` (absent when
-`available` is false), so a changed image is a new URL for the browser's
-cache (`…/logo?v=<etag>`, the hub ignores the parameter). Both are
-`false` until the hub's first read has an answer. Where the images come
-from and how they are fetched is §11.2.
+**Logo** and **banner** say what the dashboard may ask for instead of
+drawing a monogram: `available` — `GET …/logo` (`…/banner`) has an
+image; `source` — `uploaded` (a project admin's upload), `forge` (the
+repository's image) or `null` (none); `etag` — the image's current
+`ETag` (absent when `available` is false), so a changed image is a new
+URL for the browser's cache (`…/logo?v=<etag>`, the hub ignores the
+parameter). Without an upload both are `false`/`null` until the hub's
+first forge read has an answer. Where the images come from, the upload
+and the precedence are §11.2.
 
 **Keep the Why export** is the project's published Keep the Why
-dashboard state as the hub last read it (§11.3); `null` when the project
-names none (the `ktw_not_configured` case). `source` is `setting` when
-`settings.keep_the_why.state_url` is set, `repository` when the URL came
-from the repository's `.keep-the-why`. `error` is `null` or
-`{code, reason}` (`ktw_unavailable`, §11.3) — the project view itself
-never fails on the export; `summary` then holds the last good read, or is
+dashboard state as the hub last read it (§11.3) — the whole family: the
+repository's root `.keep-the-why` and every child its `children` block
+names, recursively. `null` when the project has none (the
+`ktw_not_configured` case: no repository, no root `.keep-the-why`, or no
+`dashboard-state:` line in it). The URL comes from the repository only;
+there is no setting that overrides it — the repository is the single
+source of truth, as in Keep the Why itself. `members` holds one object
+per family member in the order of §11.3 (`path` `""` for the root);
+`summary` adds up the members' summaries (`members` read, `failed` with
+an `error`). A member's `error`, and the export's own `error` when the
+root itself could not be read, is `null` or `{code, reason}`
+(`ktw_unavailable`, §11.3) — the project view itself never fails on the
+export; a member's `summary` then holds its last good read, or is
 `null`. It is independent of `keep_the_why` (whether joining agents are
 told to use the skill): a project may show the export of a Keep the Why
 it does not ask its agents to maintain.
 
-**Settings**: `release_checklist` (§6.7) and `keep_the_why.state_url` —
-`null` (read the URL from the repository) or an `https` URL that
-overrides it, at most 2048 characters, a host name (no address literal),
-no user info, no port other than 443, otherwise `invalid`. Changing it
-drops the cached export.
+**Settings**: `release_checklist` (§6.7).
 
 **State** is one of `build`, `freeze`, `fixes-only`, `accepted`,
 `archived`; any transition is allowed with a `reason`. It is in every
@@ -1429,6 +1450,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
@@ -1694,15 +1716,26 @@ the reads whose host comes from data.
 ### 11.2 Logo and banner
 
 ```
-GET /projects/{slug}/logo
-GET /projects/{slug}/banner
+GET    /projects/{slug}/logo        GET    /projects/{slug}/banner
+PUT    /projects/{slug}/logo        PUT    /projects/{slug}/banner
+DELETE /projects/{slug}/logo        DELETE /projects/{slug}/banner
 ```
 
-Scope `project:read`. The dashboard shows each project with its own image
-in place of Maity's logo. The hub reads the image server-side through the
-forge reader and serves it from its own origin; the browser never loads
-an image from the forge. The project view says whether there is one
-(`logo`, §6.1).
+`GET` is scope `project:read`. The dashboard shows each project with its
+own image in place of Maity's logo. There are two sources, and the first
+that has an image wins:
+
+1. **uploaded** — an image a human with `project:admin` uploaded (below);
+2. **forge** — the repository's image, read server-side through the
+   forge reader;
+3. none — `not_found`; the dashboard draws the monogram.
+
+The logo and the banner are independent: a project may upload a logo and
+keep the forge's banner. The hub serves either from its own origin; the
+browser never loads an image from the forge. The project view says which
+applies (`logo`, `banner`, §6.1).
+
+**From the forge.**
 
 | Forge | Square logo | Banner |
 |---|---|---|
@@ -1739,16 +1772,55 @@ matching `If-None-Match` is `304` without a body. The hub keeps an image
 for 6 hours and then reads it again; a failed refresh keeps the last
 image, an answer that there is none drops it.
 
-Errors: `not_found` when there is no image — no repository, nothing at
-the forge, an image the rules above refuse (the dashboard then draws a
-monogram; that is the client's, not the hub's); `probe_unavailable` when
-the forge did not answer and the hub holds no earlier image.
+The forge image stays a cached read as written: the hub buffers it, keeps
+it for 6 hours and then reads it again, never streams it through.
+
+**Uploaded.** `PUT …/logo` (`…/banner`) with the raw image as the body —
+no JSON, no multipart — and `Content-Type: image/png`, `image/jpeg` or
+`image/webp`. Human only: a cookie session with `X-CSRF-Token` (§2.1)
+and `project:admin`; an agent credential, whatever its scopes, is
+`forbidden`. The same acceptance rules as for the forge apply to the
+body: the type is sniffed from the magic bytes, and the declared
+`Content-Type` must name the sniffed type; SVG and every other type is
+refused; at most 1 MiB (the body cap of §1.7 does not apply to this
+call). The hub neither decodes nor re-encodes the image, so it checks no
+pixel dimensions. It stores the bytes, the sniffed type and the `ETag`
+(a digest of the bytes) in its database — a small table keyed by
+project and kind (`logo`, `banner`), the bytes as a binary column
+portable across the supported engines — and serves them with the
+headers above. An upload replaces the previous one. The answer is `200`
+with `{"logo": {available, source, etag}}` (or `banner`), the shape of
+the project view.
+
+`DELETE …/logo` (`…/banner`) removes the upload; the forge's image applies
+again (or none). `200` with the same shape; deleting where nothing was
+uploaded is `200` as well (§1.5: `DELETE` is idempotent by itself).
+
+`Idempotency-Key` as for every other state-changing call (§1.5): optional
+for the cookie session; a repeat with the same key and the same body
+replays, a different body is `idempotency_mismatch`.
+
+Every change of what the project shows — an upload, a delete, a forge
+refresh that changes the image while the forge is the source — emits
+`project_updated` (§8.2) with `fields.logo` or `fields.banner`:
+`{available, source, etag}`, never the image bytes.
+
+Errors, `GET`: `not_found` when there is no image — no upload, and no
+repository, nothing at the forge or an image the rules above refuse (the
+dashboard then draws a monogram; that is the client's, not the hub's);
+`probe_unavailable` when the forge did not answer and the hub holds no
+earlier image. `PUT`: `invalid` with `details.fields.body` one of
+`unsupported_type` (not PNG, JPEG or WebP by its bytes, or a
+`Content-Type` that does not name the sniffed type) and `too_large`
+(over 1 MiB); `forbidden` for an agent or without `project:admin`;
+`csrf_mismatch`.
 
 ### 11.3 The Keep the Why export
 
 ```
 GET /projects/{slug}/keep-the-why
 GET /projects/{slug}/keep-the-why?max_age=0
+GET /projects/{slug}/keep-the-why?member=hub
 ```
 
 Scope `project:read`. The project's published Keep the Why dashboard
@@ -1757,32 +1829,78 @@ publishes and never reads or writes `context/` (`context/scope.md`: Keep
 the Why stays external). It holds the export in memory only, never in
 its database, and keeps no copy of the entries beyond the cache below.
 
-**Where the URL comes from.** `settings.keep_the_why.state_url` when set
-(§6.1, `project:admin`); otherwise the `dashboard-state:` line inside the
-`keep-the-why:config` block of the repository's root `.keep-the-why` on
-the default branch, read through the forge's contents API
-(`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with the
-token where the hub holds one, without it where the forge allows (a
-public repository), at most 64 KiB. Neither present: `ktw_not_configured`.
-A URL from the repository must pass the same checks as the setting
-(§6.1), else `ktw_unavailable` with reason `state_url_invalid`.
+**Where the URL comes from — the repository only.** The `dashboard-state:`
+line inside the `keep-the-why:config` block of the repository's root
+`.keep-the-why` on the default branch, read through the forge's contents
+API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
+the token where the hub holds one, without it where the forge allows (a
+public repository), at most 64 KiB. There is no project setting that
+names or overrides the URL: the repository is the single source of truth,
+as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
+`dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
+`https`, at most 2048 characters, name a host (no address literal), carry
+no user info and no port other than 443, else that member's
+`ktw_unavailable` with reason `state_url_invalid`.
 
-**The read.** The transport rule of §11.1, at most 1 MiB,
-`Accept: application/json`. The `.keep-the-why` line and the export are
-cached for `max_age` seconds (default 600; `0` forces a fresh read, at
-most one per project every 30 seconds — a closer one answers from the
-cache with `fresh: false`). A failed read keeps the last good answer for
-`details.last` until the hub restarts.
+**The family.** A `.keep-the-why` may carry a `keep-the-why:children`
+block, one child per line:
 
-**What the hub relies on.** Unknown keys are ignored, at every level;
-`bodies`, `authors`, `project`, each entry's `git`, `refs`, `see` and the
-rest are never read.
+```markdown
+<!-- keep-the-why:children -->
+- hub: hub — the server: API, persistence, events, …
+- cli: cli — the agent-side command `maity` …
+<!-- /keep-the-why:children -->
+```
+
+Each line is `- <name>: <location> — <scope>`. The hub reads the whole
+family from the root down and treats every value as untrusted data (the
+skill's own rule for path-form family locations):
+
+- Only a **directory** location is followed: a relative path inside the
+  repository, resolved against the directory of the `.keep-the-why` that
+  lists it — segments of letters, digits, `.`, `_`, `-`, joined by `/`;
+  never empty, never `.` or `..` as a segment, never absolute, never a
+  backslash, never a URL. A URL location (a child in another repository)
+  is a name, not a read: it is not followed and appears as a member with
+  reason `location_not_followed`, like a location that breaks the rule
+  above. Because a location never climbs, every child lies below its
+  parent and the family cannot loop; a path listed twice is read once.
+- For each child the hub reads `<path>/.keep-the-why` through the same
+  contents API (at most 64 KiB) and that file's own `dashboard-state:`
+  line, then its `state.json` under the same rules as the root; its own
+  `children` block is followed the same way.
+- Caps: depth at most 4 below the root, at most 32 members including the
+  root. A child past either cap is not read; the answer carries
+  `family_truncated: true`.
+- A member that fails fails alone: it is listed with its `error` (and its
+  last good `summary` when there is one), the others are served. Only a
+  failure of the root `.keep-the-why` read fails the whole export.
+
+A member is `{path, id, name, state_url, dashboard_url, observed_at,
+summary, error}`: `path` is its directory inside the repository (`""`
+for the root); `id` is the `id:` line of its config block (`null` when
+absent; cut at 200 characters); `name` is the `<name>` its parent's block
+gives it (`null` for the root). Members are listed depth-first in the
+order of the blocks, the root first.
+
+**The read.** The transport rule of §11.1 for every read, each
+`state.json` at most 1 MiB, `Accept: application/json`; at most 4 reads
+of one project's family in flight at once. The `.keep-the-why` files and
+the exports are cached together for `max_age` seconds (default 600; `0`
+forces a fresh read of the whole family, at most one per project every
+30 seconds — a closer one answers from the cache with `fresh: false`).
+A failed read keeps the member's last good answer until the hub restarts.
+
+**What the hub relies on**, per export. Unknown keys are ignored, at
+every level; `bodies`, `authors`, `project` (the hub takes the family
+from the `.keep-the-why` files, not from the export), each entry's `git`,
+`refs`, `see` and the rest are never read.
 
 | Key | Used as | Missing or wrong |
 |---|---|---|
-| `state-json` | the export's version: an integer, or a string whose part before the first `.` is one; the hub knows major `2` | `ktw_unavailable`, reason `state_json_version`, `details.version` |
+| `state-json` | the export's version: an integer, or a string whose part before the first `.` is one; the hub knows major `2` | that member's `ktw_unavailable`, reason `state_json_version`, `details.version` |
 | `generated` | `summary.generated` when it is an RFC 3339 time | `null` |
-| `entries` | an array of objects | `ktw_unavailable`, reason `shape` |
+| `entries` | an array of objects | that member's `ktw_unavailable`, reason `shape` |
 | `entries[].id` | a string; the entry's identity | the entry is skipped and counted in `skipped` |
 | `entries[].uuid` | a string; preferred for the link | the link uses `id` |
 | `entries[].title` | a string | `id` |
@@ -1792,48 +1910,81 @@ rest are never read.
 | `topics[].file`, `topics[].title` | the topic title of an entry's file | `topic: null` |
 | `findings.errors`, `findings.warnings` | the linter's counts, integers ≥ 0 | `null` |
 
-**Untrusted strings.** Everything from the export is data from outside
-the hub: control characters are removed, `id` is cut at 300 characters,
-`uuid` at 64, `title`, `file` and `topic` at 200, each `type` at 40 and
-the list at 8, a cut string ends in `…`. The hub answers JSON only and
-the dashboard renders these strings as text (`web/context/rendering.md`),
-never as HTML. The hub takes no URL from the export: `dashboard_url` is
-the state URL without its last path segment, query and fragment, and an
-entry's `link` is `dashboard_url` + `#entry/` + the percent-encoded
+**Untrusted strings.** Everything from a `.keep-the-why` and from an
+export is data from outside the hub: control characters are removed,
+`id` is cut at 300 characters, `uuid` at 64, `title`, `file`, `topic`
+and a member's `name` at 200, each `type` at 40 and the list at 8, a cut
+string ends in `…`. The hub answers JSON only and the dashboard renders
+these strings as text (`web/context/rendering.md`), never as HTML. The
+hub takes no URL from an export: a member's `dashboard_url` is its state
+URL without the last path segment, query and fragment, and an entry's
+`link` is that member's `dashboard_url` + `#entry/` + the percent-encoded
 `uuid` (else `id`) — the published dashboard's own entry anchor.
 
 ```json
 {
-  "source": "repository",
-  "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
-  "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
   "observed_at": "2026-10-22T11:40:00Z",
   "fresh": true,
-  "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
-               "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+  "summary": { "members": 4, "failed": 0, "entries": 57,
+               "status": { "active": 55, "open": 2, "needs-review": 0, "pending-confirmation": 0,
                            "superseded": 0, "other": 0 },
-               "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
-  "attention": [
-    { "id": "hub.md#…", "uuid": "…", "title": "…", "type": ["question"], "status": "open",
-      "file": "hub.md", "topic": "Hub", "link": "https://maity.dev/keep-the-why-dashboard/#entry/…" }
+               "attention": 2, "findings": { "errors": 0, "warnings": 0 } },
+  "members": [
+    { "path": "", "id": "oliver-zehentleitner---maity", "name": null,
+      "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+      "observed_at": "2026-10-22T11:40:00Z",
+      "summary": { "generated": "2026-10-22T11:33:15Z", "state_json": 2, "entries": 20,
+                   "status": { "active": 19, "open": 1, "needs-review": 0, "pending-confirmation": 0,
+                               "superseded": 0, "other": 0 },
+                   "attention": 1, "findings": { "errors": 0, "warnings": 0 } },
+      "error": null },
+    { "path": "hub", "id": "oliver-zehentleitner---maity---hub", "name": "hub",
+      "state_url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/hub/",
+      "observed_at": "2026-10-22T11:40:01Z", "summary": { "…": "…" }, "error": null }
   ],
+  "attention": [
+    { "member": "", "id": "hub.md#…", "uuid": "…", "title": "…", "type": ["question"],
+      "status": "open", "file": "hub.md", "topic": "Hub",
+      "link": "https://maity.dev/keep-the-why-dashboard/#entry/…" }
+  ],
+  "family_truncated": false,
   "truncated": false,
-  "skipped": 0
+  "skipped": 0,
+  "error": null
 }
 ```
 
-`summary` is the same object the project view carries (§6.1).
-`summary.entries` counts the entries read, `summary.attention` those with
-status `open`, `needs-review` or `pending-confirmation`. `attention`
-lists them — `needs-review` first, then `pending-confirmation`, then
-`open`, each by `file` and `line` — at most 200, then `truncated: true`.
+`members` and `summary` (per member and the aggregate) are the objects
+the project view carries (§6.1). A member's `summary.entries` counts the
+entries read, `summary.attention` those with status `open`,
+`needs-review` or `pending-confirmation`; the aggregate adds up the
+members whose `summary` is not `null` (a failed member's last good read
+included), `findings` counts are summed where a member has them,
+`members` counts the members listed and `failed` those with an `error`.
+`attention` lists the entries that need attention with the `member`
+(`path`) they belong to — `needs-review` first, then
+`pending-confirmation`, then `open`, each by member order, `file` and
+`line` — at most 200 in all, then `truncated: true`. `skipped` counts
+skipped entries over all members.
 
-Errors: `ktw_not_configured`; `ktw_unavailable` with `details.reason`
-one of `forge_unavailable` (the `.keep-the-why` read failed),
-`state_url_invalid`, `address_refused`, `redirect_refused`, `timeout`,
-`http_status` (with `details.status`), `too_large`, `not_json`,
-`state_json_version`, `shape`, and `details.last` — the last good answer
-in the shape above — when there is one.
+`?member=<path>` narrows the answer to one member: `members` holds that
+one, `summary` and `attention` are its own (`?member=` with an empty
+value is the root). A path that is not a member of the family is
+`not_found`.
+
+Errors: `ktw_not_configured`; `ktw_unavailable` when the root
+`.keep-the-why` could not be read (`details.reason`
+`forge_unavailable`), with `details.last` — the last good answer in the
+shape above — when there is one. A member's own failure is never an
+error of the call: it is that member's `error`, `{code:
+"ktw_unavailable", reason}` with `reason` one of `forge_unavailable`
+(its `.keep-the-why` read failed), `config_missing` (no `.keep-the-why`
+at the path), `no_state_url` (no `dashboard-state:` line),
+`location_not_followed`, `state_url_invalid`, `address_refused`,
+`redirect_refused`, `timeout`, `http_status` (with `status`),
+`too_large`, `not_json`, `state_json_version` (with `version`), `shape`.
 
 ## 12. Endpoint index
 
@@ -1897,6 +2048,7 @@ in the shape above — when there is one.
 | POST | `/runner/placements/{id}/join` | runner | 15.9 |
 | PATCH | `/runner` | runner | 15.8 |
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
+| PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -1914,7 +2066,9 @@ reason on cards and claims in `freeze`/`fixes-only`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
-rule (§11.1) with the image and export checks (§11.2, §11.3); for runners (§15):
+rule (§11.1) with the image and export checks (§11.2, §11.3), an image
+upload by a human only and by its sniffed type, the Keep the Why family's
+path rule and caps; for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
