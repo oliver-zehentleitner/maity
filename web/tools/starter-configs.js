@@ -1,7 +1,7 @@
 // Prints the Runners view's starter configurations for a few kinds of
 // projects, with the command that writes each, as JSON: what
-// tools/starter_configs.py hands to `maity runner check`. Runs
-// js/runners.js alone; it needs nothing of the DOM to generate them.
+// tools/starter_configs.py hands to `maity runner check`. Runs js/dom.js
+// and js/runners.js; generating them touches no DOM.
 "use strict";
 
 const fs = require("fs");
@@ -9,10 +9,12 @@ const path = require("path");
 const vm = require("vm");
 
 const WEB = path.resolve(__dirname, "..");
-const ctx = { window: { Maity: { dom: {}, views: {} } }, JSON, String, Number, Date, console };
+const ctx = { window: { Maity: { views: {} } }, JSON, String, Number, Date, console };
 ctx.window.window = ctx.window;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(WEB, "js/runners.js"), "utf8"), ctx, { filename: "js/runners.js" });
+for (const file of ["js/dom.js", "js/runners.js"]) {
+  vm.runInContext(fs.readFileSync(path.join(WEB, file), "utf8"), ctx, { filename: file });
+}
 const { runnerStarterConfig: generate, runnerConfigCommand: command } = ctx.window.Maity;
 
 const repo = (url) => ({ url });
