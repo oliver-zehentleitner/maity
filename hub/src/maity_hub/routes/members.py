@@ -21,7 +21,7 @@ from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import emit
 from maity_hub.models import Strict, markdown
 from maity_hub.scopes import ROLES
-from maity_hub.views import credential_view, human_paused, member_view
+from maity_hub.views import credential_view, human_paused, member_view, member_views
 
 router = APIRouter()
 
@@ -124,7 +124,7 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             )
         ).all()
         admin = mine.may("members:admin")
-        views = [member_view(conn, r, briefing=admin or r.id == mine.id) for r in rows]
+        views = member_views(conn, rows, briefing=lambda r: admin or r.id == mine.id)
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 

@@ -27,7 +27,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, markdown, title
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
-from maity_hub.views import human_paused, paused, principal_id, task_view
+from maity_hub.views import human_paused, paused, principal_id, task_view, task_views
 
 router = APIRouter()
 
@@ -482,9 +482,7 @@ def list_tasks(
         ).all()
         page = rows[:limit]
         next_cursor = _cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
-        return JSONResponse(
-            {"items": [task_view(conn, r) for r in page], "next_cursor": next_cursor}
-        )
+        return JSONResponse({"items": task_views(conn, page), "next_cursor": next_cursor})
 
 
 @router.get("/projects/{slug}/tasks/{card_id}")

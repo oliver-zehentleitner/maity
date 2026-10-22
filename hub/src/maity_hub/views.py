@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, forge, policy
 from maity_hub import tables as t
@@ -81,12 +82,25 @@ def principal_id(conn: Connection, membership_id: int | None) -> str | None:
     """The member id (`hum-…`/`agt-…`) of a membership row id."""
     if membership_id is None:
         return None
-    row = conn.execute(
-        select(t.membership.c.agent_id, t.membership.c.human_id).where(
-            t.membership.c.id == membership_id
+    return principal_ids(conn, [membership_id])[membership_id]
+
+
+def principal_ids(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int, str]:
+    """The member ids of several membership row ids, in one query. Lists build
+    their views through this and the other `*_views`, so a page costs a fixed
+    number of statements instead of a few per row."""
+    wanted = {i for i in membership_ids if i is not None}
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        select(t.membership.c.id, t.membership.c.agent_id, t.membership.c.human_id).where(
+            t.membership.c.id.in_(wanted)
         )
-    ).one()
-    found: str = row.agent_id or row.human_id
+    ).all()
+    found = {row.id: row.agent_id or row.human_id for row in rows}
+    missing = wanted - found.keys()
+    if missing:
+        raise LookupError(f"membership rows {sorted(missing)} do not exist")
     return found
 
 
@@ -123,12 +137,42 @@ def live_session(conn: Connection, membership_id: int) -> Any:
     ).first()
 
 
-def latest_session(conn: Connection, membership_id: int) -> Any:
-    return conn.execute(
+def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any], dict[int, Any]]:
+    """Per membership: the newest live session, and the newest session of any kind."""
+    if not membership_ids:
+        return {}, {}
+    live: dict[int, Any] = {}
+    for row in conn.execute(
         select(t.agent_session)
-        .where(t.agent_session.c.membership_id == membership_id)
-        .order_by(t.agent_session.c.started_at.desc())
-    ).first()
+        .where(
+            t.agent_session.c.membership_id.in_(membership_ids),
+            t.agent_session.c.live.is_(True),
+        )
+        .order_by(t.agent_session.c.started_at.desc(), t.agent_session.c.id.desc())
+    ):
+        live.setdefault(row.membership_id, row)
+    newest = (
+        select(
+            t.agent_session.c.membership_id,
+            func.max(t.agent_session.c.started_at).label("started_at"),
+        )
+        .where(t.agent_session.c.membership_id.in_(membership_ids - live.keys()))
+        .group_by(t.agent_session.c.membership_id)
+        .subquery()
+    )
+    latest: dict[int, Any] = dict(live)
+    if membership_ids - live.keys():
+        for row in conn.execute(
+            select(t.agent_session)
+            .join(
+                newest,
+                (newest.c.membership_id == t.agent_session.c.membership_id)
+                & (newest.c.started_at == t.agent_session.c.started_at),
+            )
+            .order_by(t.agent_session.c.id.desc())
+        ):
+            latest.setdefault(row.membership_id, row)
+    return live, latest
 
 
 def member_view(conn: Connection, row: Any, *, briefing: bool = False) -> dict[str, Any]:
@@ -136,57 +180,84 @@ def member_view(conn: Connection, row: Any, *, briefing: bool = False) -> dict[s
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
     an event that goes to everyone; the caller decides."""
+    return member_views(conn, [row], briefing=briefing)[0]
+
+
+def member_views(
+    conn: Connection, rows: Sequence[Any], *, briefing: bool | Callable[[Any], bool] = False
+) -> list[dict[str, Any]]:
+    """`member_view` for several membership rows, with a fixed number of queries;
+    `briefing` for every row, or per row through a predicate."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
-    if row.agent_id is not None:
-        agent = conn.execute(
-            select(t.agent_profile).where(t.agent_profile.c.id == row.agent_id)
-        ).one()
-        head = agent_member(agent)
-    else:
-        human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-        head = human_member(human)
-    view: dict[str, Any] = {
-        **head,
-        "role": row.role,
-        "reports_to": principal_id(conn, row.reports_to),
-        "areas": row.areas,
-        "capabilities": row.capabilities,
-    }
-    session = None
-    if row.agent_id is not None:
-        session = live_session(conn, row.id)
-        latest = session or latest_session(conn, row.id)
-        is_listening = session is not None and listening.is_listening(session.id)
-        view["harness"] = latest.harness if latest else None
-        view["model"] = latest.model if latest else None
-        view["session"] = (
-            {
-                "id": session.id,
-                "harness": session.harness,
-                "model": session.model,
-                "client": session.client,
-                "started_at": ts(session.started_at),
-                "listening": is_listening,
-            }
-            if session
-            else None
-        )
-    else:
-        is_listening = False
-    view.update(
+    agent_ids = {r.agent_id for r in rows if r.agent_id is not None}
+    human_ids = {r.human_id for r in rows if r.agent_id is None}
+    agents = (
         {
-            "last_seen_at": ts(row.last_seen_at),
-            "presence": presence(row, session, is_listening),
-            "paused": paused(row),
-            "joined_at": ts(row.joined_at),
+            a.id: a
+            for a in conn.execute(
+                select(t.agent_profile).where(t.agent_profile.c.id.in_(agent_ids))
+            )
         }
+        if agent_ids
+        else {}
     )
-    if row.removed_at is not None:
-        view["removed_at"] = ts(row.removed_at)
-    if briefing:
-        view["briefing"] = row.briefing
-    return view
+    humans = (
+        {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(human_ids)))}
+        if human_ids
+        else {}
+    )
+    principals = principal_ids(conn, (r.reports_to for r in rows))
+    live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    views = []
+    for row in rows:
+        head = (
+            agent_member(agents[row.agent_id])
+            if row.agent_id
+            else human_member(humans[row.human_id])
+        )
+        view: dict[str, Any] = {
+            **head,
+            "role": row.role,
+            "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
+            "areas": row.areas,
+            "capabilities": row.capabilities,
+        }
+        session = None
+        if row.agent_id is not None:
+            session = live.get(row.id)
+            latest = latest_of.get(row.id)
+            is_listening = session is not None and listening.is_listening(session.id)
+            view["harness"] = latest.harness if latest else None
+            view["model"] = latest.model if latest else None
+            view["session"] = (
+                {
+                    "id": session.id,
+                    "harness": session.harness,
+                    "model": session.model,
+                    "client": session.client,
+                    "started_at": ts(session.started_at),
+                    "listening": is_listening,
+                }
+                if session
+                else None
+            )
+        else:
+            is_listening = False
+        view.update(
+            {
+                "last_seen_at": ts(row.last_seen_at),
+                "presence": presence(row, session, is_listening),
+                "paused": paused(row),
+                "joined_at": ts(row.joined_at),
+            }
+        )
+        if row.removed_at is not None:
+            view["removed_at"] = ts(row.removed_at)
+        if briefing(row) if callable(briefing) else briefing:
+            view["briefing"] = row.briefing
+        views.append(view)
+    return views
 
 
 def human_paused(row: Any) -> bool:
@@ -256,60 +327,95 @@ def _release(conn: Connection, row: Any) -> dict[str, Any] | None:
 
 def task_view(conn: Connection, row: Any) -> dict[str, Any]:
     """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
-    edges = conn.execute(
-        select(t.card_edge.c.to_card, t.card_edge.c.kind).where(t.card_edge.c.from_card == row.id)
-    ).all()
-    claim = None
-    if row.claim_holder is not None:
-        claim = {
-            "holder": principal_id(conn, row.claim_holder),
-            "session_id": row.claim_session_id,
-            "since": ts(row.claim_since),
-            "lease_until": ts(row.lease_until),
-            "expired": row.lease_until is not None and row.lease_until <= clock.now(),
-        }
-    return {
-        "id": row.id,
-        "kind": row.kind,
-        "title": row.title,
-        "body": row.body,
-        "label": row.label,
-        "status": row.status,
-        "area": row.area,
-        "created_by": principal_id(conn, row.created_by),
-        "assigned_to": principal_id(conn, row.assigned_to),
-        "claim": claim,
-        "checkpoint": row.checkpoint,
-        "depends_on": sorted(e.to_card for e in edges if e.kind == "depends_on"),
-        "ships_with": sorted(e.to_card for e in edges if e.kind == "ships_with"),
-        "blocked_by_request": row.blocked_by_request,
-        "ktw_ref": row.ktw_ref,
-        "report": row.report,
-        "release": _release(conn, row),
-        "contract": row.contract,
-        "created_at": ts(row.created_at),
-        "updated_at": ts(row.updated_at),
-        "closed_at": ts(row.closed_at),
+    return task_views(conn, [row])[0]
+
+
+def task_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """`task_view` for several cards: one query for the edges, one for the members."""
+    if not rows:
+        return []
+    edges: dict[str, dict[str, list[str]]] = {
+        r.id: {"depends_on": [], "ships_with": []} for r in rows
     }
+    for edge in conn.execute(
+        select(t.card_edge.c.from_card, t.card_edge.c.to_card, t.card_edge.c.kind).where(
+            t.card_edge.c.from_card.in_(edges.keys())
+        )
+    ):
+        edges[edge.from_card].setdefault(edge.kind, []).append(edge.to_card)
+    members = principal_ids(
+        conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
+    )
+    now = clock.now()
+    views = []
+    for row in rows:
+        claim = None
+        if row.claim_holder is not None:
+            claim = {
+                "holder": members[row.claim_holder],
+                "session_id": row.claim_session_id,
+                "since": ts(row.claim_since),
+                "lease_until": ts(row.lease_until),
+                "expired": row.lease_until is not None and row.lease_until <= now,
+            }
+        views.append(
+            {
+                "id": row.id,
+                "kind": row.kind,
+                "title": row.title,
+                "body": row.body,
+                "label": row.label,
+                "status": row.status,
+                "area": row.area,
+                "created_by": members.get(row.created_by),
+                "assigned_to": members.get(row.assigned_to),
+                "claim": claim,
+                "checkpoint": row.checkpoint,
+                "depends_on": sorted(edges[row.id]["depends_on"]),
+                "ships_with": sorted(edges[row.id]["ships_with"]),
+                "blocked_by_request": row.blocked_by_request,
+                "ktw_ref": row.ktw_ref,
+                "report": row.report,
+                "release": _release(conn, row),
+                "contract": row.contract,
+                "created_at": ts(row.created_at),
+                "updated_at": ts(row.updated_at),
+                "closed_at": ts(row.closed_at),
+            }
+        )
+    return views
 
 
 def event_view(conn: Connection, row: Any) -> dict[str, Any]:
     """An event as §8.1 shows it."""
-    actor = None
-    if row.actor_membership is not None:
-        actor = {
-            "member_id": principal_id(conn, row.actor_membership),
-            "session_id": row.actor_session_id,
-            "harness": row.actor_harness,
-            "model": row.actor_model,
-        }
-    return {
-        "seq": row.seq,
-        "kind": row.kind,
-        "at": ts(row.at),
-        "actor": actor,
-        "subject": {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None,
-        "audience": row.audience,
-        "payload": row.payload,
-        "redacted": row.redacted,
-    }
+    return event_views(conn, [row])[0]
+
+
+def event_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """`event_view` for several events, with one query for the actors."""
+    actors = principal_ids(conn, (r.actor_membership for r in rows))
+    views = []
+    for row in rows:
+        actor = None
+        if row.actor_membership is not None:
+            actor = {
+                "member_id": actors[row.actor_membership],
+                "session_id": row.actor_session_id,
+                "harness": row.actor_harness,
+                "model": row.actor_model,
+            }
+        views.append(
+            {
+                "seq": row.seq,
+                "kind": row.kind,
+                "at": ts(row.at),
+                "actor": actor,
+                "subject": (
+                    {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
+                ),
+                "audience": row.audience,
+                "payload": row.payload,
+                "redacted": row.redacted,
+            }
+        )
+    return views

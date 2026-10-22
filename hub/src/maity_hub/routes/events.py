@@ -19,7 +19,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.models import Strict, markdown
-from maity_hub.views import event_view
+from maity_hub.views import event_view, event_views
 
 router = APIRouter()
 
@@ -112,7 +112,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
                 events.mark_delivered(conn, rows, mine.principal_id)
             cursor = rows[-1].seq if rows else max(examined, since)
-            return [event_view(conn, r) for r in rows], cursor
+            return event_views(conn, rows), cursor
 
     if wait == 0:
         items, cursor = await run_in_threadpool(read, False, after)

@@ -142,6 +142,14 @@ MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytes
 MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 ```
 
+`scripts/measure_board.py` seeds a project (200 cards, 10 members, 2000
+events by default) and reports, per dashboard list request, the SQL
+statements it runs and its time, on SQLite or any `--database-url` it may
+wipe. `--rtt-ms` puts a delaying proxy in front of a server database to show
+what a network between hub and database adds. The lists build their views in
+batches (`views.task_views`, `event_views`, `member_views`), so a page costs
+a fixed number of statements; `tests/test_view_batching.py` holds that.
+
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
 join page says, and with the `maity` CLI (`make install`, then
