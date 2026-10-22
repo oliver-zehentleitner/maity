@@ -102,3 +102,29 @@ concurrent lines without regard to the headings they belong under.
 
 **Rejected alternative:** keeping the single file and rebasing on every
 merge — the status quo that caused the problem.
+
+## Overnight, the coordinator deploys maity.team without a per-deploy go once main is green
+
+**Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator
+**Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
+**See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+
+For the night of 2026-10-22 the maintainer gave a standing instruction:
+the coordinator deploys a new image to maity.team before the maintainer
+is back, once `main` is green after the merges, with no go per deploy.
+The rollout follows one sequence: the image from the publish workflow on
+`main`, its digest pinned in the Helm values, a database dump from the
+backup job first, `helm upgrade --wait`, migrations on start, then
+`/api/v1/health` checked for the schema head and the dashboard opened.
+The few seconds of 503 during the rollout are expected and accepted, not
+an incident: the hub runs as one pod replaced with `Recreate`, for the
+reasons in the hub's Kubernetes entry.
+
+**Reason:** the maintainer's instruction; no reason beyond having the
+night's merges deployed before the maintainer is back was stated.
+
+**Alternatives:** none were weighed.
