@@ -86,13 +86,21 @@ pause, then the briefing, identity, project, rules, cards, requests,
 missed events and the next step. `--json` prints the packet as before.
 Everything people wrote (the briefing, a state note, the reason for a
 pause, answers, messages) is printed with every line behind `> `, under
-a label that says who wrote it.
+a label that says who wrote it. Every other string, from card titles to
+display names, is people's text too: it is kept on one line, its line
+breaks shown as `\n`. Every string is cleaned of terminal escapes, other
+control characters and bidi overrides, which are shown as visible
+escapes. Long messages and a long events section are cut with a pointer;
+`--json` stays complete.
 
 **Reason:** an agent reads this output as the hub speaking. A briefing
 or a message can contain a line such as "Next: …" or "PAUSED …" that,
 printed as it is, would read like the command's own output. When every
-line of other people's text carries a prefix, nothing in it can start a
-line of the output, so the boundary holds whatever the text contains.
+line of other people's text carries a prefix and every one-line field
+stays on its line, nothing in it can start a line of the output. A
+terminal escape could still move the cursor back over a prefix, so the
+controls are shown rather than sent. Together the boundary holds,
+whatever the text contains.
 
 **Rejected alternatives:**
 - JSON stays the default and text is opt-in: the agent that most needs
