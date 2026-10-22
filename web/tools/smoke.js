@@ -827,7 +827,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dManage = main.querySelector("tr.member-manage");
   expect(dManage && btn(mRow("Agent D"), "Done") && btn(mRow("Agent D"), "Done").getAttribute("aria-expanded") === "true", "members: Manage opens the row");
   const dRole = dManage.querySelector("select"); dRole.value = "reviewer";
-  dManage.querySelector("form.member-role").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  dManage.querySelector("form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mWrites[0]) === JSON.stringify(["PATCH", "/projects/maity/members/agt-d", { role: "reviewer" }]) && text(mRow("Agent D")).includes("reviewer"),
     "members: the role changed");
   main.querySelector("tr.member-manage form.member-pause").dispatch("submit"); await tick();
@@ -837,15 +837,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(mWrites[1][2]) === JSON.stringify({ paused: { reason: "quota" } }) && text(mRow("Agent D")).includes("quota"), "members: an agent paused with a reason");
   btn(main.querySelector("tr.member-manage"), "Clear pause").click(); for (let k = 0; k < 4; k++) await tick();
   main.querySelector("tr.member-manage select").value = "member";
-  main.querySelector("tr.member-manage form.member-role").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(!text(mRow("Agent D")).includes("quota") && text(mRow("Agent D")).includes("member"), "members: pause cleared, role back");
   btn(mRow("Agent D"), "Done").click(); await tick();
   btn(mRow("Maintainer"), "Manage").click(); await tick();
   const ownerSel = main.querySelector("tr.member-manage select");
   expect(ownerSel.querySelectorAll("option").length === 5 && !main.querySelector("tr.member-manage form.member-pause"), "members: a human can be owner, has no pause");
   ownerSel.value = "admin";
-  main.querySelector("tr.member-manage form.member-role").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Changing the role failed: The project's last owner cannot be demoted or removed.") && text(mRow("Maintainer")).includes("owner"),
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Saving failed: The project's last owner cannot be demoted or removed.") && text(mRow("Maintainer")).includes("owner"),
     "members: the last owner is not demoted, said in words");
   btn(mRow("Maintainer"), "Done").click(); await tick();
   btn(mRow("Reviewer"), "Manage").click(); await tick();
@@ -857,14 +857,64 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = mConfirm;
   expect(mAsked === "Remove Reviewer from Maity? Its credentials are revoked and the cards it claimed are released."
     && JSON.stringify(mWrites[mWrites.length - 1]) === JSON.stringify(["DELETE", "/projects/maity/members/agt-r"]), "members: removing asks first and says what it does");
+  // The full edit (docs/api.md §6.2): reports to, areas, capabilities, briefing, in one PATCH.
+  win.Maity.api.patch = mPatch; win.Maity.api.del = mDel;
+  const eWrites = [];
+  win.Maity.api.patch = (p, b) => { eWrites.push([p, b]); return mPatch(p, b); };
+  btn(mRow("Reviewer"), "Manage").click(); await tick();
+  const eRow = () => main.querySelector("tr.member-manage");
+  const eSel = (i) => eRow().querySelectorAll("select")[i];
+  const eIn = () => eRow().querySelector("form.member-edit").querySelectorAll("input");
+  const submitEdit = async () => { eRow().querySelector("form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  expect(eSel(1).value === "agt-a" && !eSel(1).querySelectorAll("option").some((o) => o.attrs.value === "agt-r")
+    && eSel(1).querySelectorAll("option")[0].textContent === "nobody", "members: reports to offers nobody and everyone else, set to the current one");
+  await submitEdit();
+  expect(!eWrites.length && text(main).includes("Nothing changed."), "members: nothing changed, nothing sent");
+  eSel(1).value = "agt-d";
+  eIn()[0].value = "docs/, web/tools/, docs/";
+  eIn()[1].checked = true;
+  eRow().querySelector("textarea").value = "Review what touches web/.";
+  await submitEdit();
+  expect(JSON.stringify(eWrites[0]) === JSON.stringify(["/projects/maity/members/agt-r",
+    { reports_to: "agt-d", areas: ["docs/", "web/tools/"], capabilities: ["tag"], briefing: "Review what touches web/." }])
+    && text(main).includes("Saved for Reviewer: reports to, areas, capabilities, briefing."), "members: one PATCH with exactly what changed");
+  // A circle is refused before sending: Agent D would report to the Reviewer, who reports to Agent D.
+  btn(mRow("Reviewer"), "Done").click(); await tick();
+  btn(mRow("Agent D"), "Manage").click(); await tick();
+  eSel(1).value = "agt-r";
+  await submitEdit();
+  expect(eWrites.length === 1 && text(main).includes("Not saved: That would close a circle"), "members: a reports-to circle is refused before sending");
+  eSel(1).value = "";
+  eIn()[0].value = "../secret";
+  await submitEdit();
+  expect(eWrites.length === 1 && text(main).includes("Not saved: An area is a repository path"), "members: an area with .. is refused before sending");
+  btn(mRow("Agent D"), "Done").click(); await tick();
+  // The hub's own cycle refusal reads the same.
+  win.Maity.api.patch = (p, b) => Promise.reject(new win.Maity.api.ApiError("cycle", 400, p, "invalid", { fields: { reports_to: "cycle" } }));
+  btn(mRow("Agent C"), "Manage").click(); await tick();
+  eSel(1).value = "agt-d";
+  await submitEdit();
+  expect(text(main).includes("Saving failed: That would close a circle"), "members: the hub's cycle refusal in the same words");
+  btn(mRow("Agent C"), "Done").click(); await tick();
+  win.Maity.api.patch = mPatch;
+  // The organisation follows at once.
+  await go("#/p/maity/org");
+  const orgNode = (name) => main.querySelectorAll(".org-tree li").find((li) => li.querySelector(".org-node strong").textContent === name);
+  expect(orgNode("Agent D").querySelector("ul") && text(orgNode("Agent D").querySelector("ul")).includes("Reviewer"), "members: the organisation shows the Reviewer under Agent D");
+  // The mock refuses a circle as the hub does (docs/api.md §6.2, #118), and a removal clears reports_to.
+  let circle = null;
+  try { await mPatch("/projects/maity/members/agt-d", { reports_to: "agt-r" }); } catch (err) { circle = err; }
+  expect(circle && circle.details.fields.reports_to === "cycle", "members: the mock refuses a circle with cycle");
+  await mPatch("/projects/maity/members/agt-r", { reports_to: "agt-a", areas: [], capabilities: [], briefing: null });
+  await go("#/p/maity/members");
   // A write that went through is said as done when the re-read fails.
   win.Maity.api.patch = mPatch; win.Maity.api.del = mDel;
   btn(mRow("Reviewer"), "Manage").click(); await tick();
   const rAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? Promise.reject(new win.Maity.api.ApiError("down", 0, p)) : rAll(p));
   main.querySelector("tr.member-manage select").value = "proxy";
-  main.querySelector("tr.member-manage form.member-role").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Reviewer is now proxy. Could not refresh: down") && !text(main).includes("Changing the role failed"),
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Saved for Reviewer: role. Could not refresh: down") && !text(main).includes("Saving failed"),
     "members: a failed re-read after a write is no failed write");
   win.Maity.api.getAll = rAll;
   await win.Maity.api.patch("/projects/maity/members/agt-r", { role: "reviewer" });

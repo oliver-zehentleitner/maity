@@ -628,6 +628,26 @@ window.Maity = window.Maity || {};
         if (target.role === "owner" && body.role !== "owner" && owners.length === 1) fail(400, "invalid", "the last owner cannot be demoted", path, { fields: { role: "last_owner" } });
         target.role = body.role;
       }
+      // §6.2 and members.py: every bad field named at once; a reports-to
+      // circle or self is `cycle` (#118).
+      const all = file(m[1], "members.json", path).items;
+      const errors = {};
+      if ("reports_to" in body && body.reports_to !== null) {
+        if (!all.some((x) => x.id === body.reports_to)) errors.reports_to = "not_a_member";
+        else {
+          const seen = new Set();
+          for (let at = body.reports_to; at && !seen.has(at); at = (all.find((x) => x.id === at) || {}).reports_to) {
+            if (at === target.id) { errors.reports_to = "cycle"; break; }
+            seen.add(at);
+          }
+        }
+      }
+      if ("areas" in body && (body.areas || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.areas = "invalid_path";
+      if ("capabilities" in body && (body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if ("reports_to" in body) target.reports_to = body.reports_to;
+      if ("areas" in body) target.areas = [...new Set(body.areas)];
+      if ("capabilities" in body) target.capabilities = [...new Set(body.capabilities)];
       if ("paused" in body) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
@@ -652,6 +672,7 @@ window.Maity = window.Maity || {};
       });
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
       list.items = list.items.filter((x) => x !== target);
+      list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
       const removed = Object.assign({}, target, { removed_at: at });
       list.removed.push(removed);
       return removed;
