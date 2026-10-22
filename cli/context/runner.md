@@ -188,3 +188,28 @@ process cannot be started here", and the log keeps the real cause.
 - Starting a placement without its credential: the agent would run
   without an identity, against §15.5's rule that a missing expected
   credential is `join_failed`.
+
+## The supervisor's deadlines are wall-clock times
+
+**Id:** 8d3c5f39-21b9-4892-8a05-4816078637f4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's review of runner slice R3, 2026-10-22 (proposed `time.monotonic()`); kept in the review round
+**Revisit when:** a runner host is seen whose clock jumps (no NTP), or the records stop being kept across runner restarts
+
+`retry_at`, `deadline_at`, crash times and `since` are `time.time()`
+values. They are persisted in `actual.json` and reported as RFC 3339
+timestamps.
+
+**Reason:** these times outlive the process. After a runner restart,
+the record still has to say when a backoff ends and which crashes fall
+inside the crash window, and the hub shows `retry_at` and `deadline_at`
+as times of day. A monotonic clock restarts with every boot and means
+nothing in another process. A clock step on the host moves a backoff or
+grace deadline by that step, which NTP-synced hosts keep small.
+
+**Rejected alternative:** `time.monotonic()` for the deadlines, as the
+review proposed. Every persisted value would need converting at save
+and load, and that conversion breaks at a reboot, which is exactly when
+the records matter.
