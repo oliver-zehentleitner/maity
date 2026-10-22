@@ -33,7 +33,7 @@ def test_note_list_asks_for_open_notes_by_default_and_shows_them_cleaned(
     hostile = {**NOTE, "body": "line one\n\x1b]52;c;aGk=\x07line two"}
     fake.routes[("GET", f"{BASE}/notes")] = lambda s: (200, {"items": [hostile]})
     assert cli.main(["note", "list", "tsk-0004"]) == cli.EXIT_OK
-    assert fake.signed()[-1].query == "state=open"
+    assert fake.signed()[-1].query == "limit=200&state=open"
     out = capsys.readouterr().out
     assert "nte-0031  open  agent-c" in out and "    line one" in out
     assert "\x1b" not in out  # a note's text is shown, never executed by the terminal
@@ -42,7 +42,29 @@ def test_note_list_asks_for_open_notes_by_default_and_shows_them_cleaned(
 def test_note_list_all(joined: Path, fake: fakehub.FakeHub) -> None:
     fake.routes[("GET", f"{BASE}/notes")] = lambda s: (200, {"items": []})
     assert cli.main(["note", "list", "tsk-0004", "--all"]) == cli.EXIT_OK
-    assert fake.signed()[-1].query == "state=all"
+    assert "state=all" in fake.signed()[-1].query
+
+
+def test_note_list_follows_every_page(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = {**NOTE, "id": "nte-0032"}
+
+    def page(seen: fakehub.Seen) -> tuple[Any, ...]:
+        if "cursor=c2" in seen.query:
+            return 200, {"items": [second], "next_cursor": None}
+        return 200, {"items": [NOTE], "next_cursor": "c2"}
+
+    fake.routes[("GET", f"{BASE}/notes")] = page
+    assert cli.main(["note", "list", "tsk-0004", "--json"]) == cli.EXIT_OK
+    assert [n["id"] for n in json.loads(capsys.readouterr().out)] == ["nte-0031", "nte-0032"]
+    assert "limit=200" in fake.signed()[-1].query
+
+
+def test_state_and_all_cannot_be_given_together(joined: Path) -> None:
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["note", "list", "tsk-0004", "--all", "--state", "dismissed"])
+    assert exited.value.code == cli.EXIT_USAGE
 
 
 @pytest.mark.parametrize("flag, state", [("--incorporated", "incorporated"),
@@ -68,6 +90,8 @@ def test_note_resolve_needs_a_state(joined: Path) -> None:
         ("https://gitlab.example/group/sub/proj/-/issues/3", "url"),  # GitHub only in V1
         ("https://gitlab.example/group/proj/-/merge_requests/9", "url"),
         ("https://github.com/o/r/issues/41?x=1", "url"),  # not the forge's shape: plain
+        ("https://github.com/o/r/issues/\u0664\u0661", "url"),  # ASCII digits only
+        ("https://github.com/o/r/issues/41\n", "url"),
         ("https://keepthewhy.com/linting/", "url"),
     ],
 )
@@ -104,6 +128,8 @@ def test_link_list_shows_what_the_hub_observed(
         {"id": "lnk-0009", "kind": "pr", "forge_url": "https://github.com/o/r/pull/7",
          "observed": None},
         {"id": "lnk-0008", "kind": "url", "url": "https://keepthewhy.com/", "label": "docs"},
+        {"id": "lnk-0010", "kind": "issue", "forge_url": "https://github.com/o/r/issues/7",
+         "observed": {"found": False, "reason": "kind_mismatch"}},
     ]  # fmt: skip
     fake.routes[("GET", BASE)] = lambda s: (200, {"id": "tsk-0004", "links": links})
     assert cli.main(["link", "list", "tsk-0004"]) == cli.EXIT_OK
@@ -111,6 +137,7 @@ def test_link_list_shows_what_the_hub_observed(
     assert "lnk-0007  issue  https://github.com/o/r/issues/41  (open: Board: links)" in out
     assert "lnk-0009  pr  https://github.com/o/r/pull/7  (not observed)" in out
     assert "lnk-0008  url  docs  https://keepthewhy.com/" in out
+    assert "lnk-0010  issue  https://github.com/o/r/issues/7  (is a pull request:" in out
     assert cli.main(["link", "list", "tsk-0004", "--json"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out) == links
 

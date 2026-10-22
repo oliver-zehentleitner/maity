@@ -873,10 +873,19 @@ def cmd_note_add(args: argparse.Namespace) -> int:
 def cmd_note_list(args: argparse.Namespace) -> int:
     session = Session()
     state_ = "all" if args.all else args.state
-    answer = session.client.call(
-        "GET", session.project_path("tasks", args.card, "notes"), query=[("state", state_)]
-    )
-    items = [n for n in (_field(answer, "items") or []) if isinstance(n, dict)]
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:  # every page: a card holds at most 200 notes (§6.16)
+        query = [("state", state_), ("limit", "200")]
+        if cursor:
+            query.append(("cursor", cursor))
+        page = session.client.call(
+            "GET", session.project_path("tasks", args.card, "notes"), query=query
+        )
+        items.extend(n for n in (_field(page, "items") or []) if isinstance(n, dict))
+        cursor = _field(page, "next_cursor")
+        if not cursor:
+            break
     if args.json:
         _print_json(items)
         return EXIT_OK
@@ -905,8 +914,8 @@ def cmd_note_resolve(args: argparse.Namespace) -> int:
 
 
 _FORGE_KIND = (
-    (re.compile(r"^https://github\.com/[^/?#]+/[^/?#]+/issues/\d+/?$"), "issue"),
-    (re.compile(r"^https://github\.com/[^/?#]+/[^/?#]+/pull/\d+/?$"), "pr"),
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/issues/[0-9]+/?", re.ASCII), "issue"),
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/pull/[0-9]+/?", re.ASCII), "pr"),
 )
 
 
@@ -914,7 +923,7 @@ def link_kind(url: str) -> str:
     """`issue` or `pr` for a GitHub issue or pull request URL (§6.13: GitHub is the one forge
     of V1; anything else, another forge's issue included, is `url`). The hub decides whether
     it belongs to the project's repository."""
-    return next((kind for pattern, kind in _FORGE_KIND if pattern.match(url)), "url")
+    return next((kind for pattern, kind in _FORGE_KIND if pattern.fullmatch(url)), "url")
 
 
 def cmd_link_add(args: argparse.Namespace) -> int:
@@ -950,10 +959,14 @@ def cmd_link_list(args: argparse.Namespace) -> int:
             label = onboarding.inline(link.get("label") or "")
             what = f"{label}  {onboarding.inline(link.get('url'))}"
         else:
-            status = (
-                f"{onboarding.inline(seen.get('state'))}: {onboarding.inline(seen.get('title'))}"
-                if seen.get("found") else "not found on the forge" if seen else "not observed"
-            )  # fmt: skip
+            if seen.get("found"):
+                status = f"{onboarding.inline(seen.get('state'))}: " + onboarding.inline(
+                    seen.get("title")
+                )
+            elif seen.get("reason") == "kind_mismatch":  # an issue link to a PR (§6.13)
+                status = "is a pull request: remove it and link the pull request"
+            else:
+                status = "not found on the forge" if seen else "not observed"
             what = f"{onboarding.inline(link.get('forge_url'))}  ({status})"
         print(f"{onboarding.inline(link.get('id'))}  {onboarding.inline(link.get('kind'))}  {what}")
     return EXIT_OK
@@ -1358,8 +1371,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_note_add)
     r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
     r.add_argument("card", type=_id, help="the card id")
-    r.add_argument("--state", default="open", help="open (default), incorporated, dismissed")
-    r.add_argument("--all", action="store_true", help="every note, whatever its state")
+    which = r.add_mutually_exclusive_group()
+    which.add_argument("--state", default="open", help="open (default), incorporated, dismissed")
+    which.add_argument("--all", action="store_true", help="every note, whatever its state")
     _json_flag(r)
     r.set_defaults(handler=cmd_note_list)
     r = nsub.add_parser(
@@ -1400,7 +1414,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("card", type=_id, help="the card id")
     _json_flag(r)
     r.set_defaults(handler=cmd_link_list)
-    r = lsub.add_parser("remove", help="remove a link (its adder, the holder or creator)",
+    r = lsub.add_parser("remove", help="remove a link (its adder, the card's holder or "
+                        "creator, or tasks:admin)",
                         formatter_class=fmt)  # fmt: skip
     r.add_argument("card", type=_id, help="the card id")
     r.add_argument("link", type=_id, help="the link id, e.g. lnk-0007")
