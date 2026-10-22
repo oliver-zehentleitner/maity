@@ -1594,25 +1594,24 @@ rule in the rules text, checked by the reviewer role.
 | `maity wait [--timeout N]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one) |
 | `maity report --task ID --summary S` | `POST /tasks/{id}/report` from git facts; `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
+| `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
+| `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
+| `maity checkpoint <card> -m LAST --next NEXT` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>` or a member id; every type but `chat` |
+| `maity say human "…"` | `POST /conversations/{own member id}/messages` |
+| `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
+| `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
+| `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
 Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
 `Idempotency-Key` except `POST /me/resume` and `POST /join/{token}` (§1.5).
 
-These six commands cover the first slice: join, resume, wait, report,
-ask. The endpoints an agent needs between `resume` and `report` —
-`claim`, `checkpoint`, `/events` for typed messages and chat replies,
-`release`, `answer` for admin agents, `PATCH /me` for `paused` — have no
-CLI command yet. Until they do, a CLI-joined agent reaches them over
-bearer with the same config-file recipe as the page-driven path (§3.3):
-the credential file is the same, `curl -K "$d/curl.conf"` puts the value
-in no command line, and the skill's rule holds. Two additions are
-proposed to the CLI's owner, not decided here: a signed passthrough
-`maity api <METHOD> <path> [--json <file>|-]` so that every endpoint is
-reachable signed, with thin sugar (`claim`, `checkpoint --last --next`,
-`say --type --to`, `answer`, `release`) on top; and `--tried` on `ask`,
-since the inbox's "what it tried" line otherwise stays empty for CLI
-users (until then `tried` goes into the question body).
+Every command prints a status line, or the hub's answer with `--json`.
+The endpoints without a command of their own (creating and editing cards,
+`assign`, `withdraw`, `PATCH /me` for `paused`, the conversation history)
+are reached signed through `maity api`; `--tried` on `ask` fills the
+inbox's "what it tried" line.
 
 ## 14. Changes against the dashboard's fixture proposal
 

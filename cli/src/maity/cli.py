@@ -57,6 +57,10 @@ class UsageError(Exception):
     """Arguments argparse accepts but the command cannot use."""
 
 
+class CommandError(Exception):
+    """The hub answered, but not with what the command can act on."""
+
+
 def _err(message: str) -> None:
     print(f"maity: {message}", file=sys.stderr)
 
@@ -269,8 +273,9 @@ def cmd_report(args: argparse.Namespace) -> int:
     pr = body["pr"]
     pr_line = f"PR #{pr['number']}" if pr else f"PR {body['pr_status']}"
     status = task.get("status") if isinstance(task, dict) else None
-    print(f"reported {args.task} at {facts.head[:12]} ({pr_line}); task is now {status}")
-    return EXIT_OK
+    return _done(
+        args, task, f"reported {args.task} at {facts.head[:12]} ({pr_line}); task is now {status}"
+    )
 
 
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
@@ -303,8 +308,183 @@ def cmd_ask(args: argparse.Namespace) -> int:
     body = _ask_body(args)
     session = Session()
     request = session.client.call("POST", session.project_path("requests"), body=body)
-    print(f"asked {request.get('id')} ({request.get('class')}, {request.get('status')})")
+    rid, rclass, rstatus = (_field(request, k) for k in ("id", "class", "status"))
+    return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
+
+
+def _done(args: argparse.Namespace, result: Any, line: str) -> int:
+    """Print the hub's answer with --json, otherwise one status line."""
+    if getattr(args, "json", False):
+        _print_json(result)
+    else:
+        print(line)
     return EXIT_OK
+
+
+def _field(data: Any, *keys: str) -> Any:
+    for key in keys:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def _text(value: str, what: str) -> str:
+    value = value.strip()
+    if not value:
+        raise UsageError(f"{what} is empty")
+    return value
+
+
+def cmd_claim(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {}
+    if args.reason:
+        body["reason"] = _text(args.reason, "--reason")
+    session = Session()
+    task = session.client.call("POST", session.project_path("tasks", args.card, "claim"), body=body)
+    lease = _field(task, "claim", "lease_until")
+    return _done(args, task, f"claimed {args.card}; lease until {lease}")
+
+
+def cmd_unclaim(args: argparse.Namespace) -> int:
+    session = Session()
+    task = session.client.call("POST", session.project_path("tasks", args.card, "release"), body={})
+    return _done(args, task, f"gave {args.card} back; it is {_field(task, 'status')} again")
+
+
+def cmd_checkpoint(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {
+        "last_step": _text(args.message, "-m"),
+        "next_step": _text(args.next, "--next"),
+    }
+    session = Session()
+    where = gitfacts.position(Path.cwd())
+    if where is None:
+        _err("no commit in this clone; the checkpoint goes without branch and head")
+        refs = "without refs"
+    else:
+        head, branch = where
+        body["head"] = head
+        if branch is not None:
+            body["branch"] = branch
+        refs = f"at {head[:12]} on {branch or 'a detached HEAD'}"
+    path = session.project_path("tasks", args.card, "checkpoint")
+    task = session.client.call("POST", path, body=body)
+    return _done(args, task, f"checkpoint on {args.card} {refs}")
+
+
+SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "handover", "notice")
+
+
+def cmd_say(args: argparse.Namespace) -> int:
+    text = _text(args.body, "the message")
+    if args.to == "human":
+        if args.type or args.task:
+            raise UsageError("a chat with your human takes neither --type nor --task")
+        session = Session()
+        member_id = session.data.get("member_id")
+        if not isinstance(member_id, str):
+            raise state.StateError("this agent's member id is not known yet; run `maity resume`")
+        path = session.project_path("conversations", member_id, "messages")
+        message = session.client.call("POST", path, body={"body": text})
+        return _done(args, message, f"said to your human (seq {_field(message, 'seq')})")
+    if args.type is None:
+        raise UsageError(f"--type is required when writing to {args.to}: {', '.join(SAY_TYPES)}")
+    body: dict[str, Any] = {"kind": "message", "type": args.type, "to": args.to, "body": text}
+    if args.task:
+        body["task_id"] = args.task
+    session = Session()
+    event = session.client.call("POST", session.project_path("events"), body=body)
+    return _done(args, event, f"sent {args.type} to {args.to} (seq {_field(event, 'seq')})")
+
+
+def cmd_answer(args: argparse.Namespace) -> int:
+    if args.reply is None and args.text is None:
+        raise UsageError("give --reply, --text, or both")
+    body: dict[str, Any] = {}
+    if args.reply is not None:
+        body["reply_id"] = _text(args.reply, "--reply")
+    if args.text is not None:
+        body["text"] = _text(args.text, "--text")
+    session = Session()
+    path = session.project_path("requests", args.request, "answer")
+    request = session.client.call("POST", path, body=body)
+    return _done(args, request, f"answered {args.request}; it is {_field(request, 'status')}")
+
+
+CLOSED = ("done", "cancelled")
+
+
+def _releases(session: Session) -> list[dict[str, Any]]:
+    """Every release card of the project, following the pages."""
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        query = [("kind", "release"), ("status", "all"), ("limit", "200")]
+        if cursor:
+            query.append(("cursor", cursor))
+        page = session.client.call("GET", session.project_path("tasks"), query=query)
+        items.extend(i for i in _field(page, "items") or [] if isinstance(i, dict))
+        cursor = _field(page, "next_cursor")
+        if not cursor:
+            return items
+
+
+def _release_card(session: Session, card: str | None) -> dict[str, Any]:
+    if card:
+        task = session.client.call("GET", session.project_path("tasks", card))
+        if _field(task, "kind") != "release":
+            raise CommandError(f"{card} is not a release card")
+        return dict(task)
+    current = [r for r in _releases(session) if r.get("status") not in CLOSED]
+    if not current:
+        raise CommandError("no release is in flight; name one, see `maity release list`")
+    return current[0]
+
+
+def _release_summary(card: dict[str, Any]) -> list[str]:
+    release = card.get("release") or {}
+    readiness = release.get("readiness") or {}
+    lines = [
+        f"{card.get('id')}  {release.get('version')}  {card.get('status')}  "
+        f"ready: {'yes' if readiness.get('ready') else 'no'}"
+    ]
+    for block in readiness.get("blocking") or []:
+        detail = {k: v for k, v in block.items() if k != "reason"}
+        extra = " ".join(f"{k}={v}" for k, v in detail.items())
+        lines.append(f"  blocking: {block.get('reason')} {extra}".rstrip())
+    for item in release.get("checklist") or []:
+        mark = "x" if item.get("done") else " "
+        lines.append(f"  [{mark}] {item.get('id')}  {item.get('text')}")
+    return lines
+
+
+def cmd_release_list(args: argparse.Namespace) -> int:
+    releases = _releases(Session())
+    if args.json:
+        _print_json(releases)
+        return EXIT_OK
+    if not releases:
+        print("no releases")
+    for card in releases:
+        print(_release_summary(card)[0])
+    return EXIT_OK
+
+
+def cmd_release_show(args: argparse.Namespace) -> int:
+    card = _release_card(Session(), args.card)
+    return _done(args, card, "\n".join(_release_summary(card)))
+
+
+def cmd_release_tick(args: argparse.Namespace) -> int:
+    session = Session()
+    card = args.release or _release_card(session, None).get("id")
+    if not isinstance(card, str):
+        raise CommandError("the release card has no id")
+    path = session.project_path("tasks", card, "checklist", args.item)
+    task = session.client.call("POST", path, body={"done": not args.undo})
+    action = "unticked" if args.undo else "ticked"
+    return _done(args, task, f"{action} {args.item} on {card}")
 
 
 def cmd_api(args: argparse.Namespace) -> int:
@@ -346,12 +526,17 @@ def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--model", help="the model id this session runs on; remembered")
 
 
+def _json_flag(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--json", action="store_true", help="print the hub's answer as JSON")
+
+
 def build_parser() -> argparse.ArgumentParser:
     fmt = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(
         prog="maity",
         description="Agent-side command for Maity: join a project, resume, wait for events, "
-        "report finished work, ask a human. Every request is signed.",
+        "claim, checkpoint and report work, ask and answer, message, follow the release. Every "
+        "request is signed.",
         epilog=OUTPUT_DISCIPLINE,
         formatter_class=fmt,
     )
@@ -425,6 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--done", action="store_true", help="close the task, when your role holds done authority"
     )
+    _json_flag(p)
     p.set_defaults(handler=cmd_report)
 
     p = add(
@@ -453,14 +639,101 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tried", help="what you tried before asking")
     p.add_argument("--priority", choices=PRIORITIES, default="normal", help="default: normal")
     p.add_argument("--task", help="the task id the request belongs to")
+    _json_flag(p)
     p.set_defaults(handler=cmd_ask)
+
+    p = add(
+        "claim",
+        "take a card: it stays yours until it is closed or you give it back",
+        "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
+        "agent makes; nothing is released automatically. In a project under freeze or "
+        "fixes-only, --reason is required.",
+    )
+    p.add_argument("card", help="the card id, e.g. tsk-0004")
+    p.add_argument("--reason", help="why, when the project is in freeze or fixes-only")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_claim)
+
+    p = add(
+        "unclaim",
+        "give a claimed card back, unfinished",
+        "Give a card back (POST …/tasks/{card}/release): it is open again and claimable. Use "
+        "`report` for finished work instead.",
+    )
+    p.add_argument("card", help="the card id")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_unclaim)
+
+    p = add(
+        "checkpoint",
+        "record where the work on a card stands, for the next session",
+        "Record the last and the next step on a card you hold. The branch and the head commit "
+        "come from git, not from you. The next session reads it from the resume packet.",
+    )
+    p.add_argument("card", help="the card id")
+    p.add_argument("-m", "--last", dest="message", required=True, help="the step just finished")
+    p.add_argument("--next", required=True, help="the step to take next")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_checkpoint)
+
+    p = add(
+        "say",
+        "send a typed message to members, or chat with your human",
+        "Post a message (POST …/events). TO is 'all', 'role:<role>' or a member id, and --type "
+        "says what it is. TO 'human' writes into the chat with the human who owns this agent "
+        "(POST …/conversations/{you}/messages) and takes no --type. Status is not a message: the "
+        "board shows it.",
+    )
+    p.add_argument("to", help="'all', 'role:<role>', a member id, or 'human'")
+    p.add_argument("body", help="the message, Markdown")
+    p.add_argument("--type", choices=SAY_TYPES, help="required unless TO is 'human'")
+    p.add_argument("--task", help="the card the message is about")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_say)
+
+    p = add(
+        "answer",
+        "answer a request addressed to you",
+        "Answer a request (POST …/requests/{id}/answer) with one of its replies, free text, or "
+        "both. Agents answer decision, contract and info requests addressed to them, and any "
+        "request when their role holds requests:answer; never their own.",
+    )
+    p.add_argument("request", help="the request id, e.g. req-0012")
+    p.add_argument("--reply", help="the id of one of the request's replies")
+    p.add_argument("--text", help="a free-text answer, alone or with --reply")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_answer)
+
+    p = add(
+        "release",
+        "list releases, show one, tick its checklist",
+        "Read the project's releases and tick checklist items (§6.7). Readiness is computed by "
+        "the hub from observed state only; nothing here tags, merges or pushes.",
+    )
+    rsub = p.add_subparsers(dest="release_command", metavar="<action>", required=True)
+    r = rsub.add_parser("list", help="every release of the project", formatter_class=fmt)
+    _json_flag(r)
+    r.set_defaults(handler=cmd_release_list)
+    r = rsub.add_parser(
+        "show", help="one release: readiness, what blocks it, the checklist", formatter_class=fmt
+    )
+    r.add_argument("card", nargs="?", help="the release card id (default: the one in flight)")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_release_show)
+    r = rsub.add_parser("tick", help="tick a checklist item", formatter_class=fmt)
+    r.add_argument("item", help="the checklist item id, e.g. chk-2")
+    r.add_argument("--release", help="the release card id (default: the one in flight)")
+    r.add_argument("--undo", action="store_true", help="untick it instead")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_release_tick)
 
     p = add(
         "api",
         "any other endpoint, signed: maity api METHOD PATH",
         "Send one signed request to /api/v1 and print the JSON answer, for the endpoints that "
-        "have no command of their own yet (claim, checkpoint, messages, release, answer). PATH is "
-        "relative to /api/v1, e.g. /projects/maity/tasks/tsk-0004/claim. See `maity help`.",
+        "have no command of their own: creating and editing cards, assign, withdraw, pausing "
+        "(PATCH /me), the conversation history. PATH is relative to /api/v1, e.g. "
+        "/projects/maity/tasks/tsk-0004. See `maity help`.",
     )
     p.add_argument("method", type=str.upper, choices=("GET", "POST", "PATCH", "DELETE"))
     p.add_argument("path", help="the endpoint path, starting with /")
@@ -492,6 +765,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         hub.HubError,
         sign.CredentialFormatError,
         proc.ToolError,
+        CommandError,
         OSError,
     ) as exc:
         _err(str(exc))
