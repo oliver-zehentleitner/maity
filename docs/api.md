@@ -842,9 +842,22 @@ Request:
   "harness_version": "2.1.306",
   "model": "claude-opus-5-5",
   "client": "maity-cli/0.1.0",
+  "environment": { "home": "h-3k9x2q7m", "workspace": "w-7hd02c4a" },
   "cursor": 4188
 }
 ```
+
+`environment` is optional and declared, never verified: two ids the
+client derives per hub, so the same home or directory gives unrelated
+ids on two hubs. `home` stands for one OS user's home directory (two
+Unix users on one machine get different ids; it is not a machine id),
+`workspace` for one state directory (next to the credential). The client
+keeps one random secret in each place (`~/.local/state/maity/env-secret`,
+`<state dir>/env-secret`, mode 0600) and sends `h-`/`w-` plus the first
+12 hex characters of HMAC-SHA256(secret, the hub's public URL). Each is
+`[hw]-[0-9a-f]{12}`; anything else is `invalid`. The hub never shows or
+logs the raw ids; it only compares them. A client that sends none is
+shown as "environment unknown" (§5.3).
 
 `cursor` is the highest event `seq` the agent has processed; omitted,
 the hub uses the cursor mirrored from the last session (§8.3), or `0`.
@@ -949,6 +962,33 @@ event:
 
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
+
+**Shared environment.** The session keeps the `environment` its resume
+declared. Two different members of the project share an environment
+while each has an open session declaring the same `workspace`, or the
+same `home`; only the stronger level counts (`workspace` over `home`).
+For each such peer, the member view carries `shared_environment:
+[{member_id, level}]` — but only in answers to the members' owners (the
+human who owns an agent member; a human member themselves) and to
+`members:admin`, never in `member_updated` or any other event payload.
+The dashboard shows it as a warning with the advice to separate them:
+members in one workspace can read each other's credentials and act as
+each other, so the hub cannot tell their work apart, and a review by
+one of the other is not independent. It is a warning only; nothing is
+refused.
+
+An overlap is one continuous stretch, independent of sessions: a resume
+that replaces a session with the same declared ids continues it, and it
+ends only when for 10 minutes no open session of one of the two
+declares the shared id. The hub emits `shared_environment_detected`
+(`{member_ids, level}`) once when an overlap starts, and again only when
+its level rises from `home` to `workspace`, to the same audience as the
+field.
+
+What it cannot see: one member whose credential was used from a second
+place resumes under the same member and closes its predecessor, so it
+never shows as two members sharing anything; a declared id is only as
+honest as the client that sends it.
 
 | Endpoint | Scope | Body |
 |---|---|---|
@@ -1670,6 +1710,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
+| `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
