@@ -10,9 +10,9 @@ from conftest import fake_gh, git
 from maity import cli, gitfacts
 
 
-def pr_json(head: str, number: int = 12) -> str:
+def pr_json(head: str, number: int = 12, state: str = "OPEN") -> str:
     return json.dumps(
-        [{"number": number, "headRefOid": head, "state": "OPEN", "url": f"https://x/pull/{number}"}]
+        [{"number": number, "headRefOid": head, "state": state, "url": f"https://x/pull/{number}"}]
     )
 
 
@@ -51,6 +51,32 @@ def test_branch_without_upstream_is_refused(clone: Path) -> None:
 def test_branch_deleted_on_remote_is_refused(clone: Path) -> None:
     git(clone, "push", "--quiet", "origin", "--delete", "work")
     assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_branch_deleted_after_its_merge_reports_the_merged_head(
+    clone: Path, bin_dir: Path
+) -> None:
+    head = git(clone, "rev-parse", "HEAD")
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    fake_gh(bin_dir, pr_json(head, state="MERGED"))
+    facts = gitfacts.collect(clone)
+    assert facts.branch_merged and facts.remote_head == head
+    assert gitfacts.mismatches(facts) == []
+
+
+@pytest.mark.parametrize(
+    "state, other_head",
+    [("OPEN", False), ("CLOSED", False), ("MERGED", True)],
+)
+def test_a_deleted_branch_without_a_matching_merge_is_refused(
+    clone: Path, bin_dir: Path, state: str, other_head: bool
+) -> None:
+    head = git(clone, "rev-parse", "HEAD")
+    git(clone, "push", "--quiet", "origin", "--delete", "work")
+    fake_gh(bin_dir, pr_json("0" * 40 if other_head else head, state=state))
+    facts = gitfacts.collect(clone)
+    assert not facts.branch_merged and facts.remote_head is None
+    assert any("--no-code" in p for p in gitfacts.mismatches(facts))
 
 
 def test_detached_head_is_refused(clone: Path) -> None:
