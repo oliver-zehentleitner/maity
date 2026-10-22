@@ -70,7 +70,7 @@ Why Maity is built the way it is.
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
-- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device, or a link by mail; never for agents
+- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible)
 
 ## T
 - [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only
