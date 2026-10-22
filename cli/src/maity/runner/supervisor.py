@@ -18,18 +18,62 @@ from __future__ import annotations
 import os
 import random
 import re
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from .. import hub, onboarding, state
+from .. import __version__, hub, onboarding, state
 from . import capabilities, config, restart, stub, workspace
 from .tmux import Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
+PICKUP_RETRY = 15.0
+JOIN_TIMEOUT = 120.0
+PICKUP_DETAILS = ("pickup_not_allowed", "pickup_used")
+JOIN_DETAILS = ("code_invalid", "expired", "not_found", "rate_limited", "insecure_transport")
+_JOIN_ERROR = re.compile(r"\bjoin: ([a-z_]+):")
+
+
+class Retry(Exception):
+    """A step that may succeed on the next tick (a pickup whose answer was lost)."""
+
+
+def run_join(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tuple[bool, str | None]:
+    """`maity join --join-file -` in the clone: (joined, the `join_failed` detail when not;
+    None when the CLI's error has no code in §15.7's list).
+
+    `MAITY_STATE_DIR` points at the clone's own state directory, so the agent-side CLI
+    finds it without running git in a clone the agent can write (§5.3). Python runs isolated
+    (`-I`) from a directory outside the clone, so no module in the repository is imported
+    by the process that reads the code. Its output is never logged: an error names the join
+    URL, and with it the token."""
+    env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
+    env[state.STATE_DIR_ENV] = str(place.credential.parent)
+    command = [
+        sys.executable, "-I", "-m", "maity", "join", "--join-file", "-", "--no-resume",
+        "--no-pointer", "--client", f"maity-runner/{__version__}",
+    ]  # fmt: skip
+    try:
+        done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+            command, cwd=cwd, env=env, input=f"{url}\n{code}\n", capture_output=True,
+            text=True, timeout=JOIN_TIMEOUT, check=False,
+        )  # fmt: skip
+    except subprocess.TimeoutExpired:
+        return False, "network"
+    if done.returncode == 0:
+        return True, None
+    found = _JOIN_ERROR.search(done.stderr)
+    if found and found.group(1) in JOIN_DETAILS:
+        return False, found.group(1)
+    return False, "network" if "cannot reach" in done.stderr else None
+
+
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
@@ -101,6 +145,7 @@ class Record:
     acked: list[Any] | None = None
     pending: dict[str, Any] | None = None
     waiting: str | None = None  # why nothing is done yet, logged once (join: R4, adapter: R5)
+    joined_generation: int | None = None  # the generation this runner last joined for
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -365,17 +410,22 @@ class Supervisor:
         agent = p.get("agent") or {}
         owner = agent.get("id") or agent.get("handle") or ""
         repository = p["workspace"].get("repository") or ""
+        if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join
+            workspace.rebind(self.cfg.state_dir, place, agent["handle"], agent["id"])
         if place.path.exists():
             try:  # an existing directory that is not this agent's comes before its credential
-                workspace.inspect(self.cfg, place, repository, owner)
+                workspace.inspect(self.cfg, place, repository, owner, p["id"])
             except workspace.Refused as refused_:
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
         has_credential = place.credential.is_file()
-        if p.get("rejoin") or (not has_credential and not agent.get("credential_expected")):
-            return self._wait(rec, "the join from the runner arrives with R4", name)
-        if not has_credential:  # a credential was issued and is not in the clone
+        # `rejoin` stays set until the hub sees the new credential; one rejoin per generation.
+        rejoin = bool(p.get("rejoin")) and rec.joined_generation != p["generation"]
+        join = rejoin or (not has_credential and not agent.get("credential_expected"))
+        if not join and not has_credential:  # a credential was issued and is not in the clone
             rec.enter(now, "failed", "join_failed", detail="credential_missing")
+            return 0
+        if join and self.client is None:
             return 0
         retrying = rec.state == "exited"
         rec.enter(now, "starting", retry_at=None, started_at=now)
@@ -383,7 +433,8 @@ class Supervisor:
             rec.restarts += 1
         argv = stub.argv(harness.stub_exit_code, harness.stub_run_seconds)
         task = threading.Thread(
-            target=self._start, args=(p, rec, place, name, argv, agent), daemon=True,
+            target=self._start, args=(p, rec, place, name, argv, agent, join, rejoin),
+            daemon=True,
             name=f"maity-start-{p['id']}",
         )  # fmt: skip
         self.tasks[p["id"]] = task
@@ -398,8 +449,11 @@ class Supervisor:
         name: str,
         argv: list[str],
         agent: dict[str, Any],
+        join: bool = False,
+        rejoin: bool = False,
     ) -> None:
-        """The long part of a start, in its own thread: clone if missing, then tmux."""
+        """The long part of a start, in its own thread: clone if missing, join if needed,
+        then tmux."""
         owner = agent.get("id") or agent.get("handle") or ""
         try:
             if not self._wants(p["id"], p["generation"]):
@@ -410,6 +464,10 @@ class Supervisor:
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"),
             )  # fmt: skip
+            if join:
+                self._join(p, place, owner, rejoin)
+                with self.lock:
+                    rec.joined_generation = p["generation"]
             if workspace.stale_index_lock(place.path):
                 with self.lock:
                     rec.detail = "stale_index_lock"
@@ -425,10 +483,15 @@ class Supervisor:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
             return
-        except (TmuxError, OSError) as exc:
+        except Retry as again:
+            self.log(f"{name}: {again}; trying again in {PICKUP_RETRY:.0f} s")
+            with self.lock:
+                rec.retry_at = self.now() + PICKUP_RETRY
+            return
+        except Exception as exc:  # noqa: BLE001 - a start task never dies leaving `starting`
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
             # a lasting one ends in crash_loop instead of a permanent wrong reason.
-            self.log(f"{name}: start failed: {exc}")
+            self.log(f"{name}: start failed: {type(exc).__name__}: {exc}")
             now = self.now()
             with self.lock:
                 decision = restart.on_exit(
@@ -443,6 +506,42 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
+
+    # --- the join (§15.9) -------------------------------------------------------------------
+
+    def _join(
+        self, p: dict[str, Any], place: workspace.Workspace, owner: str, rejoin: bool
+    ) -> None:
+        """Pick up a join for the placement and run `maity join` in the clone. The URL and
+        the code go to the child on stdin, never on a command line or into a log; the
+        credential is written by the agent-side CLI, so the runner never holds it."""
+        assert self.client is not None  # noqa: S101 - _launch checks it
+        if rejoin:
+            place.credential.unlink(missing_ok=True)  # only a rejoin removes a credential
+        try:
+            pickup = self.client.call(
+                "POST",
+                f"/runner/placements/{p['id']}/join",
+                body={"observed_generation": p["generation"]},
+            )
+        except hub.HubError as exc:
+            if exc.status is None or exc.status >= 500 or exc.status == 429:
+                raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
+            detail = exc.code if exc.code in PICKUP_DETAILS else None
+            raise workspace.Refused("join_failed", detail) from None
+        url, code = pickup.get("join_url"), pickup.get("code")
+        if not isinstance(url, str) or not isinstance(code, str):
+            raise workspace.Refused("join_failed")
+        joined, why = run_join(place, url, code, self.cfg.state_dir)
+        if not joined:
+            raise workspace.Refused("join_failed", why)
+        try:
+            member = state.load_state(place.credential.parent).get("member_id")
+        except state.StateError as exc:  # joined; only the record keeps the handle a while
+            self.log(f"{place.path.name}: joined, but its state cannot be read: {exc}")
+            return
+        if isinstance(member, str) and member != owner:
+            workspace.rebind(self.cfg.state_dir, place, owner, member)
 
     def _wants(self, pid: str, generation: int) -> bool:
         with self.lock:

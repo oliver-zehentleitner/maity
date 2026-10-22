@@ -45,9 +45,7 @@ def test_help_states_the_output_discipline(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_join_requires_a_code() -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        cli.main(["join", "https://hub.example/j/abc"])
-    assert exit_info.value.code == cli.EXIT_USAGE
+    assert cli.main(["join", "https://hub.example/j/abc"]) == cli.EXIT_USAGE
 
 
 def test_wait_timeout_defaults_to_the_hint() -> None:
@@ -543,3 +541,42 @@ def test_accept_hub_stores_the_normalised_url() -> None:
         "https://maity.team"
     )
     assert hub.accept_hub("http://[::1]:8/j/t", "http://[::1]:9") == "http://[::1]:9"
+
+
+def test_join_reads_url_and_code_from_stdin_and_skips_the_resume(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    import io
+
+    line = f"{fake.url}/j/{fakehub.TOKEN}\n{fakehub.CODE}\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(line))
+    code = cli.main(["join", "--join-file", "-", "--no-resume", "--client", "maity-runner/9.9"])
+    assert code == cli.EXIT_OK, capsys.readouterr().err
+    exchange = [s for s in fake.seen if s.method == "POST"][0]
+    assert exchange.json() == {"code": fakehub.CODE, "client": "maity-runner/9.9"}
+    assert fake.signed() == []  # no resume
+    assert state.has_credential(state.resolve_state_dir())
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["join", "--join-file", "-", "https://h/j/x"],
+        ["join", "--join-file", "-", "--code", "C"],
+    ],
+)
+def test_join_takes_the_line_from_one_place_only(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("https://h/j/x\nC\n"))
+    assert cli.main(argv) == cli.EXIT_USAGE
+
+
+def test_a_join_file_with_the_wrong_shape_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "line").write_text("https://h/j/x\n")
+    assert cli.main(["join", "--join-file", str(tmp_path / "line")]) == cli.EXIT_USAGE

@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -361,8 +362,33 @@ def normalise_repository(value: str) -> str:
     return f"{host}/{path}" if path else host
 
 
+_URL_NOISE = re.compile(r"[\s#?\\%]")
+
+
+def repository_url_ok(url: str) -> bool:
+    """A repository URL the runner may clone: https, or ssh with at most a user name, a host,
+    and `owner/name`; nothing a URL parser and git could read differently (`#`, `?`, `\\`,
+    percent escapes, whitespace) and no local or other transport (`file://`, `ext::`)."""
+    if not url or _URL_NOISE.search(url):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError on a bad port
+    except ValueError:
+        return False
+    if parts.scheme not in ("https", "ssh") or not parts.hostname or parts.password:
+        return False
+    if parts.username is not None and parts.scheme != "ssh":
+        return False
+    segments = [s for s in parts.path.split("/") if s]
+    return len(segments) == 2
+
+
 def repository_allowed(url: str, allowed: tuple[str, ...]) -> bool:
-    """Whether the project's repository is one of `allowed` (normalised entries)."""
+    """Whether the project's repository is one of `allowed` (normalised entries); never for
+    a URL `repository_url_ok` refuses."""
+    if not repository_url_ok(url):
+        return False
     repo = normalise_repository(url)
     owner = repo.rpartition("/")[0]
     return any(entry == repo or entry == f"{owner}/*" for entry in allowed)

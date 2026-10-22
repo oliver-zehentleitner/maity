@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from maity import hub
+from maity import hub, state
 from maity.runner import capabilities, config, restart, supervisor, tmux, workspace
 
 pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
@@ -112,7 +112,7 @@ def recorded(cfg: config.Config, n: int = 3, credential: bool = True) -> workspa
     (place.path / ".git").mkdir(parents=True)
     (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}.git\n')
     if credential:
-        (place.path / ".git" / "maity").mkdir()
+        (place.path / ".git" / "maity").mkdir(mode=0o700)
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
     workspace._record(cfg.state_dir, place, f"agt-{n}", f"plc-000{n}")
     return place
@@ -338,14 +338,165 @@ def test_a_credential_that_should_be_there_and_is_not(world: Any) -> None:
     assert states(reports) == [("failed", "join_failed", "credential_missing")]
 
 
-def test_a_placement_that_needs_a_join_waits_for_r4(world: Any) -> None:
-    sup, backend, reports, _, logs = world
-    agent = {"id": None, "handle": "agent-3", "member": False, "credential_expected": False}
-    sup.update([placement(agent=agent)])
-    sup.tick()
-    sup.tick()
-    assert reports.sent == [] and backend.started == []
-    assert len([line for line in logs if "R4" in line]) == 1
+class Pickups(Reports):
+    """Reports, and the pickup: answers from a list (dict, or an exception to raise)."""
+
+    def __init__(self, *answers: Any) -> None:
+        super().__init__()
+        self.answers = list(answers)
+        self.pickups: list[dict[str, Any]] = []
+
+    def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if path.endswith("/join"):
+            self.pickups.append(body)
+            answer = self.answers.pop(0)
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        return super().call(method, path, body=body)
+
+
+PICKUP = {"join_url": "https://hub.example/j/tok", "code": "AAAA-BBBB-CCCC", "pickup": 1}
+NEW = {"id": None, "handle": "agent-3", "member": False, "credential_expected": False}
+
+
+def joining(
+    monkeypatch: pytest.MonkeyPatch, result: tuple[bool, str | None] = (True, None)
+) -> list[Any]:
+    """Replace the child `maity join`: on success it writes what the real one would."""
+    calls: list[Any] = []
+
+    def fake(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tuple[bool, str | None]:
+        calls.append((place.path.name, url, code))
+        if result[0]:
+            state.write_credential(place.credential.parent, state.Secret("mty1.crd-x.y"))
+            state.save_state(place.credential.parent, {"member_id": "agt-3"})
+        return result
+
+    monkeypatch.setattr(supervisor, "run_join", fake)
+    return calls
+
+
+def new_clone(cfg: config.Config) -> workspace.Workspace:
+    """A clone recorded under the handle, before the first join (no credential)."""
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace._record(cfg.state_dir, place, "agent-3", "plc-0003")
+    return place
+
+
+def test_a_new_agent_is_picked_up_joined_and_started(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    calls = joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.client.pickups == [{"observed_generation": 1}]
+    assert calls == [("agent-3", PICKUP["join_url"], PICKUP["code"])]
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert workspace.records(sup.cfg.state_dir)[str(place.path)]["agent"] == "agt-3"
+
+
+def test_a_lost_pickup_answer_is_retried(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    sup, backend, _, clock, _ = world
+    sup.client = Pickups(hub.HubError("reset", status=None), PICKUP)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert backend.started == [] and sup.records["plc-0003"].state != "failed"
+    clock.now += supervisor.PICKUP_RETRY
+    settle(sup)
+    assert len(sup.client.pickups) == 2 and len(backend.started) == 1
+
+
+@pytest.mark.parametrize(
+    ("pickup", "joined", "detail"),
+    [
+        (hub.HubError("used", code="pickup_used", status=409), (True, None), "pickup_used"),
+        (hub.HubError("no", code="pickup_not_allowed", status=409), (True, None),
+         "pickup_not_allowed"),
+        (PICKUP, (False, "code_invalid"), "code_invalid"),
+        (PICKUP, (False, None), None),
+    ],
+)  # fmt: skip
+def test_a_join_that_fails_is_join_failed(
+    world: Any, monkeypatch: pytest.MonkeyPatch, pickup: Any, joined: Any, detail: Any
+) -> None:
+    sup, backend, reports, _, _ = world
+    sup.client = Pickups(pickup)
+    joining(monkeypatch, joined)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert backend.started == []
+    assert (sup.records["plc-0003"].state, sup.records["plc-0003"].reason) == (
+        "failed", "join_failed"
+    )  # fmt: skip
+    assert sup.records["plc-0003"].detail == detail
+
+
+def test_a_rejoin_removes_the_old_credential_first(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    place = recorded(sup.cfg)
+    seen: list[bool] = []
+
+    def fake(
+        place_: workspace.Workspace, url: str, code: str, cwd: Path
+    ) -> tuple[bool, str | None]:
+        seen.append(place_.credential.exists())
+        place_.credential.write_text("mty1.crd-new.y")
+        return True, None
+
+    monkeypatch.setattr(supervisor, "run_join", fake)
+    sup.update([placement(rejoin=True)])
+    settle(sup)
+    assert seen == [False] and place.credential.read_text() == "mty1.crd-new.y"
+    assert len(backend.started) == 1
+
+
+def test_run_join_keeps_url_and_code_off_the_command_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen["argv"], seen["input"], seen["env"] = command, kwargs["input"], kwargs["env"]
+        return subprocess.CompletedProcess(command, 1, "", "maity: join: code_invalid: wrong\n")
+
+    monkeypatch.setattr("maity.runner.supervisor.subprocess.run", fake_run)
+    monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere")
+    place = workspace.Workspace(tmp_path / "c", "maity", "c")
+    assert supervisor.run_join(place, "https://h/j/SECRET-TOKEN", "CODE-1234", tmp_path) == (
+        False, "code_invalid"
+    )  # fmt: skip
+    assert not any("SECRET-TOKEN" in a or "CODE-1234" in a for a in seen["argv"])
+    assert seen["input"] == "https://h/j/SECRET-TOKEN\nCODE-1234\n"
+    assert seen["env"]["MAITY_STATE_DIR"] == str(place.credential.parent)
+    assert "--no-resume" in seen["argv"] and "--join-file" in seen["argv"]
+
+
+def test_run_join_against_a_hub(tmp_path: Path, fake: Any) -> None:
+    import fakehub
+
+    clone = tmp_path / "clone"
+    (clone / ".git").mkdir(parents=True)
+    place = workspace.Workspace(clone, "maity", "clone")
+    assert supervisor.run_join(place, f"{fake.url}/j/{fakehub.TOKEN}", fakehub.CODE, tmp_path) == (
+        True, None
+    )  # fmt: skip
+    assert place.credential.read_text() == fakehub.CREDENTIAL
+    assert state.load_state(place.credential.parent)["member_id"] == "agt-b"
+    exchange = [s for s in fake.seen if s.method == "POST"][0]
+    assert exchange.json()["client"].startswith("maity-runner/")
 
 
 def test_capacity(world: Any) -> None:
@@ -445,7 +596,10 @@ def test_records_survive_a_restart(world: Any) -> None:
 
 
 @pytest.fixture
-def origin_repo(tmp_path: Path) -> Path:
+def origin_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A local repository; cloning it needs the file transport, which the runner refuses."""
+    monkeypatch.setattr(workspace, "PROTOCOLS", ("https", "ssh", "file"))
+    monkeypatch.setattr(config, "repository_url_ok", lambda url: True)
     git = shutil.which("git")
     assert git is not None
     repo = tmp_path / "origin"
@@ -474,7 +628,7 @@ def test_prepare_clones_and_records(tmp_path: Path, origin_repo: Path) -> None:
     assert moved.value.detail == "origin_mismatch"
 
 
-def test_a_failed_clone(tmp_path: Path) -> None:
+def test_a_failed_clone(tmp_path: Path, origin_repo: Path) -> None:
     cfg = load(tmp_path)
     assert cfg.local is not None
     place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
@@ -914,3 +1068,111 @@ def test_a_start_that_ends_between_snapshot_and_step_is_not_doubled(
     monkeypatch.setattr(backend, "sessions", snapshot)
     sup.tick()
     assert len(backend.started) == 1
+
+
+# --- #121 review round -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:18777#@github.com/oliver-zehentleitner/maity",
+        "http://127.0.0.1:18777?@github.com/oliver-zehentleitner/maity",
+        "https://127.0.0.1#@github.com/oliver-zehentleitner/maity",
+        "file:///srv/github.com/oliver-zehentleitner/maity",
+        "ext::sh -c touch% /tmp/x",
+        "https://github.com/oliver-zehentleitner/maity%2F..",
+        "https://user:pw@github.com/oliver-zehentleitner/maity",
+        "https://user@github.com/oliver-zehentleitner/maity",
+        "https://github.com/oliver-zehentleitner\\maity",
+        "https://github.com/oliver-zehentleitner/maity extra",
+        "https://github.com/oliver-zehentleitner/maity/tree",
+    ],
+)
+def test_repository_urls_that_could_be_read_two_ways_are_refused(url: str) -> None:
+    assert not config.repository_url_ok(url)
+    assert not config.repository_allowed(url, ("github.com/oliver-zehentleitner/*",))
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://github.com/oliver-zehentleitner/maity.git",
+     "ssh://git@github.com/oliver-zehentleitner/maity.git"],
+)  # fmt: skip
+def test_https_and_ssh_repository_urls_pass(url: str) -> None:
+    assert config.repository_allowed(url, ("github.com/oliver-zehentleitner/*",))
+
+
+def test_a_bypass_url_is_refused_before_anything_runs(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    bad = "http://127.0.0.1:18777#@github.com/oliver-zehentleitner/maity"
+    sup.update([placement(workspace={"clone": "agent-3", "repository": bad})])
+    sup.tick()
+    assert states(reports) == [("failed", "repository_refused", None)]
+
+
+def test_the_clone_allows_only_https_and_ssh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], cwd: Path, timeout: float) -> Any:
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 128, "", "")
+
+    monkeypatch.setattr("maity.runner.workspace.proc.run", fake_run)
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    with pytest.raises(workspace.Refused):
+        workspace.prepare(cfg, place, REPO, "agt-3", "plc-0003")
+    command = seen[0]
+    assert command[:3] == ["git", "-c", "protocol.allow=never"]
+    assert "protocol.https.allow=always" in command and "protocol.file.allow=always" not in command
+
+
+def test_run_join_imports_nothing_from_the_clone(tmp_path: Path, fake: Any) -> None:
+    import fakehub
+
+    clone = tmp_path / "clone"
+    (clone / ".git").mkdir(parents=True)
+    marker = tmp_path / "planted-ran"
+    for name in ("json.py", "maity.py"):
+        (clone / name).write_text(f"open({str(marker)!r}, 'w').close()\n")
+    place = workspace.Workspace(clone, "maity", "clone")
+    runner_dir = tmp_path / "state"
+    runner_dir.mkdir()
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    assert supervisor.run_join(place, url, fakehub.CODE, runner_dir) == (True, None)
+    assert not marker.exists()
+
+
+def test_the_next_start_after_a_join_accepts_its_own_clone(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    backend.exit("maity_maity_agent-3", 0)
+    sup.tick()
+    sup.records["plc-0003"].retry_at = None
+    settle(sup)  # the hub has not named the new member yet: agent.id is still None
+    assert len(backend.started) == 2
+    assert sup.records["plc-0003"].reason != "workspace_in_use"
+
+
+def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP, PICKUP)
+    calls = joining(monkeypatch)
+    recorded(sup.cfg)
+    sup.update([placement(rejoin=True, generation=2)])
+    settle(sup)
+    backend.exit("maity_maity_agent-3", 0)
+    sup.tick()
+    sup.records["plc-0003"].retry_at = None
+    settle(sup)  # the hub has not cleared `rejoin` yet
+    assert len(calls) == 1 and len(backend.started) == 2

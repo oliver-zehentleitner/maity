@@ -149,9 +149,26 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     return EXIT_OK
 
 
+def _join_line(args: argparse.Namespace) -> tuple[str, str]:
+    """URL and code from the arguments, or as two lines from --join-file (`-`: stdin), so
+    that neither has to be on a command line where `ps` shows it (§15.9)."""
+    if args.join_file is not None:
+        if args.url is not None or args.code is not None:
+            raise UsageError("give the URL and the code either as arguments or in --join-file")
+        text = sys.stdin.read() if args.join_file == "-" else Path(args.join_file).read_text()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) != 2:
+            raise UsageError("--join-file holds two lines: the join URL, then the code")
+        return lines[0], lines[1]
+    if args.url is None or args.code is None:
+        raise UsageError("give the join URL and --code, or --join-file")
+    return args.url, args.code
+
+
 def cmd_join(args: argparse.Namespace) -> int:
-    target = hub.join_target(args.url)
-    if not args.code.strip():
+    url, code = _join_line(args)
+    target = hub.join_target(url)
+    if not code.strip():
         raise UsageError("the join code is empty")
     directory = state.resolve_state_dir()
     if state.has_credential(directory):
@@ -161,8 +178,8 @@ def cmd_join(args: argparse.Namespace) -> int:
             "before joining again"
         )
         return EXIT_ERROR
-    result = hub.exchange(target, args.code.strip())
-    base = hub.accept_hub(args.url, result.hub)  # before anything is kept
+    result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
+    base = hub.accept_hub(url, result.hub)  # before anything is kept
     path = state.write_credential(directory, result.credential)
     state.save_state(
         directory,
@@ -192,6 +209,8 @@ def cmd_join(args: argparse.Namespace) -> int:
             file=sys.stderr,
             end="",
         )
+    if args.no_resume:
+        return EXIT_OK
     try:
         return _resume(Session(), args, first=True)
     except hub.HubError as exc:
@@ -644,8 +663,17 @@ def build_parser() -> argparse.ArgumentParser:
         "who you are, the project and its rules, and the next step. A clone that already holds a "
         "credential is refused.",
     )
-    p.add_argument("url", help="the join URL from the pasted line")
-    p.add_argument("--code", required=True, help="the single-use join code from the pasted line")
+    p.add_argument("url", nargs="?", help="the join URL from the pasted line")
+    p.add_argument("--code", help="the single-use join code from the pasted line")
+    p.add_argument(
+        "--join-file",
+        metavar="FILE",
+        help="read the URL and the code as two lines from FILE, or from stdin with -",
+    )
+    p.add_argument("--no-resume", action="store_true", help="store the credential, open no session")
+    p.add_argument(
+        "--client", metavar="NAME", help="what made this join, e.g. maity-runner/<version>"
+    )
     p.add_argument(
         "--pointer",
         action="store_true",
