@@ -295,8 +295,11 @@ Every entry of `#/all` has its project's badge (logo or monogram, name,
 state) before it, as a link to the project's inbox; the entry's head
 button starts with the project's name, visually hidden, so that the
 button's own name says which project it is. A project filter and an
-optional grouping by project (sections in the switcher's order) sit in
-the toolbar; both are kept only for this tab's session.
+optional grouping by project (sections in the switcher's order, each a
+heading with its own list) sit in the toolbar; both are kept only for
+this tab's session and apply to `#/all` only, never to a project's own
+inbox. The entry opened first and the one opened after an answer follow
+the order on screen, filter and grouping included.
 
 **Reason:** a link may not sit inside a button, and the head is a button
 (it opens the entry); so the badge stands beside it. A screen reader
