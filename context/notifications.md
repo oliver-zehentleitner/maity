@@ -56,7 +56,7 @@ or a secret store is more setup than the install itself.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security review of the notifications contract and the contract owner's ruling on it, 2026-10-22; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
+**Source:** security reviews of the notifications contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
 **See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
 The hub's mail is treated as a trusted channel that members must not
@@ -67,24 +67,34 @@ turn into a link is defanged; the only links are the hub's own. Header
 values lose every control character and are RFC 2047-encoded, and an
 address is one checked `addr-spec`, never a list. Under `starttls`,
 a server without STARTTLS fails the send loudly; plaintext only with an
-environment flag documented as insecure. Notification mail and security
-mail (verification, sign-in, security alerts) have separate budgets,
-and notification mail is batched per human. A human's watch on a card
+environment flag documented as insecure. Notification mail, security
+mail (verification, security alerts, the notice to an old address) and
+sign-in mail have three separate budgets; security mail over its budget
+is queued, never dropped, and sign-in mail, the one kind an anonymous
+caller can trigger, has a cap of its own. Notification mail is batched
+per human. A human's watch on a card
 is not written into the event's audience; the hub computes that
 fan-out itself and shows it to nobody. Notifications that belong to no
 project — `security` and `system` — come from account records, the
-human's own audit records, readable by that human alone, instead of
-from events, which always belong to a project. The test send connects
+human's own audit records, readable by that human alone, numbered in a
+sequence of their own (`acr-<n>`), instead of from events, which always
+belong to a project. A personal request (a takeover notice or a soul
+proposal addressed to an agent's owner) reaches that human's inbox
+through its addressing, member of the project or not. The test send connects
 only to the configured server.
 
-The rules are the contract owner's ruling on the review; the reasons
+The rules are the contract owner's rulings on the reviews (two rounds); the reasons
 below are this contract's reading of them.
 
 **Reason:** the hub's `From` address is the one a human trusts, and
 with sign-in links by mail it becomes the address that signs them in —
 a hub that relays an agent's "sign in here" link would be the phishing
 tool itself. A shared budget would let event churn, which any member
-can cause, crowd out the mails that protect the account. An audience
+can cause, crowd out the mails that protect the account; a budget
+shared with sign-in mail would let anonymous callers do the same, and a
+dropped alert is the one an attacker wants dropped. Account records in
+the event sequence would leave gaps in `/events` from which an owner
+or admin, an admin agent included, could time the humans' sign-ins. An audience
 token is readable by every owner and admin through `/events`, so a
 watch written there would publish what the contract promises is the
 watcher's own business. A silent fallback to plaintext is the usual
@@ -95,7 +105,10 @@ anyone noticing.
 - Stripping other members' tokens from `audience` on output instead of
   never writing the watch there: a larger change to the event shape
   for every reader.
-- A reserved share of one budget instead of two budgets: offered by the
+- A reserved share of one budget instead of separate budgets: offered by the
   review; the ruling chose separate budgets (reason not recorded).
+- Account records numbered from the event sequence (the first round),
+  so that one `after` covered both: the timing leak above; the bell now
+  uses a two-part position instead.
 - Dropping the `system` kind: the mail-disabled notice has a real
   source, the account record, so the kind stays.
