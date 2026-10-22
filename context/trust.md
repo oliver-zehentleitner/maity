@@ -93,8 +93,9 @@ would mostly leave work half done without a checkpoint.
 
 **Id:** b242eda7-abc7-489f-af49-d7b7d7bf37c5
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
+**Verification:** contradicted — since the follow-up to the hub's tree check (`docs/api.md` §6.2, 2026-10-22) the cycle check runs on the PATCH only: a join for an existing member must name its current `reports_to` (`differs_from_membership`), so a join never adds an edge, while this entry still says the join is checked
 **Source:** contract change in `docs/api.md` §6.2, 2026-10-22, for the maintainer's need to re-hang members in the organisation chart
 **Revisit when:** a member has to report to more than one member, or the organisation needs a relation a tree cannot express
 **See:** https://github.com/oliver-zehentleitner/maity — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-10-22
