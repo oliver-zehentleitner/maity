@@ -81,7 +81,7 @@ def build_bundle():
 # Every project in me.json answers every endpoint the views call.
 PROJECT_FIXTURES = ("project.json", "members.json", "requests.json", "tasks.json",
                     "credentials.json", "conversations.json", "joins.json")
-TOP_FIXTURES = ("me.json", "auth-session.json", "agents.json")
+TOP_FIXTURES = ("me.json", "auth-session.json", "agents.json", "runners.json", "runner-enrollments.json")
 
 
 def check_fixture_set():

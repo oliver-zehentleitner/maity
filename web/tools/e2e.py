@@ -714,6 +714,7 @@ def scenario(run: Run, page: Page) -> None:
     images_step(run, page, alpha)
 
     why_step(run, page, alpha)
+    runners_step(run, page)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -1017,6 +1018,87 @@ def fixture_views(run: Run, browser) -> None:
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
+    """What `maity runner pair` does on the runner host: the exchange of §15.2."""
+    words = shlex.split(pair_line)
+    assert words[:3] == ["maity", "runner", "pair"] and words[4] == "--code", words
+    token = words[3].rstrip("/").rsplit("/", 1)[-1]
+    request = urllib.request.Request(
+        run.base + "/api/v1/runners/pair/" + token,
+        data=json.dumps({"code": words[5], "client": "maity-e2e/1"}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return response.status, dict(response.headers), response.read().decode()
+
+
+def runners_step(run: Run, page: Page) -> None:
+    """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    link = page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)
+    link.click()
+    expect(page).to_have_url(re.compile(r"#/runners$"))
+    view = page.locator("main section.view-runners")
+    expect(view.or_(page.locator("main .error"))).to_be_visible()
+    if page.locator("main .error").count():
+        run.step("runners: this hub has no runners yet")
+        run.problems = [p for p in run.problems if "/api/v1/runners" not in p]
+        return
+    run.step(
+        "runners: pair a runner from the dashboard, exchange the line, rename, re-pair, revoke, remove"
+    )
+    expect(view).to_contain_text("No runner yet.")
+    page.locator("#pair-name").fill("e2e-runner")
+    page.get_by_role("button", name="Create the pairing line", exact=True).click()
+    steps = page.locator(".pair-steps")
+    expect(steps).to_contain_text("maity runner pair")
+    config = page.locator(".runner-config").inner_text()
+    assert f'url = "{run.base}"' in config and '"e2e-alpha"' in config and '"e2e-beta"' in config, (
+        config
+    )
+    pair_line = steps.locator("pre.paste-line").nth(1).inner_text()
+    assert pair_line.startswith("maity runner pair ") and pair_line not in config, pair_line
+    run.shot(page, "runners-pairing")
+    run.a11y(page, "runners, pairing")
+    status, headers, credential = pair_exchange(run, pair_line)
+    assert status == 201 and credential.startswith("mty1.rcrd-"), (status, credential[:12])
+    assert headers.get("Maity-Runner-Id", "").startswith("rnr-"), headers
+    # The panel's 30-s re-read sees the runner paired; it is offline until it serves.
+    expect(page.locator(".pair-wait")).to_contain_text(
+        "e2e-runner is paired", timeout=COUNTS_MS + 15_000
+    )
+    card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-runner"))
+    expect(card).to_contain_text("offline, never connected")
+    expect(card).to_contain_text("It has not reported what it can do yet")
+    first_credential = headers["Maity-Credential-Id"]
+    expect(card).to_contain_text(first_credential)
+    run.a11y(page, "runners, one paired")
+    card.locator("input[id^=runner-name-]").fill("e2e-renamed")
+    card.get_by_role("button", name="Rename", exact=True).click()
+    card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
+    expect(card).to_be_visible()
+    card.get_by_role("button", name="Re-pair", exact=True).click()
+    expect(page.locator(".pair-steps")).to_contain_text("Keep your existing configuration")
+    repair = page.locator(".pair-steps pre.paste-line").nth(1).inner_text()
+    status, headers2, _ = pair_exchange(run, repair)
+    assert status == 201 and headers2["Maity-Runner-Id"] == headers["Maity-Runner-Id"], headers2
+    page.goto(f"{run.base}/#/all")
+    page.goto(f"{run.base}/#/runners")
+    card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
+    expect(card).to_contain_text(headers2["Maity-Credential-Id"])  # the old one was replaced
+    page.once("dialog", lambda d: d.accept())
+    card.get_by_role("button", name="Revoke", exact=True).click()
+    expect(card).to_contain_text("revoked")
+    page.once("dialog", lambda d: d.accept())
+    card.get_by_role("button", name="Remove", exact=True).click()
+    expect(page.locator("main")).to_contain_text("e2e-renamed was removed.")
+    expect(page.locator("main")).to_contain_text("Nothing was running on it.")
+    expect(page.locator("article.runner")).to_have_count(0)
+    run.shot(page, "runners-removed")
+    no_problems(run, "runners")
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:

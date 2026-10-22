@@ -117,6 +117,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   reads `GET /projects` only from a hub that does not
 - web: the sections of **Project settings** are headed `h2`, under the page's `h1`, so the
   heading levels no longer skip one
+- web: a Runners view (`#/runners`): each runner in plain words (presence, hosts or pools,
+  tools, who can see what, what its configuration allows); pair a runner with the line
+  shown once, a starter configuration and the steps that make it start; rename, re-pair,
+  revoke, remove with the agents still running on it
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
