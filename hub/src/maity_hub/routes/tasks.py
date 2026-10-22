@@ -648,8 +648,6 @@ def patch_task(
                 changed_via=caller.via,
             )
         )
-        if card.kind == "release" and changed.get("status") in cards.CLOSED:
-            releases.close(conn, card.id)
         card = _card(conn, card.id)
         view = task_view(conn, card)
         payload = {k: view[k] for k in changed if k in view}
@@ -669,6 +667,8 @@ def patch_task(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if card.kind == "release" and changed.get("status") in cards.CLOSED:
+            releases.close(conn, card.id)  # after the write's own event: release_ready last
         releases.recheck(conn, mine.project.id)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
 
@@ -1005,8 +1005,6 @@ def report(
                 changed_via=caller.via,
             )
         )
-        if body.done and card.kind == "release":
-            releases.close(conn, card.id)
         card = _card(conn, card.id)
         targets = _member(principal_id(conn, card.claim_holder)) + _member(
             principal_id(conn, card.created_by)
@@ -1020,6 +1018,8 @@ def report(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if body.done and card.kind == "release":
+            releases.close(conn, card.id)  # after task_reported: release_ready comes last
         releases.recheck(conn, mine.project.id)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
 

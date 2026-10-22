@@ -17,7 +17,8 @@ claims, checkpoints and reports, requests to humans, events with the
 long-poll, messages and conversations, release and contract cards. The
 forge probe is being built; until it lands, readiness counts no pull
 request as merged, so only a release without pull requests can be ready,
-and only on a hub that holds a forge token. Paths are
+and only on a hub that holds a forge token, in a project whose repository is
+on GitHub. Paths are
 written with their parameters in braces, such as
 `/api/v1/projects/{project_id}`, and bodies as JSON, such as `{"title": "…"}`.
 

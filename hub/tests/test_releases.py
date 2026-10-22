@@ -505,6 +505,9 @@ def test_a_release_made_ready_by_its_closing_patch_is_announced(
     assert len(announced) == 2
     assert announced[-1].payload == {"release": card["id"], "version": "0.1.0"}
     assert done.json()["release"]["readiness"] == {"ready": True, "blocking": []}
+    closing = _events(migrated, "task_updated")[-1]
+    assert closing.payload["status"] == "done"
+    assert announced[-1].seq > closing.seq  # the write's own event first, release_ready last
 
 
 def test_a_report_that_closes_a_ready_release_announces_it_and_frees_the_slot(
@@ -572,7 +575,7 @@ def test_ships_with_never_names_a_release_card(owner: flow.Human) -> None:
     assert own.json()["error"]["details"]["fields"] == {"ships_with": "release_card"}
     owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"})
     closed = owner.patch(f"/projects/maity/tasks/{card['id']}", {"ships_with": [other["id"]]})
-    assert closed.status_code == 400
+    assert closed.json()["error"]["details"]["fields"] == {"ships_with": "release_card"}
 
 
 def test_a_repository_change_resets_and_reannounces_readiness(

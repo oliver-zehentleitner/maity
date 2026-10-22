@@ -186,9 +186,6 @@ def probe_configured(conn: Connection, project_id: str) -> bool:
     return forge.configured_for(url)
 
 
-FROZEN = ("pull_requests", "groups", "readiness")
-
-
 def _live(conn: Connection, card: Any) -> dict[str, Any]:
     """Pull requests, groups and readiness as the release stands now."""
     shipped = _shipped(conn, card.id)
