@@ -1,4 +1,4 @@
-The Maity hub {{ .Chart.AppVersion }} is installed as {{ include "maity-hub.fullname" . }} in {{ .Release.Namespace }}.
+The Maity hub ({{ include "maity-hub.image" . }}) is installed as {{ include "maity-hub.fullname" . }} in {{ .Release.Namespace }}.
 Public URL: {{ include "maity-hub.publicUrl" . }}
 {{- if .Values.migrate.enabled }}
 
@@ -20,6 +20,7 @@ never from the command line):
     maity-hub owner create --handle <handle> --display-name '<Your Name>' < password-file
 {{- if not .Values.forge.github.existingSecret }}
 
-No forge token is configured: the probe answers probe_not_configured and no
-release can become ready. Set forge.github.existingSecret to enable it.
+No forge token is configured. Once the hub version in use has the forge probe,
+it answers probe_not_configured and no release can become ready; set
+forge.github.existingSecret to enable it.
 {{- end }}

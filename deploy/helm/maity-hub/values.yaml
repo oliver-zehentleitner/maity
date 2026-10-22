@@ -1,12 +1,13 @@
 # The Maity hub on Kubernetes: one Deployment with one pod, a Service, an
-# optional Ingress, and `maity-hub migrate` as a Job before every install and
-# upgrade. PostgreSQL is not part of the chart; the hub connects to one that
-# exists. Secrets are never values here: the chart only names Secrets that
-# already exist in the release namespace.
+# optional Ingress, a NetworkPolicy, and `maity-hub migrate` as a Job before
+# every install and upgrade. PostgreSQL is not part of the chart; the hub
+# connects to one that exists. Secrets are never values here: the chart only
+# names Secrets that already exist in the release namespace.
 #
-# The four values every install sets: image.repository, database.existingSecret,
-# and either ingress.* (host, className, config.trustedProxies) or
-# config.publicUrl. See README.md for a complete example.
+# What every install sets: image.repository, database.existingSecret, and
+# either the Ingress (ingress.enabled, ingress.host, ingress.className,
+# config.trustedProxies) or config.publicUrl. README.md walks through a
+# complete install.
 
 image:
   # Required. The image built from deploy/Dockerfile and pushed to a registry
@@ -19,7 +20,8 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
-# Names of existing docker-registry Secrets for a private registry.
+# Existing docker-registry Secrets for a private registry, as
+#   - name: registry-credentials
 imagePullSecrets: []
 
 nameOverride: ""
@@ -27,18 +29,25 @@ fullnameOverride: ""
 
 config:
   # MAITY_PUBLIC_URL: the address browsers and agents use; it appears in join
-  # links and in /help. Empty: https://<ingress.host> with the Ingress enabled;
-  # required without it.
+  # links and in /help. Empty: https://<ingress.host> with the Ingress enabled
+  # (also with ingress.tls.enabled false, which then needs TLS in front of the
+  # controller, e.g. on the load balancer); required without the Ingress.
   publicUrl: ""
   # MAITY_TRUSTED_PROXIES: comma-separated addresses or CIDRs of the proxies in
-  # front of the hub, i.e. the ingress controller's pods (the cluster's pod
-  # network, e.g. 10.244.0.0/16). The hub takes the client address and the
-  # scheme from X-Forwarded-* only when the connection comes from one of them.
-  # Required with the Ingress enabled: without it the hub sees plain HTTP from
-  # the controller and refuses logins and joins.
+  # front of the hub, i.e. the ingress controller's pods. The hub takes the
+  # client address and the scheme from X-Forwarded-* only when the connection
+  # comes from one of them. Required with the Ingress enabled. The cluster's
+  # pod network is the usual value:
+  #   kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'
+  # lists each node's share of it. The controller must see the real client
+  # address itself for this to help: behind a cloud load balancer that is
+  # PROXY protocol or `externalTrafficPolicy: Local` on the controller's
+  # Service (README.md, "Client addresses"); otherwise every client shares
+  # one address and one rate-limit bucket.
   trustedProxies: ""
   # MAITY_ALLOW_PLAIN_HTTP: bearer credentials and cookies over plain HTTP.
-  # Only for a cluster-internal hub that nothing outside the cluster reaches.
+  # Only for a hub nothing outside the cluster reaches: refused with the
+  # Ingress enabled or a Service type other than ClusterIP.
   allowPlainHttp: false
   # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
   # API only.
@@ -46,21 +55,21 @@ config:
 
 database:
   # Required. The name of a Secret in the release namespace whose `key` holds
-  # MAITY_DATABASE_URL, e.g.
-  #   postgresql://maity:<password>@postgres.db.svc:5432/maity
-  # Percent-encode an `@` or `:` in the password. Create it with
-  #   kubectl create secret generic maity-hub-database \
-  #     --from-file=database-url=./database-url
-  # so the URL never appears in the shell history.
+  # MAITY_DATABASE_URL, e.g. for a managed PostgreSQL with TLS:
+  #   postgresql://maity:<password>@db.example.org:16751/maity?sslmode=require
+  # Percent-encode an `@` or `:` in the password. README.md shows how to create
+  # it without the URL entering the shell history, and how to mount the
+  # database's CA for sslmode=verify-full.
   existingSecret: ""
   key: database-url
 
 forge:
   github:
     # Optional. The name of a Secret whose `key` holds a GitHub token for the
-    # probe (MAITY_FORGE_GITHUB_TOKEN; read access to pull requests, contents
-    # and checks is enough). Without it the probe answers probe_not_configured
-    # and no release can become ready. May be the same Secret as the database's.
+    # forge probe (MAITY_FORGE_GITHUB_TOKEN; read access to pull requests,
+    # contents and checks is enough). May be the same Secret as the database's.
+    # The probe and release readiness come with a later hub version; until
+    # then the token is read and unused.
     existingSecret: ""
     key: github-token
 
@@ -71,7 +80,10 @@ migrate:
   enabled: true
   # Retries for a database that is briefly unreachable during the upgrade.
   backoffLimit: 3
-  activeDeadlineSeconds: 600
+  # Seconds for all attempts together. Keep it under the --timeout of
+  # `helm install/upgrade` (the README uses 10m): a Job that outlives Helm can
+  # still migrate under the old pod after Helm reported the failure.
+  activeDeadlineSeconds: 300
   resources:
     requests:
       cpu: 50m
@@ -83,21 +95,34 @@ migrate:
 # `env` form (name/value or name/valueFrom).
 extraEnv: []
 
+# More volumes and mounts for the hub and the migrate Job, e.g. a database CA:
+#   extraVolumes:
+#     - name: db-ca
+#       secret: {secretName: maity-hub-db-ca}
+#   extraVolumeMounts:
+#     - {name: db-ca, mountPath: /etc/maity/db-ca, readOnly: true}
+extraVolumes: []
+extraVolumeMounts: []
+
 service:
+  # ClusterIP behind the Ingress. NodePort or LoadBalancer put the hub's plain
+  # HTTP port outside the cluster: only with TLS in front of it.
   type: ClusterIP
   port: 80
+  annotations: {}
 
 ingress:
   enabled: false
-  # The IngressClass, e.g. nginx.
+  # The IngressClass of the controller in front of the hub.
   className: ""
   # The host name browsers and agents use, e.g. maity.example.org.
   host: ""
   # The defaults are for ingress-nginx: an event long-poll holds its request
   # for up to 55 seconds and must reach the client unbuffered (docs/api.md §8).
-  # Another controller needs its own equivalents. Add e.g.
-  #   cert-manager.io/cluster-issuer: letsencrypt
-  # to have cert-manager fill the TLS Secret.
+  # Another controller needs its own equivalents (README.md, "Ingress
+  # controllers"). They merge with yours; set a key to null to drop it. Add
+  # e.g. `cert-manager.io/cluster-issuer: <issuer>` to have cert-manager fill
+  # the TLS Secret.
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "75"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "75"
@@ -106,6 +131,20 @@ ingress:
     enabled: true
     # Empty: <release fullname>-tls.
     secretName: ""
+
+networkPolicy:
+  # Only the peers below and this release's `helm test` pod may connect to the
+  # hub. The hub trusts X-Forwarded-For from the whole trusted-proxy range;
+  # without the policy any pod could reach it and claim any client address.
+  # Needs a CNI that enforces NetworkPolicy.
+  enabled: true
+  # NetworkPolicy peers (`from` entries). The default is the namespace of an
+  # ingress controller installed as `ingress-nginx`; change it to yours, and
+  # add the namespaces of in-cluster clients of a hub without an Ingress.
+  from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
 
 resources:
   requests:
@@ -118,6 +157,7 @@ resources:
 # stop; the hub finishes open requests before it exits.
 terminationGracePeriodSeconds: 65
 
+# Each block is rendered into its probe as it is.
 probes:
   # /api/v1/health answers 503 while the database is unreachable or not at the
   # migration head: the pod then gets no traffic, but is not restarted.
@@ -130,8 +170,10 @@ probes:
     periodSeconds: 20
     timeoutSeconds: 5
     failureThreshold: 3
+  # The same endpoint until the process first answers: up to 60 seconds.
   startup:
     periodSeconds: 2
+    timeoutSeconds: 5
     failureThreshold: 30
 
 serviceAccount:

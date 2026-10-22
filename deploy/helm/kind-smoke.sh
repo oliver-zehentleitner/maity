@@ -26,7 +26,34 @@ trap cleanup EXIT
 
 step() { printf '\n== %s\n' "$1"; }
 secret() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
-hub_pods() { kubectl -n "$ns" get pods -l app.kubernetes.io/name=maity-hub,app.kubernetes.io/component!=migrate,app.kubernetes.io/component!=test -o name; }
+hub_pods() { kubectl -n "$ns" get pods -l app.kubernetes.io/name=maity-hub,app.kubernetes.io/component=hub -o name; }
+
+# A pod in namespace $1 that asks the hub's health once; prints Succeeded or Failed.
+reach() {
+    kubectl get namespace "$1" >/dev/null 2>&1 || kubectl create namespace "$1" >/dev/null
+    kubectl -n "$1" apply -f - >/dev/null <<YAML
+apiVersion: v1
+kind: Pod
+metadata: {name: reach}
+spec:
+  restartPolicy: Never
+  securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: reach
+      image: $image
+      imagePullPolicy: Never
+      command: [python, -c, "import urllib.request; urllib.request.urlopen('http://hub-maity-hub.$ns/api/v1/health', timeout=5)"]
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+YAML
+    local phase=""
+    for _ in $(seq 60); do
+        phase="$(kubectl -n "$1" get pod reach -o jsonpath='{.status.phase}')"
+        case "$phase" in Succeeded | Failed) break ;; esac
+        sleep 1
+    done
+    kubectl -n "$1" delete pod reach --wait=false >/dev/null
+    echo "$phase"
+}
 
 step "cluster $name, the hub image, PostgreSQL"
 kind create cluster --name "$name" --kubeconfig "$KUBECONFIG" --wait 120s
@@ -72,10 +99,16 @@ values=(--set image.repository=maity-hub --set image.tag=kind-smoke --set image.
     --set database.existingSecret=maity-hub-database --set config.publicUrl=https://maity.test)
 
 step "install: the migrate Job runs first, then the hub turns ready"
-helm install hub "$chart" -n "$ns" "${values[@]}" --wait --timeout 5m
+helm install hub "$chart" -n "$ns" "${values[@]}" --wait --timeout 10m
 kubectl -n "$ns" logs job/hub-maity-hub-migrate | tee "$work/migrate.log"
 grep -q "schema empty -> " "$work/migrate.log"
 helm test hub -n "$ns" --logs
+
+step "the NetworkPolicy: the ingress controller's namespace reaches the hub, another one does not"
+allowed="$(reach ingress-nginx)"
+other="$(reach elsewhere)"
+echo "from ingress-nginx: $allowed, from elsewhere: $other"
+[ "$allowed" = Succeeded ] && [ "$other" = Failed ]
 
 step "a human account through kubectl exec, a login through a port-forward"
 owner_password="$(secret)"
@@ -95,7 +128,7 @@ kill "$forward_pid"; forward_pid=""
 
 step "upgrade: the migration runs again, the new pod replaces the old one"
 before="$(hub_pods)"
-helm upgrade hub "$chart" -n "$ns" "${values[@]}" --set podAnnotations.smoke=upgraded --wait --timeout 5m
+helm upgrade hub "$chart" -n "$ns" "${values[@]}" --set podAnnotations.smoke=upgraded --wait --timeout 10m
 kubectl -n "$ns" logs job/hub-maity-hub-migrate | tee "$work/migrate.log"
 grep -q "schema .* -> " "$work/migrate.log"
 after="$(hub_pods)"
@@ -107,7 +140,7 @@ step "a migration that fails stops the upgrade; the running hub stays"
 printf 'postgresql://maity:wrong@postgres:5432/maity' >"$work/broken-url"
 kubectl -n "$ns" create secret generic maity-hub-broken --from-file=database-url="$work/broken-url"
 if helm upgrade hub "$chart" -n "$ns" "${values[@]}" --set database.existingSecret=maity-hub-broken \
-    --set migrate.backoffLimit=0 --wait --timeout 3m; then
+    --set migrate.backoffLimit=0 --wait --timeout 10m; then
     echo "kind smoke: an upgrade with a failing migration went through" >&2
     exit 1
 fi

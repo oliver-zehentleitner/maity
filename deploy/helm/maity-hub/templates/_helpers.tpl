@@ -20,11 +20,32 @@ app.kubernetes.io/name: {{ include "maity-hub.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/*
+Common labels. `app.kubernetes.io/version` is the image tag when one is set,
+so it names what runs; with a digest it stays the chart's appVersion.
+*/}}
 {{- define "maity-hub.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{ include "maity-hub.selectorLabels" . }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ default .Chart.AppVersion .Values.image.tag | trunc 63 | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{/*
+The hub's own pods: the Deployment and the Service select on this, so the
+migrate Job's and the test's pods, which share name and instance, are never
+taken for the hub. A selector cannot change after the first install.
+*/}}
+{{- define "maity-hub.hubSelectorLabels" -}}
+{{ include "maity-hub.selectorLabels" . }}
+app.kubernetes.io/component: hub
+{{- end -}}
+
+{{- define "maity-hub.imagePullSecrets" -}}
+{{- with .Values.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end -}}
 
 {{- define "maity-hub.serviceAccountName" -}}
@@ -59,17 +80,24 @@ without either would put http://localhost:8080 into every join link.
 {{- end -}}
 
 {{/*
-Refusals that would otherwise surface only at the first login: an Ingress
-without trusted proxies leaves the hub seeing plain HTTP from the controller.
+Refusals that would otherwise surface only at the first login. An Ingress
+without trusted proxies leaves the hub seeing plain HTTP and one client
+address, the controller's: logins and joins are refused, or every client
+shares one rate-limit bucket. Plain HTTP is for a hub nothing outside the
+cluster reaches, so it is refused with an Ingress or a Service that leaves
+the cluster.
 */}}
 {{- define "maity-hub.validate" -}}
 {{- if .Values.ingress.enabled -}}
 {{- if not .Values.ingress.host -}}
 {{- fail "ingress.host is required with the Ingress enabled" -}}
 {{- end -}}
-{{- if and (not .Values.config.trustedProxies) (not .Values.config.allowPlainHttp) -}}
-{{- fail "config.trustedProxies is required with the Ingress enabled: the ingress controller's pod network, so the hub believes its X-Forwarded-Proto" -}}
+{{- if not .Values.config.trustedProxies -}}
+{{- fail "config.trustedProxies is required with the Ingress enabled: the ingress controller's pod network, so the hub believes its X-Forwarded-For and X-Forwarded-Proto" -}}
 {{- end -}}
+{{- end -}}
+{{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
+{{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
 {{- end -}}
 

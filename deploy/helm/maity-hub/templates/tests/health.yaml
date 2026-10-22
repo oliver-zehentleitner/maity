@@ -16,12 +16,7 @@ spec:
   restartPolicy: Never
   automountServiceAccountToken: false
   enableServiceLinks: false
-  {{- with .Values.imagePullSecrets }}
-  imagePullSecrets:
-    {{- range . }}
-    - name: {{ . }}
-    {{- end }}
-  {{- end }}
+  {{- include "maity-hub.imagePullSecrets" . | nindent 2 }}
   securityContext:
     {{- include "maity-hub.podSecurityContext" . | nindent 4 }}
   containers:

@@ -22,6 +22,7 @@ that need the maintainer are marked **[maintainer]**.
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
 - Dependency update automation for `hub/requirements/`: Renovate or Dependabot on the uv-compiled files, and/or `pip-audit` against `runtime.txt` in CI. Until then security bumps are manual (`make lock-upgrade PACKAGE=<name>`, hub/README.md "Dependencies").
+- A published hub image (and possibly the chart) once the maintainer decides on the registry; until then the chart requires `image.repository`.
 
 ## Requirements collected so far (not yet designed)
 

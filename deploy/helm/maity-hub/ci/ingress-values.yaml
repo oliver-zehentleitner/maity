@@ -2,7 +2,8 @@
 image:
   repository: ghcr.io/example/maity-hub
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
-imagePullSecrets: [registry]
+imagePullSecrets:
+  - name: registry
 database:
   existingSecret: maity-hub-secrets
 forge:
@@ -19,3 +20,19 @@ ingress:
     cert-manager.io/cluster-issuer: letsencrypt
 migrate:
   enabled: false
+service:
+  annotations:
+    example.org/owner: maity
+networkPolicy:
+  from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: traefik
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: maity-hub-db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/maity/db-ca
+    readOnly: true

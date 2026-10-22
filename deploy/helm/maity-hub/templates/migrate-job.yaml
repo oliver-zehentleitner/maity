@@ -4,7 +4,9 @@
 # changes: a hook Job, not an init container, so it runs once per release and
 # never in parallel with itself. A failed Job fails the install or upgrade
 # and the running hub is left as it was. The finished Job stays until the
-# next upgrade replaces it, so its log can still be read.
+# next upgrade replaces it, so its log can still be read. Its deadline stays
+# under the --timeout the README's commands pass: a Job that outlived Helm
+# could still migrate under the old pod after Helm reported the failure.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -30,12 +32,7 @@ spec:
       # when this hook runs; the Job needs no API access either way.
       automountServiceAccountToken: false
       enableServiceLinks: false
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- range . }}
-        - name: {{ . }}
-        {{- end }}
-      {{- end }}
+      {{- include "maity-hub.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "maity-hub.podSecurityContext" . | nindent 8 }}
       containers:
@@ -52,10 +49,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

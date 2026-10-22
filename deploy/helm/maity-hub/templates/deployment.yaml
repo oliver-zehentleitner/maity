@@ -5,6 +5,7 @@ metadata:
   name: {{ include "maity-hub.fullname" . }}
   labels:
     {{- include "maity-hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hub
 spec:
   # One pod, never two at once: the long-poll notifier, "one long-poll per
   # session", the request-signing nonce window and the probe worker live in
@@ -16,11 +17,11 @@ spec:
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      {{- include "maity-hub.selectorLabels" . | nindent 6 }}
+      {{- include "maity-hub.hubSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "maity-hub.selectorLabels" . | nindent 8 }}
+        {{- include "maity-hub.hubSelectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -33,12 +34,7 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- range . }}
-        - name: {{ . }}
-        {{- end }}
-      {{- end }}
+      {{- include "maity-hub.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "maity-hub.podSecurityContext" . | nindent 8 }}
       containers:
@@ -58,22 +54,17 @@ spec:
             httpGet:
               path: /api/v1/help
               port: http
-            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
-            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            {{- toYaml .Values.probes.startup | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /api/v1/health
               port: http
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /api/v1/help
               port: http
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -81,10 +72,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

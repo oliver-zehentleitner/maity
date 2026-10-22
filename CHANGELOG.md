@@ -97,10 +97,12 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - deploy: a Helm chart for the hub (`deploy/helm/maity-hub`) — one pod
   replaced with `Recreate`, `maity-hub migrate` as a pre-install/pre-upgrade
   hook Job, the database URL and the forge token from existing Secrets, an
-  optional Ingress with TLS and long-poll timeouts, readiness on
+  optional Ingress with TLS and long-poll timeouts, a NetworkPolicy that
+  admits only the ingress controller's namespace, readiness on
   `/api/v1/health` and liveness on `/api/v1/help`, a values schema that
-  refuses unknown keys, `helm test`; `deploy/helm/check.sh` and
-  `deploy/helm/kind-smoke.sh` in CI.
+  refuses unknown keys, refusals for an Ingress without trusted proxies and
+  for plain HTTP outside the cluster, `helm test`; `deploy/helm/check.sh`
+  and `deploy/helm/kind-smoke.sh` in CI.
 
 ### Fixed
 
