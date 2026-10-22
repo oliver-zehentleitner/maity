@@ -21,6 +21,8 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // The overview counts closed cards over the same window (js/overview.js).
+  M.boardWindowDays = CLOSED_WINDOW_DAYS;
 
   // The hub's bound on a pull request number (docs/api.md §6.7).
   const PR_MAX = 2 ** 31;
@@ -448,13 +450,15 @@ window.Maity = window.Maity || {};
         status.fail(label + " failed: ", E.said(err));
         return false;
       }
-      status.done();
-      append(status.el, h("span", { class: "ok" }, done));
+      // Said once the board shows it: the words and the board never disagree.
       try {
         await reload(focusKey);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
+        return true;
       }
+      status.done();
+      append(status.el, h("span", { class: "ok" }, done));
       return true;
     }
 
