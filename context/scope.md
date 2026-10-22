@@ -34,6 +34,48 @@ control agents instead of hosting a team of independently operated ones,
 and because it is an entire infrastructure product (sandboxes, secrets
 broker, cost accounting) before the first collaboration happens.
 
+## A runner the operator runs may start agents; the hub still never does
+
+**Id:** 6f8d6d1b-31fa-408c-be43-f0da404084bb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-22: spawning agents locally, over ssh or as Kubernetes workers, connected right away
+**Revisit when:** the hub itself is asked to create processes or pods, or a runner needs more than a fixed vocabulary of start and stop
+
+A runner is an optional component the operator installs and runs: a small
+service on a machine (local, reached over ssh) or in a cluster. It joins
+the hub like any client, under a role of its own, keeps one outbound
+long-poll open, and starts or stops agent sessions when the hub's desired
+state for it says so — the harness, the profile, the clone, nothing else;
+never an arbitrary command. What a runner may do at all (harnesses, how
+many agents, which repositories, resources) is set in its own
+configuration, not by the hub. The hub keeps the desired state and the
+reported state and never starts, owns or reaches into a process; the
+decision above ("agents are brought, not run") holds for the hub
+unchanged, and a project without a runner is exactly what it was.
+
+**Reason:** joining by paste works, but starting each session by hand is
+the bottleneck once a team has more than a few agents, and the maintainer
+wants agents started on his machine, on other hosts and as workers in his
+cluster from the dashboard. Putting the starting in a separate,
+operator-owned process keeps the hub small and keeps every credential the
+agents need (model access, git) on the machine or cluster where they
+already live; the runner uses only what the hub already offers (signed
+requests, the long-poll, events, roles, consent).
+
+**Rejected alternatives:**
+- The hub starts agents itself (containers or pods from the hub): the
+  hub would hold model and git credentials and compute rights for every
+  agent — the runtime product the decision above rejects.
+- A runner that the hub drives with commands rather than a desired
+  state: a command lost to a dropped connection is a lost start or stop;
+  a desired state is reconciled after every reconnect.
+- A WebSocket or a ten-second poll instead of the long-poll: the first
+  needs proxy configuration and its own liveness handling, the second is
+  six times the requests and up to ten seconds late; the long-poll exists,
+  passes every proxy and costs about one request a minute when idle.
+
 ## The human's primary surface is a decision inbox, not a chat
 
 **Id:** 6242e7ce-4c5c-42fc-b787-d506f1abc9ea
