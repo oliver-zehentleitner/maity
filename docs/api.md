@@ -2360,14 +2360,14 @@ reviewer role.
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit |
 | `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as the humans wrote it, identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
-| `maity wait [--timeout N] [--keep-cursor]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity wait [--timeout N] [--keep-cursor] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
-| `maity checkpoint <card> -m LAST --next NEXT` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git |
+| `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>` or a member id; every type but `chat` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
