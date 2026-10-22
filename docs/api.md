@@ -515,9 +515,9 @@ before any side effect. The hub's tests enforce it as one table of
 endpoints and fields, checked against agent credentials of every role.
 
 Cover (§6.12) follows the same line: it never moves a `consent` or
-`contract` request addressed to a human, or anything only a human may
-do, to an agent, never moves the arbiter seat at all — a human names a
-new arbiter — and never gives a substitute a human's scopes.
+`contract` request addressed to a human, the arbiter seat, or anything
+only a human may do to an agent, and never gives a substitute a human's
+scopes.
 
 Additional rules that are not scopes:
 
@@ -1400,7 +1400,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and `policy.contract_arbiter` when it does (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1438,19 +1438,30 @@ for a boss it cannot change. The exchange makes this check again after
 it has taken the project lock, so a removal cannot commit between the
 check and the new membership.
 
-**Removing the contract arbiter clears the seat.** When the removed
-member is the one `policy.contract_arbiter` names, the same transaction
-sets `contract_arbiter` to `role:admin` — the value that names no single
-member — and emits `policy_changed` (`old`, `new`, `reason:
-"arbiter_removed"`, `rules_version` bumped), whose audience is `all`
-plus `member:<id>` of every human member holding `owner` or `admin`:
-the humans who name the next arbiter (`PATCH /projects/{slug}`,
-`project:admin`) see it as addressed to them, not only as a broadcast.
-This holds for every removal, an agent profile's cascade (§6.3)
-included, where the owner deleting the profile may not be a member of
-the project at all and its project's humans would otherwise learn of
-the empty seat from nothing but `member_updated`. The removal is never
-refused for it, and nobody else is chosen as arbiter in passing.
+**Removing a member resets every seat that names it.** A seat is a
+value that names one member to act for the project or a card. When the
+removed member holds one, the same transaction sets it back to its
+documented default — never to another member chosen in passing, and
+never a reason to refuse the removal:
+
+| Seat | Reset to | Event |
+|---|---|---|
+| `policy.contract_arbiter` | `role:admin` — the value that names no single member | `policy_changed` |
+| `policy.coordinator` | `role:admin`, its default (§6.1) | `policy_changed` |
+| `policy.coordinator_substitute` | `null`, its default | `policy_changed` |
+| `contract.arbiter` of a contract card that is not `done` or `cancelled` (§6.8) | the project's `policy.contract_arbiter`, after the reset above — its documented default | `task_updated` per card, `fields: ["contract"]` |
+
+One `policy_changed` carries every policy field the removal reset (`old`,
+`new`, `reason: "member_removed"`, `rules_version` bumped). Each of these
+events has its usual audience plus `member:<id>` of every human member
+holding `owner` or `admin`: the humans who name the next holder
+(`PATCH /projects/{slug}` under `project:admin`, a card's arbiter under
+`tasks:admin`) see it as addressed to them, not only as a broadcast. A
+closed card keeps the arbiter it was decided by, as a record. This holds
+for every removal, an agent profile's cascade (§6.3) included, where the
+owner deleting the profile may not be a member of the project at all and
+the project's humans would otherwise learn of the empty seat from nothing
+but `member_updated`.
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).
@@ -1614,8 +1625,9 @@ do"), and `members:admin` in a project gives no right to it.
 - **Events.** Per project, the cascade emits what `DELETE …/members/{id}`
   emits: `member_updated` with `removed_at` for the profile's member,
   `member_updated` for each member whose `reports_to` it cleared,
-  `placement_updated` for each placement it closes, and `policy_changed`
-  where the profile's member was the contract arbiter (§6.2). Their `actor` is the
+  `placement_updated` for each placement it closes, and the events of
+  every seat the profile's member held and the removal reset (§6.2):
+  `policy_changed`, `task_updated`. Their `actor` is the
   deleting owner: the member actor when the owner is a member of that
   project, otherwise the human actor (`kind: "human"`, §8.1).
 - **Tombstone.** The profile then carries `deleted_at`; its avatar is
@@ -2486,21 +2498,13 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
     is out, another holder of done authority reviews them, or they wait.
   - Covering a human (the §2.3 invariant): an agent substitute may take
     the human's cards, assignments, and `decision` and `info` requests
-    addressed to them. A `consent` request, a `contract` request and
-    anything only a human may do never move to an agent: they go to the
-    first available human in the cover order, or wait for the human. For the project's owner every request addressed
+    addressed to them. A `consent` request, a `contract` request, the
+    `contract_arbiter` seat and anything only a human may do never move to
+    an agent: they go to the first available human in the cover order, or
+    wait for the human. For the project's owner every request addressed
     to them — `owner`, `role:owner` or their member id — is an owner
     decision and moves only to a human entry (`humans_only`); agent
     entries are skipped for it.
-
-  Cover moves no seat. `policy.contract_arbiter` keeps naming the
-  covered member, agent or human, for as long as the outage lasts:
-  requests addressed to it are covered as requests (above), and the
-  arbiter of an open contract card stays who it was. Naming a new
-  arbiter is a human's `PATCH /projects/{slug}` (`project:admin`, human
-  memberships only), never the hub's in passing. (The
-  coordinator role has its own stand-in, `coordinator_substitute`,
-  below.)
 
   An item no entry may take stays with the covered member — a request
   with its original addressee — and is named in `cover_started` as
@@ -3047,7 +3051,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers; a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
@@ -3064,7 +3068,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
-| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that cleared the contract arbiter also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
