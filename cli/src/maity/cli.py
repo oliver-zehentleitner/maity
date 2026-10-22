@@ -132,6 +132,9 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         session.data["project"] = slug
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
+    owner_id = field(packet, "me", "owner", "id")
+    if isinstance(owner_id, str):
+        session.data["owner_id"] = owner_id
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
@@ -450,7 +453,12 @@ SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "hand
 
 def cmd_say(args: argparse.Namespace) -> int:
     text = _text(args.body, "the message")
-    if args.to == "human":
+    to_owner = args.to == "human"
+    if not to_owner and args.type is None and args.to.startswith("hum-"):
+        # A reply to your own human is the chat of your conversation (§8.4, §9); to any
+        # other human a message needs a type.
+        to_owner = Session().data.get("owner_id") == args.to
+    if to_owner:
         if args.type is not None or args.task is not None:
             raise UsageError("a chat with your human takes neither --type nor --task")
         session = Session()
@@ -461,7 +469,10 @@ def cmd_say(args: argparse.Namespace) -> int:
         message = session.client.call("POST", path, body={"body": text})
         return _done(args, message, f"said to your human (seq {_field(message, 'seq')})")
     if args.type is None:
-        raise UsageError(f"--type is required when writing to {args.to}: {', '.join(SAY_TYPES)}")
+        raise UsageError(
+            f"--type is required when writing to {args.to}: {', '.join(SAY_TYPES)} "
+            "(no --type only for your own human: `maity say human` or their member id)"
+        )
     body: dict[str, Any] = {"kind": "message", "type": args.type, "to": args.to, "body": text}
     if args.task is not None:
         body["task_id"] = args.task
@@ -786,13 +797,13 @@ def build_parser() -> argparse.ArgumentParser:
         "say",
         "send a typed message to members, or chat with your human",
         "Post a message (POST …/events). TO is 'all', 'role:<role>' or a member id, and --type "
-        "says what it is. TO 'human' writes into the chat with the human who owns this agent "
-        "(POST …/conversations/{you}/messages) and takes no --type. Status is not a message: the "
-        "board shows it.",
+        "says what it is. TO 'human', or that human's member id without --type, writes into the "
+        "chat with the human who owns this agent (POST …/conversations/{you}/messages). Status "
+        "is not a message: the board shows it.",
     )
     p.add_argument("to", type=_id, help="'all', 'role:<role>', a member id, or 'human'")
     p.add_argument("body", help="the message, Markdown")
-    p.add_argument("--type", choices=SAY_TYPES, help="required unless TO is 'human'")
+    p.add_argument("--type", choices=SAY_TYPES, help="required unless TO is your own human")
     p.add_argument("--task", type=_id, help="the card the message is about")
     _json_flag(p)
     p.set_defaults(handler=cmd_say)

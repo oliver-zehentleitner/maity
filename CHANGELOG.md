@@ -238,6 +238,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   the primary one (Cancel before Save, Later and "let's talk" before the replies, Hide
   before Copy), destructive ones apart; on a phone they stack full width
 - cli: the resume packet names members by handle (actor, subject, reports-to, answered by, paused by, message recipient), from the packet's peers and `me`; an id the packet does not name stays an id, and so does a member whose handle is shared, shaped like an id or `all`; the Members line keeps each id (`agent-a [agt-a]`) for `say` and `ask --to`.
+- cli: `maity say <your human's member id> "…"` without `--type` is the chat with your human, like `maity say human`; to any other human `--type` stays required.
 - hub: the card, event and member lists build their views in batches — a
   page costs a fixed number of SQL statements instead of up to three per row
   (the board with 200 cards: 576 statements before, 11 now), the resume
@@ -272,6 +273,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Fixed
 
+- cli: `maity api GET '/path?after=28'` is signed with the query where the hub expects it (it answered `signature_invalid`); a fragment is refused.
+- cli: outside a Git clone, the error names `MAITY_STATE_DIR` with a per-agent path to set.
 - web: the e2e waits for the tab's icon to point at the uploaded logo instead of reading it
   once; a header render from before the upload could still be on screen (seen on #115 and #92)
 - web: the e2e waits until the uploaded logo has finished loading before it reads its width; it read the image while the request was still in flight (seen once in CI, the hub answered 200).

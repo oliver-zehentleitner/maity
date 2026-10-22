@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -623,3 +624,57 @@ def test_join_offers_the_pointer_block_instead_of_writing_it(
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
     assert not (clone / "AGENTS.md").exists()
     assert pointer.BEGIN in capsys.readouterr().err
+
+
+def test_api_accepts_a_query_in_the_path(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda seen: (200, {"items": []})
+    code = cli.main(
+        ["api", "GET", "/projects/maity/tasks?state=open&after=28", "--query", "limit=5"]
+    )
+    assert code == cli.EXIT_OK, capsys.readouterr().err
+    seen = fake.signed()[-1]
+    assert seen.path == "/api/v1/projects/maity/tasks"
+    assert dict(urllib.parse.parse_qsl(seen.query)) == {
+        "state": "open",
+        "after": "28",
+        "limit": "5",
+    }
+
+
+def test_api_refuses_a_fragment(joined: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["api", "GET", "/projects/maity/tasks#x"]) == cli.EXIT_ERROR
+    assert "fragment" in capsys.readouterr().err
+
+
+def test_say_to_your_own_humans_id_without_a_type_is_the_chat(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", "/api/v1/projects/maity/conversations/agt-b/messages")] = lambda seen: (
+        201, {"seq": 9}
+    )  # fmt: skip
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    capsys.readouterr()
+    assert cli.main(["say", "hum-1", "thanks, done"]) == cli.EXIT_OK
+    sent = fake.signed()[-1]
+    assert sent.path == "/api/v1/projects/maity/conversations/agt-b/messages"
+    assert sent.json() == {"body": "thanks, done"}
+
+
+def test_say_to_another_human_still_needs_a_type(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    capsys.readouterr()
+    assert cli.main(["say", "hum-2", "hello"]) == cli.EXIT_USAGE
+    assert "--type is required" in capsys.readouterr().err
+
+
+def test_outside_a_clone_the_error_names_maity_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(state.StateError) as info:
+        state.resolve_state_dir()
+    assert "export MAITY_STATE_DIR=~/.local/state/maity/<agent-handle>" in str(info.value)

@@ -73,8 +73,11 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
         raise StateError(
-            f"{base} is not inside a Git clone; run maity from the clone the agent works in, "
-            f"or set {STATE_DIR_ENV} to a directory of its own"
+            f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "
+            "clone. Run maity from the clone the agent works in; without one, give this agent "
+            f"a directory of its own and set it for every maity command, e.g. "
+            f"`export {STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>` (one directory per "
+            "agent identity, never shared)"
         )
     common = Path(result.stdout.strip())
     if not common.is_absolute():
