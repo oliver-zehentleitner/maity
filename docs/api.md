@@ -3753,7 +3753,7 @@ starting points, as `seq` from an event or an earlier page:
 `after` and `before` are integers ≥ 0; anything else, `latest`
 included, is `invalid` (`details.fields.after` or `.before`), and the
 two together are `invalid`. `before` pages backwards newest first here,
-unlike `before` on a conversation's messages (§9.1, §9.2), which returns
+unlike `before` on a conversation's messages (§9.2), which returns
 its page oldest first: a chat is read top to bottom, this listing from
 the newest down. `next_cursor` continues in the same direction. A cursor
 is valid only with the same `after`, `before` and `type` it was handed
