@@ -28,6 +28,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
+- [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides
 
 ## D
 
