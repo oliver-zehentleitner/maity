@@ -9,6 +9,7 @@ never ready.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Connection, select, update
@@ -195,11 +196,20 @@ def _live(conn: Connection, card: Any) -> dict[str, Any]:
     return {"pull_requests": prs, "groups": grouped, "readiness": ready}
 
 
-def release_view(conn: Connection, card: Any) -> dict[str, Any]:
-    """The release object; a closed release serves what was frozen at its close (§6.7)."""
+_UNREAD = object()  # release_view's `tag` when the caller did not read it ahead
+
+
+def release_view(conn: Connection, card: Any, tag: Any = _UNREAD) -> dict[str, Any]:
+    """The release object; a closed release serves what was frozen at its close (§6.7).
+
+    `tag` is the tag observation when the caller read it already (`tags`): a page
+    of closed releases then costs no query per card.
+    """
     data = card.release_data or {}
     version = data.get("version") or card.release_version
     computed = data.get("frozen") or _live(conn, card)
+    if tag is _UNREAD:
+        tag = _observation(conn, card.project_id, "tag", f"v{version}")
     return {
         "version": version,
         "pull_requests": computed["pull_requests"],
@@ -207,8 +217,31 @@ def release_view(conn: Connection, card: Any) -> dict[str, Any]:
         "groups": computed["groups"],
         "checklist": data.get("checklist", []),
         "readiness": computed["readiness"],
-        "tag": _observation(conn, card.project_id, "tag", f"v{version}"),
+        "tag": tag,
     }
+
+
+def tags(conn: Connection, cards: Sequence[Any]) -> dict[str, dict[str, Any] | None]:
+    """The tag observation of every release card, `v{version}` each, in one query."""
+    wanted = {
+        (c.project_id, f"v{(c.release_data or {}).get('version') or c.release_version}"): c.id
+        for c in cards
+    }
+    found: dict[str, dict[str, Any] | None] = dict.fromkeys(wanted.values())
+    if not wanted:
+        return found
+    rows = conn.execute(
+        select(t.forge_observation).where(
+            t.forge_observation.c.kind == "tag",
+            t.forge_observation.c.project_id.in_({p for p, _ in wanted}),
+            t.forge_observation.c.ref.in_({ref for _, ref in wanted}),
+        )
+    )
+    for row in rows:
+        card_id = wanted.get((row.project_id, row.ref))
+        if card_id is not None:
+            found[card_id] = {**row.data, "observed_at": clock.rfc3339(row.observed_at)}
+    return found
 
 
 def close(conn: Connection, card_id: str) -> None:

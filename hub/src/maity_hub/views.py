@@ -309,12 +309,12 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
     }
 
 
-def _release(conn: Connection, row: Any) -> dict[str, Any] | None:
+def _release(conn: Connection, row: Any, tags: dict[str, Any]) -> dict[str, Any] | None:
     if row.kind != "release":
         return None
     from maity_hub.releases import release_view
 
-    return release_view(conn, row)
+    return release_view(conn, row, tags.get(row.id))
 
 
 def task_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -338,6 +338,9 @@ def task_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
+    from maity_hub.releases import tags  # releases reads views; imported here, not at the top
+
+    release_tags = tags(conn, [r for r in rows if r.kind == "release"])
     now = clock.now()
     views = []
     for row in rows:
@@ -368,7 +371,7 @@ def task_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,
-                "release": _release(conn, row),
+                "release": _release(conn, row, release_tags),
                 "contract": row.contract,
                 "created_at": ts(row.created_at),
                 "updated_at": ts(row.updated_at),

@@ -67,6 +67,40 @@ def _grow(engine: Engine, project_id: str, owner: int, agents: list[factory.Agen
                 )
             )
         previous = card
+    _closed_releases(engine, project_id, owner, n // 3)
+
+
+_RELEASES = [0]
+
+
+def _closed_releases(engine: Engine, project_id: str, owner: int, n: int) -> None:
+    """n closed releases with their frozen record, every second one with a tag observed."""
+    now = clock.now()
+    for _ in range(n):
+        _RELEASES[0] += 1
+        version = f"0.{_RELEASES[0]}.0"
+        frozen = {"pull_requests": [], "groups": [], "readiness": {"ready": True, "blocking": []}}
+        factory.card(
+            engine,
+            project_id,
+            owner,
+            kind="release",
+            status="done",
+            closed_at=now,
+            release_version=version,
+            release_data={"version": version, "checklist": [], "frozen": frozen},
+        )
+        if _RELEASES[0] % 2:
+            with engine.begin() as conn:
+                conn.execute(
+                    insert(t.forge_observation).values(
+                        project_id=project_id,
+                        kind="tag",
+                        ref=f"v{version}",
+                        observed_at=now,
+                        data={"name": f"v{version}", "sha": "a" * 40, "found": True},
+                    )
+                )
 
 
 def test_lists_cost_the_same_for_3_rows_and_for_30(
@@ -91,9 +125,23 @@ def test_lists_cost_the_same_for_3_rows_and_for_30(
             "/api/v1/me/resume", json={"client": "test", "cursor": 0}, headers=bearer
         ),
     }
+    # One open release, the same in both measurements: its readiness is computed live.
+    factory.card(
+        migrated,
+        project_id,
+        owner_membership,
+        kind="release",
+        status="open",
+        release_version="1.0.0",
+        release_in_flight=True,
+        release_data={"version": "1.0.0", "checklist": [], "pull_requests_typed": []},
+    )
     _grow(migrated, project_id, owner_membership, agents, 3)
     small = {name: _statements(migrated, call) for name, call in calls.items()}
     _grow(migrated, project_id, owner_membership, agents, 27)
     large = {name: _statements(migrated, call) for name, call in calls.items()}
-    assert len(calls["tasks"]().json()["items"]) == 30
+    items = calls["tasks"]().json()["items"]
+    assert len(items) == 30 + 10 + 1  # cards, closed releases, the open one
+    tagged = [i for i in items if i["kind"] == "release" and i["release"]["tag"] is not None]
+    assert tagged  # the tag observations were read, in the batch
     assert large == small
