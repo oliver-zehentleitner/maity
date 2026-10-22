@@ -161,6 +161,9 @@ window.Maity = window.Maity || {};
       .then((list) => ({ list }), (error) => ({ error }));
   }
 
+  // Shared with the Members view.
+  M.pauseWords = { effect: PAUSE_EFFECT, paused: PAUSED_EFFECT };
+
   M.views.agents = async function (ctx, root) {
     const agents = ctx.members.filter((m) => m.kind === "agent");
     const creds = await Promise.all(agents.map((m) => loadCredentials(ctx, m)));

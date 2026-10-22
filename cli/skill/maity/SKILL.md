@@ -40,6 +40,7 @@ Every command has `--help`.
 | Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>` or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
 | Your human writes to you in the chat | answer with `maity say human "<message>"` |
 | A release is in flight | `maity release show`, and `maity release tick <item>` for checklist items you did |
+| Your role may start agents (`agents:propose`) and work needs another member running | `maity runners`, then `maity placement start <handle> --runner <id> --tool <tool> --reason "<why>"`; under consent the owner gives the go |
 | Anything else the hub offers | `maity api <METHOD> <path>`; `maity help` lists every endpoint |
 | You need to know how the hub works | `maity help` |
 

@@ -691,3 +691,155 @@ def test_wait_batch_over_the_cap_comes_in_two_calls_each_event_once(
     assert cli.main(["wait", "--timeout", "5", "--batch"]) == cli.EXIT_OK
     second = [e["seq"] for e in json.loads(capsys.readouterr().out)]
     assert second == list(range(101 + cli.BATCH_MAX, 171))
+
+
+# --- placements and runners (§15.6) ----------------------------------------------------------
+
+PLACEMENT = {
+    "id": "plc-0003", "agent": {"id": "agt-f", "handle": "agent-f"},
+    "runner": {"id": "rnr-0002", "name": "home"}, "harness": "claude-code",
+    "mode": "interactive", "desired": "running", "reported_current": True,
+    "reported": {"state": "running", "reason": None},
+}  # fmt: skip
+
+
+def placements(fake: fakehub.FakeHub) -> None:
+    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+        200, {"items": [PLACEMENT]}
+    )  # fmt: skip
+
+
+def test_placement_list(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    placements(fake)
+    assert cli.main(["placement", "list"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "plc-0003  agent-f on home  claude-code interactive  desired running, running" in out
+
+
+def test_placement_start_resolves_the_handle_and_names_the_consent_request(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/maity/members")] = lambda seen: (
+        200, {"items": [{"id": "agt-f", "handle": "agent-f"}]}
+    )  # fmt: skip
+    fake.routes[("POST", "/api/v1/projects/maity/placements")] = lambda seen: (
+        201, {"id": "plc-0009", "approval": {"status": "pending", "request_id": "req-4"}}
+    )  # fmt: skip
+    code = cli.main(
+        ["placement", "start", "agent-f", "--runner", "rnr-0002", "--tool", "codex",
+         "--mode", "supervised", "--clone", "agent-f2", "--reason", "second pair of hands"]
+    )  # fmt: skip
+    assert code == cli.EXIT_OK, capsys.readouterr().err
+    body = fake.signed()[-1].json()
+    assert body == {
+        "agent": {"id": "agt-f"}, "runner": "rnr-0002", "harness": "codex",
+        "reason": "second pair of hands", "mode": "supervised",
+        "workspace": {"clone": "agent-f2"},
+    }  # fmt: skip
+    assert "waiting for consent (request req-4)" in capsys.readouterr().out
+
+
+def test_placement_stop_by_handle_with_grace(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    placements(fake)
+    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-0003")] = lambda seen: (
+        200, PLACEMENT
+    )  # fmt: skip
+    assert cli.main(["placement", "stop", "agent-f", "--grace", "60"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"desired": "stopped", "stop_grace_seconds": 60}
+
+
+def test_placement_restart_by_id(joined: Path, fake: fakehub.FakeHub) -> None:
+    placements(fake)
+    fake.routes[("POST", "/api/v1/projects/maity/placements/plc-0003/restart")] = lambda seen: (
+        200, PLACEMENT
+    )  # fmt: skip
+    assert cli.main(["placement", "restart", "plc-0003"]) == cli.EXIT_OK
+    assert fake.signed()[-1].path.endswith("/plc-0003/restart")
+
+
+def test_placement_for_an_unknown_agent(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    placements(fake)
+    assert cli.main(["placement", "stop", "agent-z"]) == cli.EXIT_ERROR
+    assert "no active placement agent-z" in capsys.readouterr().err
+
+
+def test_an_agent_handle_list_is_not_a_subcommand(joined: Path, fake: fakehub.FakeHub) -> None:
+    placements(fake)
+    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-0003")] = lambda seen: (
+        200, PLACEMENT
+    )  # fmt: skip
+    listed = {**PLACEMENT, "agent": {"id": "agt-l", "handle": "list"}}
+    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+        200, {"items": [listed]}
+    )  # fmt: skip
+    assert cli.main(["placement", "stop", "list"]) == cli.EXIT_OK
+
+
+def test_runners(joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]) -> None:
+    runner = {
+        "id": "rnr-0002", "name": "home", "presence": "online",
+        "capabilities": {"running": 1, "max_agents": 4, "harnesses": [
+            {"id": "claude-code", "available": True}, {"id": "codex", "available": False}]},
+    }  # fmt: skip
+    fake.routes[("GET", "/api/v1/projects/maity/runners")] = lambda seen: (
+        200, {"items": [{"runner": runner}]}
+    )  # fmt: skip
+    assert cli.main(["runners"]) == cli.EXIT_OK
+    assert "rnr-0002  home  online  1/4 running  tools: claude-code" in capsys.readouterr().out
+
+
+def test_an_exact_placement_id_wins_and_ambiguity_is_refused(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    decoy = {**PLACEMENT, "id": "plc-bbbb", "agent": {"id": "agt-x", "handle": "plc-aaaa"}}
+    target = {**PLACEMENT, "id": "plc-aaaa", "agent": {"id": "agt-y", "handle": "y"}}
+    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+        200, {"items": [decoy, target]}
+    )  # fmt: skip
+    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-aaaa")] = lambda seen: (
+        200, target
+    )  # fmt: skip
+    assert cli.main(["placement", "stop", "plc-aaaa"]) == cli.EXIT_OK
+    assert fake.signed()[-1].path.endswith("/plc-aaaa")
+    twins = [{**PLACEMENT, "id": f"plc-{n}", "agent": {"id": f"agt-{n}", "handle": "same"}}
+             for n in (1, 2)]  # fmt: skip
+    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+        200, {"items": twins}
+    )  # fmt: skip
+    capsys.readouterr()
+    assert cli.main(["placement", "stop", "same"]) == cli.EXIT_ERROR
+    assert "more than one active placement" in capsys.readouterr().err
+
+
+def test_hub_ids_are_cleaned_and_must_be_strings(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hostile = {**PLACEMENT, "id": "plc-1\x1b]52;c;evil\x07"}
+    broken = {**PLACEMENT, "id": 7, "agent": {"id": "agt-7", "handle": "seven"}}
+    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+        200, {"items": [hostile, broken]}
+    )  # fmt: skip
+    capsys.readouterr()
+    assert cli.main(["placement", "list"]) == cli.EXIT_OK
+    assert "\x1b" not in capsys.readouterr().out
+    assert cli.main(["placement", "stop", "seven"]) == cli.EXIT_ERROR  # no crash on id 7
+
+
+def test_placement_grace_is_range_checked(joined: Path) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["placement", "stop", "agent-f", "--grace", "901"])
+
+
+def test_placement_restart_with_rejoin(joined: Path, fake: fakehub.FakeHub) -> None:
+    placements(fake)
+    fake.routes[("POST", "/api/v1/projects/maity/placements/plc-0003/restart")] = lambda seen: (
+        200, PLACEMENT
+    )  # fmt: skip
+    assert cli.main(["placement", "restart", "agent-f", "--rejoin"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"rejoin": True}

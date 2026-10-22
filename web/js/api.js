@@ -184,6 +184,18 @@ window.Maity = window.Maity || {};
     return card;
   }
 
+  // members:admin in a project: a human owner or admin there (§2.3).
+  const membersAdmin = (slug) => {
+    const mine = me().projects.find((p) => p.slug === slug);
+    return !!mine && ["owner", "admin"].includes(mine.role);
+  };
+  // An agent's owner as §6.2 shows it: always the human, member or not.
+  function humanOf(id) {
+    const m = me().member;
+    if (id === m.id) return { id: m.id, handle: m.handle, display_name: m.display_name };
+    return { id, handle: id, display_name: id };
+  }
+
   function member(slug, id, path) {
     const m = file(slug, "members.json", path).items.find((x) => x.id === id);
     if (!m) fail(404, "not_found", "Not found", path);
@@ -579,8 +591,29 @@ window.Maity = window.Maity || {};
       answer.fresh = query.get("max_age") === "0" || answer.fresh;
       return answer;
     }],
-    ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => file(m[1], "members.json", path)],
+    // §6.2: owner and a credentials summary for an admin, and for an
+    // agent's owner on their own agents; never for anyone else.
+    ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => {
+      const list = file(m[1], "members.json", path);
+      const admin = membersAdmin(m[1]);
+      const creds = fixtures()[m[1] + "/credentials.json"] || {};
+      const monthAgo = Date.now() - 30 * 86400000;
+      return { next_cursor: null, items: list.items.map((x) => {
+        if (!admin && x.owner_id !== me().member.id) return x;
+        if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
+        const all = (creds[x.id] || { items: [] }).items;
+        const active = all.filter((c) => !c.revoked_at);
+        const used = active.filter((c) => c.last_used_at).sort((a, b) => (a.last_used_at < b.last_used_at ? 1 : -1))[0];
+        return Object.assign({}, x, {
+          owner: humanOf(x.owner_id),
+          credentials: { active: active.length, never_resumed: active.filter((c) => !c.resumed_at).length,
+            revoked_recent: all.filter((c) => c.revoked_at && Date.parse(c.revoked_at) >= monthAgo).length,
+            last_used_at: used ? used.last_used_at : null, last_used_via: used ? used.last_used_via || null : null },
+        });
+      }) };
+    }],
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
+      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       if ("briefing" in body) {
         if (body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) {
@@ -588,11 +621,40 @@ window.Maity = window.Maity || {};
         }
         target.briefing = body.briefing || null;
       }
+      if ("role" in body) {
+        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) fail(400, "invalid", "unknown role", path, { fields: { role: "unknown" } });
+        if (body.role === "owner" && target.kind !== "human") fail(400, "invalid", "only a human is an owner", path, { fields: { role: "owner_is_human" } });
+        const owners = file(m[1], "members.json", path).items.filter((x) => x.role === "owner");
+        if (target.role === "owner" && body.role !== "owner" && owners.length === 1) fail(400, "invalid", "the last owner cannot be demoted", path, { fields: { role: "last_owner" } });
+        target.role = body.role;
+      }
       if ("paused" in body) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
       return target;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
+      if (!membersAdmin(m[1])) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      const list = file(m[1], "members.json", path);
+      // A second DELETE answers 200 with the removed member as it is.
+      list.removed = list.removed || [];
+      const gone = list.removed.find((x) => x.id === m[2]);
+      if (gone) return gone;
+      const target = member(m[1], m[2], path);
+      if (target.role === "owner" && list.items.filter((x) => x.role === "owner").length === 1) {
+        fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
+      }
+      // Its credentials revoked, its claims released (§6.2).
+      const at = nowIso();
+      ((fixtures()[m[1] + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
+        if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
+      });
+      file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+      list.items = list.items.filter((x) => x !== target);
+      const removed = Object.assign({}, target, { removed_at: at });
+      list.removed.push(removed);
+      return removed;
     }],
     ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/credentials$/,
       (m, body, path) => keyed(m[1], "credentials.json", m[2], path)],

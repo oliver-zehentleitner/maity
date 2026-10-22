@@ -1366,6 +1366,7 @@ create the profile (§3.1).
   "report": null,
   "release": null,
   "contract": null,
+  "rank": "a3",
   "cover": null,
   "mentions": [],
   "created_at": "2026-10-21T09:12:00Z",
@@ -1377,7 +1378,22 @@ create the profile (§3.1).
 `kind` is `task`, `release` (§6.7), `contract` (§6.8) or
 `maintenance_round` (a Keep the Why context round, opened at milestones;
 it behaves as a `task` and exists so that the board and the release list
-can tell it from feature work). `label` is optional: `fix`, `feature`,
+can tell it from feature work). `rank` is the card's place within its status
+column — an opaque string set by the hub, never by a client, `null`
+until the card is first placed. **Card order** within a status is total:
+cards with a rank by rank (bytewise), then cards without one by
+`created_at`, then by `id`. A `move` is applied to the column as it is
+when the move runs, under the project's lock: the hub gives ranks to the
+column's unranked cards up to and including the neighbour where that is
+needed to express the intent, and may at any time reassign ranks in a
+column to keep room between them; every card whose rank changes gets a
+`task_updated` with `fields: ["rank"]`. A status change keeps the rank,
+and the card takes its place among the target column by the same order.
+Among `open` cards the order is the priority: an agent that picks its
+next card on its own takes the first claimable one, by
+`GET …/tasks?status=open`; rank is advice, never a gate — claim policy,
+dependencies and assignment apply as before. The resume packet lists the
+agent's assigned cards in this order. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `status`:
 
@@ -1407,10 +1423,11 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by `updated_at` desc; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
+| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
 | `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, ktw_ref?, release?, contract?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
+| `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
 | `POST /projects/{slug}/tasks/{id}/release` | holder, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null` |
 | `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin` | `{assignee}`; sets `assigned_to`; if the card is held with an expired lease, the claim moves to the assignee (`lease_active` otherwise) |
