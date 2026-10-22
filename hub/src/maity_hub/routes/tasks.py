@@ -32,6 +32,7 @@ from maity_hub.views import human_paused, paused, principal_id, task_view, task_
 router = APIRouter()
 
 SHA = re.compile(r"[0-9a-f]{7,64}")
+FULL_SHA = re.compile(r"[0-9a-f]{40}")  # a report's heads are compared whole
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
@@ -1046,9 +1047,9 @@ def report(
 def _check_report(body: ReportIn) -> None:
     errors: dict[str, str] = {}
     for field in ("head", "remote_head"):
-        if not SHA.fullmatch(getattr(body, field)):
+        if not FULL_SHA.fullmatch(getattr(body, field)):
             errors[field] = "not_a_sha"
-    if body.pr is not None and not SHA.fullmatch(body.pr.head):
+    if body.pr is not None and not FULL_SHA.fullmatch(body.pr.head):
         errors["pr.head"] = "not_a_sha"
     if not errors and body.head != body.remote_head:
         errors["remote_head"] = "differs_from_head"

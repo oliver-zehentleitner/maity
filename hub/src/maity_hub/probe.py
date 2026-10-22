@@ -149,9 +149,10 @@ def observe_report(engine: Engine, card_id: str, max_age: int = 0) -> bool:
         "branch_head_sha": branch.data.get("head_sha") if branch else None,
         "observed_at": clock.rfc3339(max(times)),
     }
-    # A branch the forge no longer has (deleted after the merge) is not a contradiction.
+    # A pull request the forge does not have contradicts the report; a branch it no
+    # longer has (deleted after the merge) does not.
     mismatch = bool(
-        (pr and pr.data.get("found") and pr.data.get("head_sha") != report["pr"].get("head"))
+        (pr and (not pr.data.get("found") or pr.data.get("head_sha") != report["pr"].get("head")))
         or (
             branch and branch.data["found"] and branch.data["head_sha"] != report.get("remote_head")
         )

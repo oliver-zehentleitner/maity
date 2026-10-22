@@ -67,6 +67,7 @@ def _entry(
         "url": attested.get("url"),
         "title": attested.get("title"),
         "task_id": task_id,
+        "found": None,
         "state": attested.get("state"),
         "checks": None,
         "head_sha": attested.get("head"),
@@ -78,7 +79,7 @@ def _entry(
         for key in ("url", "title"):
             if observed.get(key) is not None:
                 entry[key] = observed[key]
-        for key in ("state", "checks", "head_sha", "merged_at", "observed_at"):
+        for key in ("found", "state", "checks", "head_sha", "merged_at", "observed_at"):
             entry[key] = observed.get(key)
     return entry
 
@@ -147,19 +148,21 @@ def readiness(
         number = entry["number"]
         if entry["observed_at"] is None:
             blocking.append({"reason": "pr_unverified", "pr": number})
+        elif not entry["found"]:
+            blocking.append({"reason": "pr_not_found", "pr": number})
         elif entry["state"] != "merged":
             blocking.append({"reason": "pr_open", "pr": number})
         merged[number] = entry["observed_at"] is not None and entry["state"] == "merged"
-    # A reported head the forge does not show; once per PR, a short head as a prefix.
+    # A reported head the forge does not show; once per PR, heads compared whole.
     by_number = {entry["number"]: entry for entry in prs}
     reported: dict[int, set[str]] = {}
     for item in shipped:
         pr = (item.report or {}).get("pr")
         if pr and item.report.get("pr_status") == "found" and pr.get("head"):
-            reported.setdefault(int(pr["number"]), set()).add(str(pr["head"]).lower())
+            reported.setdefault(int(pr["number"]), set()).add(pr["head"])
     for number, heads in sorted(reported.items()):
-        seen = by_number[number]["head_sha"] if by_number[number]["observed_at"] else None
-        if seen and not all(seen.lower().startswith(head) for head in heads):
+        seen = by_number[number]["head_sha"] if by_number[number]["found"] else None
+        if seen and heads != {seen}:
             blocking.append({"reason": "pr_mismatch", "pr": number})
     # A group is complete when all its cards ship here and all their PRs are observed merged.
     by_card = {item.id: item for item in shipped}

@@ -194,7 +194,15 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   observation; a worker thread that fills `report.observed` and
   `mismatch` right after a report and refreshes the open release's pull
   requests and tag on an interval, with `probe_observed` and release
-  readiness from what it saw.
+  readiness from what it saw; a pull request the forge does not have is a
+  report `mismatch` and blocks a release as `pr_not_found`, a branch
+  deleted after the merge is no mismatch.
+
+### Changed
+
+- hub: a report's `head`, `remote_head` and `pr.head` are the full 40-hex
+  commit (`not_a_sha` otherwise), and reported heads are compared whole,
+  never as a prefix.
 
 ### Fixed
 

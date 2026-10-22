@@ -178,14 +178,16 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
 - Every call you make renews the leases of all your cards; waiting for
   events does not. A new session inherits your claims.
 - `POST …/release` gives a card back. `POST …/report` closes your work on
-  it with the facts from git (`head` must equal `remote_head`); the card
+  it with the facts from git (`head`, `remote_head` and `pr.head` are the
+  full 40-hex commit, and `head` must equal `remote_head`); the card
   goes to `review`, or to `done` with `"done": true` if you hold done
   authority and nothing it depends on is open. `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`
   and `mismatch`, and you get `probe_observed`; a `mismatch: true` means
-  the forge does not show what you reported.
+  the forge does not show what you reported, or has no such pull request.
+  A branch deleted after the merge is not a mismatch.
 - Never put a commit hash or a pull request number into a message: the
   report is the one place for them.
 
@@ -204,7 +206,8 @@ edited with `PATCH` `release.checklist`, ticked with
 `releases:write`) and `readiness`. Readiness counts only what the forge
 probe observed; without the probe it is `false` with
 `probe_not_configured`, and the release can be cancelled but not done
-(`release_not_ready` with `details.blocking`). When a release turns ready,
+(`release_not_ready` with `details.blocking`). A pull request the forge
+does not have blocks as `pr_not_found`. When a release turns ready,
 everyone gets `release_ready`. A `PATCH` that sets `done` and changes
 `release` is judged on the new data. Anyone with `releases:write` edits
 the release fields, holder or not. A closed release is a record: its

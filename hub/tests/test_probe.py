@@ -283,6 +283,18 @@ def test_a_head_the_forge_does_not_show_is_a_mismatch(
     assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["mismatch"] is True
 
 
+def test_a_pull_request_the_forge_does_not_have_is_a_mismatch(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.answers["/repos/acme/maity/pulls/7"] = None
+    github.branch("agent-b/probe")
+    _, card_id = _reported_card(owner, make_client)
+    probe.observe_report(migrated, card_id)
+    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    assert (report["mismatch"], report["observed"]["pr_state"]) == (True, None)
+    assert report["observed"]["branch_head_sha"] == SHA
+
+
 def test_a_deleted_branch_is_no_mismatch(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
@@ -351,6 +363,7 @@ def test_the_release_is_refreshed_and_turns_ready(
     github.pull(1)
     github.answers["/repos/acme/maity/git/ref/tags/v0.1.0"] = None
     project_id = _project(migrated).id
+    assert len(_events(migrated, "release_ready")) == 1  # empty at creation, so ready
     assert probe.observe_release(migrated, project_id) is True
     view = owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]
     assert view["readiness"]["blocking"] == [{"reason": "pr_open", "pr": 1}]
@@ -363,6 +376,6 @@ def test_the_release_is_refreshed_and_turns_ready(
         "ready": True,
         "blocking": [],
     }
-    assert len(_events(migrated, "release_ready")) == 1
+    assert len(_events(migrated, "release_ready")) == 2  # announced again on this turn
     assert probe.observe_release(migrated, project_id, max_age=0) is False  # nothing changed
     assert len(_events(migrated, "probe_observed")) == 2
