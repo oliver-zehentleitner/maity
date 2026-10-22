@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-PREFIX = "maity-"
+PREFIX = "maity_"
 CONF = 'set -g update-environment ""\nset -g remain-on-exit on\nset -g history-limit 5000\n'
 FORMAT = (
     "#{session_name}\t#{pane_dead}\t#{pane_dead_status}\t#{pane_pid}\t"
@@ -60,7 +60,9 @@ class Session:
 
 
 def session_name(project: str, clone: str) -> str:
-    return f"{PREFIX}{project}-{clone}"
+    """`maity_<project>_<clone>`: the tokens are `[a-z0-9-]`, so `_` keeps two different
+    pairs from ever giving one name (`ab` + `cd-ef` and `ab-cd` + `ef` would with `-`)."""
+    return f"{PREFIX}{project}_{clone}"
 
 
 @dataclass
@@ -139,16 +141,27 @@ class Tmux:
             *extra, "--", *argv,
         ]  # fmt: skip
         self._check(command)
-        self._check(self._tmux("set-option", "-t", name, "@maity_placement", placement))
-        self._check(self._tmux("set-option", "-t", name, "@maity_generation", str(generation)))
-        self._check(self._tmux("pipe-pane", "-o", "-t", name, f"cat >> {shlex.quote(str(log))}"))
+        try:
+            self._check(self._tmux("set-option", "-t", name, "@maity_placement", placement))
+            self._check(self._tmux("set-option", "-t", name, "@maity_generation", str(generation)))
+            self._check(
+                self._tmux("pipe-pane", "-o", "-t", name, f"cat >> {shlex.quote(str(log))}")
+            )
+        except TmuxError:
+            self.kill(name)  # an unlabelled session would run on, invisible to the runner
+            raise
 
     def terminate(self, session: Session) -> None:
-        """SIGTERM to the agent's process group; the session stays until `kill`."""
-        if session.pid is None:
+        """SIGTERM to the agent's process group; the session stays until `kill`. tmux makes
+        the pane's process a session leader, so its pid is the group id; a pid that is not a
+        group leader any more (reused) or that is the runner's own group is left alone."""
+        pid = session.pid
+        if pid is None or pid <= 1 or pid == os.getpgrp():
             return
         try:
-            os.killpg(os.getpgid(session.pid), signal.SIGTERM)
+            if os.getpgid(pid) != pid:
+                return
+            os.killpg(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
 

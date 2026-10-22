@@ -154,14 +154,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     sup.update([placement()])
     settle(sup)
     ((name, argv, env),) = backend.started
-    assert name == "maity-maity-agent-3" and env == {"MAITY_PLACEMENT": "plc-0003"}
+    assert name == "maity_maity_agent-3" and env == {"MAITY_PLACEMENT": "plc-0003"}
     assert argv[1:3] == ["-m", "maity.runner.stub"] and argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
     sup.tick()
     assert states(reports) == [("starting", None, None), ("running", None, None)]
     first, second = (b for _, b in reports.sent)
     assert (first["seq"], second["seq"]) == (1, 2)
-    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t maity-maity-agent-3"
+    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t maity_maity_agent-3"
     assert second["target"] == "local" and second["observed_generation"] == 1
 
 
@@ -183,7 +183,7 @@ def test_quick_exits_back_off_then_end_in_a_crash_loop(world: Any) -> None:
     for _ in range(sup.cfg.limits.restart.crash_cap):
         settle(sup)
         clock.now += 1
-        backend.exit("maity-maity-agent-3", 1)
+        backend.exit("maity_maity_agent-3", 1)
         sup.tick()
         rec = sup.records["plc-0003"]
         if rec.state == "exited":
@@ -231,11 +231,11 @@ def test_stop_waits_the_grace_then_terminates_then_kills(world: Any) -> None:
     assert backend.terminated == []
     clock.now += 1
     sup.tick()
-    assert backend.terminated == ["maity-maity-agent-3"]
+    assert backend.terminated == ["maity_maity_agent-3"]
     clock.now += supervisor.KILL_AFTER
     sup.tick()
     sup.tick()
-    assert "maity-maity-agent-3" in backend.killed
+    assert "maity_maity_agent-3" in backend.killed
     assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
 
 
@@ -246,7 +246,7 @@ def test_a_process_ending_within_the_grace_is_stopped_at_once(world: Any) -> Non
     settle(sup)
     sup.update([placement(desired="stopped")])
     sup.tick()
-    backend.exit("maity-maity-agent-3", 0)
+    backend.exit("maity_maity_agent-3", 0)
     sup.tick()
     assert backend.terminated == []
     assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
@@ -279,11 +279,11 @@ def test_a_new_generation_restarts_a_running_session(world: Any) -> None:
     sup.update([placement(generation=2, stop_grace_seconds=0)])
     sup.tick()
     sup.tick()
-    assert backend.terminated == ["maity-maity-agent-3"]
-    backend.exit("maity-maity-agent-3", 143)
+    assert backend.terminated == ["maity_maity_agent-3"]
+    backend.exit("maity_maity_agent-3", 143)
     settle(sup)
-    assert backend.started[-1][0] == "maity-maity-agent-3"
-    assert backend.live["maity-maity-agent-3"].generation == 2
+    assert backend.started[-1][0] == "maity_maity_agent-3"
+    assert backend.live["maity_maity_agent-3"].generation == 2
 
 
 # --- refusals --------------------------------------------------------------------------------
@@ -354,7 +354,7 @@ def test_capacity(world: Any) -> None:
     recorded(sup.cfg, 4)
     sup.update([placement(3), placement(4)])
     settle(sup)
-    assert [s[0] for s in backend.started] == ["maity-maity-agent-3"]
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
     assert sup.records["plc-0004"].state == "pending"
     assert sup.records["plc-0004"].reason == "capacity"
 
@@ -365,8 +365,8 @@ def test_capacity(world: Any) -> None:
 def test_after_a_runner_restart_a_live_session_is_adopted(world: Any) -> None:
     sup, backend, reports, _, _ = world
     recorded(sup.cfg)
-    backend.live["maity-maity-agent-3"] = tmux.Session(
-        "maity-maity-agent-3", False, None, 99, "plc-0003", 1
+    backend.live["maity_maity_agent-3"] = tmux.Session(
+        "maity_maity_agent-3", False, None, 99, "plc-0003", 1
     )
     sup.update([placement()])
     sup.tick()
@@ -376,7 +376,7 @@ def test_after_a_runner_restart_a_live_session_is_adopted(world: Any) -> None:
 
 def test_a_session_whose_placement_is_gone_ends_after_the_grace(world: Any) -> None:
     sup, backend, reports, clock, logs = world
-    orphan = tmux.Session("maity-maity-agent-9", False, None, 77, "plc-0009", 2)
+    orphan = tmux.Session("maity_maity_agent-9", False, None, 77, "plc-0009", 2)
     backend.live[orphan.name] = orphan
     sup.tick()
     assert backend.terminated == []  # nothing known yet: never touched before the first read
@@ -393,7 +393,7 @@ def test_a_session_whose_placement_is_gone_ends_after_the_grace(world: Any) -> N
 
 def test_unlabelled_sessions_are_never_touched(world: Any) -> None:
     sup, backend, _, clock, _ = world
-    backend.live["maity-other"] = tmux.Session("maity-other", False, None, 5, None, None)
+    backend.live["maity_other"] = tmux.Session("maity_other", False, None, 5, None, None)
     sup.update([])
     clock.now += 10_000
     sup.tick()
@@ -419,6 +419,10 @@ def test_a_stale_generation_drops_the_report(world: Any) -> None:
     reports.fail = [hub.HubError("stale", code="stale_generation", status=409)]
     sup.update([placement(desired="stopped")])
     sup.tick()
+    sup.tick()
+    sup.tick()
+    assert reports.sent == []  # settled: not resent with a new seq every tick
+    sup.update([placement(desired="stopped", generation=2)])
     sup.tick()
     assert [b["seq"] for _, b in reports.sent] == [2]
 
@@ -517,7 +521,7 @@ def test_tmux_starts_the_server_under_a_clean_environment(
 
     backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
                         "/usr/bin:/bin", tmp_path / "logs", run=run)  # fmt: skip
-    backend.start("maity-maity-agent-3", tmp_path, ["stub", "--x"], {"MAITY_PLACEMENT": "p"},
+    backend.start("maity_maity_agent-3", tmp_path, ["stub", "--x"], {"MAITY_PLACEMENT": "p"},
                   "plc-0003", 4)  # fmt: skip
     new = calls[0]
     assert new[:2] == ["env", "-i"] and "SSH_AUTH_SOCK" not in " ".join(new)
@@ -542,14 +546,14 @@ def test_tmux_without_a_server_has_no_sessions(tmp_path: Path) -> None:
 
 
 def test_tmux_parses_panes(tmp_path: Path) -> None:
-    out = "maity-maity-agent-3\t1\t2\t123\tplc-0003\t4\nother\t0\t\t5\t\t\n"
+    out = "maity_maity_agent-3\t1\t2\t123\tplc-0003\t4\nother\t0\t\t5\t\t\n"
 
     def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(argv), 0, out, "")
 
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path, run=run)
     assert backend.sessions() == {
-        "maity-maity-agent-3": tmux.Session("maity-maity-agent-3", True, 2, 123, "plc-0003", 4)
+        "maity_maity_agent-3": tmux.Session("maity_maity_agent-3", True, 2, 123, "plc-0003", 4)
     }
 
 
@@ -566,12 +570,308 @@ def test_real_tmux_session_has_no_runner_variables(
     backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
                         tmp_path / "logs")  # fmt: skip
     try:
-        backend.start("maity-maity-agent-3", tmp_path, ["sh", "-c", "env; sleep 30"],
+        backend.start("maity_maity_agent-3", tmp_path, ["sh", "-c", "env; sleep 30"],
                       {"MAITY_PLACEMENT": "plc-0003"}, "plc-0003", 2)  # fmt: skip
-        found = backend.sessions()["maity-maity-agent-3"]
+        found = backend.sessions()["maity_maity_agent-3"]
         assert (found.placement, found.generation, found.dead) == ("plc-0003", 2, False)
-        env = backend.environment_of("maity-maity-agent-3")
+        env = backend.environment_of("maity_maity_agent-3")
         assert "SSH_AUTH_SOCK" not in env and "MAITY_STATE_DIR" not in env
         assert env.get("MAITY_PLACEMENT") == "plc-0003" and env["PATH"] == "/usr/bin:/bin"
     finally:
         subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
+
+
+# --- review round ----------------------------------------------------------------------------
+
+
+def test_session_names_cannot_collide() -> None:
+    assert tmux.session_name("ab", "cd-ef") != tmux.session_name("ab-cd", "ef")
+
+
+def test_two_placements_whose_names_would_have_collided_both_run(world: Any) -> None:
+    sup, backend, _, clock, logs = world
+    sup.cfg = replace(sup.cfg, limits=replace(sup.cfg.limits, projects=("ab", "ab-cd")))
+    first = placement(3, project="ab", workspace={"clone": "cd-ef", "repository": REPO})
+    second = placement(4, project="ab-cd", workspace={"clone": "ef", "repository": REPO})
+    for p in (first, second):
+        place = workspace.locate(sup.cfg.local.workspaces, p["project"], p["workspace"]["clone"])
+        (place.path / ".git" / "maity").mkdir(parents=True)
+        (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+        (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
+        workspace._record(sup.cfg.state_dir, place, p["agent"]["id"], p["id"])
+    sup.update([first, second])
+    settle(sup)
+    clock.now += 10_000
+    for _ in range(5):
+        sup.tick()
+    assert len(backend.started) == 2 and backend.terminated == [] and backend.killed == []
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"id": "../../escaped"},
+        {"id": "plc-0003/x"},
+        {"project": "../x"},
+        {"generation": "4"},
+        {"generation": True},
+        {"workspace": {"clone": "a/b", "repository": REPO}},
+        {"workspace": None},
+        {"desired": "maybe"},
+    ],
+)
+def test_a_malformed_placement_is_dropped_and_the_rest_runs(
+    world: Any, bad: dict[str, Any]
+) -> None:
+    sup, backend, reports, _, logs = world
+    recorded(sup.cfg, 4)
+    sup.update([placement(3, **bad), placement(4)])
+    settle(sup)
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-4"]
+    assert {path for path, _ in reports.sent} == {"plc-0004"}
+    assert any("malformed" in line for line in logs)
+
+
+def test_a_placement_missing_a_key_does_not_stop_the_tick(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg, 4)
+    broken = placement(3)
+    del broken["project"]
+    sup.update([broken, placement(4)])
+    settle(sup)
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-4"]
+
+
+def test_adoption_waits_for_the_first_read_of_the_placements(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+    backend.live["maity_maity_agent-3"] = tmux.Session(
+        "maity_maity_agent-3", False, None, 99, "plc-0003", 1
+    )
+    sup.records["plc-0003"] = supervisor.Record(generation=1, state="running", since=1.0)
+    sup.tick()  # serve has not said hello yet: nothing desired
+    sup.update([placement()])
+    sup.tick()
+    assert states(reports) == [("running", "adopted", None)]
+    assert backend.started == []
+
+
+def test_a_live_session_without_a_record_is_adopted(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    sup.update([placement()])
+    sup.tick()
+    sup.first_tick = False
+    del sup.records["plc-0003"]
+    backend.live["maity_maity_agent-3"] = tmux.Session(
+        "maity_maity_agent-3", False, None, 99, "plc-0003", 1
+    )
+    sup.tick()
+    assert states(reports)[-1] == ("running", "adopted", None)
+
+
+def test_an_adopted_session_that_exits_is_not_a_quick_crash(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    recorded(sup.cfg)
+    backend.live["maity_maity_agent-3"] = tmux.Session(
+        "maity_maity_agent-3", False, None, 99, "plc-0003", 1
+    )
+    sup.update([placement()])
+    sup.tick()
+    clock.now += 1
+    backend.exit("maity_maity_agent-3", 1)
+    sup.tick()
+    assert sup.records["plc-0003"].crashes == []
+
+
+def test_capacity_counts_starts_in_flight(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    sup, backend, _, _, _ = world
+    sup.cfg = replace(sup.cfg, limits=replace(sup.cfg.limits, max_agents=1))
+    recorded(sup.cfg, 3)
+    recorded(sup.cfg, 4)
+    gate = threading.Event()
+    real = workspace.prepare
+
+    def slow(*args: Any, **kwargs: Any) -> None:
+        gate.wait(5)
+        real(*args, **kwargs)
+
+    monkeypatch.setattr(workspace, "prepare", slow)
+    sup.update([placement(3), placement(4)])
+    sup.tick()
+    sup.tick()  # the first start is still in flight
+    gate.set()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    sup.tick()
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert sup.records["plc-0004"].reason == "capacity"
+
+
+def test_a_stop_during_a_start_does_not_start(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+    gate = threading.Event()
+    real = workspace.prepare
+
+    def slow(*args: Any, **kwargs: Any) -> None:
+        gate.wait(5)
+        real(*args, **kwargs)
+
+    monkeypatch.setattr(workspace, "prepare", slow)
+    sup.update([placement()])
+    sup.tick()
+    sup.update([placement(desired="stopped")])
+    gate.set()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    sup.tick()
+    assert backend.started == []
+    assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
+
+
+def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        failing = "set-option" in argv
+        return subprocess.CompletedProcess(list(argv), 1 if failing else 0, "", "boom")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
+    with pytest.raises(tmux.TmuxError):
+        backend.start("maity_p_c", tmp_path, ["x"], {}, "plc-0003", 1)
+    assert calls[-1][-3:] == ["kill-session", "-t", "maity_p_c"]
+
+
+def test_a_tmux_failure_at_start_backs_off_instead_of_failing_for_good(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise tmux.TmuxError("timed out")
+
+    monkeypatch.setattr(backend, "start", broken)
+    sup.update([placement()])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert rec.state == "exited" and rec.retry_at is not None
+
+
+def test_exit_code_does_not_outlive_its_generation(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    backend.exit("maity_maity_agent-3", 7)
+    sup.tick()
+    sup.update([placement(generation=2, harness="claude-code")])
+    sup.tick()
+    last = reports.sent[-1][1]
+    assert last["reason"] == "harness_refused" and last["exit_code"] is None
+
+
+def test_workspace_in_use_comes_before_credential_missing(world: Any) -> None:
+    sup, _, reports, _, _ = world
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    place.path.mkdir(parents=True)
+    sup.update([placement()])
+    sup.tick()
+    assert states(reports) == [("failed", "workspace_in_use", "workspace_unrecorded")]
+
+
+def test_terminate_never_signals_the_runners_own_group(tmp_path: Path) -> None:
+    import os
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path)
+    backend.terminate(tmux.Session("x", False, None, os.getpgrp(), "plc-1", 1))
+    backend.terminate(tmux.Session("x", False, None, os.getpid(), "plc-1", 1))  # not a leader
+    backend.terminate(tmux.Session("x", False, None, 1, "plc-1", 1))
+
+
+def test_running_is_advertised_when_it_changes(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    patches: list[dict[str, Any]] = []
+
+    class Client(Reports):
+        def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+            if method == "PATCH":
+                patches.append(body)
+                return {}
+            return super().call(method, path, body=body)
+
+    sup.client = Client()
+    sup.capabilities = {"running": 0, "targets": [{"name": "local", "running": 0}]}
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    assert patches[-1]["capabilities"]["running"] == 1
+    assert patches[-1]["capabilities"]["targets"][0]["running"] == 1
+    sup.tick()
+    assert len(patches) == 1
+
+
+def test_unsupported_settings_are_refused(tmp_path: Path) -> None:
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        CONFIG.format(root=tmp_path, max_agents=2).replace(
+            "[backend.local]\n",
+            '[backend.local]\nlayout = "agent_user"\nagent_user = "a"\n' 'memory_max = "4G"\n',
+        )
+    )
+    found = config.unsupported(config.load(path))
+    assert any("agent_user" in f for f in found) and any("memory_max" in f for f in found)
+
+
+def test_a_relative_tmux_socket_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        CONFIG.format(root=tmp_path, max_agents=2).replace(
+            "[backend.local]\n", '[backend.local]\ntmux_socket = "maity"\n'
+        )
+    )
+    with pytest.raises(config.ConfigError, match="absolute"):
+        config.load(path)
+
+
+def test_the_stub_does_not_spin_on_a_failing_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import stub
+
+    (tmp_path / ".git" / "maity").mkdir(parents=True)
+    (tmp_path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
+    monkeypatch.chdir(tmp_path)
+    now = [0.0]
+    calls: list[tuple[str, ...]] = []
+
+    def fake_maity(*args: str, timeout: float) -> int:
+        calls.append(args)
+        return 2
+
+    monkeypatch.setattr(stub, "_maity", fake_maity)
+    monkeypatch.setattr("maity.runner.stub.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("maity.runner.stub.time.sleep", lambda s: now.__setitem__(0, now[0] + s))
+    assert stub.main(["--exit-code", "3", "--run-seconds", "30"]) == 3
+    assert len([c for c in calls if c[0] == "wait"]) <= 7  # one per 5 s, not millions
+
+
+def test_serve_refuses_unsupported_settings_with_78(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity import cli
+    from maity.runner import serve
+
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        CONFIG.format(root=tmp_path, max_agents=2).replace(
+            "[backend.local]\n", '[backend.local]\ncpu_quota = "200%"\n'
+        )
+    )
+    assert cli.main(["runner", "serve", "--config", str(path)]) == serve.EXIT_CONFIG
+    assert "cpu_quota" in capsys.readouterr().err

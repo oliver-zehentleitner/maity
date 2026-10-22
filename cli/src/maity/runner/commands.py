@@ -251,8 +251,6 @@ def _check_local(report: Report, local: config.Local) -> None:
         report.error(f"workspaces {workspaces} cannot be created or written by this user")
     else:
         report.ok(f"workspaces {workspaces}")
-    if local.layout == "agent_user":
-        report.error('layout = "agent_user" is not supported by this version yet (R6)')
 
 
 def _existing_parent(path: Path) -> Path:
@@ -341,6 +339,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.print()
         return 1
     report.ok(f"configuration {path}")
+    for problem in config.unsupported(cfg):
+        report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
     if cfg.local is not None:

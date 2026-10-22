@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -24,7 +25,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .. import hub, state
+from .. import hub, onboarding, state
 from . import capabilities, config, restart, stub, workspace
 from .tmux import Session, Tmux, TmuxError, session_name
 
@@ -32,7 +33,33 @@ TICK = 5.0
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
-TERMINAL = ("stopped", "failed")
+ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
+LIVE = ("starting", "running", "stopping")
+PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
+HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
+
+
+def valid(p: Any) -> bool:
+    """The fields the runner builds paths, names and URLs from, checked before any use."""
+    if not isinstance(p, dict):
+        return False
+    space = p.get("workspace")
+    generation = p.get("generation")
+    return (
+        isinstance(p.get("id"), str)
+        and PLACEMENT_ID.match(p["id"]) is not None
+        and isinstance(p.get("project"), str)
+        and workspace.TOKEN.match(p["project"]) is not None
+        and isinstance(generation, int)
+        and not isinstance(generation, bool)
+        and generation >= 1
+        and p.get("desired") in ("running", "stopped")
+        and isinstance(space, dict)
+        and isinstance(space.get("clone"), str)
+        and workspace.TOKEN.match(space["clone"]) is not None
+        and isinstance(p.get("harness"), str)
+        and HARNESS_ID.match(p["harness"]) is not None
+    )
 
 
 def stamp(moment: float | None) -> str | None:
@@ -71,6 +98,8 @@ class Record:
             self.since = now
         self.state, self.reason = state_, reason
         self.detail = fields.pop("detail", None)
+        if state_ not in ("exited", "failed", "stopped"):
+            self.exit_code = None
         for name, value in fields.items():
             setattr(self, name, value)
 
@@ -93,13 +122,24 @@ class Supervisor:
     tasks: dict[str, threading.Thread] = field(default_factory=dict)
     orphans: dict[str, float] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
-    first_tick: bool = True
+    first_tick: bool = True  # until the first tick after the hub's placements were read
+    capabilities: dict[str, Any] | None = None  # for PATCH /runner when `running` changes
+    advertised_running: int = 0
+    advertised_at: float = 0.0
 
     # --- what serve calls ------------------------------------------------------------------
 
     def update(self, placements: list[dict[str, Any]]) -> None:
+        good = [p for p in placements if valid(p)]
+        if len(good) != len(placements):
+            ids = [
+                onboarding.inline(p.get("id") if isinstance(p, dict) else p)
+                for p in placements
+                if not valid(p)
+            ]
+            self.log(f"supervisor: ignoring malformed placements: {', '.join(ids)[:300]}")
         with self.lock:
-            self.desired = list(placements)
+            self.desired = good
             self.synced = True
 
     def actual(self) -> list[dict[str, Any]]:
@@ -146,24 +186,42 @@ class Supervisor:
         with self.lock:
             desired = list(self.desired)
             synced = self.synced
-            alive = sum(1 for s in sessions.values() if not s.dead)
+            labelled = {s.placement: s for s in sessions.values() if s.placement}
+            starting = sum(1 for t in self.tasks.values() if t.is_alive())
+            alive = sum(1 for s in sessions.values() if not s.dead) + starting
             for placement in desired:
                 name = session_name(placement["project"], placement["workspace"]["clone"])
-                alive += self._step(placement, sessions.get(name), now, alive)
+                mine = labelled.get(placement["id"])
+                other = sessions.get(name)
+                blocking = other if other is not None and other is not mine else None
+                try:
+                    alive += self._step(placement, mine, blocking, now, alive)
+                except Exception as exc:  # noqa: BLE001 - one placement never stops the rest
+                    self.log(f"supervisor: {placement['id']}: {type(exc).__name__}: {exc}")
             if synced:
                 wanted = {p["id"] for p in desired}
-                self._orphans(sessions, now)
+                self._orphans(sessions, wanted, now)
                 for pid in [pid for pid in self.records if pid not in wanted]:
                     if pid not in self.tasks:
                         del self.records[pid]  # closed or gone: nothing left to report
-            self.first_tick = False
+                self.first_tick = False
+            running = sum(1 for s in sessions.values() if not s.dead and s.placement in labelled)
         self._report(desired)
+        self._advertise(running, now)
         self.save()
 
     # --- one placement ---------------------------------------------------------------------
 
-    def _step(self, p: dict[str, Any], session: Session | None, now: float, alive: int) -> int:
-        """Act on one placement; returns how many sessions it started (for capacity)."""
+    def _step(
+        self,
+        p: dict[str, Any],
+        mine: Session | None,
+        blocking: Session | None,
+        now: float,
+        alive: int,
+    ) -> int:
+        """Act on one placement. `mine` is the session labelled with it, `blocking` another
+        session holding its name. Returns how many sessions it started (for capacity)."""
         pid, generation = p["id"], p["generation"]
         task = self.tasks.get(pid)
         if task is not None:
@@ -175,8 +233,7 @@ class Supervisor:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
-        foreign = session is not None and session.placement != pid
-        mine = None if foreign else session
+            rec.exit_code = None
 
         if p.get("desired") == "stopped":
             if mine is not None and not mine.dead:
@@ -187,8 +244,8 @@ class Supervisor:
                 rec.enter(now, "stopped", "stopped_by_hub", deadline_at=None, kill_at=None,
                           retry_at=None)  # fmt: skip
             return 0
-        if foreign:
-            return 0  # another placement's session in this clone: ended as an orphan first
+        if mine is None and blocking is not None:
+            return 0  # another session holds this name: ended as an orphan first
         if mine is not None and mine.generation != generation:
             if not mine.dead:
                 self._stop(rec, mine, p, now)
@@ -196,8 +253,8 @@ class Supervisor:
             self.backend.kill(mine.name)
             mine = None
         if mine is not None and not mine.dead:
-            if self.first_tick and rec.state != "stopping":
-                rec.enter(now, "running", "adopted")
+            if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
+                rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
                 rec.enter(now, "running")
             elif rec.state == "stopping":  # desired went back to running during a stop
@@ -230,9 +287,13 @@ class Supervisor:
             rec.enter(now, "stopped", "stopped_by_hub", exit_code=code, deadline_at=None,
                       kill_at=None)  # fmt: skip
             return
-        decision = restart.on_exit(
-            self.cfg.limits.restart, rec.crashes, rec.started_at or now, now, self.rand
+        # An adopted session's start is unknown: its exit is not counted as a quick one.
+        started = (
+            rec.started_at
+            if rec.started_at is not None
+            else now - self.cfg.limits.restart.quick_exit
         )
+        decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
                       retry_at=None)  # fmt: skip
@@ -288,6 +349,14 @@ class Supervisor:
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
         agent = p.get("agent") or {}
+        owner = agent.get("id") or agent.get("handle") or ""
+        repository = p["workspace"].get("repository") or ""
+        if place.path.exists():
+            try:  # an existing directory that is not this agent's comes before its credential
+                workspace.inspect(self.cfg, place, repository, owner)
+            except workspace.Refused as refused_:
+                rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
+                return 0
         has_credential = place.credential.is_file()
         if p.get("rejoin") or (not has_credential and not agent.get("credential_expected")):
             return self._wait(rec, "the join from the runner arrives with R4", name)
@@ -319,6 +388,10 @@ class Supervisor:
         """The long part of a start, in its own thread: clone if missing, then tmux."""
         owner = agent.get("id") or agent.get("handle") or ""
         try:
+            if not self._wants(p["id"], p["generation"]):
+                with self.lock:  # stopped or moved on while the task was queued
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
             workspace.prepare(
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"),
@@ -326,6 +399,10 @@ class Supervisor:
             if workspace.stale_index_lock(place.path):
                 with self.lock:
                     rec.detail = "stale_index_lock"
+            if not self._wants(p["id"], p["generation"]):  # the clone took a while
+                with self.lock:
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
             self.backend.start(
                 name, place.path, argv, {"MAITY_PLACEMENT": p["id"]}, p["id"], p["generation"]
             )
@@ -335,24 +412,39 @@ class Supervisor:
                           exit_code=refused.exit_code)  # fmt: skip
             return
         except (TmuxError, OSError) as exc:
+            # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
+            # a lasting one ends in crash_loop instead of a permanent wrong reason.
             self.log(f"{name}: start failed: {exc}")
+            now = self.now()
             with self.lock:
-                rec.enter(self.now(), "failed", "harness_missing")
+                decision = restart.on_exit(
+                    self.cfg.limits.restart, rec.crashes, now, now, self.rand
+                )
+                if decision.crash_loop:
+                    rec.enter(now, "failed", "crash_loop", crashes=decision.crashes, retry_at=None)
+                else:
+                    rec.enter(now, "exited", crashes=decision.crashes, retry_at=decision.retry_at)
             return
         hint = f"tmux -S {self.backend.socket} attach -t {name}"
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
         self.log(f"{name}: started generation {p['generation']}")
 
+    def _wants(self, pid: str, generation: int) -> bool:
+        with self.lock:
+            return any(
+                p["id"] == pid and p["generation"] == generation and p["desired"] == "running"
+                for p in self.desired
+            )
+
     # --- sessions nobody wants -------------------------------------------------------------
 
-    def _orphans(self, sessions: dict[str, Session], now: float) -> None:
-        """A session labelled with a placement that no longer wants it (deleted while the
-        runner was offline, or moved to another clone) ends after `stop_grace_max`. A session
-        without a label yet is one being started."""
-        names = {session_name(p["project"], p["workspace"]["clone"]): p["id"] for p in self.desired}
+    def _orphans(self, sessions: dict[str, Session], wanted: set[str], now: float) -> None:
+        """A session labelled with a placement this runner no longer has (deleted while it
+        was offline) ends after `stop_grace_max`. A session without a label is one being
+        started, or not this runner's: never touched."""
         for name, session in sessions.items():
-            if session.placement is None or names.get(name) == session.placement:
+            if session.placement is None or session.placement in wanted:
                 self.orphans.pop(name, None)
                 continue
             if session.dead:
@@ -365,6 +457,23 @@ class Supervisor:
                 self.log(f"{name}: ended (orphaned: placement {session.placement} is gone)")
             elif now - first >= self.cfg.limits.stop_grace_max:
                 self.backend.terminate(session)
+
+    # --- advertising -----------------------------------------------------------------------
+
+    def _advertise(self, running: int, now: float) -> None:
+        """`PATCH /runner` with the new `running`, at most every ADVERTISE_EVERY seconds."""
+        if self.client is None or self.capabilities is None:
+            return
+        if running == self.advertised_running or now - self.advertised_at < ADVERTISE_EVERY:
+            return
+        caps = {**self.capabilities, "running": running}
+        caps["targets"] = [{**t, "running": running} for t in caps.get("targets", [])]
+        try:
+            self.client.call("PATCH", "/runner", body={"capabilities": caps})
+        except hub.HubError as exc:
+            self.log(f"supervisor: advertising running={running} failed ({exc})")
+            return
+        self.advertised_running, self.advertised_at = running, now
 
     # --- reports ---------------------------------------------------------------------------
 
@@ -409,8 +518,8 @@ class Supervisor:
                 self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
             except hub.HubError as exc:
                 if exc.code in ("stale_generation", "not_found"):
-                    with self.lock:
-                        rec.pending = None  # the hub moved on; the next tick reports anew
+                    with self.lock:  # the hub moved on: settled, until the state changes
+                        rec.acked, rec.pending = pending["key"], None
                     continue
                 self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
                 continue
@@ -420,7 +529,8 @@ class Supervisor:
 
 
 def build(cfg: config.Config, client: hub.Client | None, log: Log,
-          probes: dict[str, capabilities.Probe]) -> Supervisor:  # fmt: skip
+          probes: dict[str, capabilities.Probe],
+          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
     """The supervisor for the local backend of `cfg`."""
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
     backend = Tmux(
@@ -430,6 +540,6 @@ def build(cfg: config.Config, client: hub.Client | None, log: Log,
         agent_path=capabilities.agent_path(cfg, os.environ.get("PATH", "")),
         logs=cfg.state_dir / "logs",
     )
-    supervisor = Supervisor(cfg, backend, client, log, probes)
+    supervisor = Supervisor(cfg, backend, client, log, probes, capabilities=capabilities_)
     supervisor.load()
     return supervisor

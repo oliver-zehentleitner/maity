@@ -287,7 +287,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         local = Local(
             workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
             tmux_socket=Path(
-                local_in.get("tmux_socket", str, str(state_dir / "tmux.sock"))
+                local_in.get("tmux_socket", str, str(state_dir / "tmux.sock"), check=_absolute)
             ).expanduser(),
             layout=layout,
             agent_user=agent_user,
@@ -377,6 +377,28 @@ def _repositories(values: Any) -> str | None:
             repr(v) for v in bad
         )
     return None
+
+
+def _absolute(value: Any) -> str | None:
+    return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
+
+
+def unsupported(cfg: Config) -> list[str]:
+    """What the configuration asks for that this version does not do yet. `check` reports
+    each as an error and `serve` refuses to start, rather than running agents with less
+    isolation or fewer limits than the operator wrote down."""
+    found: list[str] = []
+    if cfg.local is not None:
+        if cfg.local.layout == "agent_user":
+            found.append('backend.local.layout = "agent_user" is not supported yet (R7)')
+        if cfg.local.memory_max is not None:
+            found.append("backend.local.memory_max is not enforced yet; remove it or wait for it")
+        if cfg.local.cpu_quota is not None:
+            found.append("backend.local.cpu_quota is not enforced yet; remove it or wait for it")
+    for harness in cfg.harnesses.values():
+        if harness.env_file is not None:
+            found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    return found
 
 
 def _grace(value: Any) -> str | None:

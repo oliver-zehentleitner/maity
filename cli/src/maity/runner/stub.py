@@ -44,10 +44,12 @@ def main(args: Sequence[str] | None = None) -> int:
         _maity("resume", timeout=60)
     while deadline is None or time.monotonic() < deadline:
         left = 60.0 if deadline is None else max(deadline - time.monotonic(), 0.0)
-        if joined:
-            _maity("wait", "--timeout", str(max(int(left), 1)), timeout=left + 30)
-        else:
-            time.sleep(min(left, 5.0))
+        started = time.monotonic()
+        code = (
+            _maity("wait", "--timeout", str(max(int(left), 1)), timeout=left + 30) if joined else 1
+        )
+        if code != 0 or time.monotonic() - started < 1:  # a failing or instant wait: no spin
+            time.sleep(min(left, 5.0) if deadline else 5.0)
     return int(options.exit_code)
 
 

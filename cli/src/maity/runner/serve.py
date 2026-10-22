@@ -282,7 +282,7 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     service = Service(cfg, hub.Client(base, key), capabilities.build(cfg, probes))
     if cfg.local is not None:
         # Its own client: reports go out while the connection thread sits in a long-poll.
-        local = supervisor.build(cfg, hub.Client(base, key), log, probes)
+        local = supervisor.build(cfg, hub.Client(base, key), log, probes, service.advertised)
         service.reconcile, service.actual = local.update, local.actual
         service.supervisor = local
     return service
@@ -293,6 +293,11 @@ def serve(config_path: Path) -> int:
         cfg = config.load(config_path)
     except config.ConfigError as exc:
         for problem in exc.problems:
+            log(problem)
+        return EXIT_CONFIG
+    missing = config.unsupported(cfg)
+    if missing:
+        for problem in missing:
             log(problem)
         return EXIT_CONFIG
     try:

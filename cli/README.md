@@ -345,6 +345,12 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Reports.** Each placement gets one report per change, with the next
   `seq`, written to `<state_dir>/actual.json` before it is sent.
 
+Settings this version does not carry out yet (`layout = "agent_user"`,
+`memory_max`, `cpu_quota`, a harness `env_file`) are errors in `check`,
+and `serve` refuses to start with them (exit 78), instead of running
+agents with less isolation than the file asks for. `tmux_socket` must be
+an absolute path.
+
 This slice starts the `stub` harness only (no model, for tests: it exits
 with `exit_code` after `run_seconds`). It starts it only in a clone that
 already holds the agent's credential. The join from the runner and the

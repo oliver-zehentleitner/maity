@@ -101,6 +101,24 @@ def _record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str
         state.save_state(state_dir, found, name=RECORDS)
 
 
+def inspect(
+    cfg: config.Config, workspace: Workspace, repository: str, agent: str
+) -> dict[str, Any]:
+    """An existing clone's record, when it is `agent`'s and points at `repository`;
+    `Refused` otherwise. Reads the record and `.git/config` only."""
+    record = records(cfg.state_dir).get(str(workspace.path))
+    if not isinstance(record, dict):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    if record.get("agent") != agent:
+        raise Refused("workspace_in_use", "other_agent")
+    found = origin(workspace.path)
+    if found is None or config.normalise_repository(found) != config.normalise_repository(
+        repository
+    ):
+        raise Refused("workspace_in_use", "origin_mismatch")
+    return record
+
+
 def prepare(
     cfg: config.Config,
     workspace: Workspace,
@@ -111,17 +129,8 @@ def prepare(
 ) -> None:
     """Make sure the clone exists and belongs to `agent`; clone it when it is missing.
     `Refused` otherwise. `agent` is the agent's id, or its handle before the first join."""
-    record = records(cfg.state_dir).get(str(workspace.path))
     if workspace.path.exists():
-        if record is None:
-            raise Refused("workspace_in_use", "workspace_unrecorded")
-        if record.get("agent") != agent:
-            raise Refused("workspace_in_use", "other_agent")
-        found = origin(workspace.path)
-        if found is None or config.normalise_repository(found) != config.normalise_repository(
-            repository
-        ):
-            raise Refused("workspace_in_use", "origin_mismatch")
+        record = inspect(cfg, workspace, repository, agent)
         if record.get("placement_id") != placement_id:
             _record(cfg.state_dir, workspace, agent, placement_id)
         return
