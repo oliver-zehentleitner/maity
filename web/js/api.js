@@ -521,7 +521,18 @@ window.Maity = window.Maity || {};
       }
       return fail(404, "not_found", "Not found", path);
     }],
-    ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => file(m[1], "joins.json", path)],
+    // A fixture join with expires_in_seconds expires that long after the
+    // fixtures were first read, so an open one stays open.
+    ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
+      const list = file(m[1], "joins.json", path);
+      list.items.forEach((j) => {
+        if ("expires_in_seconds" in j) {
+          j.expires_at = new Date(Date.now() + j.expires_in_seconds * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+          delete j.expires_in_seconds;
+        }
+      });
+      return list;
+    }],
     // The join line is made up here and shown once, as the hub would.
     ["POST", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       let agentId = body.agent && body.agent.id;
@@ -552,7 +563,12 @@ window.Maity = window.Maity || {};
     ["DELETE", /^\/projects\/([^/]+)\/joins\/([^/]+)$/, (m, body, path) => {
       const j = file(m[1], "joins.json", path).items.find((x) => x.id === m[2]);
       if (!j) fail(404, "not_found", "Not found", path);
-      if (!j.revoked_at) j.revoked_at = nowIso();
+      if (!j.revoked_at) {
+        // §3.1: only an open join is revoked; a revoked one answers as it is.
+        const from = j.used_at ? "used" : j.burned ? "burned" : Date.parse(j.expires_at) <= Date.now() ? "expired" : null;
+        if (from) fail(409, "invalid_transition", "the join is " + from, path, { from, to: "revoked" });
+        j.revoked_at = nowIso();
+      }
       return j;
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
@@ -658,6 +674,10 @@ window.Maity = window.Maity || {};
     } catch (err) {
       throw new ApiError("The hub did not answer: " + err.message, 0, path);
     }
+    // Maity-Server-Time on every answer (docs/api.md §1.2): how far this
+    // browser's clock is off the hub's, for judging expiry as the hub does.
+    const served = res.headers && res.headers.get ? Date.parse(res.headers.get("Maity-Server-Time") || "") : NaN;
+    if (!Number.isNaN(served)) skew = served - Date.now();
     if (!res.ok) {
       let detail = res.statusText;
       let code = res.headers && res.headers.get ? res.headers.get("Maity-Error") : null;
@@ -677,6 +697,8 @@ window.Maity = window.Maity || {};
     }
     return res.json();
   }
+
+  let skew = 0;
 
   function request(method, path, body, raw) {
     // In fixture mode an image travels with the Content-Type the page sniffed.
@@ -702,6 +724,8 @@ window.Maity = window.Maity || {};
   }
 
   M.api = {
+    // The hub's time as best known: this clock corrected by the last answer's.
+    now: () => Date.now() + skew,
     source,
     ApiError,
     get: (path) => request("GET", path),

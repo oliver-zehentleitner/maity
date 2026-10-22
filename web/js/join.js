@@ -1,7 +1,9 @@
 // Join an agent: create a join for one of the human's agent profiles (or a
 // new one) and show the paste line once (docs/api.md §3.1). The line
 // carries a single-use code; it is held in this view only, never stored,
-// and gone when the view is left. Open joins can be revoked.
+// and gone when the view is left. Each join's state is derived from its
+// fields, expiry against the clock while the view is open; only an open
+// join can be revoked.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -9,14 +11,24 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
+  // Expiry emits no event; the list re-judges it on this interval, by the
+  // hub's clock (M.api.now). A join expired less than GRACE_MS ago keeps
+  // Revoke: what the hub still accepts must stay revocable, and the hub
+  // decides.
+  const EXPIRY_MS = 10000;
+  const GRACE_MS = 60000;
+
   const ROLES = ["member", "reviewer", "proxy", "admin"];
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
-  function joinState(j) {
-    if (j.revoked_at) return "revoked " + formatTime(j.revoked_at);
-    if (j.burned) return "burned";
-    if (j.used_at) return "used " + formatTime(j.used_at);
-    return "open until " + formatTime(j.expires_at);
+  // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
+  // revoked, used, burned, then the clock.
+  function joinState(j, now) {
+    if (j.revoked_at) return { key: "revoked", label: "revoked", text: "revoked " + formatTime(j.revoked_at) };
+    if (j.used_at) return { key: "used", label: "used", text: "used " + formatTime(j.used_at) };
+    if (j.burned) return { key: "burned", label: "burned", text: "refused after three wrong codes" };
+    if (Date.parse(j.expires_at) <= now) return { key: "expired", label: "expired", text: "expired " + formatTime(j.expires_at) };
+    return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
   }
 
   M.views.join = async function (ctx, root) {
@@ -156,31 +168,62 @@ window.Maity = window.Maity || {};
     status.el);
 
     const listBox = h("div");
+    let shownList = null;
+    let shownKey = "";
+    // One status line for the list, so a redraw keeps an error on screen.
+    const listStatus = M.statusLine();
+    const revocable = (j, state, now) => state.key === "open"
+      || (state.key === "expired" && now - Date.parse(j.expires_at) < GRACE_MS);
+    // What a redraw would change: the open set and the revocable set.
+    const keyOf = (list, now) => list.items.map((j) => {
+      const state = joinState(j, now);
+      return j.id + ":" + state.key + (revocable(j, state, now) ? "+" : "");
+    }).join(" ");
+    async function reread() {
+      try {
+        drawJoins(await M.api.getAll(ctx.base + "/joins"));
+      } catch (err) {
+        listStatus.fail("The joins could not be read: ", err);
+      }
+    }
     function drawJoins(list) {
-      const listStatus = M.statusLine();
-      append(clear(listBox), h("h3", null, "Joins"),
-        list.items.length
-          ? h("ul", { class: "joins" }, list.items.map((j) => h("li", null,
-            h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + joinState(j),
-            !j.used_at && !j.revoked_at && !j.burned
-              ? h("button", {
+      shownList = list;
+      const now = M.api.now();
+      shownKey = keyOf(list, now);
+      const rows = list.items.map((j) => ({ j, state: joinState(j, now) }));
+      const open = rows.filter((r) => r.state.key === "open");
+      const done = rows.filter((r) => r.state.key !== "open");
+      const row = ({ j, state }) => h("li", { class: "join-" + state.key },
+        h("span", { class: "badge join-state" }, state.label), " ",
+        h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text,
+        revocable(j, state, now)
+          ? h("button", {
                 type: "button",
                 class: "danger",
                 onclick: async () => {
                   listStatus.busy("Revoking…");
                   try {
                     await M.api.del(ctx.base + "/joins/" + encodeURIComponent(j.id));
-                    drawJoins(await M.api.getAll(ctx.base + "/joins"));
+                    listStatus.done();
+                    await reread();
                   } catch (err) {
                     listStatus.fail("Not revoked: ", err);
+                    // Used, burned or expired meanwhile: show it as the hub has it.
+                    if (err.code === "invalid_transition") await reread();
                   }
                 },
               }, "Revoke")
-              : null)))
-          : h("p", { class: "muted" }, "No joins yet."),
+          : null);
+      append(clear(listBox), h("h3", null, "Joins"),
+        !rows.length ? h("p", { class: "muted" }, "No joins yet.") : null,
+        open.length ? h("ul", { class: "joins open-joins", "aria-label": "Open joins" }, open.map(row)) : null,
+        rows.length && !open.length ? h("p", { class: "muted" }, "No open join.") : null,
+        done.length ? [h("h4", null, "No longer usable"), h("ul", { class: "joins closed-joins" }, done.map(row))] : null,
         listStatus.el);
     }
     drawJoins(joins);
+    // A join that expires while the view is open moves down without a reload.
+    ctx.every(EXPIRY_MS, () => { if (keyOf(shownList, M.api.now()) !== shownKey) drawJoins(shownList); });
 
     append(root, h("h2", null, "Join an agent"),
       h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),

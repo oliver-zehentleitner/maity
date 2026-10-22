@@ -770,6 +770,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "phone width")
 
     users_step(run, page)
+    join_expiry_step(run, page)
     change_password(run, page)
 
 
@@ -1441,6 +1442,34 @@ def users_step(run: Run, page: Page) -> None:
     run.shot(page, "users")
     run.a11y(page, "users")
     no_problems(run, "users")
+
+
+def join_expiry_step(run: Run, page: Page) -> None:
+    """A join that expires while Join an agent is open moves to the others, without Revoke."""
+    run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
+    # A second tab of the same human whose clock can be moved: the hub's is not.
+    other = page.context.browser.new_context(storage_state=page.context.storage_state())
+    second = other.new_page()
+    watch_page(run, second)
+    second.clock.install()
+    second.goto(f"{run.base}/#/p/e2e-alpha/join")
+    # A new profile: the existing one is a member here already.
+    second.locator("#join-agent").select_option("")
+    second.locator("#join-handle").fill("e2e-expiring")
+    second.locator("#join-display").fill("E2E Expiring")
+    second.get_by_role("button", name="Create join line", exact=True).click()
+    expect(second.locator(".paste-line")).to_be_visible()
+    row = second.locator("ul.open-joins li").first
+    expect(row.get_by_role("button", name="Revoke", exact=True)).to_be_visible()
+    join_id = row.locator("code").inner_text()
+    second.clock.fast_forward("16:00")  # past the default 15 minutes
+    gone = second.locator("ul.closed-joins li", has_text=join_id)
+    expect(gone).to_contain_text("expired")
+    expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
+    expect(second.locator("ul.open-joins li", has_text=join_id)).to_have_count(0)
+    run.shot(second, "join-expired")
+    other.close()
+    no_problems(run, "joins")
 
 
 def change_password(run: Run, page: Page) -> None:

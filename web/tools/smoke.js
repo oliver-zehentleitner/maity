@@ -822,6 +822,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   await go("#/p/maity/join");
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
+  // Each join's state from its fields; only an open one can be revoked, and it comes first.
+  const joinRow = (id) => main.querySelectorAll(".joins li").find((li) => li.textContent.includes(id));
+  const openRows = main.querySelector(".open-joins").querySelectorAll("li");
+  expect(openRows.length === 1 && joinRow("join-0010").classList.contains("join-open") && text(joinRow("join-0010")).startsWith("open join-0010")
+    && text(joinRow("join-0010")).includes("open until") && btn(joinRow("join-0010"), "Revoke"), "joins: an open join is listed first, with Revoke");
+  const closedRows = main.querySelector(".closed-joins").querySelectorAll("li");
+  expect(closedRows.length === 4 && closedRows.every((li) => !btn(li, "Revoke")), "joins: used, expired, burned and revoked joins have no Revoke");
+  expect(text(joinRow("join-0009")).startsWith("expired join-0009") && text(joinRow("join-0009")).includes("· expired ")
+    && joinRow("join-0009").classList.contains("join-expired"), "joins: an expired join says expired, not open");
+  expect(text(joinRow("join-0008")).startsWith("burned") && text(joinRow("join-0008")).includes("refused after three wrong codes"), "joins: a burned join");
+  expect(text(joinRow("join-0007")).startsWith("revoked") && text(joinRow("join-0007")).includes("· revoked "), "joins: a revoked join");
+  expect(text(joinRow("join-0006")).startsWith("used") && text(joinRow("join-0006")).includes("· used "), "joins: a used join");
   expect(main.all().some((e) => e.attrs.pattern) && !badPatterns().length, "join: every pattern compiles with the v flag " + badPatterns());
   byId("join-agent").value = "agt-x";
   const joinPosts = [];
@@ -855,6 +867,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
   expect(main.querySelectorAll(".joins li")[0].textContent.includes("Agent New as member"), "the joins list names the new profile");
+  // A join that expires while the view is open moves to the others without a reload.
+  const jAll = win.Maity.api.getAll;
+  const soon = { id: "join-soon", agent_id: "agt-b", role: "member", created_by: "hum-maintainer", created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60).toISOString(), used_at: null, burned: false, revoked_at: null };
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/joins" ? Promise.resolve({ items: [soon], next_cursor: null }) : jAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  expect(btn(joinRow("join-soon"), "Revoke") && main.querySelector(".open-joins"), "joins: open while it lasts");
+  await new Promise((r) => setTimeout(r, 80)); await fireIntervals(); await tick();
+  expect(!main.querySelector(".open-joins") && text(main).includes("No open join.") && text(joinRow("join-soon")).startsWith("expired"),
+    "joins: expired while the view is open, without a reload");
+  expect(btn(joinRow("join-soon"), "Revoke"), "joins: just expired, it keeps Revoke for a minute: the hub decides");
+  const jNow = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 61000;
+  await fireIntervals(); await tick();
+  expect(!btn(joinRow("join-soon"), "Revoke"), "joins: a minute after it expired, no Revoke");
+  // Expiry is judged by the hub's clock (M.api.now; its skew is tested in API mode).
+  soon.expires_at = new Date(Date.now() - 5 * 60000).toISOString();
+  win.Maity.api.now = () => Date.now() - 10 * 60000;
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  expect(main.querySelector(".open-joins") && btn(joinRow("join-soon"), "Revoke"), "joins: a browser ahead of the hub still sees an open join open");
+  // A Revoke the hub refuses (expired by its clock): said, kept on screen, the list re-read.
+  win.Maity.api.getAll = jAll;
+  win.Maity.api.now = () => Date.parse("2026-10-21T08:10:00Z");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  const jReads = [];
+  const jAll2 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => { jReads.push(p); return jAll2(p); };
+  btn(joinRow("join-0009"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Not revoked: the join is expired") && jReads.includes("/projects/maity/joins"),
+    "joins: a refused Revoke is said and the list re-read");
+  win.Maity.api.getAll = jAll2;
+  win.Maity.api.now = jNow;
+  win.Maity.api.getAll = jAll;
   await go("#/p/maity/inbox");
   expect(!text(main).includes("FIXTURE"), "the line is gone after leaving the view");
   // count polling: a change offers a reload instead of replacing the list
@@ -1067,12 +1112,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));
   const calls = [];
+  // The fake hub's clock is 10 minutes behind this one.
+  const HUB_TIME = new Date(Date.now() - 10 * 60000).toISOString().replace(/\.\d+Z$/, "Z");
   let mode = "ok";
   ctx.fetch = async (url, init) => {
     if (mode === "down") throw new Error("connection refused");
     calls.push({ url, method: init.method, headers: Object.assign({}, init.headers) });
     const [p, q] = url.replace("/api/v1", "").split("?");
-    const json = (status, data) => ({ ok: status < 400, status, statusText: "x", headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : null) }, json: async () => data });
+    const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
+      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
     if (init.method === "POST") {
       if (mode === "reject") return json(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch", details: {} } });
       const r = F["maity/requests.json"].items.find((x) => p.includes(x.id));
@@ -1086,6 +1134,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   document.cookie = "other=1; maity_csrf=tok%3D123";
   await go("#/p/maity/inbox");
   expect(!main.querySelector(".error"), "API mode against a fake hub renders the inbox");
+  expect(Math.abs(win.Maity.api.now() - Date.parse(HUB_TIME)) < 5000, "API mode: the hub's clock from Maity-Server-Time");
   expect(!text(header).includes("Fixtures"), "no fixture label in API mode");
   expect(!head.querySelector("script"), "API mode never loads the fixture bundle");
   expect(calls.filter((c) => c.method === "GET").every((c) => !("X-CSRF-Token" in c.headers)), "no CSRF header on GET");
