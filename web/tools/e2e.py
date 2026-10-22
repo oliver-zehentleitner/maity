@@ -450,6 +450,18 @@ def scenario(run: Run, page: Page) -> None:
     assert [r.get("answer", {}).get("reply_id") for r in got] == ["go"], got
     no_problems(run, "all projects")
 
+    run.step("phone width: no view scrolls sideways")
+    run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
+    page.set_viewport_size({"width": 390, "height": 844})
+    for view in ("inbox", "board", "agents", "org", "join"):
+        page.goto(f"{run.base}/#/p/e2e-alpha/{view}")
+        expect(page.locator("main section.view")).to_be_visible()
+        expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
+        run.shot(page, f"phone-{view}")
+    no_problems(run, "phone width")
+
 
 if __name__ == "__main__":
     sys.exit(main())

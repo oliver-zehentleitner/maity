@@ -32,16 +32,20 @@ window.Maity = window.Maity || {};
     }
     const status = M.statusLine();
     // Active ones first, as the hub lists them; revoked ones stay visible.
+    // The text flows as one line that wraps; the button stays beside it.
     append(box, h("ul", null, list.items.map((c) => h("li", { class: c.revoked_at ? "revoked" : "" },
-      h("code", null, c.id),
-      h("span", null, " " + (c.client || "") + " · created " + formatTime(c.created_at)),
-      c.revoked_at
-        ? h("span", { class: "muted" }, " · revoked " + formatTime(c.revoked_at) + " by " + ctx.nameOf(c.revoked_by)
-          + (c.revoked_reason ? " (" + c.revoked_reason + ")" : ""))
-        : [
-          c.resumed_at
+      h("span", { class: "credential-text" },
+        h("code", null, c.id),
+        " " + (c.client || "") + " · created " + formatTime(c.created_at),
+        c.revoked_at
+          ? h("span", { class: "muted" }, " · revoked " + formatTime(c.revoked_at) + " by " + ctx.nameOf(c.revoked_by)
+            + (c.revoked_reason ? " (" + c.revoked_reason + ")" : ""))
+          : (c.resumed_at
             ? h("span", null, " · last used " + formatAgo(c.last_used_at))
-            : h("span", { class: "never" }, " · never resumed"),
+            : h("span", { class: "never" }, " · never resumed"))),
+      c.revoked_at
+        ? null
+        : [
           h("button", {
             type: "button",
             class: "danger",

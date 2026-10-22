@@ -209,6 +209,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 8. `#/all` lists both requests, the `high` one first, each with its project,
    and answers them there, one in free text, one with `go`; the agent's
    `maity resume` sees that answer.
+9. at phone width (390 px) the inbox, board, agents, organisation and join
+   views load without an error and none of them scrolls sideways.
 
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
 default a temp directory, kept). Any console error, page error or API
