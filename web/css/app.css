@@ -311,6 +311,15 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prs th, .prs td { overflow-wrap: normal; }
 .prs td:first-child { overflow-wrap: break-word; }
 .groups .unknown { color: var(--muted); }
+.release-edit { margin-top: 6px; }
+.release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.checklist.editable label { color: inherit; }
+.rows-form h4 { margin: 6px 0 4px; }
+.edit-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.edit-rows li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.edit-rows input.item-text { flex: 1 1 auto; min-width: 0; }
+.edit-rows input.pr-number { width: 6rem; }
 
 .readiness { margin-top: 8px; font-size: 0.88rem; }
 .readiness.ready { color: var(--ok); }
