@@ -732,3 +732,19 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 6px; }
 .overview-counts a { display: block; padding: 4px 6px; border-radius: 4px; background: var(--surface-2); text-decoration: none; }
 .overview-counts .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Group chats (js/group-chat.js). */
+.chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-list-pane .new-group { white-space: nowrap; }
+.mention-count { background: var(--accent); color: var(--accent-text); }
+.group-people-line, .group-observers { margin: 0 0 4px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.group-manage { margin: 4px 0 8px; }
+.group-manage summary { cursor: pointer; font-size: 0.88rem; }
+.group-manage .inline-form { margin: 6px 0; }
+.group-members { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; font-size: 0.88rem; }
+.earlier { display: flex; justify-content: center; margin: 4px 0; }
+.earlier:empty { display: none; }
+.msg-redacted { margin: 0; font-style: italic; }
+.group-readonly { margin: 8px 0 0; }
+.group-people { border: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; }
+.group-people legend { padding: 0; margin-bottom: 4px; }

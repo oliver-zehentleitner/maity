@@ -344,3 +344,43 @@ keeps the inbox there, and what waits for an answer matters more than a
 summary. The board's "changed, Reload" notice would interrupt nothing
 worth protecting here. One error for the whole view: it hides what the
 page already has.
+
+## Group chats live in the chat view's own two panes; the hub says which kind a chat is, and the history before one joined is read on demand
+
+**Id:** 46abbbf3-40b9-4802-a22f-1a85293a9b8f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the group-chat contract (docs/api.md §9.2, §9.3, §8.5; PR #153) and the coordinator's card for the dashboard's part (tsk-b2dv60tsexjf), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub sends live events to an owner who reads along, a chat gets more than twelve people, or the list needs filters by kind
+**See:** views.md#the-chats-history-days-apart-a-senders-run-grouped-and-the-line-before-what-was-unread-when-it-opened — abe93ad2-1a75-4abc-a5d0-70e074d17335 — as of 2026-10-22
+
+Group chats are in the same list as the direct chats, newest first, and
+open in the same right-hand pane. A new one is made in that pane
+(`#/p/<slug>/chat/new`), so Back and the URL work as for any chat. The
+kind of a chat comes from the hub's list, never from the shape of its
+id. The open chat names its people and everyone who reads along. It
+shows the window since one joined; what came before is a button away,
+read on demand. Choosing one's own agent alone for a new chat points
+to the direct chat before anything is sent. Renaming, adding and
+removing people sit behind a disclosure, for the creator and admins
+only. Removing a message asks for a reason in the browser's own prompt,
+as the page already asks with the browser's confirm before anything
+destructive; the hub requires the reason, so an empty one is asked for
+again. A removed message is recognised by its `null` body. Changes to
+the chat, someone else's included, are drawn in place, and a removal
+reaches the open chat through `event_redacted`. No message wakes an
+owner who reads along, so the view re-reads every 30 seconds.
+
+**Reason:** one list is one place to look for "where was that said",
+and the chat view's sizing, drafts, quoting and Markdown work for both
+kinds unchanged. The hub decides what a chat is, so a change of id
+scheme cannot break the page. Starting at the window is the contract's
+"fresh by default": a latecomer is not buried under talk from before
+they came, and the button says the earlier part is there.
+
+**Rejected alternative:** a separate tab for group chats: two lists to
+search, and a mention could sit in either. A dialog for the new chat:
+the page has no dialogs, and a pane route keeps the browser's
+navigation. Loading the whole history on opening: it would bring back
+the backlog the window keeps out.

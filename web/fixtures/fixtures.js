@@ -296,6 +296,88 @@ window.MAITY_FIXTURES = {
       "next_cursor": null
     }
   },
+  "maity/group-chats.json": {
+    "cnv-0007": {
+      "items": [
+        {
+          "body": "Where do we stand for 0.2?",
+          "conversation_id": "cnv-0007",
+          "from": "hum-maintainer",
+          "id": "evt-5010",
+          "mentions": [],
+          "sent_at": "2026-10-21T13:20:00Z",
+          "seq": 5010,
+          "to": "cnv-0007"
+        },
+        {
+          "body": "Contract is final; the hub side needs the release card.",
+          "conversation_id": "cnv-0007",
+          "from": "agt-a",
+          "id": "evt-5015",
+          "mentions": [],
+          "sent_at": "2026-10-21T13:25:00Z",
+          "seq": 5015,
+          "to": "cnv-0007"
+        },
+        {
+          "body": "@maintainer the tag can go today.",
+          "conversation_id": "cnv-0007",
+          "from": "agt-b",
+          "id": "evt-5020",
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "maintainer",
+              "length": 11,
+              "member_id": "hum-maintainer",
+              "offset": 0
+            }
+          ],
+          "sent_at": "2026-10-21T13:30:00Z",
+          "seq": 5020,
+          "to": "cnv-0007"
+        }
+      ],
+      "read": {
+        "hum-maintainer": 5015
+      },
+      "view": {
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:00:00Z",
+        "created_by": "hum-maintainer",
+        "id": "cnv-0007",
+        "kind": "group",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "joined_at": "2026-10-21T13:00:00Z",
+            "joined_seq": 0,
+            "kind": "human",
+            "member_id": "hum-maintainer",
+            "owner_id": null
+          },
+          {
+            "handle": "agent-a",
+            "joined_at": "2026-10-21T13:00:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-a",
+            "owner_id": "hum-maintainer"
+          },
+          {
+            "handle": "agent-b",
+            "joined_at": "2026-10-21T13:05:00Z",
+            "joined_seq": 0,
+            "kind": "agent",
+            "member_id": "agt-b",
+            "owner_id": "hum-maintainer"
+          }
+        ],
+        "title": "Release 0.2 go/no-go"
+      }
+    }
+  },
   "maity/joins.json": {
     "items": [
       {
