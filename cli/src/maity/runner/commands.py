@@ -9,15 +9,16 @@ import shutil
 import stat
 import sys
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import hub, proc, state
-from . import config
+from .. import hub, onboarding, state
+from . import capabilities, config, serve
 
-STATE_FILE = "runner.json"
-REVOKE = "revoke the runner in the dashboard"
-VERSION_TIMEOUT = 10.0
+STATE_FILE = serve.RUNNER_FILE
+UNIT = "maity-runner.service"
+REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
 
 
@@ -250,8 +251,6 @@ def _check_local(report: Report, local: config.Local) -> None:
         report.error(f"workspaces {workspaces} cannot be created or written by this user")
     else:
         report.ok(f"workspaces {workspaces}")
-    if local.layout == "agent_user":
-        report.error('layout = "agent_user" is not supported by this version yet (R6)')
 
 
 def _existing_parent(path: Path) -> Path:
@@ -260,25 +259,18 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
-def _version(binary: str) -> str | None:
-    try:
-        done = proc.run([binary, "--version"], cwd=Path.home(), timeout=VERSION_TIMEOUT)
-    except proc.ToolError:
-        return None
-    first = (done.stdout or done.stderr).strip().splitlines()
-    return first[0][:80] if done.returncode == 0 and first else None
-
-
 def _check_harness(report: Report, harness: config.Harness, agent_path: str) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    binary = shutil.which(harness.binary or "", path=agent_path)
-    if binary is None:
+    found = capabilities.probe(harness, agent_path)
+    if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
-    version = _version(binary)
-    report.ok(f"harness {harness.id}: {binary} ({version or 'version unknown'})")
+    if found.reason == "version_failed":
+        report.error(f"harness {harness.id}: `{found.path} --version` failed")
+        return
+    report.ok(f"harness {harness.id}: {found.path} ({found.version})")
     if harness.env_file is not None:
         if harness.env_file.is_file():
             _private(report, harness.env_file, f"harness {harness.id} env_file")
@@ -347,17 +339,87 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.print()
         return 1
     report.ok(f"configuration {path}")
+    for problem in config.unsupported(cfg):
+        report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
     if cfg.local is not None:
         _check_local(report, cfg.local)
-    agent_path = (cfg.local.agent_path if cfg.local else None) or os.environ.get("PATH", "")
+    agent_path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
     for harness in cfg.harnesses.values():
         _check_harness(report, harness, agent_path)
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
     return 1 if report.failed else 0
+
+
+# --- serve and status ------------------------------------------------------------------------
+
+
+def cmd_unit(args: argparse.Namespace) -> int:
+    """The systemd unit shipped in the package, to stdout."""
+    print(resources.files("maity.runner").joinpath(UNIT).read_text(encoding="utf-8"), end="")
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    config.require_tomllib()
+    return serve.serve(config.path_of(args.config))
+
+
+def _alive(pid: Any) -> bool:
+    """Whether `pid` is a running `maity runner serve`; a reused pid is not."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return True  # no /proc: the signal check is all there is
+    return b"runner" in command and b"serve" in command
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """The local view, from the state directory only; never contacts the hub."""
+    config.require_tomllib()
+    cfg = config.load(config.path_of(args.config))
+    paired = state.load_state(cfg.state_dir, name=STATE_FILE) if cfg.state_dir.is_dir() else {}
+    current = (
+        state.load_state(cfg.state_dir, name=serve.STATUS_FILE) if cfg.state_dir.is_dir() else {}
+    )
+    running = _alive(current.get("pid"))
+    view: dict[str, Any] = {
+        "hub": paired.get("hub"),
+        "runner_id": paired.get("runner_id"),
+        "service": "running" if running else "not running",
+        "connected": bool(current.get("connected")) and running,
+        **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
+        "placements": current.get("placements") or [],
+    }
+    if args.json:
+        print(json.dumps(view, indent=2))
+        return 0
+    show = onboarding.inline  # every string here came from the hub or a file it wrote
+    print(f"runner   {show(view['runner_id'] or 'not paired')} on {show(view['hub'] or '-')}")
+    connection = "connected" if view["connected"] else "not connected"
+    print(f"service  {view['service']}, {connection} (as of {show(view['updated_at'] or '-')})")
+    if view["error"]:
+        retry = f"; next try {show(view['retry_at'])}" if view["retry_at"] and running else ""
+        print(f"last     {show(view['error'])}{retry}")
+    for placement in view["placements"]:
+        if isinstance(placement, dict):
+            print(
+                f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
+                f"generation {show(placement.get('generation'))}  "
+                f"desired {show(placement.get('desired'))}"
+            )
+    return 0
 
 
 # --- parser ----------------------------------------------------------------------------------
@@ -401,3 +463,34 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--explain", action="store_true", help="print every key's default and stop")
     r.add_argument("--offline", action="store_true", help="do not contact the hub")
     r.set_defaults(handler=cmd_check)
+
+    r = rsub.add_parser(
+        "serve",
+        help="the runner service: connect to the hub and follow its placements",
+        description="Say hello to the hub, hold the runner's event stream and re-read the "
+        "placements on every wake. Logs to standard error. Exits 0 on SIGTERM (agents keep "
+        f"running) and {serve.EXIT_CONFIG} on a revoked credential or a configuration the hub "
+        "refuses, which the systemd unit does not restart.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.set_defaults(handler=cmd_serve)
+
+    r = rsub.add_parser(
+        "status",
+        help="the local view: service, connection, placements; does not contact the hub",
+        description="Print what the running service last wrote to the state directory.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "unit",
+        help="print the systemd unit for running serve as a service",
+        description="Print the systemd unit shipped with this package; its comments say how "
+        "to install it (`maity runner unit > /etc/systemd/system/maity-runner.service`).",
+        formatter_class=fmt,
+    )
+    r.set_defaults(handler=cmd_unit)

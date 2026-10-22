@@ -307,6 +307,62 @@ Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
 
+`maity runner serve` is the service. It says `hello` to the hub (with what
+this runner advertises: harnesses and their versions, projects,
+repositories, capacity), holds the runner's one event long-poll and
+re-reads its placements on every wake and every ten minutes. It logs to
+standard error. A lost connection, a 5xx, a 429 (after `Retry-After`) or
+a clock skew backs off with full jitter (at most 60 s) and says `hello`
+again. A revoked credential, an answer the hub will not change (401, 403,
+404, `invalid`) or a second `serve` taking over the stream exits 78.
+SIGTERM exits 0. In every case the agents keep running.
+
+```sh
+maity runner serve            # in the foreground; as a service: `maity runner unit`
+maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
+```
+
+With `[backend] kind = "local"` the service supervises the agents itself.
+Every five seconds it compares the placements with the sessions of its
+own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
+otherwise) and then starts, restarts, stops, adopts or ends sessions:
+
+- **Clean environment.** The tmux server starts under `env -i` with only
+  `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
+  `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+- **Clones.** Each clone is `<workspaces>/<project>/<clone>`, recorded in
+  `<state_dir>/workspaces.json`. The runner runs `git clone` only into a
+  missing directory and never runs git in an existing clone; it parses
+  `.git/config` instead.
+- **Restarts.** A process that exits is restarted after `10 s × 2^n`
+  (±20 %, at most `restart.max`). Five exits within 60 s of their start
+  inside 30 minutes end the placement as `failed`/`crash_loop` until its
+  generation moves.
+- **Stops.** A stop waits `stop_grace_seconds` (capped by
+  `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
+- **Adoption and orphans.** After a runner restart, a live session of a
+  known placement is adopted, not restarted. A session whose placement
+  is gone ends after `stop_grace_max`.
+- **Reports.** Each placement gets one report per change, with the next
+  `seq`, written to `<state_dir>/actual.json` before it is sent.
+
+Settings this version does not carry out yet (`layout = "agent_user"`,
+`memory_max`, `cpu_quota`, a harness `env_file`) are errors in `check`,
+and `serve` refuses to start with them (exit 78), instead of running
+agents with less isolation than the file asks for. `tmux_socket` must be
+an absolute path.
+
+This slice starts the `stub` harness only (no model, for tests: it exits
+with `exit_code` after `run_seconds`). It starts it only in a clone that
+already holds the agent's credential. The join from the runner and the
+real harness adapters come next.
+
+`maity runner unit` prints the systemd unit shipped in the package
+([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the
+service as a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked
+credential is not retried in a loop, and `KillMode=process`, so stopping
+the service never ends the agents' tmux sessions.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -317,6 +373,7 @@ host lowercased. `host/owner/*` is the only wildcard.
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
 | 6 | `wait` superseded by another `wait` of this credential |
+| 78 | `maity runner serve`: a revoked credential, a configuration, state directory or answer the hub will not change, or a second service; the systemd unit does not restart it |
 | 130 | interrupted (Ctrl-C) |
 
 ## The agent skill

@@ -24,7 +24,7 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 CLIENT = f"maity-cli/{__version__}"
 USER_AGENT = CLIENT
 # §1.5: exempt from Idempotency-Key, because a repeat is harmless or opens a fresh session.
-NO_IDEMPOTENCY = ("/me/resume", "/join/")
+NO_IDEMPOTENCY = ("/me/resume", "/join/", "/runner/hello", "/runner/placements/")
 
 
 class HubError(Exception):
@@ -35,6 +35,7 @@ class HubError(Exception):
         self.code = code
         self.status = status
         self.details: dict[str, Any] = {}
+        self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -208,6 +209,9 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         text += _field_reasons(details.get("fields"))
     err = HubError(text, code=code, status=exc.code)
     err.details = details
+    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+    if retry_after and retry_after.strip().isdigit():
+        err.retry_after = float(retry_after.strip())
     return err
 
 

@@ -98,3 +98,148 @@ history and the process list.
   operator failed the pair after the exchange and lost the credential.
 - Overwriting the configuration of another hub: it would orphan that
   runner's credential and state without a word.
+
+## `serve` ends with 78 on anything retrying cannot fix, and never takes the agents with it
+
+**Id:** e210a162-44c7-4efd-9176-c3c3f66b3e63
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`)
+**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design
+
+`maity runner serve` backs off and says `hello` again only on no answer,
+a 5xx, 408, 429 or a clock skew. A revoked credential, any other 4xx and
+`superseded: true` on the event stream end it with exit 78, which the
+systemd unit does not restart (`RestartPreventExitStatus=78`). SIGTERM
+ends it with 0. The unit sets `KillMode=process`.
+
+**Reason:** a service manager restarting a runner whose credential is
+revoked, or whose hub refuses its capabilities, only produces a log loop.
+Failing loudly once tells the operator what to fix. A superseded stream
+means a second `serve` holds the same credential; restarting both would
+make them supersede each other forever. On one host a lock on the state
+directory refuses the second service at its start, so the running one
+keeps the stream. A state directory the service cannot write ends it with
+78 too, so a unit pointed at the wrong path does not restart every ten
+seconds. The agents run in a tmux server
+the runner started, inside the unit's cgroup, so systemd's default
+`KillMode=control-group` would end every agent on a service restart. The
+design keeps agents running across runner restarts and hub outages, so
+only the runner's own process may be signalled.
+
+**Rejected alternatives:**
+- Retrying every error with backoff: hides a revoked credential or a
+  wrong configuration behind an endless reconnect.
+- Backing off on `superseded` and reconnecting: two services would take
+  the stream from each other in turn.
+- Leaving `KillMode` at its default: a `systemctl restart` for an
+  upgrade would end every agent mid-work.
+- `PrivateTmp` in the unit: with the agents outliving the service, the
+  next start would replace their `/tmp` under them.
+
+## Capabilities say `sandbox: off` until an adapter switches a sandbox on
+
+**Id:** 0e700858-b898-4d5d-b230-b5d9ce3e0941
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.3 (`sandbox`: the harness's own OS sandbox); implementation of runner slice R2, 2026-10-22
+**Revisit when:** the harness adapters (R5) enable a harness's own sandbox when it starts
+
+Every real harness is advertised with `sandbox: "off"` and `stub` with
+`"n/a"`, whatever `check` finds about the prerequisites. The version is
+the first dotted number in the `--version` output, cut to printable ASCII.
+
+**Reason:** the field tells a human choosing a runner how far the
+harness is confined. Bubblewrap being installed does not mean the
+runner starts the harness with its sandbox on; until an adapter does
+that, `on` would overstate the confinement.
+
+**Rejected alternative:** derive `on` from the prerequisites, as `check`
+reports them; that describes the machine, not how the agent runs.
+
+## A placement the runner cannot act on yet is logged, not reported as a failure
+
+**Id:** 5ed066bf-d571-489f-902c-1097d3a6b6e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
+**Revisit when:** the join from the runner (R4) and the harness adapters (R5) are in; then this case no longer exists
+
+While only the `stub` adapter exists and the runner cannot pick up a
+join, a placement that needs either is left as it is. It gets no
+report, and the runner logs one line naming the missing slice. A start
+that fails in tmux itself is reported as `failed`/`harness_missing`, and
+the log line carries tmux's message.
+
+**Reason:** §15.7's reason list is closed, and none of its codes means
+"this runner version cannot do that yet". Reporting `failed` with a
+code that names something else (`join_failed`, `harness_refused`) would
+tell the human a wrong cause and make them act on it. With no report the
+dashboard shows the placement as pending (`reported_current: false`),
+which is what it is. A tmux failure is the closest the list has to "the
+process cannot be started here", and the log keeps the real cause.
+
+**Rejected alternatives:**
+- Adding a reason code for it: a contract change for a state that lasts
+  only until the next two slices merge.
+- Starting a placement without its credential: the agent would run
+  without an identity, against §15.5's rule that a missing expected
+  credential is `join_failed`.
+
+## The supervisor's deadlines are wall-clock times
+
+**Id:** 8d3c5f39-21b9-4892-8a05-4816078637f4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's review of runner slice R3, 2026-10-22 (proposed `time.monotonic()`); kept in the review round
+**Revisit when:** a runner host is seen whose clock jumps (no NTP), or the records stop being kept across runner restarts
+
+`retry_at`, `deadline_at`, crash times and `since` are `time.time()`
+values. They are persisted in `actual.json` and reported as RFC 3339
+timestamps.
+
+**Reason:** these times outlive the process. After a runner restart,
+the record still has to say when a backoff ends and which crashes fall
+inside the crash window, and the hub shows `retry_at` and `deadline_at`
+as times of day. A monotonic clock restarts with every boot and means
+nothing in another process. A clock step on the host moves a backoff or
+grace deadline by that step, which NTP-synced hosts keep small.
+
+**Rejected alternative:** `time.monotonic()` for the deadlines, as the
+review proposed. Every persisted value would need converting at save
+and load, and that conversion breaks at a reboot, which is exactly when
+the records matter.
+
+## Agents' tmux runs on a socket in the state directory, sessions named with underscores
+
+**Id:** b4254a67-3690-4365-9e8a-e0daaa3a2425
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.4 (first `-L maity`, `maity-<project>-<clone>`); the coordinator's review of runner slice R3, 2026-10-22 (the name collision); `docs/api.md` §15.5 as amended to `-S`
+**Revisit when:** agents run as their own OS user (the `agent_user` layout), where the server belongs to that user and its socket must lie where both can reach it
+
+The runner's tmux server listens on `tmux -S <state_dir>/tmux.sock`, by
+default (an absolute `tmux_socket` overrides it), not `tmux -L maity`.
+Sessions are named `maity_<project>_<clone>` and matched by their
+`@maity_placement` label, not by name.
+
+**Reason:** `-L` puts the socket in `/tmp/tmux-<uid>/`, which the
+operator's own tmux shares and which a service's private `/tmp` would
+hide after a restart. In the runner's 0700 state directory the socket is
+the runner's alone and survives a service restart along with the agents.
+Project slugs and clone names may both contain `-`, so `maity-ab-cd-ef`
+could be `ab` + `cd-ef` or `ab-cd` + `ef`. One project's live agent would
+then be read as the other's orphan and killed. Both tokens are
+`[a-z0-9-]`, so `_` cannot occur in either, and the label settles any
+doubt.
+
+**Rejected alternatives:**
+- `-L maity`, as first designed: shared directory, and lost under
+  `PrivateTmp`.
+- Keeping `-` and parsing names more cleverly: the split is ambiguous
+  by construction.

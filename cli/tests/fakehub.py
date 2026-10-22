@@ -70,7 +70,8 @@ class FakeHub:
     join_used: bool = False
     pair_used: bool = False
     hub_header: str | None = None  # Maity-Hub answered by the exchanges; None: the hub's URL
-    routes: dict[tuple[str, str], Callable[[Seen], tuple[int, Any]]] = field(default_factory=dict)
+    # (method, path) -> (status, payload) or (status, payload, headers)
+    routes: dict[tuple[str, str], Callable[[Seen], tuple[Any, ...]]] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
 
     def signed(self) -> list[Seen]:
@@ -104,7 +105,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
 
         def _verify(self, seen: Seen) -> bool:
             auth = seen.headers.get("authorization", "")
-            if auth != f"Maity-HMAC {CREDENTIAL_ID}":
+            if auth not in (f"Maity-HMAC {CREDENTIAL_ID}", f"Maity-HMAC {RUNNER_CREDENTIAL_ID}"):
                 self._error(401, "unauthenticated")
                 return False
             if hub.skew_once:
@@ -123,7 +124,10 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
             if not hmac.compare_digest(expected, seen.headers.get("maity-signature", "")):
                 self._error(401, "signature_invalid")
                 return False
-            if seen.method in ("POST", "PATCH") and seen.path != "/api/v1/me/resume":
+            exempt = seen.path == "/api/v1/me/resume" or seen.path.startswith(
+                ("/api/v1/runner/hello", "/api/v1/runner/placements/")
+            )
+            if seen.method in ("POST", "PATCH") and not exempt:
                 if not 16 <= len(seen.headers.get("idempotency-key", "")) <= 128:
                     self._error(400, "invalid", {"fields": {"Idempotency-Key": "required"}})
                     return False
@@ -187,8 +191,8 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 return None
             route = hub.routes.get((self.command, path))
             if route is not None:
-                status, payload = route(seen)
-                return self._send(status, payload)
+                status, payload, *extra = route(seen)
+                return self._send(status, payload, *extra)
             if path == "/api/v1/me/resume":
                 return self._send(
                     200,

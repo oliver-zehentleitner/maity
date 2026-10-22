@@ -1,0 +1,43 @@
+# maity-runner.service — the Maity runner as a system service (runner design §10.1).
+#
+# Install: `maity runner unit > /etc/systemd/system/maity-runner.service`; create the user
+# (`useradd --system --create-home --home-dir /var/lib/maity-runner maity-runner`), install
+# `maity` where ExecStart points, write /etc/maity-runner/runner.toml with
+# state_dir = "/var/lib/maity-runner/state" and [backend.local] workspaces =
+# "/var/lib/maity-runner/workspaces", pair as that user
+# (`sudo -u maity-runner maity runner pair <url> --code-file - --config /etc/maity-runner/runner.toml`),
+# then `systemctl enable --now maity-runner`.
+#
+# The agents run in a tmux server this service starts, so they inherit everything below:
+# they can write only /var/lib/maity-runner (their home, the clones, the state) and /tmp.
+
+[Unit]
+Description=Maity runner: starts and stops agents on placements
+Documentation=https://github.com/oliver-zehentleitner/maity/blob/main/cli/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=maity-runner
+Group=maity-runner
+ExecStart=/usr/local/bin/maity runner serve --config /etc/maity-runner/runner.toml
+# 78 is a revoked credential or a configuration the hub refuses: restarting cannot fix it.
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=78
+# Stopping the service stops the runner, never the agents: their tmux server lives in this
+# unit's cgroup, and the default KillMode would end every agent with it.
+KillMode=process
+TimeoutStopSec=30
+# The `single` layout only (design §7.6): the `agent_user` layout runs tmux through sudo,
+# which cannot gain privileges under NoNewPrivileges. Remove this line for that layout.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/maity-runner
+# No PrivateTmp: with KillMode=process the agents outlive a service restart, and a private
+# /tmp would be replaced under them on the next start.
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
