@@ -5,7 +5,9 @@
 # by the hub's user; `docker run -v maity-data:/app/data <image> migrate`
 # prepares it. For PostgreSQL or MySQL/MariaDB set MAITY_DATABASE_URL.
 
-FROM python:3.12-slim AS build
+# The base by digest, so a rebuild of the same commit gets the same layers. To
+# move it: docker buildx imagetools inspect python:3.12-slim, then both lines.
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS build
 WORKDIR /src
 # Dockerfile.dockerignore limits the context to hub/ and web/, without dotfiles.
 COPY . .
@@ -15,7 +17,7 @@ RUN pip install --no-cache-dir --require-hashes -r hub/requirements/build.txt \
     && pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels ./hub \
     && cp hub/requirements/runtime.txt /wheels/ && mkdir -p web
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
 RUN useradd --system --uid 10001 --home-dir /app maity \
     && mkdir -p /app/data && chown maity /app/data
 WORKDIR /app

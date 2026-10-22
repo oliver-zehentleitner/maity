@@ -55,8 +55,12 @@ example; any cluster with the same pieces works.
    kubectl create namespace maity
    ```
 
-2. **Image.** Build the hub image from the repository root and push it. The
-   project does not publish an image yet.
+2. **Image.** Releases are published as `ghcr.io/oliver-zehentleitner/maity-hub`,
+   tagged with the version and the full commit SHA and never `latest`. The
+   workflow `publish-image` builds them; until its first release you build
+   the image yourself. Pin it by digest (`image.digest`) when you can; the
+   workflow's run summary prints it. To build your own from the repository
+   root:
 
    ```sh
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .
