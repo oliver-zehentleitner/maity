@@ -215,13 +215,13 @@ no project is not stated beyond the contract's rule itself.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision, inbox and chat, 2026-10-22; humans as substitutes and as covered members added on his answer to the pull request's open questions the same day
-**Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is
+**Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is; or a limit is used to hold cards against a human
 
 Rate limits will happen, so the hub keeps an availability per member
 (`available`, `limited` until a time, `offline`, `paused`) and each
 membership, a human's included, carries a policy for an outage longer than its grace period:
 `wait` keeps the work with the member and stretches its leases to the
-end of the limit; `substitute` hands its open cards and the requests
+end of the limit, for at most 24 hours (entry below); `substitute` hands its open cards and the requests
 addressed to it to the first available member of an ordered list,
 visibly as cover, with claims moved rather than dropped. A limit comes
 from the agent itself before it stops, or from a runner that recognises
@@ -281,3 +281,62 @@ longer than two hours leaves an agent idle long after most resets.
 (`initial × factor^n` up to its maximum): tuned for crashes, it retries
 within seconds and would turn a limit into a burst of pointless starts —
 the reason a limit counts neither as a crash nor toward the restart cap.
+
+## A declared limit holds a member's cards for at most 24 hours, and an absence ends within 90 days
+
+**Id:** f24d2d25-9d94-49cc-89b6-1f2388baad66
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
+**Revisit when:** agents' provider limits routinely last longer than a day, or an owner needs an absence longer than 90 days
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+A limit extends the member's leases once, when it is stored, to its end
+plus the grace, but never past 24 hours after the outage began; a new
+limit in the same outage cannot push that further. After that the lease
+runs out as usual. The owner's `absence.until` is at most 90 days ahead.
+
+**Reason:** the draft extended leases to the end of a limit of up to
+seven days, renewable by declaring again, and the owner's absence had
+no cap. Since an admin's `assign` or `release` over a live lease is
+refused, a declaration became a hold on the board that the humans could
+break only by removing the member — an agent acting against a human's
+lever. Bounding the hold keeps a short reset seamless and returns the
+cards to normal lease rules after a day. The bound is confirmed as the
+contract owner's ruling; the 24 hours and 90 days are chosen values,
+not measured.
+
+**Rejected alternatives:**
+- Extend to the end of the limit, up to seven days (the draft): the
+  hold against humans described above.
+- Let a human with `tasks:admin` release or assign over a lease a limit
+  extended (proposed in the review): not chosen; why a bound was
+  preferred over an override is not recorded (unknown).
+
+## A human's away reason is shown only in projects they choose
+
+**Id:** 83a2f234-1d68-4dc0-8451-f1ad1ff9dedc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
+**Revisit when:** absence moves from the project to the membership, or humans ask to see each other's reasons by default
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+When a human declares themselves away, every member view shows that
+they are away and until when; the free-text reason appears only in the
+projects the human listed when declaring it, none by default.
+
+**Reason:** a human's limit applies to every membership of the account,
+including projects with other owners, and every reader of a member
+view, agents included, would otherwise see the free text — a place for
+private detail the human may not mean for all of them. "Away until" is
+what the other members need to plan around. That the reason is hidden
+by default is confirmed as the contract owner's ruling; the privacy
+reading is inferred from the review finding it answered.
+
+**Rejected alternatives:**
+- Show the reason everywhere (the draft): the exposure above.
+- Scope a human's limit per project (proposed in the review): not
+  chosen; why is not recorded (unknown).
