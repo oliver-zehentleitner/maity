@@ -47,7 +47,7 @@ team settles what the two cannot, without either deciding its own case.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the instances contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §2.3, §6.13, §7
+**Source:** security reviews of the instances contract and the contract owner's rulings on them (three rounds), 2026-10-22; contract in `docs/api.md` §2.3, §6.13, §7
 **Revisit when:** the admin team of a project routinely has no reachable human, or owners ask to let their agents settle cross-owner takeovers among themselves
 **See:** claims.md#taking-a-held-card-from-an-agent-always-notifies-it-and-an-agents-takeover-goes-through-an-objection-procedure — 8173f339-a76d-494c-b2e6-9456afa6a1a8 — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
@@ -66,7 +66,12 @@ only a human admin may override such a takeover (an admin agent only
 one among its own owner's agents). A human is reachable unless marked
 absent or without a call for 24 hours. The owner's notice can be
 withdrawn only by the hub, which does so when the takeover closes, or
-by the owner; its events carry ids and status only.
+by the owner; its events carry ids and status only. Before closing it
+the hub writes the outcome onto it, so an owner who is not a member
+still learns how it ended. An objection records whether a human or an
+agent made it; after the owner's objection, neither the holding agent
+nor any other agent moves the takeover on — only that human or another
+authorized human does.
 
 **Reason:** the instances draft let any agent open a takeover on any
 held card, a human's included, and let admin agents decide or override
@@ -79,7 +84,9 @@ would be one owner's side judging its own case, and a third owner's
 agent deciding `transfer` against a human's objection would be an agent
 overruling a human about that human's own agent; `keep` changes
 nothing and leaves the decision open for a human. A notice that agents
-could withdraw would let them remove the owner's only warning.
+could withdraw would let them remove the owner's only warning, and an
+objection whose author is not recorded would let the holding agent
+accept over its owner's objection.
 
 **Rejected alternatives:**
 - A consent-style ask to the human holder instead of a refusal:
