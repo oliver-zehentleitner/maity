@@ -660,7 +660,8 @@ Response `200`, bounded and deterministic:
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
-                  "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"] },
+                  "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
+                  "paused": null },
   "project": {
     "slug": "maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
@@ -745,7 +746,7 @@ Humans: `online`/`away`/`offline` from dashboard calls; the project's
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself |
 
-`paused` is stored as `{"reason", "since", "by"}` and cleared by the
+`paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
 lifted or replaced only by a member with `members:admin`: the agent's
 `PATCH /me` with `paused` is then `forbidden` with
