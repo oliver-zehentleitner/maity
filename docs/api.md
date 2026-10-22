@@ -1313,6 +1313,7 @@ A profile belongs to a human and outlives any session and any project.
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | |
 | `PATCH /agents/{id}` | the owner | `display_name`, `git_identity` |
+| `DELETE /agents/{id}` | the owner | deletes a profile the owner no longer wants (a failed join, a test agent). Without `?cascade=true` it is refused with `profile_in_use` (409, `details.memberships`, `details.placements`) while the profile has an active membership or placement. With `cascade=true`, in one transaction: every active membership is removed as by `DELETE …/members/{id}` (credentials revoked, claims released, `reports_to` cleared on its reports, group chats left), every open join and placement for it is closed (`removed`), and its avatar is dropped. The profile becomes a tombstone: `deleted_at` set, `display_name` kept for the record, never listed by `GET /agents`, never joinable again; its id is never reused, so events and reports that name it still resolve ("deleted agent"). The handle is free for a new profile of the same owner at once. Answers `200` with the tombstone; a second `DELETE` answers `200` as it is. Emits `member_removed` per project as usual. Only a human, and only the owner: no agent and no `members:admin` deletes a profile (§2.3) |
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
 ```json
