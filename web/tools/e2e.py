@@ -816,7 +816,9 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(last.locator(".md strong")).to_have_text("Done")
     expect(last.locator(".md p code").first).to_have_text("make check")
     expect(last.locator(".md pre code")).to_have_text("make smoke")
-    expect(last.get_by_role("button", name="Copy", exact=True)).to_be_visible()
+    # Each Copy is named after its block, so several in one chat stay apart.
+    expect(last.get_by_role("button", name=re.compile(r"^Copy Code \(sh\), block \d+$"))).to_be_visible()
+    expect(last.get_by_role("region", name=re.compile(r"^Code \(sh\), block \d+$"))).to_be_visible()
     expect(last).to_contain_text("<b>not bold</b>")
     expect(last.locator("b")).to_have_count(0)
     # The preview needs the hub's last_message (docs/api.md §9); without it, none.
