@@ -158,11 +158,18 @@ window.Maity = window.Maity || {};
     // tab comes back; the timer ends with the view, the listener with it.
     if (!(ctx.canAdmin || ctx.isOwner)) {
       ctx.every(NARROW_MS, reread);
+      // The tab shown again, or its window focused again (another window was
+      // in front while the tab stayed visible); both end with the view.
       const back = () => {
-        if (!root.isConnected && root.isConnected !== undefined) { document.removeEventListener("visibilitychange", back); return; }
+        if (!root.isConnected && root.isConnected !== undefined) {
+          document.removeEventListener("visibilitychange", back);
+          window.removeEventListener("focus", back);
+          return;
+        }
         if (document.visibilityState !== "hidden") reread();
       };
       document.addEventListener("visibilitychange", back);
+      window.addEventListener("focus", back);
     }
   };
 })(window.Maity);

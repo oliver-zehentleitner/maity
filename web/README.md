@@ -271,7 +271,7 @@ Inside a project, in the order of their importance; see
     come from `GET …/overview`, which is read again on `task_*`,
     `request_*` and `probe_observed` and redrawn in place, with no Reload;
     for a viewer who is neither owner nor admin (in few events' audiences)
-    also every 60 seconds and when the tab comes back. Triggers during a
+    also every 60 seconds and when the tab or its window comes back. Triggers during a
     read give one more read after it; the focus stays on the same link. A
     family cut at the hub's limit and a failed Keep the Why read are said.
     Each part has its empty state. Without a repository or a published
