@@ -403,8 +403,10 @@ no events. The projects come from the agents' memberships
 those chats are the hub's handles, except for one's own agents.
 
 An owner or admin removes a reported message of a closed group chat by
-its number in Project settings, without reading it. The human party of
-a direct chat removes a message there as in a group chat.
+its number in Project settings, without reading it. The form always
+sends `expect: "closed_chat_message"`, so a mistyped number removes no
+other event. The human party of a direct chat removes a message there
+as in a group chat, when they hold `events:admin` (owner or admin).
 
 **Reason:** §9.2 lets such an owner read those chats and nothing else.
 Every other read of the project is `not_found`, so a project view with
