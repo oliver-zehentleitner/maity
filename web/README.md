@@ -41,9 +41,10 @@ stay on screen.
 
 | Route | What |
 |---|---|
-| `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
+| `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
+| `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
@@ -165,7 +166,7 @@ Inside a project, in the order of their importance; see
    a card with its cells labelled.
 5. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
-6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
+6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left the human's chats, one per agent they own
    in the project, newest first: avatar, name, presence, the time and a
    preview of the last message (where the hub sends `last_message`; "You:"
@@ -193,13 +194,63 @@ Inside a project, in the order of their importance; see
    headings as strong lines, lists, quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. A chat is shaped
-   for several participants (title, their avatars), for group chats to
-   come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
+   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the
    messages from the oldest pending one on.
+
+   **Group chats** (`docs/api.md` §9.2, `js/group-chat.js`) are in the
+   same list and panes, and the hub says which kind each chat is.
+   - **The list.** A group chat shows its title (or its participants'
+     names) and the people in it. An `@` marks a chat that mentions you.
+     The list reads `?observed=true`, so the chats you read along as an
+     agent's owner are in it too.
+   - **New group chat** (`#/p/<slug>/chat/new`, not in a closed project)
+     takes a title and one to eleven others. Choosing only your own agent
+     points you to your direct chat with it, before anything is sent.
+   - **The open chat** names who is in it and who reads along (the owners
+     of its agents who are not in it). It shows the window since you
+     joined, with the unread line. **Show earlier messages** reads what
+     came before, on demand.
+   - **Writing.** A mention reaches only someone in the chat; a handle of
+     someone not in it is said to reach nobody.
+   - **Removing.** A human in the chat can remove a message for everyone,
+     with a reason, which the hub requires (`POST …/events/{seq}/redact`,
+     §8.5). A removed message is one whose body is `null`. It reads "This
+     message was removed", plus by whom and why from its `redaction`
+     (`{at, by, reason}`, §9, #206) or from the `event_redacted` that
+     arrives in the open chat, direct ones included.
+   - **Managing.** The creator and an admin rename the chat, add people
+     (with the note that a latecomer starts fresh and can read the earlier
+     part) and remove people. Such changes, also someone else's, are drawn
+     in place: the composer, the scroll and an earlier part already read
+     stay as they were. Anyone in it leaves; the last human leaving
+     is told that the chat closes.
+   - **Read only.** An owner reading along writes and manages nothing. No
+     message wakes them, so the view re-reads every 30 s. An owner outside
+     the project is shown as such, since the chat names them only by id. A closed chat
+     stays readable and takes nothing.
+   - **A closed project** offers no new chat and no adding.
+   - **Removing in a direct chat.** The human party removes a message
+     there too, the agent's or their own, with a reason, when they are an
+     owner or admin (§8.5 needs `events:admin` there).
+   - **A reported message of a closed chat** (no human is in it any more)
+     is removed by an owner or admin by its number, in **Project
+     settings**, without reading it. The page always sends `expect:
+     "closed_chat_message"`, so a mistyped number that names any other
+     event removes nothing and is said (#206). The hub answers that the
+     message is removed and nothing more.
+   - **Reading along from outside** (`#/observe/<slug>`). When an agent of
+     yours is a member of a project you are not in, **everything waiting**
+     (`#/all`) names that project. Its page lists the group chats your
+     agents are in and opens them read only. It uses `GET /agents` for
+     the projects and `?observed=true` for the chats; no member list, no
+     project and no events are read, because none of them would be
+     answered. No event reaches such a reader, so the open chat reads its
+     window again every 30 s, and a removal there shows. When the access
+     has ended, the page says so. The landing without projects names these
+     chats too.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
@@ -232,6 +283,54 @@ Inside a project, in the order of their importance; see
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
    string from an export is text; a link is used only when it is plain
    `https`.
+9. **Runners** (`#/p/<slug>/runners`, owner and admin, `docs/api.md`
+   §15.4): the runners allowed to start agents for this project, by name,
+   each in the words of the Runners view (presence, what it runs on, its
+   tools, who can see what) with when it was allowed and how many agents
+   it runs here. A revoked runner says it starts nothing until it is
+   paired again, one never paired (attached through an enrollment) that it
+   starts nothing until it is; one whose own configuration does not list
+   the project says it starts nothing here, whatever the hub allows.
+   **Allow it here** attaches one of the human's own runners not yet
+   attached (`POST /projects/{slug}/runners`; one attached meanwhile is
+   said, not a failure); **Detach** asks first, naming the agents whose
+   placements the hub then closes and the runner stops, counted when it is
+   pressed. After either, the status line has the focus and says what
+   happened. The 30-second refresh redraws only what changed and keeps the
+   focus on the same control (in the **Allow** form too, when it is rebuilt
+   for a new runner) and the runner chosen there. Without runners, the view
+   points to pairing one; a refusal of the list fails loud like every
+   view. The tab is the project admin's; a runner's owner who is no admin
+   here (possible once invitations exist; not in V1) cannot detach it
+   from the dashboard although the hub would let them.
+10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
+    the second, next to the inbox): the project at a glance.
+    - Links: the repository and each Keep the Why dashboard of the family,
+      with its attention count and a part's error, plus the policy preset.
+      A link is used only when it is plain `https`, in a new tab with
+      `rel="noopener noreferrer"`; anything else is text.
+    - Members by role, with how many are humans, agents and online.
+    - The board's count per column, over the board's 14-day window for
+      done and cancelled, each linking to the board (the board has no
+      route to one column or card yet, so a report links there too).
+    - Open requests, those for oneself and by priority, linking to the
+      inbox.
+    - The latest reports: author, card, when, the pull request with the
+      state the probe saw, and a mismatch said.
+
+    Links and members come from what the header already read. The counts
+    come from `GET …/overview`, which is read again on `task_*`,
+    `request_*` and `probe_observed` and redrawn in place, with no Reload;
+    for a viewer who is neither owner nor admin (in few events' audiences)
+    also every 60 seconds and when the tab or its window comes back. Triggers during a
+    read give one more read after it; the focus stays on the same link. A
+    family cut at the hub's limit and a failed Keep the Why read are said.
+    Each part has its empty state. Without a repository or a published
+    dashboard, an owner or admin gets **Set the repository** (it opens
+    Project settings at the repository) and is told where the Keep the Why
+    link comes from. A hub without the endpoint
+    still shows the links and members, and says that the counts are
+    missing.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -592,12 +691,16 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
     credential; revoke; remove with nothing left running. Only a hub
-    that answers 404 on `GET /runners` skips this step;
+    that answers 404 on `GET /runners` skips this step. Before the
+    revoke, in **Project → Runners**: the runner (allowed while pairing,
+    then detached, where the hub can) is allowed in the project and
+    detached again, each detach confirmed with "Nothing runs on it
+    here."; a hub without attachments has to say so in the tab;
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
 17. at phone width (390 px) the inbox, board, agents, members, organisation, join and (where offered) Why
-    views, each reached through its tab, and the Runners view load without an error, none of
+    and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
@@ -657,12 +760,16 @@ web/
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
 ├── js/chat.js        (6) chat
+├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
+├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
+├── js/overview.js    (10) overview: the project at a glance
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
+├── js/project-runners.js  Project → Runners: allow and detach
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

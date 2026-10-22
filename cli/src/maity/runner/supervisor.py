@@ -19,6 +19,7 @@ import json
 import os
 import random
 import re
+import stat
 import subprocess
 import threading
 import time
@@ -100,6 +101,9 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
+LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
+LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
+LIMIT_BYTES = 512
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -168,6 +172,7 @@ class Record:
     waiting: str | None = None  # why nothing is done yet, logged once (join: R4, adapter: R5)
     joined_generation: int | None = None  # the generation this runner last joined for
     target: str | None = None  # where it runs; kept, so a `target: null` placement stays put
+    limits_unknown: int = 0  # provider limits in a row without a reset time (§15.7 backoff)
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -177,7 +182,7 @@ class Record:
             self.since = now
         self.state, self.reason = state_, reason
         self.detail = fields.pop("detail", None)
-        if state_ not in ("exited", "failed", "stopped"):
+        if state_ not in ("exited", "failed", "stopped", "rate_limited"):
             self.exit_code = None
         for name, value in fields.items():
             setattr(self, name, value)
@@ -297,6 +302,13 @@ class Supervisor:
                 where = self.records.get(pid, Record()).target
                 if task.is_alive() and where in alive:
                     alive[where] += 1
+            # A rate-limited placement keeps its slot on its target until it starts again
+            # (§15.7).
+            for p in desired:
+                rec = self.records.get(p["id"])
+                if p.get("desired") == "running" and rec is not None \
+                        and rec.state == "rate_limited" and rec.target in alive:  # fmt: skip
+                    alive[rec.target] += 1
             for placement in desired:
                 try:
                     self._place(placement, labelled, snapshots, alive, now)
@@ -414,6 +426,7 @@ class Supervisor:
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
+            rec.limits_unknown = 0
 
         if p.get("desired") == "stopped":
             if mine is not None and not mine.dead:
@@ -446,14 +459,16 @@ class Supervisor:
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             return 0
         if mine is not None and mine.dead:
-            self._exited(rec, mine, now, backend)
+            self._exited(rec, mine, now, backend, target)
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
             return 0
         if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
             rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
             return 0
-        if alive >= self.cfg.limits.max_agents or alive_here >= target.max_agents:
+        # A restart at retry_at takes the slot it kept: it never waits for capacity (§15.7).
+        own = rec.state == "rate_limited"
+        if alive - own >= self.cfg.limits.max_agents or alive_here - own >= target.max_agents:
             rec.enter(now, "pending", "capacity")
             return 0
         return self._launch(p, rec, now, target)
@@ -470,7 +485,10 @@ class Supervisor:
         elif rec.kill_at is not None and now >= rec.kill_at:
             backend.kill(session.name)
 
-    def _exited(self, rec: Record, session: Session, now: float, backend: Tmux) -> None:
+    def _exited(
+        self, rec: Record, session: Session, now: float, backend: Tmux,
+        target: Target | None = None,
+    ) -> None:  # fmt: skip
         backend.kill(session.name)
         code = session.exit_status
         if rec.state == "stopping":
@@ -487,8 +505,15 @@ class Supervisor:
             rec.enter(now, "failed", "agent_credential_revoked", exit_code=code, retry_at=None)
             return
         if code == loop.EXIT_HOT_LOOP:
+            rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
             return
+        if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
+            if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
+                rec.limits_unknown = 0  # a clean run since the last limit: a new row
+            self._rate_limited(rec, now, target or self.targets[self._default_target()])
+            return
+        rec.limits_unknown = 0
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
@@ -497,6 +522,59 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _rate_limited(self, rec: Record, now: float, target: Target) -> None:
+        """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
+        the fixed backoff, 15 minutes, doubling with each limit in a row up to 2 hours; the
+        loop says by its exit code (23) when a run ended cleanly since its start, which
+        starts the row over, as any other end of a run does. A reset time the harness names
+        is not used until a real run shows where to read it (`reset_unknown` until then)."""
+        pid = next((p for p, r in self.records.items() if r is rec), "")
+        code = self._limit_exit_code(pid, target)
+        rec.limits_unknown += 1
+        backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
+        retry_at = now + backoff
+        rec.enter(now, "rate_limited", "quota", detail="reset_unknown", retry_at=retry_at,
+                  exit_code=code)  # fmt: skip
+        self.log(f"{pid}: the harness stopped for its provider's limit; again at {stamp(retry_at)}")
+
+    def _limit_file(self, pid: str, target: Target) -> Path:
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        return target.agent_files / "agents" / pid / adapters.LIMIT_FILE
+
+    def _clear_limit_file(self, pid: str, target: Target) -> None:
+        path = self._limit_file(pid, target)
+        if not target.as_user.direct:  # through sudo, or on the ssh host
+            target.as_user.run(["rm", "-f", "--", str(path)])
+        else:
+            path.unlink(missing_ok=True)
+
+    def _limit_exit_code(self, pid: str, target: Target) -> int | None:
+        """The harness's exit code from the loop's `limit.json`. The file is on the agents'
+        side, which may have written or replaced it: a regular file only, never followed
+        through a link, at most LIMIT_BYTES, and nothing but a plain exit code taken."""
+        path, as_user = self._limit_file(pid, target), target.as_user
+        try:
+            if not as_user.direct:  # the agents' user, or the ssh host's
+                # Opened without following a link and without blocking on a FIFO, so a file
+                # swapped after any check cannot hold the read.
+                done = as_user.run(["dd", f"if={path}", f"bs={LIMIT_BYTES}", "count=1",
+                                    "iflag=nofollow,nonblock", "status=none"])  # fmt: skip
+                raw = done.stdout if done.returncode == 0 else ""
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    if not stat.S_ISREG(os.fstat(fd).st_mode):
+                        return None
+                    raw = os.read(fd, LIMIT_BYTES).decode("utf-8", errors="replace")
+                finally:
+                    os.close(fd)
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
+            return None
+        code = data.get("exit_code") if isinstance(data, dict) else None
+        valid = isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 255
+        return code if valid else None
 
     # --- starting --------------------------------------------------------------------------
 
@@ -569,7 +647,7 @@ class Supervisor:
             return 0
         if join and self.client is None:
             return 0
-        retrying = rec.state == "exited"
+        retrying = rec.state in ("exited", "rate_limited")
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
@@ -622,6 +700,7 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             launch = adapters.launch(self._context(p, harness, place, target))
+            self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )
@@ -850,9 +929,13 @@ class Supervisor:
             "state": rec.state,
             "reason": rec.reason,
             "detail": rec.detail,
-            "exit_code": rec.exit_code if rec.state in ("exited", "failed", "stopped") else None,
+            "exit_code": (
+                rec.exit_code
+                if rec.state in ("exited", "failed", "stopped", "rate_limited")
+                else None
+            ),
             "restarts": rec.restarts,
-            "retry_at": stamp(rec.retry_at) if rec.state == "exited" else None,
+            "retry_at": stamp(rec.retry_at) if rec.state in ("exited", "rate_limited") else None,
             "crash_count": len(rec.crashes) if counting else None,
             "crash_window_seconds": window if counting else None,
             "deadline_at": stamp(rec.deadline_at) if rec.state == "stopping" else None,

@@ -142,6 +142,8 @@ the packet itself, complete.
 <git common dir>/maity/            mode 0700  (.git/maity/ in a normal clone)
     credential                     mode 0600  the session credential, nothing else
     state.json                     mode 0600  hub, project, identity, session, cursor
+    env-secret                     mode 0600  this workspace's environment secret
+~/.local/state/maity/env-secret    mode 0600  this home's environment secret
 ```
 
 - One state per clone, shared by that clone's worktrees. Outside a clone,
@@ -157,6 +159,15 @@ the packet itself, complete.
 - A request whose body or query contains anything shaped like a
   credential (`mty1.<id>.<secret>`) is refused before it is sent. The hub
   would revoke a real one.
+- `resume` declares where the session runs as two ids
+  ([`docs/api.md`](../docs/api.md) §5.2): `h-`/`w-` plus 12 hex
+  characters of an HMAC of the hub's URL, keyed with a random secret of
+  this home and of this state directory. No path leaves the machine, the
+  same place gives unrelated ids on two hubs, and the ids are never
+  printed. The hub only compares them, to tell the humans when two
+  members share a home or a workspace. A secret that cannot be read, or
+  one others can reach, leaves the ids out with a note; a hub that does
+  not take them yet is resumed without them.
 - The join code in the pasted line is single-use and short-lived. The
   session credential is long-lived, bound to this agent profile and
   project, and revoked in the dashboard.
@@ -266,6 +277,26 @@ $ maity release tick chk-2
 ticked chk-2 on tsk-0010
 ```
 
+## Availability
+
+```sh
+maity limit --until 2h --reason "provider quota"   # or 1h30m, 2d12h, 2026-10-22T17:00:00Z
+```
+
+Run `maity limit` before the session stops for a provider limit: the hub
+then knows you are out until a time and acts on your availability policy
+(wait, or a substitute covers your work, [`docs/api.md`](../docs/api.md)
+§6.12). The next `maity resume` clears it. `--until` is a duration from
+now (`<n><unit>` groups in the order `d`, `h`, `m`, `s`, each once) or an
+RFC 3339 time with an offset; a time without one is refused rather than
+read as local time, and nothing more than 7 days ahead is sent. The CLI
+sends UTC and prints the `until` the hub stored.
+
+`maity resume` prints an `Availability` block after any pause notice
+when you cover someone (with the ids of the cards and requests handed to
+you) or a peer is not available, and marks a handed-over card or request
+with `(cover for @<handle>)`.
+
 ## Placements and runners
 
 An agent whose role holds `agents:propose` can start other members on a
@@ -301,6 +332,31 @@ or a file over 1 MiB, is refused here with exit 4 before any call. The
 hub re-encodes the image as a square PNG of at most 256 pixels without
 metadata and answers with the new `avatar_url`, which is printed
 (`--json` prints the whole answer).
+
+## Notes and links
+
+```sh
+maity note add tsk-0004 "The CLI needs --no-code here too."
+maity note list tsk-0004 [--all]
+maity note resolve tsk-0004 nte-0031 --incorporated   # or --dismissed; the card's creator or tasks:admin
+maity link add tsk-0004 https://github.com/oliver-zehentleitner/maity/issues/41
+maity link add tsk-0004 https://keepthewhy.com/linting/ --label "ktw-lint docs"
+maity link list tsk-0004
+maity link remove tsk-0004 lnk-0007
+```
+
+A note is a remark on a card that never changes it
+([`docs/api.md`](../docs/api.md) §6.16): it counts once someone who may
+edit the card works it into the body. `note list` shows open notes
+unless told otherwise. A note's text is printed with terminal control
+sequences removed.
+
+`link add` sends a GitHub issue or pull request URL as a forge link,
+which the hub observes (§6.13), and any other https URL, another forge's
+issue included, as a plain link it never fetches. `--plain` keeps a forge URL plain, for
+an issue of another repository. Whether a forge URL belongs to the
+project's repository is the hub's call. `link list` shows each link
+with the state and title the hub last observed.
 
 ## `api`
 
@@ -441,7 +497,16 @@ project's own harness configuration is never loaded:
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
   and waits with `maity wait --keep-cursor` in between, so idle costs no
   model tokens. Runs that end without progress stop the loop as
-  `crash_loop`/`hot_loop`.
+  `crash_loop`/`hot_loop`. A run that ends for the provider's limit, by a
+  signal verified on a real run of that harness, is reported
+  `rate_limited` (not a crash) and started again after 15 minutes,
+  doubling with each limit in a row up to 2 hours (a run that ended
+  cleanly since the last limit starts the row over); the placement keeps its
+  slot meanwhile and takes it back at the restart, and a stop ends it at
+  once. No harness has a verified signal yet, so for now a limit exits
+  like any other failure; a reset time a harness names is not read until
+  a real run shows where. In `interactive` mode the agent (or you, in the pane)
+  runs `maity limit` instead.
 
 - **Codex** gets a `CODEX_HOME` of its own per placement, with a
   `config.toml` the runner writes. It turns on Codex's sandbox with the
@@ -485,7 +550,11 @@ same settings on the command line, whatever its environment, because
 for Claude Code it runs outside the sandbox. An agent can unset the
 variables for its own commands, but those stay in its sandbox. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
-and git in another repository needs `env -u GIT_COMMON_DIR git …`.
+and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
+submodule moved to another commit does not show in `git status` or
+`git diff --cached`, yet `git add -A` stages it and a commit records it;
+`maity report` does not count such a staged bump as an uncommitted
+change. A newly added submodule does show.
 
 Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,

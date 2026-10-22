@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -380,3 +380,19 @@ def test_removing_a_member_clears_reports_to_on_its_reports(
     assert updated == sorted([boss.id, first.id, second.id])
     assert all(e.payload["reports_to"] is None for e in events if e.payload["id"] != boss.id)
     assert link.reports_to is None
+
+
+def test_the_exchange_drops_a_boss_removed_in_between(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    boss = flow.agent(make_client, owner)
+    created = flow.join(owner, "maity", reports_to=boss.id)
+    # A removal that commits after the link was read: the link still names the boss.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == boss.id).values(active=None)
+        )
+    response = flow.exchange(make_client(), created)
+    assert response.status_code == 201, response.text
+    member = owner.get(f"/projects/maity/members/{response.headers['Maity-Member-Id']}")
+    assert member.json()["reports_to"] is None  # never a former member (§6.2)

@@ -1,0 +1,110 @@
+{
+  "cnv-0007": {
+    "view": {
+      "id": "cnv-0007",
+      "kind": "group",
+      "title": "Release 0.2 go/no-go",
+      "created_by": "hum-maintainer",
+      "created_at": "2026-10-21T13:00:00Z",
+      "participants": [
+        {
+          "member_id": "hum-maintainer",
+          "kind": "human",
+          "handle": "maintainer",
+          "owner_id": null,
+          "joined_at": "2026-10-21T13:00:00Z",
+          "joined_seq": 0
+        },
+        {
+          "member_id": "agt-a",
+          "kind": "agent",
+          "handle": "agent-a",
+          "owner_id": "hum-maintainer",
+          "joined_at": "2026-10-21T13:00:00Z",
+          "joined_seq": 0
+        },
+        {
+          "member_id": "agt-b",
+          "kind": "agent",
+          "handle": "agent-b",
+          "owner_id": "hum-maintainer",
+          "joined_at": "2026-10-21T13:05:00Z",
+          "joined_seq": 0
+        }
+      ],
+      "closed_at": null,
+      "closed_reason": null
+    },
+    "items": [
+      {
+        "id": "evt-5010",
+        "seq": 5010,
+        "conversation_id": "cnv-0007",
+        "from": "hum-maintainer",
+        "to": "cnv-0007",
+        "body": "Where do we stand for 0.2?",
+        "sent_at": "2026-10-21T13:20:00Z",
+        "mentions": []
+      },
+      {
+        "id": "evt-5015",
+        "seq": 5015,
+        "conversation_id": "cnv-0007",
+        "from": "agt-a",
+        "to": "cnv-0007",
+        "body": "Contract is final; the hub side needs the release card.",
+        "sent_at": "2026-10-21T13:25:00Z",
+        "mentions": []
+      },
+      {
+        "id": "evt-5020",
+        "seq": 5020,
+        "conversation_id": "cnv-0007",
+        "from": "agt-b",
+        "to": "cnv-0007",
+        "body": "@maintainer the tag can go today.",
+        "sent_at": "2026-10-21T13:30:00Z",
+        "mentions": [
+          {
+            "member_id": "hum-maintainer",
+            "handle": "maintainer",
+            "field": "body",
+            "offset": 0,
+            "length": 11
+          }
+        ]
+      }
+    ],
+    "read": {
+      "hum-maintainer": 5015
+    }
+  },
+  "cnv-0011": {
+    "view": {
+      "id": "cnv-0011",
+      "kind": "group",
+      "title": "Closed after the handover",
+      "created_by": "hum-ops",
+      "created_at": "2026-10-20T10:00:00Z",
+      "participants": [],
+      "closed_at": "2026-10-20T12:00:00Z",
+      "closed_reason": "no_human"
+    },
+    "items": [
+      {
+        "id": "evt-4990",
+        "seq": 4990,
+        "conversation_id": "cnv-0011",
+        "from": "hum-ops",
+        "to": "cnv-0011",
+        "body": "the deploy key is …",
+        "sent_at": "2026-10-20T11:00:00Z",
+        "mentions": []
+      }
+    ],
+    "read": {},
+    "former": [
+      "hum-ops"
+    ]
+  }
+}

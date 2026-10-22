@@ -246,3 +246,177 @@ burst of an agent's replies together without merging separate exchanges.
 browser — it would disagree with the unread count the list shows, and
 another device would never see it. Grouping by a fixed number of
 messages — a long pause would hide that the agent came back later.
+
+## Project → Runners is the project admin's tab; refreshes redraw in place, and a missing list fails loud
+
+**Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+
+The tab is offered to owner and admin only (`members:admin`), although
+the hub also lets a runner's owner detach it. In V1 the only human is
+the owner, so nobody is left out yet. Allowing is the hub's grant; the
+runner checks its own `[limits] projects` again. A runner the hub allows
+but whose configuration does not list the project is therefore warned
+about: it starts nothing here.
+
+Presence and placements send no events, so the view re-reads every 30
+seconds. A card is redrawn only when its data changed, the focus stays
+on the same control, and the Allow form is rebuilt only when the set of
+free runners changes, keeping the runner chosen. Detach reads the count
+of agents again before it asks. A 404 on the list is an error like any
+other: the dashboard ships with its hub, which has attachments.
+
+**Reason:** a redraw every 30 seconds that rebuilds the form takes the
+choice and the focus away from someone using a keyboard or a screen
+reader, and an Enter after it could allow the wrong runner. A 404 that
+reads as "not yet" would hide a broken route now that the hub has it.
+
+**Rejected alternative:** the tab for every member, with Detach where
+the hub allows it. In V1 that only adds a view nobody else can use, and
+an Allow nobody but the admin may send. Treating a 404 as an older hub:
+that was right before the hub had attachments, and today it only
+covers a regression.
+
+## In the cross-project inbox, the project's badge is a link beside the entry, and its name starts the entry's own name
+
+**Id:** e356660d-570b-47ec-9ba1-70b5bad4224d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback that entries of all projects were hard to tell apart, relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the entry head is no longer one button, or the cross-project view gets a layout of its own per project
+
+Every entry of `#/all` has its project's badge (logo or monogram, name,
+state) before it, as a link to the project's inbox; the entry's head
+button starts with the project's name, visually hidden, so that the
+button's own name says which project it is. A project filter and an
+optional grouping by project (sections in the switcher's order, each a
+heading with its own list) sit in the toolbar; both are kept only for
+this tab's session and apply to `#/all` only, never to a project's own
+inbox. The entry opened first and the one opened after an answer follow
+the order on screen, filter and grouping included.
+
+**Reason:** a link may not sit inside a button, and the head is a button
+(it opens the entry); so the badge stands beside it. A screen reader
+moving by buttons would then miss the project, hence the hidden prefix.
+
+**Rejected alternative:** the badge inside the button, as before — it
+cannot be a link there, and its place after the priority read as just
+another label. An `aria-label` on the button — it would have to repeat
+the visible text word for word (axe label-content-name-mismatch).
+
+## The overview is the second tab, redrawn in place, and its counts failing leaves the rest standing
+
+**Id:** e585b67d-8a1a-4e68-8ea7-814ec4fbc251
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the overview contract (docs/api.md §6.11, PR #189) and its contract owner's rulings, 2026-10-22; the coordinator's card for the view (tsk-hha96xyqcpdd), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the overview gains merges from the change ticker (#180) or releases, or the inbox stops being the landing page
+
+`#/p/<slug>/overview` gets the tab right after **Inbox**, while the inbox
+stays the landing page. The view is five parts: links, members, board
+counts, open requests and the latest reports. Links and members come
+from what the header already holds. The counts come from one
+`GET …/overview` with the board's window, read again on `task_*`,
+`request_*` and `probe_observed` and redrawn in place, with no Reload
+offer. A viewer who is neither owner nor admin is in few of those
+events' audiences (§8.2), so for them the view also re-reads every 60
+seconds and when the tab or its window comes back. A trigger that arrives during a
+read causes one more read after it, and a redraw puts the focus back on
+the same link. If that call fails, links and members still show, and the place
+of the counts says why they are missing.
+
+**Reason:** the inbox is where the human acts. The overview is where
+they look first after a while away, so it sits next to the inbox
+without replacing it. A summary is not read line by line, so redrawing
+it does not pull text away from a reader, which is why the contract
+asks for it in place. Links and members do not depend on the new call,
+so one missing endpoint should not blank the page.
+
+**Rejected alternative:** the overview as the landing page. The contract
+keeps the inbox there, and what waits for an answer matters more than a
+summary. The board's "changed, Reload" notice would interrupt nothing
+worth protecting here. One error for the whole view: it hides what the
+page already has.
+
+## Group chats live in the chat view's own two panes; the hub says which kind a chat is, and the history before one joined is read on demand
+
+**Id:** 46abbbf3-40b9-4802-a22f-1a85293a9b8f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the group-chat contract (docs/api.md §9.2, §9.3, §8.5; PR #153) and the coordinator's card for the dashboard's part (tsk-b2dv60tsexjf), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub sends live events to an owner who reads along, a chat gets more than twelve people, or the list needs filters by kind
+**See:** views.md#the-chats-history-days-apart-a-senders-run-grouped-and-the-line-before-what-was-unread-when-it-opened — abe93ad2-1a75-4abc-a5d0-70e074d17335 — as of 2026-10-22
+
+Group chats are in the same list as the direct chats, newest first, and
+open in the same right-hand pane. A new one is made in that pane
+(`#/p/<slug>/chat/new`), so Back and the URL work as for any chat. The
+kind of a chat comes from the hub's list, never from the shape of its
+id. The open chat names its people and everyone who reads along. It
+shows the window since one joined; what came before is a button away,
+read on demand. Choosing one's own agent alone for a new chat points
+to the direct chat before anything is sent. Renaming, adding and
+removing people sit behind a disclosure, for the creator and admins
+only. Removing a message asks for a reason in the browser's own prompt,
+as the page already asks with the browser's confirm before anything
+destructive; the hub requires the reason, so an empty one is asked for
+again. A removed message is recognised by its `null` body. Changes to
+the chat, someone else's included, are drawn in place, and a removal
+reaches the open chat through `event_redacted`. No message wakes an
+owner who reads along, so the view re-reads every 30 seconds.
+
+**Reason:** one list is one place to look for "where was that said",
+and the chat view's sizing, drafts, quoting and Markdown work for both
+kinds unchanged. The hub decides what a chat is, so a change of id
+scheme cannot break the page. Starting at the window is the contract's
+"fresh by default": a latecomer is not buried under talk from before
+they came, and the button says the earlier part is there.
+
+**Rejected alternative:** a separate tab for group chats: two lists to
+search, and a mention could sit in either. A dialog for the new chat:
+the page has no dialogs, and a pane route keeps the browser's
+navigation. Loading the whole history on opening: it would bring back
+the backlog the window keeps out.
+
+## Reading along from outside a project is its own route on the chat view, found through one's agents; the blind removal sits in Project settings
+
+**Id:** fe785529-88da-47be-927b-4b13924f2b46
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2 (an owner outside the project) and §8.5 (blind removal); the coordinator's card for group chats part 2 (tsk-vz8e024wehde), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub offers such an owner a list of its readable projects, sends it events, or the accounts design gives humans a place for projects they are not in
+**See:** views.md#group-chats-live-in-the-chat-views-own-two-panes-the-hub-says-which-kind-a-chat-is-and-the-history-before-one-joined-is-read-on-demand — 46abbbf3-40b9-4802-a22f-1a85293a9b8f — as of 2026-10-23
+
+An owner whose agent is in a project the owner is not in reads that
+agent's group chats at `#/observe/<slug>`. The page is the chat view
+itself, run in a context without a project: no header, no member list,
+no events. The projects come from the agents' memberships
+(`GET /agents`), and everything waiting (`#/all`) names them. Names in
+those chats are the hub's handles, except for one's own agents.
+
+An owner or admin removes a reported message of a closed group chat by
+its number in Project settings, without reading it. The form always
+sends `expect: "closed_chat_message"`, so a mistyped number removes no
+other event. The human party of a direct chat removes a message there
+as in a group chat, when they hold `events:admin` (owner or admin).
+
+**Reason:** §9.2 lets such an owner read those chats and nothing else.
+Every other read of the project is `not_found`, so a project view with
+its header would only fail; a context that asks for nothing else keeps
+the page inside what the hub answers. The memberships are the only
+place the human learns of such a project. The blind removal has no chat
+to start from, because nobody who can open the chat is left, so it
+belongs with the project's other admin tools.
+
+**Rejected alternative:** these projects in the project switcher, like
+one's own. They would promise inbox, board and members, none of which
+the hub answers. A removal form inside the closed chat: the admin cannot
+open that chat.

@@ -253,6 +253,15 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-head .meta { color: var(--muted); font-size: 0.85rem; }
 
 .project-label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; }
+/* The cross-project inbox: the project's badge before each entry, as a link. */
+.entry-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.entry-row .project-label { flex: none; padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); text-decoration: none; }
+.entry-row .project-label:hover, .entry-row .project-label:focus-visible { border-color: var(--accent); }
+.entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
+.entries-box { display: grid; gap: 8px; }
+.entry-group { margin: 6px 0 0; }
+.entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
 
 .prio-high { color: var(--high); }
 .prio-normal { color: var(--normal); }
@@ -713,3 +722,29 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-controls input[type="file"] { max-width: 100%; }
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
+/* The project at a glance (js/overview.js). */
+.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 12px; }
+.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.overview-part h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 1rem; }
+.overview-part .facts { margin: 0; }
+.overview-why, .overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.overview-reports li { overflow-wrap: anywhere; }
+.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 6px; }
+.overview-counts a { display: block; padding: 4px 6px; border-radius: 4px; background: var(--surface-2); text-decoration: none; }
+.overview-counts .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Group chats (js/group-chat.js). */
+.chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-list-pane .new-group { white-space: nowrap; }
+.mention-count { background: var(--accent); color: var(--accent-text); }
+.group-people-line, .group-observers { margin: 0 0 4px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.group-manage { margin: 4px 0 8px; }
+.group-manage summary { cursor: pointer; font-size: 0.88rem; }
+.group-manage .inline-form { margin: 6px 0; }
+.group-members { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; font-size: 0.88rem; }
+.earlier { display: flex; justify-content: center; margin: 4px 0; }
+.earlier:empty { display: none; }
+.msg-redacted { margin: 0; font-style: italic; }
+.group-readonly { margin: 8px 0 0; }
+.group-people { border: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; }
+.group-people legend { padding: 0; margin-bottom: 4px; }
