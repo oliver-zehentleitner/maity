@@ -185,7 +185,7 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
     """Fill `report.observed` and `mismatch`; True when the card changed."""
     with engine.connect() as conn:
         card = conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
-    if card is None or not card.report:
+    if card is None or not card.report or card.report.get("code") is False:
         return False
     project = _project(engine, card.project_id)
     if not fg.configured_for(project.repository_url):
@@ -314,7 +314,9 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
         (observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
-        if card.project_id in observable and card.report.get("observed") is None
+        if card.project_id in observable
+        and card.report.get("observed") is None
+        and card.report.get("code") is not False
     ]
     work += [(observe_release, (engine, fg, project_id)) for project_id in sorted(observable)]
     for job, args in work:
