@@ -44,20 +44,22 @@ one feed, and nothing for the views that have no cheap "after" query.
 **Status:** active
 **Evidence:** inferred
 **Source:** the notifications contract (docs/api.md §17, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** the hub offers per-project unread counts of chats and mentions, a push channel without an open tab, or the 50-item read proves too short
+**Revisit when:** the hub offers a push channel without an open tab, or personal requests get a view of their own
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
-The badges, the bell and the tab title come from one read of
-`GET /me/notifications?limit=50`, made with the existing 15-second `/me`
-read and after every answer. The hub's counts are cross-project, so the
-unread chats and mentions per project are counted from those 50 items.
+The badges and the tab title come from one read of
+`GET /me/notifications?limit=0`, made with the existing 15-second `/me`
+read and after every answer: the counts, `by_project` for the switcher
+and the tabs, and the position the browser's long-poll starts from. The
+bell reads its latest 20 only when it opens.
 An item's link is built from its `target`, never from its `url`. A hub
 that answers 404 leaves the page as it was, with no bell. Any other
 failure is said in the notice and stops nothing.
 
 Browser notifications run only when the account wants them and the
-browser allows them. They use the long-poll `?after=<seq>&wait=55`,
+browser allows them. They use the long-poll `?after=<position>&wait=55`,
+each answer's `next_after` passed back unchanged as the next start,
 which §17.2 gives a session beside its events long-poll. A `superseded`
 answer means another tab took that slot, so this tab waits five
 minutes; the item id as tag stops a second display. A quick empty
@@ -75,9 +77,11 @@ public address, which a page opened elsewhere may not share. Asking the
 browser on a click is the only time a browser reliably shows the
 prompt, and it is the human's own decision to be asked.
 
-**Rejected alternative:** one notifications read per project for the
-per-project badges. That is one call per project every 15 seconds, for
-a number the 50 newest items already give closely enough. Showing
+**Rejected alternative:** counting the per-project badges from the
+newest 50 items, as this page did against the contract's first round:
+the numbers were too low whenever more than 50 were unread, and the hub
+now counts per project itself (`by_project`). Reading the bell's items
+on every poll: they are shown only when the bell is open. Showing
 browser notifications from the 15-second poll: fifteen seconds late,
 and every open tab would show them. Asking for permission when the
 page loads: browsers block or suppress prompts without a click, and a
