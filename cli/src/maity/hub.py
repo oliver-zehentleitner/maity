@@ -83,13 +83,50 @@ def hub_base(url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "", "", "")).rstrip("/")
 
 
-def join_token(url: str) -> str:
-    """The token from `https://<hub>/j/<token>` or `https://<hub>/api/v1/join/<token>`."""
+def join_target(url: str) -> str:
+    """Where `maity join` sends the exchange, from the URL's shape (docs/api.md §13): a
+    `/j/<token>` or `/api/v1/join/<token>` URL → `POST /api/v1/join/<token>` on that host; a
+    URL whose path is one segment (a join host, §1.1) → `POST` to that same URL."""
+    base = hub_base(url)
     path = urllib.parse.urlsplit(url.strip()).path.rstrip("/")
     for prefix in ("/j/", f"{API}/join/"):
-        if path.startswith(prefix) and "/" not in path[len(prefix) :] and path[len(prefix) :]:
-            return urllib.parse.unquote(path[len(prefix) :])
-    raise HubError(f"not a join URL (expected /j/<token>): {safe_url(url)}")
+        token = path[len(prefix) :]
+        if path.startswith(prefix) and token and "/" not in token:
+            return f"{base}{API}/join/{segment(urllib.parse.unquote(token))}"
+    token = path[1:]
+    if token and "/" not in token and token not in ("j", "r", "api"):  # a truncated hub URL
+        return f"{base}/{segment(urllib.parse.unquote(token))}"
+    raise HubError(
+        f"not a join URL (expected https://<hub>/j/<token> or https://<join host>/<token>): "
+        f"{safe_url(url)}"
+    )
+
+
+def accept_hub(given: str, header: str | None) -> str:
+    """The hub's base URL after an exchange: the `Maity-Hub` header (the URL the command was
+    given when it is missing), only under the transport rule and only on the host of the
+    given URL or that host's parent domain (§13). Anything else is refused before the
+    command keeps anything."""
+    base = hub_base(given)
+    if not header:
+        return base
+    try:
+        claimed = hub_base(header)
+    except HubError as exc:
+        raise HubError(
+            f"the exchange named a hub URL the CLI refuses ({exc}); nothing was stored. The "
+            "code is used: ask for a new one"
+        ) from None
+    host = (urllib.parse.urlsplit(base).hostname or "").rstrip(".")
+    other = (urllib.parse.urlsplit(claimed).hostname or "").rstrip(".")
+    parent = host.split(".", 1)[1] if "." in host else ""
+    if other != host and not (other == parent and "." in parent):
+        raise HubError(
+            f"the exchange on {host} named {safe_url(claimed)} as the hub, which is neither "
+            "that host nor its parent domain; nothing was stored. The code is used: ask for a "
+            "new one"
+        )
+    return claimed
 
 
 def segment(value: str) -> str:
@@ -178,12 +215,11 @@ class JoinResult:
     hub: str | None
 
 
-def _exchange(base: str, path: str, code: str, what: str, timeout: float) -> tuple[Secret, Message]:
+def _exchange(url: str, code: str, what: str, timeout: float) -> tuple[Secret, Message]:
     """POST a single-use code to an exchange whose answer body is a credential and nothing
     else (§3.3, §15.2). The body is checked for the credential format and handed back as a
     `Secret`; it is never decoded into anything that could be printed, and an error body is
     never mistaken for it."""
-    url = f"{base}{API}{path}"
     body = json.dumps({"code": code, "client": CLIENT}).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
     request = urllib.request.Request(url, data=body, method="POST", headers=headers)  # noqa: S310
@@ -194,16 +230,16 @@ def _exchange(base: str, path: str, code: str, what: str, timeout: float) -> tup
     except urllib.error.HTTPError as exc:
         raise _error_from(exc, what) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HubError(f"cannot reach {base}: {getattr(exc, 'reason', exc)}") from exc
+        raise HubError(f"cannot reach {safe_url(url)}: {getattr(exc, 'reason', exc)}") from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
         raise HubError(f"the {what} exchange answered with something that is not a credential")
     return Secret(value), facts
 
 
-def exchange(base: str, token: str, code: str, timeout: float = 30.0) -> JoinResult:
-    """POST /join/{token} (§3.3)."""
-    credential, facts = _exchange(base, f"/join/{segment(token)}", code, "join", timeout)
+def exchange(url: str, code: str, timeout: float = 30.0) -> JoinResult:
+    """The join exchange (§3.3) at `url`, from `join_target()`."""
+    credential, facts = _exchange(url, code, "join", timeout)
     return JoinResult(
         credential=credential,
         credential_id=facts.get("Maity-Credential-Id"),
@@ -233,8 +269,8 @@ class PairResult:
 
 def pair_exchange(base: str, token: str, code: str, timeout: float = 30.0) -> PairResult:
     """POST /runners/pair/{token} (§15.2): the runner's credential, and the projects attached."""
-    path = f"/runners/pair/{segment(token)}"
-    credential, facts = _exchange(base, path, code, "pairing", timeout)
+    url = f"{base}{API}/runners/pair/{segment(token)}"
+    credential, facts = _exchange(url, code, "pairing", timeout)
     attached = [s.strip() for s in (facts.get("Maity-Attached") or "").split(",") if s.strip()]
     return PairResult(
         credential=credential,
