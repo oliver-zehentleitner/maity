@@ -748,11 +748,12 @@ exit it writes the harness's own exit code to `limit.json` in the
 agent's directory and exits 22. The runner maps 22 to `rate_limited`,
 `reason: quota`, `detail: reset_unknown`, with that exit code and
 `retry_at` 15 minutes on, doubling with each limit in a row up to 2
-hours. A session that ran longer than `quick_exit` before its limit
-starts the row over, and so does a new generation. The runner deletes
-the file before each start and reads it as the agents' user, a regular
-file only, never through a link, at most 512 bytes, and takes nothing
-but a plain exit code from it. No adapter lists an exit code yet, so for
+hours. When a run of the loop had ended cleanly before the limit, the
+loop exits 23 instead of 22, and the runner starts the row over; so does
+any other end of a run, and a new generation. The runner deletes
+the file before each start and reads it as the agents' user, never
+through a link and never blocking on a FIFO, at most 512 bytes, and takes
+nothing but a plain exit code from it. No adapter lists an exit code yet, so for
 now every limit exits as an ordinary failure, as §15.7 asks until a
 signal is verified; a reset time a harness names is not read either.
 
@@ -764,9 +765,10 @@ untrusted input: an agent could plant a link to a device or a deep JSON,
 or a reset time that holds its slot for a week. Guessing a harness's limit signal would turn
 some real crashes into limits, which hide from the crash cap and set the
 member's availability; an empty list keeps the old behaviour until a run
-shows the signal. The loop's clean runs between two limits never reach the runner, so a
-session's own length is what shows that a limit was not the previous one
-repeating.
+shows the signal. The loop's clean runs between two limits never reach the runner, so the
+loop says so in its exit code: the file is the agents' to write, the exit
+status is not, and a session's length alone would reset the row for
+sessions that simply work a while before each limit.
 
 **Rejected alternatives:**
 - Reading the harness's output in the pane for limit messages: the loop
