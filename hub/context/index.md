@@ -46,6 +46,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel
 
 ## K
+- [kubernetes.md](kubernetes.md) — one pod with Recreate, no replica count; migrations as a pre-install/pre-upgrade hook Job; readiness on health, liveness on help
 
 ## L
 
