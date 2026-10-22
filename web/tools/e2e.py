@@ -929,7 +929,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     page.locator("#upload-logo").set_input_files(
         files=[{"name": "notes.txt", "mimeType": "image/png", "buffer": b"not an image at all"}]
     )
-    expect(page.locator("header")).to_contain_text(
+    expect(page.locator("#header")).to_contain_text(
         "Logo not uploaded: not a PNG, JPEG or WebP image"
     )
     page.locator("#upload-logo").set_input_files(
