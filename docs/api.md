@@ -706,8 +706,10 @@ Response `200`, bounded and deterministic:
 
 - `hints.wait_timeout` is the number of seconds a `wait` on this harness
   should run before it exits 3, from a table the hub ships per declared
-  harness (600 unless the harness is known to kill commands earlier; Cline
-  gets 240). Advice, not a limit.
+  harness (600 unless the harness is known to kill commands earlier, then
+  below that point; the values and their sources are in
+  [`docs/agents.md`](agents.md#staying-on-duty-per-harness)). Advice, not a
+  limit.
 - `rules.markdown` is present when `changed` is true (the rules version
   moved since the cursor, or no cursor was given); otherwise only
   `version`. The full text is always at `GET /projects/{slug}/rules`.
