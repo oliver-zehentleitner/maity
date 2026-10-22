@@ -1,32 +1,114 @@
-// (5) Chat: a direct conversation with an agent the human owns. Messages
-// are events the agent picks up with wait or resume (docs/api.md §9); a
-// chat event of this conversation in the project's feed fetches the new
-// messages. No event says that a message reached the agent's session, so
-// while one of the human's messages is not picked up yet, the next event of
-// that agent, or the window getting the focus back, re-reads the messages
-// for their delivered_at. The inbox stays the primary surface.
+// (5) Chat: direct conversations with the agents the human owns. The
+// conversations are listed beside the open one (presence, last message,
+// unread), so switching is one click; on a phone the list is its own
+// screen. Messages are events the agent picks up with wait or resume
+// (docs/api.md §9); a chat event of a conversation in the project's feed
+// fetches its new messages and re-reads the list. No event says that a
+// message reached the agent's session, so while one of the human's
+// messages is not picked up yet, the next event of that agent, or the
+// window getting the focus back, re-reads the messages for their
+// delivered_at. The inbox stays the primary surface.
 "use strict";
 
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, formatTime, formatAgo } = M.dom;
+  const { h, append, clear, formatTime, formatAgo } = M.dom;
 
-  async function picker(ctx, mine) {
-    const list = await M.api.getAll(ctx.base + "/conversations");
-    const byAgent = {};
-    list.items.forEach((c) => { byAgent[c.agent_id] = c; });
-    return h("div", null,
+  // Presence emits no event (docs/api.md §5.3): the list re-reads it.
+  const LIST_MS = 30000;
+  const PRESENCE_LABELS = { online: "online", away: "away", offline: "offline", paused: "paused" };
+
+  // Unsent text per conversation ("<slug>/<agent id>"), kept while the
+  // human switches between them in this tab; never stored or sent.
+  const drafts = new Map();
+
+  // A chat as the list shows it: today one per owned agent (docs/api.md §9),
+  // shaped for chats with several participants (a title, their avatars).
+  function chatsOf(mine, byAgent) {
+    return mine.map((m) => {
+      const c = byAgent[m.id] || {};
+      return { id: m.id, title: m.display_name, participants: [m], unread: c.unread || 0,
+        last_message_at: c.last_message_at || null, last_message: c.last_message || null };
+    });
+  }
+
+  // Newest chat first; the ones without messages after, by title.
+  function ordered(chats) {
+    const at = (c) => c.last_message_at || "";
+    return chats.slice().sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.title.localeCompare(b.title)));
+  }
+
+  const initials = (name) => (name.match(/[\p{L}\p{N}]+/gu) || ["?"]).slice(0, 2).map((w) => [...w][0].toUpperCase()).join("");
+
+  // Up to three participants' initials; with one, its presence as a dot.
+  function avatars(chat) {
+    const shown = chat.participants.slice(0, 3);
+    return h("span", { class: "avatars", "aria-hidden": "true" },
+      shown.map((m) => h("span", { class: "avatar" }, initials(m.display_name))),
+      chat.participants.length === 1 ? h("span", { class: "dot " + chat.participants[0].presence }) : null);
+  }
+
+  // Under the title: who and how present, then an unsent draft, else the
+  // last message where the hub sends it (`last_message`), else nothing.
+  function subline(ctx, chat) {
+    const who = chat.participants.length === 1
+      ? PRESENCE_LABELS[chat.participants[0].presence] || chat.participants[0].presence
+      : chat.participants.map((m) => m.display_name).join(", ");
+    const draft = drafts.get(ctx.slug + "/" + chat.id);
+    const last = chat.last_message;
+    let line = null;
+    if (draft) line = h("span", { class: "preview draft" }, "Draft: " + draft);
+    else if (last && last.redacted) line = h("span", { class: "preview" }, "A message was removed.");
+    else if (last) line = h("span", { class: "preview" }, (last.from === ctx.me.id ? "You: " : "") + last.body);
+    return [h("span", { class: "conv-sub" }, who), line];
+  }
+
+  function listItem(ctx, chat, currentId) {
+    const current = chat.id === currentId;
+    return h("li", null, h("a", {
+      href: ctx.link("chat", chat.id),
+      class: "conv" + (current ? " current" : "") + (chat.unread ? " unread" : ""),
+      "aria-current": current ? "page" : null,
+    },
+    avatars(chat),
+    h("span", { class: "conv-title" }, chat.title),
+    h("span", { class: "conv-time" }, chat.last_message_at ? formatAgo(chat.last_message_at) : ""),
+    chat.unread ? h("span", { class: "count", "aria-label": chat.unread + " unread" }, String(chat.unread)) : null,
+    subline(ctx, chat)));
+  }
+
+  // The conversation list; refresh() re-reads it and presence in place.
+  function conversations(ctx, currentId) {
+    const ul = h("ul", { class: "chat-list" });
+    const status = M.statusLine();
+    let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
+    let byAgent = {};
+    const draw = () => {
+      clear(ul);
+      ordered(chatsOf(mine, byAgent)).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
+    };
+    let reading = null;
+    const refresh = (withMembers) => {
+      if (reading) return reading;
+      reading = Promise.all([
+        M.api.getAll(ctx.base + "/conversations"),
+        withMembers ? M.api.getAll(ctx.base + "/members") : null,
+      ]).then(([list, members]) => {
+        byAgent = {};
+        list.items.forEach((c) => { byAgent[c.agent_id] = c; });
+        if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
+        draw();
+        status.done();
+      }).catch((err) => status.fail("The conversations could not be read: ", err))
+        .finally(() => { reading = null; });
+      return reading;
+    };
+    const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("h2", null, "Chat"),
-      mine.length
-        ? h("ul", { class: "chat-picker" }, mine.map((m) => {
-          const c = byAgent[m.id];
-          return h("li", null, h("a", { href: ctx.link("chat", m.id) }, m.display_name),
-            c && c.unread ? h("span", { class: "count", "aria-label": c.unread + " unread" }, String(c.unread)) : null,
-            h("span", { class: "muted" }, " · " + m.role + " · " + m.presence
-              + (c && c.last_message_at ? " · last message " + formatAgo(c.last_message_at) : "")));
-        }))
-        : h("p", { class: "muted" }, "You own no agents in this project."));
+      mine.length ? ul : h("p", { class: "muted" }, "You own no agents in this project."),
+      status.el);
+    return { el, refresh };
   }
 
   const metaText = (ctx, msg, own) => (own ? "" : ctx.nameOf(msg.from) + " · ") + formatTime(msg.sent_at)
@@ -46,19 +128,30 @@ window.Maity = window.Maity || {};
   M.views.chat = async function (ctx, root, args) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
+    const list = conversations(ctx, agent ? agent.id : null);
+    const layout = h("div", { class: "chat-layout" + (agent ? " open" : "") }, list.el);
+    append(root, layout);
+    const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
+    ctx.onEvents((events) => { if (events.some(isChat)) list.refresh(false); });
+    ctx.every(LIST_MS, () => list.refresh(true));
     if (!agent) {
-      if (args[0]) append(root, h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."));
-      append(root, await picker(ctx, mine));
+      if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No agent of yours with the id " + args[0] + "."));
+      else if (mine.length) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
+      await list.refresh(false);
       return;
     }
+    const pane = h("section", { class: "chat-pane", "aria-label": "Chat with " + agent.display_name });
+    append(layout, pane);
 
     const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
     const conv = await M.api.get(path);
+    // Read after the messages, so that this conversation's unread is gone.
+    await list.refresh(false);
     let cursor = conv.cursor || 0;
     const shown = new Set(conv.items.map((m) => m.seq));
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
-    const list = h("ol", { class: "messages", "aria-live": "polite" },
+    const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map((m) => message(ctx, m, pending)) : h("li", { class: "empty" }, "No messages yet."));
     const pollStatus = M.statusLine();
 
@@ -93,14 +186,13 @@ window.Maity = window.Maity || {};
     function add(msg) {
       if (shown.has(msg.seq)) return;
       shown.add(msg.seq);
-      const empty = list.querySelector(".empty");
+      const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
-      append(list, message(ctx, msg, pending));
+      append(messages, message(ctx, msg, pending));
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
-    const mentions = (e) => e.kind === "message" && e.payload && e.payload.type === "chat"
-      && e.payload.conversation_id === agent.id && !shown.has(e.seq);
+    const mentions = (e) => isChat(e) && e.payload.conversation_id === agent.id && !shown.has(e.seq);
     ctx.onEvents(async (events) => {
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
       if (!events.some(mentions)) return;
@@ -109,11 +201,18 @@ window.Maity = window.Maity || {};
         fresh.items.forEach(add);
         if (fresh.cursor && fresh.cursor > cursor) cursor = fresh.cursor;
         pollStatus.done();
+        // The list read on the same event may predate this read.
+        list.refresh(false);
       } catch (err) {
         pollStatus.fail("New messages could not be fetched: ", err);
       }
     });
+    const key = ctx.slug + "/" + agent.id;
     const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
+    text.value = drafts.get(key) || "";
+    text.addEventListener("input", () => {
+      if (text.value.trim()) drafts.set(key, text.value); else drafts.delete(key);
+    });
     const status = M.statusLine();
     const button = h("button", { type: "submit" }, "Send");
 
@@ -127,7 +226,9 @@ window.Maity = window.Maity || {};
         const msg = await M.api.post(path, { body });
         add(msg);
         text.value = "";
+        drafts.delete(key);
         status.done();
+        list.refresh(false);
       } catch (err) {
         status.fail("Not sent: ", err);
       } finally {
@@ -139,14 +240,14 @@ window.Maity = window.Maity || {};
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(e);
     });
 
-    append(root,
+    append(pane,
+      h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },
         h("h2", null, "Chat with " + agent.display_name),
         h("span", { class: "muted" }, agent.session
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
-          : "no session — picked up when it resumes"),
-        h("a", { href: ctx.link("chat") }, "Other agents")),
-      list,
+          : "no session — picked up when it resumes")),
+      messages,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),

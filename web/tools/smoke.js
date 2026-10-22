@@ -642,10 +642,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/org");
   expect(main.querySelectorAll(".org-node svg").length === main.querySelectorAll(".org-node").length, "avatars: in the organisation, one per member");
 
+  // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
-  expect(main.querySelectorAll(".chat-picker li").length === 5, "chat picker lists own agents");
+  const convs = () => main.querySelectorAll(".chat-list a.conv");
+  const conv = (name) => convs().find((a) => a.querySelector(".conv-title").textContent === name);
+  expect(convs().length === 5 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents, nothing open yet");
+  expect(convs()[0].querySelector(".conv-title").textContent === "Agent D" && convs()[1].querySelector(".conv-title").textContent === "Agent A",
+    "chat: the newest chat first, the ones without messages after");
+  const convA = conv("Agent A");
+  expect(convA.getAttribute("href") === "#/p/maity/chat/agt-a" && text(convA).includes("Endpoints for join, tasks and requests are drafted.")
+    && convA.querySelector(".count") && convA.querySelector(".count").textContent === "1" && convA.classList.contains("unread")
+    && text(convA).includes("online") && convA.querySelector(".avatar").textContent === "AA",
+    "chat: an entry has the agent, the last message, its time, the unread count, presence and an avatar");
+  expect(text(conv("Agent D")).includes("You: Keep the inbox usable"), "chat: one's own last message reads You:");
+  expect(!conv("Agent B").querySelector(".preview") && text(conv("Agent C")).includes("paused"), "chat: no messages, no preview; presence in words");
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelectorAll(".msg").length === 2, "conversation with A");
+  expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
+    && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
+  // A draft per chat survives switching to another chat and back.
+  main.querySelector("textarea").value = "half a thought"; main.querySelector("textarea").dispatch("input");
+  await go("#/p/maity/chat/agt-d");
+  expect(main.querySelector("textarea").value === "" && text(conv("Agent A")).includes("Draft: half a thought"), "chat: switching keeps the draft, shown in the list");
+  await go("#/p/maity/chat/agt-a");
+  expect(main.querySelector("textarea").value === "half a thought", "chat: the draft is back in its chat");
+  main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
+  // A redacted last message.
+  const cAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c
+    : Object.assign({}, c, { last_message: Object.assign({}, c.last_message, { body: null, redacted: true }) }))), next_cursor: null }));
+  await go("#/p/maity/chat");
+  expect(text(conv("Agent D")).includes("A message was removed.") && !text(conv("Agent D")).includes("null"), "chat: a redacted last message");
+  // A hub before last_message: no preview, the rest stays.
+  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations" ? r
+    : { items: r.items.map((c) => { const o = Object.assign({}, c); delete o.last_message; return o; }), next_cursor: null }));
+  await go("#/p/maity/chat");
+  expect(convs().length === 5 && !main.querySelector(".chat-list .preview"), "chat: a hub without last_message shows no preview");
+  win.Maity.api.getAll = cAll;
+  await go("#/p/maity/chat/agt-a");
   main.querySelector("textarea").value = "Thanks.";
   main.querySelector("form").dispatch("submit"); await tick();
   expect(main.querySelectorAll(".msg").length === 3 && text(main).includes("not picked up yet"), "sent message appended");

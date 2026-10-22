@@ -455,7 +455,47 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 /* ---- chat ----------------------------------------------------------- */
 
-.chat-picker { padding-left: 20px; }
+/* Two panes, like a messenger: the chats left, the open one right. On a
+   phone the list is one screen and the chat another. */
+.chat-layout { display: grid; grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr); gap: 20px; align-items: start; }
+.chat-list-pane h2 { margin-top: 0; }
+.chat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.conv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "av title time" "av sub count" "av prev prev";
+  column-gap: 10px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+.conv:hover { background: var(--surface); }
+.conv.current { background: var(--surface); border-color: var(--accent); }
+.conv-title { grid-area: title; font-weight: 600; overflow-wrap: anywhere; }
+.conv.unread .conv-title { font-weight: 700; }
+.conv-time { grid-area: time; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.conv .count { grid-area: count; justify-self: end; align-self: center; color: var(--accent); }
+.conv-sub { grid-area: sub; font-size: 0.82rem; color: var(--muted); }
+.conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.conv .preview.draft { font-style: italic; }
+.avatars { grid-area: av; position: relative; display: flex; align-self: start; }
+.avatar {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--border); color: var(--text);
+  font-size: 0.75rem; font-weight: 700;
+}
+.avatar + .avatar { margin-left: -10px; box-shadow: 0 0 0 2px var(--bg); }
+.avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
+.chat-back { display: none; }
+.chat-none { margin-top: 3rem; text-align: center; }
+@media (max-width: 720px) {
+  .chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .chat-layout.open .chat-list-pane, .chat-none { display: none; }
+  .chat-back { display: inline-block; margin-bottom: 8px; }
+}
 
 .messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
 

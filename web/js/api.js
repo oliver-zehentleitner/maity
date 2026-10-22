@@ -560,10 +560,14 @@ window.Maity = window.Maity || {};
       return {
         items: Object.keys(all).map((agentId) => {
           const items = all[agentId].items;
+          const last = items.length ? items[items.length - 1] : null;
           return {
             agent_id: agentId,
-            last_message_at: items.length ? items[items.length - 1].sent_at : null,
+            last_message_at: last ? last.sent_at : null,
             unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
+            // §9: the newest message as a preview, its body cut at 200 code points.
+            last_message: last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
+              sent_at: last.sent_at, redacted: !!last.redacted },
           };
         }),
         next_cursor: null,
