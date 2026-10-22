@@ -849,7 +849,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     # The switcher's state dot: frozen Alpha differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
-      const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.startsWith(name));
+      const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
       return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
     })""")
     assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
