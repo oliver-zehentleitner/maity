@@ -28,6 +28,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
+- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, history from join, the agent's owner reads along (pending)
 
 ## D
 
