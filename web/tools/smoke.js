@@ -931,6 +931,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let chatNoConv = null;
   try { await mPost0("/projects/maity/events", { kind: "message", type: "chat", to: "agt-a", body: "x" }); } catch (err) { chatNoConv = err; }
   expect(badRole && badRole.details.fields.to && chatNoConv && chatNoConv.details.fields.conversation_id === "missing", "message: the mock refuses an unknown role and a chat without its conversation");
+  // From a chat: an @name there tells nobody; the hint offers a project message with it.
+  await go("#/p/maity/chat/agt-d");
+  const chatText = byId("chat-text");
+  const hintEl = () => main.querySelector(".mention-hint");
+  expect(hintEl() && hintEl().hidden, "message: no hint while the chat has no @name");
+  chatText.value = "Ask @agent-c about the join path"; chatText.dispatch("input");
+  const hintLink = hintEl().querySelector("a");
+  expect(!hintEl().hidden && text(hintEl()).includes("In this chat @agent-c notifies nobody.") && hintLink
+    && hintLink.getAttribute("href") === "#/p/maity/message/%40agent-c", "message: a chat's @name is said to notify nobody, with a project message offered");
+  chatText.value = "mail me@agent-c"; chatText.dispatch("input");
+  expect(hintEl().hidden, "message: an @ inside a word gives no hint");
+  chatText.value = ""; chatText.dispatch("input");
   // Opened from a chat with the @name in it.
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");

@@ -304,8 +304,9 @@ today) shows that one instead. On the agents' cards, in the
 organisation and in the chat list.
 
 **Message the project** (`#/p/<slug>/message`, no tab: **Message the
-project** in the inbox's toolbar, and from a chat with an `@name` already
-written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
+project** in the inbox's toolbar, and from a chat: an `@name` typed there
+is said to notify nobody, with a link to a project message that has it
+already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
 §8.4): to everyone, a role or one member (never oneself), of one of the
 hub's types (a notice by default), optionally about an open card. The
 hub scans the body: a mention adds that member to whom it reaches and

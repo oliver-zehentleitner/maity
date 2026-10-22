@@ -1289,6 +1289,9 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     wait = run.wait_start(alpha)
     page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
     page.locator("#chat-text").fill("Ask @e2e-agent about it later.")
+    hint = page.locator(".mention-hint")
+    expect(hint).to_contain_text("In this chat @e2e-agent notifies nobody.")
+    expect(hint.get_by_role("link")).to_have_attribute("href", "#/p/e2e-alpha/message/%40e2e-agent")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     event = run.wait_event(wait)
     assert event.get("kind") == "message" and event["payload"].get("type") == "chat", event
