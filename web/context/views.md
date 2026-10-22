@@ -118,10 +118,11 @@ leaked line is pasted.
 
 **Id:** c285771a-0b3a-4867-b66b-a1c7faa837de
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22
-**Revisit when:** the contract gives cards an order within a column, or the hub exposes the moves a caller may make
+**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22; re-checked by the coordinator after card order arrived (its revisit condition), 2026-10-22: the Move menu and the transition rule still hold, the order within a column is its own entry
+**Revisit when:** the hub exposes the moves a caller may make
+**See:** views.md#cards-are-placed-within-a-column-by-a-place-menu-and-by-dragging-over-a-card-and-the-order-changes-only-once-the-hub-answered — 3785a685-e976-400f-b088-9321804d29fc — as of 2026-10-22
 
 Each card a human may move has a **Move** menu with exactly the moves the
 hub allows them, mirrored from its transition check (proposed ↔ open for
@@ -130,7 +131,8 @@ authority; cancel for an admin or an open card's creator). A pointer may
 drag the card instead: while dragging, the allowed columns are outlined
 and the others dimmed; a card let go over a refused column is said in
 words on `dragend` (a browser fires no drop there) and nothing is sent.
-There is no order within a column. The board's filters (member, area)
+Placing a card within its column is a separate move with its own menu
+(see the entry linked above). The board's filters (member, area)
 work on the cards already loaded.
 
 **Reason:** a drag-only board leaves keyboard and phone users without a
