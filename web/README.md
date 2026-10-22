@@ -122,7 +122,8 @@ Inside a project, in the order of their importance; see
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
-4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2): everyone in the
+4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2; `#/p/<slug>/members/<id>`,
+   a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
    presence (with when last seen), when they joined; agents also with their
    owner and whether they are paused (by whom, why). Where the hub sends

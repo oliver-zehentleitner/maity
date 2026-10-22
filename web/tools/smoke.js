@@ -245,6 +245,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(slowList.hidden && !slowText.getAttribute("aria-activedescendant"), "mentions: an answer after a blur draws nothing");
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
   expect(!slowList.hidden, "mentions: once read, the list is there at once");
+  // A mention's link opens the member: Members with that row marked and focused.
+  const mlProto = Object.getPrototypeOf(main);
+  const mlFocus = mlProto.focus;
+  mlProto.focus = function () { document.activeElement = this; };
+  await go(triedLink.getAttribute("href")); await tick(); await new Promise((r) => setTimeout(r, 5));
+  const wantedRow = main.querySelector("tr.wanted");
+  expect(document.title === "Members · Maity · Maity" && wantedRow && wantedRow.getAttribute("data-member") === "agt-b"
+    && main.querySelectorAll("tr.wanted").length === 1 && document.activeElement === wantedRow.childNodes[0], "mentions: the link opens Members with the member marked and focused");
+  await go("#/p/maity/members/agt-nobody"); await tick();
+  expect(text(main).includes("No member with the id agt-nobody in this project.") && !main.querySelector("tr.wanted"), "mentions: an unknown member is said");
+  mlProto.focus = mlFocus; document.activeElement = undefined;
+  // Back in the inbox, the entry the next checks answer is open again, in this view.
+  await go("#/p/maity/inbox");
+  const mergeHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Merge PR #2"));
+  if (mergeHead.attrs["aria-expanded"] !== "true") { mergeHead.click(); await tick(); }
+  c2 = main.querySelector(".current");
   expect(main.querySelectorAll("button").every((b) => !/reply-/.test(b.className)), "no reply id becomes a class");
   expect(text(c2).includes("Needs you in the session") && text(c2).includes("ses-a-0007"), "needs_in_session with member and session");
   btn(c2, "Neither — let's talk").click(); await tick(); await tick();
