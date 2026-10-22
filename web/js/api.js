@@ -100,6 +100,17 @@ window.Maity = window.Maity || {};
     return file(slug, "project.json", path);
   }
 
+  // A release card that may still change: closed ones are a record.
+  function releaseCard(slug, id, path) {
+    const card = file(slug, "tasks.json", path).items.find((x) => x.id === id);
+    if (!card) fail(404, "not_found", "no such card", path);
+    if (card.kind !== "release") fail(400, "invalid", "releases only", path, { fields: { release: "releases_only" } });
+    if (card.status === "done" || card.status === "cancelled") {
+      fail(409, "invalid_transition", "a closed release does not change", path, { from: card.status, to: card.status });
+    }
+    return card;
+  }
+
   function member(slug, id, path) {
     const m = file(slug, "members.json", path).items.find((x) => x.id === id);
     if (!m) fail(404, "not_found", "Not found", path);
@@ -129,8 +140,9 @@ window.Maity = window.Maity || {};
     },
   };
 
-  // docs/api.md §3, §6.2: a briefing is Markdown of at most 16 KiB.
-  const BRIEFING_BYTES = 16 * 1024;
+  // docs/api.md §3, §6.2: a briefing is Markdown of at most 16 KiB,
+  // counted in characters (code points) as the hub counts them.
+  const BRIEFING_CHARS = 16 * 1024;
 
   // [method, pattern, handler(match, body, path, query)]. One row per
   // endpoint the views use; the patterns match the path below /api/v1
@@ -257,12 +269,53 @@ window.Maity = window.Maity || {};
       const keep = statusFilter(query, "all");
       return { items: file(m[1], "tasks.json", path).items.filter(keep), next_cursor: null };
     }],
+    // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
+    // it: computing it is the hub's, never the page's.
+    ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
+      const card = releaseCard(m[1], m[2], path);
+      const rel = card.release;
+      if (body.release && body.release.checklist) {
+        const old = {};
+        rel.checklist.forEach((i) => { old[i.id] = i; });
+        let next = rel.checklist.reduce((n, i) => Math.max(n, Number(i.id.slice(4)) || 0), 0) + 1;
+        rel.checklist = body.release.checklist.map((i) => {
+          if (i.id) {
+            if (!old[i.id]) fail(400, "invalid", "unknown checklist item", path, { fields: { "release.checklist": "unknown_item:" + i.id } });
+            return Object.assign({}, old[i.id], { text: i.text });
+          }
+          const item = { id: "chk-" + next, text: i.text, done: false, by: null, at: null };
+          next += 1;
+          return item;
+        });
+      }
+      if (body.release && body.release.pull_requests_typed) {
+        rel.pull_requests_typed = body.release.pull_requests_typed.map((p) => ({ number: p.number, state: p.state || null }));
+        const typed = new Set(rel.pull_requests_typed.map((p) => p.number));
+        const kept = rel.pull_requests.filter((p) => p.source !== "typed" || typed.has(p.number));
+        rel.pull_requests_typed.forEach((p) => {
+          if (!kept.some((k) => k.number === p.number)) {
+            kept.push({ number: p.number, url: null, title: null, task_id: null, state: p.state, checks: null,
+              head_sha: null, merged_at: null, observed_at: null, source: "typed", found: null });
+          }
+        });
+        rel.pull_requests = kept.sort((a, b) => a.number - b.number);
+      }
+      card.updated_at = nowIso();
+      return card;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/checklist\/([^/]+)$/, (m, body, path) => {
+      const card = releaseCard(m[1], m[2], path);
+      const item = card.release.checklist.find((i) => i.id === m[3]);
+      if (!item) fail(404, "not_found", "no such checklist item", path);
+      Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
+      return card;
+    }],
     ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => file(m[1], "members.json", path)],
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
       const target = member(m[1], m[2], path);
       if ("briefing" in body) {
-        if (body.briefing !== null && new TextEncoder().encode(body.briefing).length > BRIEFING_BYTES) {
-          fail(400, "invalid", "the briefing is longer than 16 KiB", path, { fields: { briefing: "string_too_long" } });
+        if (body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) {
+          fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
         }
         target.briefing = body.briefing || null;
       }
@@ -302,8 +355,8 @@ window.Maity = window.Maity || {};
           owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso(),
         });
       }
-      if (body.briefing && new TextEncoder().encode(body.briefing).length > BRIEFING_BYTES) {
-        fail(400, "invalid", "the briefing is longer than 16 KiB", path, { fields: { briefing: "string_too_long" } });
+      if (body.briefing && [...body.briefing].length > BRIEFING_CHARS) {
+        fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
       }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);

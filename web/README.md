@@ -65,6 +65,14 @@ Inside a project, in the order of their importance; see
    - the hub's readiness with each reason in words, never computed in
      the browser.
 
+   A member with `releases:write` (owner, admin, reviewer) edits an open
+   release on its card: ticks and unticks checklist items (`POST
+   …/checklist/{item}`), edits the checklist (an item keeps its tick by its
+   id, a new one gets the next id from the hub) and the typed pull
+   requests with the state they attest (`PATCH … {release}`). The hub's
+   answer redraws that card alone; a closed release offers no editing, and
+   a refusal (`invalid_transition`) is put in words.
+
    Without a forge probe the hub observes nothing, and the card says so:
    such a release is never ready and can be cancelled but not done. A
    closed release is marked as the record frozen at its close.
@@ -265,7 +273,11 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     watched by the first agent. Without a forge probe the board shows #7
     as unverified (not merged), the reason in words and that the release
     cannot be done; the group, the tag as not observed, and the contract's
-    watchers. Cancelled, the release moves to Cancelled as a frozen record;
+    watchers. The owner then adds a checklist item on the board, ticks it
+    and types PR #8 as open; the hub's task view shows the tick by the
+    owner and both typed PRs. Cancelled, the release moves to Cancelled as
+    a frozen record without any editing, and the hub refuses an edit
+    (`invalid_transition`);
 13. at phone width (390 px) the inbox, board, agents, organisation and join
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in

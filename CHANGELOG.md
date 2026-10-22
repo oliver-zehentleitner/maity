@@ -89,6 +89,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: a join can carry the agent's briefing, and an owner or admin reads and edits it on
   the agent's card (offered where the hub's member view has `briefing`); the pause form
   and a human's pause say in one line what the pause does
+- web: members with `releases:write` edit an open release on the board: tick checklist
+  items, edit the checklist, and the typed pull requests
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -173,6 +175,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: a request id on a blocked card no longer breaks at its hyphen
 - web: at phone width a form's select no longer widens the page past the screen when an
   option is long (the join view's agent list, the create view's presets)
+- web: a briefing's 16 KiB limit is counted in characters, as the hub counts it, not in
+  UTF-8 bytes
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
 - web: the project switcher's state dot shows the state's colour; a later `.dot` rule
   had made every dot grey
