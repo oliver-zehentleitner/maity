@@ -426,8 +426,18 @@ window.MAITY_FIXTURES = {
   },
   "maity/project.json": {
     "absence": null,
+    "banner": {
+      "available": true,
+      "etag": "\"u-banner-1\"",
+      "source": "uploaded"
+    },
     "created_at": "2026-10-21T07:50:00Z",
     "keep_the_why": true,
+    "logo": {
+      "available": true,
+      "etag": "\"f-logo-1\"",
+      "source": "forge"
+    },
     "name": "Maity",
     "policy": {
       "claim_policy": "self-claim",
@@ -1262,8 +1272,16 @@ window.MAITY_FIXTURES = {
       "scope": "bug fixes may be released, features wait",
       "until": "2026-10-22T08:00:00Z"
     },
+    "banner": {
+      "available": false,
+      "source": null
+    },
     "created_at": "2026-09-02T10:00:00Z",
     "keep_the_why": false,
+    "logo": {
+      "available": false,
+      "source": null
+    },
     "name": "Sample shop",
     "policy": {
       "claim_policy": "self-claim",

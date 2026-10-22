@@ -102,6 +102,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   for confirmation; each credential shows how it was last used
 - web: change your password in the dashboard (`#/account`, **Account** in the header):
   current, new and repeat, checked before sending; other sessions are signed out
+- web: each project shows its logo (or a monogram from its initials) in the switcher, the
+  header, `#/all` and as the tab's icon, and its banner on its inbox; `project:admin`
+  uploads and removes both in **Project settings** (the panel formerly called **State &
+  absence**)
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -251,4 +255,4 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   next event or when the window gets the focus back, instead of only after a reload
 - web: on a narrow screen the current tab and project are scrolled into their rows;
   the 15-second count re-read redraws only the switcher, so it no longer closes an
-  open State & absence panel with what was typed in it, nor resets a scrolled tab row
+  open State & absence panel (now Project settings) with what was typed in it, nor resets a scrolled tab row

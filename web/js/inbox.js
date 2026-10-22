@@ -73,7 +73,9 @@ window.Maity = window.Maity || {};
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     ctx.scope === "all" && req.project
-      ? h("span", { class: "project-label" }, req.project.name,
+      ? h("span", { class: "project-label" },
+        M.projectMark(req.project.slug, req.project.name, (ctx.projectViews || {})[req.project.slug], "small"),
+        req.project.name,
         h("span", { class: "state state-" + req.project.state }, ctx.stateLabel(req.project.state)))
       : null,
     h("span", { class: "title" }, req.title),
@@ -291,6 +293,9 @@ window.Maity = window.Maity || {};
     },
     [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === ui.show }, l)));
 
+    // The project's banner (docs/api.md §11.2) heads its landing page.
+    const banner = ctx.scope === "project" && M.api.imageUrl(ctx.slug, "banner", ctx.project.banner);
+    if (banner) append(root, h("img", { class: "project-banner", src: banner, alt: "" }));
     append(root,
       h("div", { class: "toolbar" },
         h("h2", null, ctx.scope === "all" ? "Waiting for you, all projects" : "Inbox"),

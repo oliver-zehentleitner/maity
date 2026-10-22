@@ -49,7 +49,7 @@ window.Maity = window.Maity || {};
   const EVENTS_PAGE = 200;
 
   // Events that change the header of every project view.
-  const PROJECT_KINDS = /^(state_changed|absence_changed|policy_changed|rules_changed)$/;
+  const PROJECT_KINDS = /^(state_changed|absence_changed|policy_changed|rules_changed|project_updated)$/;
   const REQUEST_KINDS = /^request_/;
 
   const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -173,6 +173,7 @@ window.Maity = window.Maity || {};
     }
     // Offered where the hub knows the field (docs/api.md §6.1).
     if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
+    if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
     if (ctx.isOwner) {
       const a = ctx.project.absence;
       const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
@@ -195,6 +196,87 @@ window.Maity = window.Maity || {};
     }
     append(panel, status.el);
     return panel;
+  }
+
+  // The project's own logo and banner (docs/api.md §11.2), for project:admin
+  // humans: what shows now and where it comes from, upload, and removing an
+  // upload (the forge's image then applies again). The type is read from the
+  // file's first bytes, as the hub reads it; at most 1 MiB.
+  const IMAGE_MAX = 1024 * 1024;
+  const SOURCES = { uploaded: "uploaded here", forge: "from the repository's forge" };
+  const IMAGE_REASONS = {
+    unsupported_type: "not a PNG, JPEG or WebP image",
+    too_large: "larger than 1 MiB",
+  };
+
+  async function sniffImage(file) {
+    const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const at = (i, bytes) => bytes.every((v, k) => b[i + k] === v);
+    if (at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+    if (at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
+    if (at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50])) return "image/webp";
+    return null;
+  }
+
+  // Set by an upload or a removal; the next header opens the panel with it.
+  let imagesNote = null;
+
+  function imagesForm(ctx) {
+    const status = statusLine();
+    if (imagesNote) {
+      append(status.el, h("span", { class: "ok" }, imagesNote));
+      imagesNote = null;
+    }
+    const box = h("div", { class: "images" }, h("h3", null, "Logo and banner"));
+    [["logo", "Logo", "Square; shown next to the project's name everywhere."],
+      ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
+      const view = ctx.project[kind] || { available: false, source: null };
+      const url = M.api.imageUrl(ctx.slug, kind, view);
+      const id = "upload-" + kind;
+      const input = h("input", { id, type: "file", accept: "image/png,image/jpeg,image/webp" });
+      input.addEventListener("change", async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (file.size > IMAGE_MAX) { status.fail(label + " not uploaded: ", { message: "larger than 1 MiB" }); input.value = ""; return; }
+        const type = await sniffImage(file);
+        if (!type) { status.fail(label + " not uploaded: ", { message: "not a PNG, JPEG or WebP image" }); input.value = ""; return; }
+        status.busy("Uploading the " + kind + "…");
+        try {
+          await M.api.putImage(ctx.base + "/" + kind, file, type);
+          imagesNote = label + " uploaded.";
+          render();
+        } catch (err) {
+          const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
+          status.fail(label + " not uploaded: ", why ? { message: IMAGE_REASONS[why] || why } : err);
+          input.value = "";
+        }
+      });
+      append(box, h("div", { class: "image-row" },
+        h("h4", null, label),
+        url
+          ? h("img", { class: "image-preview image-preview-" + kind, src: url, alt: "The project's current " + kind })
+          : h("p", { class: "muted" }, kind === "logo" ? "None: a monogram is shown." : "None."),
+        view.source ? h("p", { class: "muted" }, SOURCES[view.source] || view.source) : null,
+        h("label", { for: id }, "Upload a " + kind + " (PNG, JPEG or WebP, at most 1 MiB)"), input,
+        h("p", { class: "hint" }, hint),
+        view.source === "uploaded"
+          ? h("button", {
+            type: "button",
+            onclick: async () => {
+              status.busy("Removing the " + kind + "…");
+              try {
+                await M.api.del(ctx.base + "/" + kind);
+                imagesNote = "Uploaded " + kind + " removed" + (kind === "logo" ? "; the forge's logo, or a monogram, shows again." : ".");
+                render();
+              } catch (err) {
+                status.fail(label + " not removed: ", err);
+              }
+            },
+          }, "Remove the uploaded " + kind)
+          : null));
+    });
+    append(box, status.el);
+    return box;
   }
 
   // policy.signing (docs/api.md §2.2, §6.1, §10). Before it becomes
@@ -282,6 +364,54 @@ window.Maity = window.Maity || {};
     return form;
   }
 
+  // ---- project logo -------------------------------------------------------
+
+  // Dark enough for white initials: each at least 5.2:1 against #fff (WCAG AA).
+  const MONOGRAM_COLOURS = ["#1a66d9", "#7a3fc4", "#b02a6b", "#b3361d", "#8a5a00", "#2f7a1f",
+    "#0f7a6b", "#1f6f99", "#5b4cc4", "#9a3412", "#4d6b1f", "#6b4f3a"];
+
+  const initials = (name) => {
+    const words = String(name || "?").trim().split(/[\s_-]+/).filter(Boolean);
+    const letters = words.length > 1 ? [words[0], words[1]].map((w) => [...w][0]) : [...(words[0] || "?")].slice(0, 1);
+    return letters.join("").toUpperCase();
+  };
+
+  const colourOf = (slug) => {
+    let n = 0;
+    for (const ch of String(slug)) n = (n * 31 + ch.codePointAt(0)) % 9973;
+    return MONOGRAM_COLOURS[n % MONOGRAM_COLOURS.length];
+  };
+
+  // A project's logo (§11.2) as the hub serves it, else a monogram from its
+  // initials in a colour from its slug. The mark stands next to the
+  // project's name, which is its accessible name, so the mark itself is
+  // left out of the accessibility tree (alt="", aria-hidden).
+  function projectMark(slug, name, view, size) {
+    const url = view && M.api.imageUrl(slug, "logo", view.logo);
+    if (url) return h("img", { class: "project-mark " + (size || ""), src: url, alt: "", width: "20", height: "20" });
+    const mark = h("span", { class: "project-mark monogram " + (size || ""), "aria-hidden": "true" }, initials(name));
+    mark.style.background = colourOf(slug);
+    return mark;
+  }
+  M.projectMark = projectMark;
+
+  // The tab's icon: the project's logo where it has one, else the browser's default.
+  function setFavicon(slug, view) {
+    const url = slug && view && M.api.imageUrl(slug, "logo", view.logo);
+    let link = document.head && document.head.querySelectorAll
+      ? Array.from(document.head.querySelectorAll("link")).find((l) => l.getAttribute("rel") === "icon") || null
+      : null;
+    if (!url) {
+      if (link) link.remove();
+      return;
+    }
+    if (!link) {
+      link = h("link", { rel: "icon" });
+      document.head.appendChild(link);
+    }
+    link.setAttribute("href", url);
+  }
+
   // ---- header -------------------------------------------------------------
 
   // Always visible: every project of this human with what waits there, and
@@ -295,6 +425,7 @@ window.Maity = window.Maity || {};
         href: projectLink(p.slug, "inbox"),
         "aria-current": ctx.scope === "project" && p.slug === ctx.slug ? "page" : null,
       },
+      projectMark(p.slug, p.name, (ctx.projectViews || {})[p.slug], "small"),
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
       count(p.open_requests))),
@@ -354,13 +485,14 @@ window.Maity = window.Maity || {};
           clear(panelSlot);
           if (panelOpen) append(panelSlot, projectPanel(ctx));
         },
-      }, "State & absence")
+      }, "Project settings")
       : null;
     append(header,
       h("div", { class: "bar" },
         h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
-          ? [h("span", { class: "project" }, ctx.project.name), stateBadge(ctx.project.state, ctx.project.state_note), toggle]
+          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name),
+            stateBadge(ctx.project.state, ctx.project.state_note), toggle]
           : h("span", { class: "project" }, { new: "New project", account: "Your account" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
@@ -382,6 +514,8 @@ window.Maity = window.Maity || {};
           }, item.label)))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    // After an image was uploaded or removed, the panel opens again to say so.
+    if (toggle && imagesNote) toggle.click();
   }
 
   // ---- context ------------------------------------------------------------
@@ -393,6 +527,19 @@ window.Maity = window.Maity || {};
     ctx.memberById = byId;
     ctx.nameOf = (id) => (byId[id] ? byId[id].display_name : id || "—");
     return ctx;
+  }
+
+  // The full project views (GET /projects, docs/api.md §6.1) for each
+  // project's logo; without them the switcher draws monograms, it does not fail.
+  async function projectViews() {
+    try {
+      const list = await M.api.get("/projects");
+      const bySlug = {};
+      (list.items || []).forEach((p) => { bySlug[p.slug] = p; });
+      return bySlug;
+    } catch (err) {
+      return {};
+    }
   }
 
   async function loadContext(where, me) {
@@ -504,7 +651,7 @@ window.Maity = window.Maity || {};
     ctx.onEvents((events) => {
       const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
       const texts = [];
-      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push("The project's state, absence or policy changed.");
+      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push("The project changed.");
       if (item && item.watch && theirs.some((e) => item.watch.test(e.kind))) texts.push(item.changed);
       texts.forEach((t) => changed.add(t));
       if (texts.length) append(clear(changeLine), h("p", { class: "flag" }, Array.from(changed).join(" ") + " ", reload));
@@ -561,7 +708,10 @@ window.Maity = window.Maity || {};
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
-      ctx = await loadContext(where, me);
+      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews()]);
+      ctx = loaded;
+      ctx.projectViews = views;
+      if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, h("h1", { class: "brand" }, "Maity")));
@@ -606,6 +756,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (known) label = item.label + " · " + ctx.project.name;
     document.title = label + " · Maity";
+    setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 
   M.errorBox = errorBox;

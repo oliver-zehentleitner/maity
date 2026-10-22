@@ -43,6 +43,7 @@ import re
 import shlex
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tarfile
@@ -50,6 +51,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import zlib
 from pathlib import Path
 
 from playwright.sync_api import Page, expect, sync_playwright
@@ -708,6 +710,7 @@ def scenario(run: Run, page: Page) -> None:
     chat_pause_state(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
+    images_step(run, page, alpha)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -829,14 +832,14 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     run.step("state and absence: the owner freezes the project; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/e2e-alpha/events", after="latest", wait=0)["cursor"]
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.locator("#state-select").select_option("freeze")
     page.locator("#state-note").fill("e2e freeze: fixes only")
     page.locator("#state-reason").fill("e2e: release candidate")
     page.get_by_role("button", name="Change state", exact=True).click()
     expect(page.locator("header .state")).to_have_text("Freeze")
     expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.locator("#absence-until").fill("2030-01-02T10:00")
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
@@ -846,7 +849,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     # The switcher's state dot: frozen Alpha differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
-      const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.startsWith(name));
+      const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
       return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
     })""")
     assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
@@ -871,10 +874,10 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         "freeze",
         "e2e: release candidate",
     ), change
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.get_by_role("button", name="I am back", exact=True).click()
     expect(page.locator("header .absence")).to_have_count(0)
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.locator("#state-select").select_option("build")
     page.locator("#state-reason").fill("e2e: back to building")
     page.get_by_role("button", name="Change state", exact=True).click()
@@ -882,6 +885,92 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     assert project["state"] == "build" and project["absence"] is None, project
     no_problems(run, "state and absence")
+
+
+def tiny_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
+    """A one-colour PNG, built here so the test needs no image file."""
+    row = b"\x00" + bytes(rgb) * width
+    raw = zlib.compress(row * height, 9)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", raw) + chunk(b"IEND", b"")
+
+
+def images_step(run: Run, page: Page, alpha: Path) -> None:
+    """The project's logo and banner (docs/api.md §11.2) where the hub has them."""
+    project = run.api(alpha, "GET", "/projects/e2e-alpha")
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    chip = page.locator("nav.switcher a", has_text="E2E Alpha")
+    if "logo" not in project:
+        run.step("images: this hub has no logos yet, so the dashboard draws monograms")
+        expect(chip.locator(".project-mark.monogram")).to_have_text("EA")
+        expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
+        page.get_by_role("button", name="Project settings", exact=True).click()
+        expect(page.locator("#state-select")).to_be_visible()
+        expect(page.locator("#upload-logo")).to_have_count(0)
+        page.get_by_role("button", name="Project settings", exact=True).click()
+        return
+    run.step("images: the owner uploads a logo and a banner, then removes the logo")
+    expect(chip.locator(".project-mark.monogram")).to_have_text(
+        "EA"
+    )  # no repository, no forge image
+    page.get_by_role("button", name="Project settings", exact=True).click()
+    page.locator("#upload-logo").set_input_files(
+        files=[{"name": "notes.txt", "mimeType": "image/png", "buffer": b"not an image at all"}]
+    )
+    expect(page.locator("header")).to_contain_text(
+        "Logo not uploaded: not a PNG, JPEG or WebP image"
+    )
+    page.locator("#upload-logo").set_input_files(
+        files=[
+            {
+                "name": "logo.png",
+                "mimeType": "image/png",
+                "buffer": tiny_png(64, 64, (26, 102, 217)),
+            }
+        ]
+    )
+    mark = page.locator("header .bar img.project-mark")
+    expect(mark).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/logo\?v="))
+    expect(chip.locator("img.project-mark")).to_be_visible()
+    assert (
+        page.evaluate("() => document.querySelector('header .bar img.project-mark').naturalWidth")
+        == 64
+    ), "the logo did not load from the hub"
+    icon = page.evaluate("() => (document.querySelector('link[rel=icon]') || {}).href || ''")
+    assert "/api/v1/projects/e2e-alpha/logo?v=" in icon, icon
+    # The panel opened again by itself to say the logo was uploaded.
+    expect(page.locator("#project-panel")).to_contain_text("Logo uploaded.")
+    page.locator("#upload-banner").set_input_files(
+        files=[
+            {
+                "name": "banner.png",
+                "mimeType": "image/png",
+                "buffer": tiny_png(600, 150, (122, 63, 196)),
+            }
+        ]
+    )
+    expect(page.locator("#project-panel")).to_contain_text("Banner uploaded.")
+    page.locator("nav.views").get_by_role("link", name="Inbox", exact=True).click()
+    banner = page.locator("main img.project-banner")
+    expect(banner).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/banner\?v="))
+    expect(banner).to_be_visible()
+    shown = run.api(alpha, "GET", "/projects/e2e-alpha")
+    assert shown["logo"]["source"] == "uploaded" and shown["banner"]["source"] == "uploaded", shown
+    run.shot(page, "logo-and-banner")
+    run.a11y(page, "inbox with a logo and a banner")
+    page.get_by_role("button", name="Project settings", exact=True).click()
+    run.a11y(page, "project settings with images")
+    page.get_by_role("button", name="Remove the uploaded logo", exact=True).click()
+    expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
+    expect(page.locator("#project-panel")).to_contain_text("Uploaded logo removed")
+    page.get_by_role("button", name="Project settings", exact=True).click()
+    assert run.api(alpha, "GET", "/projects/e2e-alpha")["logo"]["available"] is False
+    no_problems(run, "images")
 
 
 def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
@@ -1062,10 +1151,10 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
         # Agents, not the inbox: the next step reaches the inbox through its tab.
         page.goto(f"{run.base}/#/p/e2e-alpha/agents")
-        page.get_by_role("button", name="State & absence", exact=True).click()
+        page.get_by_role("button", name="Project settings", exact=True).click()
         expect(page.locator("#state-select")).to_be_visible()
         expect(page.locator("#signing-select")).to_have_count(0)
-        page.get_by_role("button", name="State & absence", exact=True).click()
+        page.get_by_role("button", name="Project settings", exact=True).click()
         return
     run.step(
         "signing: an agent calls with a bearer token; the switch names it before requiring signing"
@@ -1074,7 +1163,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 200, status
     page.goto(f"{run.base}/#/p/e2e-alpha/agents")
     expect(page.locator("main section.view-agents")).to_contain_text("(bearer token)")
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.locator("#signing-select").select_option("required")
     impact = page.locator(".signing-impact")
     expect(impact).to_contain_text("would be refused (signature_required)")
@@ -1090,7 +1179,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 403 and body["error"]["code"] == "signature_required", (status, body)
     run.maity(alpha, "resume")  # the CLI signs, so it still works
     run.a11y(page, "agents, signing required")
-    page.get_by_role("button", name="State & absence", exact=True).click()
+    page.get_by_role("button", name="Project settings", exact=True).click()
     page.locator("#signing-select").select_option("optional")
     page.locator("#signing-reason").fill("e2e: back to optional")
     page.get_by_role("button", name="Change signing", exact=True).click()

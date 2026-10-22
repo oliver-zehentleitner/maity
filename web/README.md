@@ -126,6 +126,24 @@ state offers **Join an agent**. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
 `repository.url: not_a_configured_forge`, …).
 
+**Logo and banner** (`docs/api.md` §11.2). Each project shows its own
+logo next to its name: in its switcher chip, in the header, on its
+entries in `#/all`, and as the tab's icon of its pages. The image comes
+from the hub's own path (`/api/v1/projects/<slug>/logo?v=<etag>`), read
+from `GET /projects` alongside `/me`. Without one, a monogram stands
+there: the project's initials in white on one of twelve colours (each at
+least 5.2:1), chosen by the slug. The mark is decorative next to the
+project's visible name (`alt=""`, `aria-hidden`); a monogram cannot be the
+tab's icon (the hub's CSP allows no `data:` or `blob:` images), so that
+tab keeps the browser's default. The banner, where the project has one,
+heads the project's inbox. In **Project settings** a human with
+`project:admin` sees what shows now and where it comes from (uploaded or
+the repository's forge), uploads a logo or a banner (PNG, JPEG or WebP,
+at most 1 MiB; the type is read from the file's first bytes, as the hub
+reads it, and sent as the raw body) and removes an upload, after which
+the forge's image applies again. A hub without the fields offers no
+upload and the dashboard draws monograms.
+
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
 optional or required, with a reason. Before it becomes required, the
@@ -137,7 +155,7 @@ was last used, signed or as a bearer token.
 
 The project state (build, freeze, fixes-only, accepted, archived) is in
 the header of every screen; owner and admin change it there with a
-reason (**State & absence**), and the owner sets and clears the absence
+reason (**Project settings**), and the owner sets and clears the absence
 shown under it.
 
 ## Fixture mode
@@ -187,8 +205,8 @@ fails while the bundle is stale.
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being
   read or typed, reloads on its own and says "1 new request." in its
-  status line, for a screen reader too, unless the **State & absence**
-  panel is open or a header control has the focus. Only the switcher is redrawn: an open **State & absence** panel,
+  status line, for a screen reader too, unless the **Project settings**
+  panel is open or a header control has the focus. Only the switcher is redrawn: an open **Project settings** panel,
   what is typed in it, and how far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
@@ -279,7 +297,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     form and the paused card say what a human's pause does. Where the hub
     knows briefings, the owner writes one on the card and the agent's
     `resume` packet carries it; where it does not, no editor is offered;
-11. **State & absence**: the owner freezes the project with a note and a
+11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
     packet carries the state, the note and the absence; then back to build
@@ -301,7 +319,14 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     confirmation; once required, the bearer call answers 403
     `signature_required` while the CLI's signed calls go on; then back to
     optional. Without the field, no switch is offered;
-14. at phone width (390 px) the inbox, board, agents, organisation and join
+14. **Logo and banner**, where the hub has them: the e2e project has no
+    repository, so a monogram shows; a text file named as PNG is refused
+    before sending; a generated PNG becomes the logo in the header, the
+    switcher and the tab's icon (loaded from the hub at its real size); a
+    banner heads the inbox; the hub's project view says both are
+    uploaded; removing the logo brings the monogram back. Without the
+    fields, monograms and no upload;
+15. at phone width (390 px) the inbox, board, agents, organisation and join
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither

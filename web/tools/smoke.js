@@ -23,7 +23,7 @@ class Node_ {
 }
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
 class El extends Node_ {
-  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; }
+  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = {}; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
   removeAttribute(k) { delete this.attrs[k]; }
@@ -86,7 +86,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URLSearchParams, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -105,7 +105,9 @@ function expect(cond, what) { console.log((cond ? "ok   " : "FAIL ") + what); if
 ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 (async () => {
   async function go(hash) { win.location.hash = hash; win.onhashchange(); await tick(); await tick(); }
-  const chip = (label) => header.querySelectorAll(".switcher a").find((a) => a.textContent.startsWith(label));
+  // A chip's text starts with its monogram (or nothing, for a logo), then the name.
+  const chip = (label) => header.querySelectorAll(".switcher a").find((a) => a.textContent.replace(/^[A-Z?]{1,2}(?=[A-Z+])/, "").startsWith(label)
+    || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
   const byId = (id) => main.all().find((e) => e.id === id) || header.all().find((e) => e.id === id);
@@ -125,6 +127,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   expect(chipCount("All projects") === "4" && chipCount("Maity") === "3" && chipCount("Sample shop") === "1", "switcher counts 4 / 3 / 1");
   expect(main.querySelectorAll(".project-label").length === 4, "every entry labelled with its project");
+  // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
+  const markOf = (label) => chip(label).querySelector(".project-mark");
+  expect(markOf("Maity").tagName === "IMG" && markOf("Maity").getAttribute("src") === "fixtures/maity/logo.png" && markOf("Maity").getAttribute("alt") === "",
+    "logo: the switcher shows a project's logo, decorative next to its name");
+  expect(markOf("Sample shop").tagName === "SPAN" && markOf("Sample shop").textContent === "SS" && markOf("Sample shop").getAttribute("aria-hidden") === "true"
+    && /^#[0-9a-f]{6}$/.test(markOf("Sample shop").style.background), "logo: without one, a monogram from the initials in a colour of the slug");
+  expect(main.querySelectorAll(".project-label .project-mark").length === 4, "logo: every #/all entry carries its project's mark");
+  expect(gets.includes("/projects"), "logo: the project views are read for the logos");
+  const refuses = (src) => { try { win.Maity.dom.h("img", { src }); return false; } catch (e) { return true; } };
+  expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
+    && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maity/logo?v=%22f1%22"),
+    "dom: an image is a local file or the hub's own image, never another origin, not even https");
   let cur = main.querySelector(".current");
   expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Freeze") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
@@ -433,7 +447,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("The board changed.") && btn(main, "Reload"), "an agent's card event offers a reload");
   feed = [{ seq: 10003, kind: "state_changed", actor: { member_id: "hum-other" }, payload: {} }];
   await fireIntervals(); await tick();
-  expect(text(main).includes("The board changed.") && text(main).includes("state, absence or policy changed"), "state change added to the notice");
+  expect(text(main).includes("The board changed.") && text(main).includes("The project changed."), "state change added to the notice");
   btn(main, "Reload").click(); await tick(); await tick();
   expect(!text(main).includes("The board changed."), "reload clears the notice");
   await go("#/p/maity/inbox");
@@ -454,15 +468,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "a changed count reloads an empty list on its own, without a notice");
   expect(main.querySelector(".notice") && main.querySelector(".notice").getAttribute("role") === "status" && text(main.querySelector(".notice")).includes("1 new request."),
     "the quiet reload says \"1 new request.\" in the status notice");
-  // The same with the State & absence panel open and typed in: no reload, the offer instead.
+  // The same with the Project settings panel open and typed in: no reload, the offer instead.
   win.Maity.api.get = realGet2; await go("#/p/maity/board"); await go("#/p/maity/inbox");
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   byId("state-reason").value = "typed, not sent";
   win.Maity.api.get = bump("maity");
   await fireIntervals(); await tick(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
-    "with the State & absence panel open the empty list is not reloaded; the panel and its text stay");
-  btn(header, "State & absence").click(); await tick();
+    "with the Project settings panel open the empty list is not reloaded; the panel and its text stay");
+  btn(header, "Project settings").click(); await tick();
   // An open entry on screen: the change is offered as a reload instead.
   win.Maity.api.get = realGet2;
   await go("#/p/sample/inbox");
@@ -511,19 +525,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".notice .flag"), "no notice while nothing changed");
 
   // state and absence
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   const sel = byId("state-select"); sel.value = "freeze";
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
   await fireIntervals(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
-    "the count re-read keeps the open State & absence panel and its input");
+    "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header).includes("Freeze"), "state changed to freeze");
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header).includes("Away until") && text(header).includes("fixes only"), "absence set");
@@ -532,7 +546,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sigPatches = [];
   const realPatch4 = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { sigPatches.push([p, b]); return realPatch4(p, b); };
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   const sigSel = byId("signing-select");
   expect(sigSel && sigSel.value === "optional", "signing: the switch shows the project's policy");
   sigSel.value = "required"; sigSel.dispatch("change"); await tick(); await tick(); await tick();
@@ -549,7 +563,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(sigPatches.length === 1 && sigPatches[0][0] === "/projects/maity"
     && JSON.stringify(sigPatches[0][1]) === JSON.stringify({ policy: { signing: "required" }, reason: "all agents run the CLI now" }),
     "signing: confirmed, the PATCH carries the policy field and the reason");
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   expect(byId("signing-select").value === "required", "signing: the switch reads required after the change");
   byId("signing-select").value = "optional"; byId("signing-select").dispatch("change"); await tick();
   expect(!text(header.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
@@ -558,12 +572,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(sigPatches[1][1]) === JSON.stringify({ policy: { signing: "optional" }, reason: "back to optional" }), "signing: back to optional is sent");
   win.Maity.api.patch = realPatch4;
   await go("#/p/sample/inbox");
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   expect(byId("state-select") && !byId("signing-select"), "signing: no switch where the hub has no signing policy");
-  btn(header, "State & absence").click(); await tick();
+  btn(header, "Project settings").click(); await tick();
   await go("#/p/maity/agents");
   expect(text(main).includes("(signed)") && text(main).includes("(bearer token)"), "credentials: how each was last used");
   await go("#/p/maity/inbox");
+  // Logo in the header, the tab's icon, the banner on the project's inbox.
+  const headerMark = header.querySelector(".bar .project-mark");
+  const icon = () => head.querySelectorAll("link").find((l) => l.getAttribute("rel") === "icon");
+  expect(headerMark && headerMark.tagName === "IMG" && icon() && icon().getAttribute("href") === "fixtures/maity/logo.png",
+    "logo: in the header, and as the tab's icon");
+  const bannerImg = main.querySelector("img.project-banner");
+  expect(bannerImg && bannerImg.getAttribute("src") === "fixtures/maity/banner.png" && bannerImg.getAttribute("alt") === "", "banner: heads the project's inbox");
+  await go("#/p/sample/inbox");
+  expect(header.querySelector(".bar .project-mark").textContent === "SS" && !icon() && !main.querySelector("img.project-banner"),
+    "logo: a project without images has a monogram, no icon and no banner");
+  await go("#/p/maity/inbox");
+  // Upload and remove, for project:admin, with the type read from the bytes.
+  const imgPuts = [];
+  const realPut = win.Maity.api.putImage, realDel = win.Maity.api.del;
+  win.Maity.api.putImage = (p, blob, type) => { imgPuts.push(["PUT", p, type, blob.size]); return realPut(p, blob, type); };
+  win.Maity.api.del = (p) => { imgPuts.push(["DELETE", p]); return realDel(p); };
+  const fakeFile = (bytes, size, type) => ({
+    size: size || bytes.length, type: type || "image/png",
+    slice: (a, b) => ({ arrayBuffer: async () => Uint8Array.from(bytes.slice(a, b)).buffer }),
+  });
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
+  const WEBP = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50];
+  const SVG = [0x3c, 0x73, 0x76, 0x67, 0x20, 0x78, 0x6d, 0x6c, 0x6e, 0x73, 0x3d, 0x22];
+  const pick = async (id, file) => { const i = byId(id); i.files = [file]; i.dispatch("change"); for (let k = 0; k < 6; k++) await tick(); };
+  btn(header, "Project settings").click(); await tick();
+  expect(header.querySelector(".images") && text(header.querySelector(".images")).includes("from the repository's forge")
+    && text(header.querySelector(".images")).includes("uploaded here") && byId("upload-logo"), "images: what shows now and where it comes from");
+  await pick("upload-logo", fakeFile(SVG, 0, "image/svg+xml"));
+  expect(!imgPuts.length && text(header).includes("Logo not uploaded: not a PNG, JPEG or WebP image"), "images: an SVG is refused by its bytes, before sending");
+  await pick("upload-logo", fakeFile(PNG, 1024 * 1024 + 1));
+  expect(!imgPuts.length && text(header).includes("Logo not uploaded: larger than 1 MiB"), "images: over 1 MiB is refused before sending");
+  await pick("upload-logo", fakeFile(WEBP, 2000, "image/png"));
+  expect(JSON.stringify(imgPuts[0]) === JSON.stringify(["PUT", "/projects/maity/logo", "image/webp", 2000]),
+    "images: the upload is a PUT of the raw file, typed by its bytes (WebP, whatever the file claims)");
+  // The panel opens again by itself and says what happened.
+  const removeLogo = btn(header, "Remove the uploaded logo");
+  expect(removeLogo && text(header.querySelector(".images")).includes("Logo uploaded.") && text(header.querySelector(".images")).includes("uploaded here"),
+    "images: after an upload the panel says so, and the logo can be removed");
+  removeLogo.click(); await tick(); await tick(); await tick();
+  expect(JSON.stringify(imgPuts[1]) === JSON.stringify(["DELETE", "/projects/maity/logo"]) && header.querySelector(".bar .project-mark").getAttribute("src") === "fixtures/maity/logo.png",
+    "images: removed, the forge's logo applies again");
+  expect(text(header).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
+  btn(header, "Project settings").click(); await tick();
+  win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // Account: change the password (docs/api.md §2.1).
   const accountLink = header.querySelectorAll("a").find((a) => a.textContent === "Account");
   expect(accountLink && accountLink.getAttribute("href") === "#/account", "the header links to the account");

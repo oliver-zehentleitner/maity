@@ -46,6 +46,14 @@ join returns, with its single-use code, is kept in the join view's own
 variables only: it is not stored in the page's storage, not put into the
 URL, not logged, and leaving the view drops it.
 
+An image source is never taken from data either (since 2026-10-22): a
+project's logo and banner are loaded only from the hub's own path, which
+the page builds from the slug and the ETag
+(`/api/v1/projects/<slug>/logo?v=<etag>`, `docs/api.md` §11.2), or from an
+object URL of a file chosen in the same tab; `Maity.dom.h` refuses any
+other `src` — an `https` URL of another origin included (links may be https, images may not). The hub serves the image from its own origin and never lets
+the browser load one from the forge.
+
 **Reason:** text-only rendering stops markup, but an `href` is a second
 way in: a `javascript:` URL typed into a release would run in the
 human's session on one click. The join code is the one secret the
