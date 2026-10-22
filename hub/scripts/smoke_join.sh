@@ -186,7 +186,18 @@ fi
 grep -q probe_not_configured "$work/probe-cli"
 echo "cli agent: probe_not_configured"
 
+step "signing required: the curl agent's bearer call is refused, the cli agent signs and goes on"
+human -o /dev/null -X PATCH -d '{"policy":{"signing":"required"},"reason":"agents sign from now on"}' \
+    "$hub/api/v1/projects/smoke"
+cd "$work/clone-curl"
+code="$(curl -sS -o "$work/signing-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/me")"
+[ "$code" = 403 ]
+json '"curl agent: " + d["error"]["code"]' <"$work/signing-curl" | tee "$work/signing"
+grep -q "signature_required$" "$work/signing"
+cd "$work/clone-cli"
+maity api GET /me | json '"cli agent, signed: " + d["member"]["handle"]'
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, the cli agent was paused and resumed, and asked the probe\n'
+printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, the cli agent was paused and resumed, asked the probe, and signing was enforced\n'

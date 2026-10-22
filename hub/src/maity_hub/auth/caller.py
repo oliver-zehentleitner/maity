@@ -244,9 +244,11 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.membership.c.project_id,
             t.membership.c.agent_id,
             t.agent_profile.c.owner_id,
+            t.project.c.signing,
         )
         .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.credential.c.id == credential_id)
     ).first()
     if row is None:
@@ -265,6 +267,16 @@ def _refuse_revoked(row: Any) -> None:
 
 
 def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:
+    if via == "bearer" and row.signing == "required":
+        # After the proof of possession, before any side effect: no presence, no
+        # lease, no last use, and no idempotent replay of an earlier answer (§2.2).
+        raise ApiError(
+            403,
+            "signature_required",
+            "this project requires signed requests: install the CLI (pipx install maity); "
+            "it uses the credential you already have",
+            {"cli": "pipx install maity", "then": "maity resume"},
+        )
     now = clock.now()
     credential_id: str = row.id
     membership_id: int = row.membership_id
@@ -276,7 +288,9 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:
         )
     ).first()
     conn.execute(
-        update(t.credential).where(t.credential.c.id == credential_id).values(last_used_at=now)
+        update(t.credential)
+        .where(t.credential.c.id == credential_id)
+        .values(last_used_at=now, last_used_via=via)
     )
     conn.execute(
         update(t.membership).where(t.membership.c.id == membership_id).values(last_seen_at=now)

@@ -289,6 +289,25 @@ def _md(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
 
 
+# Put first on the page when the project's policy has `signing: required` (§3.2, step 7).
+_SIGNING_REQUIRED = """## This project requires the CLI
+
+Every call after the exchange must be signed, and only the `maity` command
+signs: a call with the bearer credential is refused with `signature_required`.
+Install the CLI and join with it:
+
+```sh
+pipx install maity
+maity join {{hub}}/j/{{token}} --code <code>
+```
+
+If you cannot install it yet, the exchange in section 3 still works and
+stores the credential where the CLI looks for it; the calls with `curl.conf`
+after it are refused. Install the CLI then and run `maity resume --hub {{hub}}`
+once.
+"""
+
+
 def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, str]:
     """The page as Markdown, and its title."""
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
@@ -313,6 +332,16 @@ def render_page(conn: Connection, row: Any, token: str, hub: str) -> tuple[str, 
         "reports_to": reports_to_text,
         "hub": hub,
         "token": token,
+        "signing_required": (
+            _SIGNING_REQUIRED.replace("{{hub}}", hub).replace("{{token}}", token)
+            if project.signing == "required"
+            else ""
+        ),
+        "cli_status": (
+            "This project requires it: every call after the exchange must be signed."
+            if project.signing == "required"
+            else "It is optional:"
+        ),
     }
     text = _TEMPLATE_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), _template())
     return text, f"Join {project.name} on Maity"
@@ -373,7 +402,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         raise rate_limited(wait)
     engine = engine_of(request)
 
-    def run() -> tuple[str, str, str, str] | None:
+    def run() -> tuple[str, str, str, str, str] | None:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
@@ -411,7 +440,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
     outcome = await run_in_threadpool(retrying, run)
     if outcome is None:
         raise ApiError(403, "code_invalid", "the code does not match this join")
-    value, credential_id, agent_id, project_slug = outcome
+    value, credential_id, agent_id, project_slug, signing = outcome
     return Response(
         value,
         status_code=201,
@@ -421,11 +450,14 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             "Maity-Member-Id": agent_id,
             "Maity-Project": project_slug,
             "Maity-Hub": settings.public_url,
+            # The page's curl recipe prints the headers: a project that refuses
+            # bearer calls says so in the same step (§3.3).
+            "Maity-Signing": signing,
         },
     )
 
 
-def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str]:
+def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str]:
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
     lock_project(conn, row.project_id)
@@ -492,4 +524,4 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
             subject=("member", row.agent_id),
         )
-    return value, credential_id, row.agent_id, project.slug
+    return value, credential_id, row.agent_id, project.slug, project.signing

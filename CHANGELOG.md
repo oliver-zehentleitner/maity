@@ -207,6 +207,12 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - hub: a report's `head`, `remote_head` and `pr.head` are the full 40-hex
   commit (`not_a_sha` otherwise), and reported heads are compared whole,
   never as a prefix.
+- hub: signed requests mandatory per project (`docs/api.md` §2.2, §6.1) — the
+  policy field `signing: optional | required` (a preset change keeps it), a
+  bearer agent call in a `required` project is `signature_required` (403)
+  after the secret verified and before any side effect, the exchange answers
+  `Maity-Signing`, the join page puts the CLI first, and the credential view
+  shows `last_used_via`.
 
 ### Fixed
 

@@ -134,6 +134,8 @@ project = Table(
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
+    # optional or required (§2.2); the default fills projects made before 0003.
+    Column("signing", String(16), nullable=False, server_default="optional"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -221,6 +223,7 @@ credential = Table(
     Column("created_at", UtcDateTime, nullable=False),
     Column("resumed_at", UtcDateTime),
     Column("last_used_at", UtcDateTime),
+    Column("last_used_via", String(16)),  # bearer or signed, written with last_used_at
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
