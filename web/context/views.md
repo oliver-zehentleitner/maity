@@ -84,3 +84,61 @@ remembered state, and it hides what waits elsewhere behind the switcher
 on exactly the screen opened first. A project chooser as the landing
 page — one click more before the first answer, and it shows counts but
 not the requests themselves.
+
+## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
+
+**Id:** b8c3a4f4-1e21-4de1-9a82-7abe86456259
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of an expired join still listed as open, relayed by the coordinator, 2026-10-22; web PR #107 and its review, 2026-10-22
+**Revisit when:** the hub sends a join's state itself, or a join's lifetime becomes much shorter than a minute
+
+Join an agent lists each join with the state its fields give, in the
+hub's order: revoked, used, burned (three wrong codes), expired; open
+joins first, the others muted and labelled. Expiry is judged by the
+hub's clock: this browser's clock corrected by the `Maity-Server-Time`
+of the last answer (docs/api.md §1.2), re-judged every 10 s while the
+view is open. A join that expired less than a minute ago keeps Revoke,
+and a Revoke the hub refuses (`invalid_transition`) is said and the list
+re-read.
+
+**Reason:** Revoke is the safety valve for a leaked line. A browser whose
+clock runs ahead would hide Revoke while the hub still accepts the line;
+the hub's time, and a minute's grace in which the hub decides, keep the
+valve where it is needed. The order mirrors the hub's, so the page never
+calls "expired" what the hub calls "used".
+
+**Rejected alternative:** the browser's clock alone — wrong by the
+client's skew, which on a laptop can be minutes. Hiding Revoke exactly at
+`expires_at` — the second the hub and the page disagree is the second a
+leaked line is pasted.
+
+## Cards move by a Move menu and by dragging, only where the hub's transition table allows; nothing is drag-only
+
+**Id:** c285771a-0b3a-4867-b66b-a1c7faa837de
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22
+**Revisit when:** the contract gives cards an order within a column, or the hub exposes the moves a caller may make
+
+Each card a human may move has a **Move** menu with exactly the moves the
+hub allows them, mirrored from its transition check (proposed ↔ open for
+the creator, holder or an admin; review → done or back with done
+authority; cancel for an admin or an open card's creator). A pointer may
+drag the card instead: while dragging, the allowed columns are outlined
+and the others dimmed; a card let go over a refused column is said in
+words on `dragend` (a browser fires no drop there) and nothing is sent.
+There is no order within a column. The board's filters (member, area)
+work on the cards already loaded.
+
+**Reason:** a drag-only board leaves keyboard and phone users without a
+way to move a card; the menu is the path for both, and dragging is a
+shortcut over the same rule. Mirroring the table means the page offers
+no move the hub would refuse, and the hub still decides.
+
+**Rejected alternative:** offering every column and letting the hub
+refuse — every refusal would be a round trip and a surprise. Filters as
+query parameters to the hub — the board already holds every card of the
+window, so filtering there is instant and needs no new contract.

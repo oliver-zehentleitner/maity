@@ -65,3 +65,32 @@ it can be read back from.
 is where the human checks a pull request, and a link there is what makes
 it usable. A blocklist of schemes — `https` alone is the one the forge
 uses, and an allowlist of one cannot miss a scheme.
+
+## A member's picture is generated from its id, as SVG nodes, unless an avatar the page may load exists
+
+**Id:** f6560be2-4153-4d19-adc7-6fdc8589991f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request for a picture that differs per member, relayed by the coordinator, 2026-10-22; web PR #128, 2026-10-22
+**Revisit when:** avatars can be uploaded (docs/api.md #136) and an upload should replace the generated one everywhere, or a design asks for another pattern
+
+Every member gets a picture: a mirrored 5×5 identicon and a hue, both
+from FNV-1a of the member id, so every client draws the same picture for
+the same member without asking the hub. It is built from SVG nodes
+(`createElementNS`), never from markup, and it is decorative: the name is
+always written beside it. The hue is set as a custom property through
+CSSOM (`style.setProperty("--avatar-h")`); the theme sets lightness and
+background, so it reads in light and dark. A member that carries an
+`avatar_url` shows that picture only where `h()` lets the page load it
+(the hub's own images); anything else falls back to the identicon.
+
+**Reason:** a picture per member helps tell agents apart at a glance, and
+deriving it from the id needs no hub field and no storage; SVG nodes keep
+the rule that nothing from data becomes markup (see the entries above).
+CSSOM instead of a `style` attribute keeps working under a strict CSP.
+
+**Rejected alternative:** initials on a coloured disc — two agents named
+"Agent B" and "Agent Builder" look the same. A hash-coloured `style`
+attribute — blocked by a strict CSP and parsed as markup-adjacent text. A
+picture from a third-party avatar service — it would send member ids out.
