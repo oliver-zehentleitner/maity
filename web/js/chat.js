@@ -310,9 +310,13 @@ window.Maity = window.Maity || {};
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
         text, button, status.el));
-    fitToScreen(layout);
-    messages.scrollTop = messages.scrollHeight;
-    // On a phone the chat replaced the list: take the focus to its heading.
-    if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+    // Sizing, scrolling and focus need the view in the page, which the
+    // router does once this function has returned.
+    window.setTimeout(() => {
+      fitToScreen(layout);
+      messages.scrollTop = messages.scrollHeight;
+      // On a phone the chat replaced the list: take the focus to its heading.
+      if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+    }, 0);
   };
 })(window.Maity);
