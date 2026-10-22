@@ -337,3 +337,60 @@ operator's account. The operator docs say so.
 **Rejected alternative:** a longer deny list that tries to close every
 route. git's surface keeps growing, and a list that looks complete
 would read as a boundary when it is not one.
+
+## Codex reaches the operator's login through a link in its per-placement home
+
+**Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** runner design v2 §6.1 and §6.2 (a `CODEX_HOME` per placement); implementation of runner slice R5b, 2026-10-22; whether Codex rewrites `auth.json` on a token refresh is unverified (the design marks it *verify*)
+**Revisit when:** a real Codex run shows the link replaced by a file, or the operator's login going stale while an agent's stays fresh
+
+Each Codex placement gets its own `CODEX_HOME` under the runner's state
+directory. A `config.toml` written by the runner sets the sandbox,
+approvals and network rules. The operator's `~/.codex/auth.json` is
+linked into it, not copied.
+
+**Reason:** a per-placement home keeps `codex exec resume --last` from
+picking up another agent's session and keeps the operator's own Codex
+configuration out of the agents' runs. The login, though, is one account.
+A copy would go stale when Codex refreshes the token in one place and
+not the other, and the agents would start failing while the operator's
+own Codex still works. A link keeps one file for both.
+
+**Rejected alternatives:**
+- Copying `auth.json` at every start: the copy can diverge after a
+  refresh, and the next start would overwrite a newer token with an older
+  one.
+- Running Codex with the operator's own `CODEX_HOME`: every agent would
+  see the operator's history and configuration, and `--last` would cross
+  placements.
+
+## Codex is confined by its sandbox, so it refuses command allowlists
+
+**Id:** c2acd907-0f26-4850-8272-063390f1d6a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
+**Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
+
+Codex placements are advertised with `confinement: "sandbox"`, not
+`allowlist`. A placement for a repository whose `allow` list is not
+empty is refused for Codex (`harness_refused`). The project's own
+Codex configuration is kept out by marking the clone untrusted.
+
+**Reason:** the runner's Codex profile limits files and network through
+Codex's sandbox, but Codex has no command allowlist the runner can write.
+Advertising `allowlist` would tell the human choosing a runner that
+commands are filtered when they are not. A repository `allow` list would
+look honoured while it is ignored. Refusing makes the gap visible. A
+trusted clone would load a committed `.codex/config.toml` over the
+runner's profile, and one reviewer saw that switch the sandbox off.
+
+**Rejected alternatives:**
+- Keep advertising `allowlist` and ignore the grant: a claim the runner
+  cannot keep.
+- Build an exec-policy layer for Codex now: unverified against the
+  shipped Codex, and the sandbox already sets the boundary that matters.

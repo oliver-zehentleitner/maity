@@ -394,6 +394,10 @@ class Supervisor:
         found = self.probes.get(harness.id)
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
+        repository = config.normalise_repository(p["workspace"].get("repository") or "")
+        grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
+        if harness.id == "codex" and grant.allow:
+            return ("harness_refused", None)  # Codex cannot honour a command allowlist
         if harness.require_sandbox and not capabilities.sandbox_available(
             harness, self.agent_path()
         ):
@@ -414,7 +418,7 @@ class Supervisor:
             return 0
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
-            return self._wait(rec, f"the {harness.id} adapter arrives with R5b", name)
+            return self._wait(rec, f"no adapter for {harness.id} in this version", name)
         if self.cfg.local is None:
             return 0
         try:

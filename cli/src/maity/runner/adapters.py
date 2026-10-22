@@ -16,6 +16,7 @@ could widen the grant, bring hooks or plugins, and change with a `git checkout`.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,7 +50,7 @@ GIT_DENIED = (
 )  # fmt: skip
 
 
-READY = ("stub", "claude-code")  # harnesses with an adapter in this version
+READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
 
 
 class NotYet(Exception):
@@ -83,7 +84,11 @@ def launch(ctx: Context) -> Launch:
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds), env)
     if harness.id == "claude-code":
         return _claude_code(ctx, env)
-    raise NotYet(f"the {harness.id} adapter arrives with R5b")
+    if harness.id == "codex":
+        return _codex(ctx, env)
+    if harness.id == "opencode":
+        return _opencode(ctx, env)
+    raise NotYet(f"no adapter for {harness.id}")
 
 
 def _write(path: Path, data: Any) -> Path:
@@ -170,3 +175,100 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         [*base, "-p", SUPERVISED_PROMPT, "--continue"],
         quiet,
     )
+
+
+# --- Codex ------------------------------------------------------------------------------------
+
+# Codex's own model endpoints, for the network rule; an operator adds more per repository.
+CODEX_PROVIDER_HOSTS = ("api.openai.com", "chatgpt.com")
+
+
+def codex_config(ctx: Context) -> str:
+    """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
+    workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
+    network to the hub, the forge and the model provider only."""
+    hosts = sorted({*ctx.hosts, *CODEX_PROVIDER_HOSTS, *ctx.grant.network})
+    domains = "".join(f'{json.dumps(host)} = "allow"\n' for host in hosts)
+    return (
+        'approval_policy = "never"\n'
+        'default_permissions = "maity"\n\n'
+        # The clone's own .codex/config.toml would override this profile; an untrusted
+        # project's configuration layers are not loaded.
+        f'[projects.{json.dumps(str(ctx.clone))}]\ntrust_level = "untrusted"\n\n'
+        "[features]\nnetwork_proxy = true\n\n"
+        '[permissions.maity]\nextends = ":workspace"\n\n'
+        "[permissions.maity.filesystem]\n"
+        f"{json.dumps(str(ctx.clone / '.git'))} = \"write\"\n"
+        # Commits need .git; its hooks and config would turn an allowed git call into anything.
+        f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
+        f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n\n"
+        "[permissions.maity.network]\nenabled = true\n\n"
+        "[permissions.maity.network.domains]\n" + domains
+    )
+
+
+def _codex(ctx: Context, env: dict[str, str]) -> Launch:
+    assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    home = ctx.agent_dir / "codex-home"
+    home.mkdir(mode=0o700, exist_ok=True)
+    state.write_file(home / "config.toml", codex_config(ctx))
+    login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+    link = home / "auth.json"
+    if login.is_file() and not link.exists():
+        # The operator's own login, linked so that a token refresh lands in the original.
+        link.symlink_to(login)
+    (ctx.clone / ".git" / "maity").mkdir(mode=0o700, parents=True, exist_ok=True)
+    env = {**env, "CODEX_HOME": str(home)}
+    model = ctx.placement.get("model")
+    chosen = ["-m", model] if model else []
+    if ctx.placement.get("mode") == "interactive":
+        return Launch([ctx.binary, "-C", str(ctx.clone), *chosen, START_PROMPT], env)
+    first = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, START_PROMPT]
+    # `--last` is per working directory, and CODEX_HOME is per placement: never another's.
+    again = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, "resume", "--last", START_PROMPT]
+    return _supervised(ctx, first, again, env)
+
+
+# --- opencode ---------------------------------------------------------------------------------
+
+
+def opencode_config(ctx: Context) -> dict[str, Any]:
+    """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
+    project's configuration switched off, `AGENTS.md` is named as an instruction."""
+    bash = {"*": "deny", "maity *": "allow"}
+    for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *ctx.grant.allow):
+        bash[cmd] = "allow"
+        bash[f"{cmd} *"] = "allow"
+    bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins
+    secret = f"{ctx.clone}/.git/maity/*"
+    # The clone's credential is neither readable nor writable; nothing under .git is edited
+    # (agents commit through git; its config and hooks would turn a git call into anything).
+    read = {"*": "allow", secret: "deny"}
+    edit = {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
+    return {
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {
+            "*": "deny",
+            "read": read, "glob": "allow", "grep": "allow", "list": "allow",
+            "edit": edit,
+            "bash": bash,
+            "webfetch": "deny",
+            "external_directory": "deny",
+        },
+        "instructions": [str(ctx.clone / "AGENTS.md")],
+    }  # fmt: skip
+
+
+def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
+    assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    path = _write(ctx.agent_dir / "opencode.json", opencode_config(ctx))
+    # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
+    # .opencode/ directories bring agents, commands and plugins.
+    env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
+    model = ctx.placement.get("model")
+    chosen = ["--model", model] if model else []
+    if ctx.placement.get("mode") == "interactive":
+        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", START_PROMPT], env)
+    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, START_PROMPT]
+    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", START_PROMPT]
+    return _supervised(ctx, first, again, env)
