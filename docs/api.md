@@ -649,8 +649,10 @@ Scope: any authenticated caller.
 {
   "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "display_name": "Maintainer" },
   "projects": [
-    { "slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3 },
-    { "slug": "sample", "name": "Sample shop", "state": "freeze", "role": "owner", "open_requests": 1 }
+    { "slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3,
+      "logo": { "available": true, "etag": "\"3f2a…\"" } },
+    { "slug": "sample", "name": "Sample shop", "state": "freeze", "role": "owner", "open_requests": 1,
+      "logo": { "available": false, "etag": null } }
   ],
   "server_time": "2026-10-21T13:41:10Z"
 }
@@ -658,7 +660,9 @@ Scope: any authenticated caller.
 
 For a human, `projects` lists every membership, each with
 `open_requests`: the number of open requests `GET /projects/{slug}/requests`
-returns for this caller with its defaults (`to=me`, `status=open`, §7).
+returns for this caller with its defaults (`to=me`, `status=open`, §7),
+and `logo` (`available`, `etag`; §11.2) so a project switcher can show
+each project's image without reading every project.
 For an agent exactly one project, with `owner_id` on `member` and no
 `open_requests`. The dashboard re-reads `/me` for its counts after an
 answer and on an interval.
@@ -2706,9 +2710,11 @@ A placement as the runner reads it:
   `briefing`, the join URL or code, `approval`, `created_by`.
 - **What a runner reads.** Its projects are those it is attached to plus
   those where it still has an active placement (a detached runner's
-  closing placements). `projects` in the packet, `/runner/placements`
-  and `/runner/events` all use that set. A placement or project outside
-  it is `not_found`.
+  closing placements). `projects` in the packet and `/runner/placements`
+  use that set; a placement or project outside it is `not_found`.
+  `/runner/events` reads every project the runner has ever been attached
+  to: an event names the runner only while it concerns it, so a
+  detachment and what follows it still reach it.
 - **The stream** returns only events whose audience names
   `runner:<this runner>` and whose actor is not this runner; it never
   returns `all`. An event is a wake-up only: the runner re-reads
