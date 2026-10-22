@@ -122,9 +122,25 @@ Inside a project, in the order of their importance; see
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
-4. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
+4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2): everyone in the
+   project, humans first, then agents, each with name and handle, role,
+   presence (with when last seen), when they joined; agents also with their
+   owner and whether they are paused (by whom, why). Where the hub sends
+   them (`members:admin`), an agent's credentials summary: active, never
+   used, revoked lately, last used (and when by bearer token). With
+   `members:admin` each row has **Manage**: change the role (owner only for
+   a human), pause an agent with a reason or clear its pause, and **Remove
+   from the project** after a confirmation that says what it does; the
+   hub's `last_owner` refusal is said in words, and a write that went
+   through is said as done even when the re-read after it fails. The
+   owner and credentials come where the hub sends them: to an admin, and
+   to an agent's owner on their own agents. Presence is re-read every
+   30 s and updated in place; a redraw keeps the keyboard focus (Manage
+   to the opened row's role, Done back to Manage). On a phone each row is
+   a card with its cells labelled.
+5. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
-5. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
+6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
    like a messenger. On the left the human's chats, one per agent they own
    in the project, newest first: avatar, name, presence, the time and a
    preview of the last message (where the hub sends `last_message`; "You:"
@@ -146,7 +162,7 @@ Inside a project, in the order of their importance; see
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the
    messages from the oldest pending one on.
-6. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
+7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
@@ -160,7 +176,7 @@ Inside a project, in the order of their importance; see
    screen moves down without a reload; for a minute after it expired it
    keeps **Revoke**, and the hub decides. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
-7. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
+8. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard
    state as the hub read it, read-only. A headline says how many entries
    need attention (open, needs review, pending confirmation) out of how
@@ -444,7 +460,10 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     clears it, and the agent then sets and lifts a pause of its own; the
     form and the paused card say what a human's pause does. Where the hub
     knows briefings, the owner writes one on the card and the agent's
-    `resume` packet carries it; where it does not, no editor is offered;
+    `resume` packet carries it; where it does not, no editor is offered.
+    **Members**: the owner in the humans table, the agent in the agents
+    table (credentials only where the hub sends them); the agent's role
+    changed to reviewer and back through **Manage**;
 11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
@@ -485,7 +504,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
-17. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
+17. at phone width (390 px) the inbox, board, agents, members, organisation, join and (where offered) Why
     views, each reached through its tab, and the Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
@@ -540,10 +559,11 @@ web/
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
 ├── js/agents.js      (3) agents and presence
-├── js/org.js         (4) organisation tree
-├── js/chat.js        (5) chat
-├── js/join.js        (6) join an agent
-├── js/why.js         (7) why: the Keep the Why export
+├── js/members.js     (4) members: humans and agents, managed by an admin
+├── js/org.js         (5) organisation tree
+├── js/chat.js        (6) chat
+├── js/join.js        (7) join an agent
+├── js/why.js         (8) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
