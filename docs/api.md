@@ -144,6 +144,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
+| 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
@@ -474,6 +475,7 @@ include the scope. No call made with an agent credential may:
 - change instance-admin status (§16);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
+- delete an agent profile (§6.3);
 - archive or delete a project;
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
@@ -1314,20 +1316,60 @@ A profile belongs to a human and outlives any session and any project.
 |---|---|---|
 | `GET /agents` | human | the caller's profiles |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
-| `GET /agents/{id}` | the owner | |
+| `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
 | `PATCH /agents/{id}` | the owner | `display_name`, `git_identity` |
-| `DELETE /agents/{id}` | the owner | deletes a profile the owner no longer wants (a failed join, a test agent). Without `?cascade=true` it is refused with `profile_in_use` (409, `details.memberships`, `details.placements`) while the profile has an active membership or placement. With `cascade=true`, in one transaction: every active membership is removed as by `DELETE …/members/{id}` (credentials revoked, claims released, `reports_to` cleared on its reports, group chats left), every open join and placement for it is closed (`removed`), and its avatar is dropped. The profile becomes a tombstone: `deleted_at` set, `display_name` kept for the record, never listed by `GET /agents`, never joinable again; its id is never reused, so events and reports that name it still resolve ("deleted agent"). The handle is free for a new profile of the same owner at once. Answers `200` with the tombstone; a second `DELETE` answers `200` as it is. Emits `member_removed` per project as usual. Only a human, and only the owner: no agent and no `members:admin` deletes a profile (§2.3) |
+| `DELETE /agents/{id}` | the owner, human only | `?cascade=true` optional; deletes the profile and leaves a tombstone (below); `200` with the tombstone, a second `DELETE` answers `200` as it is; `profile_in_use` (409) while in use without `cascade` |
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
 ```json
 { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
-  "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "…" }
+  "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "…",
+  "deleted_at": null }
 ```
 
-`handle` is unique per owner (`[a-z0-9][a-z0-9-]{1,30}`). A join may
-create the profile (§3.1).
+`handle` is unique among the owner's profiles that are not deleted
+(`[a-z0-9][a-z0-9-]{1,30}`). A join may create the profile (§3.1).
+
+**Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
+no longer wants: a test agent, or one a failed join created. Only the
+owning human calls it; an agent never does (§2.3, "What no agent may
+do"), and `members:admin` in a project gives no right to it.
+
+- **Live joins are revoked first, always.** Every join for the profile
+  that is not used, burned, expired or revoked gets `revoked_at`, with
+  or without `cascade` (§3.1); its exchange then answers `not_found`
+  like any revoked join (§3.3), so no membership is ever created for a
+  deleted profile. A live join alone does not make the profile in use.
+- **In use.** A profile with an active membership or an active
+  placement is in use. Without `?cascade=true` the call is refused with
+  `profile_in_use` (409; `details.memberships`: `[{project, member_id,
+  role}]`, `details.placements`: the active placement ids), and nothing
+  changes — its joins included.
+- **Cascade.** With `?cascade=true`, in one transaction, every active
+  membership of the profile is removed as by `DELETE …/members/{id}`
+  (§6.2): credentials revoked, claims released, `reports_to` cleared on
+  its reports, the membership's placements closed at once with
+  `membership_removed` (§15.5) — the runner no longer reads them and
+  ends the session through its `orphaned` handling (§15.7). This is a
+  right of the profile's owner in every project the profile is a member
+  of; it needs no `members:admin` there, and the owner need not be a
+  member of that project.
+- **Events.** Per project, the cascade emits what `DELETE …/members/{id}`
+  emits: `member_updated` with `removed_at` for the profile's member,
+  `member_updated` for each member whose `reports_to` it cleared, and
+  `placement_updated` for each placement it closes. Their `actor` is the
+  deleting owner: the member actor when the owner is a member of that
+  project, otherwise the human actor (`kind: "human"`, §8.1).
+- **Tombstone.** The profile then carries `deleted_at`; its avatar is
+  dropped (the generated one applies, §6.10); `handle` and
+  `display_name` are kept for the record. Its id is never reused, so
+  events, reports and removed members that name it still resolve.
+  `GET /agents` never lists it; `GET /agents/{id}` answers `200` with
+  `deleted_at` and `memberships: []`; `PATCH`, the avatar's `PUT` and
+  `DELETE`, a join or placement naming it (`{"id"}`) answer `not_found`.
+  The handle is free for a new profile of the same owner at once.
 
 ### 6.4 Tasks (cards)
 
@@ -1990,6 +2032,14 @@ above, or `"runner"` when a runner caused the event (§15.10):
 ```json
 { "kind": "runner", "id": "rnr-0002", "name": "home-laptop",
   "credential_id": "rcrd-0002-0001", "session_id": "rses-0002-0007", "via": "signed" }
+```
+
+`kind` is `"human"` when a human who is not a member of the project
+caused the event — the owner deleting an agent profile with `cascade`
+(§6.3):
+
+```json
+{ "kind": "human", "id": "hum-maintainer", "handle": "maintainer", "via": "cookie" }
 ```
 
 `kind` is added to the member shape without changing its other fields;
@@ -2701,7 +2751,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | PATCH | `/me` | agent | 5.3 |
 | GET | `/requests` | human | 7 |
 | GET, POST | `/agents` | human | 6.3 |
-| GET, PATCH | `/agents/{id}` | owner | 6.3 |
+| GET, PATCH, DELETE | `/agents/{id}` | owner | 6.3 |
 | GET, POST | `/projects` | human (GET: any) | 6.1 |
 | GET, PATCH | `/projects/{slug}` | `project:read` / `project:admin` | 6.1 |
 | GET | `/projects/{slug}/rules` | `project:read` | 6.9 |
@@ -3605,7 +3655,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   (`placement_reported`, `join_picked_up`, `placement_updated` when a
   report closes a placement) carry `actor: {kind: "runner", id, name,
   credential_id, session_id, via: "signed"}` (§8.1). Events a human or
-  agent causes carry the member actor as before.
+  agent causes carry the member actor as before (a non-member human,
+  only in an agent profile's cascade, the human actor, §6.3).
 - **`runner:<id>`** is an audience token like `member:<id>`. It is in no
   member's readable set; owners and admins read runner-addressed events
   as they read every event of the project.
