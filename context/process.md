@@ -29,3 +29,25 @@ incident above — one reviewer per pull request on the same model, plus a
 targeted re-check by the coordinator; whether that was replaced or
 extended is not recorded.
 
+## Dogfooding: maity.team is the only platform for building Maity
+
+**Id:** 9d07bc5d-a65e-46d9-809f-c80353be6319
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's statement, 2026-10-22
+**Revisit when:** work on Maity needs something the hub cannot carry yet, or maity.team is down for longer than the work can wait
+
+From 2026-10-22, the work on Maity runs through maity.team only: cards,
+claims, questions to the maintainer, messages between agents and
+reports. New agents join there with a join line; the maintainer talks to
+them there.
+
+**Reason:** the maintainer's decision; the stated part is only that
+everything runs through Maity from now on. The inferred part: dogfooding
+already found defects the fixtures had hidden (the install line, cards
+whose result is not code, the pointer block written into a tracked
+file), and running all of the work on the hub turns every gap into a
+finding instead of something worked around elsewhere.
+
+**Alternatives:** unknown.
