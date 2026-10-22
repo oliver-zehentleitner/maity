@@ -142,7 +142,8 @@ only the runner's own process may be signalled.
 
 **Id:** 0e700858-b898-4d5d-b230-b5d9ce3e0941
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 3c074f5a-6245-4fd9-82a2-09b543738394
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.3 (`sandbox`: the harness's own OS sandbox); implementation of runner slice R2, 2026-10-22
 **Revisit when:** the harness adapters (R5) enable a harness's own sandbox when it starts
@@ -270,3 +271,64 @@ pointer block has nothing to do here.
   the agent-writable config, and the rule is simpler kept whole.
 - Logging the CLI's error text for diagnosis: a token in a log file
   outlives the join.
+
+## Claude Code's sandbox runs strict or not at all
+
+**Id:** 3c074f5a-6245-4fd9-82a2-09b543738394
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** Claude Code's sandboxing documentation (code.claude.com/docs/en/sandboxing), read 2026-10-22; the coordinator's review of runner slice R5a
+**Revisit when:** Claude Code changes the defaults of `autoAllowBashIfSandboxed` or `failIfUnavailable`, or another harness gets an OS sandbox the runner switches on
+
+Where bubblewrap and socat are on the agents' `PATH`, the runner's
+settings for Claude Code turn the sandbox on with `failIfUnavailable`,
+`allowUnsandboxedCommands: false`, `autoAllowBashIfSandboxed: false` and a
+strict network allowlist (the hub, the forge, the repository's
+`network` list). Capabilities then say `sandbox: on`. Without those tools
+the session runs unsandboxed, `running` carries `detail:
+sandbox_unavailable`, and `require_sandbox` refuses the placement.
+
+**Reason:** the documented defaults would undo the point. If the sandbox
+cannot start, Claude Code runs commands unsandboxed. A command that fails
+inside the sandbox may be retried outside it. And sandboxed commands run
+without the permission rules, so the command allowlist would no longer
+apply. Each default has to be set the other way explicitly. Allowed
+network domains start empty, so the hub and the forge have to be named, or
+`maity` and `git push` fail.
+
+**Rejected alternatives:**
+- `sandbox.enabled` alone, as in the first version of R5a: a missing
+  bubblewrap and the retry escape hatch would both run commands
+  unsandboxed without anyone noticing.
+- Leaving `autoAllowBashIfSandboxed` at its default: inside the sandbox
+  every command would run, `curl` to any allowed host included.
+
+## The command allowlists are not a boundary until agents run as their own user
+
+**Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
+**Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
+
+The runner grants named `git` subcommands, not `git *`. It denies `-c`,
+`--config-env`, `--exec-path`, `--no-index`, `--upload-pack`,
+`--receive-pack`, `--exec=` and any path under `.git/maity`. The file
+tools cannot reach `.git/maity`.
+
+**Reason:** git runs programs through its options and configuration, and
+`diff --no-index` reads any file. A wildcard grant therefore meant "may
+run anything", and in the `single` layout that includes reading the
+agent's own credential and the runner's state. Naming subcommands and
+denying the known escape routes stops accidents and naive prompt
+injection. It does not stop a determined agent: aliases from the
+operator's git configuration, test runners in a repository's `allow`
+list, and build tools all execute repository code. Until agents run as an
+OS user of their own, an agent with a shell is as trusted as the
+operator's account. The operator docs say so.
+
+**Rejected alternative:** a longer deny list that tries to close every
+route. git's surface keeps growing, and a list that looks complete
+would read as a boundary when it is not one.

@@ -28,6 +28,25 @@ START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
     "comes first. Then work as `docs/agents.md` and the rules in the packet say."
 )
+# Supervised runs end with the turn: the loop starts the next one on the next event.
+SUPERVISED_PROMPT = (
+    START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
+    "turn; do not run `maity wait`: you are started again on the next event."
+)
+
+# git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
+# `--config-env` or `--exec-path` run arbitrary programs, and `diff --no-index` reads any
+# file, the clone's credential included. The list stops accidents and naive injection; the
+# boundary is the OS user (and Claude Code's sandbox), see cli/context/runner.md.
+GIT_SUBCOMMANDS = (
+    "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
+    "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
+    "ls-files", "blame", "grep", "remote -v", "config user.name", "config user.email",
+)  # fmt: skip
+GIT_DENIED = (
+    "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
+    "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
+)  # fmt: skip
 
 
 READY = ("stub", "claude-code")  # harnesses with an adapter in this version
@@ -47,6 +66,7 @@ class Context:
     grant: config.RepositoryGrant
     restart: config.Restart
     sandbox: bool = False  # the harness's own OS sandbox can be switched on here
+    hosts: tuple[str, ...] = ()  # the hub's and the forge's, for network rules
     extra_env: dict[str, str] = field(default_factory=dict)  # e.g. declared machine ids
 
 
@@ -98,14 +118,24 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     the clone only. Absolute paths take a double slash in Claude Code's rules. The clone's
     credential is neither readable nor writable through the file tools."""
     ws = str(ctx.clone)
-    allow = ["Bash(maity *)", "Bash(git *)", *(f"Bash({cmd})" for cmd in ctx.grant.allow)]
+    allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
+    allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    allow += [f"Bash({cmd})" for cmd in ctx.grant.allow]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     deny = [f"{tool}(/{ws}/.git/maity/**)" for tool in ("Read", "Edit", "Write")]
+    deny += [f"Bash({rule})" for rule in GIT_DENIED]
     settings: dict[str, Any] = {
         "permissions": {"allow": allow, "deny": deny, "defaultMode": "dontAsk"},
     }
     if ctx.sandbox:
-        settings["sandbox"] = {"enabled": True}
+        settings["sandbox"] = {
+            "enabled": True,
+            "failIfUnavailable": True,  # never fall back to unsandboxed commands
+            "allowUnsandboxedCommands": False,  # no dangerouslyDisableSandbox retry
+            "autoAllowBashIfSandboxed": False,  # the allowlist above still decides
+            "network": {"allowedDomains": sorted({*ctx.hosts, *ctx.grant.network}),
+                        "strictAllowlist": True},
+        }  # fmt: skip
     return settings
 
 
@@ -128,5 +158,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     # Headless: no background command may hold a run open past its turn (§6.2).
     quiet = {**env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
     return _supervised(
-        ctx, [*base, "-p", START_PROMPT], [*base, "-p", START_PROMPT, "--continue"], quiet
+        ctx,
+        [*base, "-p", SUPERVISED_PROMPT],
+        [*base, "-p", SUPERVISED_PROMPT, "--continue"],
+        quiet,
     )

@@ -59,12 +59,13 @@ def probe(harness: config.Harness, agent_path: str) -> Probe:
     return Probe(found, ascii_text(match.group(0) if match else lines[0], 80), None)
 
 
-def sandbox_available(harness: config.Harness) -> bool:
-    """Whether the harness's own OS sandbox can be switched on here: Claude Code's needs
-    bubblewrap and socat on Linux (§6.1). Nothing else is switched on yet."""
+def sandbox_available(harness: config.Harness, path: str | None = None) -> bool:
+    """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
+    needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Nothing else is
+    switched on yet."""
     if harness.id != "claude-code" or not sys.platform.startswith("linux"):
         return False
-    return all(shutil.which(tool) for tool in ("bwrap", "socat"))
+    return all(shutil.which(tool, path=path) for tool in ("bwrap", "socat"))
 
 
 def agent_path(cfg: config.Config, environ_path: str) -> str:
