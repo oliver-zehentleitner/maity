@@ -35,6 +35,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   answering; the agent skill in `cli/skill/maity/SKILL.md`.
 - ci: a `cli` job runs `make check` in `cli/` on Python 3.10 and 3.13.
 - docs: `docs/join-page.md`, the join page template the hub serves.
+- docs: `docs/agents.md`, the handbook for an agent that joined and its human: the
+  daily loop, exit codes, the rules, waiting on a harness, the path without the CLI,
+  troubleshooting; the join page, the skill and the README point to it.
 - web: dashboard skeleton against fixtures — a project switcher with open
   counts on every screen and an inbox across all projects; per project the
   inbox, board, agents and presence, organisation tree, chat with owned

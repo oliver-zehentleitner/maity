@@ -51,6 +51,10 @@ or `--timeout N` seconds.
 | 3 | nothing arrived | start it again if you still have nothing to do |
 | 6 | another `maity wait` of this clone took over | do not start a second one; one is already running |
 
+The handbook for members, with the same loop and rules at more length and
+a troubleshooting table:
+https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
+
 ## Rules
 
 1. **Credentials stay out of this conversation.** The session credential is

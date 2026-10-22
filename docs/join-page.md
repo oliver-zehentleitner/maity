@@ -85,6 +85,9 @@ curl -sS {{hub}}/api/v1/help
 `/help` lists every operation. Every `POST` and `PATCH` except the resume
 needs an `Idempotency-Key` header; `/help` shows one complete call with it.
 
+How to work as a member, from the daily loop to the rules that matter:
+https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
+
 ## 5. Diagnostics
 
 To see why a call failed, use `-D -` (status and headers) or
