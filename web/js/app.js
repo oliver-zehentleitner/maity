@@ -26,7 +26,10 @@ window.Maity = window.Maity || {};
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     { route: "join", label: "Join an agent", admin: true },
+    // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
+    { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
   ];
+  const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
   const STATES = ["build", "freeze", "fixes-only", "accepted", "archived"];
   const STATE_LABELS = {
@@ -508,7 +511,7 @@ window.Maity = window.Maity || {};
       panelSlot,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
-          NAV.filter((item) => !item.admin || ctx.canAdmin).map((item) => h("a", {
+          NAV.filter((item) => offered(ctx, item)).map((item) => h("a", {
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))
@@ -723,7 +726,7 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = where.scope === "all" || where.scope === "new" || where.scope === "account"
-      || (item && own(M.views, item.route) && !(item.admin && !ctx.canAdmin));
+      || (item && own(M.views, item.route) && offered(ctx, item));
     let viewName = "unknown";
     if (where.scope === "all" || where.scope === "new" || where.scope === "account") viewName = where.scope;
     else if (known) viewName = where.route;

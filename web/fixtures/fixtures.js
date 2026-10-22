@@ -272,6 +272,157 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/keep-the-why.json": {
+    "attention": [
+      {
+        "file": "incidents.md",
+        "id": "incidents.md#platforms-changed-underneath-the-build",
+        "link": "https://maity.dev/keep-the-why-dashboard/#entry/f3bec014-28b7-4bfe-9ca8-304f1481fceb",
+        "member": "",
+        "status": "open",
+        "title": "Platforms changed underneath the build",
+        "topic": "Incidents of the build",
+        "type": [
+          "incident"
+        ],
+        "uuid": "f3bec014-28b7-4bfe-9ca8-304f1481fceb"
+      }
+    ],
+    "error": null,
+    "family_truncated": false,
+    "fresh": true,
+    "members": [
+      {
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+        "error": null,
+        "id": "oliver-zehentleitner---maity",
+        "name": null,
+        "observed_at": "2026-10-22T12:10:00Z",
+        "path": "",
+        "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+        "summary": {
+          "attention": 1,
+          "entries": 21,
+          "findings": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "generated": "2026-10-22T12:04:55Z",
+          "state_json": 2,
+          "status": {
+            "active": 20,
+            "needs-review": 0,
+            "open": 1,
+            "other": 0,
+            "pending-confirmation": 0,
+            "superseded": 0
+          }
+        }
+      },
+      {
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/hub/",
+        "error": null,
+        "id": "oliver-zehentleitner---maity---hub",
+        "name": "hub",
+        "observed_at": "2026-10-22T12:10:00Z",
+        "path": "hub",
+        "state_url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+        "summary": {
+          "attention": 0,
+          "entries": 31,
+          "findings": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "generated": "2026-10-22T12:04:55Z",
+          "state_json": 2,
+          "status": {
+            "active": 31,
+            "needs-review": 0,
+            "open": 0,
+            "other": 0,
+            "pending-confirmation": 0,
+            "superseded": 0
+          }
+        }
+      },
+      {
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/cli/",
+        "error": null,
+        "id": "oliver-zehentleitner---maity---cli",
+        "name": "cli",
+        "observed_at": "2026-10-22T12:10:00Z",
+        "path": "cli",
+        "state_url": "https://maity.dev/keep-the-why-dashboard/cli/state.json",
+        "summary": {
+          "attention": 0,
+          "entries": 7,
+          "findings": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "generated": "2026-10-22T12:04:55Z",
+          "state_json": 2,
+          "status": {
+            "active": 7,
+            "needs-review": 0,
+            "open": 0,
+            "other": 0,
+            "pending-confirmation": 0,
+            "superseded": 0
+          }
+        }
+      },
+      {
+        "dashboard_url": "https://maity.dev/keep-the-why-dashboard/web/",
+        "error": null,
+        "id": "oliver-zehentleitner---maity---web",
+        "name": "web",
+        "observed_at": "2026-10-22T12:10:00Z",
+        "path": "web",
+        "state_url": "https://maity.dev/keep-the-why-dashboard/web/state.json",
+        "summary": {
+          "attention": 0,
+          "entries": 12,
+          "findings": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "generated": "2026-10-22T12:04:56Z",
+          "state_json": 2,
+          "status": {
+            "active": 11,
+            "needs-review": 0,
+            "open": 0,
+            "other": 0,
+            "pending-confirmation": 0,
+            "superseded": 1
+          }
+        }
+      }
+    ],
+    "observed_at": "2026-10-22T12:10:00Z",
+    "skipped": 0,
+    "summary": {
+      "attention": 1,
+      "entries": 71,
+      "failed": 0,
+      "findings": {
+        "errors": 0,
+        "warnings": 0
+      },
+      "members": 4,
+      "status": {
+        "active": 69,
+        "needs-review": 0,
+        "open": 1,
+        "other": 0,
+        "pending-confirmation": 0,
+        "superseded": 1
+      }
+    },
+    "truncated": false
+  },
   "maity/members.json": {
     "items": [
       {
@@ -433,6 +584,139 @@ window.MAITY_FIXTURES = {
     },
     "created_at": "2026-10-21T07:50:00Z",
     "keep_the_why": true,
+    "keep_the_why_export": {
+      "error": null,
+      "family_truncated": false,
+      "members": [
+        {
+          "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+          "error": null,
+          "id": "oliver-zehentleitner---maity",
+          "name": null,
+          "observed_at": "2026-10-22T12:10:00Z",
+          "path": "",
+          "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+          "summary": {
+            "attention": 1,
+            "entries": 21,
+            "findings": {
+              "errors": 0,
+              "warnings": 0
+            },
+            "generated": "2026-10-22T12:04:55Z",
+            "state_json": 2,
+            "status": {
+              "active": 20,
+              "needs-review": 0,
+              "open": 1,
+              "other": 0,
+              "pending-confirmation": 0,
+              "superseded": 0
+            }
+          }
+        },
+        {
+          "dashboard_url": "https://maity.dev/keep-the-why-dashboard/hub/",
+          "error": null,
+          "id": "oliver-zehentleitner---maity---hub",
+          "name": "hub",
+          "observed_at": "2026-10-22T12:10:00Z",
+          "path": "hub",
+          "state_url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+          "summary": {
+            "attention": 0,
+            "entries": 31,
+            "findings": {
+              "errors": 0,
+              "warnings": 0
+            },
+            "generated": "2026-10-22T12:04:55Z",
+            "state_json": 2,
+            "status": {
+              "active": 31,
+              "needs-review": 0,
+              "open": 0,
+              "other": 0,
+              "pending-confirmation": 0,
+              "superseded": 0
+            }
+          }
+        },
+        {
+          "dashboard_url": "https://maity.dev/keep-the-why-dashboard/cli/",
+          "error": null,
+          "id": "oliver-zehentleitner---maity---cli",
+          "name": "cli",
+          "observed_at": "2026-10-22T12:10:00Z",
+          "path": "cli",
+          "state_url": "https://maity.dev/keep-the-why-dashboard/cli/state.json",
+          "summary": {
+            "attention": 0,
+            "entries": 7,
+            "findings": {
+              "errors": 0,
+              "warnings": 0
+            },
+            "generated": "2026-10-22T12:04:55Z",
+            "state_json": 2,
+            "status": {
+              "active": 7,
+              "needs-review": 0,
+              "open": 0,
+              "other": 0,
+              "pending-confirmation": 0,
+              "superseded": 0
+            }
+          }
+        },
+        {
+          "dashboard_url": "https://maity.dev/keep-the-why-dashboard/web/",
+          "error": null,
+          "id": "oliver-zehentleitner---maity---web",
+          "name": "web",
+          "observed_at": "2026-10-22T12:10:00Z",
+          "path": "web",
+          "state_url": "https://maity.dev/keep-the-why-dashboard/web/state.json",
+          "summary": {
+            "attention": 0,
+            "entries": 12,
+            "findings": {
+              "errors": 0,
+              "warnings": 0
+            },
+            "generated": "2026-10-22T12:04:56Z",
+            "state_json": 2,
+            "status": {
+              "active": 11,
+              "needs-review": 0,
+              "open": 0,
+              "other": 0,
+              "pending-confirmation": 0,
+              "superseded": 1
+            }
+          }
+        }
+      ],
+      "observed_at": "2026-10-22T12:10:00Z",
+      "summary": {
+        "attention": 1,
+        "entries": 71,
+        "failed": 0,
+        "findings": {
+          "errors": 0,
+          "warnings": 0
+        },
+        "members": 4,
+        "status": {
+          "active": 69,
+          "needs-review": 0,
+          "open": 1,
+          "other": 0,
+          "pending-confirmation": 0,
+          "superseded": 1
+        }
+      }
+    },
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",
@@ -1278,6 +1562,7 @@ window.MAITY_FIXTURES = {
     },
     "created_at": "2026-09-02T10:00:00Z",
     "keep_the_why": false,
+    "keep_the_why_export": null,
     "logo": {
       "available": false,
       "source": null

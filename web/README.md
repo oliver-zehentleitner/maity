@@ -103,6 +103,22 @@ Inside a project, in the order of their importance; see
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
    once, with a copy button; open joins can be revoked.
+7. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
+   `docs/api.md` §11.3): the project's published Keep the Why dashboard
+   state as the hub read it, read-only. A headline says how many entries
+   need attention (open, needs review, pending confirmation) out of how
+   many, in how many parts of the family (the repository's root and the
+   children its `.keep-the-why` names), with the linter's counts and when
+   the hub read it; **Read again** asks for a fresh read (`max_age=0`).
+   The entries that need attention follow, grouped by part, each linking
+   to its entry in the published dashboard; then one row per part with its
+   counts and a link to its dashboard. A part that could not be read is
+   named with the reason in words and its last good read. When the root
+   cannot be read, the last good answer is shown and said so; when the
+   project publishes none (`ktw_not_configured`), the view says what the
+   hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
+   string from an export is text; a link is used only when it is plain
+   `https`.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -326,7 +342,10 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     banner heads the inbox; the hub's project view says both are
     uploaded; removing the logo brings the monogram back. Without the
     fields, monograms and no upload;
-15. at phone width (390 px) the inbox, board, agents, organisation and join
+15. **Why**, where the hub has the export: the e2e project has no
+    repository, so the view says it needs one (the hub's
+    `ktw_not_configured`); without the field, no Why tab;
+16. at phone width (390 px) the inbox, board, agents, organisation and join
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
@@ -381,6 +400,7 @@ web/
 ├── js/org.js         (4) organisation tree
 ├── js/chat.js        (5) chat
 ├── js/join.js        (6) join an agent
+├── js/why.js         (7) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js

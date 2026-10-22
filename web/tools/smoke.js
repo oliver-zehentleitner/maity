@@ -351,6 +351,57 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
+  // Why: the Keep the Why export (docs/api.md §11.3), from the published maity.dev family.
+  const whyTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Why");
+  expect(whyTab() && whyTab().getAttribute("href") === "#/p/maity/why", "why: a tab where the hub has the export");
+  const whyGets = [];
+  const realGet6 = win.Maity.api.get;
+  win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
+  await go("#/p/maity/why");
+  expect(document.title === "Why · Maity · Maity" && text(main).includes("1 entry needs attention · 71 entries in 4 parts of the project")
+    && text(main).includes("Linter: 0 errors, 0 warnings."), "why: the family's summary");
+  const rows = main.querySelectorAll(".why-members tbody tr");
+  expect(rows.length === 4 && rows[0].textContent.startsWith("the project root") && rows[1].textContent.startsWith("hub · hub/")
+    && rows[1].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/hub/", "why: one row per part, linking to its dashboard");
+  const entryLink = main.querySelectorAll(".why-entries a").find((a) => a.textContent === "Platforms changed underneath the build");
+  expect(entryLink && entryLink.getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/#entry/f3bec014-28b7-4bfe-9ca8-304f1481fceb"
+    && text(main.querySelector(".why-group")).includes("open") && text(main).includes("Incidents of the build · incident"),
+    "why: the entry that needs attention, grouped by part, linking into the published dashboard");
+  btn(main, "Read again").click(); await tick(); await tick();
+  expect(whyGets.includes("/projects/maity/keep-the-why?max_age=0"), "why: Read again asks for a fresh read");
+  // A member that fails, a root that cannot be read, strings and links from the export.
+  const baseAnswer = await realGet6("/projects/maity/keep-the-why");
+  const withFailed = JSON.parse(JSON.stringify(baseAnswer));
+  withFailed.members[3].error = { code: "ktw_unavailable", reason: "timeout" };
+  withFailed.summary.failed = 1;
+  withFailed.attention.push({ member: "web", id: "x", uuid: null, title: "<b>not markup</b>", type: ["question"], status: "needs-review",
+    file: "views.md", topic: null, link: "javascript:alert(1)" });
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why") ? Promise.resolve(withFailed) : realGet6(p));
+  await go("#/p/maity/board"); await go("#/p/maity/why");
+  const webRow = main.querySelectorAll(".why-members tbody tr")[3];
+  expect(webRow.className === "failed" && text(webRow).includes("Could not be read: its state.json did not answer in time. Shown is its last good read.")
+    && text(main).includes("· 1 could not be read"), "why: a part that fails is named with its reason and its last good read");
+  const odd = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("<b>not markup</b>"));
+  expect(odd && !odd.querySelector("a") && !odd.querySelector("b"), "why: an export's strings are text, a link that is not https is none");
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why")
+    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable", last: Object.assign({}, baseAnswer, { fresh: false }) }))
+    : realGet6(p));
+  await go("#/p/maity/board"); await go("#/p/maity/why");
+  expect(text(main).includes("The hub could not read the project's root .keep-the-why just now (its .keep-the-why could not be read from the forge). Shown is its last good read")
+    && main.querySelectorAll(".why-members tbody tr").length === 4, "why: the root unreadable, the last good read is shown and said so");
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/keep-the-why")
+    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable" })) : realGet6(p));
+  await go("#/p/maity/board"); await go("#/p/maity/why");
+  expect(text(main).includes("could not read the project's root .keep-the-why") && !main.querySelector(".why-members"), "why: no last read, only the note");
+  win.Maity.api.get = realGet6;
+  await go("#/p/sample/why");
+  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line"),
+    "why: not configured, said so with what the hub reads");
+  // A hub that does not know the export: no tab.
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? realGet6(p).then((v) => { delete v.keep_the_why_export; return v; }) : realGet6(p));
+  await go("#/p/maity/inbox");
+  expect(!whyTab(), "why: no tab where the hub has no export field");
+  win.Maity.api.get = realGet6;
   await go("#/p/maity/org");
   const tree = main.querySelector(".org-tree");
   expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical"), "org tree by areas, policy preset");

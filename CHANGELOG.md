@@ -106,6 +106,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   header, `#/all` and as the tab's icon, and its banner on its inbox; `project:admin`
   uploads and removes both in **Project settings** (the panel formerly called **State &
   absence**)
+- web: a Why view per project shows its published Keep the Why family: the summary, the
+  entries that need attention by part with links into the published dashboard, one row
+  per part, and honest states when it is not configured, unreadable or a part fails
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

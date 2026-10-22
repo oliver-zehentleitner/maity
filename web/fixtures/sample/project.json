@@ -39,5 +39,6 @@
   "banner": {
     "available": false,
     "source": null
-  }
+  },
+  "keep_the_why_export": null
 }

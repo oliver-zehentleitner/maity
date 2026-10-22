@@ -1,0 +1,151 @@
+{
+  "observed_at": "2026-10-22T12:10:00Z",
+  "fresh": true,
+  "summary": {
+    "members": 4,
+    "failed": 0,
+    "entries": 71,
+    "status": {
+      "active": 69,
+      "open": 1,
+      "needs-review": 0,
+      "pending-confirmation": 0,
+      "superseded": 1,
+      "other": 0
+    },
+    "attention": 1,
+    "findings": {
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "members": [
+    {
+      "path": "",
+      "id": "oliver-zehentleitner---maity",
+      "name": null,
+      "state_url": "https://maity.dev/keep-the-why-dashboard/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/",
+      "observed_at": "2026-10-22T12:10:00Z",
+      "summary": {
+        "generated": "2026-10-22T12:04:55Z",
+        "state_json": 2,
+        "entries": 21,
+        "status": {
+          "active": 20,
+          "open": 1,
+          "needs-review": 0,
+          "pending-confirmation": 0,
+          "superseded": 0,
+          "other": 0
+        },
+        "attention": 1,
+        "findings": {
+          "errors": 0,
+          "warnings": 0
+        }
+      },
+      "error": null
+    },
+    {
+      "path": "hub",
+      "id": "oliver-zehentleitner---maity---hub",
+      "name": "hub",
+      "state_url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/hub/",
+      "observed_at": "2026-10-22T12:10:00Z",
+      "summary": {
+        "generated": "2026-10-22T12:04:55Z",
+        "state_json": 2,
+        "entries": 31,
+        "status": {
+          "active": 31,
+          "open": 0,
+          "needs-review": 0,
+          "pending-confirmation": 0,
+          "superseded": 0,
+          "other": 0
+        },
+        "attention": 0,
+        "findings": {
+          "errors": 0,
+          "warnings": 0
+        }
+      },
+      "error": null
+    },
+    {
+      "path": "cli",
+      "id": "oliver-zehentleitner---maity---cli",
+      "name": "cli",
+      "state_url": "https://maity.dev/keep-the-why-dashboard/cli/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/cli/",
+      "observed_at": "2026-10-22T12:10:00Z",
+      "summary": {
+        "generated": "2026-10-22T12:04:55Z",
+        "state_json": 2,
+        "entries": 7,
+        "status": {
+          "active": 7,
+          "open": 0,
+          "needs-review": 0,
+          "pending-confirmation": 0,
+          "superseded": 0,
+          "other": 0
+        },
+        "attention": 0,
+        "findings": {
+          "errors": 0,
+          "warnings": 0
+        }
+      },
+      "error": null
+    },
+    {
+      "path": "web",
+      "id": "oliver-zehentleitner---maity---web",
+      "name": "web",
+      "state_url": "https://maity.dev/keep-the-why-dashboard/web/state.json",
+      "dashboard_url": "https://maity.dev/keep-the-why-dashboard/web/",
+      "observed_at": "2026-10-22T12:10:00Z",
+      "summary": {
+        "generated": "2026-10-22T12:04:56Z",
+        "state_json": 2,
+        "entries": 12,
+        "status": {
+          "active": 11,
+          "open": 0,
+          "needs-review": 0,
+          "pending-confirmation": 0,
+          "superseded": 1,
+          "other": 0
+        },
+        "attention": 0,
+        "findings": {
+          "errors": 0,
+          "warnings": 0
+        }
+      },
+      "error": null
+    }
+  ],
+  "attention": [
+    {
+      "member": "",
+      "id": "incidents.md#platforms-changed-underneath-the-build",
+      "uuid": "f3bec014-28b7-4bfe-9ca8-304f1481fceb",
+      "title": "Platforms changed underneath the build",
+      "type": [
+        "incident"
+      ],
+      "status": "open",
+      "file": "incidents.md",
+      "topic": "Incidents of the build",
+      "link": "https://maity.dev/keep-the-why-dashboard/#entry/f3bec014-28b7-4bfe-9ca8-304f1481fceb"
+    }
+  ],
+  "family_truncated": false,
+  "truncated": false,
+  "skipped": 0,
+  "error": null
+}
