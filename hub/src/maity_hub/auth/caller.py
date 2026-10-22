@@ -79,6 +79,16 @@ class Caller:
         """Idempotency keys are unique per credential, or per human for cookies."""
         return self.credential_id or self.principal_id
 
+    def runner_actor(self) -> Actor:
+        """A runner as the actor of an event: no membership (§15.10)."""
+        return Actor(
+            membership_id=None,
+            session_id=self.session_id,
+            credential_id=self.credential_id,
+            via=self.via,
+            runner_id=self.runner_id,
+        )
+
     def actor(self, membership_id: int) -> Actor:
         return Actor(
             membership_id=membership_id,
@@ -383,10 +393,22 @@ def _runner(conn: Connection, row: Any) -> Caller:
         .values(last_used_at=now, last_used_via="signed")
     )
     conn.execute(update(t.runner).where(t.runner.c.id == row.runner_id).values(last_seen_at=now))
+    session_id = conn.execute(
+        select(t.runner_session.c.id).where(
+            t.runner_session.c.credential_id == row.id, t.runner_session.c.live.is_(True)
+        )
+    ).scalar()
+    if session_id is not None:
+        conn.execute(
+            update(t.runner_session)
+            .where(t.runner_session.c.id == session_id)
+            .values(last_seen_at=now)
+        )
     return Caller(
         kind="runner",
         via="signed",
         runner_id=row.runner_id,
         owner_id=row.owner_id,
         credential_id=row.id,
+        session_id=session_id,
     )

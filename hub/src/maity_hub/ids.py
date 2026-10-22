@@ -25,6 +25,8 @@ PREFIXES = {
     "runner": "rnr",
     "runner_enrollment": "renr",
     "runner_credential": "rcrd",
+    "runner_attachment": "ratt",
+    "runner_session": "rses",
 }
 
 

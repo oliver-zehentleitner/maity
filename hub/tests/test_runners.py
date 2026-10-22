@@ -192,7 +192,6 @@ def test_the_access_log_masks_pairing_tokens(
         ({"name": "x", "ttl_seconds": 900}, {"name": "string_pattern_mismatch"}),
         ({"ttl_seconds": 59}, {"ttl_seconds": "out_of_range"}),
         ({"ttl_seconds": 901}, {"ttl_seconds": "out_of_range"}),
-        ({"attach": ["maity"]}, {"attach": "not_supported_yet"}),
         ({"name": None}, {"name": "required"}),
         ({"runner_id": "rnr-nope", "name": None}, {"runner_id": "not_yours"}),
     ],
