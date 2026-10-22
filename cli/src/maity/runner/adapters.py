@@ -58,6 +58,10 @@ SESSION_GIT_CONFIG = {
     "GIT_CONFIG_KEY_1": "diff.ignoreSubmodules", "GIT_CONFIG_VALUE_1": "all",
 }  # fmt: skip
 
+# Exit codes that are a harness's provider limit, per harness: only what a real run verified.
+LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
+LIMIT_FILE = "limit.json"
+
 
 class NotYet(Exception):
     """This version has no adapter for the harness (or the mode) yet."""
@@ -128,6 +132,10 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
                 "crash_window": policy.crash_window, "crash_cap": policy.crash_cap,
                 "quick_exit": policy.quick_exit,
             },
+            # A provider limit, as the loop recognises it: none until a real run of the
+            # harness has shown its signal (§15.7); until then a limit exits like a crash.
+            "limit": {"exit_codes": list(LIMIT_EXITS.get(ctx.harness.id, ())),
+                      "file": str(ctx.agent_dir / LIMIT_FILE)},
         },  # fmt: skip
     )
     return Launch([sys.executable, "-I", "-m", "maity.runner.loop", "--spec", str(spec)], env)

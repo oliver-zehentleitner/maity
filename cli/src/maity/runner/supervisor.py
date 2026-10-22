@@ -93,6 +93,9 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
+LIMIT_MAX = 7 * 24 * 3600.0  # a named reset further out is capped (§15.7)
+LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
+LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
@@ -132,6 +135,17 @@ def _count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def _when(value: Any) -> float | None:
+    """An RFC 3339 time with an offset as a timestamp; None for anything else."""
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment.timestamp() if moment.tzinfo is not None else None
+
+
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
@@ -160,6 +174,7 @@ class Record:
     pending: dict[str, Any] | None = None
     waiting: str | None = None  # why nothing is done yet, logged once (join: R4, adapter: R5)
     joined_generation: int | None = None  # the generation this runner last joined for
+    limits_unknown: int = 0  # provider limits in a row without a reset time (§15.7 backoff)
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -169,7 +184,7 @@ class Record:
             self.since = now
         self.state, self.reason = state_, reason
         self.detail = fields.pop("detail", None)
-        if state_ not in ("exited", "failed", "stopped"):
+        if state_ not in ("exited", "failed", "stopped", "rate_limited"):
             self.exit_code = None
         for name, value in fields.items():
             setattr(self, name, value)
@@ -260,6 +275,13 @@ class Supervisor:
             labelled = {s.placement: s for s in sessions.values() if s.placement}
             starting = sum(1 for t in self.tasks.values() if t.is_alive())
             alive = sum(1 for s in sessions.values() if not s.dead) + starting
+            # A rate-limited placement keeps its slot until it starts again (§15.7).
+            alive += sum(
+                1
+                for p in desired
+                if p.get("desired") == "running"
+                and getattr(self.records.get(p["id"]), "state", None) == "rate_limited"
+            )
             for placement in desired:
                 name = session_name(placement["project"], placement["workspace"]["clone"])
                 mine = labelled.get(placement["id"])
@@ -305,6 +327,7 @@ class Supervisor:
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
+            rec.limits_unknown = 0
 
         if p.get("desired") == "stopped":
             if mine is not None and not mine.dead:
@@ -379,8 +402,13 @@ class Supervisor:
             rec.enter(now, "failed", "agent_credential_revoked", exit_code=code, retry_at=None)
             return
         if code == loop.EXIT_HOT_LOOP:
+            rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
             return
+        if code == loop.EXIT_RATE_LIMITED:
+            self._rate_limited(rec, now)
+            return
+        rec.limits_unknown = 0
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
@@ -389,6 +417,33 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _rate_limited(self, rec: Record, now: float) -> None:
+        """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
+        the reset time it named, at most 7 days ahead, or the fixed backoff: 15 minutes,
+        doubling with each limit in a row without one, up to 2 hours."""
+        assert self.cfg.local is not None  # noqa: S101 - the local backend's supervisor
+        found: dict[str, Any] = {}
+        pid = next((p for p, r in self.records.items() if r is rec), "")
+        try:
+            data = json.loads(
+                (self.cfg.state_dir / "agents" / pid / adapters.LIMIT_FILE).read_text()
+            )
+            found = data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            pass
+        code = found.get("exit_code")
+        reset = _when(found.get("reset_at"))
+        if reset is not None and reset > now:
+            retry_at, detail = min(reset, now + LIMIT_MAX), None
+            rec.limits_unknown = 0
+        else:
+            rec.limits_unknown += 1
+            backoff = min(LIMIT_BACKOFF * 2 ** (rec.limits_unknown - 1), LIMIT_BACKOFF_MAX)
+            retry_at, detail = now + backoff, "reset_unknown"
+        rec.enter(now, "rate_limited", "quota", detail=detail, retry_at=retry_at,
+                  exit_code=code if isinstance(code, int) else None)  # fmt: skip
+        self.log(f"{pid}: the harness stopped for its provider's limit; again at {stamp(retry_at)}")
 
     # --- starting --------------------------------------------------------------------------
 
@@ -464,7 +519,7 @@ class Supervisor:
             return 0
         if join and self.client is None:
             return 0
-        retrying = rec.state == "exited"
+        retrying = rec.state in ("exited", "rate_limited")
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
@@ -695,9 +750,13 @@ class Supervisor:
             "state": rec.state,
             "reason": rec.reason,
             "detail": rec.detail,
-            "exit_code": rec.exit_code if rec.state in ("exited", "failed", "stopped") else None,
+            "exit_code": (
+                rec.exit_code
+                if rec.state in ("exited", "failed", "stopped", "rate_limited")
+                else None
+            ),
             "restarts": rec.restarts,
-            "retry_at": stamp(rec.retry_at) if rec.state == "exited" else None,
+            "retry_at": stamp(rec.retry_at) if rec.state in ("exited", "rate_limited") else None,
             "crash_count": len(rec.crashes) if counting else None,
             "crash_window_seconds": window if counting else None,
             "deadline_at": stamp(rec.deadline_at) if rec.state == "stopping" else None,

@@ -277,6 +277,26 @@ $ maity release tick chk-2
 ticked chk-2 on tsk-0010
 ```
 
+## Availability
+
+```sh
+maity limit --until 2h --reason "provider quota"   # or 1h30m, 2d12h, 2026-10-22T17:00:00Z
+```
+
+Run `maity limit` before the session stops for a provider limit: the hub
+then knows you are out until a time and acts on your availability policy
+(wait, or a substitute covers your work, [`docs/api.md`](../docs/api.md)
+§6.11). The next `maity resume` clears it. `--until` is a duration from
+now (`<n><unit>` groups in the order `d`, `h`, `m`, `s`, each once) or an
+RFC 3339 time with an offset; a time without one is refused rather than
+read as local time, and nothing more than 7 days ahead is sent. The CLI
+sends UTC and prints the `until` the hub stored.
+
+`maity resume` prints an `Availability` block after any pause notice
+when you cover someone (with the ids of the cards and requests handed to
+you) or a peer is not available, and marks a handed-over card or request
+with `(cover for @<handle>)`.
+
 ## Placements and runners
 
 An agent whose role holds `agents:propose` can start other members on a
@@ -452,7 +472,14 @@ project's own harness configuration is never loaded:
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
   and waits with `maity wait --keep-cursor` in between, so idle costs no
   model tokens. Runs that end without progress stop the loop as
-  `crash_loop`/`hot_loop`.
+  `crash_loop`/`hot_loop`. A run that ends for the provider's limit, by a
+  signal verified on a real run of that harness, is reported
+  `rate_limited` (not a crash) and started again at the reset time it
+  named, or after 15 minutes, doubling up to 2 hours when it named none;
+  the placement keeps its slot meanwhile, and a stop ends it at once. No
+  harness has a verified signal yet, so for now a limit exits like any
+  other failure. In `interactive` mode the agent (or you, in the pane)
+  runs `maity limit` instead.
 
 - **Codex** gets a `CODEX_HOME` of its own per placement, with a
   `config.toml` the runner writes. It turns on Codex's sandbox with the

@@ -6,8 +6,12 @@ burst settle, and runs the harness again, whose `maity resume` lists the event a
 
 Exit codes the runner maps (§15.7): 20 the agent's credential is revoked
 (`agent_credential_revoked`), 21 runs keep ending without progress (`crash_loop`,
-`hot_loop`). A run that ends within `quick_exit` without the event having been acknowledged
-counts toward `crash_cap` within `crash_window`, with the runner's backoff between runs.
+`hot_loop`), 22 the harness stopped for its provider's limit (`rate_limited`, with the
+harness's own exit code and any reset time in the spec's `limit.file`). Which exits mean a
+limit is the adapter's `limit` in the spec, and only a signal verified on a real run of that
+harness goes there; without one, a limit is an ordinary non-zero exit. A run that ends
+within `quick_exit` without the event having been acknowledged counts toward `crash_cap`
+within `crash_window`, with the runner's backoff between runs.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ WAIT_TIMEOUT = 600
 SETTLE = 15.0
 EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
+EXIT_RATE_LIMITED = 22
 
 
 @dataclass
@@ -56,6 +61,19 @@ class Loop:
             self.sleep(max(0.0, decision.retry_at - ended))
         return None
 
+    def limited(self, code: int) -> bool:
+        """Whether exit `code` is the harness's provider limit, by the adapter's verified
+        signal; if so, the harness's own code (and no reset time: none is read yet) goes to
+        the spec's file for the runner."""
+        limit = self.spec.get("limit") or {}
+        if code not in (limit.get("exit_codes") or []):
+            return False
+        self.log("the harness stopped for its provider's limit")
+        if limit.get("file"):
+            with open(limit["file"], "w", encoding="utf-8") as fh:
+                json.dump({"exit_code": code, "reset_at": None}, fh)
+        return True
+
     def turn(self, argv: list[str]) -> int | None:
         """Headless runs until one ends cleanly. A non-zero exit counts against the cap and is
         run again after the backoff, without waiting for a new event: the work it was doing
@@ -67,6 +85,8 @@ class Loop:
             if code == 0:
                 return None
             self.log(f"the run exited {code}")
+            if self.limited(code):
+                return EXIT_RATE_LIMITED
             stop = self.count(started, self.now())
             if stop is not None:
                 return stop
