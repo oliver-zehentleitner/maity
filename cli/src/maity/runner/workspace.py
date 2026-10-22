@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import configparser
 import re
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from typing import Any
 
 from .. import proc, state
 from . import config
+from .asuser import RUNNER, AsUser
 
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 RECORDS = "workspaces.json"
@@ -46,6 +48,12 @@ class Workspace:
     path: Path
     project: str
     clone: str
+    host: str = ""  # the ssh target; "" on this machine
+
+    @property
+    def key(self) -> str:
+        """The record's key: the path, prefixed with the host for a clone on an ssh host."""
+        return f"{self.host}:{self.path}" if self.host else str(self.path)
 
     @property
     def credential(self) -> Path:
@@ -53,9 +61,13 @@ class Workspace:
         return self.path / ".git" / "maity" / state.CREDENTIAL_FILE
 
 
-def locate(root: Path, project: str, clone: str) -> Workspace:
+def locate(root: Path, project: str, clone: str, host: str = "") -> Workspace:
+    """The clone's path under `root`. On an ssh host `root` is a remote path, validated by
+    the configuration and never resolved here; the tokens cannot leave it either way."""
     if not (TOKEN.match(project) and TOKEN.match(clone)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
+    if host:
+        return Workspace(root / project / clone, project, clone, host)
     base = root.resolve()
     path = (base / project / clone).resolve()
     if path.parent.parent != base:
@@ -63,11 +75,11 @@ def locate(root: Path, project: str, clone: str) -> Workspace:
     return Workspace(path, project, clone)
 
 
-def origin(path: Path) -> str | None:
+def origin(path: Path, as_user: AsUser = RUNNER) -> str | None:
     """`remote.origin.url` from `.git/config`, parsed, never through git."""
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
-        parser.read_string((path / ".git" / "config").read_text(encoding="utf-8"))
+        parser.read_string(as_user.read(path / ".git" / "config").decode("utf-8"))
     except (OSError, UnicodeDecodeError, configparser.Error):
         return None
     try:
@@ -76,7 +88,9 @@ def origin(path: Path) -> str | None:
         return None
 
 
-def stale_index_lock(path: Path, now: float | None = None) -> bool:
+def stale_index_lock(path: Path, now: float | None = None, as_user: AsUser = RUNNER) -> bool:
+    if not as_user.direct:
+        return False  # a hint only, and the lock's mtime is the agents' user's to read
     lock = path / ".git" / "index.lock"
     try:
         return (now or time.time()) - lock.stat().st_mtime > STALE_LOCK
@@ -93,7 +107,7 @@ def records(state_dir: Path) -> dict[str, Any]:
 def record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str) -> None:
     with _lock:
         found = records(state_dir)
-        found[str(workspace.path)] = {
+        found[workspace.key] = {
             "project": workspace.project,
             "agent": agent,
             "placement_id": placement_id,
@@ -108,18 +122,19 @@ def inspect(
     repository: str,
     agent: str,
     placement_id: str | None = None,
+    as_user: AsUser = RUNNER,
 ) -> dict[str, Any]:
     """An existing clone's record, when it is `agent`'s (or was made for this placement,
     which covers the time between a join and the hub naming the new member) and points at
     `repository`; `Refused` otherwise. Reads the record and `.git/config` only."""
-    found = records(cfg.state_dir).get(str(workspace.path))
+    found = records(cfg.state_dir).get(workspace.key)
     if not isinstance(found, dict):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     if found.get("agent") != agent and (
         placement_id is None or found.get("placement_id") != placement_id
     ):
         raise Refused("workspace_in_use", "other_agent")
-    url = origin(workspace.path)
+    url = origin(workspace.path, as_user)
     if url is None or config.normalise_repository(url) != config.normalise_repository(repository):
         raise Refused("workspace_in_use", "origin_mismatch")
     return found
@@ -132,15 +147,16 @@ def prepare(
     agent: str,
     placement_id: str,
     branch: str | None = None,
+    as_user: AsUser = RUNNER,
 ) -> None:
     """Make sure the clone exists and belongs to `agent`; clone it when it is missing.
     `Refused` otherwise. `agent` is the agent's id, or its handle before the first join."""
-    if workspace.path.exists():
-        existing = inspect(cfg, workspace, repository, agent, placement_id)
+    if as_user.exists(workspace.path):
+        existing = inspect(cfg, workspace, repository, agent, placement_id, as_user)
         if existing.get("placement_id") != placement_id:
             record(cfg.state_dir, workspace, agent, placement_id)
         return
-    workspace.path.parent.mkdir(parents=True, exist_ok=True)
+    as_user.mkdir(workspace.path.parent)
     if not config.repository_url_ok(repository):
         raise Refused("repository_refused")
     # Only these transports, whatever the URL or a submodule says (no file://, no ext::).
@@ -152,8 +168,12 @@ def prepare(
         command += ["--branch", branch]
     command += ["--", repository, str(workspace.path)]
     try:
-        done = proc.run(command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT)
-    except proc.ToolError:
+        if not as_user.direct:
+            # The clone is the agents'; no prompt for a login, as proc.run says for ours.
+            done = as_user.run(command, env=dict(proc.NO_PROMPT), timeout=CLONE_TIMEOUT)
+        else:
+            done = proc.run(command, cwd=workspace.path.parent, timeout=CLONE_TIMEOUT)
+    except (proc.ToolError, subprocess.TimeoutExpired):
         raise Refused("clone_failed") from None
     if done.returncode != 0:
         raise Refused("clone_failed", exit_code=done.returncode)
@@ -164,7 +184,7 @@ def rebind(state_dir: Path, workspace: Workspace, old: str, new: str) -> None:
     """After the first join the record moves from the handle to the agent's id."""
     with _lock:
         found = records(state_dir)
-        entry = found.get(str(workspace.path))
+        entry = found.get(workspace.key)
         if entry and entry.get("agent") == old:
             entry["agent"] = new
             state.save_state(state_dir, found, name=RECORDS)

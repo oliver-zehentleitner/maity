@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import state
 from . import config, stub
+from .asuser import AsUser
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -36,9 +35,10 @@ SUPERVISED_PROMPT = (
 )
 
 # git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
-# `--config-env` or `--exec-path` run arbitrary programs, and `diff --no-index` reads any
-# file, the clone's credential included. The list stops accidents and naive injection; the
-# boundary is the OS user (and Claude Code's sandbox), see cli/context/runner.md.
+# `--config-env` or `--exec-path` run arbitrary programs. `diff` still reads a file outside
+# the work tree without `--no-index` (`git diff /dev/null <path>`), so these lists stop
+# accidents and naive injection only; the boundary is the harness's OS sandbox and the OS
+# user, see cli/context/runner.md.
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
@@ -51,6 +51,15 @@ GIT_DENIED = (
 
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
+SESSION_GIT_CONFIG = {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "diff.ignoreSubmodules", "GIT_CONFIG_VALUE_1": "all",
+}  # fmt: skip
+
+# Exit codes that are a harness's provider limit, per harness: only what a real run verified.
+LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
+LIMIT_FILE = "limit.json"
 
 
 class NotYet(Exception):
@@ -69,6 +78,9 @@ class Context:
     sandbox: bool = False  # the harness's own OS sandbox can be switched on here
     hosts: tuple[str, ...] = ()  # the hub's and the forge's, for network rules
     extra_env: dict[str, str] = field(default_factory=dict)  # e.g. declared machine ids
+    private: tuple[Path, ...] = ()  # never readable from the sandbox: runner state, secrets
+    workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
+    as_user: AsUser = AsUser()  # who the agents run as (§7.6)
 
 
 @dataclass(frozen=True)
@@ -78,10 +90,20 @@ class Launch:
 
 
 def launch(ctx: Context) -> Launch:
-    env = {"MAITY_PLACEMENT": ctx.placement["id"], **ctx.extra_env}
+    # Every git in the session, the harness's own unsandboxed calls included, reads the
+    # clone's real .git: a `.git/commondir` the agent writes from the sandbox redirects
+    # nothing. The agent can unset it for its own commands, which stay in the sandbox.
+    env = {
+        "MAITY_PLACEMENT": ctx.placement["id"],
+        "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        # A nested repository the agent registers as a submodule keeps its own configuration,
+        # which the pin does not reach; git passes these settings on to it.
+        **SESSION_GIT_CONFIG,
+        **ctx.extra_env,
+    }
     harness = ctx.harness
     if harness.id == "stub":
-        return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds), env)
+        return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
     if harness.id == "claude-code":
         return _claude_code(ctx, env)
     if harness.id == "codex":
@@ -91,16 +113,15 @@ def launch(ctx: Context) -> Launch:
     raise NotYet(f"no adapter for {harness.id}")
 
 
-def _write(path: Path, data: Any) -> Path:
-    state.write_file(path, json.dumps(data, indent=2) + "\n")
-    return path
+def _write(ctx: Context, path: Path, data: Any) -> Path:
+    """A file for the agents' side, written as the agents' user (§7.6)."""
+    return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
 
 
 def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str, str]) -> Launch:
     """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen."""
     policy = ctx.restart
-    spec = _write(
-        ctx.agent_dir / "loop.json",
+    spec = _write(ctx, ctx.agent_dir / "loop.json",
         {
             "first": first,
             "again": again,
@@ -110,9 +131,13 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
                 "crash_window": policy.crash_window, "crash_cap": policy.crash_cap,
                 "quick_exit": policy.quick_exit,
             },
+            # A provider limit, as the loop recognises it: none until a real run of the
+            # harness has shown its signal (§15.7); until then a limit exits like a crash.
+            "limit": {"exit_codes": list(LIMIT_EXITS.get(ctx.harness.id, ())),
+                      "file": str(ctx.agent_dir / LIMIT_FILE)},
         },  # fmt: skip
     )
-    return Launch([sys.executable, "-I", "-m", "maity.runner.loop", "--spec", str(spec)], env)
+    return Launch([*ctx.as_user.runner_module("loop"), "--spec", str(spec)], env)
 
 
 # --- Claude Code ------------------------------------------------------------------------------
@@ -144,8 +169,12 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             "network": {"allowedDomains": sorted({*ctx.hosts, *ctx.grant.network}),
                         "strictAllowlist": True},
             # Repository code run by an allowed build or test command cannot read or replace
-            # the clone's credential; `maity` alone, which signs with it, runs outside.
-            "filesystem": {"denyRead": [f"{ws}/.git/maity"], "denyWrite": [f"{ws}/.git/maity"]},
+            # the clone's credential, other clones' or the runner's; `maity` alone, which
+            # signs with it, runs outside.
+            # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
+            # re-open its credential as well, and that order is unverified here.
+            "filesystem": {"denyRead": [f"{ws}/.git/maity", *(str(p) for p in ctx.private)],
+                           "denyWrite": [f"{ws}/.git/maity"]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
     return settings
@@ -153,8 +182,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
 
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    settings = _write(ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
-    mcp = _write(ctx.agent_dir / "claude-mcp.json", {"mcpServers": {}})
+    settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
+    mcp = _write(ctx, ctx.agent_dir / "claude-mcp.json", {"mcpServers": {}})
     base = [
         ctx.binary,
         "--setting-sources", "user",  # the project's .claude/ is not loaded, hooks included
@@ -189,6 +218,11 @@ def codex_config(ctx: Context) -> str:
     network to the hub, the forge and the model provider only."""
     hosts = sorted({*ctx.hosts, *CODEX_PROVIDER_HOSTS, *ctx.grant.network})
     domains = "".join(f'{json.dumps(host)} = "allow"\n' for host in hosts)
+    # Unreadable: other clones (the workspaces root), the runner's state and the secrets in
+    # the agents' home. The clone's own rules are more specific and win; its credential
+    # stays readable, since the agent's `maity` runs inside the sandbox.
+    roots = (*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private)
+    hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n\n'
@@ -197,9 +231,11 @@ def codex_config(ctx: Context) -> str:
         f'[projects.{json.dumps(str(ctx.clone))}]\ntrust_level = "untrusted"\n\n'
         "[features]\nnetwork_proxy = true\n\n"
         '[permissions.maity]\nextends = ":workspace"\n\n'
-        "[permissions.maity.filesystem]\n"
+        "[permissions.maity.filesystem]\n" + hidden + f'{json.dumps(str(ctx.clone))} = "write"\n'
         f"{json.dumps(str(ctx.clone / '.git'))} = \"write\"\n"
-        # Commits need .git; its hooks and config would turn an allowed git call into anything.
+        # Commits need .git (lock files are created there, so the directory stays writable).
+        # Its hooks and config are read-only; a `commondir` the agent writes is ignored by
+        # every git outside the sandbox, which runs with GIT_COMMON_DIR set (launch()).
         f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n\n"
         "[permissions.maity.network]\nenabled = true\n\n"
@@ -210,14 +246,15 @@ def codex_config(ctx: Context) -> str:
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     home = ctx.agent_dir / "codex-home"
-    home.mkdir(mode=0o700, exist_ok=True)
-    state.write_file(home / "config.toml", codex_config(ctx))
-    login = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
-    link = home / "auth.json"
-    if login.is_file() and not link.exists():
-        # The operator's own login, linked so that a token refresh lands in the original.
-        link.symlink_to(login)
-    (ctx.clone / ".git" / "maity").mkdir(mode=0o700, parents=True, exist_ok=True)
+    ctx.as_user.write(home / "config.toml", codex_config(ctx))
+    # The login of whoever runs the agents (the operator, or the agents' user), linked so
+    # that a token refresh lands in the original; a link left from an earlier launch that
+    # points elsewhere, or nowhere, is replaced (AsUser.link).
+    own = None if not ctx.as_user.direct else os.environ.get("CODEX_HOME")
+    login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
+    if ctx.as_user.exists(login, "-f"):
+        ctx.as_user.link(login, home / "auth.json")
+    ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")
     chosen = ["-m", model] if model else []
@@ -249,7 +286,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            "read": read, "glob": "allow", "grep": "allow", "list": "allow",
+            # grep and glob are asked about the pattern typed, not the path searched, so a path
+            # rule cannot keep them off .git/maity: they are off.
+            "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,
             "webfetch": "deny",
@@ -261,7 +300,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
 
 def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    path = _write(ctx.agent_dir / "opencode.json", opencode_config(ctx))
+    path = _write(ctx, ctx.agent_dir / "opencode.json", opencode_config(ctx))
     # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
     # .opencode/ directories bring agents, commands and plugins.
     env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}

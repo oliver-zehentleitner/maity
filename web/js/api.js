@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
@@ -177,6 +178,16 @@ window.Maity = window.Maity || {};
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     card.updated_at = nowIso();
     return card;
+  }
+
+  let attachSerial = 0;
+  const activeAttachments = (slug) => runnersFile().attachments
+    .filter((a) => a.project === slug && !a.detached_at)
+    .sort((x, y) => runnerOf(x.runner_id, "").name.localeCompare(runnerOf(y.runner_id, "").name));
+  function attachmentView(a) {
+    const counts = (runnersFile().active_placements || {})[a.runner_id] || {};
+    return { id: a.id, runner: runnerOf(a.runner_id, ""), project: a.project, attached_by: a.attached_by,
+      attached_at: a.attached_at, detached_at: a.detached_at, active_placements: a.detached_at ? 0 : counts[a.project] || 0 };
   }
 
   // A release card that may still change: closed ones are a record.
@@ -251,6 +262,46 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  // A message item as §9 shows it (#206): redacted and redaction always there.
+  const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
+  // each { view, items, read }; joined_seq is where a participant's window begins.
+  function groupChats(slug) {
+    const all = fixtures();
+    if (!all[slug + "/group-chats.json"]) all[slug + "/group-chats.json"] = {};
+    return all[slug + "/group-chats.json"];
+  }
+  function groupChat(slug, id, path) {
+    const c = groupChats(slug)[id];
+    if (!c) fail(404, "not_found", "Not found", path);
+    return c;
+  }
+  const participantOf = (m, at, seq) => ({ member_id: m.id, kind: m.kind, handle: m.handle, owner_id: m.kind === "agent" ? m.owner_id : null, joined_at: at, joined_seq: seq });
+  function windowOf(c, memberId) {
+    const p = c.view.participants.find((x) => x.member_id === memberId);
+    return c.items.filter((x) => x.seq > (p ? p.joined_seq : 0));
+  }
+  // The view as the caller may see it, or null when it may not.
+  function groupItem(slug, c, path) {
+    const meId = me().member.id;
+    const v = c.view;
+    const participant = v.participants.some((x) => x.member_id === meId);
+    const observers = [...new Set(v.participants.filter((x) => x.kind === "agent" && x.owner_id && !v.participants.some((y) => y.member_id === x.owner_id)).map((x) => x.owner_id))];
+    if (!participant && !observers.includes(meId)) return null;
+    return { id: v.id, kind: "group", title: v.title, created_by: v.created_by, created_at: v.created_at,
+      participants: v.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at })),
+      observers, closed_at: v.closed_at, closed_reason: v.closed_reason, access: participant ? "participant" : "observer" };
+  }
+  // The creator while a participant, or a human participant with members:admin; else refused.
+  function managed(slug, id, path) {
+    const c = groupChat(slug, id, path);
+    const item = groupItem(slug, c, path);
+    if (!item) fail(404, "not_found", "Not found", path);
+    if (item.access === "observer") fail(403, "forbidden", "an observer does not manage", path, { reason: "observer" });
+    if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
+    if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
+    return c;
+  }
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -416,8 +467,39 @@ window.Maity = window.Maity || {};
         r.credential_state = "revoked";
         r.removed_at = nowIso();
         r.projects = [];
+        runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
       return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+    }],
+    // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
+    ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: activeAttachments(m[1]).map(attachmentView), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      const r = runnersFile().items.find((x) => x.id === body.runner_id && !x.removed_at);
+      if (!r || r.owner_id !== me().member.id) fail(400, "invalid", "attach one of your own runners", path, { fields: { runner_id: "not_yours" } });
+      const open = activeAttachments(m[1]).find((a) => a.runner_id === r.id);
+      if (open) fail(409, "already_attached", "the runner is attached already", path, { attachment: attachmentView(open) });
+      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: m[1],
+        attached_by: me().member.id, attached_at: nowIso(), detached_at: null };
+      runnersFile().attachments.push(a);
+      r.projects = (r.projects || []).concat(m[1]);
+      return attachmentView(a);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/runners\/([^/]+)$/, (m, body, path) => {
+      const all = runnersFile().attachments.filter((x) => x.project === m[1] && x.runner_id === m[2]);
+      if (!all.length) fail(404, "not_found", "the runner was never attached here", path);
+      const a = all.find((x) => !x.detached_at) || all[all.length - 1];
+      if (!a.detached_at) {
+        a.detached_at = nowIso();
+        const r = runnerOf(m[2], path);
+        r.projects = (r.projects || []).filter((s) => s !== m[1]);
+        const counts = (runnersFile().active_placements || {})[r.id];
+        if (counts) delete counts[m[1]];
+      }
+      return attachmentView(a);
     }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
@@ -501,6 +583,21 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if ("repository" in body) {
+        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
+        if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
+        }
+        const same = p.repository && p.repository.url === url;
+        // What the repository had, kept by its URL, comes back with it: the
+        // export follows the repository, and a new one has not been read yet.
+        if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
+        const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
+        p.repository = back ? back.repository
+          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
+      }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
         if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
@@ -573,6 +670,49 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.11 the overview: counts per column (closed ones after closed_after),
+    // open requests as this caller would list them, the latest reports.
+    ["GET", /^\/projects\/([^/]+)\/overview$/, (m, body, path, query) => {
+      const after = query.get("closed_after");
+      if (after !== null && Number.isNaN(Date.parse(after))) fail(400, "invalid", "closed_after is no time", path, { fields: { closed_after: "invalid" } });
+      const limit = query.get("limit") === null ? 10 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) fail(400, "invalid", "limit is 1 to 50", path, { fields: { limit: "invalid" } });
+      const cards = file(m[1], "tasks.json", path).items;
+      const counts = { proposed: 0, open: 0, in_progress: 0, blocked: 0, review: 0, done: 0, cancelled: 0 };
+      cards.forEach((t) => {
+        const closed = t.status === "done" || t.status === "cancelled";
+        if (closed && after && Date.parse(t.closed_at || t.updated_at) <= Date.parse(after)) return;
+        if (t.status in counts) counts[t.status] += 1;
+      });
+      const meId = me().member.id;
+      const role = roleIn(m[1]);
+      const answers = ["owner", "admin", "proxy"].includes(role);
+      const mine = (r) => r.to === meId || r.to === role;
+      const open = openFor(m[1]).filter((r) => answers || mine(r) || (r.asked_by && r.asked_by.member_id === meId));
+      const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
+      open.forEach((r) => { if (r.priority in byPriority) byPriority[r.priority] += 1; });
+      // A removed reporter keeps its handle and name (§6.2's removed member view).
+      const mlist = file(m[1], "members.json", path);
+      const members = mlist.items.concat(mlist.removed || []);
+      const who = (id) => { const x = members.find((mm) => mm.id === id); return { member_id: id, handle: x ? x.handle : id, display_name: x ? x.display_name : id, avatar_url: x ? x.avatar_url || null : null }; };
+      const reports = cards.filter((t) => t.report && t.report.reported_at)
+        .sort((a, b) => (a.report.reported_at < b.report.reported_at ? 1 : -1)).slice(0, limit)
+        .map((t) => {
+          const r = t.report;
+          const code = r.code !== false;
+          return { task: { id: t.id, title: t.title, status: t.status, kind: t.kind, label: t.label || null },
+            reported_by: who(r.reported_by), reported_at: r.reported_at, code, verification: r.verification || null,
+            pr: code && r.pr_status === "found" && r.pr ? { number: r.pr.number, url: r.pr.url } : null,
+            pr_state: r.observed ? r.observed.pr_state || null : null, observed_at: r.observed ? r.observed.observed_at || null : null,
+            // null until the probe has looked (§6.6), never "no mismatch".
+            mismatch: r.observed ? !!r.mismatch : null };
+        });
+      return { server_time: nowIso(),
+        board: { counts, closed_after: after },
+        requests: { open: open.length, to_me: open.filter(mine).length, by_priority: byPriority,
+          oldest_open_at: open.length ? open.map((r) => r.created_at).sort()[0] : null },
+        reports };
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path, query) => {
       const keep = statusFilter(query, "all");
@@ -887,23 +1027,190 @@ window.Maity = window.Maity || {};
       }
       return j;
     }],
-    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
+    // §9.3: the direct conversations and the group chats, newest first; with
+    // observed=true also the group chats read along as an agent's owner.
+    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
       const all = file(m[1], "conversations.json", path);
-      return {
-        items: Object.keys(all).map((agentId) => {
-          const items = all[agentId].items;
-          const last = items.length ? items[items.length - 1] : null;
-          return {
-            agent_id: agentId,
-            last_message_at: last ? last.sent_at : null,
-            unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
-            // §9: the newest message as a preview, its body cut at 200 code points.
-            last_message: last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
-              sent_at: last.sent_at, redacted: !!last.redacted },
-          };
-        }),
-        next_cursor: null,
+      const members = file(m[1], "members.json", path).items;
+      const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
+        sent_at: last.sent_at, redacted: !!last.redacted };
+      // §9.2: an owner outside the project sees only the chats its agents are
+      // in, and only with observed=true; no direct chat, nothing else.
+      const outside = !me().projects.some((p) => p.slug === m[1]);
+      // Neither a member nor an agent there: the route does not say the project exists (§9.2).
+      if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
+        && (a.memberships || []).some((x) => x.project === m[1]))) fail(404, "not_found", "Not found", path);
+      const direct = outside ? [] : Object.keys(all).map((agentId) => {
+        const items = all[agentId].items;
+        const last = items.length ? items[items.length - 1] : null;
+        const agent = members.find((x) => x.id === agentId);
+        return {
+          id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
+          participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+            { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
+          last_message_at: last ? last.sent_at : null,
+          unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
+          mentions_unread: 0,
+          // §9: the newest message as a preview, its body cut at 200 code points.
+          last_message: preview(last),
+        };
+      });
+      const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
+        .filter((g) => g.access === "participant" || query.get("observed") === "true")
+        .map((g) => {
+          const c = groupChats(m[1])[g.id];
+          const win = windowOf(c, me().member.id);
+          const last = win.length ? win[win.length - 1] : null;
+          const readTo = c.read[me().member.id] || 0;
+          const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
+          return Object.assign({}, g, {
+            participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+            last_message_at: last ? last.sent_at : null, last_message: preview(last),
+            unread: g.access === "observer" ? null : theirs.length,
+            mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
+          });
+        });
+      const at = (c) => c.last_message_at || c.created_at || "";
+      return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    }],
+    // §9.2 group chats.
+    ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
+      const chats = groupChats(m[1]);
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const members = file(m[1], "members.json", path).items;
+      const ids = [...new Set([me().member.id].concat(body.participants || []))];
+      if (ids.some((id) => !members.some((x) => x.id === id))) fail(400, "invalid", "not a member", path, { fields: { participants: "not_a_member" } });
+      if (ids.length < 2) fail(400, "invalid", "too few", path, { fields: { participants: "too_few" } });
+      if (ids.length > 12) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+      const others = ids.filter((id) => id !== me().member.id).map((id) => members.find((x) => x.id === id));
+      if (others.length === 1 && others[0].kind === "agent" && others[0].owner_id === me().member.id) {
+        fail(400, "invalid", "that is the direct conversation", path, { fields: { participants: "use_direct" } });
+      }
+      const at = nowIso();
+      const id = "cnv-" + String(Object.keys(chats).length + 100).padStart(4, "0");
+      chats[id] = { view: { id, kind: "group", title: body.title || null, created_by: me().member.id, created_at: at,
+        participants: ids.map((mid) => participantOf(members.find((x) => x.id === mid), at, 0)), closed_at: null, closed_reason: null },
+      items: [], read: {} };
+      return groupItem(m[1], chats[id], path);
+    }],
+    ["GET", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)$/, (m, body, path) => {
+      const item = groupItem(m[1], groupChat(m[1], m[2], path), path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      return item;
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)$/, (m, body, path) => {
+      const c = managed(m[1], m[2], path);
+      c.view.title = body.title || null;
+      return groupItem(m[1], c, path);
+    }],
+    ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants$/, (m, body, path) => {
+      const c = managed(m[1], m[2], path);
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const who = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id);
+      if (!who) fail(400, "invalid", "not a member", path, { fields: { member_id: "not_a_member" } });
+      if (!c.view.participants.some((x) => x.member_id === who.id)) {
+        if (c.view.participants.length >= 12) fail(400, "invalid", "too many", path, { fields: { participants: "too_many" } });
+        const last = c.items.length ? c.items[c.items.length - 1].seq : 0;
+        c.view.participants.push(participantOf(who, nowIso(), last));
+      }
+      return groupItem(m[1], c, path);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants\/([^/]+)$/, (m, body, path) => {
+      const c = groupChat(m[1], m[2], path);
+      const self = m[3] === me().member.id;
+      if (!self) managed(m[1], m[2], path);
+      else if (!c.view.participants.some((x) => x.member_id === me().member.id)) fail(404, "not_found", "Not found", path);
+      const gone = c.view.participants.find((x) => x.member_id === m[3]);
+      if (!gone) fail(404, "not_found", "no such participant", path);
+      c.view.participants = c.view.participants.filter((x) => x !== gone);
+      if (gone.kind === "human") c.former = (c.former || []).concat(gone.member_id);
+      // The last human gone: the chat closes (§9.2).
+      if (!c.view.participants.some((x) => x.kind === "human")) { c.view.closed_at = nowIso(); c.view.closed_reason = "no_human"; }
+      return { conversation_id: m[2], member_id: m[3], joined_at: gone.joined_at, left_at: nowIso(), by: me().member.id, reason: self ? "left" : "removed" };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path, query) => {
+      const c = groupChat(m[1], m[2], path);
+      const item = groupItem(m[1], c, path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      if (query.get("after") !== null && query.get("before") !== null) fail(400, "invalid", "after or before", path, { fields: { before: "invalid" } });
+      const limit = Math.min(200, Number(query.get("limit") || 50));
+      const win = windowOf(c, me().member.id);
+      let items;
+      if (query.get("before") !== null) {
+        const older = c.items.filter((x) => x.seq < Number(query.get("before")));
+        items = older.slice(-limit);
+      } else {
+        items = win.filter((x) => x.seq > Number(query.get("after") || 0)).slice(0, limit);
+        if (item.access === "participant" && items.length) c.read[me().member.id] = Math.max(c.read[me().member.id] || 0, items[items.length - 1].seq);
+      }
+      // earlier: the seq to pass as before; for a window with nothing in it
+      // yet, everything said so far lies before it.
+      const first = items.length ? items[0].seq : (win.length ? win[0].seq : (c.items.length ? c.items[c.items.length - 1].seq + 1 : null));
+      const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
+      // An admin's reason is shown to it and the chat's former humans only (§8.5).
+      const shown = (x) => {
+        const v = messageView(x);
+        if (v.redaction && v.redaction.admin_reason) {
+          const r = Object.assign({}, v.redaction);
+          delete r.admin_reason;
+          if (item.access === "observer" || me().member.kind !== "human") r.reason = null;
+          v.redaction = r;
+        }
+        return v;
       };
+      return { items: items.map(shown), cursor: items.length ? items[items.length - 1].seq : null, earlier };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path) => {
+      const c = groupChat(m[1], m[2], path);
+      const item = groupItem(m[1], c, path);
+      if (!item) fail(404, "not_found", "Not found", path);
+      if (item.access === "observer") fail(403, "forbidden", "an observer does not post", path, { reason: "observer" });
+      if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
+      // One sequence for the project's messages, as the event log has it.
+      const last = Math.max(5000, ...Object.values(groupChats(m[1])).flatMap((x) => x.items.map((y) => y.seq)),
+        ...Object.values(file(m[1], "conversations.json", path)).flatMap((x) => x.items.map((y) => y.seq)));
+      const msg = { id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2], from: me().member.id, to: m[2], body: body.body, sent_at: nowIso(), mentions: [] };
+      c.items.push(msg);
+      c.read[me().member.id] = msg.seq;
+      return msg;
+    }],
+    // §8.5: a chat message redacted by a human in the room, the direct chat's
+    // human party with events:admin, or blind in a closed group chat.
+    ["POST", /^\/projects\/([^/]+)\/events\/(\d+)\/redact$/, (m, body, path) => {
+      const seq = Number(m[2]);
+      const chats = groupChats(m[1]);
+      const meId = me().member.id;
+      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      let msg = null;
+      let chat = null;
+      let direct = null;
+      Object.values(chats).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; chat = c; } });
+      if (!msg) Object.entries(file(m[1], "conversations.json", path)).forEach(([agentId, c]) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; direct = agentId; } });
+      // expect (#206): only a closed group chat's message, else nothing changes.
+      if (body.expect !== undefined && !(chat && chat.view.closed_at)) fail(400, "invalid", "not a closed group chat's message", path, { fields: { expect: "mismatch" } });
+      if (!msg) fail(404, "not_found", "Not found", path);
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      const stamp = (extra) => Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: Object.assign({ at: nowIso(), by: meId, reason: body.reason }, extra) });
+      const event = () => ({ seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: meId, at: nowIso() } });
+      if (chat) {
+        const item = groupItem(m[1], chat, path);
+        const former = (chat.former || []).includes(meId);
+        if (chat.view.closed_at && former) { stamp(); return event(); }
+        // The blind removal: an admin who cannot read the chat learns only
+        // that it is removed; its reason is shown to it and the former humans.
+        if (chat.view.closed_at && admin && (!item || item.access !== "participant")) { stamp({ admin_reason: true }); return { seq, redacted: true }; }
+        if (!item) fail(404, "not_found", "Not found", path);
+        if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "observer" });
+        stamp();
+        return event();
+      }
+      // A direct chat: its human party, holding events:admin (§8.5).
+      const agent = file(m[1], "members.json", path).items.find((x) => x.id === direct);
+      if (!agent || agent.owner_id !== meId) fail(404, "not_found", "Not found", path);
+      if (!admin) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
+      stamp();
+      return event();
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);
@@ -911,7 +1218,7 @@ window.Maity = window.Maity || {};
       conv.items.forEach((x) => { x.seen_by_human = true; });
       return {
         items: conv.items.filter((x) => x.seq > after).map((x) => {
-          const copy = Object.assign({}, x);
+          const copy = messageView(x);
           delete copy.seen_by_human;
           return copy;
         }),

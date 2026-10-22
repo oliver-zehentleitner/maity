@@ -28,7 +28,7 @@ window.Maity = window.Maity || {};
     string_too_short: "Required.",
     string_too_long: "Too long.",
     missing: "Required.",
-    not_a_configured_forge: "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.",
+    not_a_configured_forge: M.FORGE_RULE,
     unknown: "Not a known value.",
   };
 

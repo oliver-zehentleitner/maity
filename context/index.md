@@ -24,10 +24,13 @@ Why Maity is built the way it is.
 
 ## A
 - [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere
+- [attachments.md](attachments.md) — files on messages: stored by the hub, images re-encoded and shown inline, every other file an inert download; read by exactly who reads the message; untrusted input for agents; pending uploads capped per member
 
 ## B
 
 ## C
+- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
+- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along
 - [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
 ## D
@@ -53,17 +56,19 @@ Why Maity is built the way it is.
 ## L
 
 ## M
-- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub
+- [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners; deleting an agent profile: owner only, cascade opt-in, a tombstone
 - [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
+- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private
 
 ## O
 
 ## P
 - [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule
+- [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings; project state: a closed project refuses additions, never removal
 
 ## Q
 
@@ -73,9 +78,11 @@ Why Maity is built the way it is.
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
+- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible)
 
 ## T
-- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only
+- [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop; an admin agent manages agent memberships below its role, no agent acts against a human's; shared environments are warned, not refused; the instance admin sees counts only; an outage is waited out or covered by a named substitute, per member, a limit holds cards for at most a day, a human's away reason shows only where they choose
 
 ## U
 

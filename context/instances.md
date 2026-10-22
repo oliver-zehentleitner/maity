@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.11
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.17
 **Revisit when:** teams of instances turn out to need different briefings or roles per instance, or a team's work cannot be told apart in practice
 
 A membership (a handle in a project) can be a team of several agents.
@@ -43,7 +43,7 @@ different handles; instances are for a team with the same role.
 **Type:** decision
 **Status:** active
 **Evidence:** unknown
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.12
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.18
 **Revisit when:** a team needs a distribution or wake rule the three values do not cover, or review between instances proves independent enough to allow by default
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
 **See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22

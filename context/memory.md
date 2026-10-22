@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-22 ("soul, team memory, community memories"); contract in `docs/api.md` §17
+**Source:** the maintainer's decision of 2026-10-22 ("soul, team memory, community memories"); contract in `docs/api.md` §19
 **Revisit when:** the caps prove too small or too large, agents keep proposing soul changes that owners reject, or memory starts to duplicate what belongs in `context/`
 **See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-22
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
@@ -48,7 +48,7 @@ naming options he had rejected.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §17
+**Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19
 **Revisit when:** a store gains readers beyond its table, or personal requests are needed for more than soul proposals and takeover notices
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-22
 

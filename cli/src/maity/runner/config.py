@@ -10,6 +10,7 @@ file, and the hub cannot widen it. Every default is listed by `maity runner chec
 from __future__ import annotations
 
 import os
+import pwd
 import re
 import tomllib
 import urllib.parse
@@ -70,12 +71,32 @@ class Limits:
 @dataclass(frozen=True)
 class Local:
     workspaces: Path
-    tmux_socket: Path  # tmux -S; default <state_dir>/tmux.sock
+    tmux_socket: Path  # tmux -S; default <agent_files>/tmux.sock
+    agent_files: Path = Path()  # tmux.conf, logs, harness files: the agents' side
     layout: str = "single"
     agent_user: str | None = None
     agent_path: str | None = None  # None: the service's own PATH at start
     memory_max: str | None = None
     cpu_quota: str | None = None
+
+
+@dataclass(frozen=True)
+class SshHost:
+    name: str  # the target name placements use
+    address: str
+    user: str
+    workspaces: Path  # absolute, on the host
+    port: int = 22
+    max_agents: int = 4
+    agent_path: str = "/usr/local/bin:/usr/bin:/bin"  # PATH of the agents and of maity there
+    isolation: str = "shared_user"
+
+
+@dataclass(frozen=True)
+class Ssh:
+    known_hosts: Path  # the only known_hosts file; StrictHostKeyChecking=yes
+    hosts: tuple[SshHost, ...]
+    identity: str = "agent"  # "agent": the operator's SSH_AUTH_SOCK; otherwise a key file
 
 
 @dataclass(frozen=True)
@@ -108,6 +129,7 @@ class Config:
     local: Local | None
     harnesses: dict[str, Harness]
     repositories: dict[str, RepositoryGrant]
+    ssh: Ssh | None = None
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -275,11 +297,19 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         agent_user = local_in.get("agent_user", str, None)
         if layout == "agent_user" and not agent_user:
             problems.append('backend.local.agent_user: required with layout = "agent_user"')
+        # The agents' side lives where the agents' user can reach it: the runner's state
+        # directory in the single layout, the agent user's home in the agent_user layout.
+        agent_files = (
+            home_of(agent_user) / ".maity-runner"
+            if layout == "agent_user" and agent_user
+            else state_dir
+        )
         local = Local(
             workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
             tmux_socket=Path(
-                local_in.get("tmux_socket", str, str(state_dir / "tmux.sock"), check=_absolute)
+                local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
+            agent_files=agent_files,
             layout=layout,
             agent_user=agent_user,
             agent_path=local_in.get("agent_path", str, None),
@@ -287,11 +317,14 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             cpu_quota=local_in.get("cpu_quota", str, None),
         )
         local_in.done()
-    # [backend.local] under another kind is not read, so its keys are not judged either
-    for later, slice_ in (("ssh", "R7"), ("k8s", "phase 2")):
-        later_in = backend_in.table(later)
-        if later_in is not None or kind == later:
-            problems.append(f"backend.{later}: not supported by this version yet ({slice_})")
+    # A table for another kind is not read, so its keys are not judged either.
+    ssh = None
+    ssh_in = backend_in.table("ssh")
+    if kind == "ssh":
+        ssh = _ssh(ssh_in or _Reader({}, "backend.ssh", problems), problems)
+    k8s_in = backend_in.table("k8s")
+    if k8s_in is not None or kind == "k8s":
+        problems.append("backend.k8s: not supported by this version yet (phase 2)")
     backend_in.done()
 
     harnesses: dict[str, Harness] = {}
@@ -328,7 +361,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants)
+    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh)
 
 
 _RESTART = Restart()
@@ -399,14 +432,21 @@ def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
 
 
+def home_of(user: str) -> Path:
+    """A user's home directory; `/home/<user>` when this host does not know the user (the
+    check reports that separately)."""
+    try:
+        return Path(pwd.getpwnam(user).pw_dir)
+    except KeyError:
+        return Path("/home") / user
+
+
 def unsupported(cfg: Config) -> list[str]:
     """What the configuration asks for that this version does not do yet. `check` reports
     each as an error and `serve` refuses to start, rather than running agents with less
     isolation or fewer limits than the operator wrote down."""
     found: list[str] = []
     if cfg.local is not None:
-        if cfg.local.layout == "agent_user":
-            found.append('backend.local.layout = "agent_user" is not supported yet (R7)')
         if cfg.local.memory_max is not None:
             found.append("backend.local.memory_max is not enforced yet; remove it or wait for it")
         if cfg.local.cpu_quota is not None:
@@ -415,6 +455,62 @@ def unsupported(cfg: Config) -> list[str]:
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
     return found
+
+
+HOST_ADDRESS = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$"
+)  # a name or an address, never an option
+REMOTE_USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+REMOTE_PATH = re.compile(r"^/[A-Za-z0-9._/-]*$")
+
+
+def _ssh(table: _Reader, problems: list[str]) -> Ssh:
+    known_hosts = table.get("known_hosts", str, "", required=True, check=_absolute)
+    identity = table.get("identity", str, "agent")
+    if identity != "agent" and not Path(identity).expanduser().is_absolute():
+        problems.append('backend.ssh.identity: "agent" or an absolute path to a key file')
+    hosts: list[SshHost] = []
+    raw = table.get("hosts", list, [], required=True)
+    if "hosts" in table.data and not raw:
+        problems.append("backend.ssh.hosts: name at least one host")
+    for index, entry in enumerate(raw):
+        host = _Reader(entry, f"backend.ssh.hosts[{index}]", problems)
+        name = host.get("name", str, "", required=True, check=_pattern(SLUG, "a slug"))
+        hosts.append(
+            SshHost(
+                name=name,
+                address=host.get("address", str, "", required=True,
+                                 check=_pattern(HOST_ADDRESS, "a host name or address")),
+                user=host.get("user", str, "", required=True,
+                              check=_pattern(REMOTE_USER, "a user name")),
+                workspaces=Path(host.get("workspaces", str, "/", required=True,
+                                         check=_pattern(REMOTE_PATH, "an absolute path"))),
+                port=host.get("port", int, 22, check=_port),
+                max_agents=host.get("max_agents", int, 4, check=_positive),
+                agent_path=host.get("agent_path", str, SshHost.agent_path,
+                                    check=_pattern(re.compile(r"^/[A-Za-z0-9._/:-]*$"), "a PATH")),
+                isolation=host.get("isolation", str, "shared_user",
+                                   check=_one_of("shared_user", "own_user")),
+            )
+        )  # fmt: skip
+        if hosts[-1].isolation == "own_user":
+            problems.append(
+                f"{host.where}.isolation: own_user is not supported by this version yet"
+            )
+        host.done()
+    names = [h.name for h in hosts]
+    for name in sorted({n for n in names if names.count(n) > 1}):
+        problems.append(f"backend.ssh.hosts: the name {name!r} is used twice")
+    table.done()
+    return Ssh(Path(known_hosts).expanduser(), tuple(hosts), identity)
+
+
+def _port(value: Any) -> str | None:
+    return None if 0 < value < 65536 else "1 to 65535"
+
+
+def _pattern(pattern: re.Pattern[str], what: str) -> Callable[[Any], str | None]:
+    return lambda v: None if pattern.match(v) and ".." not in v.split("/") else f"not {what}"
 
 
 def _grace(value: Any) -> str | None:

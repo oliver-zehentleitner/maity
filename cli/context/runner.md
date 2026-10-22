@@ -310,7 +310,7 @@ network domains start empty, so the hub and the forge have to be named, or
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
@@ -615,3 +615,237 @@ placement that waits for something this runner will never do.
 **Rejected alternative:** keeping such a placement pending without a
 report, as while the adapters were missing: it would wait forever on a
 runner that refuses the harness by configuration.
+
+## Sandboxed agents: git redirects are pinned, other clones and secrets unreadable
+
+**Id:** ea36c196-f8e6-43ae-bc47-49c8d5379a65
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
+
+Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
+environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. Git then ignores
+a `.git/commondir` the agent wrote from inside its sandbox, and does not
+run a program from a nested repository the agent registered as a
+submodule (whose configuration the pin does not reach). That covers the
+harness's own git calls, which run outside the sandbox, and any other git
+started from the session. `maity`'s own git carries the same settings on
+its command line whatever its environment, because for Claude Code
+`maity` runs outside the sandbox. Codex's profile reads nothing under
+the workspaces root but its own clone, nothing in the runner's state and
+configuration, and none of a list of logins and keys in the agents'
+home. Claude Code's sandbox gets the same read denies except the
+workspaces root, plus the credential of every other clone that exists
+when the agent starts. A clone made later stays readable to it until its
+next start. Both keep the clone's own credential readable, because the
+agent's `maity` needs it. The forge login stays readable, because pushing
+needs it. opencode's `grep` and `glob` are off: opencode checks them
+against the pattern typed, not the path searched. maity and the runner
+run git only through `proc.GIT`, a clone into a missing directory, and
+`gc`'s pinned read; a test pins that.
+
+**Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
+`.git`, so the directory has to stay writable, and an agent that can
+write there can write `commondir`. Read-only `config` and `hooks` meant
+nothing once git read them from elsewhere. The variable is part of the
+harness process's environment, which a sandboxed command cannot change.
+An agent that unsets it for its own git runs the planted program as
+itself, inside its own sandbox, which it could do anyway. Without read
+denies, one agent read another's credential (another identity on the
+hub), the operator's ssh keys and the model login, and could send them
+to an allowed host. For Claude Code the workspaces root is left
+readable: re-opening the clone inside it with `allowRead` may re-open
+the clone's credential as well, and that order could not be checked
+without a model run. Denying each other clone's credential by name at
+the start avoids the question, at the cost of clones made later. The
+home list is a list: the README says that any other secret in the
+agents' home stays readable.
+
+**Rejected alternatives:**
+- A read-only `.git` with write access to `objects`, `refs` and the
+  index only: git creates its lock files and `ORIG_HEAD` in `.git`
+  itself, so commits fail.
+- Denying writes to each redirecting file (`commondir`,
+  `config.worktree`, `info/attributes`): files that do not exist yet
+  cannot be bound read-only reliably, and it is the enumeration the gc
+  fix already moved away from.
+- Hiding the whole home from Codex: the agent's `maity`, `git` and
+  toolchains are often installed there.
+- `--ignore-submodules=all` on `maity`'s own `git status`: it also hides
+  a newly staged submodule, so `report` would miss a change. The
+  configuration setting keeps git out of the submodule and still shows
+  the staged gitlink.
+
+## In the `agent_user` layout everything on the agents' side belongs to the agents' user
+
+**Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.6; the coordinator's choice to do the `agent_user` layout before ssh, 2026-10-22; implementation of runner slice R7a, 2026-10-22; not yet run with a real second user
+**See:** runner.md — 2bdc5809-b08b-4fa2-97bc-004d37c4cddb — as of 2026-10-22
+**Revisit when:** agents need separation from each other, not only from the runner (one OS user per agent), or a live run shows a harness writing where the agents' user cannot
+
+With `layout = "agent_user"`, every command for the agents runs as
+`sudo -n -u <agent_user> --`, with only the environment it needs passed
+explicitly. That covers the tmux server and its sessions, the clone, the
+join, the supervised loop, `gc`'s git and its revocation check, and stopping
+a process group. Everything the agents' side needs (tmux socket and
+configuration, logs, the harness settings and Codex's home) lives under
+`~<agent_user>/.maity-runner/` and is written as that user. The runner's
+state directory, its credential and its records stay the runner user's
+alone. Commands for the agents never get the runner's terminal (stdin is
+`/dev/null`), and the clone runs without any login prompt. Harness
+probes and `check` run as the agents' user, who is the one that must be
+able to start them. Nothing secret may travel as an argument in this
+layout: sudo logs every command line, and `/proc` shows it, so a
+harness `env_file` (R5) has to reach the session another way than
+`env K=V` or `tmux -e`. The sandbox read denies are worked out from this
+side too: the agents' user's home secrets, its `~/.maity-runner` (every
+agent's socket, log and settings, which the single layout keeps in the
+hidden state directory) and the other clones' credentials, listed as
+that user because the runner cannot list a 0700 directory it does not
+own; a listing that is not complete refuses the start
+(`harness_refused`) rather than leave a credential readable. Binaries and
+sandbox tools are looked up, and Codex's sandbox tried, as that user on
+the agents' PATH as well.
+
+**Reason:** the layout exists so that agents, and any repository code
+they run, cannot read the runner's credential or state. That only holds
+if nothing the agents need has to be inside the runner's 0700 state
+directory. Harness settings written as the agents' user can be changed
+by that user, but under this layout the OS user is the boundary. A
+setting an agent widens only reaches what that same user could already
+do with a shell. Agents under one `agent_user` still see each other's
+files and credentials; separating them needs one user per agent (ssh
+`own_user`, or pods).
+
+**Rejected alternatives:**
+- Harness settings owned by the runner and readable by the agents: they
+  would need a runner-owned directory the agents can traverse, and
+  Claude Code still loads the agents' user's own settings, which that
+  user can write.
+- Running tmux as the runner with `server-access` for the agents' user:
+  tmux 3.3 and later only, and the sessions' processes would still be
+  the runner's.
+
+## On the ssh backend each host is a target that runs its own `maity`
+
+**Id:** 256e800f-3ddc-482e-b4ac-e6b09d69fe72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.4; implementation of runner slice R7b, 2026-10-22; the independent review of #172 (an sshd test found that ssh cannot create its ControlPath directory), 2026-10-22; tested against a fake `ssh` and against a real sshd on localhost, not yet against a remote host
+**Revisit when:** a live run on a real host shows a step that does not work over ssh, or `gc` and `workspace claim` are extended to ssh hosts
+
+The supervisor works on targets: `local`, or one per configured ssh host.
+Each target has its own command runner, workspaces root, tmux server,
+agent limit and harness probes. Every command for a host is a fixed
+template sent as one command line with every word quoted, over a shared
+connection with strict host keys and no forwarding. The agents' files
+(tmux socket, logs, harness settings) live in the remote user's
+`~/.maity-runner/`. That home is learned on the first connection. What the
+agents run, the supervised loop and the `stub` included, starts through
+the host's own `maity`, on internal subcommands (`maity runner loop`,
+`maity runner stub`). The join runs the host's `maity` too, so the
+agent's credential is written on the host and never passes through the
+runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
+denies are the host's: the remote user's home secrets, its
+`~/.maity-runner` and the other clones' credentials listed on the host,
+never paths of the runner's machine. `gc` and `workspace claim` stay
+local-only in this slice.
+
+**Reason:** the runner's interpreter path means nothing on another
+machine, and the operator's install there (pipx, a virtual environment)
+is reached reliably only through its `maity` on the configured
+`agent_path`. Keying records by host keeps the same path on two hosts
+from being one workspace. `gc` reads an agent's git state with a layout
+check written against local files; doing that over ssh needs the same
+care again, so it waits rather than being half done.
+
+**Rejected alternatives:**
+- `python3 -I -m maity.runner.loop` on the host: the system `python3`
+  usually does not have the operator's `maity` installed.
+- Copying the runner's interpreter path to the host: different machines
+  rarely share it.
+
+## A placement without a target stays on the host it was first given
+
+**Id:** 0448a690-171f-4f75-8f33-a896dd3f7e0a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.2, §5.4 and §15.7 of the API contract; the contract owner's choice of `target_unknown`, 2026-10-22; implementation of runner slice R7b, 2026-10-22
+**Revisit when:** the runner gains a way to move a clone and its credential between hosts, or operators ask for load-based placement
+
+A placement that names a target runs there. One with `target: null`
+goes to the first reachable host, in configuration order, with a free
+slot. It is recorded there and stays there across ticks and runner
+restarts. A target the configuration no longer has is reported as
+`failed`/`harness_refused` with the detail `target_unknown`. While a host
+does not answer, its placements keep their last reported state, and the
+runner advertises the host with `reachable: false` and
+`unreachable_since` at once instead of reporting a reason.
+
+**Reason:** a clone and its credential exist on one host. Moving a
+placement to another host would start it without its work and its
+identity. The first free host in configuration order is predictable for
+the operator, who orders the list. Reachability is a property of the
+host, not of a placement (§15.7), and an agent on a host that lost its
+network is still running.
+
+**Rejected alternatives:**
+- Choosing the least loaded host on every start: a restart could land on
+  another host and lose the clone.
+- Reporting an unreachable host's placements as failed: the agents keep
+  running there, and the report would be wrong once the host answers.
+
+
+## A provider limit reaches the runner as the loop's exit 22, and no harness signals one yet
+
+**Id:** 924bb731-5f0d-4532-b785-e651d0949988
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.7 and §6.12 as settled in the contract's review rounds (recognition only by a signal verified on a real run; the reset_unknown backoff); implementation of the CLI side of #158, 2026-10-22
+**Revisit when:** a real run of Claude Code or Codex shows the exit code or output that marks its provider limit, or a harness names its reset time in a form the loop can read
+
+The supervised loop learns from the adapter which exit codes are the
+harness's provider limit (`limit.exit_codes` in its spec). On such an
+exit it writes the harness's own exit code to `limit.json` in the
+agent's directory and exits 22. The runner maps 22 to `rate_limited`,
+`reason: quota`, `detail: reset_unknown`, with that exit code and
+`retry_at` 15 minutes on, doubling with each limit in a row up to 2
+hours. When a run of the loop had ended cleanly before the limit, the
+loop exits 23 instead of 22, and the runner starts the row over; so does
+any other end of a run, and a new generation. The runner deletes
+the file before each start and reads it as the agents' user, never
+through a link and never blocking on a FIFO, at most 512 bytes, and takes
+nothing but a plain exit code from it. No adapter lists an exit code yet, so for
+now every limit exits as an ordinary failure, as §15.7 asks until a
+signal is verified; a reset time a harness names is not read either.
+
+**Reason:** the loop is the only process that sees the harness exit, and
+the runner only sees the loop's exit status; a fixed exit code plus a
+file in the agent's directory carries the harness's own code without a
+new channel. That directory is the agents' side, so the file is
+untrusted input: an agent could plant a link to a device or a deep JSON,
+or a reset time that holds its slot for a week. Guessing a harness's limit signal would turn
+some real crashes into limits, which hide from the crash cap and set the
+member's availability; an empty list keeps the old behaviour until a run
+shows the signal. The loop's clean runs between two limits never reach the runner, so the
+loop says so in its exit code: the file is the agents' to write, the exit
+status is not, and a session's length alone would reset the row for
+sessions that simply work a while before each limit.
+
+**Rejected alternatives:**
+- Reading the harness's output in the pane for limit messages: the loop
+  would have to capture what the agent sees, and the wording changes with
+  every harness version.
+- A new tmux option to pass the limit to the runner: the runner already
+  reads the agent's directory, and an option would outlive the session's
+  exit only by accident.

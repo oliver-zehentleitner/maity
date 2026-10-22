@@ -5,13 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import shlex
 import sys
 import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -116,7 +119,20 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     for key in ("harness", "harness_version", "model", "cursor"):
         if session.data.get(key) is not None:
             body[key] = session.data[key]
-    packet = session.client.call("POST", "/me/resume", body=body)
+    declared = environment.ids(session.client.base, session.dir)
+    if declared is not None:
+        body["environment"] = declared
+    try:
+        packet = session.client.call("POST", "/me/resume", body=body)
+    except hub.HubError as exc:
+        # A hub from before §5.3 refuses the field: resume without it, saying so.
+        fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
+        if "environment" not in body or exc.code != "invalid" or not isinstance(fields, dict) \
+                or not any(str(k).startswith("environment") for k in fields):  # fmt: skip
+            raise
+        _err("this hub does not take the session's environment yet; resuming without it")
+        del body["environment"]
+        packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
@@ -533,17 +549,30 @@ def cmd_answer(args: argparse.Namespace) -> int:
 CLOSED = ("done", "cancelled")
 
 
+def _next_cursor(page: Any, seen: set[str]) -> str | None:
+    """The page's `next_cursor`, or None on the last page. A cursor that comes back would
+    loop for ever: that is an error, never another round."""
+    cursor = _field(page, "next_cursor")
+    if not isinstance(cursor, str) or not cursor:
+        return None
+    if cursor in seen:
+        raise CommandError("the hub sent the same page cursor twice; stopping")
+    seen.add(cursor)
+    return cursor
+
+
 def _releases(session: Session) -> list[dict[str, Any]]:
     """Every release card of the project, following the pages."""
     items: list[dict[str, Any]] = []
     cursor: str | None = None
+    seen: set[str] = set()
     while True:
         query = [("kind", "release"), ("status", "all"), ("limit", "200")]
         if cursor:
             query.append(("cursor", cursor))
         page = session.client.call("GET", session.project_path("tasks"), query=query)
         items.extend(i for i in _field(page, "items") or [] if isinstance(i, dict))
-        cursor = _field(page, "next_cursor")
+        cursor = _next_cursor(page, seen)
         if not cursor:
             return items
 
@@ -791,6 +820,335 @@ def _avatar_line(answer: Any) -> str:
     if url is None:
         return "no image (the generated avatar is shown)"
     return f"{onboarding.inline(url)} ({onboarding.inline(source or 'unknown source')})"
+
+
+# --- the limit (§6.12) --------------------------------------------------------------------------
+
+LIMIT_MAX = 7 * 24 * 3600
+_DURATION = re.compile(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.ASCII)
+_RFC3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:[Zz]|[+-]\d{2}:\d{2})", re.ASCII
+)
+_NO_OFFSET = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?", re.ASCII)
+
+
+def cli_time(flag: str, value: str, direction: int, now: float | None = None,
+             limit: int | None = None) -> str:  # fmt: skip
+    """A time option as RFC 3339 in UTC with `Z`: a timestamp with an offset (converted), or
+    a duration (`90m`, `1h30m`, `2d12h`; §13's grammar, ASCII digits only) from now, forward
+    (`direction` 1) or back (-1), at most `limit` seconds. A timestamp without an offset is
+    refused, never read as local time: an agent's zone is often not its human's."""
+    match = _DURATION.fullmatch(value)
+    if value and match and any(match.groups()):
+        if any(g is not None and int(g) == 0 for g in match.groups()):
+            raise UsageError(f"{flag} {value!r}: each part of a duration is a positive number")
+        d, h, m, s = (int(g or 0) for g in match.groups())
+        seconds = ((d * 24 + h) * 60 + m) * 60 + s
+        if limit is not None and seconds > limit:
+            raise UsageError(f"{flag} {value!r}: at most 7 days ahead")
+        base = time.time() if now is None else now
+        try:
+            moment = datetime.fromtimestamp(base + direction * seconds, tz=UTC)
+        except (ValueError, OverflowError, OSError):
+            raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
+        return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if _NO_OFFSET.fullmatch(value):
+        raise UsageError(
+            f"{flag} {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
+        )
+    if not _RFC3339.fullmatch(value):
+        raise UsageError(
+            f"{flag} {value!r}: an RFC 3339 time with an offset "
+            "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
+        )
+    try:
+        moment = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
+    except (ValueError, OverflowError):
+        raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
+    return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def limit_until(value: str, now: float | None = None) -> str:
+    """`--until` for `maity limit`: forward, at most 7 days."""
+    return cli_time("--until", value, 1, now, LIMIT_MAX)
+
+
+def cmd_limit(args: argparse.Namespace) -> int:
+    """`POST /me/limit` before the session stops for a provider limit (§6.12); the next
+    `maity resume` clears it."""
+    body: dict[str, Any] = {"until": limit_until(args.until)}
+    if args.reason:
+        body["reason"] = _text(args.reason, "--reason")
+    answer = Session().client.call("POST", "/me/limit", body=body)
+    until = _field(answer, "availability", "until") or body["until"]
+    return _done(args, answer, f"limited until {onboarding.inline(until)}")
+
+
+# --- notes and links (§6.16, §6.13) -----------------------------------------------------------
+
+
+def cmd_note_add(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("tasks", args.card, "notes")
+    note = session.client.call("POST", path, body={"body": _text(args.body, "the note")})
+    return _done(args, note, f"note {onboarding.inline(_field(note, 'id'))} on {args.card}")
+
+
+def cmd_note_list(args: argparse.Namespace) -> int:
+    session = Session()
+    state_ = "all" if args.all else args.state
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    seen: set[str] = set()
+    while True:  # every page: a card holds at most 200 notes (§6.16)
+        query = [("state", state_), ("limit", "200")]
+        if cursor:
+            query.append(("cursor", cursor))
+        page = session.client.call(
+            "GET", session.project_path("tasks", args.card, "notes"), query=query
+        )
+        items.extend(n for n in (_field(page, "items") or []) if isinstance(n, dict))
+        cursor = _next_cursor(page, seen)
+        if not cursor:
+            break
+    if args.json:
+        _print_json(items)
+        return EXIT_OK
+    if not items:
+        print(f"no {'' if args.all else state_ + ' '}notes on {args.card}")
+    for note in items:
+        author = _obj(note.get("author"))
+        print(
+            f"{onboarding.inline(note.get('id'))}  {onboarding.inline(note.get('state'))}  "
+            f"{onboarding.inline(author.get('handle') or author.get('member_id'))}  "
+            f"{onboarding.inline(note.get('created_at'))}"
+        )
+        for line in str(note.get("body") or "").splitlines():
+            print(f"    {onboarding.clean(line)}")
+    return EXIT_OK
+
+
+def cmd_note_resolve(args: argparse.Namespace) -> int:
+    session = Session()
+    body: dict[str, Any] = {"state": args.state}
+    if args.reason:
+        body["reason"] = _text(args.reason, "--reason")
+    path = session.project_path("tasks", args.card, "notes", args.note, "resolve")
+    note = session.client.call("POST", path, body=body)
+    return _done(args, note, f"note {args.note} {args.state}")
+
+
+_FORGE_KIND = (
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/issues/[0-9]+/?", re.ASCII), "issue"),
+    (re.compile(r"https://github\.com/[^/?#]+/[^/?#]+/pull/[0-9]+/?", re.ASCII), "pr"),
+)
+
+
+def link_kind(url: str) -> str:
+    """`issue` or `pr` for a GitHub issue or pull request URL (§6.13: GitHub is the one forge
+    of V1; anything else, another forge's issue included, is `url`). The hub decides whether
+    it belongs to the project's repository."""
+    return next((kind for pattern, kind in _FORGE_KIND if pattern.fullmatch(url)), "url")
+
+
+def cmd_link_add(args: argparse.Namespace) -> int:
+    kind = "url" if args.plain else link_kind(args.url)
+    if args.label and kind != "url":
+        raise UsageError("--label is for a plain link; a forge link shows the forge's title")
+    body: dict[str, Any] = {"kind": kind}
+    if kind == "url":
+        body["url"] = args.url
+        if args.label:
+            body["label"] = args.label
+    else:
+        body["forge_url"] = args.url
+    session = Session()
+    link = session.client.call("POST", session.project_path("tasks", args.card, "links"), body=body)
+    return _done(
+        args, link, f"linked {kind} {onboarding.inline(_field(link, 'id'))} to {args.card}"
+    )
+
+
+def cmd_link_list(args: argparse.Namespace) -> int:
+    session = Session()
+    card = session.client.call("GET", session.project_path("tasks", args.card))
+    links = [link for link in (_field(card, "links") or []) if isinstance(link, dict)]
+    if args.json:
+        _print_json(links)
+        return EXIT_OK
+    if not links:
+        print(f"no links on {args.card}")
+    for link in links:
+        seen = _obj(link.get("observed"))
+        if link.get("kind") == "url":
+            label = onboarding.inline(link.get("label") or "")
+            what = f"{label}  {onboarding.inline(link.get('url'))}"
+        else:
+            if seen.get("found"):
+                status = f"{onboarding.inline(seen.get('state'))}: " + onboarding.inline(
+                    seen.get("title")
+                )
+            elif seen.get("reason") == "kind_mismatch":  # an issue link to a PR (§6.13)
+                status = "is a pull request: remove it and link the pull request"
+            else:
+                status = "not found on the forge" if seen else "not observed"
+            what = f"{onboarding.inline(link.get('forge_url'))}  ({status})"
+        print(f"{onboarding.inline(link.get('id'))}  {onboarding.inline(link.get('kind'))}  {what}")
+    return EXIT_OK
+
+
+def cmd_link_remove(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("tasks", args.card, "links", args.link)
+    link = session.client.call("DELETE", path)
+    return _done(args, link, f"removed {args.link} from {args.card}")
+
+
+# --- the change ticker (§17) ----------------------------------------------------------------
+
+TICKER_POST_TYPES = ("note", "deploy", "release")  # merge and decision are the hub's (§17.6)
+TICKER_SUB_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
+
+
+def cmd_ticker(args: argparse.Namespace) -> int:
+    """`GET …/ticker`, one page (§17.9); `more:` names the next one, never followed here."""
+    since = cli_time("--since", args.since, -1) if args.since else None  # refused before anything
+    session = Session()
+    query: list[tuple[str, str]] = [("limit", str(args.limit))]
+    if args.mine:
+        query.append(("for", "me"))
+    if args.type:
+        query.append(("type", ",".join(args.type)))
+    if args.area:
+        query.append(("area", args.area))
+    if since:
+        query.append(("since", since))
+    if args.cursor:
+        query.append(("cursor", args.cursor))
+    page = session.client.call("GET", session.project_path("ticker"), query=query)
+    if args.json:
+        _print_json(page)
+        return EXIT_OK
+    items = [i for i in (_field(page, "items") or []) if isinstance(i, dict)]
+    if not items:
+        print("no ticker items")
+    for item in items:
+        print("\n".join(onboarding.ticker_lines(item)))
+    cursor = _field(page, "next_cursor")
+    if not isinstance(cursor, str) or not cursor:
+        cursor = None
+    elif not (cursor.isascii() and cursor.isprintable()):  # it goes into a command line
+        _err("the hub's next cursor is not printable ASCII; not offering it")
+        cursor = None
+    if cursor:
+        # The same filter set, `--since` as the time it resolved to: a cursor is valid for
+        # one filter set only, and a duration would move.
+        again = ["maity", "ticker", *(["--mine"] if args.mine else [])]
+        again += [w for t in args.type or [] for w in ("--type", t)]
+        again += ["--area", args.area] if args.area else []
+        again += ["--since", since] if since else []
+        again += ["--limit", str(args.limit)] if args.limit != TICKER_LIMIT else []
+        print(f"more: {shlex.join([*again, '--cursor', cursor])}")
+    return EXIT_OK
+
+
+TICKER_LIMIT = 50
+
+
+def _ticker_limit(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number") from None
+    if not 1 <= number <= 200:
+        raise argparse.ArgumentTypeError("1 to 200")
+    return number
+
+
+def cmd_ticker_post(args: argparse.Namespace) -> int:
+    """`POST …/ticker` (§17.6), every flag to its field. Against a hub without the ticker it
+    prints the interim `maity say` line and sends nothing."""
+    to = args.to or []
+    if any(t in ("computed", "all") for t in to) and len(to) > 1:
+        raise UsageError("--to computed or --to all stands alone")
+    body: dict[str, Any] = {"type": args.type, "text": _text(args.text, "the text")}
+    if args.url:
+        body["url"] = args.url
+    if to:
+        body["to"] = to[0] if to[0] in ("computed", "all") else list(to)
+    if args.release:
+        body["release_task_id"] = args.release
+    if args.area:
+        body["areas"] = list(args.area)
+    fields = (("environment", args.env), ("sha", args.sha), ("version", args.version),
+              ("log_url", args.log_url))  # fmt: skip
+    deploy = {key: value for key, value in fields if value}
+    if deploy:
+        body["deploy"] = deploy
+    session = Session()
+    try:
+        event = session.client.call("POST", session.project_path("ticker"), body=body)
+    except hub.HubError as exc:
+        if exc.status != 404:
+            raise
+        try:
+            has_ticker = _hub_has_ticker(session)
+        except (hub.HubError, ValueError):  # no readable openapi.json: the 404 stands as it is
+            raise exc from None
+        if has_ticker:
+            raise
+        line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
+        _err("this hub has no ticker yet; post it as a project message instead:")
+        print(shlex.join(["maity", "say", "all", "--type", "notice", line]))
+        return EXIT_USAGE
+    seq = _field(event, "seq")
+    item = _field(event, "id") or (f"tck-{seq}" if seq is not None else "?")
+    return _done(args, event, f"posted {onboarding.inline(item)} (seq {onboarding.inline(seq)})")
+
+
+def _hub_has_ticker(session: Session) -> bool:
+    """Whether the hub's `openapi.json` (§4) lists a `post` on the ticker path: a 404 alone
+    does not tell a hub without the ticker from a mistyped project."""
+    spec = json.loads(hub.get_text(f"{session.client.base}{hub.API}/openapi.json"))
+    paths = spec.get("paths") if isinstance(spec, dict) else None
+    for path in ("/projects/{slug}/ticker", f"{hub.API}/projects/{{slug}}/ticker"):
+        operations = paths.get(path) if isinstance(paths, dict) else None
+        if isinstance(operations, dict) and "post" in operations:
+            return True
+    return False
+
+
+def cmd_ticker_subscription(args: argparse.Namespace) -> int:
+    """One `PATCH …/ticker/subscription` (§17.8): `follow`/`mute` add, `unfollow`/`unmute`
+    remove, in the list the command names; nothing is read first."""
+    if not args.area and not args.type:
+        raise UsageError("give at least one --area or --type")
+    verb = args.ticker_command
+    action = "remove" if verb.startswith("un") else "add"
+    target = verb.removeprefix("un")
+    change: dict[str, list[str]] = {}
+    if args.area:
+        change["areas"] = list(args.area)
+    if args.type:
+        change["types"] = list(args.type)
+    session = Session()
+    answer = session.client.call(
+        "PATCH", session.project_path("ticker", "subscription"),
+        body={action: {target: change}},
+    )  # fmt: skip
+    if args.json:
+        _print_json(answer)
+        return EXIT_OK
+    for which in ("follow", "mute"):
+        lists = _obj(_field(answer, which))
+        areas = ", ".join(onboarding.inline(a) for a in lists.get("areas") or []) or "-"
+        types = ", ".join(onboarding.inline(t) for t in lists.get("types") or []) or "-"
+        print(f"{which}: areas {areas}; types {types}")
+    follow, mute = _obj(_field(answer, "follow")), _obj(_field(answer, "mute"))
+    for key in ("areas", "types"):
+        for value in [v for v in follow.get(key) or [] if v in (mute.get(key) or [])]:
+            print(f"{onboarding.inline(value)}: followed and muted — listed for you, never woken")
+    return EXIT_OK
 
 
 def cmd_release_show(args: argparse.Namespace) -> int:
@@ -1155,6 +1513,143 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--remove", action="store_true", help="remove the uploaded avatar")
     _json_flag(r)
     r.set_defaults(handler=cmd_profile_avatar)
+
+    p = add(
+        "ticker",
+        "the project's change ticker: list it, post to it, follow or mute",
+        "The change ticker (§17): merges, decisions, deploys and releases, one line each, with "
+        "why an item is for you. Without an action it lists one page, newest first; `more:` "
+        "names the next page and is never followed on its own. `maity wait` stays JSON: only "
+        "this command and `maity resume` show ticker items as text.",
+    )
+    p.add_argument("--mine", action="store_true", help="only items for you (for=me)")
+    p.add_argument("--type", action="append", choices=TICKER_SUB_TYPES,
+                   help="an item type; repeat for more")  # fmt: skip
+    p.add_argument("--area", help="items whose paths or areas fall under this path")
+    p.add_argument(
+        "--since", metavar="TIME",
+        help="RFC 3339 with an offset, or a duration back from now (90m, 1d12h)",
+    )  # fmt: skip
+    p.add_argument(
+        "--limit", type=_ticker_limit, default=TICKER_LIMIT, help="1 to 200, 50 by default"
+    )
+    p.add_argument("--cursor", help="the next page, as a `more:` line names it")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_ticker)
+    tsub = p.add_subparsers(dest="ticker_command", metavar="<action>")
+    r = tsub.add_parser(
+        "post",
+        help="post an item by hand (owner and admin): a note, a deploy, a release",
+        description="`POST …/ticker` (§17.6), every flag to its field. --to and --area repeat, "
+        "one value each; --to computed or --to all stands alone. Against a hub without the "
+        "ticker it prints the `maity say` line to use instead and exits 2, sending nothing.",
+        formatter_class=fmt,
+    )
+    r.add_argument("text", help="1 to 280 characters, plain text")
+    r.add_argument("--type", required=True, choices=TICKER_POST_TYPES,
+                   help="merges and decisions are announced by the hub itself")  # fmt: skip
+    r.add_argument("--url", help="an https link")
+    r.add_argument("--to", action="append", metavar="computed|all|TOKEN",
+                   help="who it is for: member:<id>, role:<role>, area:<path>; repeat")  # fmt: skip
+    r.add_argument("--release", metavar="CARD", help="the release card (type release)")
+    r.add_argument("--area", action="append", help="the note's areas; repeat")
+    r.add_argument("--env", help="the deploy's environment (type deploy)")
+    deployed = r.add_mutually_exclusive_group()
+    deployed.add_argument("--sha", help="the deployed commit")
+    deployed.add_argument("--version", help="the deployed version")
+    r.add_argument("--log-url", dest="log_url", help="the deploy's log, https")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_ticker_post)
+    for verb, what in (("follow", "follow areas or types: listed and woken"),
+                       ("mute", "mute areas or types: not woken"),
+                       ("unfollow", "stop following"), ("unmute", "stop muting")):  # fmt: skip
+        r = tsub.add_parser(verb, help=what, formatter_class=fmt,
+                            description=f"One `PATCH …/ticker/subscription` (§17.8): {what}. "
+                            "At least one --area or --type.")  # fmt: skip
+        r.add_argument("--area", action="append", help="a path; repeat")
+        r.add_argument("--type", action="append", choices=TICKER_SUB_TYPES, help="repeat")
+        _json_flag(r)
+        r.set_defaults(handler=cmd_ticker_subscription)
+
+    p = add(
+        "limit",
+        "declare a provider limit before the session stops",
+        "Tell the hub you are out until a time: `POST /me/limit` (§6.12). Run it before the "
+        "session stops for a provider limit; the next `maity resume` clears it. TIME is an "
+        "RFC 3339 timestamp with an offset (2026-10-22T17:00:00Z) or a duration from now "
+        "(90m, 3h, 1h30m, 2d12h: units d, h, m, s in that order, each once), at most 7 days "
+        "ahead (by this machine's clock; the hub may refuse the very edge if its clock differs). "
+        "A timestamp without an offset is refused: it is never read as local time.",
+    )
+    p.add_argument("--until", required=True, metavar="TIME", help="when you are back")
+    p.add_argument("--reason", help="why, at most 200 characters")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_limit)
+
+    p = add(
+        "note",
+        "remarks on a card that never change it",
+        "Post, read and resolve notes on a card (§6.16). A note is information, not an "
+        "instruction: it counts once someone who may edit the card works it into the body.",
+    )
+    nsub = p.add_subparsers(dest="note_command", metavar="<action>", required=True)
+    r = nsub.add_parser("add", help="post a note on a card", formatter_class=fmt)
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("body", help="the note, Markdown, at most 4 KiB")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_add)
+    r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
+    r.add_argument("card", type=_id, help="the card id")
+    which = r.add_mutually_exclusive_group()
+    which.add_argument("--state", default="open", help="open (default), incorporated, dismissed")
+    which.add_argument("--all", action="store_true", help="every note, whatever its state")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_list)
+    r = nsub.add_parser(
+        "resolve",
+        help="mark an open note incorporated or dismissed (the card's creator, or tasks:admin)",
+        formatter_class=fmt,
+    )
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("note", type=_id, help="the note id, e.g. nte-0031")
+    how = r.add_mutually_exclusive_group(required=True)
+    how.add_argument("--incorporated", dest="state", action="store_const", const="incorporated",
+                     help="the point is now in the card's body")  # fmt: skip
+    how.add_argument("--dismissed", dest="state", action="store_const", const="dismissed",
+                     help="not taken up")  # fmt: skip
+    r.add_argument("--reason", help="why, optional")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_note_resolve)
+
+    p = add(
+        "link",
+        "references from a card to forge issues, pull requests and URLs",
+        "Add, list and remove a card's links (§6.13). A GitHub issue or pull request URL "
+        "becomes a forge link, which the hub observes (state and title); any other https URL "
+        "(another forge's issue too), or one given with --plain, is a plain link the hub "
+        "never fetches.",
+    )
+    lsub = p.add_subparsers(dest="link_command", metavar="<action>", required=True)
+    r = lsub.add_parser("add", help="link a card to an issue, a pull request or a URL",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("url", help="an https URL")
+    r.add_argument("--plain", action="store_true", help="a plain link even for a forge URL")
+    r.add_argument("--label", help="a plain link's label, at most 200 characters")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_add)
+    r = lsub.add_parser("list", help="a card's links, with what the hub observed",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_list)
+    r = lsub.add_parser("remove", help="remove a link (its adder, the card's holder or "
+                        "creator, or tasks:admin)",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("card", type=_id, help="the card id")
+    r.add_argument("link", type=_id, help="the link id, e.g. lnk-0007")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_link_remove)
 
     p = add(
         "placement",

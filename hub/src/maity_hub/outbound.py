@@ -169,6 +169,11 @@ def _body(response: http.client.HTTPResponse, cap: int, deadline: float, sock: A
             sock.settimeout(remaining)
         chunk = response.read1(CHUNK)
         if not chunk:
+            # The end of the stream before the declared length is no body. The watchdog
+            # closing the socket at the deadline ends a read this way too, so `read1`
+            # returning nothing is not proof that the server finished.
+            if response.length:
+                raise Refused("timeout" if time.monotonic() >= deadline else "unavailable")
             # A gzip answer must end where its stream ends: a truncated stream or a second
             # member after the first is not the body the server meant.
             if decoder is not None and (not decoder.eof or decoder.unused_data):

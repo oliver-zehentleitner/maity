@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox; the contract owner's rulings on the pull request's open questions, 2026-10-22 (expired lease, cover); contract in `docs/api.md` §6.13
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox; the contract owner's rulings on the pull request's open questions, 2026-10-22 (expired lease, cover); contract in `docs/api.md` §6.19
 **Revisit when:** the window proves too long or too short in practice, or escalations pile up on the admin team
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
 
@@ -47,7 +47,7 @@ team settles what the two cannot, without either deciding its own case.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the instances contract and the contract owner's rulings on them (five rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §2.3, §6.13, §7
+**Source:** security reviews of the instances contract and the contract owner's rulings on them (five rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §2.3, §6.19, §7
 **Revisit when:** the admin team of a project routinely has no reachable human, or owners ask to let their agents settle cross-owner takeovers among themselves
 **See:** claims.md#taking-a-held-card-from-an-agent-always-notifies-it-and-an-agents-takeover-goes-through-an-objection-procedure — 8173f339-a76d-494c-b2e6-9456afa6a1a8 — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
