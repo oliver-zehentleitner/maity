@@ -4,7 +4,8 @@
 
 **Id:** f2a34d72-f074-474c-87bb-2d8c6bccd60e
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
 **Evidence:** confirmed
 **Source:** runner design v2 §5.1 and §12 question 7; the coordinator's binding answers on the runner configuration, 2026-10-22
 **Revisit when:** the CLI's floor moves to Python 3.11, or the dashboard's pairing panel generates keys `check` does not know
@@ -394,3 +395,88 @@ runner's profile, and one reviewer saw that switch the sandbox off.
   cannot keep.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
+
+## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
+
+**Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 7, relayed 2026-10-22; runner design v2 §5.1; the coordinator's binding answers on the runner configuration, 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 22a7d470-4458-493b-8df6-08176d4abb13 — as of 2026-10-22
+**Revisit when:** the dashboard's pairing panel generates keys `check` does not know
+
+`maity runner` reads a TOML file (`~/.config/maity-runner/runner.toml`,
+`--config` or `MAITY_RUNNER_CONFIG`) with the standard library's
+`tomllib`. Only `hub.url`, `limits.projects`, `limits.repositories` and
+one `[harness.<id>]` are required. Every other key has a default, and
+`maity runner check --explain` prints them all. Unknown keys are refused
+with their full dotted name. The whole CLI, agent commands included,
+needs Python 3.11 or newer.
+
+**Reason:** the dashboard writes a starter file trimmed to the required
+keys, so the defaults have to be the documented ones and nothing else. A
+typo that silently fell back to a default would widen or narrow what a
+runner may do without anyone noticing, which is the same reason the API
+refuses unknown fields. The maintainer chose one floor for the whole CLI
+over a gate for the runner alone. One version line for agents and
+operators to read, and no code path that exists only to refuse, outweigh
+supporting hosts that only have 3.10.
+
+**Rejected alternatives:**
+- Gating `tomllib` to the runner while agent commands kept 3.10 (the
+  first version): two floors in one package, and a refusal path to test.
+- A vendored TOML parser or JSON configuration: a third-party parser
+  breaks the stdlib-only rule, and JSON gives operators no comments in a
+  file they edit by hand.
+- Ignoring unknown keys with a warning: a warning on a service's start is
+  easily missed, and the key decides what agents may touch.
+
+## The agents' OS user is the operator's choice
+
+**Id:** c666ae71-f252-4973-aa28-f13222254713
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 1, relayed 2026-10-22
+**Revisit when:** a deployment needs agents isolated from each other by default, or the `agent_user` layout proves too hard to set up for most operators
+
+Both layouts stay supported. With `single`, agents run as the runner's
+user, which may be the operator's own account in a terminal. With
+`agent_user`, agents run as a separate OS user through sudo. Neither is
+required, and the runner advertises which one it uses
+(`targets[].isolation`).
+
+**Reason:** running agents as one's own user in a terminal is a
+legitimate way to work: it is how a single developer starts, and the
+harness's own sandbox and allowlists still apply. A separate user is the
+stronger boundary (see the constraint on allowlists in this file) for
+operators who want it, at the cost of sudo rules and a second account.
+Making it mandatory would block the simple case without making the
+shared case safer than an operator would choose anyway.
+
+**Rejected alternative:** `agent_user` as the only layout. It is the
+safer default on paper, but it puts sudo configuration in front of a
+first run.
+
+## For now the runner offers Claude Code and Codex
+
+**Id:** 62bcf506-caed-470c-a094-9bea4217b440
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
+**Revisit when:** the maintainer decides on opencode and the harnesses without a command allowlist when the runner goes into use
+
+A configuration may name `claude-code`, `codex` and `stub`. `opencode`
+is refused as "not offered yet" even though its adapter is built. `pi`,
+`hermes`, `kimi`, `cline` and `omp` stay refused because they have no
+command allowlist (design §6.3).
+
+**Reason:** the maintainer wants to discuss the rest once the runner is
+in use, with real runs behind the discussion. The opencode adapter stays
+in the code so that the decision costs a line, not a slice.
+
+**Rejected alternative:** offering every built adapter: opencode's
+project-configuration switch and `instructions` path are still
+unverified (design §6.1).
