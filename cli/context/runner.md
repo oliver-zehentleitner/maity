@@ -528,3 +528,35 @@ supervised loop starts it again on the next event.
 
 **Rejected alternative:** one default mode for every harness: it fits
 only one of them.
+
+## `stop-all` refuses while the service runs; `gc` never holds an agent's credential
+
+**Id:** ad84669c-8da9-4e2a-8598-342d797d6454
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.5 and §10.1; implementation of runner slice R6b, 2026-10-22
+**Revisit when:** the runner gains a local control channel the service listens on, or the hub reports revocation to runners directly
+
+`maity runner stop-all` takes the service's lock first and refuses
+while `serve` holds it. `maity runner gc --revoked` asks whether a
+workspace's credential is revoked by running that clone's own `maity`
+(`python -I -m maity api GET /me` with the clone's state directory). It
+reads uncommitted files and unpushed commits with git's hooks,
+fsmonitor, pagers and transports switched off.
+
+**Reason:** a running service compares sessions with the hub's desired
+state every five seconds. It would start every agent `stop-all` just
+ended, and the operator would see the emergency stop fail. Refusing with
+the reason is clearer than racing the service. The runner never holds an
+agent's credential (§15.9). Letting the agent-side CLI make the call keeps
+that true, and `-I` with a cwd outside the clone keeps the clone's code
+out of the process. `gc` is the one place the runner reads an agent's
+git state, so it does so with everything git could run switched off.
+
+**Rejected alternatives:**
+- `stop-all` telling the service to stop its agents: there is no control
+  channel, and an emergency path should not depend on the process it
+  works around.
+- Reading the credential in the runner to ask the hub: a second holder
+  of every agent's credential.
