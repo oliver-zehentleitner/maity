@@ -211,7 +211,8 @@ shown under it.
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
-Later, "Neither — let's talk", the replies; Hide, Copy), in that order in
+Later, "Neither — let's talk", the replies with the primary one last;
+Hide, Copy), in that order in
 the page too, so the tab order is the order on screen; destructive ones
 (Revoke, Remove) stand apart. On a phone (≤ 600 px) they stack, full width.
 

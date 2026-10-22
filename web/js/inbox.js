@@ -161,7 +161,9 @@ window.Maity = window.Maity || {};
           onclick: () => onLater(req),
         }, "Later"),
         h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
-        (req.replies || []).map((r) =>
+        // The primary reply last, the others in the hub's order before it.
+        [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
+          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
       h("div", { class: "free-text" },
         h("label", { for: textId }, "Free text"),

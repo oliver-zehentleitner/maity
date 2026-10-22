@@ -255,7 +255,7 @@ window.Maity = window.Maity || {};
       },
       h("h4", null, title), list,
       h("div", { class: "row" },
-        h("button", { type: "button", class: "small list-tool", onclick: () => {
+        h("button", { type: "button", class: "small", onclick: () => {
           const li = add(null);
           const first = li.querySelector("input");
           if (first) first.focus();

@@ -316,8 +316,6 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .groups .unknown { color: var(--muted); }
 .release-edit { margin-top: 6px; }
 .release-edit .row, .rows-form .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-/* A tool for the list itself stays at the left, apart from Cancel and Save. */
-.rows-form .row .list-tool { margin-right: auto; }
 .checklist.editable li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .checklist.editable label { color: inherit; }
 .rows-form h4 { margin: 6px 0 4px; }
@@ -383,9 +381,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .runner ul { margin: 0; padding-left: 18px; }
 .runner-tools .unavailable { color: var(--muted); }
 .runner-actions { display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: 8px; margin-top: 10px; }
-.runner-actions .rename { margin-right: auto; }
+.runner-actions .rename { margin-inline-end: auto; }
 /* The destructive ones apart from the rest. */
-.runner-actions .separated { margin-left: 12px; }
+.runner-actions .separated { margin-inline-start: 12px; }
 .runner-actions .rename { display: flex; gap: 6px; align-items: end; max-width: none; }
 .presence.revoked, .dot.revoked { color: var(--bad); }
 .dot.revoked { background: var(--bad); }
@@ -418,7 +416,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .briefing .pre { margin: 0 0 6px; max-height: 12rem; overflow: auto; }
 .briefing-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .briefing-form label { font-size: 0.85rem; color: var(--muted); }
-.briefing-form .row { display: flex; justify-content: flex-end; gap: 6px; }
+.briefing-form .row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 /* ---- organisation --------------------------------------------------- */
 
@@ -492,10 +490,13 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   main { padding: 12px; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
-  .compose > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button { flex: 1 1 100%; justify-self: stretch; }
+  .compose > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
+  .release-edit .row > button, .pause > button, .runner-actions > button, .runner-actions .rename { flex: 1 1 100%; justify-self: stretch; }
+  .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
+  .runner-actions .separated { margin-inline-start: 0; }
   .toolbar h2 { flex-basis: 100%; }
   .profiles { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }
   .facts dt { margin-top: 4px; }
-  .reply { flex: 1 1 40%; }
+  .reply { flex: 1 1 100%; }
 }
