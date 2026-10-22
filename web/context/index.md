@@ -69,7 +69,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## U
 
 ## V
-- [views.md](views.md) — the inbox is the first screen, then board, agents, organisation, chat; a project switcher everywhere and the cross-project inbox as landing page; the org tree is computed, never stored
+- [views.md](views.md) — the inbox is the first screen, then board, agents, organisation, chat; a project switcher everywhere and the cross-project inbox as landing page; the org tree is computed, never stored; project messages read from the events (no listing)
 
 ## W
 

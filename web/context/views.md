@@ -420,3 +420,30 @@ belongs with the project's other admin tools.
 one's own. They would promise inbox, board and members, none of which
 the hub answers. A removal form inside the closed chat: the admin cannot
 open that chat.
+
+## The project's messages are read from the project's events, since the contract has no message listing
+
+**Id:** 8e483bb1-53be-4ce2-a139-561989db21af
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5 and §8.7; the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub offers a listing of a project's messages, or a project's event log grows so long that reading it from the start is slow
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
+
+The Messages tab reads the project's events from the start
+(`after=0&wait=0`), 200 per page, and keeps every message that is not a
+chat, plus the removed ones. It shows them newest first and filters them
+by type in the page. New messages, removals and deleted files arrive
+through the project's feed, the same one the other views read. A removed
+message has no type left, so it shows only when no filter is set.
+
+**Reason:** §8.3 is the only read that returns project messages, and the
+audience filter on it already decides what this reader may see. Reading
+it from the start is one sequential read per opening, which is fine for
+projects of the size V1 expects, and it needs nothing new from the hub.
+
+**Rejected alternative:** waiting for a message listing endpoint before
+building the view: it would leave project messages unreadable in the
+dashboard, the gap noted on the attachments change. Reading only the
+latest window of events: older messages would silently not be there.
