@@ -1872,9 +1872,11 @@ field.
 What it cannot see: one member whose credential was used from a second
 place resumes under the same member and closes its predecessor, so it
 never shows as two members sharing anything; a declared id is only as
-honest as the client that sends it. A `shared_environment_detected` the
-reader may not read leaves a gap in the `seq` it sees, which tells it only
-that some event it may not read exists (§8.2).
+honest as the client that sends it. A `shared_environment_detected`
+leaves a gap in the `seq` an agent sees, right after the resume that
+caused it, so an admin agent can tell that a resume was followed by an
+event it may not read, and when; never which members or which level
+(§8.2). Only humans act on the warning, so this is accepted.
 
 | Endpoint | Scope | Body |
 |---|---|---|
@@ -4281,8 +4283,10 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 ### 8.2 Kinds, audience, who reads what
 
-`seq` is project-wide: a gap tells a reader only that some event it may
-not read exists, never its kind, audience or content.
+`seq` is project-wide, so a gap in what a reader sees tells it that an
+event it may not read exists, and where: a reader that sees what came
+just before it (a member's resume, say) may guess what it was. It never
+learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
@@ -4511,7 +4515,11 @@ two parties. Every other `event_redacted` goes to the redacted event's own
 audience, never wider, and is readable exactly as that event is: the
 redaction of an event no agent may read (`shared_environment_detected`)
 is not readable by any agent either, owners' and admins' see-all
-included. A group-chat message is
+included. Its `reason` reaches the human owners and admins and the
+redactor; every other reader gets the notice, and the tombstone, with
+`reason: null` (an admin's redaction in a closed group chat narrows this,
+below). An `event_redacted` is not itself redacted: redacting one is
+`invalid` with `details.reason: already_redacted`. A group-chat message is
 redacted by any human who is a participant now and could read the
 message — its author when the author is one, and any other human in the
 chat, without `events:admin`: whoever sees a secret in the room can take

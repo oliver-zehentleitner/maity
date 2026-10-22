@@ -116,7 +116,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
                 events.mark_delivered(conn, rows, mine.principal_id)
             cursor = rows[-1].seq if rows else max(examined, since)
-            return event_views(conn, rows), cursor
+            return event_views(conn, rows, mine), cursor
 
     if wait == 0:
         items, cursor = await run_in_threadpool(read, False, after)
@@ -331,6 +331,10 @@ def redact(
         ).first()
         if row is None:
             raise not_found()
+        if row.kind == "event_redacted":  # a tombstone's record is not itself redacted
+            raise ApiError(
+                400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
+            )
         # The tombstone's event reaches whoever could read the event, never more (§8.5).
         audience = list(row.audience or [])
         if row.conversation_id is not None:

@@ -93,6 +93,41 @@ def test_everyone_with_events_post_may_message_all(
 # --- §8.5 redaction --------------------------------------------------------------------------
 
 
+def test_a_redaction_cannot_be_redacted(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "a secret"})
+    with migrated.connect() as conn:
+        tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    again = owner.post(f"/projects/maity/events/{tomb.seq}/redact", {"reason": "hide it"})
+    assert again.status_code == 400
+    assert again.json()["error"]["details"] == {"reason": "already_redacted"}
+
+
+def test_only_human_admins_and_the_redactor_read_the_reason(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+
+    def seen(who: Any) -> dict[str, Any]:
+        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        notice = next(e for e in items if e["kind"] == "event_redacted")
+        tomb = next(e for e in items if e["seq"] == leaked["seq"])
+        return {"notice": notice["payload"]["reason"], "tomb": tomb["payload"]["reason"]}
+
+    assert seen(owner) == {"notice": "the token", "tomb": "the token"}
+    for reader in (agent, admin):  # an admin agent is no human admin (§8.5)
+        assert seen(reader) == {"notice": None, "tomb": None}
+    packet = agent.resume(cursor=0).json()["events"]["items"]
+    notice = next(e for e in packet if e["kind"] == "event_redacted")
+    assert notice["payload"] == {"seq": leaked["seq"], "reason": None}
+
+
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

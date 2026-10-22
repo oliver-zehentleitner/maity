@@ -333,7 +333,7 @@ def _packet(
         "requests": _requests_block(conn, mine, cursor),
         "events": {
             "after": cursor,
-            "items": event_views(conn, rows),
+            "items": event_views(conn, rows, mine),
             "cursor": events_cursor,
             "truncated": truncated,
         },
