@@ -147,6 +147,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
+| 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.11); `details.coordinator`, `details.until` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
@@ -423,18 +424,20 @@ below names the scope it needs; the role grants scopes:
 ᵃ: an agent with the `admin` role holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose role is
 `member` or `reviewer` and that are not its own: `reports_to`, `areas`,
-`briefing`, `paused`, and `role` between `member` and `reviewer`. It
+`briefing`, `paused`, `availability_policy` (§6.11), and `role` between
+`member` and `reviewer`. It
 never grants or removes `proxy` (the owner's voice, §7) and never sets
 `capabilities` (`tag` stands in for a human's go under `tag_authority:
 capability`); both are a human's. It never creates, lists or revokes a
 join (§3.1): a new agent comes through a placement proposal (§15.6) or
 a request, so a new identity always passes a human. Removing an agent
-member, and changing the role of or pausing a member who holds
-`reviewer` or is named in `policy.contract_arbiter`, does not take effect
+member, and changing the role, the pause or the `availability_policy`
+of a member who holds `reviewer` or is named in
+`policy.contract_arbiter` or `policy.coordinator`, does not take effect
 on the call: it answers `202` with a `consent` request to `owner`
-(title `Remove <handle>`, `Change <handle> to <role>` or `Pause
-<handle>`), which only a human answers — an agent's answer is
-`forbidden` with `details.reason: humans_only`, as under
+(title `Remove <handle>`, `Change <handle> to <role>`, `Pause
+<handle>` or `Change cover for <handle>`), which only a human answers —
+an agent's answer is `forbidden` with `details.reason: humans_only`, as under
 `spawn_consent_by: human` (§15.6) — and the change is applied on `go`,
 in the human's name as approver and the agent's as actor. It never
 lifts **or replaces** a pause a human set (§5.3). A pause it sets is
@@ -1079,6 +1082,14 @@ hub cannot stop what the agent does outside the hub; the pause is the
 signal and the gate on new work. A pause the agent set itself is a
 declaration only and refuses nothing.
 
+**Availability** (§6.11) is computed on top of presence and pause:
+`available`, `limited` (with `until`, from `POST /me/limit` or a runner's
+`rate_limited` report), `offline`, `paused`. It decides what happens to a
+member's open work during an outage; presence stays what it is above.
+An agent that stops for a provider limit declares `POST /me/limit` rather
+than a self-set `paused`: the limit has an end the hub can schedule
+around.
+
 ## 6. Projects, members, tasks, releases
 
 ### 6.1 Project
@@ -1202,6 +1213,8 @@ reason — the logged exemption. There is no gate on labels.
 | `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
+| `coordinator` | agent member id or `role:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.11); `role:admin` is the project's agent members with role `admin`, out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
+| `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.11); it takes over no cards |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -1234,6 +1247,9 @@ session:
   "last_seen_at": "2026-10-21T13:39:30Z",
   "presence": "online",
   "paused": null,
+  "availability": { "state": "available", "since": "2026-10-21T10:12:00Z" },
+  "availability_policy": { "on_unavailable": "wait", "substitutes": [], "grace_minutes": 15 },
+  "covered_by": null, "covering": [],
   "joined_at": "2026-10-21T10:12:00Z"
 }
 ```
@@ -1284,7 +1300,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.11); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -1350,6 +1366,7 @@ create the profile (§3.1).
   "report": null,
   "release": null,
   "contract": null,
+  "cover": null,
   "mentions": [],
   "created_at": "2026-10-21T09:12:00Z",
   "updated_at": "2026-10-21T13:20:00Z",
@@ -1400,6 +1417,10 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | holder | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | holder | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
+
+`cover` is `null` or `{for, by, since}`: the card was handed from the
+member `for` to its substitute `by` during an outage (§6.11). Only the hub
+sets it.
 
 `mentions` holds the resolved `@handle` mentions of the card's `body`
 (§8.6); the hub fills it on every write of `body`, a client never sends
@@ -1852,6 +1873,155 @@ slot); `forbidden` for a runner credential; `not_found` on
 `/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
 `DELETE`: `csrf_mismatch` for a cookie call without a matching token.
 
+### 6.11 Availability and cover
+
+Rate limits will happen. The hub keeps, per member, whether it can work
+right now, and per agent membership what happens to its open work when it
+cannot: wait for it, or hand the work to a substitute. The maintainer's
+decision of 2026-10-22 (`context/trust.md`).
+
+**Availability** is in every member view, computed from the membership,
+never set directly:
+
+```json
+"availability": { "state": "limited", "since": "2026-10-22T14:05:00Z", "until": "2026-10-22T17:00:00Z",
+                  "source": "runner", "harness": "Claude Code", "reason": "quota" }
+```
+
+| `state` | Condition (first that applies) |
+|---|---|
+| `paused` | `paused` is set on the membership (§5.3), by whoever set it |
+| `limited` | a limit is stored and `until` is in the future |
+| `offline` | `presence` is `offline` (§5.3) |
+| `available` | otherwise |
+
+`since` is when the state was entered; `until`, `source` (`self` or
+`runner`), `harness` and `reason` are present with `limited` only. For a
+human member the state is `available` or `offline` from presence alone;
+a human's absence is `absence` (§6.1). Availability is not presence: an
+`away` agent is `available`.
+
+**The limit.** An agent that sees its provider's limit coming declares it
+before it stops:
+
+| Endpoint | Scope | Body |
+|---|---|---|
+| `POST /me/limit` | agent | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's |
+
+A runner sets the same limit from its report (§15.7): state
+`rate_limited`, `until` = `retry_at`, `source: runner`. A limit is stored
+as `{until, since, source, harness, reason, placement_id?}` and cleared
+by the member's next `resume`, by a later report of the same placement
+that is not `rate_limited`, or when `until` passes — whichever comes
+first. A new limit replaces the stored one. A limit refuses nothing; it is
+a declaration the hub acts on. A self-declared `paused` (§5.3) is still
+accepted; a limit is the form the hub can schedule around.
+
+**The policy.** An agent membership carries `availability_policy`;
+`null` on a human:
+
+```json
+"availability_policy": { "on_unavailable": "substitute", "substitutes": ["agt-a", "role:reviewer"],
+                         "grace_minutes": 15 }
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
+| `substitutes` | ordered list, ≤ 8, of agent member ids or `role:<role>` | who covers; `role:<role>` expands to that role's agent members, by `handle`. Empty with `substitute` is `invalid`. A human, the member itself or a non-member is `invalid` (`details.fields.substitutes`: `human`, `self`, `not_a_member`) |
+| `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
+
+Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`,
+or by an admin agent within §2.3 ᵃ: on agent memberships whose role is
+`member` or `reviewer` and that are not its own, and, for a member who
+holds `reviewer` or is named in `policy.contract_arbiter` or
+`policy.coordinator`, through the consent request to `owner` (title
+`Change cover for <handle>`), as for a role change. A change emits
+`member_updated` with `changed: ["availability_policy"]`. Example: the
+reviewer is covered by the coordinating agent, the coordinating agent is
+waited for:
+
+```json
+PATCH /projects/maity/members/oz-agent-review  { "availability_policy": { "on_unavailable": "substitute", "substitutes": ["oz-agent-a"] } }
+PATCH /projects/maity/members/oz-agent-a       { "availability_policy": { "on_unavailable": "wait" } }
+```
+
+**The outage.** An outage starts when the state leaves `available` and
+ends when it returns. Under either policy the hub emits
+`member_availability_changed` at both ends (§8.2). Once an outage has
+lasted `grace_minutes` — never for a limit whose `until` falls within
+the grace —:
+
+- `wait`: the work stays. Each lease the member holds is extended to
+  `until` + grace when `until` is known (a limit), at the moment the limit
+  is stored; for `paused` and `offline` the leases run out as usual
+  (§6.5).
+- `substitute`: the hub picks the first entry of `substitutes`, in order,
+  whose member is `available` and not itself covered, and hands it the
+  **cover set**: the cards the member holds (`in_progress`, `blocked`,
+  `review`), the open cards assigned to it, and the open requests
+  addressed to its member id. Claims move, they are not dropped: holder
+  and `claim.session_id` change, the lease restarts at
+  `policy.lease_seconds`, checkpoint and branch stay on the card. An
+  assignment moves `assigned_to`. A request keeps its `to` and gains
+  `cover`; the substitute answers it as the addressee would, recorded
+  with `on_behalf_of` = the covered member (§7). Each moved card and
+  request carries `cover: {for, by, since}`. The hub emits `cover_started`,
+  which wakes the substitute, and `task_assigned` with `reason: "cover"`
+  per card. Requests the covered member asked stay its own.
+
+  What cover never does: grant a scope — a substitute acts on a handed-over
+  item with its own role, and an item it could not act on (a `consent`
+  request without `requests:answer`, a `review` card it may not move to
+  `done`) is left with the covered member; make a member review its own
+  work — a `review` card whose previous holder was the substitute is left
+  as well; move anything to or from a human. Items left behind are named
+  in `cover_started` as `left`. With no substitute available, the member is
+  treated as under `wait` and the hub tries again whenever a listed
+  substitute becomes `available`.
+
+**The return.** When the member is `available` again, the hub emits
+`member_availability_changed` and, per cover, `cover_ended` to the member
+and the substitute. Routing names the member again: area routing (§6.2)
+and new assignments go to it. What the substitute has taken — a card it
+claimed or checkpointed, a request it answered — stays with the
+substitute until done; no ping-pong. Handed-over items it has not touched
+— an assignment not yet claimed, a request not yet answered — return to
+the member, with `cover` cleared. While a cover runs, area routing sends a
+new card for the member to its substitute, with `cover` set.
+
+**The coordinator.** `policy.coordinator` names the member who
+coordinates (§6.1); when it is not `available` beyond its grace, and its
+`coordinator_substitute` is unset or not `available` either:
+
+- work in progress continues: checkpoints, reports, self-claims, answers;
+- no new assignments by agents: an agent's `assign`, `assigned_to` and
+  claim on another's behalf answer `coordinator_unavailable` (409) —
+  humans are not gated;
+- merges are the forge's: the rules text tells agents not to merge until
+  the coordinator is back; the hub cannot stop it (§2.3, policies);
+- humans are told: `member_availability_changed` of the coordinator also
+  goes to `role:owner`.
+
+A coordinator under `substitute` is covered like any member, and its
+cover makes the substitute the coordinator for these rules too; the
+`coordinator_substitute` field covers the coordinator role alone, without
+handing over its cards.
+
+**What the hub cannot do.** At `until` the hub clears the limit and emits
+`member_limit_ended` to the coordinator, for an agent without an active
+placement. It cannot start or wake a desktop app or a terminal session:
+someone — the coordinator, the human, a scheduler the operator runs —
+starts that agent again. Under a runner the restart is the runner's
+(§15.7), and the hub emits no `member_limit_ended`.
+
+**In the member view**, every reader sees `availability`,
+`availability_policy`, `covered_by` (`{member_id, since}` or `null`) and
+`covering` (`[{member_id, since}]`). The dashboard shows who is out, until
+when, and who covers whom from these fields. The resume packet's
+`membership` gains `availability_policy` and `covering`; each of `peers`
+gains `availability`. Availability changes never emit `member_updated`.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -1899,6 +2069,7 @@ slot); `forbidden` for a runner credential; `not_found` on
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
+| `cover` | `null` or `{for, by, since}`, set by the hub (§6.11): the addressee `for` is out and `by` covers; `by` may answer as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`; a `consent` request is covered only by a substitute with `requests:answer` |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -1991,6 +2162,9 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_availability_changed` | the member's `reports_to`, the agent's owner, `role:admin`, the coordinator (§6.11); also `role:owner` when the member is the coordinator. Never the member itself, even when it holds a role in the audience | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
+| `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.11) |
+| `member_limit_ended` | the coordinator (§6.11), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
@@ -2678,6 +2852,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent | 5.3 |
+| POST | `/me/limit` | agent | 6.11 |
 | GET | `/requests` | human | 7 |
 | GET, POST | `/agents` | human | 6.3 |
 | GET, PATCH | `/agents/{id}` | owner | 6.3 |
@@ -2748,8 +2923,9 @@ atomic claim and lease ownership, answer rights by role and class
 (`consent` by `requests:answer` holders only; no membership answers its
 own request; no default on `consent`), addressing by member and role,
 `done` refused with open `depends_on`, unique version and one release in
-flight, `ready` from observed state only, closed-project refusal, a
-reason on cards and claims in `freeze`/`fixes-only`, append-only events
+flight, `ready` from observed state only, closed-project refusal, the
+coordinator gate on agents' assignments and cover's moves of claims,
+assignments and requests (§6.11), a reason on cards and claims in `freeze`/`fixes-only`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
@@ -2795,12 +2971,13 @@ reviewer role.
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. *Planned (runner track).* |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the workspaces that have no placement. Which of their agent credentials are revoked is not answered by any runner endpoint yet; until one is specified, `gc` lists the workspaces without a placement. *Planned (runner track).* |
+| `maity limit --until <time> [--reason R]` | `POST /me/limit`; `<time>` is RFC 3339 or a duration from now (`90m`, `3h`), sent as RFC 3339. Run before the session stops for a provider limit; the next `maity resume` clears it. *Planned (availability).* Until it ships: `maity api POST /me/limit --json -` |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
-A row or option marked *Planned (runner track)* is contract the CLI on
-`main` does not have yet: `maity` answers it with a usage error (exit 2).
+A row or option marked *Planned (runner track)* or *Planned
+(availability)* is contract the CLI on `main` does not have yet: `maity` answers it with a usage error (exit 2).
 Of the runner commands, `maity runner pair` and `maity runner check` exist
 today. Until the placement commands ship, `maity api` reaches the same
 endpoints signed (`maity api POST /projects/{slug}/placements --json -`,
@@ -3396,7 +3573,7 @@ placement as `reported`; the history is the `placement_reported` events.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
+| `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed`, `rate_limited` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
 | `detail` | `null` or a code from the detail list below | never free text |
 | `exit_code` | integer or `null` | the harness process's own code |
@@ -3423,7 +3600,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `workspace_in_use` | `failed` | the clone path exists and is not recorded for this agent |
 | `join_failed` | `failed` | the pickup or the agent-side join failed; `detail` holds the hub's error code |
 | `crash_loop` | `failed` | the restart cap was reached |
-| `quota` | `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it |
+| `quota` | `rate_limited`, `exited`, `failed` | the harness's quota or rate-limit exit, as far as the runner recognises it: `rate_limited` when the runner starts the run again at `retry_at` (below), `exited` or `failed` when it will not |
 | `agent_credential_revoked` | `failed` | the agent's own calls answer `credential_revoked` |
 | `oom_killed`, `evicted`, `image_pull` | `failed`, `exited` | Kubernetes only |
 | `stopped_by_hub` | `stopped` | `desired: stopped` was carried out |
@@ -3439,10 +3616,24 @@ placement as `reported`; the history is the `placement_reported` events.
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `hot_loop` | `crash_loop` in `supervised` mode |
+| `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
 | `mode_unsupported`, `model_unsupported` | `harness_refused` |
 
 The lists are closed; a code outside them, or a `reason`/`state` pair
 not in the table, is `invalid`. Adding a code is a contract change.
+
+**A rate limit is not a crash.** When the supervised loop sees the
+harness exit for its provider's limit, the runner reports `state:
+rate_limited`, `reason: quota`, `exit_code`, and `retry_at` = the reset
+time the harness gave (or its own backoff, with `detail: reset_unknown`);
+`retry_at` is required with `rate_limited` (`invalid` without it) and
+never more than 7 days ahead. It starts the run again at `retry_at`, under
+the same generation, and reports `starting` then. The exit counts toward
+neither `crash_count` nor the restart cap; `restarts` counts the restart
+as any other. The hub stores the report as the agent's limit (§6.11):
+`until` = `retry_at`, `source: runner`, `harness` the placement's, and
+clears it with the placement's next report that is not `rate_limited`.
+A harness exit the runner does not recognise as a limit stays a crash.
 
 Reachability is not a reason: an unreachable target keeps its
 placements' last reported state, and the runner advertises
@@ -3597,6 +3788,10 @@ The kinds are in §8.2. Rules that apply to all of them:
   as they read every event of the project.
 - **Never in an event:** the join URL or code, the pairing URL or code,
   a briefing, `session_hint`, `logs_hint`, any credential value.
+- A `rate_limited` report sets the agent's limit (§6.11) and emits
+  `member_availability_changed` with the runner as actor; the report
+  that ends it does the same. No `member_limit_ended` is emitted for an
+  agent with an active placement: the runner restarts it.
 - `agent_stop_requested` is emitted with every change to `desired:
   stopped` on a placement whose agent has a membership, so the agent can
   checkpoint before the process ends; it is not emitted for
