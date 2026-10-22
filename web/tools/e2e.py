@@ -665,21 +665,24 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     tabs.get_by_role("link", name="Agents", exact=True).click()
     agents = page.locator("main section.view-agents")
+    expect(agents.locator("form.pause")).to_contain_text(
+        "A pause tells the agent at once and refuses it new work (claims, new cards)"
+    )
     agents.locator(f"#pause-{agent_id}").fill("e2e: hold on")
     agents.locator("form.pause").get_by_role("button", name="Pause", exact=True).click()
     expect(agents).to_contain_text("by Owner: e2e: hold on")
+    expect(agents).to_contain_text("The agent was told at once and gets no new work")
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
     run.shot(page, "paused")
     out = run.maity_refused(alpha, "api", "--json", "-", "PATCH", "/me", stdin='{"paused": null}')
     assert "forbidden" in out and "a human paused you" in out, out
-    run.maity(alpha, "resume")  # a resume clears the agent's own pause, never a human's
-    me = next(
-        m
-        for m in run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
-        if m["id"] == agent_id
-    )
-    assert (me.get("paused") or {}).get("by") == owner_id, me
-    assert me["paused"]["reason"] == "e2e: hold on", me
+    # A resume clears the agent's own pause, never a human's; the packet
+    # tells the agent about it (membership.paused, docs/api.md §5.2).
+    packet = json.loads(run.maity(alpha, "resume"))
+    paused = packet["membership"].get("paused") or {}
+    assert paused.get("by") == owner_id and paused.get("reason") == "e2e: hold on", packet[
+        "membership"
+    ]
     page.reload()
     expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
     agents.get_by_role("button", name="Clear pause", exact=True).click()
@@ -696,6 +699,8 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.api(alpha, "PATCH", "/me", {"paused": None})  # its own pause, it may lift
     assert own_pause() is None, own_pause()
     no_problems(run, "pause")
+
+    briefing_step(run, page, alpha, agent_id)
 
     run.step("state and absence: the owner freezes the project; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/e2e-alpha/events", after="latest", wait=0)["cursor"]
@@ -828,6 +833,29 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     )  # no live status in a record
     run.shot(page, "release-cancelled")
     no_problems(run, "release cancelled")
+
+
+def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
+    """The briefing (docs/api.md §3, §6.2) where the hub knows it; otherwise nothing offered."""
+    members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
+    own = next(m for m in members if m["id"] == agent_id)
+    agents = page.locator("main section.view-agents")
+    page.reload()
+    expect(agents).to_contain_text("@e2e-agent")
+    if "briefing" not in own:
+        run.step("briefing: this hub has none yet, so the dashboard offers none")
+        expect(agents.locator(".briefing")).to_have_count(0)
+        return
+    run.step("briefing: the owner writes it on the agent's card; the agent's resume carries it")
+    agents.locator(".briefing").get_by_role("button", name=re.compile("briefing$")).click()
+    page.locator(f"#briefing-{agent_id}").fill("You test the dashboard. First: the e2e card.")
+    page.get_by_role("button", name="Save briefing", exact=True).click()
+    expect(agents.locator(".briefing")).to_contain_text(
+        "You test the dashboard. First: the e2e card."
+    )
+    packet = json.loads(run.maity(alpha, "resume"))
+    assert packet["membership"].get("briefing") == "You test the dashboard. First: the e2e card."
+    no_problems(run, "briefing")
 
 
 if __name__ == "__main__":

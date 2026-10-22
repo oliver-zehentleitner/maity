@@ -10,6 +10,7 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime } = M.dom;
 
   const ROLES = ["member", "reviewer", "proxy", "admin"];
+  const BRIEFING_BYTES = 16 * 1024; // docs/api.md §3
 
   function joinState(j) {
     if (j.revoked_at) return "revoked " + formatTime(j.revoked_at);
@@ -47,6 +48,14 @@ window.Maity = window.Maity || {};
       h("option", { value: "" }, "nobody"),
       ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
     const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
+    // docs/api.md §3: the briefing reaches the agent in its resume packet
+    // after the exchange, never on the join page.
+    const briefing = h("textarea", {
+      id: "join-briefing",
+      rows: "5",
+      placeholder: "What this agent is for and its first assignment, e.g. \"You review the hub's pull requests. "
+        + "Start with the open ones under hub/ and tell me what blocks a merge.\"",
+    });
     const ttl = h("select", { id: "join-ttl" },
       [[900, "15 minutes"], [1800, "30 minutes"], [3600, "1 hour"]].map(([v, l]) => h("option", { value: String(v) }, l)));
 
@@ -87,6 +96,12 @@ window.Maity = window.Maity || {};
           if (!handle.value.trim()) { handle.focus(); return; }
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
+        const text = briefing.value.trim();
+        if (new TextEncoder().encode(text).length > BRIEFING_BYTES) {
+          status.fail("No join created: ", { message: "the briefing is longer than 16 KiB" });
+          briefing.focus();
+          return;
+        }
         const body = {
           agent,
           role: role.value,
@@ -95,6 +110,7 @@ window.Maity = window.Maity || {};
           capabilities: [],
           ttl_seconds: Number(ttl.value),
         };
+        if (text) body.briefing = text;
         status.busy("Creating…");
         let j;
         try {
@@ -123,6 +139,12 @@ window.Maity = window.Maity || {};
     h("label", { for: "join-role" }, "Role"), role,
     h("label", { for: "join-reports" }, "Reports to"), reportsTo,
     h("label", { for: "join-areas" }, "Areas (comma separated)"), areas,
+    // Offered when the hub knows briefings: its member view then has the key.
+    ctx.members.some((x) => "briefing" in x)
+      ? [h("label", { for: "join-briefing" }, "Briefing (optional, Markdown)"), briefing,
+        h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
+          + "after; it is never on the join page. You can change it later on the agent's card.")]
+      : null,
     h("label", { for: "join-ttl" }, "Valid for"), ttl,
     h("button", { type: "submit" }, "Create join line"),
     status.el);

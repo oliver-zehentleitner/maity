@@ -83,6 +83,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   `ships_with` groups, every readiness reason in words, an honest note when the project
   has no forge probe, a closed release as its frozen record; contract cards show their
   watchers
+- web: a join can carry the agent's briefing, and an owner or admin reads and edits it on
+  the agent's card (offered where the hub's member view has `briefing`); the pause form
+  and a human's pause say in one line what the pause does
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

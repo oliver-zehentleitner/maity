@@ -129,6 +129,9 @@ window.Maity = window.Maity || {};
     },
   };
 
+  // docs/api.md §3, §6.2: a briefing is Markdown of at most 16 KiB.
+  const BRIEFING_BYTES = 16 * 1024;
+
   // [method, pattern, handler(match, body, path, query)]. One row per
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
@@ -257,6 +260,12 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => file(m[1], "members.json", path)],
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
       const target = member(m[1], m[2], path);
+      if ("briefing" in body) {
+        if (body.briefing !== null && new TextEncoder().encode(body.briefing).length > BRIEFING_BYTES) {
+          fail(400, "invalid", "the briefing is longer than 16 KiB", path, { fields: { briefing: "string_too_long" } });
+        }
+        target.briefing = body.briefing || null;
+      }
       if ("paused" in body) {
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
@@ -292,6 +301,9 @@ window.Maity = window.Maity || {};
           id: agentId, handle: body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
           owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso(),
         });
+      }
+      if (body.briefing && new TextEncoder().encode(body.briefing).length > BRIEFING_BYTES) {
+        fail(400, "invalid", "the briefing is longer than 16 KiB", path, { fields: { briefing: "string_too_long" } });
       }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
