@@ -337,3 +337,32 @@ operator's account. The operator docs say so.
 **Rejected alternative:** a longer deny list that tries to close every
 route. git's surface keeps growing, and a list that looks complete
 would read as a boundary when it is not one.
+
+## Codex reaches the operator's login through a link in its per-placement home
+
+**Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** runner design v2 §6.1 and §6.2 (a `CODEX_HOME` per placement); implementation of runner slice R5b, 2026-10-22; whether Codex rewrites `auth.json` on a token refresh is unverified (the design marks it *verify*)
+**Revisit when:** a real Codex run shows the link replaced by a file, or the operator's login going stale while an agent's stays fresh
+
+Each Codex placement gets its own `CODEX_HOME` under the runner's state
+directory. A `config.toml` written by the runner sets the sandbox,
+approvals and network rules. The operator's `~/.codex/auth.json` is
+linked into it, not copied.
+
+**Reason:** a per-placement home keeps `codex exec resume --last` from
+picking up another agent's session and keeps the operator's own Codex
+configuration out of the agents' runs. The login, though, is one account.
+A copy would go stale when Codex refreshes the token in one place and
+not the other, and the agents would start failing while the operator's
+own Codex still works. A link keeps one file for both.
+
+**Rejected alternatives:**
+- Copying `auth.json` at every start: the copy can diverge after a
+  refresh, and the next start would overwrite a newer token with an older
+  one.
+- Running Codex with the operator's own `CODEX_HOME`: every agent would
+  see the operator's history and configuration, and `--last` would cross
+  placements.

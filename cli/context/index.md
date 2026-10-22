@@ -60,7 +60,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 
 ## R
 - [report.md](report.md) — why `maity report` refuses on any mismatch between git, the remote and the pull request, with no override
-- [runner.md](runner.md) — `maity runner`: a configuration that refuses unknown keys and documents every default, tomllib only from 3.11, one normalisation for repository entries and project URLs, what `pair` reads and refuses before sending; `serve` ends with 78 when retrying cannot help and never takes the agents with it; a placement the runner cannot act on yet is logged, not reported as a failure; deadlines are wall-clock times because they outlive the process; agents' tmux on a socket in the state directory, sessions named with underscores; Claude Code's sandbox runs strict or not at all; command allowlists are no boundary until agents run as their own user
+- [runner.md](runner.md) — `maity runner`: a configuration that refuses unknown keys and documents every default, tomllib only from 3.11, one normalisation for repository entries and project URLs, what `pair` reads and refuses before sending; `serve` ends with 78 when retrying cannot help and never takes the agents with it; a placement the runner cannot act on yet is logged, not reported as a failure; deadlines are wall-clock times because they outlive the process; agents' tmux on a socket in the state directory, sessions named with underscores; Claude Code's sandbox runs strict or not at all; command allowlists are no boundary until agents run as their own user; `sandbox: off` until an adapter enables one; Codex reaches the operator's login through a link
 
 ## S
 
