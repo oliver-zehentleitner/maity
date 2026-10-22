@@ -528,3 +528,60 @@ supervised loop starts it again on the next event.
 
 **Rejected alternative:** one default mode for every harness: it fits
 only one of them.
+
+## `stop-all` refuses while the service runs; `gc` never holds an agent's credential
+
+**Id:** ad84669c-8da9-4e2a-8598-342d797d6454
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §7.5 and §10.1; implementation of runner slice R6b, 2026-10-22
+**Revisit when:** the runner gains a local control channel the service listens on, or the hub reports revocation to runners directly
+
+`maity runner stop-all` takes the service's lock first and refuses
+while `serve` holds it. `maity runner gc --revoked` asks whether a
+workspace's credential is revoked by running that clone's own `maity`
+(`python -I -m maity api GET /me` with the clone's state directory). It
+asks the hub which placements are active and keeps every clone one of
+them names. git runs in a clone only when `.git` holds nothing but a
+plain clone's top-level entries, each a file or a directory as git
+makes it (so no `commondir`, `config.worktree`, submodules or object
+alternates, nothing in `info/` but `exclude`, and no symlink anywhere,
+since git follows them past every check) and `.git/config`, at most
+64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
+user name and email). git runs with `GIT_DIR` and `GIT_WORK_TREE` pinned
+to the clone, without the operator's `GIT_*` environment or git
+configuration. Otherwise, and whenever git
+fails, the clone is listed as not inspected and is never removed.
+
+**Reason:** a running service compares sessions with the hub's desired
+state every five seconds. It would start every agent `stop-all` just
+ended, and the operator would see the emergency stop fail. Refusing with
+the reason is clearer than racing the service. The runner never holds an
+agent's credential (§15.9). Letting the agent-side CLI make the call keeps
+that true, and `-I` with a cwd outside the clone keeps the clone's code
+out of the process. `gc` is the one place the runner reads an agent's
+git state, so it does so with everything git could run switched off.
+
+A first version ran git with `-c` overrides for hooks, fsmonitor and
+pagers and called that defused. A review showed filter drivers (through
+`.git/info/attributes`) and `gpg.program` (through `log.showSignature`)
+still ran the agent's code as the operator. Overrides can only switch off
+what they name, and git keeps adding ways to run programs, so the rule
+now reads only configuration it knows to be inert. A second review found
+the same gap one level up: `.git/commondir` sends git to another
+directory's configuration and attributes. Checking `.git/config` alone
+was again an enumeration, of the files git reads, so `.git` itself is
+now held to a plain clone's entries as well.
+
+**Rejected alternatives:**
+- `stop-all` telling the service to stop its agents: there is no control
+  channel, and an emergency path should not depend on the process it
+  works around.
+- Overriding every dangerous git setting with `-c`: an enumeration of
+  what git can run, which is how the first version missed two.
+- Pinning `GIT_COMMON_DIR` alone instead of checking `.git`'s entries:
+  it closes `commondir` but not the next file git learns to read; it is
+  kept as a second line, not as the rule.
+- Reading the credential in the runner to ask the hub: a second holder
+  of every agent's credential.

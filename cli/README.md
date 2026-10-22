@@ -426,6 +426,31 @@ project's own harness configuration is never loaded:
 
 `stub` (no model, for tests) runs as before.
 
+On the runner host, without the hub:
+
+```sh
+maity runner logs agent-f [--follow]   # a placement's session output (by id or agent handle)
+maity runner approve agent-f           # with limits.require_local_approval: let it start
+maity runner stop-all [--grace 30]     # end every agent; refused while the service runs
+maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
+maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made by hand
+```
+
+`gc` asks the hub through each clone's own `maity`, so the runner never
+holds an agent's credential, and asks the hub which placements are active,
+so a clone a new placement continues is kept. git runs in a clone only
+when its `.git` holds nothing but a plain clone's entries, each of the
+expected type (no `commondir`, `config.worktree`, `info/attributes`,
+submodules, object alternates or symlinks anywhere), and its
+configuration, at most 64 KiB, nothing but a plain clone's keys. git can run programs
+from all of those, and the agent wrote them. git runs pinned to the
+clone (`GIT_DIR`, `GIT_WORK_TREE`, no inherited `GIT_*`), so a broken
+clone fails instead of git reading a parent repository. Any other clone
+is listed as "not inspected" and never removed, as is one where git
+fails. `--yes` needs
+the service stopped, and a record whose path is not the workspace it
+names is never followed.
+
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the
 service as a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked

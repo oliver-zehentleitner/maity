@@ -217,8 +217,13 @@ class Service:
                 "error": error,
                 "retry_at": utc(time.time() + retry_in) if retry_in is not None else None,
                 "placements": [
-                    {k: p.get(k) for k in ("id", "project", "generation", "desired")}
+                    {
+                        **{k: p.get(k) for k in ("id", "project", "generation", "desired")},
+                        "agent": (p.get("agent") or {}).get("handle"),
+                    }
                     for p in self.placements
+                    # never a path or a line from an unchecked id
+                    if isinstance(p.get("id"), str) and supervisor.PLACEMENT_ID.match(p["id"])
                 ],
                 "updated_at": utc(),
             },

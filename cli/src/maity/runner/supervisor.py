@@ -78,6 +78,8 @@ def run_join(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tupl
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
+APPROVED_FILE = "approved.json"
+LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
@@ -330,6 +332,9 @@ class Supervisor:
             self._exited(rec, mine, now)
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
+            return 0
+        if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
+            rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
             return 0
         if alive >= self.cfg.limits.max_agents:
             rec.enter(now, "pending", "capacity")
@@ -690,18 +695,29 @@ class Supervisor:
                     rec.acked, rec.pending = pending["key"], None
 
 
-def build(cfg: config.Config, client: hub.Client | None, log: Log,
-          probes: dict[str, capabilities.Probe],
-          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
-    """The supervisor for the local backend of `cfg`."""
+def local_backend(cfg: config.Config) -> Tmux:
+    """The tmux server of `cfg`'s local backend (also for `stop-all`, without the hub)."""
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
-    backend = Tmux(
+    return Tmux(
         socket=cfg.local.tmux_socket,
         conf=cfg.state_dir / "tmux.conf",
         home=os.environ.get("HOME", ""),
         agent_path=capabilities.agent_path(cfg, os.environ.get("PATH", "")),
-        logs=cfg.state_dir / "logs",
+        logs=cfg.state_dir / LOGS,
     )
-    supervisor = Supervisor(cfg, backend, client, log, probes, capabilities=capabilities_)
+
+
+def approved(state_dir: Path) -> dict[str, Any]:
+    """Placements the operator approved on this host (`maity runner approve`)."""
+    return state.load_state(state_dir, name=APPROVED_FILE) if state_dir.is_dir() else {}
+
+
+def build(cfg: config.Config, client: hub.Client | None, log: Log,
+          probes: dict[str, capabilities.Probe],
+          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
+    """The supervisor for the local backend of `cfg`."""
+    supervisor = Supervisor(
+        cfg, local_backend(cfg), client, log, probes, capabilities=capabilities_
+    )
     supervisor.load()
     return supervisor

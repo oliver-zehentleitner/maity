@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, serve
+from . import capabilities, config, operate, serve
 
 STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
@@ -422,6 +422,28 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _seconds(value: str) -> int:
+    seconds = int(value)
+    if seconds < 0:
+        raise argparse.ArgumentTypeError("0 or more seconds")
+    return seconds
+
+
+def _operate(name: str) -> Any:
+    """A handler for one of `operate`'s commands: the configuration first, its refusals as
+    this module's (exit 2)."""
+
+    def handler(args: argparse.Namespace) -> int:
+        cfg = config.load(config.path_of(args.config))
+        try:
+            result: int = getattr(operate, name)(cfg, args)
+        except operate.Refused as exc:
+            raise Refused(str(exc)) from None
+        return result
+
+    return handler
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -494,3 +516,65 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         formatter_class=fmt,
     )
     r.set_defaults(handler=cmd_unit)
+
+    def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:
+        r: argparse.ArgumentParser = rsub.add_parser(
+            name, help=summary, description=description, formatter_class=fmt
+        )
+        r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+        return r
+
+    r = runner_cmd(
+        "logs",
+        "an agent's session output, from this host",
+        "Print a placement's log (<state_dir>/logs/<placement>.log); the placement is named by "
+        "its id or by the agent's handle. Logs stay on the runner; the hub never sees them.",
+    )
+    r.add_argument("which", help="the placement id, or the agent's handle")
+    r.add_argument("--follow", action="store_true", help="keep printing what is appended")
+    r.add_argument(
+        "--raw", action="store_true", help="the bytes as written, escape sequences included"
+    )
+    r.set_defaults(handler=_operate("cmd_logs"))
+
+    r = runner_cmd(
+        "approve",
+        "let a held placement start (require_local_approval)",
+        "With limits.require_local_approval, new placements wait as pending/awaiting_operator "
+        "until approved here, on the runner host.",
+    )
+    r.add_argument("which", help="the placement id, or the agent's handle")
+    r.set_defaults(handler=_operate("cmd_approve"))
+
+    r = runner_cmd(
+        "stop-all",
+        "end every agent on this runner, without the hub",
+        "For emergencies and decommissioning: SIGTERM to every agent session, then kill-session "
+        "after --grace seconds. Refused while the service runs, since it would start them again.",
+    )
+    r.add_argument("--grace", type=_seconds, default=operate.STOP_ALL_GRACE, metavar="N")
+    r.set_defaults(handler=_operate("cmd_stop_all"))
+
+    r = runner_cmd(
+        "gc",
+        "list, and with --yes remove, workspaces whose credential is revoked",
+        "For every recorded workspace without a placement whose credential the hub reports as "
+        "revoked: its uncommitted files and the commits on no remote (git run with hooks, "
+        "fsmonitor and pagers off). Removes only with --yes.",
+    )
+    r.add_argument("--revoked", action="store_true", help="required: the only kind gc knows")
+    r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
+    r.set_defaults(handler=_operate("cmd_gc"))
+
+    r = runner_cmd(
+        "workspace",
+        "record an existing clone for an agent",
+        "`maity runner workspace claim <project>/<clone> --agent <id>`: record a clone made by "
+        "hand, or one left after a lost state directory, so the runner may use it.",
+    )
+    r.add_argument("action", choices=("claim",))
+    r.add_argument("where", help="<project>/<clone>")
+    r.add_argument("--agent", required=True, help="the agent's member id")
+    r.add_argument("--placement", help="the placement id, when one exists")
+    r.add_argument("--force", action="store_true", help="record it again")
+    r.set_defaults(handler=_operate("cmd_workspace_claim"))
