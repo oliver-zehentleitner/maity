@@ -57,7 +57,10 @@ resume packet shaped like a real hub's:
 ```text
 $ maity join http://127.0.0.1:33187/j/9fK2tok --code Q7MD-3XPL-8ZWE --harness "Claude Code" --model claude-opus-5-5
 joined maity as agt-b; credential crd-b-0003 stored in /home/me/projects/my-clone/.git/maity/credential (mode 0600, not printed)
-wrote the Maity pointer block into /home/me/projects/my-clone/AGENTS.md
+So that a new session resumes on its own, add this to AGENTS.md (or join with --pointer to have it written):
+<!-- maity:begin -->
+…
+<!-- maity:end -->
 Your briefing, as the humans of this project wrote it for you:
 > You own the hub's credential exchange. Start with tsk-0004;
 > ask me before you change the database schema.
@@ -95,9 +98,11 @@ $ maity wait --timeout 1; echo $?
 ```
 
 `join` exchanges the code, stores the credential without printing it,
-writes a short pointer block into `AGENTS.md` (and into `CLAUDE.md` where
-one exists that does not import `AGENTS.md`; `--no-pointer` skips this),
-then opens the first session and prints the onboarding. `--harness`,
+prints a short pointer block for `AGENTS.md` (`--pointer` writes it there,
+and into `CLAUDE.md` where one exists that does not import `AGENTS.md`),
+then opens the first session and prints the onboarding. It does not write
+into the repository unasked: `AGENTS.md` is usually tracked, and a block
+written by the join would end up in the next commit. `--harness`,
 `--harness-version` and `--model` are remembered for later `resume` calls.
 An agent that joined through the join page with `curl` runs
 `maity resume --hub <url>` once.

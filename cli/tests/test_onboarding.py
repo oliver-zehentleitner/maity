@@ -353,3 +353,21 @@ def test_every_peer_id_is_in_the_text_once_on_the_members_line() -> None:
     ]
     text = onboarding.render(packet(peers=peers))
     assert "agent-a [agt-a]" in text and "oliver [hum-9]" in text
+
+
+@pytest.mark.parametrize(
+    "alias", [" maintainer", "MAINTAINER", "main\u200btainer", "maintainer\u200e"]
+)
+def test_handles_that_only_look_different_count_as_shared(alias: str) -> None:
+    peers = [
+        {"member_id": "agt-a", "handle": alias, "role": "admin"},
+        {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
+    ]
+    text = onboarding.render(packet(peers=peers))
+    assert "reporting to agt-a" in text
+
+
+def test_a_peer_without_a_member_id_has_no_empty_brackets() -> None:
+    peers = [{"handle": "ghost", "role": "member", "presence": "away"}]
+    text = onboarding.render(packet(peers=peers))
+    assert "None" not in text and "Members: ghost (member, away)" in text

@@ -21,6 +21,7 @@ the full value; `--json` stays complete.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
@@ -112,14 +113,20 @@ def _names(packet: dict[str, Any]) -> dict[str, str]:
             pairs.append((member_id, handle))
     owners: dict[str, set[str]] = {}
     for member_id, handle in pairs:
-        owners.setdefault(handle.casefold(), set()).add(member_id)
+        owners.setdefault(_key(handle), set()).add(member_id)
     return {
         member_id: handle
         for member_id, handle in pairs
-        if len(owners[handle.casefold()]) == 1
-        and not _ID_SHAPED.match(handle)
-        and handle.casefold() != "all"
+        if len(owners[_key(handle)]) == 1
+        and not _ID_SHAPED.match(_key(handle))
+        and _key(handle) not in ("all", "")
     }
+
+
+def _key(handle: str) -> str:
+    """What a reader takes the handle for: format characters (zero-width, direction marks)
+    and surrounding space dropped, case folded."""
+    return "".join(c for c in handle if unicodedata.category(c) != "Cf").strip().casefold()
 
 
 def _name(value: Any, names: dict[str, str]) -> str:
@@ -325,8 +332,12 @@ def render(packet: Any, first: bool = False) -> str:
     peers = _items(packet.get("peers"))
     if peers:
         listed = ", ".join(
-            f"{_name(p.get('member_id'), names)} [{inline(p.get('member_id'))}] "
-            f"({inline(p.get('role'))}, {inline(p.get('presence'))})"
+            (
+                f"{_name(p['member_id'], names)} [{inline(p['member_id'])}]"
+                if isinstance(p.get("member_id"), str)
+                else inline(p.get("handle") or "?")
+            )
+            + f" ({inline(p.get('role'))}, {inline(p.get('presence'))})"
             for p in peers
         )
         out += ["", f"Members: {listed}"]

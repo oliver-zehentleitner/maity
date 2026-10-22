@@ -10,6 +10,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 ### Added
 
+- cli: `maity report --no-code` (`docs/api.md` §6.6, #116) — a card whose result is not code is reported with `code: false`, the summary carrying the result; no git fact is read or sent, so it works from any clone state.
 - cli: `maity join` on a join host (`docs/api.md` §1.1, §13) — the exchange follows the URL's shape (`/join/<token>` or `/j/<token>` → `POST /api/v1/join/<token>`, a single-segment join-host URL → `POST` to that URL); `Maity-Hub` from the exchange is kept only under the transport rule and on the given host or its parent domain, for `join` and `maity runner pair`, otherwise exit 1 with nothing stored.
 - cli: `maity runner pair` and `maity runner check` (runner slice R1, `docs/api.md` §15.2) — the TOML configuration with unknown keys refused by name and every default listed by `check --explain`; pairing with `--code` or `--code-file -`, writing the credential 0600 under `state_dir` and a starter configuration when none exists, refusing a configuration for another hub; repository entries `host/owner/name` or `host/owner/*`, normalised like the project's repository URL; `maity runner` needs Python 3.11 and refuses on 3.10.
 - hub: runners, first slice (`docs/api.md` §15.1–15.3) — enrollments (paged) and the pairing exchange (`POST /runners/pair/{token}`, single use, burned after three wrong codes, rate limited, the join's transport rule), re-pairing, `GET`/`PATCH`/`DELETE /runners/{id}` and `POST /runners/{id}/revoke`; runner credentials (`rcrd-…`) sign every call, are refused as bearer with `signature_required`, reach `/runner/*` only (`not_found` on project routes, `forbidden` elsewhere), and are revoked when found in a payload; the request log masks `/r/…` and `/runners/pair/…`. `attach` in an enrollment is refused until attachments exist.
@@ -225,6 +226,10 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   the image must report that version. The base image is pinned by digest.
 
 ### Changed
+
+- cli: `maity join` no longer writes into the repository unasked: it prints the pointer block for `AGENTS.md`, and `--pointer` writes it (`--no-pointer` is accepted and is the default).
+- cli: `maity checkpoint` warns on a detached HEAD and on a branch other than the card's last checkpoint's; `--no-code` sends no git facts. `maity wait --batch` prints every pending event (at most 50) as one JSON array and moves the cursor past them.
+- cli: the resume text treats handles that differ only in case, surrounding space or invisible characters as shared and shows ids for them; a peer without a member id shows no empty brackets. The hub URL from an exchange is stored lowercase and IDNA-encoded; port 0 and a numeric "parent" are refused.
 
 - cli: the resume packet names members by handle (actor, subject, reports-to, answered by, paused by, message recipient), from the packet's peers and `me`; an id the packet does not name stays an id, and so does a member whose handle is shared, shaped like an id or `all`; the Members line keeps each id (`agent-a [agt-a]`) for `say` and `ask --to`.
 - hub: the card, event and member lists build their views in batches — a

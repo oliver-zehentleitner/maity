@@ -109,3 +109,31 @@ whatever the text contains.
   text itself and closed early.
 - Printing people's text unmarked: what the humans wrote and what the
   hub says would look the same.
+
+## `join` prints the pointer block instead of writing it into the repository
+
+**Id:** d3341cd4-bb98-48e8-a23d-c4fb4b8534a4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** dogfooding on maity.team, 2026-10-22 (a member's join wrote into the tracked AGENTS.md); the coordinator's card on CLI friction
+**Revisit when:** harnesses read an untracked file (such as AGENTS.local.md) at session start, so the block could go there without touching the repository
+
+`maity join` writes nothing into the repository by default. It prints the
+pointer block for `AGENTS.md`, and `--pointer` writes it there (and into a
+`CLAUDE.md` that does not import `AGENTS.md`). `--no-pointer` is still
+accepted and does what is now the default.
+
+**Reason:** `AGENTS.md` is tracked in nearly every repository. A block the
+join writes unasked turns up as a change in the next `git status`, and an
+agent that stages with `git add -A` commits it into the project's history
+on a feature branch, where a reviewer has to remove it again. Whether the
+block belongs in the repository is the repository's decision
+(`docs/architecture.md` §4.2), and a printed block leaves that decision
+with whoever reads the output.
+
+**Rejected alternatives:**
+- Keep writing by default with `--no-pointer` to skip: the pasted join line
+  has no flag, so in practice the block is always written.
+- Write it into an untracked file: harnesses read `AGENTS.md`, not a local
+  variant, so the block would not do its job.
