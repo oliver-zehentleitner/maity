@@ -98,3 +98,57 @@ history and the process list.
   operator failed the pair after the exchange and lost the credential.
 - Overwriting the configuration of another hub: it would orphan that
   runner's credential and state without a word.
+
+## `serve` ends with 78 on anything retrying cannot fix, and never takes the agents with it
+
+**Id:** e210a162-44c7-4efd-9176-c3c3f66b3e63
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`)
+**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design
+
+`maity runner serve` backs off and says `hello` again only on no answer,
+a 5xx, 408, 429 or a clock skew. A revoked credential, any other 4xx and
+`superseded: true` on the event stream end it with exit 78, which the
+systemd unit does not restart (`RestartPreventExitStatus=78`). SIGTERM
+ends it with 0. The unit sets `KillMode=process`.
+
+**Reason:** a service manager restarting a runner whose credential is
+revoked, or whose hub refuses its capabilities, only produces a log loop.
+Failing loudly once tells the operator what to fix. A superseded stream
+means a second `serve` holds the same credential; restarting both would
+make them supersede each other forever. The agents run in a tmux server
+the runner started, inside the unit's cgroup, so systemd's default
+`KillMode=control-group` would end every agent on a service restart. The
+design keeps agents running across runner restarts and hub outages, so
+only the runner's own process may be signalled.
+
+**Rejected alternatives:**
+- Retrying every error with backoff: hides a revoked credential or a
+  wrong configuration behind an endless reconnect.
+- Backing off on `superseded` and reconnecting: two services would take
+  the stream from each other in turn.
+- Leaving `KillMode` at its default: a `systemctl restart` for an
+  upgrade would end every agent mid-work.
+
+## Capabilities say `sandbox: off` until an adapter switches a sandbox on
+
+**Id:** 0e700858-b898-4d5d-b230-b5d9ce3e0941
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.3 (`sandbox`: the harness's own OS sandbox); implementation of runner slice R2, 2026-10-22
+**Revisit when:** the harness adapters (R5) enable a harness's own sandbox when it starts
+
+Every real harness is advertised with `sandbox: "off"` and `stub` with
+`"n/a"`, whatever `check` finds about the prerequisites. The version is
+the first dotted number in the `--version` output, cut to printable ASCII.
+
+**Reason:** the field tells a human choosing a runner how far the
+harness is confined. Bubblewrap being installed does not mean the
+runner starts the harness with its sandbox on; until an adapter does
+that, `on` would overstate the confinement.
+
+**Rejected alternative:** derive `on` from the prerequisites, as `check`
+reports them; that describes the machine, not how the agent runs.
