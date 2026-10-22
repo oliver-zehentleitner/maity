@@ -10,6 +10,7 @@ token never leaves for a host the operator did not choose.
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import time
@@ -28,9 +29,10 @@ class ForgeUnavailableError(Exception):
     """The forge did not answer a read (network, timeout, 5xx, rate limit, bad token,
     a repository the token cannot see, an answer of an unexpected shape)."""
 
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(self, message: str, status: int | None = None, rate_limited: bool = False) -> None:
         super().__init__(message)
         self.status = status  # the forge's HTTP status, when it answered with one
+        self.rate_limited = rate_limited  # a 403/429 that says "later", not "never"
 
 
 def kind_of(url: str | None) -> str | None:
@@ -79,7 +81,8 @@ PAGE = 100
 MAX_PAGES = 10  # 1000 check runs; past that the sum is `unknown`
 
 VISIBILITY_SECONDS = 300
-_visible: dict[str, float] = {}  # repository -> when the token last saw it
+# (token digest, repository) -> when that token last saw it; the digest, not the token
+_visible: dict[tuple[str, str], float] = {}
 
 
 @dataclass(frozen=True)
@@ -107,7 +110,15 @@ class Forge:
         except urllib.error.HTTPError as error:
             if error.code == 404:
                 return None
-            raise ForgeUnavailableError(f"the forge answered {error.code}", error.code) from None
+            headers: Any = error.headers or {}
+            limited = error.code in (403, 429) and (
+                headers.get("X-RateLimit-Remaining") == "0" or "Retry-After" in headers
+            )
+            raise ForgeUnavailableError(
+                f"the forge answered {error.code}" + (" (rate limit)" if limited else ""),
+                error.code,
+                rate_limited=limited,
+            ) from None
         except (OSError, ValueError, http.client.HTTPException) as error:
             # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not
             # answer, like a timeout; never the error text, which may quote the request.
@@ -118,12 +129,13 @@ class Forge:
     def _missing(self, repository: str) -> None:
         """A 404 for a ref is an answer only when the token can see the repository: GitHub
         answers 404 for a private repository the token has no access to, too."""
-        seen = _visible.get(repository)
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
+        seen = _visible.get(key)
         if seen is not None and time.monotonic() - seen < VISIBILITY_SECONDS:
             return
         if self._get(f"/repos/{repository}") is None:
             raise ForgeUnavailableError("the repository is not visible to the forge token")
-        _visible[repository] = time.monotonic()
+        _visible[key] = time.monotonic()
 
     def _check_runs(self, repository: str, sha: str) -> list[dict[str, str]] | None:
         """Every check run on the commit; None when there are more than MAX_PAGES pages."""
@@ -153,7 +165,7 @@ class Forge:
             runs = self._check_runs(repository, sha)
             statuses = self._statuses(repository, sha)
         except ForgeUnavailableError as error:
-            if error.status == 403:  # a token without the checks or statuses permission
+            if error.status == 403 and not error.rate_limited:  # no checks/statuses permission
                 return "unknown", []
             raise
         if runs is None:

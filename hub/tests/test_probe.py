@@ -531,3 +531,28 @@ def test_a_new_repository_starts_without_the_old_observations(
     assert moved.status_code == 200, moved.text
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_observation)).all() == []
+
+
+def test_a_slow_read_that_started_first_never_replaces_a_newer_one(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow read of "open" starts; meanwhile a fast read sees "merged" and is
+    stored. The slow one ends last but is the older observation, and stays out."""
+    project = _project(migrated)
+    github.pull(1)  # what the slow read will see
+    real_read = probe._read
+    calls = [0]
+
+    def slow_then_fast(*args: Any) -> dict[str, Any]:
+        calls[0] += 1
+        if calls[0] == 1:
+            seen = real_read(*args)  # "open", as the forge said when this read began
+            github.pull(1, merged=True)
+            probe.observe(migrated, READER, project, "pr", "1", 0)  # the fast read, nested
+            return seen
+        return real_read(*args)
+
+    monkeypatch.setattr(probe, "_read", slow_then_fast)
+    probe.observe(migrated, READER, project, "pr", "1", 0)
+    stored = probe.last(migrated, project.id, "pr", "1")
+    assert stored is not None and stored.data["state"] == "merged"

@@ -31,6 +31,9 @@ class FakeOpener:
         answer = self.answers.get(path, self.answers.get(path.split("?")[0]))
         if isinstance(answer, BaseException):
             raise answer
+        if isinstance(answer, tuple):  # (status, headers)
+            status, headers = answer
+            raise urllib.error.HTTPError(request.full_url, status, "error", headers, None)
         if isinstance(answer, int):
             raise urllib.error.HTTPError(request.full_url, answer, "error", {}, None)  # type: ignore[arg-type]
         if answer is None:
@@ -218,3 +221,24 @@ def test_stale_runs_are_pending(opener: FakeOpener) -> None:
 
 def test_the_token_is_never_in_a_repr() -> None:
     assert TOKEN not in repr(READER) and TOKEN not in str(READER)
+
+
+@pytest.mark.parametrize("headers", [{"X-RateLimit-Remaining": "0"}, {"Retry-After": "60"}])
+def test_a_rate_limit_on_checks_is_no_answer_not_a_missing_permission(
+    opener: FakeOpener, headers: dict[str, str]
+) -> None:
+    opener.answers[_checks_path(1)] = (403, headers)
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        READER.checks("a/b", SHA)
+    assert raised.value.rate_limited is True
+
+
+def test_repository_visibility_is_remembered_per_token(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b/pulls/9"] = None
+    READER.pull_request("a/b", 9)
+    other = forge.Forge("another-token")
+    other.pull_request("a/b", 9)
+    visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
+    assert len(visibility) == 2  # each token asked once for itself
+    assert all(TOKEN not in str(key) for key in forge._visible)

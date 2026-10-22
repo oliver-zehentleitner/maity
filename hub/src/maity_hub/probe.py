@@ -97,8 +97,10 @@ def observe(
     now = clock.now()
     if row is not None and max_age > 0 and now - row.observed_at < timedelta(seconds=max_age):
         return Observation(dict(row.data), row.observed_at, fresh=False)
-    data = _read(fg, forge.repository_of(project.repository_url), kind, ref)
+    # The time the read started: a slow read that began before a fast one is the
+    # older observation, whenever it ends.
     observed_at = clock.now()
+    data = _read(fg, forge.repository_of(project.repository_url), kind, ref)
     with transaction(engine) as conn:
         lock_project(conn, project.id)  # one writer per project: delete + insert is the upsert
         stored = _cached(conn, project.id, kind, ref)
