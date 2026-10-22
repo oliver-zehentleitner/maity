@@ -58,6 +58,7 @@ Why Maity is built the way it is.
 ## O
 
 ## P
+- [process.md](process.md) — how Maity itself is built: the review process, and maity.team as the only platform for the work
 
 ## Q
 
