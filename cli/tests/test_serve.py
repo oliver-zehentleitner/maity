@@ -468,3 +468,36 @@ def test_the_unit_ships_with_the_package(capsys: pytest.CaptureFixture[str]) -> 
     unit = capsys.readouterr().out
     assert "KillMode=process" in unit and "RestartPreventExitStatus=78" in unit
     assert "PrivateTmp" not in unit.replace("No PrivateTmp", "")
+
+
+def test_local_trouble_while_backing_off_ends_with_78(tmp_path: Path) -> None:
+    script = Script(("POST /runner/hello", err(503)))
+    svc, _, clock = service(tmp_path, script)
+    (tmp_path / "st").mkdir(mode=0o500)
+    try:
+        assert run(svc) == serve.EXIT_CONFIG
+    finally:
+        (tmp_path / "st").chmod(0o700)
+    assert clock.slept == []
+
+
+def test_hub_words_never_forge_a_log_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hostile = hub.HubError("503: \x1b]8;;https://evil\x07x\x1b]8;;\x07\nFORGED line", status=503)
+    script = Script(("POST /runner/hello", hostile), ("POST /runner/hello", err(404)))
+    svc, _, _ = service(tmp_path, script)
+    run(svc)
+    logged = capsys.readouterr().err
+    assert "\x1b" not in logged and "\x07" not in logged
+    assert not any(line.startswith("FORGED") for line in logged.splitlines())
+
+
+def test_a_page_that_does_not_move_the_cursor_is_waited_out(tmp_path: Path) -> None:
+    script = Script(
+        HELLO, events({"seq": 1}, cursor=5120), placements(), events({"seq": 1}, cursor=5120)
+    )
+    clock = Clock(poll_seconds=0.0)
+    svc, _, _ = service(tmp_path, script, clock)
+    run(svc)
+    assert clock.slept[:1] == [serve.POLL_FLOOR]

@@ -74,7 +74,7 @@ def fatal_reason(err: hub.HubError) -> str | None:
         return None
     if err.status in (408, 429) or err.status >= 500:
         return None
-    return f"the hub refuses this runner: {err}"
+    return f"the hub refuses this runner: {onboarding.inline(str(err))}"
 
 
 def backoff(attempt: int, err: hub.HubError | None, rand: Callable[[], float]) -> float:
@@ -162,19 +162,20 @@ class Service:
             try:
                 self.hello()
                 while True:
-                    started = self.monotonic()
+                    started, before = self.monotonic(), self.cursor
                     woken = self.poll()
                     held = self.monotonic() - started
                     if held >= BACKOFF_RESET:
                         attempt = 0
-                    if not woken and held < POLL_FLOOR:
-                        self.sleep(POLL_FLOOR - held)  # an empty answer that did not hold
+                    if held < POLL_FLOOR and (not woken or self.cursor == before):
+                        # An answer that neither held nor moved the cursor: never spin.
+                        self.sleep(POLL_FLOOR - held)
                     if woken or self.monotonic() - self.last_read >= REREAD_INTERVAL:
                         self.read_placements()
             except Fatal as exc:
                 return self._fatal(str(exc))
-            except OSError as exc:  # the state directory, never the network (that is HubError)
-                return self._fatal(f"the state directory cannot be written: {exc}")
+            except OSError as exc:  # local files, never the network (that is HubError)
+                return self._fatal(f"local state cannot be written: {exc}")
             except hub.HubError as exc:
                 reason = fatal_reason(exc)
                 if reason is not None:
@@ -182,8 +183,12 @@ class Service:
                 attempt += 1
                 delay = backoff(attempt, exc, self.rand)
                 self.connected = False
-                self.write_status(error=str(exc), retry_in=delay)
-                log(f"{exc}; trying again in {delay:.0f} s")
+                text = onboarding.inline(str(exc))  # the hub's words: one line, no escapes
+                try:
+                    self.write_status(error=text, retry_in=delay)
+                except OSError as local:
+                    return self._fatal(f"local state cannot be written: {local}")
+                log(f"{text}; trying again in {delay:.0f} s")
                 self.sleep(delay)
 
     def _fatal(self, reason: str) -> int:
