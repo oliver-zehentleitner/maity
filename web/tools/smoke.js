@@ -698,7 +698,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const colEl = (st) => main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === st);
   expect(colEl("proposed").classList.contains("drop-ok") && colEl("cancelled").classList.contains("drop-ok")
     && colEl("done").classList.contains("drop-refused") && !colEl("open").classList.contains("drop-refused"), "board: while dragging, the allowed columns are marked, the others refused");
-  colEl("done").dispatch("drop"); await tick();
+  colEl("done").dispatch("dragover"); bCard("tsk-0008").dispatch("dragend"); await tick();
   expect(bWrites.length === 1 && text(main).includes("Not moved: tsk-0008 cannot go to Done.") && !colEl("done").classList.contains("drop-refused"),
     "board: a drop on a refused column is said, nothing sent");
   bCard("tsk-0008").dispatch("dragstart", { dataTransfer: null });

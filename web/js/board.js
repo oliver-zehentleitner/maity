@@ -454,10 +454,17 @@ window.Maity = window.Maity || {};
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 
     // Dragging: the columns the card may go to are marked, the others refused.
+    // A browser fires drop only where dragover allowed it, so a card let go
+    // over a refused column ends with dragend alone: the column it was last
+    // over says what was refused.
     let dragging = null;
+    let over = null;
+    let dropped = false;
     const drag = {
       start(e, c) {
         dragging = c;
+        over = null;
+        dropped = false;
         if (e.dataTransfer) { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; }
         const ok = new Set(E.targets(ctx, c));
         columnsBox.querySelectorAll("section.column").forEach((col) => {
@@ -467,7 +474,12 @@ window.Maity = window.Maity || {};
         });
       },
       end() {
+        const c = dragging;
+        if (c && !dropped && over && over.s !== c.status && !E.targets(ctx, c).includes(over.s)) {
+          status.fail("Not moved: ", { message: c.id + " cannot go to " + over.label + "." });
+        }
         dragging = null;
+        over = null;
         columnsBox.querySelectorAll("section.column").forEach((col) => {
           col.classList.toggle("drop-ok", false);
           col.classList.toggle("drop-refused", false);
@@ -483,14 +495,20 @@ window.Maity = window.Maity || {};
         class: "column",
         "aria-label": label,
         "data-status": s,
-        ondragover: (e) => { if (may()) { e.preventDefault(); col.classList.toggle("drop-over", true); } },
+        ondragenter: () => { if (dragging) over = { s, label }; },
+        ondragover: (e) => {
+          if (dragging) over = { s, label };
+          if (may()) { e.preventDefault(); col.classList.toggle("drop-over", true); }
+        },
         ondragleave: () => col.classList.toggle("drop-over", false),
         ondrop: (e) => {
           e.preventDefault();
           const c = dragging;
-          drag.end();
-          if (c && E.targets(ctx, c).includes(s)) move(c, s);
-          else if (c && c.status !== s) status.fail("Not moved: ", { message: c.id + " cannot go to " + label + "." });
+          if (c && E.targets(ctx, c).includes(s)) {
+            dropped = true;
+            drag.end();
+            move(c, s);
+          }
         },
       },
       h("h3", { class: "column-head" }, label, h("span", { class: "count" }, String(cards.length))),
