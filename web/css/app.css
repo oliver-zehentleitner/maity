@@ -610,7 +610,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .msg.in.grouped { margin-top: -4px; padding-inline-start: 48px; }
 .msg-avatar { flex: none; }
 .msg-body { min-width: 0; }
-.msg.grouped .meta { opacity: 0.8; }
+/* A grouped message says only when; muted, never fainter than --muted (contrast). */
+.msg.grouped .meta { font-size: 0.74rem; }
 .messages .empty p { margin: 0 0 4px; }
 .jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
 .jump-latest[hidden] { display: none; }
