@@ -215,6 +215,17 @@ window.Maity = window.Maity || {};
 
   // A tab row scrolls sideways on its own when it is wider than the screen;
   // the current tab is scrolled into it, without moving the page.
+  // A row that scrolls shows it: a fade on the side with more entries.
+  function scrollCue(nav) {
+    const update = () => {
+      const more = nav.scrollWidth - nav.clientWidth;
+      nav.classList.toggle("more-before", more > 1 && nav.scrollLeft > 1);
+      nav.classList.toggle("more-after", more > 1 && nav.scrollLeft < more - 1);
+    };
+    nav.addEventListener("scroll", update, { passive: true });
+    update();
+  }
+
   function showCurrent(nav) {
     const cur = nav && nav.querySelector('[aria-current="page"]');
     if (!cur || !nav.clientWidth) return;
@@ -234,6 +245,7 @@ window.Maity = window.Maity || {};
     old.parentNode.insertBefore(fresh, old);
     old.remove();
     fresh.scrollLeft = scrolled;
+    scrollCue(fresh);
   }
 
   function renderHeader(ctx, current) {
@@ -279,7 +291,7 @@ window.Maity = window.Maity || {};
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))
         : null);
-    header.querySelectorAll("nav").forEach(showCurrent);
+    header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
   }
 
   // ---- context ------------------------------------------------------------
@@ -370,6 +382,7 @@ window.Maity = window.Maity || {};
       clear(countLine);
       const now = openNow();
       if (now !== seen && (where.scope === "all" || where.route === "inbox")) {
+        if (ctx.quietReload && ctx.quietReload()) { render(); return; }
         append(countLine, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
           h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
       }

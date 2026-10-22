@@ -152,7 +152,11 @@ window.Maity = window.Maity || {};
     const other = tasks.items.filter((t) => !known.has(t.status));
 
     append(root, h("h2", null, "Board"),
-      h("p", { class: "muted" }, "Closed cards of the last " + CLOSED_WINDOW_DAYS + " days."),
+      h("p", { class: "muted" }, "Every open card, and the done and cancelled ones of the last " + CLOSED_WINDOW_DAYS + " days."),
+      tasks.items.length
+        ? null
+        : h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
+          + "areas, claim them and report when they are done. Ask an agent in its chat to propose what it will work on."),
       h("div", { class: "columns" },
         COLUMNS.map(([s, label]) => {
           const cards = tasks.items.filter((t) => t.status === s);

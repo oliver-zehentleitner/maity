@@ -346,6 +346,10 @@ def scenario(run: Run, page: Page) -> None:
     run.step("create a project")
     page.get_by_role("link", name="Create a project", exact=True).click()
     create_project(run, page, "E2E Alpha", "e2e-alpha")
+    # At 1280 px the rows fit: no scroll cue.
+    for nav in ("nav.views", "nav.switcher"):
+        cls = page.locator(nav).get_attribute("class") or ""
+        assert "more-" not in cls, f"{nav} shows a scroll cue at 1280 px ({cls!r})"
     run.shot(page, "project-created")
     no_problems(run, "create a project")
 
@@ -373,6 +377,7 @@ def scenario(run: Run, page: Page) -> None:
     # The view has read the event head once its columns are drawn; what the
     # agent does from here on is offered as a reload.
     expect(page.get_by_role("region", name="Proposed")).to_be_visible()
+    expect(page.locator("main .first-hint")).to_contain_text("No cards yet")
     task = run.api(
         alpha, "POST", "/projects/e2e-alpha/tasks", {"title": "E2E card", "area": "web/"}
     )
@@ -416,15 +421,13 @@ def scenario(run: Run, page: Page) -> None:
         text=True,
     )
     try:
-        expect(
-            page.get_by_text(re.compile(r"What waits for you changed \(1 open\)"))
-        ).to_be_visible()
+        # The list was empty, so nothing was being read: it reloads on its own.
+        entry = page.locator("li.entry.current")
+        expect(entry).to_be_visible()
+        expect(page.get_by_text("What waits for you changed")).to_have_count(0)
         expect(page.locator("nav.switcher a", has_text="E2E Alpha").locator(".count")).to_have_text(
             "1"
         )
-        run.shot(page, "inbox-notice")
-        page.get_by_role("button", name="Reload the list", exact=True).click()
-        entry = page.locator("li.entry.current")
         expect(entry).to_contain_text("Ship the e2e card?")
         expect(entry).to_contain_text("The test asks this.")
         run.shot(page, "inbox-request")
@@ -542,6 +545,9 @@ def scenario(run: Run, page: Page) -> None:
         expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
+        # The views row is wider than 390 px; it shows a fade where more tabs are.
+        cue = page.locator("nav.views").get_attribute("class") or ""
+        assert "more-after" in cue or "more-before" in cue, f"{view}: no scroll cue ({cue!r})"
         # The current tab and project chip are scrolled into their rows.
         hidden = [cls for cls, shown in page.evaluate(CURRENT_SHOWN_JS) if not shown]
         assert not hidden, f"{view}: the current entry of nav.{hidden} is scrolled out of view"

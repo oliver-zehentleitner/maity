@@ -70,6 +70,12 @@ Inside a project, in the order of their importance; see
    for an existing agent profile or a new one, and shows the paste line
    once, with a copy button; open joins can be revoked.
 
+**For a first-time human**, the empty inbox and the empty board say where
+their content comes from (the agents' requests; the cards the agents
+propose), the paste line of a join says where it goes (to the agent as a
+message, or run in a terminal in the agent's clone), and a tab row wider
+than the screen fades on the side where more entries are.
+
 **Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
 checked before sending), an optional repository URL, Keep the Why, and
@@ -129,7 +135,8 @@ fails while the bundle is stale.
 - `GET /me` every 15 seconds and after every answer, for the switcher's
   counts. When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
-  reading. Only the switcher is redrawn: an open **State & absence** panel,
+  reading; a list with no open entry on screen, where nothing is being
+  read or typed, reloads on its own. Only the switcher is redrawn: an open **State & absence** panel,
   what is typed in it, and how far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
@@ -197,9 +204,9 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    runs it (`maity join`) and is listed under **Agents**;
 3. the agent creates and claims a card; the open board offers
    **Reload** and then shows the claim;
-4. the agent asks (`maity ask --task`), which blocks the card; the inbox
-   notices the new request and the switcher counts it; the agent starts
-   `maity wait`;
+4. the agent asks (`maity ask --task`), which blocks the card; the empty
+   inbox reloads on its own and shows the request, and the switcher counts
+   it; the agent starts `maity wait`;
 5. the owner answers with a reply button; the inbox empties, the count
    goes, `maity wait` exits with `request_answered` for that request, and
    the card is no longer blocked;
@@ -213,7 +220,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 9. at phone width (390 px) the inbox, board, agents, organisation and join
    views, each reached through its tab, load without an error, none of
    them scrolls sideways, the current tab and project stay visible in
-   their rows, and every Revoke label stays on one line.
+   their rows, the tab row shows its scroll fade (and at 1280 px neither
+   row does), and every Revoke label stays on one line.
 
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
 default a temp directory, kept), with the join line painted over; the
