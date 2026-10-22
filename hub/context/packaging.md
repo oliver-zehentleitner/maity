@@ -98,3 +98,25 @@ file per interpreter.
 - pip-tools' `pip-compile`: produces the same file format, but resolves
   for the running interpreter only, so 3.12 and 3.13 would need separate
   files.
+
+## Pillow is held below 13 for now
+
+**Id:** df3c7ee6-6fd3-4350-8d03-aad7d3011a66
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** adding the avatar decoder (contract #136), 2026-10-22
+**Revisit when:** Pillow 13 has been out for some weeks, or a security release reaches only 13
+
+`pillow>=12.3,<13`: the avatar decoder reads bytes from any agent
+credential, so the first release taken is one that has been out for
+months (12.3.0, July 2026) rather than the major release of the week
+(13.0.0, 2026-10-16).
+
+**Reason:** a new major version of the hub's most exposed parser
+deserves its own change, tested on its own, not one folded into the
+feature that introduced the dependency.
+
+**Alternatives:** the newest release, 13.0.0. It brings whatever it
+fixes, but it is six days old and a major version.
+
