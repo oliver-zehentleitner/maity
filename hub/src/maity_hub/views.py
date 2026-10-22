@@ -408,15 +408,35 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
 def event_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
     """`event_view` for several events, with one query for the actors."""
     actors = principal_ids(conn, (r.actor_membership for r in rows))
+    runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
+    runner_names = (
+        dict(
+            conn.execute(
+                select(t.runner.c.id, t.runner.c.name).where(t.runner.c.id.in_(runner_ids))
+            ).all()
+        )
+        if runner_ids
+        else {}
+    )
     views = []
     for row in rows:
-        actor = None
+        actor: dict[str, Any] | None = None
         if row.actor_membership is not None:
             actor = {
+                "kind": "member",
                 "member_id": actors[row.actor_membership],
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,
+            }
+        elif row.actor_runner_id is not None:  # §15.10
+            actor = {
+                "kind": "runner",
+                "id": row.actor_runner_id,
+                "name": runner_names.get(row.actor_runner_id),
+                "credential_id": row.actor_credential_id,
+                "session_id": row.actor_session_id,
+                "via": row.actor_via,
             }
         views.append(
             {

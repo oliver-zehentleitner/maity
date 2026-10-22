@@ -17,7 +17,7 @@ that need the maintainer are marked **[maintainer]**.
 
 ## Agent B (`hub/`)
 
-- Runner slices after H1 (`docs/api.md` §15): H2 attachments and the runner stream, H3 placements, H4 the join pickup, H5 proposals and consent, H6 supervised sessions.
+- Runner slices after H2 (`docs/api.md` §15): H3 placements, H4 the join pickup, H5 proposals and consent, H6 supervised sessions.
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
 - Dependency update automation for `hub/requirements/`: Renovate or Dependabot on the uv-compiled files. Advisories are caught by the `audit` workflow; the bump itself is still manual (`make lock-upgrade PACKAGE=<name>`, hub/README.md "Dependencies").
