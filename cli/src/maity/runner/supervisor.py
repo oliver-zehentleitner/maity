@@ -22,14 +22,15 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import capabilities, config, restart, stub, workspace
+from . import adapters, capabilities, config, loop, restart, workspace
 from .tmux import Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
@@ -77,6 +78,8 @@ def run_join(place: workspace.Workspace, url: str, code: str, cwd: Path) -> tupl
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
+APPROVED_FILE = "approved.json"
+LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
@@ -121,7 +124,7 @@ def _count(value: Any) -> bool:
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
-    return datetime.fromtimestamp(moment, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(moment, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -315,7 +318,13 @@ class Supervisor:
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
-                rec.enter(now, "running")
+                harness = self.cfg.harnesses.get(p["harness"])
+                unconfined = (
+                    harness is not None
+                    and harness.id == "claude-code"
+                    and not capabilities.sandbox_available(harness, self.agent_path())
+                )
+                rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             return 0
@@ -323,6 +332,9 @@ class Supervisor:
             self._exited(rec, mine, now)
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
+            return 0
+        if self.cfg.limits.require_local_approval and pid not in approved(self.cfg.state_dir):
+            rec.enter(now, "pending", "awaiting_operator")  # §7.1: `maity runner approve`
             return 0
         if alive >= self.cfg.limits.max_agents:
             rec.enter(now, "pending", "capacity")
@@ -352,6 +364,12 @@ class Supervisor:
             if rec.started_at is not None
             else now - self.cfg.limits.restart.quick_exit
         )
+        if code == loop.EXIT_REVOKED:
+            rec.enter(now, "failed", "agent_credential_revoked", exit_code=code, retry_at=None)
+            return
+        if code == loop.EXIT_HOT_LOOP:
+            rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
+            return
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
         if decision.crash_loop:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
@@ -381,6 +399,14 @@ class Supervisor:
         found = self.probes.get(harness.id)
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
+        repository = config.normalise_repository(p["workspace"].get("repository") or "")
+        grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
+        if harness.id == "codex" and grant.allow:
+            return ("harness_refused", None)  # Codex cannot honour a command allowlist
+        if harness.require_sandbox and not capabilities.sandbox_available(
+            harness, self.agent_path()
+        ):
+            return ("harness_refused", None)  # the operator asked for no run without it
         return None
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
@@ -396,8 +422,8 @@ class Supervisor:
             rec.enter(now, "failed", refused[0], detail=refused[1])
             return 0
         harness = self.cfg.harnesses[p["harness"]]
-        if harness.id != "stub":
-            return self._wait(rec, f"the {harness.id} adapter arrives with R5", name)
+        if harness.id not in adapters.READY:
+            return self._wait(rec, f"no adapter for {harness.id} in this version", name)
         if self.cfg.local is None:
             return 0
         try:
@@ -431,9 +457,8 @@ class Supervisor:
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
-        argv = stub.argv(harness.stub_exit_code, harness.stub_run_seconds)
         task = threading.Thread(
-            target=self._start, args=(p, rec, place, name, argv, agent, join, rejoin),
+            target=self._start, args=(p, rec, place, name, harness, agent, join, rejoin),
             daemon=True,
             name=f"maity-start-{p['id']}",
         )  # fmt: skip
@@ -447,7 +472,7 @@ class Supervisor:
         rec: Record,
         place: workspace.Workspace,
         name: str,
-        argv: list[str],
+        harness: config.Harness,
         agent: dict[str, Any],
         join: bool = False,
         rejoin: bool = False,
@@ -475,9 +500,8 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            self.backend.start(
-                name, place.path, argv, {"MAITY_PLACEMENT": p["id"]}, p["id"], p["generation"]
-            )
+            launch = adapters.launch(self._context(p, harness, place))
+            self.backend.start(name, place.path, launch.argv, launch.env, p["id"], p["generation"])
         except workspace.Refused as refused:
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
@@ -542,6 +566,36 @@ class Supervisor:
             return
         if isinstance(member, str) and member != owner:
             workspace.rebind(self.cfg.state_dir, place, owner, member)
+
+    def _context(
+        self, p: dict[str, Any], harness: config.Harness, place: workspace.Workspace
+    ) -> adapters.Context:
+        agent_dir = self.cfg.state_dir / "agents" / p["id"]
+        agent_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        repository = config.normalise_repository(p["workspace"].get("repository") or "")
+        found = self.probes.get(harness.id)
+        return adapters.Context(
+            placement=p,
+            harness=harness,
+            binary=found.path if found else None,
+            clone=place.path,
+            agent_dir=agent_dir,
+            grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
+            restart=self.cfg.limits.restart,
+            sandbox=capabilities.sandbox_available(harness, self.agent_path()),
+            hosts=tuple(
+                h
+                for h in (
+                    urllib.parse.urlsplit(self.cfg.hub_url).hostname,
+                    urllib.parse.urlsplit(p["workspace"].get("repository") or "").hostname,
+                )
+                if h
+            ),
+        )
+
+    def agent_path(self) -> str:
+        """The PATH the agents get: where their sandbox tools must be found."""
+        return capabilities.agent_path(self.cfg, os.environ.get("PATH", ""))
 
     def _wants(self, pid: str, generation: int) -> bool:
         with self.lock:
@@ -641,18 +695,29 @@ class Supervisor:
                     rec.acked, rec.pending = pending["key"], None
 
 
-def build(cfg: config.Config, client: hub.Client | None, log: Log,
-          probes: dict[str, capabilities.Probe],
-          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
-    """The supervisor for the local backend of `cfg`."""
+def local_backend(cfg: config.Config) -> Tmux:
+    """The tmux server of `cfg`'s local backend (also for `stop-all`, without the hub)."""
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
-    backend = Tmux(
+    return Tmux(
         socket=cfg.local.tmux_socket,
         conf=cfg.state_dir / "tmux.conf",
         home=os.environ.get("HOME", ""),
         agent_path=capabilities.agent_path(cfg, os.environ.get("PATH", "")),
-        logs=cfg.state_dir / "logs",
+        logs=cfg.state_dir / LOGS,
     )
-    supervisor = Supervisor(cfg, backend, client, log, probes, capabilities=capabilities_)
+
+
+def approved(state_dir: Path) -> dict[str, Any]:
+    """Placements the operator approved on this host (`maity runner approve`)."""
+    return state.load_state(state_dir, name=APPROVED_FILE) if state_dir.is_dir() else {}
+
+
+def build(cfg: config.Config, client: hub.Client | None, log: Log,
+          probes: dict[str, capabilities.Probe],
+          capabilities_: dict[str, Any] | None = None) -> Supervisor:  # fmt: skip
+    """The supervisor for the local backend of `cfg`."""
+    supervisor = Supervisor(
+        cfg, local_backend(cfg), client, log, probes, capabilities=capabilities_
+    )
     supervisor.load()
     return supervisor

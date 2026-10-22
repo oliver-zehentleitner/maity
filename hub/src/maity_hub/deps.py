@@ -47,6 +47,7 @@ def facts_of(request: Request) -> RequestFacts:
         body=request.scope["state"].get("body", b""),
         origin=origin_of(request),
         allow_plain_http=settings_of(request).allow_plain_http,
+        cli_install=settings_of(request).cli_install,
     )
 
 

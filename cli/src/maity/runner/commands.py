@@ -8,13 +8,14 @@ import os
 import shutil
 import stat
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, serve
+from . import capabilities, config, operate, serve
 
 STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
@@ -44,7 +45,6 @@ def _code(args: argparse.Namespace) -> str:
 def _hub_table(path: Path) -> tuple[str, Path]:
     """`hub.url` and `hub.state_dir` of an existing configuration; nothing else is read, so a
     configuration still missing its limits can be paired again after a revocation."""
-    tomllib = config.require_tomllib()
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
@@ -71,7 +71,6 @@ def starter_config(base: str) -> str:
 
 
 def cmd_pair(args: argparse.Namespace) -> int:
-    config.require_tomllib()
     base = hub.hub_base(args.url)
     token = hub.pair_token(args.url)
     code = _code(args)
@@ -325,7 +324,6 @@ def _check_hub(report: Report, cfg: config.Config) -> None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    config.require_tomllib()  # all of `maity runner` refuses on 3.10, --explain too
     if args.explain:
         print(explain(), end="")
         return 0
@@ -346,6 +344,10 @@ def cmd_check(args: argparse.Namespace) -> int:
     if cfg.local is not None:
         _check_local(report, cfg.local)
     agent_path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
+    if shutil.which("maity", path=agent_path) is None:
+        report.error(f"`maity` is not on agent_path ({agent_path}); every agent runs it")
+    else:
+        report.ok("maity found on agent_path")
     for harness in cfg.harnesses.values():
         _check_harness(report, harness, agent_path)
     if not args.offline:
@@ -364,7 +366,6 @@ def cmd_unit(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    config.require_tomllib()
     return serve.serve(config.path_of(args.config))
 
 
@@ -387,7 +388,6 @@ def _alive(pid: Any) -> bool:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """The local view, from the state directory only; never contacts the hub."""
-    config.require_tomllib()
     cfg = config.load(config.path_of(args.config))
     paired = state.load_state(cfg.state_dir, name=STATE_FILE) if cfg.state_dir.is_dir() else {}
     current = (
@@ -420,6 +420,28 @@ def cmd_status(args: argparse.Namespace) -> int:
                 f"desired {show(placement.get('desired'))}"
             )
     return 0
+
+
+def _seconds(value: str) -> int:
+    seconds = int(value)
+    if seconds < 0:
+        raise argparse.ArgumentTypeError("0 or more seconds")
+    return seconds
+
+
+def _operate(name: str) -> Any:
+    """A handler for one of `operate`'s commands: the configuration first, its refusals as
+    this module's (exit 2)."""
+
+    def handler(args: argparse.Namespace) -> int:
+        cfg = config.load(config.path_of(args.config))
+        try:
+            result: int = getattr(operate, name)(cfg, args)
+        except operate.Refused as exc:
+            raise Refused(str(exc)) from None
+        return result
+
+    return handler
 
 
 # --- parser ----------------------------------------------------------------------------------
@@ -494,3 +516,65 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         formatter_class=fmt,
     )
     r.set_defaults(handler=cmd_unit)
+
+    def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:
+        r: argparse.ArgumentParser = rsub.add_parser(
+            name, help=summary, description=description, formatter_class=fmt
+        )
+        r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+        return r
+
+    r = runner_cmd(
+        "logs",
+        "an agent's session output, from this host",
+        "Print a placement's log (<state_dir>/logs/<placement>.log); the placement is named by "
+        "its id or by the agent's handle. Logs stay on the runner; the hub never sees them.",
+    )
+    r.add_argument("which", help="the placement id, or the agent's handle")
+    r.add_argument("--follow", action="store_true", help="keep printing what is appended")
+    r.add_argument(
+        "--raw", action="store_true", help="the bytes as written, escape sequences included"
+    )
+    r.set_defaults(handler=_operate("cmd_logs"))
+
+    r = runner_cmd(
+        "approve",
+        "let a held placement start (require_local_approval)",
+        "With limits.require_local_approval, new placements wait as pending/awaiting_operator "
+        "until approved here, on the runner host.",
+    )
+    r.add_argument("which", help="the placement id, or the agent's handle")
+    r.set_defaults(handler=_operate("cmd_approve"))
+
+    r = runner_cmd(
+        "stop-all",
+        "end every agent on this runner, without the hub",
+        "For emergencies and decommissioning: SIGTERM to every agent session, then kill-session "
+        "after --grace seconds. Refused while the service runs, since it would start them again.",
+    )
+    r.add_argument("--grace", type=_seconds, default=operate.STOP_ALL_GRACE, metavar="N")
+    r.set_defaults(handler=_operate("cmd_stop_all"))
+
+    r = runner_cmd(
+        "gc",
+        "list, and with --yes remove, workspaces whose credential is revoked",
+        "For every recorded workspace without a placement whose credential the hub reports as "
+        "revoked: its uncommitted files and the commits on no remote (git run with hooks, "
+        "fsmonitor and pagers off). Removes only with --yes.",
+    )
+    r.add_argument("--revoked", action="store_true", help="required: the only kind gc knows")
+    r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
+    r.set_defaults(handler=_operate("cmd_gc"))
+
+    r = runner_cmd(
+        "workspace",
+        "record an existing clone for an agent",
+        "`maity runner workspace claim <project>/<clone> --agent <id>`: record a clone made by "
+        "hand, or one left after a lost state directory, so the runner may use it.",
+    )
+    r.add_argument("action", choices=("claim",))
+    r.add_argument("where", help="<project>/<clone>")
+    r.add_argument("--agent", required=True, help="the agent's member id")
+    r.add_argument("--placement", help="the placement id, when one exists")
+    r.add_argument("--force", action="store_true", help="record it again")
+    r.set_defaults(handler=_operate("cmd_workspace_claim"))
