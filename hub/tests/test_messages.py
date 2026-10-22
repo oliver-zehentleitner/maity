@@ -151,6 +151,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "body",
         "sent_at",
         "delivered_at",
+        "mentions",
     }
     assert (message["from"], message["to"], message["conversation_id"]) == (
         owner.id,

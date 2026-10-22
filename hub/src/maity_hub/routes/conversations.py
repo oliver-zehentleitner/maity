@@ -22,7 +22,7 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, not_found
 from maity_hub.models import Strict, markdown
 from maity_hub.routes.events import MessageIn, chat_parties, post_message
-from maity_hub.views import ts
+from maity_hub.views import principal_id, ts
 
 router = APIRouter()
 
@@ -47,12 +47,11 @@ def message_view(conn: Connection, row: Any) -> dict[str, Any]:
         "body": None if row.redacted else payload.get("body"),
         "sent_at": ts(row.at),
         "delivered_at": ts(delivered),
+        "mentions": [],  # a chat is never resolved (§8.6)
     }
 
 
 def _sender(conn: Connection, row: Any) -> str | None:
-    from maity_hub.views import principal_id
-
     return principal_id(conn, row.actor_membership)
 
 
@@ -114,6 +113,34 @@ def _summary(conn: Connection, mine: Membership, caller: Caller, agent_id: str) 
         "agent_id": agent_id,
         "last_message_at": ts(last),
         "unread": _unread(conn, mine, caller, agent_id),
+        "last_message": _last_message(conn, mine, agent_id),
+    }
+
+
+PREVIEW = 200  # code points (§9)
+
+
+def _last_message(conn: Connection, mine: Membership, agent_id: str) -> dict[str, Any] | None:
+    """The conversation's newest message as a preview: text for the list, never mentions."""
+    row = conn.execute(
+        select(t.event)
+        .where(
+            t.event.c.project_id == mine.project.id,
+            t.event.c.kind == "message",
+            t.event.c.conversation_id == agent_id,
+        )
+        .order_by(t.event.c.seq.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    body = None if row.redacted else (row.payload or {}).get("body")
+    return {
+        "seq": row.seq,
+        "from": principal_id(conn, row.actor_membership),
+        "body": body[:PREVIEW] if isinstance(body, str) else None,
+        "sent_at": ts(row.at),
+        "redacted": bool(row.redacted),
     }
 
 
