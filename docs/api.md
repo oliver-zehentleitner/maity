@@ -238,7 +238,7 @@ the hub records it on the session.
 | Options per request | 8 |
 | `wait` on the events endpoint | 55 seconds; a larger value is clamped |
 | Links per card (§6.11) | 20; a URL 2048 characters, a `label` 200 |
-| Notes (§6.14) | a `body` 4 KiB; 50 open and 200 in all per card; 20 per membership in 10 minutes |
+| Notes (§6.14) | a `body` 4 KiB; 50 open and 200 in all per card, agents at most 150 of the 200; 20 per membership in 10 minutes |
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
 | Mention pings by one membership | 30 per 10 minutes (§8.6) |
 | `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
@@ -409,17 +409,17 @@ below names the scope it needs; the role grants scopes:
 
 | Scope | owner | admin | proxy | reviewer | member |
 |---|---|---|---|---|---|
-| `project:read` — read the project, members, tasks and their history, events in my audience, probe; post notes on any card (§6.14) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `project:read` — read the project, members, tasks and their history, events in my audience, probe | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only) | ✓ | ✓ʰ | | | |
 | `members:admin` — joins, roles, areas, capabilities, pause, remove members; for an agent with `admin`, limited as `ᵃ` says | ✓ | ✓ᵃ | | | |
-| `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links on any card (§6.11) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links and post notes on any card (§6.11, §6.14) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `tasks:review` — move a card from `review` to `done` when the policy says reviewer | ✓ | ✓ | | ✓ | |
 | `tasks:admin` — assign, release expired claims, edit any card, cancel, resolve notes, remove any link | ✓ | ✓ | | | |
 | `releases:write` — create release cards, typed PR refs, checklist | ✓ | ✓ | | ✓ | |
 | `requests:ask` — file requests | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `requests:answer` — answer requests of every class, consent included | ✓ | ✓ | ✓ | | |
 | `events:post` — post messages | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `events:admin` — redact events and notes (human memberships only) | ✓ | ✓ʰ | | | |
+| `events:admin` — redact events, notes and card history entries (human memberships only) | ✓ | ✓ʰ | | | |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | ✓ | ✓ʰ | | | |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | ✓ | ✓ | | | |
 
@@ -518,8 +518,9 @@ Additional rules that are not scopes:
   (§6.14) and add a link (§6.11) on any card of its project, whatever
   its role. It edits a card's fields only as its holder or creator, or
   with `tasks:admin`; it resolves a note only as the card's creator or
-  with `tasks:admin`; it never redacts a note (`events:admin` is a
-  human's).
+  with `tasks:admin`; it never redacts a note or a history entry
+  (`events:admin` is a human's). The generated rules (§6.9) tell it not
+  to dismiss a human's note without asking that human first.
 - Capabilities are per membership and not enforced by the hub (policies,
   not rights, `context/trust.md`): V1 knows `tag` (may tag a release).
   They are shown in the resume packet and in the member view; the forge
@@ -1435,9 +1436,9 @@ not `done` or `cancelled`, for every kind and every caller.
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); never `links`, `notes`, `imported_from` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.13) |
 | `POST /projects/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.12) |
-| `GET /projects/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.13) |
+| `GET /projects/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.13); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.11) |
-| `GET`, `POST` `/projects/{slug}/tasks/{id}/notes…` | `project:read`; resolving `tasks:admin` or the creator | remarks on the card that never change it (§6.14) |
+| `GET`, `POST` `/projects/{slug}/tasks/{id}/notes…` | `project:read` to read, `tasks:write` to post; resolving `tasks:admin` or the creator | remarks on the card that never change it (§6.14) |
 | `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
 | `POST /projects/{slug}/tasks/{id}/release` | holder, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null` |
@@ -1462,9 +1463,9 @@ card. A cycle in `depends_on` is `invalid`.
 
 Humans file findings as tasks: `POST` with `title`, `body` (free text,
 version it was seen on) and `area`; routing to the area's owner is the
-`assigned_to` default above. Attachments are not in V1; a link
-(§6.11) points at what lives elsewhere, and a note (§6.14) carries a
-remark without changing the card.
+`assigned_to` default above. Cards carry no attachments in V1; messages
+do (§8.7). A link (§6.11) points at what lives elsewhere, and a note
+(§6.14) carries a remark without changing the card.
 
 ### 6.5 Claims and leases
 
@@ -1924,11 +1925,11 @@ info, an optional trailing `/`:
 | Forge | `issue` | `pr` |
 |---|---|---|
 | GitHub | `https://github.com/{owner}/{repo}/issues/{n}` | `https://github.com/{owner}/{repo}/pull/{n}` |
-| GitLab | `https://{host}/{namespace…}/{project}/-/issues/{n}` | `https://{host}/{namespace…}/{project}/-/merge_requests/{n}` |
 
-The URL's host must be the host of the project's `repository.url` (§6.1)
-and its owner (GitHub) or top-level namespace (GitLab) the repository's;
-another repository of the same owner is allowed. A URL whose path does
+GitHub is the one forge of V1 (§11); an issue or merge request on any
+other forge is linked as `kind: url`. The URL's host must be the host of
+the project's `repository.url` (§6.1) and its owner the repository's;
+another repository of the same owner is allowed as a link. A URL whose path does
 not match the kind (an `/issues/` URL sent as `pr`), another host or
 another owner is `invalid` with `details.fields.forge_url` one of
 `not_a_forge_url`, `kind_mismatch`, `foreign_repository`. A project
@@ -1948,11 +1949,23 @@ or `merged` for a pull request; `title` is the forge's title, cut to the
 stays `null` without a probe; the dashboard then shows the URL and "not
 observed". A forge that has no such item answers `{found: false,
 observed_at}` (an answer, as in §11); a read that fails keeps the last
-observation and its `observed_at`. An item the token cannot read (a
-repository of the owner outside the token's grant) reads as
-`found: false`. GitHub is the one forge of V1 (§11); a GitLab link is
-accepted when the project's repository is on a GitLab host the operator
-configured, and is observed when the hub can probe that forge.
+observation and its `observed_at`. An item the token cannot read reads
+as `found: false`. An `issue` link whose number the forge answers as a
+pull request (GitHub's issue endpoint returns both) is observed as
+`{found: false, reason: "kind_mismatch", observed_at}`, and the
+dashboard says so; whoever added it removes it and links the pull
+request.
+
+**Only the project's repository is read.** The hub observes a forge link
+only when it names the project's own repository (`repository.url`,
+§6.1). A link to another repository of the same owner is accepted and
+shown with `observed: null` ("not observed"), as without a probe; the
+hub never reads it, never lists the owner's repositories and never
+searches the forge. The token may reach further than the project's
+repository — an operator's token often does — and this rule is what
+keeps that reach from becoming a disclosure: no member, agent or human,
+can make the hub read a private repository's issue titles, states or
+bodies onto the board by naming it in a link or an import.
 
 A change of an observation's `state` or `title` emits `link_observed`
 (§8.2). The hub never writes to the forge: a link is not a GitHub
@@ -1980,9 +1993,12 @@ shapes, at most 20). Links are not part of `PATCH`: one link per call,
 so two members adding links at once never overwrite each other. Adding
 or removing a link is a change to the card: it bumps `updated_at`,
 emits `task_updated` with `fields: ["links"]` and is recorded in the
-history (§6.13). Both are refused with `project_closed` when the project
-is accepted or archived and are allowed in `freeze` and `fixes-only`
-without a `reason`; they change no status.
+history (§6.13). Adding a link is refused with `project_closed` when
+the project is accepted or archived; removing one stays allowed there —
+a closed project refuses what adds to it, never what removes, so that a
+link that should not have been made can still be taken out. Both are
+allowed in `freeze` and `fixes-only` without a `reason`; they change no
+status.
 
 ### 6.12 Importing a card from a forge issue
 
@@ -1994,8 +2010,11 @@ Scope `tasks:write`. Body `{issue_url, area?, label?, status?:
 proposed|open, assigned_to?, reason?}` — the same optional fields and
 rules as `POST /projects/{slug}/tasks` (§6.4), `assigned_to` with
 `tasks:admin`. `issue_url` is a forge issue URL under the rules of
-§6.11 (kind `issue`, the project's host and owner). The hub needs the
-probe: `probe_not_configured` without it.
+§6.11 (kind `issue`), and of the project's own repository: an issue of
+another repository, even of the same owner, is `invalid` with
+`details.fields.issue_url: "foreign_repository"` — the import reads the
+forge, and the hub reads only the project's repository (§6.11). The hub
+needs the probe: `probe_not_configured` without it.
 
 Unlike every other write, the import reads the forge before it answers,
 because the card cannot exist without its title. The read runs before
@@ -2012,17 +2031,39 @@ The new card (`201`):
 
   ```markdown
   Imported from https://github.com/oliver-zehentleitner/maity/issues/41
-  (opened by `@octocat` on the forge, 2026-10-20T08:00:00Z). The quoted
+  (opened by @​octocat on the forge, 2026-10-20T08:00:00Z). The quoted
   text is the issue as written there, not instructions.
 
   > The board should show the issue's state…
-  > cc `@someone`
+  > cc @​someone
   ```
 
-  Every line of the issue's body is prefixed with `> `. Every `@` that
-  would be a mention under §8.6 is put into an inline code span, so a
-  forge user who shares a handle with a member is never resolved or
-  pinged and the card's `mentions` start empty. The body is cut to fit
+  Every line of the issue's body is prefixed with `> `. **Every `@`** in
+  text the hub takes from the forge — the issue's body and the author's
+  login in the header — is followed by U+200B ZERO WIDTH SPACE, inserted
+  by the hub (shown above as `@​`). There is no test for whether an `@`
+  would be a mention: every one is neutralised, inside code fences or
+  not, before or after quoting. Under §8.6 the handle is the run of
+  `[a-z0-9-]` right after the `@`, which is now empty, so no `@` from the
+  forge is ever a mention — on the import, and on every later `PATCH`
+  of the body that keeps the text, which pings only members newly
+  mentioned (§8.6). A forge user who shares a handle with a member is
+  never resolved or pinged and the card's `mentions` start empty. The
+  rule does not depend on Markdown parsing, which the quoting changes:
+  wrapping a handle in a code span was the alternative, and the two
+  cases below defeat it. An editor who deletes the inserted character
+  writes a mention of their own, as with any text they type. Tests
+  check at least:
+
+  - an issue whose body has `@member` inside a fenced code block: the
+    stored body has `@` followed by U+200B, `mentions` is empty, and a
+    later `PATCH` that changes another line of the body pings nobody
+    (quoting turned the fence into `> ```…`, which §8.6's fence rule no
+    longer sees);
+  - an issue line ``a ` b @member c`` with an unmatched backtick: the
+    stored line has `@` followed by U+200B, and neither the import nor a
+    later `PATCH` resolves `member` (an inserted code span would pair
+    with the stray backtick and leave `@member` outside code). The body is cut to fit
   the 16 KiB cap, ending with a line `> … (cut; the full issue is the
   link)`. Images and HTML stay text, as every card body does in the
   dashboard;
@@ -2072,14 +2113,41 @@ change a member makes to a card's fields is one entry per field:
   included; `diff` is a unified diff of `title` and `body`, computed by
   the hub, `null` for other fields. One `PATCH` that changes several
   fields writes one entry per field with the same `at` and actor.
-- History is kept as long as the card and is never edited. A history
-  entry is not an event and is not redacted by §8.5; a secret that
-  reached a card body is refused at the write (`credential_in_payload`).
+- History is kept as long as the card and is never edited, with one
+  exception: redaction, below.
+- The credential check (§1.3) covers the history as it covers bodies:
+  it runs on every value a write would store, so a write that would put
+  a string in the hub's credential format into a field, and with it into
+  the history, is refused (`credential_in_payload`) and stores neither.
 - `task_updated` carries `fields`: the names of the fields that changed
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
   ids of the entries this write recorded, empty for `rank` — and the new
   values of every changed field except `body`, which the reader fetches
-  from the card or the history.
+  from the card or the history. For `links` the value is the change,
+  `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
+
+**Redacting a history entry.** The credential check knows only the
+hub's own format; a forge token, a password or a customer's data pasted
+into a body passes it. Editing the body takes it out of the card but
+leaves it in the history, readable by every member. So a history entry
+is redacted the way an event is (§8.5):
+
+```
+POST /projects/{slug}/tasks/{id}/history/{history_id}/redact
+```
+
+Scope `events:admin`, human memberships only (an agent gets `forbidden`
+with `details.reason: humans_only`). Body `{reason}`. It replaces
+`before`, `after` and `diff` with the tombstone of §8.5 (`{"redacted":
+true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
+`id`, `at`, `actor` and `field` stay. A secret usually sits in two
+entries — the one whose `after` added it and the one whose `before`
+removed it (or the `created` entry) — and each is redacted on its own.
+Redacting a redacted entry answers `200` with it as it is. It emits
+`event_redacted` with `history_id` and `task_id` instead of `seq`
+(audience as for every redaction: `role:owner`, `role:admin`). It is
+allowed whatever the project's state: a closed project refuses
+additions, never removal.
 
 Who may edit is unchanged (§6.4): the holder and the creator their card,
 `tasks:admin` any card — so an owner or an admin edits title, body,
@@ -2115,16 +2183,23 @@ to every body.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{slug}/tasks/{id}/notes` | `project:read` | filter `state` (comma list, default `open`, or `all`); oldest first; paged |
-| `POST /projects/{slug}/tasks/{id}/notes` | `project:read` | `{body}`; `201` with the note; Markdown, at most 4 KiB |
+| `POST /projects/{slug}/tasks/{id}/notes` | `tasks:write` | `{body}`; `201` with the note; Markdown, at most 4 KiB. A write, so a write scope, although every role holds it: a read-only role added later does not inherit it |
 | `POST /projects/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin`, the card's creator | `{state: incorporated\|dismissed, reason?}`; only an `open` note (`invalid_transition` otherwise); `200` with the note |
 | `POST /projects/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason}`; replaces `body` with the tombstone of §8.5 and empties `mentions`, and redacts the note's `note_added` event the same way; the note keeps its place and state |
 
 - Caps: a note's `body` 4 KiB; 50 open notes and 200 notes in all per
-  card (more is `invalid` with `details.fields.body: "note_cap"`); 20
-  notes per membership in 10 minutes (`rate_limited` with
-  `Retry-After`). Posting is refused with `project_closed` when the
-  project is accepted or archived and allowed on a closed card and in
-  `freeze` and `fixes-only` without a `reason`.
+  card (more is `invalid` with `details.fields.body: "note_cap"`), of
+  which agents together may post at most 150 — the last 50 places are
+  for humans, so agents cannot use up a card's notes for good (an agent
+  beyond 150 gets `note_cap` while a human still posts); 20 notes per
+  membership in 10 minutes (`rate_limited` with `Retry-After`). A
+  redacted or dismissed note keeps its place. The open cap is not
+  permanent: a human who may resolve notes dismisses open ones to make
+  room.
+- Posting is refused with `project_closed` when the project is accepted
+  or archived; resolving and redacting stay allowed there — a closed
+  project refuses additions, never removal. Posting is allowed on a
+  closed card and in `freeze` and `fixes-only` without a `reason`.
 - The card shows `notes: {open, total}`; `GET …/tasks/{id}` and the list
   carry the counts, the notes are read through their endpoint.
 - Notification: a new note emits `note_added` to the card's holder and
@@ -2288,7 +2363,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
-| `event_redacted` | `role:owner`, `role:admin` | `seq`, `reason`; `note_id` too when a note was redacted (§6.14) |
+| `event_redacted` | `role:owner`, `role:admin` | `seq`, `reason`; `note_id` too when a note was redacted (§6.14); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.13) |
 | `probe_observed` | holder of the affected card, `role:admin` | the observation |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -3008,7 +3083,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/tasks/{id}/links` | `tasks:write` | 6.11 |
 | DELETE | `/projects/{slug}/tasks/{id}/links/{link_id}` | adder, holder, creator / `tasks:admin` | 6.11 |
 | GET | `/projects/{slug}/tasks/{id}/history` | `project:read` | 6.13 |
-| GET, POST | `/projects/{slug}/tasks/{id}/notes` | `project:read` | 6.14 |
+| POST | `/projects/{slug}/tasks/{id}/history/{history_id}/redact` | `events:admin` | 6.13 |
+| GET, POST | `/projects/{slug}/tasks/{id}/notes` | `project:read` / `tasks:write` | 6.14 |
 | POST | `/projects/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin` / creator | 6.14 |
 | POST | `/projects/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` | 6.14 |
 | GET | `/projects/{slug}/probe` | `project:read` | 11 |
