@@ -129,6 +129,16 @@ owners and admins, and before the actor's own events. Its redaction
 inherits that: an `event_redacted` whose subject is of a humans-only kind
 is refused to agents the same way, decided per batch of the scan with one
 query for the redacted events' kinds, so the payload stays `{seq, reason}`.
+A redaction's `reason` is shown only to the human owners and admins and to
+the redactor; every other reader gets `reason: null`, in the notice and in
+the tombstone.
+
+**Accepted:** the `seq` an agent sees has a gap where such an event is,
+right after the resume that caused it, so an admin agent can tell that a
+resume was followed by an event it may not read, and when; never which
+members or which level. This is accepted because only humans act on the
+warning, and emitting it later than the resume, in a background pass,
+would still leave a gap, only a less telling one.
 
 **Reason:** the field must be current on every read. The live sessions are
 the source of truth, and they are few per project. Storing the overlap
