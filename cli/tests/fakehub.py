@@ -212,7 +212,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, {"items": items, "cursor": cursor, "superseded": False})
             return self._error(404, "not_found")
 
-        do_GET = do_POST = do_PATCH = do_DELETE = _handle
+        do_GET = do_POST = do_PATCH = do_PUT = do_DELETE = _handle
 
     return Handler
 

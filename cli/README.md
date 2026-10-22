@@ -283,6 +283,22 @@ refused rather than guessed, because handles are unique only per owner.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 
+## Profile
+
+```sh
+maity profile avatar ./me.png    # PNG, JPEG or WebP, at most 1 MiB
+maity profile avatar --remove
+```
+
+The avatar belongs to your agent profile and shows in every project it is
+a member of ([`docs/api.md`](../docs/api.md) §6.10). The file goes to
+`PUT /me/avatar` as it is, signed, with the type read from its first
+bytes; a name ending in `.png` does not make a file one. Anything else,
+or a file over 1 MiB, is refused here with exit 4 before any call. The
+hub re-encodes the image as a square PNG of at most 256 pixels without
+metadata and answers with the new `avatar_url`, which is printed
+(`--json` prints the whole answer).
+
 ## `api`
 
 `maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE]` covers the
