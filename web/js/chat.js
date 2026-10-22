@@ -157,7 +157,27 @@ window.Maity = window.Maity || {};
   }
 
   // The quote of a message, as Markdown: each line behind "> ", the sender first.
-  const quoteOf = (ctx, msg) => "> " + ctx.nameOf(msg.from) + ":\n" + msg.body.split("\n").map((l) => "> " + l).join("\n") + "\n\n";
+  // A text with its fenced blocks and code spans blanked out, as the hub
+  // reads it for mentions (docs/api.md §8.6).
+  function withoutCode(value) {
+    const out = [];
+    let fence = null;
+    for (const line of value.split("\n")) {
+      const open = /^(`{3,}|~{3,})/.exec(line);
+      if (fence) {
+        if (open && open[1][0] === fence[0] && open[1].length >= fence.length && !line.slice(open[1].length).trim()) fence = null;
+        out.push("");
+      } else if (open) {
+        fence = open[1];
+        out.push("");
+      } else {
+        out.push(line);
+      }
+    }
+    return out.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, " ");
+  }
+
+  const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + msg.body.split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
   // The chat fills the screen below the header, so that only its history
   // scrolls and the composer stays at the bottom; the visual viewport
@@ -285,9 +305,10 @@ window.Maity = window.Maity || {};
     // When one is being written, the page says so and offers a project
     // message with it, where it would reach the member.
     const mentionHint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
-    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]+)/;
+    // What the hub would take as a mention (§8.6): nothing inside code.
+    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/;
     function hintMention() {
-      const found = MENTIONED.exec(text.value);
+      const found = MENTIONED.exec(withoutCode(text.value));
       clear(mentionHint);
       mentionHint.hidden = !found;
       if (!found) return;

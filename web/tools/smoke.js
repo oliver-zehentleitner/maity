@@ -1114,6 +1114,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && hintLink.getAttribute("href") === "#/p/maity/message/%40agent-c", "message: a chat's @name is said to notify nobody, with a project message offered");
   chatText.value = "mail me@agent-c"; chatText.dispatch("input");
   expect(hintEl().hidden, "message: an @ inside a word gives no hint");
+  chatText.value = "run `@agent-c` or\n```\n@agent-c\n```"; chatText.dispatch("input");
+  expect(hintEl().hidden, "message: an @name in code gives no hint, as the hub skips code");
   chatText.value = ""; chatText.dispatch("input");
   // Opened from a chat with the @name in it.
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
@@ -1133,11 +1135,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && mdA[1].getAttribute("href") === "https://maity.dev/x" && text(mdLinks).includes("[no](javascript:alert(1))") && text(mdLinks).includes("http://plain.example"),
     "markdown: links only when plain https, the rest as written");
   const mdBlock = MD("# Title\n- one\n- two\n1. first\n> quoted\n> more\n\n```js\nconst a = `x`;\n```");
-  expect(JSON.stringify(tagsOf(mdBlock)) === '["h4","ul","ol","blockquote","div"]' && mdBlock.querySelectorAll("ul li").length === 2
+  expect(JSON.stringify(tagsOf(mdBlock)) === '["p","ul","ol","blockquote","div"]' && mdBlock.childNodes[0].querySelector("strong") && mdBlock.querySelectorAll("ul li").length === 2
     && text(mdBlock.querySelector("blockquote")).includes("quoted") && mdBlock.querySelector("pre code").textContent === "const a = `x`;"
     && text(mdBlock.querySelector(".md-lang")) === "js" && btn(mdBlock, "Copy"), "markdown: a heading kept small, lists, a quote, a fenced block with its language and Copy");
   btn(mdBlock, "Copy").click(); await tick();
   expect(ctx.copied === "const a = `x`;", "markdown: Copy puts the code on the clipboard");
+  const mdPre = mdBlock.querySelector("pre");
+  expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
+    && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
+    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+  // A deep quote stops nesting instead of overflowing the stack.
+  const mdDeep = MD(">".repeat(5000) + " deep");
+  let quoteDepth = 0;
+  for (let q = mdDeep.querySelector("blockquote"); q; q = q.querySelector("blockquote")) quoteDepth += 1;
+  expect(quoteDepth === 8 && mdDeep.querySelector(".md-deep") && text(mdDeep).includes("deep"), "markdown: quotes nest at most eight deep, the rest as written");
+  const mdFences = MD("```python title=x.py\nprint(1)\n```\n  ~~~~\n```\nstill code\n~~~~~\n3. three\n4. four");
+  const mdCodes = mdFences.querySelectorAll("pre code");
+  expect(mdCodes.length === 2 && mdCodes[0].textContent === "print(1)" && text(mdFences.querySelector(".md-lang")) === "python"
+    && mdCodes[1].textContent === "```\nstill code" && mdFences.querySelector("ol").getAttribute("start") === "3",
+    "markdown: a fence with an info string, an indented tilde fence closed only by a long enough one, a list starting at 3");
+  const mdInfo = MD("``` not `a` fence\ntext");
+  expect(!mdInfo.querySelector("pre"), "markdown: a backtick fence whose info string has a backtick is no fence");
+  const mdTrick = MD("[https://bank.example](https://evil.example/x) [a](https://bank.example@evil.example) [b](https://ev\u202eil.example)");
+  expect(mdTrick.querySelectorAll("a").length === 1 && text(mdTrick).includes("(goes to evil.example)")
+    && text(mdTrick).includes("[a](https://bank.example@evil.example)"),
+    "markdown: a link text that looks like another address says where it goes; userinfo and bidi characters are no link");
+  expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
+  const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
 
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");

@@ -170,8 +170,8 @@ Inside a project, in the order of their importance; see
    list is one screen and the chat another, with **← Conversations**
    back; opening a chat there moves the focus to its heading. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
-   small headings, lists, quotes, fenced code with its language and a
-   **Copy** button, inline code, strong and em, and links only when plain
+   headings as strong lines, lists, quotes, fenced code with its language
+   and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
    it into the composer as a quote. A chat is shaped
    for several participants (title, their avatars), for group chats to

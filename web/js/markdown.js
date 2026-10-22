@@ -32,7 +32,7 @@ window.Maity = window.Maity || {};
   }
 
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
-  const TOKEN = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text) {
     const out = [];
     let at = 0;
@@ -40,7 +40,10 @@ window.Maity = window.Maity || {};
       if (m.index > at) out.push(text.slice(at, m.index));
       if (m[1] !== undefined) {
         const url = safeUrl(m[2]);
+        // A text that looks like another address says where the link goes.
+        const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
         out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]) : m[0]);
+        if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
         out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);
@@ -55,6 +58,8 @@ window.Maity = window.Maity || {};
     return out;
   }
 
+  const hostOf = (u) => (/^\s*(?:https?:\/\/)?([^/?#\s]+)/i.exec(u) || [null, ""])[1].toLowerCase();
+
   // A paragraph's lines, each break kept.
   function lines(list) {
     const out = [];
@@ -62,11 +67,17 @@ window.Maity = window.Maity || {};
     return out;
   }
 
+  // Characters that make code read differently from what runs (Trojan Source).
+  const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
+  let blocks = 0;
   function codeBlock(code, lang) {
-    const pre = h("pre", { class: "md-code", tabindex: "0", "aria-label": lang ? "Code, " + lang : "Code" }, h("code", null, code));
+    blocks += 1;
+    const name = "Code" + (lang ? " (" + lang + ")" : "") + ", block " + blocks;
+    const pre = h("pre", { class: "md-code", tabindex: "0", role: "region", "aria-label": name }, h("code", null, code));
     const copy = h("button", {
       type: "button",
       class: "small md-copy",
+      "aria-label": "Copy " + name,
       onclick: async () => {
         try {
           await navigator.clipboard.writeText(code);
@@ -74,13 +85,21 @@ window.Maity = window.Maity || {};
         } catch (err) {
           copy.textContent = "Copy failed — select the text";
         }
+        window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
       },
     }, "Copy");
-    return h("div", { class: "md-code-box" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy, pre);
+    return h("div", { class: "md-code-box" },
+      h("div", { class: "md-code-bar" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy),
+      INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, "This code contains invisible characters (bidi or zero-width); what you copy may differ from what you see.") : null,
+      pre);
   }
 
+  // Quotes nest at most this deep; deeper is shown as written.
+  const MAX_DEPTH = 8;
+
   // Blocks, line by line.
-  M.markdown = function (source) {
+  M.markdown = function (source, depth) {
+    const level = depth || 0;
     const all = String(source || "").replace(/\r\n?/g, "\n").split("\n");
     const out = [];
     let i = 0;
@@ -88,22 +107,26 @@ window.Maity = window.Maity || {};
     const flush = () => { if (para.length) out.push(h("p", null, lines(para))); para = []; };
     while (i < all.length) {
       const line = all[i];
-      const fence = /^(`{3,}|~{3,})\s*([\w+-]*)\s*$/.exec(line);
-      if (fence) {
+      // A fence (§8.6: three or more backticks or tildes, up to three spaces
+      // in); a backtick fence's info string has no backtick; its first word
+      // is the language.
+      const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (fence && !(fence[1][0] === "`" && fence[2].includes("`"))) {
         flush();
-        const close = new RegExp("^" + fence[1][0] + "{" + fence[1].length + ",}\\s*$");
+        const lang = (fence[2].trim().split(/\s+/)[0] || "").slice(0, 40);
+        const close = new RegExp("^ {0,3}" + (fence[1][0] === "`" ? "`" : "~") + "{" + fence[1].length + ",}\\s*$");
         const body = [];
         i += 1;
         while (i < all.length && !close.test(all[i])) { body.push(all[i]); i += 1; }
-        out.push(codeBlock(body.join("\n"), fence[2]));
+        out.push(codeBlock(body.join("\n"), lang));
         i += 1;
         continue;
       }
       const heading = /^(#{1,3})\s+(.*)$/.exec(line);
       if (heading) {
         flush();
-        // Headings inside a message stay small: h4 to h6.
-        out.push(h("h" + (heading[1].length + 3), { class: "md-h" }, inline(heading[2])));
+        // A heading inside a message is a line of strong text, not a page heading.
+        out.push(h("p", { class: "md-h md-h" + heading[1].length }, h("strong", null, inline(heading[2]))));
         i += 1;
         continue;
       }
@@ -111,7 +134,9 @@ window.Maity = window.Maity || {};
         flush();
         const quoted = [];
         while (i < all.length && /^>\s?/.test(all[i])) { quoted.push(all[i].replace(/^>\s?/, "")); i += 1; }
-        out.push(h("blockquote", null, M.markdown(quoted.join("\n"))));
+        out.push(level < MAX_DEPTH
+          ? h("blockquote", null, M.markdown(quoted.join("\n"), level + 1))
+          : h("p", { class: "md-deep" }, lines(quoted)));
         continue;
       }
       const item = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line);
@@ -125,7 +150,9 @@ window.Maity = window.Maity || {};
           items.push(h("li", null, inline(m[3])));
           i += 1;
         }
-        out.push(h(ordered ? "ol" : "ul", null, items));
+        // A numbered list starts where its first item does.
+        const first = ordered ? parseInt(item[2], 10) : 1;
+        out.push(h(ordered ? "ol" : "ul", ordered && first !== 1 ? { start: String(first) } : null, items));
         continue;
       }
       if (!line.trim()) { flush(); i += 1; continue; }
