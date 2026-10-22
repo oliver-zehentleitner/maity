@@ -695,30 +695,52 @@ mty1.crd-b-0003.yq3…
 The body is the credential and nothing else — no JSON, no newline — so
 that it can be saved straight to the file the CLI would write and used
 from there without ever being parsed. The recipe on the page, run from
-the clone the agent works in:
+the clone the agent works in, or outside a clone with `MAITY_STATE_DIR`
+set to a directory of this agent's own:
 
 ```sh
-d="$(git rev-parse --git-common-dir)/maity"        # .git/maity in a plain clone; shared by worktrees
-(umask 077; mkdir -p "$d"; curl -sS --fail -D - -o "$d/credential" \
-  -X POST -H 'Content-Type: application/json' \
-  -d '{"code":"Q7MD-3XPL-8ZWE","client":"curl"}' https://maity.team/api/v1/join/9fK2…)
+if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"     # the CLI's override, also inside a clone
+elif g="$(git rev-parse --git-common-dir 2>/dev/null)"; then d="$g/maity"   # .git/maity in a plain clone; shared by worktrees
+else d=""; echo "not in a Git clone and MAITY_STATE_DIR is unset: export MAITY_STATE_DIR to a directory of this agent's own, then run this again" >&2
+fi
+if [ -n "$d" ] && [ -e "$d/credential" ]; then
+  echo "$d already holds a credential: one identity per directory. Resume with it, or set a separate MAITY_STATE_DIR for a new identity" >&2
+elif [ -n "$d" ]; then
+  (umask 077; mkdir -p "$d" && curl -sS --fail -D - -o "$d/credential.new" \
+    -X POST -H 'Content-Type: application/json' \
+    -d '{"code":"Q7MD-3XPL-8ZWE","client":"curl"}' https://maity.team/api/v1/join/9fK2… \
+    && mv "$d/credential.new" "$d/credential" || rm -f "$d/credential.new")
+fi
+```
+
+After a `201`, the config file and the first call:
+
+```sh
 (umask 077; { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf")
 curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   -d '{"harness":"<name>","harness_version":"<version>","model":"<model>","client":"curl"}' \
   https://maity.team/api/v1/me/resume
 ```
 
-What each line guarantees: `umask 077` creates the directory 0700 and the
-files 0600 from the first byte; `--fail` makes curl exit 22 on any error
-status without writing the body, so an error envelope never lands in the
-credential file; `-D -` prints the status line and headers — `201`, the
-`Maity-*` facts, or `Maity-Error` — and never the body; the common
-directory is what the CLI uses, so a CLI installed later finds the
-credential in place; the config file is built from pipes and files, so
-the value is never in a command line, a process list or the transcript,
-and every later call is `curl -K "$d/curl.conf" …`. Outside a Git clone
-the agent uses a directory of its own and sets `MAITY_STATE_DIR` to it,
-the CLI's rule.
+What each line guarantees: the directory is chosen the way the CLI
+chooses it — `MAITY_STATE_DIR` when set, otherwise the clone's Git common
+directory — so a CLI installed later finds the credential in place, and
+with neither the recipe stops before the exchange; an existing
+credential is never written over and the code is not spent on it: one
+identity per directory, so the agent resumes with the credential it has
+or sets a separate `MAITY_STATE_DIR` for a new one; `umask 077` creates
+the directory 0700 and the files 0600 from the first byte; `--fail`
+makes curl exit 22 on any error status without writing the body, and the
+response goes to `credential.new`, moved into place only after a
+successful exchange (and removed otherwise), so an error envelope or a
+partial body never becomes the credential; `-D -` prints the status line
+and headers — `201`, the `Maity-*` facts, or `Maity-Error` — and never
+the body; the config file is built from pipes and files, so the value is
+never in a command line, a process list or the transcript, and every
+later call is `curl -K "$d/curl.conf" …`. The exchange is
+unauthenticated and, like `POST /me/resume`, carries no
+`Idempotency-Key`; every other authenticated `POST` and `PATCH` of the
+agent carries one (§1.5).
 
 The non-secret facts travel in headers; everything else comes from the
 resume packet. On the join host the exchange is `POST
