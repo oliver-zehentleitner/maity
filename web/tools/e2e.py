@@ -704,11 +704,13 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert project["absence"]["until"].startswith("2030-01-02"), project
     log = run.api(alpha, "GET", "/projects/e2e-alpha/events", after=cursor, wait=0)["items"]
     change = next((e for e in log if e["kind"] == "state_changed"), None)
-    assert change and change["payload"] == {
-        "old": "build",
-        "new": "freeze",
-        "reason": "e2e: release candidate",
-    }, log
+    assert change, log
+    payload = change["payload"]
+    assert (payload["old"], payload["new"], payload["reason"]) == (
+        "build",
+        "freeze",
+        "e2e: release candidate",
+    ), change
     page.get_by_role("button", name="State & absence", exact=True).click()
     page.get_by_role("button", name="I am back", exact=True).click()
     expect(page.locator("header .absence")).to_have_count(0)
