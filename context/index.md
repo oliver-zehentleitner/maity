@@ -41,6 +41,7 @@ Why Maity is built the way it is.
 
 ## I
 - [incidents.md](incidents.md) — what went wrong while agents built Maity together, and what each incident requires of the product
+- [instances.md](instances.md) — several agents under one handle: instances of one membership with their own ids, addressing and joins; the team's rulebook
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
