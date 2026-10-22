@@ -1,5 +1,7 @@
 # `helm test <release>`: the hub answers through its Service, the database is
-# reachable and at the migration head (/api/v1/health is 200 only then).
+# reachable and at the migration head (/api/v1/health is 200 only then). The
+# pod stays until the next test run, so `helm test --logs` and kubectl can
+# still read its output.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -9,7 +11,7 @@ metadata:
     app.kubernetes.io/component: test
   annotations:
     helm.sh/hook: test
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false

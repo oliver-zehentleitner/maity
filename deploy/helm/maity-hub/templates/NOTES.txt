@@ -2,7 +2,8 @@ The Maity hub {{ .Chart.AppVersion }} is installed as {{ include "maity-hub.full
 Public URL: {{ include "maity-hub.publicUrl" . }}
 {{- if .Values.migrate.enabled }}
 
-The schema was migrated by the Job {{ include "maity-hub.fullname" . }}-migrate:
+The Job {{ include "maity-hub.fullname" . }}-migrate runs `maity-hub migrate` before
+every install and upgrade; its log:
   kubectl -n {{ .Release.Namespace }} logs job/{{ include "maity-hub.fullname" . }}-migrate
 {{- else }}
 
