@@ -138,6 +138,7 @@ boundary.
 **Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator
 **Revisit when:** the admin and the admin agent agree on a start policy
 **See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — cd93203d-f56f-4860-8cc8-7564db18ae7e — as of 2026-10-22
 
 Starting an agent through a runner needs the maintainer's go. Which
 starts may go ahead without it is a policy the human admin and the admin
