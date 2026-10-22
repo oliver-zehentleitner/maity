@@ -394,6 +394,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me" ? realGet5(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : realGet5(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/board");
   expect(!byId("chk-rel-0001-chk-1") && !btn(rel(), "Edit checklist"), "release: no editing without releases:write");
+  expect(!main.querySelector("form.card-order"), "board: without tasks:admin no card offers Place");
   win.Maity.api.get = realGet5;
   await go("#/p/sample/board");
   const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
@@ -821,6 +822,57 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const asg1 = bCard("tsk-0001").querySelector("form.card-assign select"); asg1.value = "agt-b";
   bCard("tsk-0001").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Assigning failed: It is claimed with a live lease"), "board: a live lease is not taken over, said in words");
+  // Order within a column (docs/api.md §6.4): by rank, then created_at, then id.
+  const colIds = (st) => colEl(st).querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  expect(JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0009", "tsk-0001", "tsk-0007"]), "board: a column in the hub's order, a ranked card first " + JSON.stringify(colIds("in_progress")));
+  const ordSel = (id) => bCard(id).querySelector("form.card-order select");
+  expect(JSON.stringify(ordSel("tsk-0009").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move down", "To the bottom"])
+    && JSON.stringify(ordSel("tsk-0001").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move up", "Move down"])
+    , "board: Place offers the moves the card's place allows");
+  expect(!main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === "done").querySelector("form.card-order"), "board: closed cards keep their order");
+  bProto.focus = function () { document.activeElement = this; };
+  const ordBefore = bWrites.length;
+  bCard("tsk-0009").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[ordBefore]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0009/move", { after: "tsk-0001" }])
+    && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0001", "tsk-0009", "tsk-0007"]) && text(main).includes("tsk-0009 is now below tsk-0001."),
+    "board: Move down places the card below its neighbour, once the hub answered");
+  expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "order:tsk-0009", "board: the focus stays on the placed card's Place");
+  ordSel("tsk-0007").value = "top";
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1][2]) === JSON.stringify({ to: "top" }) && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0007", "tsk-0001", "tsk-0009"]),
+    "board: To the top");
+  bProto.focus = bFocus; document.activeElement = undefined;
+  // Dragging within the column: above or below the card it is let go over.
+  bCard("tsk-0009").dispatch("dragstart", { dataTransfer: null });
+  expect(colEl("in_progress").classList.contains("drop-ok"), "board: its own column takes it while dragging");
+  const overCard = bCard("tsk-0007").querySelector(".card-id");
+  colEl("in_progress").dispatch("dragover", { target: overCard });
+  expect(bCard("tsk-0007").classList.contains("drop-before"), "board: the spot above the card is marked");
+  colEl("in_progress").dispatch("drop", { target: overCard }); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0009/move", { before: "tsk-0007" }])
+    && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0009", "tsk-0007", "tsk-0001"]) && !main.querySelector("article.drop-before"),
+    "board: dropped over a card's upper half, placed above it");
+  bCard("tsk-0009").dispatch("dragstart", { dataTransfer: null });
+  const lower = bCard("tsk-0001");
+  lower.getBoundingClientRect = () => ({ top: 0, height: 100 });
+  colEl("in_progress").dispatch("drop", { target: lower, clientY: 80 }); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(bWrites[bWrites.length - 1][2]) === JSON.stringify({ after: "tsk-0001" }) && colIds("in_progress")[2] === "tsk-0009",
+    "board: dropped over a card's lower half, placed below it");
+  // A neighbour that moved meanwhile: the board is read again and says so.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("gone", 400, p, "invalid", {}));
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Reordering failed: the card next to it moved or changed meanwhile; the board shows the order as it is now."),
+    "board: a stale neighbour re-reads the board and says so");
+  // A not_found while card and neighbour are still in place: a hub without the endpoint.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {}));
+  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Reordering failed: this hub does not order cards yet."), "board: a hub without the move endpoint is said as such");
+  win.Maity.api.post = (p, b) => { bWrites.push(["POST", p, b]); return bPost(p, b); };
+  // The mock as the hub: a neighbour in another column is invalid; a member may not order.
+  let otherCol = null;
+  try { await bPost("/projects/maity/tasks/tsk-0001/move", { before: "tsk-0006" }); } catch (err) { otherCol = err; }
+  expect(otherCol && otherCol.code === "invalid", "board: the mock refuses a neighbour from another column");
+
   // Filters by member and area.
   const fm = byId("board-member"); fm.value = "agt-b"; fm.dispatch("change");
   const visibleIds = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]).sort();
