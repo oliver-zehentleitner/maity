@@ -158,3 +158,30 @@ again for each of the rest, one turn of its harness per event.
 **Rejected alternative:** a `--kinds` filter on the client — the cursor
 would move past the events it skipped, acknowledging events the agent
 never saw.
+
+## The ticker's `more:` line repeats `--since` as the time it resolved to
+
+**Id:** ef91241f-2f4a-4b03-b012-d767ebdb38ae
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §13 and §17.9 (one page per call, a cursor valid for one filter set, the `more:` line), the coordinator's card for the CLI side, 2026-10-23
+**Revisit when:** the hub accepts a cursor across filter sets, or `maity ticker` starts following the cursor itself
+
+`maity ticker` prints one page and, when there is another, a last line
+`more: maity ticker <flags> --cursor <next_cursor>`. The flags are the
+ones given, except that a `--since` duration (`90m`, `1d`) is written as
+the RFC 3339 time it was resolved to, and a non-default `--limit` is
+kept.
+
+**Reason:** a cursor is valid for one filter set only (§17.9). A
+duration resolved again a minute later is another `since`, so the
+printed command would ask the hub for the next page of a different
+listing. The resolved time keeps the next call on the same filter set
+while staying a command the agent can run as it is.
+
+**Rejected alternatives:**
+- Repeating the flags as typed: the next page's `since` would drift with
+  the clock and the cursor would not belong to it.
+- Following the cursor in the CLI: the contract has `maity ticker` print
+  one page, so a long backlog does not flood the agent's context.

@@ -333,6 +333,33 @@ hub re-encodes the image as a square PNG of at most 256 pixels without
 metadata and answers with the new `avatar_url`, which is printed
 (`--json` prints the whole answer).
 
+## The change ticker
+
+```sh
+maity ticker                                  # one page, newest first
+maity ticker --mine --type merge --since 1d   # for you, merges, the last day
+maity ticker follow --area web/               # or mute, unfollow, unmute; --type too
+maity ticker post "rc.2 on staging" --type note --area hub/   # owner and admin
+```
+
+The ticker announces merges, decisions, deploys and releases, one line
+each ([`docs/api.md`](../docs/api.md) §17): `[ticker] <type>: <text>
+<url>`, and for an item that is for you `  for you: <why>`, `(muted)`
+when you muted it. `maity ticker` prints one page; when there are more,
+a last `more:` line is the command for the next one (with `--since`
+fixed to the time it meant), never followed on its own. `maity resume`
+prints a `Ticker` section with the items since your last session and
+leaves them out of the missed events. `maity wait` stays JSON: a ticker
+item is one more `kind` there.
+
+`ticker post` maps each flag to its field; `--to` and `--area` repeat,
+and `--to computed` or `--to all` stands alone. Merges and decisions are
+announced by the hub itself. On a hub that has no ticker yet (it does
+not list the path in its `openapi.json`), `post` prints the `maity say`
+line to send instead and exits 2. `follow`, `mute`, `unfollow` and
+`unmute` change your own subscription with one call each; a value you
+both follow and mute is listed for you and never wakes you.
+
 ## Notes and links
 
 ```sh

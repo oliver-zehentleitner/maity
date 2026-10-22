@@ -146,3 +146,32 @@ def test_link_remove(joined: Path, fake: fakehub.FakeHub) -> None:
     fake.routes[("DELETE", f"{BASE}/links/lnk-0007")] = lambda s: (200, {"id": "lnk-0007"})
     assert cli.main(["link", "remove", "tsk-0004", "lnk-0007"]) == cli.EXIT_OK
     assert fake.signed()[-1].method == "DELETE"
+
+
+def test_a_cursor_that_comes_back_stops_the_paging(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = []
+
+    def page(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen)
+        return 200, {"items": [NOTE], "next_cursor": "same"}
+
+    fake.routes[("GET", f"{BASE}/notes")] = page
+    assert cli.main(["note", "list", "tsk-0004"]) not in (cli.EXIT_OK,)
+    assert len(calls) == 2  # the first page, then the cursor once; never a third round
+    assert "same page cursor twice" in capsys.readouterr().err
+
+
+def test_release_list_stops_on_a_cursor_that_comes_back(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = []
+
+    def page(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen)
+        return 200, {"items": [], "next_cursor": "loop"}
+
+    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = page
+    assert cli.main(["release", "list"]) != cli.EXIT_OK
+    assert len(calls) == 2 and "same page cursor twice" in capsys.readouterr().err
