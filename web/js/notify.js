@@ -1,0 +1,207 @@
+// Notifications for the human (docs/api.md §17, stage 1 and the browser
+// part): the counts behind the badges and the tab title, the bell with the
+// latest items, and browser notifications while a tab is open. Everything
+// comes from GET /me/notifications; a hub without it leaves the page as it
+// was (counts summed from /me, no bell). Links are built from an item's
+// target, never from its url: the dashboard owns its routes.
+"use strict";
+
+window.Maity = window.Maity || {};
+
+(function (M) {
+  const { h, append, clear, formatAgo } = M.dom;
+
+  const KIND_WORDS = {
+    inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards",
+    agent: "Agents stopped", jour_fixe: "Jour fixe", system: "Mail delivery",
+  };
+  // How long a browser long-poll may hold, and how long to stay away after
+  // another tab took the long-poll over (§17.2: one per session).
+  const WAIT_S = 55;
+  const SUPERSEDED_MS = 5 * 60 * 1000;
+  // An answer back faster than this with nothing in it (a hub or mock that
+  // does not hold) is not asked again at once.
+  const QUICK_MS = 1000;
+  const PAUSE_MS = 30 * 1000;
+
+  // available: null until read, false when the hub has no notifications.
+  const state = { available: null, counts: null, items: [], byProject: {} };
+
+  // The page's address for an item, from its target.
+  function linkOf(item) {
+    const slug = item.project && item.project.slug;
+    if (!slug) return "#/all";
+    const base = "#/p/" + encodeURIComponent(slug) + "/";
+    const t = item.target || {};
+    if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
+    if (t.type === "task") return base + "board";
+    if (t.type === "placement") return base + "agents";
+    return base + "inbox";
+  }
+
+  // One read: the counts and the newest 50, from which the unread chats and
+  // mentions per project are told (more than 50 unread show as 50).
+  async function read() {
+    try {
+      const answer = await M.api.get("/me/notifications?limit=50");
+      state.available = true;
+      state.counts = answer.counts;
+      state.items = answer.items || [];
+      state.byProject = {};
+      state.items.filter((x) => !x.read && (x.kind === "chat" || x.kind === "mention")).forEach((x) => {
+        const slug = x.project && x.project.slug;
+        const p = state.byProject[slug] || (state.byProject[slug] = { chat: 0, mention: 0 });
+        p[x.kind] += 1;
+      });
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      state.available = false;
+    }
+    return state;
+  }
+
+  // What asks for the human in one project: its open requests, and its
+  // unread chats and mentions.
+  function projectCount(p) {
+    const extra = state.byProject[p.slug] || { chat: 0, mention: 0 };
+    return { requests: p.open_requests || 0, chat: extra.chat, mention: extra.mention,
+      total: (p.open_requests || 0) + extra.chat + extra.mention };
+  }
+
+  // The tab title: "(6) " before it while anything asks for the human.
+  function title(base) {
+    const n = state.available && state.counts ? state.counts.total : 0;
+    return (n ? "(" + n + ") " : "") + base;
+  }
+
+  // The bell: the unread count on it, the latest items under it, each a
+  // link to where it happened, unread ones marked, and Mark all read.
+  function bell(ctx, onChange) {
+    if (!state.available) return null;
+    const unread = state.items.filter((x) => !x.read).length;
+    const box = h("div", { class: "bell-box" });
+    const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
+    list.hidden = true;
+    const label = "Notifications" + (unread ? ", " + unread + " unread" : "");
+    const button = h("button", {
+      type: "button", class: "bell", "aria-expanded": "false", "aria-controls": "bell-panel", "aria-label": label, title: label,
+    }, M.icons.bell(18), unread ? h("span", { class: "count", "aria-hidden": "true" }, String(unread)) : null);
+    const status = M.statusLine();
+    const close = (refocus) => {
+      list.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", outside, true);
+      if (refocus) button.focus();
+    };
+    function outside(e) { if (!box.contains(e.target)) close(false); }
+    function draw() {
+      const items = state.items.slice(0, 20);
+      const counts = state.counts || {};
+      const top = items.length ? items[0].seq : null;
+      append(clear(list),
+        h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, "Notifications"),
+          top !== null && unread ? h("button", {
+            type: "button", class: "small",
+            onclick: async () => {
+              status.busy("Marking…");
+              try {
+                await M.api.post("/me/notifications/read", { up_to: top });
+              } catch (err) {
+                status.fail("Not marked: ", err);
+                return;
+              }
+              // The bell is drawn again with the new counts; the focus goes to it.
+              close(false);
+              await onChange();
+              const again = document.getElementById("header").querySelector("button.bell");
+              if (again) again.focus();
+            },
+          }, "Mark all read") : null),
+        h("p", { class: "muted bell-counts" }, Object.keys(KIND_WORDS).filter((k) => counts[k]).map((k) => KIND_WORDS[k] + " " + counts[k]).join(" · ") || "Nothing new."),
+        items.length
+          ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
+            h("a", {
+              href: linkOf(x),
+              onclick: () => {
+                close(false);
+                if (!x.read) M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
+              },
+            }, x.redacted ? "Removed" : x.title),
+            h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
+            x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
+          : h("p", { class: "muted" }, "No notifications in the last 30 days."),
+        h("p", { class: "hint" }, h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
+        status.el);
+    }
+    button.addEventListener("click", () => {
+      if (!list.hidden) { close(true); return; }
+      draw();
+      list.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      document.addEventListener("click", outside, true);
+    });
+    list.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(true); } });
+    append(box, button, list);
+    return box;
+  }
+
+  // ---- browser notifications (§17.8 stage 2) ---------------------------
+
+  let browserLoop = null;
+  const shown = new Set();
+
+  // Shows what is new while a tab is open, for the kinds switched on; the
+  // item's id is the tag, so two tabs show it once. Never one's own.
+  function startBrowser(ctx, settings) {
+    stopBrowser();
+    const b = settings && settings.browser;
+    if (!b || !b.enabled || !("Notification" in window) || window.Notification.permission !== "granted") return;
+    // A pause ends early when the loop is stopped, so nothing is left waiting.
+    const loop = { stopped: false, timer: null, wake: null };
+    browserLoop = loop;
+    let after = (state.items[0] && state.items[0].seq) || 0;
+    const pause = (ms) => new Promise((done) => {
+      loop.wake = done;
+      loop.timer = window.setTimeout(done, ms);
+    });
+    (async () => {
+      while (!loop.stopped) {
+        const asked = Date.now();
+        let answer;
+        try {
+          answer = await M.api.get("/me/notifications?after=" + after + "&wait=" + WAIT_S + "&limit=50");
+        } catch (err) {
+          await pause(PAUSE_MS);
+          continue;
+        }
+        if (loop.stopped) return;
+        if (answer.superseded) { await pause(SUPERSEDED_MS); continue; }
+        const items = answer.items || [];
+        items.forEach((x) => {
+          after = Math.max(after, x.seq);
+          if (x.read || shown.has(x.id) || !b.kinds[x.kind]) return;
+          if (x.actor && x.actor.member_id === ctx.me.id) return;
+          shown.add(x.id);
+          const withText = b.content && b.content[x.kind] && typeof x.content === "string";
+          const note = new window.Notification(x.redacted ? "Maity" : x.title, {
+            tag: x.id,
+            body: (x.project ? x.project.name : "") + (withText ? "\n" + x.content.slice(0, 120) : ""),
+          });
+          note.onclick = () => { window.focus(); window.location.hash = linkOf(x); note.close(); };
+        });
+        if (!items.length && Date.now() - asked < QUICK_MS) await pause(PAUSE_MS);
+      }
+    })();
+  }
+
+  function stopBrowser() {
+    const loop = browserLoop;
+    browserLoop = null;
+    if (!loop) return;
+    loop.stopped = true;
+    window.clearTimeout(loop.timer);
+    if (loop.wake) loop.wake();
+  }
+
+  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserLoop, KIND_WORDS };
+})(window.Maity);

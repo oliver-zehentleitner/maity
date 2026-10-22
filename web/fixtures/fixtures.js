@@ -1785,6 +1785,149 @@ window.MAITY_FIXTURES = {
     ],
     "server_time": "2026-10-21T13:42:00Z"
   },
+  "notifications.json": {
+    "items": [
+      {
+        "actor": null,
+        "at": "2026-10-22T13:20:00Z",
+        "id": "ntf-4241",
+        "kind": "agent",
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "read": false,
+        "redacted": false,
+        "seq": 4241,
+        "target": {
+          "id": "plc-0003",
+          "type": "placement"
+        },
+        "title": "agent-c stopped: quota",
+        "url": "https://maity.team/#/p/maity/agents"
+      },
+      {
+        "actor": {
+          "avatar_url": null,
+          "display_name": "Agent B",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T13:15:00Z",
+        "id": "ntf-4239",
+        "kind": "mention",
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "read": false,
+        "redacted": false,
+        "seq": 4239,
+        "target": {
+          "id": "tsk-0004",
+          "type": "task"
+        },
+        "title": "Agent B mentioned you in tsk-0004 Hub: credential exchange and storage",
+        "url": "https://maity.team/#/p/maity/board?task=tsk-0004"
+      },
+      {
+        "actor": {
+          "avatar_url": null,
+          "display_name": "Agent A",
+          "member_id": "agt-a"
+        },
+        "at": "2026-10-22T13:10:00Z",
+        "id": "ntf-4237",
+        "kind": "chat",
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "read": false,
+        "redacted": false,
+        "seq": 4237,
+        "target": {
+          "id": "agt-a",
+          "type": "conversation"
+        },
+        "title": "Agent A in agent-a",
+        "url": "https://maity.team/#/p/maity/chat/agt-a"
+      },
+      {
+        "actor": {
+          "avatar_url": null,
+          "display_name": "Shop Dev",
+          "member_id": "agt-s1"
+        },
+        "at": "2026-10-22T12:50:00Z",
+        "id": "ntf-4235",
+        "kind": "inbox",
+        "project": {
+          "name": "Sample shop",
+          "slug": "sample"
+        },
+        "read": false,
+        "redacted": false,
+        "seq": 4235,
+        "target": {
+          "id": "req-s001",
+          "type": "request"
+        },
+        "title": "Shop Dev asks: Which payment provider?",
+        "url": "https://maity.team/#/p/sample/inbox"
+      },
+      {
+        "actor": {
+          "avatar_url": null,
+          "display_name": "Agent B",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T12:41:12Z",
+        "id": "ntf-4231",
+        "kind": "card",
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "read": true,
+        "reason": "creator",
+        "redacted": false,
+        "seq": 4231,
+        "target": {
+          "id": "tsk-0004",
+          "type": "task"
+        },
+        "title": "tsk-0004 Hub: credential exchange and storage: status review",
+        "url": "https://maity.team/#/p/maity/board?task=tsk-0004"
+      }
+    ],
+    "settings": {
+      "browser": {
+        "content": {
+          "chat": false,
+          "mention": false
+        },
+        "enabled": false,
+        "kinds": {
+          "agent": true,
+          "card": false,
+          "chat": true,
+          "inbox": true,
+          "jour_fixe": true,
+          "mention": true
+        }
+      },
+      "email": null,
+      "kinds": [
+        "inbox",
+        "chat",
+        "mention",
+        "card",
+        "agent",
+        "jour_fixe"
+      ],
+      "mail_available": false
+    }
+  },
   "runner-enrollments.json": {
     "items": [
       {

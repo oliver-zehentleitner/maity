@@ -344,6 +344,12 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
+  function notificationCounts() {
+    const counts = { inbox: me().projects.reduce((k, p) => k + openFor(p.slug).length, 0), chat: 0, mention: 0, card: 0, agent: 0, jour_fixe: 0, system: 0 };
+    fixtures()["notifications.json"].items.forEach((x) => { if (!x.read && x.kind !== "inbox") counts[x.kind] += 1; });
+    counts.total = counts.inbox + counts.chat + counts.mention;
+    return counts;
+  }
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -427,6 +433,51 @@ window.Maity = window.Maity || {};
       });
       data.server_time = nowIso();
       return data;
+    }],
+    // §17.2: the human's notifications. inbox counts the open requests as
+    // /me does; chat and the rest count the unread items of their kind
+    // (the hub's chat count is the conversations' unread, which the
+    // fixtures do not keep apart).
+    ["GET", /^\/me\/notifications$/, (m, body, path, query) => {
+      const n = fixtures()["notifications.json"];
+      const limit = query.get("limit") === null ? 20 : Number(query.get("limit"));
+      if (!Number.isInteger(limit) || limit < 0 || limit > 50) fail(400, "invalid", "limit is 0 to 50", path, { fields: { limit: "invalid" } });
+      const counts = notificationCounts();
+      const kinds = query.get("kind") ? query.get("kind").split(",") : null;
+      const projects = query.get("project") ? query.get("project").split(",") : null;
+      let items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
+        && (!kinds || kinds.includes(x.kind)) && (!projects || projects.includes(x.project.slug)));
+      const after = query.get("after");
+      if (after !== null) items = items.filter((x) => x.seq > Number(after)).sort((a, b) => a.seq - b.seq);
+      else items = items.slice().sort((a, b) => b.seq - a.seq);
+      return { counts, items: items.slice(0, limit), next_cursor: null, server_time: nowIso() };
+    }],
+    // §17.3: by ids, or everything up to a seq (of one kind or project).
+    ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
+      const n = fixtures()["notifications.json"];
+      if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
+      n.items.forEach((x) => {
+        if (body.ids ? body.ids.includes(x.id)
+          : x.seq <= body.up_to && (!body.kind || x.kind === body.kind) && (!body.project || x.project.slug === body.project)) x.read = true;
+      });
+      return { counts: notificationCounts() };
+    }],
+    // §17.4: the account's settings; a PATCH merges what it names.
+    ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
+    ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
+      const set = fixtures()["notifications.json"].settings;
+      const b = body.browser || {};
+      if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
+      if ("enabled" in b) set.browser.enabled = b.enabled;
+      Object.entries(b.kinds || {}).forEach(([k, v]) => {
+        if (!(k in set.browser.kinds)) fail(400, "invalid", "unknown kind", path, { fields: { ["browser.kinds." + k]: "unknown" } });
+        set.browser.kinds[k] = !!v;
+      });
+      Object.entries(b.content || {}).forEach(([k, v]) => {
+        if (!(k in set.browser.content)) fail(400, "invalid", "no content for this kind", path, { fields: { ["browser.content." + k]: "unknown" } });
+        set.browser.content[k] = !!v;
+      });
+      return set;
     }],
     ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
     // §16.1: the instance admin's list, by handle, filtered and paged.

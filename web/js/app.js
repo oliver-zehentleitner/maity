@@ -144,6 +144,8 @@ window.Maity = window.Maity || {};
       await M.api.post("/auth/logout");
     } finally {
       if (M.clearChatDrafts) M.clearChatDrafts();
+      M.notify.stopBrowser();
+      M.notify.state.settings = null;
       window.location.hash = "";
       render();
     }
@@ -516,8 +518,18 @@ window.Maity = window.Maity || {};
   // Always visible: every project of this human with what waits there, and
   // the cross-project view with the total.
   function switcher(ctx) {
-    const total = ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
+    const N = M.notify.state;
+    // With the hub's notifications: what asks for the human, requests,
+    // unread chats and mentions (docs/api.md §17.2); else the open requests.
+    const total = N.available ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
+    const pill = (p) => {
+      if (!N.available) return count(p.open_requests);
+      const c = M.notify.projectCount(p);
+      const words = [c.requests ? c.requests + " open" : null, c.chat ? c.chat + " unread in chats" : null,
+        c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ");
+      return c.total ? h("span", { class: "count", "aria-label": words }, String(c.total)) : null;
+    };
     return h("nav", { class: "switcher", "aria-label": "Projects" },
       h("a", { href: "#/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", count(total)),
       ctx.projects.map((p) => h("a", {
@@ -527,7 +539,7 @@ window.Maity = window.Maity || {};
       projectMark(p.slug, p.name, (ctx.projectViews || {})[p.slug], "small"),
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
-      count(p.open_requests))),
+      pill(p))),
     h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"),
     h("a", { href: "#/runners", class: "runners-link", "aria-current": ctx.scope === "runners" ? "page" : null }, "Runners"));
   }
@@ -553,6 +565,39 @@ window.Maity = window.Maity || {};
     const right = left + cur.offsetWidth;
     if (left < nav.scrollLeft) nav.scrollLeft = Math.max(0, left - 8);
     else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
+  }
+
+  // The inbox tab says the project's open requests, the chat tab its unread
+  // chats (docs/api.md §17.2), where the hub has notifications.
+  function tabCount(ctx, route) {
+    if (!M.notify.state.available || (route !== "inbox" && route !== "chat")) return null;
+    const c = M.notify.projectCount(ctx.projects.find((p) => p.slug === ctx.slug) || { slug: ctx.slug });
+    const n = route === "inbox" ? c.requests : c.chat;
+    return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
+  }
+
+  function renderTabCounts(ctx) {
+    const nav = document.getElementById("header").querySelector("nav.views");
+    if (!nav) return;
+    nav.querySelectorAll("a").forEach((a) => {
+      const route = NAV.find((n) => a.getAttribute("href") === projectLink(ctx.slug, n.route));
+      if (!route) return;
+      const old = a.querySelector(".count");
+      if (old) old.remove();
+      const fresh = tabCount(ctx, route.route);
+      if (fresh) a.appendChild(fresh);
+    });
+  }
+
+  // The bell follows the counts; an open one stays as it is until closed.
+  function renderBell(ctx) {
+    const header = document.getElementById("header");
+    const old = header.querySelector(".bell-box");
+    if (old && old.querySelector("[aria-expanded=\"true\"]")) return;
+    const fresh = M.notify.bell(ctx, () => ctx.refreshCounts());
+    if (old && fresh) { old.parentNode.insertBefore(fresh, old); old.remove(); }
+    else if (old) old.remove();
+    else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
   }
 
   // The counts changed: only the switcher is replaced, so an open State &
@@ -625,7 +670,7 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, settings.el, profile.el)),
+        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -646,7 +691,7 @@ window.Maity = window.Maity || {};
           NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
-          }, item.label)))
+          }, item.label, tabCount(ctx, item.route))))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // After an image was uploaded or removed, the panel opens again to say so.
@@ -699,9 +744,12 @@ window.Maity = window.Maity || {};
       // Re-reads /me for the switcher's counts. What counts as seen stays;
       // the inbox marks it after an answer of its own.
       refreshCounts: async () => {
-        const fresh = await M.api.get("/me");
+        const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read()]);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
+        renderBell(ctx);
+        renderTabCounts(ctx);
+        document.title = M.notify.title(baseTitle);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -783,6 +831,7 @@ window.Maity = window.Maity || {};
       }
     }
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
+    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, "Could not read your notifications: " + notifyError.message)); notifyError = null; }
     ctx.every(POLL_MS, () => counts().then(() => clear(failLine), failed));
     // A changed count is answered by reloading; an answer given here
     // updates what counts as seen.
@@ -825,6 +874,21 @@ window.Maity = window.Maity || {};
   }
 
   let renderSeq = 0;
+  // The tab title without its count, and a failed notifications read to say.
+  let baseTitle = "Maity";
+  let notifyError = null;
+
+  // Browser notifications run across renders, once per page; the account's
+  // wish is read once and again when the account view changes it.
+  async function startBrowserNotifications(ctx) {
+    if (M.notify.running() || !("Notification" in window) || window.Notification.permission !== "granted") return;
+    try {
+      const settings = M.notify.state.settings || (M.notify.state.settings = await M.api.get("/me/notification-settings"));
+      M.notify.startBrowser(ctx, settings);
+    } catch (err) {
+      notifyError = err;
+    }
+  }
 
   async function render() {
     const seq = ++renderSeq;
@@ -849,7 +913,10 @@ window.Maity = window.Maity || {};
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
-      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me)]);
+      // Notifications never stop the page: a failed read is said in the
+      // notice (watch), and a hub without them leaves the counts as /me has them.
+      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),
+        M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       ctx.projectViews = views;
       if (seq !== renderSeq) return;
@@ -911,7 +978,9 @@ window.Maity = window.Maity || {};
     else if (where.scope === "admin-users") label = "Users";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
-    document.title = label + " · Maity";
+    baseTitle = label + " · Maity";
+    document.title = M.notify.title(baseTitle);
+    if (M.notify.state.available) startBrowserNotifications(ctx);
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 

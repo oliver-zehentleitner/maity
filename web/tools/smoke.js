@@ -151,11 +151,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => { gets.push(p); return realAll(p); };
   docListeners.DOMContentLoaded(); await tick(); await tick();
+  // The title without the count of what asks for the human (js/notify.js).
+  const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
   expect(gets.some((p) => p.startsWith("/requests")) && !gets.some((p) => p.includes("/members")), "#/all renders from the requests alone");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
-  expect(chipCount("All projects") === "4" && chipCount("Maity") === "3" && chipCount("Sample shop") === "1", "switcher counts 4 / 3 / 1");
+  // With notifications (docs/api.md §17.2): requests plus unread chats and mentions; Maity has one of each unread.
+  expect(chipCount("All projects") === "6" && chipCount("Maity") === "5" && chipCount("Sample shop") === "1", "switcher counts 6 / 5 / 1");
+  expect(document.title.startsWith("(6) "), "the tab title starts with what asks for the human");
   expect(main.querySelectorAll(".project-label").length === 4, "every entry labelled with its project");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
@@ -181,9 +185,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
   expect(cur && text(cur).includes("Argon2id"), "Later moves to the next entry without answering");
-  expect(chipCount("All projects") === "4", "Later sends nothing, counts unchanged");
+  expect(chipCount("All projects") === "6", "Later sends nothing, counts unchanged");
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
-  expect(chipCount("All projects") === "3" && chipCount("Maity") === "2", "answer re-reads /me counts");
+  expect(chipCount("All projects") === "5" && chipCount("Maity") === "4", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Maity"), "sort by project");
   // A project filter and grouping by project.
@@ -310,7 +314,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/%E0%A4%A");
   expect(main.querySelector(".error") && text(main).includes("URI"), "malformed hash shows an error box");
   await go("#/p/maity/constructor");
-  expect(text(main).includes("No such view") && document.title === "No such view · Maity", "prototype key is no view, sane title");
+  expect(text(main).includes("No such view") && plainTitle() === "No such view · Maity", "prototype key is no view, sane title");
   await go("#/p/maity/nonsense");
   expect(text(main).includes("No such view"), "unknown view");
   expect(throws(() => win.Maity.dom.h("a", { href: "javascript:alert(1)" })), "h() refuses a javascript: href");
@@ -514,7 +518,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/admin/users"); await tick();
   const userRows = () => main.querySelectorAll("table.users tbody tr");
   const userNames = () => userRows().map((tr) => tr.querySelector(".user-name").textContent);
-  expect(document.title === "Users · Maity" && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
+  expect(plainTitle() === "Users · Maity" && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
     "users: every human, by handle");
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -697,7 +701,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = (p) => { rWrites.push(["DELETE", p]); return rDel(p); };
   await go("#/runners"); await tick();
   const card = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
-  expect(document.title === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
+  expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));
   expect(laptop.includes("online") && laptop.includes("this machine") && laptop.includes("Allowed in maity.")
     && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
@@ -801,7 +805,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realGet6 = win.Maity.api.get;
   win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
   await go("#/p/maity/why");
-  expect(document.title === "Why · Maity · Maity" && text(main).includes("1 entry needs attention · 71 entries in 4 parts of the project")
+  expect(plainTitle() === "Why · Maity · Maity" && text(main).includes("1 entry needs attention · 71 entries in 4 parts of the project")
     && text(main).includes("Linter: 0 errors, 0 warnings."), "why: the family's summary");
   const rows = main.querySelectorAll(".why-members tbody tr");
   expect(rows.length === 4 && rows[0].textContent.startsWith("the project root") && rows[1].textContent.startsWith("hub · hub/")
@@ -1067,7 +1071,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/members");
   const mRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
   const tables = main.querySelectorAll("table.members");
-  expect(document.title === "Members · Maity · Maity" && tables.length === 2 && tables[0].querySelectorAll("tr.member").length === 1
+  expect(plainTitle() === "Members · Maity · Maity" && tables.length === 2 && tables[0].querySelectorAll("tr.member").length === 1
     && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
     "members: humans first, then agents");
   const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
@@ -1900,7 +1904,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(accountLink && accountLink.getAttribute("href") === "#/account", "the profile menu links to the account");
   pb.click(); await tick();
   await go("#/account");
-  expect(document.title === "Your account · Maity" && text(main).includes("@maintainer") && byId("password-current"), "the account view");
+  expect(plainTitle() === "Your account · Maity" && text(main).includes("@maintainer") && byId("password-current"), "the account view");
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
@@ -2009,7 +2013,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
   expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
   await go("#/new");
-  expect(document.title === "New project · Maity" && byId("project-slug"), "create-project view");
+  expect(plainTitle() === "New project · Maity" && byId("project-slug"), "create-project view");
   expect(byId("project-slug").attrs.pattern && !badPatterns().length, "create: every pattern compiles with the v flag " + badPatterns());
   byId("project-name").value = "Dogfood Hub"; byId("project-name").dispatch("input");
   expect(byId("project-slug").value === "dogfood-hub", "slug proposed from the name");
@@ -2621,6 +2625,78 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   win.location.search = "";
+
+  // Notifications (docs/api.md §17): the bell, the counts, browser notifications.
+  await go("#/p/maity/inbox");
+  const bellBtn = () => header.querySelector("button.bell");
+  const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "Notifications, 4 unread" && text(bellBtn()).includes("4")
+    && tabCountOf("Chat") === "1", "notifications: the bell says how many are unread; the chat tab its unread chats");
+  const nPosts = [];
+  const nPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p.startsWith("/me/notifications")) nPosts.push([p, b]); return nPost(p, b); };
+  bellBtn().click(); await tick();
+  const bellPanel = header.querySelector(".bell-panel");
+  const bellLinks = bellPanel.querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
+  expect(!bellPanel.hidden && bellBtn().getAttribute("aria-expanded") === "true"
+    && JSON.stringify(bellLinks) === JSON.stringify(["#/p/maity/agents", "#/p/maity/board", "#/p/maity/chat/agt-a", "#/p/sample/inbox", "#/p/maity/board"])
+    && bellPanel.querySelectorAll(".bell-items li.unread").length === 4 && text(bellPanel).includes("Mentions 1"),
+    "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked");
+  const maityBefore = Number(chipCount("Maity"));
+  bellPanel.querySelectorAll(".bell-items a")[2].click(); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread"
+    && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
+  bellBtn().click(); await tick();
+  btn(header.querySelector(".bell-panel"), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
+  const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
+  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: 4241 }]) && bellBtn().getAttribute("aria-label") === "Notifications"
+    && Number(chipCount("Maity")) === maityOpen,
+    "notifications: Mark all read marks up to the newest; the project's count is its open requests again");
+  win.Maity.api.post = nPost;
+  // A hub without notifications: no bell, the counts from /me as before.
+  const nGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nGet(p));
+  await go("#/p/maity/board"); await go("#/p/maity/inbox");
+  expect(!bellBtn() && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"), "notifications: a hub without them shows no bell and no error");
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : nGet(p));
+  await go("#/p/maity/board");
+  expect(text(main).includes("Could not read your notifications: down") && !main.querySelector(".error"), "notifications: a failed read is said, the page stays");
+  win.Maity.api.get = nGet;
+  // Browser notifications: asked only on the human's click, shown per kind, never for one's own.
+  const shownNotes = [];
+  let asked = 0;
+  win.Notification = function (title, opts) { shownNotes.push([title, opts]); this.close = () => {}; };
+  win.Notification.permission = "default";
+  win.Notification.requestPermission = async () => { asked += 1; win.Notification.permission = "granted"; return "granted"; };
+  await go("#/account/notifications");
+  expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
+    && byId("notify-kind-card").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
+  const fresh = [
+    { id: "ntf-5001", seq: 5001, kind: "chat", at: "2026-10-22T15:00:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "secret text" },
+    { id: "ntf-5002", seq: 5002, kind: "card", at: "2026-10-22T15:01:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-b" }, title: "tsk-0004 …: reported", target: { type: "task", id: "tsk-0004" }, read: false, redacted: false },
+    { id: "ntf-5003", seq: 5003, kind: "mention", at: "2026-10-22T15:02:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "hum-maintainer" }, title: "own", target: { type: "task", id: "tsk-0004" }, read: false, redacted: false },
+  ];
+  const polls = [];
+  win.Maity.api.get = (p) => {
+    if (p.startsWith("/me/notifications?after=")) { polls.push(p); const items = fresh.splice(0); return Promise.resolve({ counts: {}, items, next_cursor: null }); }
+    return nGet(p);
+  };
+  byId("notify-browser").checked = true; byId("notify-browser").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
+  expect(asked === 1 && byId("notify-browser").checked && text(main).includes("Browser notifications are on.") && text(main).includes("This browser shows them."),
+    "notifications: turning them on asks the browser once, and saves the wish");
+  expect(polls.length >= 1 && /after=\d+&wait=55/.test(polls[0]) && shownNotes.length === 1 && shownNotes[0][0] === "Agent A in agent-a"
+    && shownNotes[0][1].tag === "ntf-5001" && !shownNotes[0][1].body.includes("secret text"),
+    "notifications: a new chat is shown with its id as tag, without its text; a card (off) and one's own are not");
+  shownNotes.length = 0;
+  byId("notify-content-chat").checked = true; byId("notify-content-chat").dispatch("change"); for (let k = 0; k < 6; k++) await tick();
+  fresh.push(Object.assign({}, { id: "ntf-5004", seq: 5004, kind: "chat", at: "2026-10-22T15:03:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "x".repeat(300) }));
+  for (let k = 0; k < 8; k++) await tick();
+  expect(shownNotes.length <= 1, "notifications: one notification per new item");
+  win.Maity.notify.stopBrowser();
+  byId("notify-browser").checked = false; byId("notify-browser").dispatch("change"); for (let k = 0; k < 6; k++) await tick();
+  expect(!win.Maity.notify.running() && text(main).includes("Browser notifications are off."), "notifications: turned off, nothing is polled any more");
+  win.Maity.api.get = nGet;
+  delete win.Notification;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

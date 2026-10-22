@@ -39,6 +39,41 @@ menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen.
 
+**Notifications** (`docs/api.md` §17, `js/notify.js`). Where the hub has
+them, `GET /me/notifications` gives the counts:
+- **Switcher pill.** A project's pill counts its open requests plus its
+  unread chats and mentions, and its label says which. **All projects**
+  shows the hub's `total`.
+- **Tabs.** The **Inbox** tab shows the project's open requests, the
+  **Chat** tab its unread chats.
+- **Tab title.** It starts with `(<total>) ` while anything asks for the
+  human.
+- **Per project.** Unread chats and mentions per project are counted from
+  the newest 50 items.
+
+A **bell** left of the menus has the unread count. It opens the latest 20
+items, unread ones marked, each a link to where it happened. The link is
+built from the item's `target`, never from its `url`. Opening an item
+marks it read; **Mark all read** marks everything up to the newest. The
+bell links to the settings.
+
+**Browser notifications** are opt-in on the account
+(`#/account/notifications`). Turning them on is the one place the
+browser's permission is asked, and its answer is shown beside the switch.
+After that:
+- **Delivery.** While a tab is open, also in the background, the page
+  long-polls `?after=<seq>&wait=55` and shows each new item of a kind
+  switched on. The item's `id` is the tag, so two tabs show it once.
+  Clicking one opens its place.
+- **What is shown.** Nothing for one's own actions. A chat's or a
+  mention's text only where the human allowed it.
+- **Two tabs.** When another tab took over the long-poll (`superseded`),
+  this tab waits five minutes.
+
+A hub without the endpoints shows no bell and counts the open requests
+from `/me`, as before. A failed read is said in the notice and does not
+stop the page. Mail settings come with the hub's mail (stage 3).
+
 | Route | What |
 |---|---|
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
@@ -46,7 +81,7 @@ stay on screen.
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -570,7 +605,8 @@ fails while the bundle is stale.
 ## Refresh
 
 - `GET /me` every 15 seconds and after every answer, for the switcher's
-  counts. When the number of open requests on screen changes, the page
+  counts, with `GET /me/notifications?limit=50` beside it where the hub has
+  notifications (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being
   read or typed, reloads on its own and says "1 new request." in its
@@ -777,8 +813,9 @@ web/
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
-├── js/menu.js       the header's menus (a button and its menu)
+├── js/menu.js       the header's menus (a button and its menu), the gear and the bell icons
 ├── js/mentions.js    the @ picker
+├── js/notify.js     notifications: the counts, the bell, browser notifications
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
 ├── js/inbox.js       (1) inbox, per project and across all
@@ -796,6 +833,7 @@ web/
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/overview.js    (10) overview: the project at a glance
 ├── js/new-project.js create a project; the empty state
+├── js/notify-settings.js  browser notifications on the account
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
