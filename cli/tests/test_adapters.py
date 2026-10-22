@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from maity.runner import adapters, config, loop, supervisor
+from maity.runner.asuser import AsUser
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 
@@ -329,7 +330,7 @@ def test_other_clones_credentials_are_private_as_they_stand_at_start(tmp_path: P
     for clone in (own, ws / "maity" / "agent-4", ws / "other" / "agent-5"):
         (clone / ".git" / "maity").mkdir(parents=True)
     (ws / "maity" / "agent-6" / ".git").mkdir(parents=True)  # never joined: nothing to hide
-    others = supervisor.other_credentials(ws, own, supervisor.AsUser())
+    others = supervisor.other_credentials(ws, own, AsUser())
     found = supervisor.private_paths(tmp_path / "st", tmp_path / "home", own, others,
                                      (tmp_path / "runner.toml",))  # fmt: skip
     assert ws / "maity" / "agent-4" / ".git" / "maity" in found

@@ -256,3 +256,23 @@ def test_harnesses_are_probed_as_the_agents_user(tmp_path: Path, fake_sudo: Path
     found = capabilities.probe(harness, f"{agent_bin}:/usr/bin:/bin", AsUser("maity-agent"))
     assert found.path == str(tool) and found.version == "2.1.308"
     assert "command -v" in fake_sudo.read_text()  # looked up as maity-agent, not the runner
+
+
+def test_the_deny_lists_come_from_the_agents_side(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """In this layout the secrets to hide are the agents' user's, its own files hold every
+    agent's socket and log, and only that user can list the clones it owns."""
+    from test_supervisor import FakeTmux, placement
+
+    cfg = load(tmp_path, monkeypatch)
+    assert cfg.local is not None
+    sibling = workspace_for(cfg).path.parent / "agent-4" / ".git" / "maity"
+    sibling.mkdir(parents=True)
+    sup = supervisor.Supervisor(cfg, FakeTmux(), None, print, {})  # type: ignore[arg-type]
+    ctx = sup._context(placement(), cfg.harnesses["stub"], workspace_for(cfg))
+    agent_home = tmp_path / "agent-home"
+    assert agent_home / ".claude" in ctx.private and agent_home / ".ssh" in ctx.private
+    assert cfg.local.agent_files.resolve() in ctx.private
+    assert sibling.resolve() in ctx.private
+    assert "-path */.git/maity" in fake_sudo.read_text()  # listed as maity-agent
