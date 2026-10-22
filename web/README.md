@@ -105,7 +105,12 @@ Inside a project, in the order of their importance; see
    the field and checked before sending), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
-   once, with a copy button; open joins can be revoked.
+   once, with a copy button. The joins below are open ones first (each
+   with **Revoke**), then the others, muted, each labelled with its state
+   from the join's fields: used, expired (its `expires_at` has passed;
+   judged against the clock while the view is open, so a join that
+   expires on screen moves down without a reload), burned (refused after
+   three wrong codes) or revoked.
 7. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard
    state as the hub read it, read-only. A headline says how many entries

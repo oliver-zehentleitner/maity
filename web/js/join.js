@@ -1,7 +1,9 @@
 // Join an agent: create a join for one of the human's agent profiles (or a
 // new one) and show the paste line once (docs/api.md §3.1). The line
 // carries a single-use code; it is held in this view only, never stored,
-// and gone when the view is left. Open joins can be revoked.
+// and gone when the view is left. Each join's state is derived from its
+// fields, expiry against the clock while the view is open; only an open
+// join can be revoked.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -9,14 +11,20 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
+  // Expiry emits no event; the list re-judges it on this interval.
+  const EXPIRY_MS = 10000;
+
   const ROLES = ["member", "reviewer", "proxy", "admin"];
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
-  function joinState(j) {
-    if (j.revoked_at) return "revoked " + formatTime(j.revoked_at);
-    if (j.burned) return "burned";
-    if (j.used_at) return "used " + formatTime(j.used_at);
-    return "open until " + formatTime(j.expires_at);
+  // A join's state from GET /joins (docs/api.md §3.1): what ended it
+  // first by its own act, else the clock.
+  function joinState(j, now) {
+    if (j.revoked_at) return { key: "revoked", label: "revoked", text: "revoked " + formatTime(j.revoked_at) };
+    if (j.burned) return { key: "burned", label: "burned", text: "refused after three wrong codes" };
+    if (j.used_at) return { key: "used", label: "used", text: "used " + formatTime(j.used_at) };
+    if (Date.parse(j.expires_at) <= now) return { key: "expired", label: "expired", text: "expired " + formatTime(j.expires_at) };
+    return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
   }
 
   M.views.join = async function (ctx, root) {
@@ -156,14 +164,21 @@ window.Maity = window.Maity || {};
     status.el);
 
     const listBox = h("div");
+    let shownList = null;
+    let shownOpen = "";
     function drawJoins(list) {
+      shownList = list;
+      const now = Date.now();
       const listStatus = M.statusLine();
-      append(clear(listBox), h("h3", null, "Joins"),
-        list.items.length
-          ? h("ul", { class: "joins" }, list.items.map((j) => h("li", null,
-            h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + joinState(j),
-            !j.used_at && !j.revoked_at && !j.burned
-              ? h("button", {
+      const rows = list.items.map((j) => ({ j, state: joinState(j, now) }));
+      const open = rows.filter((r) => r.state.key === "open");
+      const done = rows.filter((r) => r.state.key !== "open");
+      shownOpen = open.map((r) => r.j.id).join(" ");
+      const row = ({ j, state }) => h("li", { class: "join-" + state.key },
+        h("span", { class: "badge join-state" }, state.label), " ",
+        h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text,
+        state.key === "open"
+          ? h("button", {
                 type: "button",
                 class: "danger",
                 onclick: async () => {
@@ -176,11 +191,21 @@ window.Maity = window.Maity || {};
                   }
                 },
               }, "Revoke")
-              : null)))
-          : h("p", { class: "muted" }, "No joins yet."),
+          : null);
+      append(clear(listBox), h("h3", null, "Joins"),
+        !rows.length ? h("p", { class: "muted" }, "No joins yet.") : null,
+        open.length ? h("ul", { class: "joins open-joins", "aria-label": "Open joins" }, open.map(row)) : null,
+        rows.length && !open.length ? h("p", { class: "muted" }, "No open join.") : null,
+        done.length ? [h("h4", null, "Used, expired or revoked"), h("ul", { class: "joins closed-joins" }, done.map(row))] : null,
         listStatus.el);
     }
     drawJoins(joins);
+    // A join that expires while the view is open moves down without a reload.
+    ctx.every(EXPIRY_MS, () => {
+      const now = Date.now();
+      const stillOpen = shownList.items.filter((j) => joinState(j, now).key === "open").map((j) => j.id).join(" ");
+      if (stillOpen !== shownOpen) drawJoins(shownList);
+    });
 
     append(root, h("h2", null, "Join an agent"),
       h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
