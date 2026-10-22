@@ -260,15 +260,19 @@ writes it to `<state_dir>/credential` (0600, directory 0700, never
 printed). Without a configuration it writes
 `~/.config/maity-runner/runner.toml` with the hub and the default
 `state_dir`; you add `[limits]` and a `[harness.<id>]`. A configuration
-for another hub, or a state directory that already holds a credential, is
-refused with exit 2 before anything is sent. `--config` (or
+for another hub, or a state directory that already holds a credential,
+that others can reach, or that this user cannot create, is refused with
+exit 2 before the single-use code is sent. After the exchange the
+credential is written first; if the configuration then cannot be
+written, `pair` says so and prints what to put in it. `--config` (or
 `MAITY_RUNNER_CONFIG`) names another file.
 
 `check` validates the configuration, refusing unknown keys by name, then
 the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
 Code, allow rules and hooks in the runner user's own Claude Code settings
-that every agent would inherit, and finally `GET /health` on the hub
+that every agent would inherit, a configuration file others could
+change (a warning), and finally `GET /health` on the hub
 (`--offline` skips it). A minimal configuration:
 
 ```toml

@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ from .. import hub, proc, state
 from . import config
 
 STATE_FILE = "runner.json"
+REVOKE = "revoke the runner in the dashboard"
 VERSION_TIMEOUT = 10.0
 HEALTH_TIMEOUT = 10.0
 
@@ -84,14 +86,10 @@ def cmd_pair(args: argparse.Namespace) -> int:
     else:
         state_dir = Path(config.DEFAULT_STATE_DIR).expanduser()
         created = True
-    if state.has_credential(state_dir):
-        raise Refused(
-            f"{state_dir} already holds a runner credential; revoke the runner in the dashboard "
-            "and delete that file before pairing again"
-        )
+    _preflight(state_dir, path if created else None)
     result = hub.pair_exchange(base, token, code)
-    if created:
-        state.write_private(path, starter_config(base))
+    # The credential first: once the exchange is done, the enrollment is spent, and the
+    # credential is the one thing that cannot be had again.
     stored = state.write_credential(state_dir, result.credential)
     state.save_state(
         state_dir,
@@ -109,9 +107,44 @@ def cmd_pair(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     if created:
+        try:
+            state.write_file(path, starter_config(base))
+        except OSError as exc:
+            print(
+                f"could not write {path} ({exc.strerror}); the credential is stored. Write the "
+                f"configuration by hand, starting with:\n{starter_config(base)}",
+                file=sys.stderr,
+            )
+            return 1
         print(f"wrote {path}; add [limits] and a [harness.<id>] to it", file=sys.stderr)
-    print("next: `maity runner check`, then `maity runner serve`", file=sys.stderr)
+    print("next: `maity runner check`", file=sys.stderr)
     return 0
+
+
+def _writable(path: Path) -> bool:
+    """Whether `path` can be written, or created below its nearest existing parent."""
+    existing = path if path.exists() else _existing_parent(path)
+    return existing.is_dir() and os.access(existing, os.W_OK | os.X_OK)
+
+
+def _preflight(state_dir: Path, new_config: Path | None) -> None:
+    """Everything that would make storing the result fail, checked before the code is
+    spent: the exchange is single use, and its credential exists nowhere else."""
+    if state.has_credential(state_dir):
+        raise Refused(
+            f"{state_dir} already holds a runner credential. To pair again, move that file "
+            "away first (a re-pair revokes it at the exchange); to replace the runner, "
+            f"{REVOKE}"
+        )
+    if state_dir.exists():
+        try:
+            state.check_private(state_dir, REVOKE)
+        except state.StateError as exc:
+            raise Refused(str(exc)) from None
+    if not _writable(state_dir):
+        raise Refused(f"state_dir {state_dir} cannot be created or written by this user")
+    if new_config is not None and not _writable(new_config.parent):
+        raise Refused(f"{new_config.parent} cannot be created or written by this user")
 
 
 # --- check -----------------------------------------------------------------------------------
@@ -174,11 +207,23 @@ def explain() -> str:
 
 def _private(report: Report, path: Path, what: str) -> None:
     try:
-        state.check_private(path)
+        state.check_private(path, REVOKE)
     except state.StateError as exc:
         report.error(str(exc))
     else:
         report.ok(f"{what} {path} is private")
+
+
+def _check_config_file(report: Report, path: Path) -> None:
+    """The configuration decides what agents may touch: nobody else may change it."""
+    st = path.stat()
+    if st.st_uid not in (os.getuid(), 0):
+        report.warn(f"{path} belongs to another user, who can change what this runner may do")
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        report.warn(
+            f"{path} is writable by group or others, who can change what this runner may do; "
+            f"run `chmod go-w {path}`"
+        )
 
 
 def _check_state(report: Report, cfg: config.Config) -> None:
@@ -287,6 +332,7 @@ def _check_hub(report: Report, cfg: config.Config) -> None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    config.require_tomllib()  # all of `maity runner` refuses on 3.10, --explain too
     if args.explain:
         print(explain(), end="")
         return 0
@@ -300,6 +346,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.print()
         return 1
     report.ok(f"configuration {path}")
+    _check_config_file(report, path)
     _check_state(report, cfg)
     if cfg.local is not None:
         _check_local(report, cfg.local)

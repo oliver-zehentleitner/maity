@@ -166,6 +166,35 @@ def test_stop_grace_max_stays_in_the_hub_range() -> None:
     assert any(p.startswith("limits.stop_grace_max:") for p in problems(text))
 
 
+def test_hub_url_follows_the_join_rule() -> None:
+    found = problems(minimal().replace("https://hub.example", "http://hub.example"))
+    assert any(p.startswith("hub.url: refusing plain HTTP") for p in found), found
+    assert "hub.url" not in " ".join(
+        problems(minimal().replace("https://hub.example", "http://127.0.0.1:8090") + "x = 1\n")
+    )
+
+
+def test_harness_modes_and_models() -> None:
+    assert "harness.stub.modes: name at least one mode" in problems(
+        minimal().replace("[harness.stub]\n", "[harness.stub]\nmodes = []\n")
+    )
+    assert "harness.stub.default_model: must be one of its models" in problems(
+        minimal().replace("[harness.stub]\n", '[harness.stub]\ndefault_model = "m"\n')
+    )
+
+
+def test_every_bad_repository_is_named() -> None:
+    bad = ", ".join(f'"x/{n}"' for n in range(5))
+    found = problems(minimal().replace('"github.com/oliver-zehentleitner/maity"', bad))
+    (line,) = [p for p in found if p.startswith("limits.repositories:")]
+    assert all(f"'x/{n}'" in line for n in range(5))
+
+
+def test_backend_local_is_not_judged_under_another_kind() -> None:
+    found = problems(minimal(b='\n[backend]\nkind = "ssh"\n[backend.local]\nlayout = "x"\n'))
+    assert not any(p.startswith("backend.local") for p in found), found
+
+
 def test_python_310_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
     with pytest.raises(config.ConfigError) as info:
@@ -293,6 +322,68 @@ def test_pair_refuses_plain_http_off_loopback(home: Path) -> None:
     assert cli.main(["runner", "pair", "http://hub.example/r/x", "--code", "c"]) == cli.EXIT_ERROR
 
 
+def test_pair_accepts_a_config_directory_the_operator_made(
+    home: Path, fake: fakehub.FakeHub
+) -> None:
+    directory = home / ".config" / "maity-runner"
+    directory.mkdir(parents=True)
+    directory.chmod(0o775)  # noqa: S103 - an operator's directory, no secret in it
+    assert cli.main(["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE]) == 0
+    assert mode(directory / "runner.toml") == 0o600 and mode(directory) == 0o775
+
+
+def test_pair_refuses_a_loose_state_dir_before_sending(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "runner.toml"
+    path.write_text(MINIMAL.format(url=fake.url, state_dir=tmp_path / "st"))
+    (tmp_path / "st").mkdir(mode=0o775)
+    (tmp_path / "st").chmod(0o775)  # noqa: S103 - the loose mode is the point
+    code = cli.main(
+        ["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE, "--config", str(path)]
+    )
+    assert code == cli.EXIT_USAGE
+    err = capsys.readouterr().err
+    assert "chmod 700" in err and "revoke the runner" in err and "session" not in err
+    assert not fake.pair_used
+
+
+def test_pair_refuses_a_state_dir_it_cannot_create(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub
+) -> None:
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    path = tmp_path / "runner.toml"
+    path.write_text(MINIMAL.format(url=fake.url, state_dir=locked / "st"))
+    try:
+        code = cli.main(
+            ["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE, "--config", str(path)]
+        )
+    finally:
+        locked.chmod(0o700)
+    assert code == cli.EXIT_USAGE
+    assert not fake.pair_used
+
+
+def test_a_config_that_cannot_be_written_keeps_the_credential(
+    home: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+
+    def fail(path: Path, text: str) -> Path:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(state, "write_file", fail)
+    code = cli.main(["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE])
+    assert code == cli.EXIT_ERROR
+    credential = home / ".local" / "state" / "maity-runner" / "credential"
+    assert credential.read_text() == fakehub.RUNNER_CREDENTIAL
+    err = capsys.readouterr().err
+    assert "the credential is stored" in err and f'url = "{fake.url}"' in err
+    assert fakehub.SECRET not in err
+
+
 # --- check -----------------------------------------------------------------------------------
 
 
@@ -303,6 +394,7 @@ def paired(tmp_path: Path, home: Path, fake: fakehub.FakeHub) -> Path:
         MINIMAL.format(url=fake.url, state_dir=tmp_path / "st")
         + f'\n[backend.local]\nworkspaces = "{tmp_path / "ws"}"\n'
     )
+    path.chmod(0o644)  # whatever the umask: the operator's file, writable by them only
     assert (
         cli.main(
             ["runner", "pair", pair_url(fake), "--code", fakehub.PAIR_CODE, "--config", str(path)]
@@ -395,6 +487,24 @@ def test_check_refuses_a_loose_state_dir(
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
     assert any("chmod 700" in line for line in lines(capsys))
+
+
+def test_check_warns_about_a_config_others_can_change(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_tool(bin_dir, "tmux")
+    paired.chmod(0o664)
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert any("chmod go-w" in line and line.startswith("warn") for line in lines(capsys))
+
+
+def test_explain_refuses_on_python_310(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("maity.runner.config.sys.version_info", (3, 10, 14))
+    assert cli.main(["runner", "check", "--explain"]) == cli.EXIT_ERROR
+    assert "Python 3.11" in capsys.readouterr().err
 
 
 def test_check_lists_configuration_problems(

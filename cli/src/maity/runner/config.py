@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..hub import HubError, hub_base
+
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
@@ -198,7 +200,7 @@ def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable
         if pattern is not None:
             bad = [v for v in values if not pattern.match(v)]
             if bad:
-                return f"not {what}: {', '.join(repr(v) for v in bad[:3])}"
+                return f"not {what}: {', '.join(repr(v) for v in bad)}"
         return None
 
     return check
@@ -209,7 +211,12 @@ def _one_of(*allowed: str) -> Callable[[Any], str | None]:
 
 
 def _https_url(value: Any) -> str | None:
-    return None if value.startswith(("https://", "http://")) else "expected an http(s) URL"
+    """The rule `join` and `pair` apply: HTTPS, plain HTTP only on loopback, no user info."""
+    try:
+        hub_base(value)
+    except HubError as exc:
+        return str(exc)
+    return None
 
 
 def load(path: Path) -> Config:
@@ -289,8 +296,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             cpu_quota=local_in.get("cpu_quota", str, None),
         )
         local_in.done()
-    elif local_in is not None:
-        local_in.done()
+    # [backend.local] under another kind is not read, so its keys are not judged either
     for later, slice_ in (("ssh", "R7"), ("k8s", "phase 2")):
         later_in = backend_in.table(later)
         if later_in is not None or kind == later:
@@ -368,7 +374,7 @@ def _repositories(values: Any) -> str | None:
     bad = [v for v in values if not REPOSITORY.match(normalise_repository(v))]
     if bad:
         return "expected host/owner/name or host/owner/* (no other wildcard): " + ", ".join(
-            repr(v) for v in bad[:3]
+            repr(v) for v in bad
         )
     return None
 
@@ -396,8 +402,10 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     if modes and default_mode not in modes:
         problems.append(f"{where}.default_mode: must be one of its modes")
     models = tuple(table.get("models", list, [], check=_strings()))
+    if not modes and "modes" in table.data:
+        problems.append(f"{where}.modes: name at least one mode")
     default_model = table.get("default_model", str, models[0] if models else None)
-    if models and default_model is not None and default_model not in models:
+    if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
     env_file = table.get("env_file", str, None)
     harness = Harness(

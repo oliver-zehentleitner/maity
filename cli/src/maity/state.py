@@ -94,9 +94,13 @@ def _ensure_dir(path: Path) -> None:
     os.chmod(path, 0o700)  # mkdir's mode is masked by the umask; this one is not
 
 
-def _atomic_write(path: Path, data: str) -> None:
-    """Write `data` to `path` with mode 0600, never leaving a partly written file behind."""
-    _ensure_dir(path.parent)
+def _atomic_write(path: Path, data: str, private_dir: bool = True) -> None:
+    """Write `data` to `path` with mode 0600, never leaving a partly written file behind.
+
+    `private_dir=False` accepts an existing directory as it is (a file without a secret in
+    a directory the operator made); a missing one is still created 0700."""
+    if private_dir or not path.parent.is_dir():
+        _ensure_dir(path.parent)
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp = Path(tmp_name)  # mkstemp creates it 0600
     try:
@@ -110,8 +114,9 @@ def _atomic_write(path: Path, data: str) -> None:
         raise
 
 
-def check_private(path: Path) -> None:
-    """Refuse a file or directory others could reach, the way ssh refuses a loose private key."""
+def check_private(path: Path, revoke: str = "revoke the session in the dashboard") -> None:
+    """Refuse a file or directory others could reach, the way ssh refuses a loose private key.
+    `revoke` is the way out when the file is not yours."""
     st = path.stat()
     if st.st_uid != os.getuid():
         raise StateError(f"{path} belongs to another user; refusing to use it")
@@ -120,13 +125,14 @@ def check_private(path: Path) -> None:
         fix = "700" if path.is_dir() else "600"
         raise StateError(
             f"{path} is accessible by group or others (mode {mode:04o}); "
-            f"run `chmod {fix} {path}` if it is yours, or revoke the session in the dashboard"
+            f"run `chmod {fix} {path}` if it is yours, or {revoke}"
         )
 
 
-def write_private(path: Path, text: str) -> Path:
-    """Write a new file 0600 in a 0700 directory (the runner's configuration)."""
-    _atomic_write(path, text)
+def write_file(path: Path, text: str) -> Path:
+    """Write a file 0600 that holds no secret (the runner's configuration); its directory
+    is created 0700 when missing and taken as it is otherwise."""
+    _atomic_write(path, text, private_dir=False)
     return path
 
 
