@@ -187,36 +187,41 @@ ask has no part in ending that.
 - Leave withdrawal with every `requests:answer` holder, as for any other
   request: an agent could end a decision two humans were taking.
 
-## Removing the contract arbiter resets the seat to `role:admin` and tells the project's humans
+## Removing a member resets every seat that names it to its default and tells the project's humans
 
 **Id:** 02d819b8-1d40-471a-ac93-968dd051b3b7
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner's ruling on the re-verification of the profile-deletion pull request, 2026-10-23; contract in `docs/api.md` §6.2 and §6.3
-**Revisit when:** `contract_arbiter` gains a value that names nobody, or `policy.coordinator` naming a removed member needs the same rule
+**Revisit when:** a seat gains a value that names nobody, or a new policy field names a single member
 **See:** members.md#deleting-an-agent-profile-owner-only-refused-while-in-use-unless-cascaded-a-tombstone-instead-of-a-hard-delete — 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1 — as of 2026-10-23
 
-When a removal takes out the member `policy.contract_arbiter` names, the
-same transaction sets the field to `role:admin` and emits
-`policy_changed`, addressed to the project's human owners and admins by
-member token besides `all`. It holds for every removal; the case that
-raised it is an agent profile's cascade, whose deleting owner need not
-be a member of the project.
+When a removal takes out a member that holds a seat, the same
+transaction sets the seat back to its documented default:
+`policy.contract_arbiter` and `policy.coordinator` to `role:admin`,
+`policy.coordinator_substitute` to `null`, and the arbiter of an open
+contract card to the project's arbiter. The `policy_changed` and
+`task_updated` it emits are addressed to the project's human owners and
+admins by member token as well. It holds for every removal; the case
+that raised it is an agent profile's cascade, whose deleting owner need
+not be a member of the project. A closed card keeps its arbiter as a
+record.
 
-The ruling is the contract owner's; `role:admin` as the reset value is
-the contract writer's choice, as the existing value that names no single
-member.
+The ruling is the contract owner's. `role:admin` for the arbiter, which
+has no documented default, is the contract writer's choice: the
+existing value that names no single member.
 
-**Reason:** without it the seat named a former member, and the
-project's humans learnt of it from nothing but the broadcast
-`member_updated`. Naming the arbiter is a human's policy change, so the
-humans are told rather than the hub picking someone.
+**Reason:** without it a seat named a former member, and the project's
+humans learnt of it from nothing but the broadcast `member_updated`.
+Naming the next holder is a human's change, so the humans are told
+rather than the hub picking someone.
 
 **Rejected alternatives:**
 - Leave the seat dangling: contract requests without `to` would route to
-  a member who is gone.
+  a member who is gone, and a removed coordinator would never come back
+  from its outage.
 - Hand the seat to another member automatically: the hub would make a
-  policy choice no human made.
+  choice no human made.
 - A new `null` value for "no arbiter": a new policy value for one edge
   case, when `role:admin` already exists.
