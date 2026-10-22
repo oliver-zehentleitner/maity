@@ -608,6 +608,12 @@ def scenario(run: Run, page: Page) -> None:
         if view == "agents":
             assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
+    # The create form: its preset select has long option labels.
+    page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
+    expect(page.locator("main section.view-new")).to_be_visible()
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"#/new is {width[0]} px wide at {width[1]} px"
+    run.shot(page, "phone-new")
     no_problems(run, "phone width")
 
 
