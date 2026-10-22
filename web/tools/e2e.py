@@ -134,8 +134,12 @@ class Run:
         assert wait.returncode == 0, f"maity wait exited {wait.returncode}: {out}{err}"
         return json.loads(out)
 
-    def api(self, clone: Path, method: str, path: str, body: object | None = None) -> dict:
+    def api(
+        self, clone: Path, method: str, path: str, body: object | None = None, **query: object
+    ) -> dict:
         args = ["api", method, path]
+        for key, value in query.items():
+            args[1:1] = ["--query", f"{key}={value}"]
         if body is not None:
             args[1:1] = ["--json", "-"]
         out = self.maity(clone, *args, stdin=None if body is None else json.dumps(body))
@@ -624,8 +628,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert event.get("kind") == "message", event
     assert event["payload"].get("body") == "Hello back from the owner.", event
     assert event["payload"].get("conversation_id") == agent_id, event
-    page.reload()
-    expect(page.locator("ol.messages li.msg.out").last).to_contain_text("reached a session")
+    # No event says the message reached the session; the agent's next event
+    # (its resume emits session_started) makes the open chat re-read it.
+    out_msg = page.locator("ol.messages li.msg.out").last
+    expect(out_msg).to_contain_text("not picked up yet")
+    run.maity(alpha, "resume")
+    expect(out_msg).to_contain_text("reached a session")
     no_problems(run, "chat")
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
@@ -650,11 +658,21 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
     agents.get_by_role("button", name="Clear pause", exact=True).click()
     expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
+
+    def own_pause() -> dict | None:
+        members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
+        return next(m for m in members if m["id"] == agent_id).get("paused")
+
+    assert own_pause() is None, own_pause()
     run.api(alpha, "PATCH", "/me", {"paused": {"reason": "e2e: out of quota"}})
+    mine = own_pause()
+    assert mine and mine["by"] == agent_id and mine["reason"] == "e2e: out of quota", mine
     run.api(alpha, "PATCH", "/me", {"paused": None})  # its own pause, it may lift
+    assert own_pause() is None, own_pause()
     no_problems(run, "pause")
 
     run.step("state and absence: the owner freezes the project; the agent's resume shows it")
+    cursor = run.api(alpha, "GET", "/projects/e2e-alpha/events", after="latest", wait=0)["cursor"]
     page.get_by_role("button", name="State & absence", exact=True).click()
     page.locator("#state-select").select_option("freeze")
     page.locator("#state-note").fill("e2e freeze: fixes only")
@@ -667,6 +685,9 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
+    expect(page.locator("header .absence")).to_contain_text(
+        re.compile(r"Away until Jan 2, 2030, 10:00")
+    )
     # The switcher's state dot: frozen Alpha differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.startsWith(name));
@@ -681,6 +702,13 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
     assert project["absence"]["until"].startswith("2030-01-02"), project
+    log = run.api(alpha, "GET", "/projects/e2e-alpha/events", after=cursor, wait=0)["items"]
+    change = next((e for e in log if e["kind"] == "state_changed"), None)
+    assert change and change["payload"] == {
+        "old": "build",
+        "new": "freeze",
+        "reason": "e2e: release candidate",
+    }, log
     page.get_by_role("button", name="State & absence", exact=True).click()
     page.get_by_role("button", name="I am back", exact=True).click()
     expect(page.locator("header .absence")).to_have_count(0)
