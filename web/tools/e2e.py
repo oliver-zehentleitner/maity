@@ -155,7 +155,9 @@ def stop_hub(hub: subprocess.Popen) -> None:
 
 def watch_page(run: Run, page: Page) -> None:
     def console(msg) -> None:
-        if msg.type == "error":
+        # Chromium logs every answer of 400 or more as "Failed to load
+        # resource"; those are judged by response() below, by their path.
+        if msg.type == "error" and not msg.text.startswith("Failed to load resource"):
             run.problems.append(f"console error: {msg.text}")
 
     def response(resp) -> None:
