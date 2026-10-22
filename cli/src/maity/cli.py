@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from maity import __version__, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity.runner import commands as runner_commands
+from maity.runner import config
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -795,6 +797,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(handler=cmd_api)
 
+    runner_commands.add_parser(sub, fmt)
+
     p = sub.add_parser(
         "help",
         help="print the hub's own documentation (GET /api/v1/help)",
@@ -860,7 +864,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as exc:
         _err(_explain(exc))
         return EXIT_ERROR
-    except UsageError as exc:
+    except config.ConfigError as exc:
+        for problem in exc.problems:
+            _err(problem)
+        return EXIT_ERROR
+    except (UsageError, runner_commands.Refused) as exc:
         _err(str(exc))
         return EXIT_USAGE
     except KeyboardInterrupt:

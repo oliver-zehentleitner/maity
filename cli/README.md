@@ -241,6 +241,52 @@ sends one signed request to `/api/v1<path>` and prints the JSON answer.
 Why a passthrough as well as commands:
 [`context/commands.md`](context/commands.md).
 
+## `maity runner`
+
+The runner service starts and stops agents on this machine for a hub
+([`docs/api.md`](../docs/api.md) §15). It needs Python 3.11 or newer
+(`tomllib`); on 3.10 it refuses, and every other command keeps working. It
+never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
+own configuration.
+
+```sh
+maity runner pair https://<hub>/r/<token> --code K3PF-9QZD-1MWA   # or --code-file - (stdin)
+maity runner check                                               # exits 1 on any error
+maity runner check --explain                                     # every key's default
+```
+
+`pair` exchanges the single-use code for the runner's credential and
+writes it to `<state_dir>/credential` (0600, directory 0700, never
+printed). Without a configuration it writes
+`~/.config/maity-runner/runner.toml` with the hub and the default
+`state_dir`; you add `[limits]` and a `[harness.<id>]`. A configuration
+for another hub, or a state directory that already holds a credential, is
+refused with exit 2 before anything is sent. `--config` (or
+`MAITY_RUNNER_CONFIG`) names another file.
+
+`check` validates the configuration, refusing unknown keys by name, then
+the state directory and credential modes, tmux and the workspaces, each
+harness binary and its version, the OS sandbox prerequisites for Claude
+Code, allow rules and hooks in the runner user's own Claude Code settings
+that every agent would inherit, and finally `GET /health` on the hub
+(`--offline` skips it). A minimal configuration:
+
+```toml
+[hub]
+url = "https://maity.example.org"
+
+[limits]
+projects = ["maity"]
+repositories = ["github.com/oliver-zehentleitner/maity"]   # or "github.com/oliver-zehentleitner/*"
+
+[harness.claude-code]
+modes = ["interactive", "supervised"]
+```
+
+Repository entries and the project's repository URL are compared after
+the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
+host lowercased. `host/owner/*` is the only wildcard.
+
 ## Exit codes
 
 | Code | Meaning |

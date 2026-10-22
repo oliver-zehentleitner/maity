@@ -23,6 +23,10 @@ CREDENTIAL = f"mty1.{CREDENTIAL_ID}.{SECRET}"
 TOKEN = "9fK2tok"
 CODE = "Q7MD-3XPL-8ZWE"
 VERIFIER = hashlib.sha256(SECRET.encode()).digest()
+RUNNER_CREDENTIAL_ID = "rcrd-0002-0001"
+RUNNER_CREDENTIAL = f"mty1.{RUNNER_CREDENTIAL_ID}.{SECRET}"
+PAIR_TOKEN = "Xb7pairtok"
+PAIR_CODE = "K3PF-9QZD-1MWA"
 
 
 def canonical_query(raw_query: str) -> str:
@@ -64,6 +68,7 @@ class FakeHub:
     events: list[dict[str, Any]] = field(default_factory=list)
     skew_once: bool = False
     join_used: bool = False
+    pair_used: bool = False
     routes: dict[tuple[str, str], Callable[[Seen], tuple[int, Any]]] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
 
@@ -142,6 +147,25 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 return None
             if path == "/api/v1/help":
                 return self._send(200, "# Maity help\n")
+            if path == "/api/v1/health":
+                return self._send(200, {"status": "ok"})
+            if path == f"/api/v1/runners/pair/{PAIR_TOKEN}" and self.command == "POST":
+                if hub.pair_used:
+                    return self._error(404, "not_found")
+                if seen.json().get("code") != PAIR_CODE:
+                    return self._error(403, "code_invalid")
+                hub.pair_used = True
+                return self._send(
+                    201,
+                    RUNNER_CREDENTIAL,
+                    {
+                        "Maity-Credential-Id": RUNNER_CREDENTIAL_ID,
+                        "Maity-Runner-Id": "rnr-0002",
+                        "Maity-Attached": "maity, sample",
+                        "Maity-Hub": hub.url,
+                        "Maity-Signing": "required",
+                    },
+                )
             if path == f"/api/v1/join/{TOKEN}" and self.command == "POST":
                 if hub.join_used:
                     return self._error(404, "not_found")
