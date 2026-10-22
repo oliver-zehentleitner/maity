@@ -16,3 +16,7 @@
   read the operator's terminal, keep alive, ignore the operator's forwarding and local
   commands, and need a ControlPath directory the runner now creates; a remote home that is
   not a plain path refuses the host, and the attach hint is quoted word by word.
+- cli runner (ssh): `check` counts the 17 bytes ssh adds to the ControlPath while it binds
+  the connection socket, so a `state_dir` too long for it is reported instead of every host
+  showing as unreachable; a host's rate-limited placement keeps its slot on that host and
+  its limit file is read there.

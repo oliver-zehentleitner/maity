@@ -386,11 +386,14 @@ def _check_ssh(report: Report, cfg: config.Config, only: str | None) -> None:
         report.error(f"identity {cfg.ssh.identity} does not exist")
     else:
         _private(report, Path(cfg.ssh.identity).expanduser(), "identity")
-    socket = cfg.state_dir / "ssh" / ("0" * 40)  # ssh's %C is 40 hex characters
-    if len(str(socket).encode()) >= targets.UNIX_PATH_MAX:
+    # ssh's %C is 40 hex characters, and ssh binds the master's socket first under a
+    # temporary name: the path plus `.` and 16 random characters must fit as well.
+    socket = cfg.state_dir / "ssh" / ("0" * 40)
+    if len(str(socket).encode()) + targets.CONTROL_SUFFIX >= targets.UNIX_PATH_MAX:
         report.error(
             f"state_dir {cfg.state_dir} is too long for ssh's connection sockets "
-            f"(<state_dir>/ssh/<40 hex> must stay under {targets.UNIX_PATH_MAX} bytes); "
+            f"(<state_dir>/ssh/<40 hex> plus ssh's {targets.CONTROL_SUFFIX}-byte temporary "
+            f"suffix must stay under {targets.UNIX_PATH_MAX} bytes); "
             "choose a shorter hub.state_dir"
         )
     hosts = [t for t in targets.ssh_hosts(cfg) if only is None or t.name == only]

@@ -487,6 +487,54 @@ def test_check_refuses_a_state_dir_too_long_for_sshs_sockets(
     assert "too long for ssh's connection sockets" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(("extra", "refused"), [(0, False), (1, True)])
+def test_check_counts_sshs_temporary_suffix_at_the_edge(
+    tmp_path: Path, fake_ssh: Path, capsys: pytest.CaptureFixture[str], extra: int, refused: bool
+) -> None:
+    """The longest state_dir that still works: <state_dir>/ssh/<40 hex> plus 17 bytes is
+    107, one under sun_path's 108 with its NUL; one byte more and ssh cannot bind."""
+    import shutil
+    import tempfile
+
+    short = Path(tempfile.mkdtemp(prefix="m", dir="/tmp"))  # pytest's own paths are too long
+    try:
+        fixed = len("/ssh/") + 40 + targets.CONTROL_SUFFIX
+        room = targets.UNIX_PATH_MAX - 1 - fixed - len(str(short)) - 1  # 1: the separator
+        deep = short / ("d" * (room + extra))
+        path = tmp_path / "runner.toml"
+        path.write_text(CONFIG.format(root=tmp_path).replace(f"{tmp_path}/st", str(deep)))
+        deep.mkdir(mode=0o700)
+        cli.main(["runner", "check", "--offline", "--config", str(path)])
+        assert ("too long for ssh's connection sockets" in capsys.readouterr().out) is refused
+    finally:
+        shutil.rmtree(short)
+
+
+def test_a_limit_on_a_host_is_read_there_and_keeps_its_slot_there(
+    tmp_path: Path, fake_ssh: Path
+) -> None:
+    from maity.runner import adapters, loop
+
+    sup, backends, reports, clock, _ = remote_world(tmp_path, fake_ssh)
+    remote_clone(sup.cfg, "build-1", 3)
+    remote_clone(sup.cfg, "build-1", 4)
+    sup.update([placement(3, target="build-1")])
+    settle(sup)
+    target = sup.targets["build-1"]
+    assert target.agent_files is not None
+    limit = target.agent_files / "agents" / "plc-0003" / adapters.LIMIT_FILE
+    limit.parent.mkdir(parents=True, exist_ok=True)
+    limit.write_text('{"exit_code": 75}')
+    backends["build-1"].exit("maity_maity_agent-3", loop.EXIT_RATE_LIMITED)
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.exit_code, rec.target) == ("rate_limited", 75, "build-1")
+    assert "dd if=" in fake_ssh.read_text()  # read on the host, never through a link
+    sup.update([placement(3, target="build-1"), placement(4, target="build-1")])
+    settle(sup)
+    assert sup.records["plc-0004"].reason == "capacity"  # build-1 takes one agent
+
+
 def test_a_hosts_deny_lists_name_the_hosts_paths(tmp_path: Path, fake_ssh: Path) -> None:
     """Remote home secrets, the remote ~/.maity-runner and the other clones' credentials
     listed on the host; nothing of the runner's own machine."""

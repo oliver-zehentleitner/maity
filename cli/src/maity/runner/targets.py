@@ -24,6 +24,7 @@ from .tmux import Tmux, attach_words
 LOGS = "logs"
 AGENT_FILES = ".maity-runner"  # under the remote user's home on an ssh host
 UNIX_PATH_MAX = 108  # sun_path, with its terminating NUL: ssh's ControlPath must fit
+CONTROL_SUFFIX = 17  # `.` + 16 random characters: ssh binds the master's socket under this first
 SANDBOX_TOOLS = ("bwrap", "socat")
 # Each argument with where the host's PATH finds it (empty when nowhere); names are data.
 WHICH = 'for b; do printf "%s\\t%s\\n" "$b" "$(command -v -- "$b")"; done'
