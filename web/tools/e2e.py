@@ -745,6 +745,7 @@ def scenario(run: Run, page: Page) -> None:
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
+    attachments_step(run, page, agent_id)
     members_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -814,6 +815,32 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def attachments_step(run: Run, page: Page, agent_id: str) -> None:
+    """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    page.locator("#chat-files").set_input_files(
+        files=[{"name": "e2e-shot.png", "mimeType": "image/png", "buffer": tiny_png(32, 32, (40, 160, 90))}]
+    )
+    pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
+    expect(page.locator(".attach").get_by_text(re.compile(r"e2e-shot\.png|Not attached"))).to_be_visible()
+    if pending.count() == 0:
+        # Only a hub without attachments is skipped, and the composer has to say so.
+        run.step("attachments: this hub keeps no files yet; the composer says the upload failed")
+        expect(page.locator(".attach .send-status")).to_contain_text("Not attached")
+        run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/e2e-alpha/attachments\?\S* answered (404|405)$", p)]
+        no_problems(run, "attachments")
+        return
+    run.step("attachments: the owner sends an image to the agent; it shows inline from the hub")
+    page.locator("#chat-text").fill("a picture")
+    page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    img = page.locator("ol.messages li.msg.out img.attach-image").last
+    expect(img).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/attachments/att-[A-Za-z0-9_-]+/content$"))
+    page.wait_for_function("() => { const i = [...document.querySelectorAll('img.attach-image')].pop(); return i && i.complete; }")
+    assert page.evaluate("() => [...document.querySelectorAll('img.attach-image')].pop().naturalWidth") > 0
+    run.a11y(page, "chat with an attachment")
+    no_problems(run, "attachments")
 
 
 def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:

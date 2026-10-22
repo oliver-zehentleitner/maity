@@ -251,6 +251,29 @@ Inside a project, in the order of their importance; see
      window again every 30 s, and a removal there shows. When the access
      has ended, the page says so. The landing without projects names these
      chats too.
+   **Attachments** (`docs/api.md` §8.7, `js/attachments.js`) go with a
+   message in a direct chat, a group chat and a project message.
+   - **Attaching.** **Attach files** uploads each chosen file at once as
+     its raw body (`POST …/attachments?name=`), an image with the type
+     its bytes say. The file shows as pending with **Remove** until the
+     message is sent and names it. A message may be only files.
+   - **Refused before sending:** over 10 MiB, or more than ten in one
+     message. The hub's own refusals (the 20-file or 100 MiB pending
+     cap, the project's quota, an image's size in pixels, a closed
+     project) are said in words.
+   - **Showing.** A message's image is shown inline from the hub's own
+     path (`…/attachments/{id}/content`). Every other file is its name,
+     size and type with a download link (`?download=1`): no preview, no
+     viewer, nothing rendered. `h()` allows only that path as a link or
+     an image source.
+   - **Deleting.** The human party of a direct chat, or a human in a
+     group chat, deletes a file of it for everyone; the message stays.
+     An `attachment_deleted` says it in place, and a file that no longer
+     loads is said removed.
+   - **Admins.** In **Project settings** an owner or admin sees the
+     pending uploads of everyone and deletes them. Another member's shows
+     only its size, uploader and expiry. A closed project offers no new
+     file; the ones there stay readable.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
@@ -759,6 +782,7 @@ web/
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
+├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/observe.js     reading along in a project one is not in

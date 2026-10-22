@@ -15,9 +15,9 @@ window.Maity = window.Maity || {};
           // Handlers are functions; a string here would be inline script.
           if (typeof value !== "function") throw new TypeError("h(): " + key + " must be a function");
           el.addEventListener(key.slice(2), value);
-        } else if (key === "href" && !isLocalRef(value) && !safeUrl(value)) {
+        } else if (key === "href" && !isLocalRef(value) && !safeUrl(value) && !isOwnFile(value)) {
           throw new TypeError("h(): href is neither a route nor an https URL");
-        } else if (key === "src" && !isLocalRef(value) && !isOwnImage(value)) {
+        } else if (key === "src" && !isLocalRef(value) && !isOwnImage(value) && !isOwnFile(value)) {
           // An image never comes from another origin, not even over https.
           throw new TypeError("h(): src is neither a local file nor the hub's own image");
         } else if (key === "class") {
@@ -66,6 +66,15 @@ window.Maity = window.Maity || {};
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     // Object URLs exist only for an upload in fixture mode, a page opened from file://.
+    return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
+  }
+
+  // An attachment's bytes on the hub's own origin (docs/api.md §8.7), built
+  // by api.js from the project and the attachment id, never from data; in
+  // fixture mode an object URL of a file chosen in this tab.
+  function isOwnFile(value) {
+    if (typeof value !== "string") return false;
+    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/attachments\/att-[A-Za-z0-9_-]{1,64}\/content(\?download=1)?$/.test(value)) return true;
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
 

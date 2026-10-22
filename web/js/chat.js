@@ -199,7 +199,8 @@ window.Maity = window.Maity || {};
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
-      h("div", { class: "msg-body" }, body, meta,
+      h("div", { class: "msg-body" }, body,
+        M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null,
         o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Remove this message for everyone", onclick: () => o.onRedact(msg) }, "Remove") : null));
   }
@@ -341,7 +342,8 @@ window.Maity = window.Maity || {};
     const pending = new Map();
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
-    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: ctx.canAdmin ? redactDirect : null });
+    // The human party deletes a file of the chat (§8.7), whoever sent it.
+    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true });
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map(draw)
         : h("li", { class: "empty" }, h("p", null, "No messages yet."),
@@ -411,6 +413,8 @@ window.Maity = window.Maity || {};
       // A message of this chat removed (§8.5): its text goes at once.
       events.filter((e) => e.kind === "event_redacted" && e.payload)
         .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
+      events.filter((e) => e.kind === "attachment_deleted" && e.payload)
+        .forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
       if (!events.some(mentions)) return;
       try {
@@ -484,15 +488,20 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const button = h("button", { type: "submit" }, "Send");
 
+    // Files go with the message (§8.7): uploaded when chosen, named when sent.
+    const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
     async function send(e) {
       e.preventDefault();
       const body = text.value.trim();
-      if (!body) { text.focus(); return; }
+      const files = files0 ? files0.ids() : [];
+      if (!body && !files.length) { text.focus(); return; }
+      if (files0 && files0.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
       button.disabled = true;
       status.busy("Sending…");
       try {
-        const msg = await M.api.post(path, { body });
+        const msg = await M.api.post(path, files.length ? { body, attachments: files } : { body });
         add(msg, true);
+        if (files0) files0.clear();
         text.value = "";
         drafts.delete(key);
         hintMention();
@@ -522,7 +531,7 @@ window.Maity = window.Maity || {};
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
-        text, mentionHint, button, status.el));
+        text, mentionHint, files0 ? files0.el : null, button, status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

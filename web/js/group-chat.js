@@ -166,7 +166,8 @@ window.Maity = window.Maity || {};
       parts.drafts.set(key, text.value);
       text.focus();
     }
-    const opts = { group: true, onRedact: mayRedact ? redact : null };
+    // A human in the chat deletes a file of it, as it removes a message (§8.7).
+    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     let draw = null;
     // Drawn as one timeline (days, groups, the unread line); the earlier part
@@ -229,6 +230,7 @@ window.Maity = window.Maity || {};
       if (events.some((e) => /^conversation_/.test(e.kind) && ((e.subject && e.subject.id === id) || (e.payload && e.payload.id === id)))) {
         refreshView();
       }
+      events.filter((e) => e.kind === "attachment_deleted" && e.payload).forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
       const removedHere = events.filter((e) => e.kind === "event_redacted" && e.payload && all.some((m) => m.seq === e.payload.seq));
       if (removedHere.length) {
         removedHere.forEach((e) => {
@@ -353,14 +355,18 @@ window.Maity = window.Maity || {};
       });
       hintMention();
       const button = h("button", { type: "submit" }, "Send");
+      const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
       const sendIt = async (e) => {
         e.preventDefault();
         const body = text.value.trim();
-        if (!body) { text.focus(); return; }
+        const ids = files ? files.ids() : [];
+        if (!body && !ids.length) { text.focus(); return; }
+        if (files && files.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
         button.disabled = true;
         status.busy("Sending…");
         try {
-          add(await M.api.post(path, { body }));
+          add(await M.api.post(path, ids.length ? { body, attachments: ids } : { body }));
+          if (files) files.clear();
           text.value = "";
           parts.drafts.delete(key);
           hintMention();
@@ -375,7 +381,7 @@ window.Maity = window.Maity || {};
       text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendIt(e); });
       compose = h("form", { class: "compose", onsubmit: sendIt },
         h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends; @handle reaches someone in the chat)"),
-        text, hint, button);
+        text, hint, files ? files.el : null, button);
     }
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());

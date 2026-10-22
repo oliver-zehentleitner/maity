@@ -51,6 +51,8 @@ window.Maity = window.Maity || {};
     if (args && args[0]) body.value = args[0] + " ";
     const status = M.statusLine();
     const send = h("button", { type: "submit" }, "Send");
+    // Files go with the message (§8.7): a message with files may have no text.
+    const files = M.attachments ? M.attachments.picker(ctx, "message") : null;
     const result = h("div", { class: "message-result", "aria-live": "polite" });
 
     const form = h("form", {
@@ -59,12 +61,15 @@ window.Maity = window.Maity || {};
       onsubmit: async (e) => {
         e.preventDefault();
         const text = body.value.trim();
-        if (!text) { status.fail("Not sent: ", { message: "the message is empty" }); body.focus(); return; }
+        const ids = files ? files.ids() : [];
+        if (!text && !ids.length) { status.fail("Not sent: ", { message: "the message is empty" }); body.focus(); return; }
+        if (files && files.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
         if ([...text].length > BODY_CHARS) { status.fail("Not sent: ", { message: "the message is longer than 16,384 characters" }); body.focus(); return; }
         // What is sent is what the confirmation speaks of: the fields are
         // held while it is on its way, so nothing typed meanwhile is lost.
         const message = { kind: "message", type: type.value, to: to.value, body: text };
         if (card.value) message.task_id = card.value;
+        if (ids.length) message.attachments = ids;
         const fields = [to, type, card, body, send];
         fields.forEach((f) => { f.disabled = true; });
         status.busy("Sending…");
@@ -72,6 +77,7 @@ window.Maity = window.Maity || {};
           const event = await M.api.post(ctx.base + "/events", message);
           const mentioned = ((event.payload && event.payload.mentions) || []).map((x) => ctx.nameOf(x.member_id));
           if (body.value.trim() === text) body.value = "";
+          if (files) files.clear();
           status.done();
           const whom = message.to === "all" ? "everyone" : message.to.startsWith("role:") ? "every " + message.to.slice(5) : ctx.nameOf(message.to);
           append(clear(result), h("p", { class: "ok" }, "Sent to " + whom
@@ -92,6 +98,7 @@ window.Maity = window.Maity || {};
     M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id),
     h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "
       + "at most 10 members per message. An unsent message is not kept when you leave this view."),
+    files ? files.el : null,
     h("div", { class: "actions" }, send),
     status.el);
 

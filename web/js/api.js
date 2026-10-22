@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   const uploaded = {};  // "<slug>/<kind>" -> object URL
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
+  const attachmentBlobs = {};  // "<slug>/<attachment id>" -> object URL of the file uploaded in this tab
   const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
@@ -262,6 +263,46 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
+  const ATTACHMENT_MAX = 10 * 1024 * 1024;
+  function attachmentsOf(slug) {
+    const all = fixtures();
+    if (!all[slug + "/attachments.json"]) all[slug + "/attachments.json"] = { items: [] };
+    return all[slug + "/attachments.json"].items;
+  }
+  function attachmentOf(slug, id, path) {
+    const a = attachmentsOf(slug).find((x) => x.id === id);
+    if (!a) fail(404, "not_found", "Not found", path);
+    return a;
+  }
+  // Another member's pending upload: its size and uploader, nothing that says what it is.
+  const hiddenUpload = (a) => ({ id: a.id, uploaded_by: a.uploaded_by, size: a.size, uploaded_at: a.uploaded_at, expires_at: a.expires_at,
+    name: null, type: null, kind: null, sha256: null, width: null, height: null, message_seq: null });
+  // The ids a message names, each a pending upload of the poster; bound to it.
+  function bindAttachments(slug, ids, seq, path) {
+    if (!ids || !ids.length) return [];
+    if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
+    if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
+    const list = attachmentsOf(slug);
+    const bad = {};
+    ids.forEach((id) => {
+      const a = list.find((x) => x.id === id && x.uploaded_by === me().member.id && !x.deleted_at);
+      if (!a) bad[id] = "unknown";
+      else if (a.message_seq !== null) bad[id] = "already_attached";
+    });
+    if (Object.keys(bad).length) fail(400, "invalid", "attachments", path, { fields: { attachments: bad } });
+    return ids.map((id) => {
+      const a = list.find((x) => x.id === id);
+      a.message_seq = seq;
+      return { id: a.id, name: a.name, size: a.size, type: a.type, kind: a.kind, width: a.width, height: a.height };
+    });
+  }
+  function messageOfSeq(slug, seq) {
+    const g = Object.values(groupChats(slug)).find((c) => c.items.some((x) => x.seq === seq));
+    if (g) return { group: g };
+    const d = Object.entries(fixtures()[slug + "/conversations.json"] || {}).find(([, c]) => c.items.some((x) => x.seq === seq));
+    return d ? { direct: d[0] } : null;
+  }
   // A message item as §9 shows it (#206): redacted and redaction always there.
   const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
   // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
@@ -623,7 +664,8 @@ window.Maity = window.Maity || {};
       const errors = {};
       if (body.kind !== "message") errors.kind = "unknown";
       if (!["interface_change", "blocker", "go_request", "review_result", "handover", "notice", "chat"].includes(body.type)) errors.type = "unknown";
-      if (!body.body || !String(body.body).trim()) errors.body = "missing";
+      // A message with attachments may have an empty body (§8.7).
+      if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) errors.body = "missing";
       if ("mentions" in body) errors.mentions = "read_only";
       const members = file(m[1], "members.json", path).items;
       const roles = ["owner", "admin", "reviewer", "member", "proxy"];
@@ -643,8 +685,9 @@ window.Maity = window.Maity || {};
         mentions.push({ member_id: hits[0].id, handle: x[2], field: "body", offset: Array.from(text.slice(0, at)).length, length: x[2].length + 1 });
       }
       if (new Set(mentions.map((x) => x.member_id)).size > 10 || mentions.length > 50) fail(400, "invalid", "too many mentions", path, { fields: { body: "too_many_mentions" } });
+      const files = bindAttachments(m[1], body.attachments, 9000, path);
       return { seq: 9000, kind: "message", at: nowIso(), actor: { member_id: me().member.id },
-        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions } };
+        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
     }],
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path, query) => {
       const keep = statusFilter(query, "open");
@@ -1027,6 +1070,73 @@ window.Maity = window.Maity || {};
       }
       return j;
     }],
+    // §8.7 attachments: a raw upload, pending until a message names it.
+    ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const name = query.get("name");
+      if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
+      if (body.size > ATTACHMENT_MAX) fail(413, "payload_too_large", "larger than 10 MiB", path);
+      const list = attachmentsOf(m[1]);
+      const mine = list.filter((a) => a.uploaded_by === me().member.id && a.message_seq === null && !a.deleted_at);
+      if (mine.length >= 20 || mine.reduce((n, a) => n + a.size, 0) + body.size > 100 * 1024 * 1024) {
+        fail(409, "attachment_quota", "too many pending uploads", path, { scope: "pending" });
+      }
+      const declared = String(body.type || "").toLowerCase().split(";")[0].trim().replace("image/jpg", "image/jpeg");
+      const image = ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(declared);
+      const at = nowIso();
+      const att = {
+        id: "att-" + String(list.length + 1).padStart(4, "0"),
+        name: image && declared === "image/gif" ? name.replace(/\.gif$/i, "") + ".png" : name,
+        size: body.size, type: image ? (declared === "image/gif" ? "image/png" : declared) : (/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(declared) ? declared : "application/octet-stream"),
+        kind: image ? "image" : "file", sha256: "fixture", width: image ? 640 : null, height: image ? 480 : null,
+        uploaded_by: me().member.id, uploaded_at: at, expires_at: new Date(Date.now() + 86400000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        message_seq: null, deleted_at: null, deleted_by: null, deleted_reason: null,
+      };
+      list.push(att);
+      try {
+        if (window.URL && URL.createObjectURL && body.blob) attachmentBlobs[m[1] + "/" + att.id] = URL.createObjectURL(body.blob);
+      } catch (ignored) {
+        // Not a Blob (a test's stand-in): the file has no URL in this tab.
+      }
+      return att;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      const pending = attachmentsOf(m[1]).filter((a) => a.message_seq === null && !a.deleted_at
+        && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
+      return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/attachments\/(att-[^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
+    ["DELETE", /^\/projects\/([^/]+)\/attachments\/(att-[^/]+)$/, (m, body, path) => {
+      const a = attachmentOf(m[1], m[2], path);
+      const meId = me().member.id;
+      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      if (a.deleted_at) return Object.assign({}, a);
+      if (a.message_seq === null) {
+        if (a.uploaded_by !== meId && !admin) fail(404, "not_found", "Not found", path);
+        const list = attachmentsOf(m[1]);
+        list.splice(list.indexOf(a), 1);
+        return a.uploaded_by === meId ? Object.assign({}, a) : hiddenUpload(a);
+      }
+      // Of a message: its uploader; in a chat a human in it now; in a project message an admin.
+      const where = messageOfSeq(m[1], a.message_seq);
+      let allowed = a.uploaded_by === meId;
+      if (!allowed && where && where.group) {
+        const item = groupItem(m[1], where.group, path);
+        if (!item) fail(404, "not_found", "Not found", path);
+        if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
+        allowed = true;
+      } else if (!allowed && where && where.direct) {
+        const agent = file(m[1], "members.json", path).items.find((x) => x.id === where.direct);
+        allowed = !!agent && agent.owner_id === meId;
+      } else if (!allowed) {
+        allowed = admin;
+      }
+      if (!allowed) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+      Object.assign(a, { deleted_at: nowIso(), deleted_by: meId, deleted_reason: "deleted" });
+      delete attachmentBlobs[m[1] + "/" + a.id];
+      return Object.assign({}, a);
+    }],
     // §9.3: the direct conversations and the group chats, newest first; with
     // observed=true also the group chats read along as an agent's owner.
     ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
@@ -1170,7 +1280,9 @@ window.Maity = window.Maity || {};
       // One sequence for the project's messages, as the event log has it.
       const last = Math.max(5000, ...Object.values(groupChats(m[1])).flatMap((x) => x.items.map((y) => y.seq)),
         ...Object.values(file(m[1], "conversations.json", path)).flatMap((x) => x.items.map((y) => y.seq)));
-      const msg = { id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2], from: me().member.id, to: m[2], body: body.body, sent_at: nowIso(), mentions: [] };
+      if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
+      const msg = { id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2], from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), mentions: [],
+        attachments: bindAttachments(m[1], body.attachments, last + 1, path) };
       c.items.push(msg);
       c.read[me().member.id] = msg.seq;
       return msg;
@@ -1191,7 +1303,12 @@ window.Maity = window.Maity || {};
       if (body.expect !== undefined && !(chat && chat.view.closed_at)) fail(400, "invalid", "not a closed group chat's message", path, { fields: { expect: "mismatch" } });
       if (!msg) fail(404, "not_found", "Not found", path);
       if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
-      const stamp = (extra) => Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: Object.assign({ at: nowIso(), by: meId, reason: body.reason }, extra) });
+      const stamp = (extra) => {
+        // A redacted message takes its files with it (§8.7, deleted_reason redacted).
+        attachmentsOf(m[1]).filter((a) => a.message_seq === seq && !a.deleted_at)
+          .forEach((a) => { Object.assign(a, { deleted_at: nowIso(), deleted_by: meId, deleted_reason: "redacted" }); delete attachmentBlobs[m[1] + "/" + a.id]; });
+        return Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: Object.assign({ at: nowIso(), by: meId, reason: body.reason }, extra) });
+      };
       const event = () => ({ seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: meId, at: nowIso() } });
       if (chat) {
         const item = groupItem(m[1], chat, path);
@@ -1228,9 +1345,11 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
+      if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],
-        from: me().member.id, to: m[2], body: body.body, sent_at: nowIso(), delivered_at: null,
+        from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), delivered_at: null,
+        attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));
       return msg;
@@ -1356,6 +1475,14 @@ window.Maity = window.Maity || {};
     post: (path, body) => request("POST", path, body || {}),
     // PUT of an image as its raw bytes; type is the sniffed Content-Type.
     putImage: (path, blob, type) => request("PUT", path, blob, type),
+    // POST of a file as its raw bytes (§8.7); type is its Content-Type.
+    postRaw: (path, blob, type) => request("POST", path, blob, type),
+    // The URL of an attachment's bytes (§8.7): the hub's own path, or in
+    // fixture mode the object URL of the file chosen in this tab.
+    attachmentUrl: (slug, id, download) => {
+      if (source === "fixtures") return attachmentBlobs[slug + "/" + id] || null;
+      return API_BASE + "/projects/" + encodeURIComponent(slug) + "/attachments/" + encodeURIComponent(id) + "/content" + (download ? "?download=1" : "");
+    },
     // The URL of a project's logo or banner for an <img>, or null when the
     // project view says there is none: the hub's own path, versioned by the
     // ETag; in fixture mode the image next to the project's JSON, or an upload.
