@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -513,27 +513,33 @@ limit the hub states, not one it closes. What it does instead:
   a mail the agent could delete. Only a session that existed before
   that sign-in can mark it read; the obtained session and every session
   created after it cannot.
-- **A fresh session cannot lock the human out.** A session younger
-  than 1 hour cannot end the human's older sessions (§2.6.5), so a
-  session obtained through the mailbox cannot end the sessions that
-  show the alert before the human has seen it.
+- **A session the human has not confirmed cannot lock the human
+  out.** A session in good standing — signed in by password, or its
+  own sign-in alert marked read by the human (§2.6.5) — may end any
+  session of the human, a newer one included. A session not in good
+  standing never ends one that is in good standing, and while it is
+  younger than 1 hour it ends no older session at all. So a session
+  obtained through the mailbox cannot end the sessions that show its
+  alert, and a human who signs in again with the password can always
+  end it.
 - **The device code needs a human at a signed-in screen.** Its approval
   uses number matching and shows what the hub itself observed
   (§2.6.2); an agent without a human session cannot approve one.
 - **A new address needs the password.** Changing the verified address,
   which would move the sign-in path to another mailbox, needs the
   account password in the same request — or, for a human without a
-  password, the approval of a session that is at least 24 hours old —
+  password, the approval of a session in good standing that is at
+  least 24 hours old —
   and tells the old address (§2.6.3). A session obtained through the
   mailbox, or approved on an unlocked dashboard, therefore cannot move
   the sign-in path to a mailbox of its own: for a human with a
   password not at all. For a human without one the guard is an age
-  gate: the change goes on only when a session at least 24 hours old
-  approves it, so a session obtained a moment ago cannot do it, and
-  one that wants to approve its own change must stay signed in for a
-  day — during which it is listed in Profile → Sessions with an unread
-  `security` item in the bell, and, if it came from a mail sign-in,
-  shown as a banner in the human's other sessions (§2.6.5).
+  gate plus good standing: the change goes on only when a session at
+  least 24 hours old approves it, and only one in good standing — whose
+  own sign-in the human confirmed from an earlier session (§2.6.5). A
+  session obtained a moment ago cannot do it, and one that waits a day
+  still cannot while its alert is unread; nor can it reject or replace
+  a change the human filed.
 
 Additional rules that are not scopes:
 
@@ -812,14 +818,20 @@ definition.
   `202` with `email.address_change: {id, address, requested_at,
   session_id}` — `id` an immutable `adc-<random>` of this one change,
   the address `null` for a removal — shown with "Approve" and "Reject"
-  in every session of the human that is at least 24 hours old. Both
-  calls name what they act on: `POST
-  /me/notification-settings/email/address-change/approve` `{id,
-  address}` from such a session lets it go on (from a younger one it is
-  `forbidden` with `details.reason: session_too_new`);
-  `POST …/address-change/reject` `{id, address}` (any session of the human)
-  drops it. A held change exists once per human: a newer `PATCH` of the
-  address replaces it atomically with a new `id`, and an approval or
+  in every session of the human that may act on it. Both calls name
+  what they act on and need a session **in good standing** (§2.6.5):
+  `POST /me/notification-settings/email/address-change/approve` `{id,
+  address}` from a session in good standing that is at least 24 hours
+  old lets it go on (younger: `forbidden` with `details.reason:
+  session_too_new`); `POST …/address-change/reject` `{id, address}` from
+  a session in good standing drops it. A session not in good standing
+  can neither approve nor reject a held change, nor replace it with a
+  `PATCH` of its own: each is `forbidden` with `details.reason:
+  not_in_good_standing`; it may file a change only while none is held.
+  A `PATCH` that is itself the approval (from a session at least 24
+  hours old) also needs good standing. A held change exists once per
+  human: a newer `PATCH` of the address from a session in good standing
+  replaces it atomically with a new `id`, and an approval or
   rejection naming the old `id`, or an `address` that is not the held
   change's, is `conflict` (§1.3) and changes nothing — so a session
   that showed address A can never approve an address B that a younger
@@ -986,27 +998,41 @@ and is never affected by mail limits; the password is not either.
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
 
-**A young session cannot end older ones.** A session younger than 1
-hour cannot end any session of the human that is older than itself:
-`POST /auth/sessions/end-others` from it, and `DELETE
-/auth/sessions/{id}` on an older session, are `forbidden` with
-`details.reason: session_too_new` and end nothing. It may end itself
-(a logout) and sessions younger than itself. So a session obtained
-through a mailbox or a stolen device code cannot end the sessions that
-show the alert of its sign-in before the human has had an hour to see
-it. A password change (§2.1) still ends every other session, since it
-needs the password.
+**Good standing.** A session is **in good standing** when it was
+signed in by password, or when its own `session_created` item has been
+marked read by an allowed session through `ids` (below) — never by
+`up_to`, by age or by the record's expiry. The session list shows it
+(`good_standing`). Good standing is what lets a session end others,
+mark sign-in alerts read and act on a held address change (§2.6.3).
+
+**Who may end which session.**
+
+- A session **in good standing** may end any session of the human, at
+  any age, newer ones included — through `DELETE /auth/sessions/{id}`,
+  `end-others` or the banner's "End this session".
+- A session **not in good standing** never ends a session that is in
+  good standing (`forbidden`, `details.reason: not_in_good_standing`;
+  `end-others` from it ends only the other sessions not in good
+  standing). While it is younger than 1 hour it ends no session older
+  than itself either (`forbidden`, `details.reason: session_too_new`).
+  It may always end itself (a logout).
+
+So a session obtained through a mailbox or a stolen device code cannot
+end the sessions that show the alert of its sign-in, at any age, and a
+human who signs in again with the password gets a session in good
+standing that ends it at once. A password change (§2.1) still ends
+every other session, since it needs the password.
 
 ```json
 { "items": [
   { "id": "hss-41c0", "current": true, "method": "password",
     "created_at": "2026-10-22T08:02:11Z", "last_seen_at": "2026-10-22T14:01:30Z",
     "expires_at": "2026-11-05T14:01:30Z", "browser": "Firefox", "os": "Linux",
-    "ip": "198.51.100.7", "approved_by": null },
+    "ip": "198.51.100.7", "approved_by": null, "good_standing": true },
   { "id": "hss-41c7", "current": false, "method": "device_code",
     "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
     "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
-    "ip": "203.0.113.24", "approved_by": "hss-41c0",
+    "ip": "203.0.113.24", "approved_by": "hss-41c0", "good_standing": false,
     "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
     "ended_at": null, "ended_by": null } ] }
 ```
@@ -1054,10 +1080,12 @@ notification of the kind `security` (#160, §17.1), title `New sign-in:
   only from a session that **existed before** the sign-in it reports —
   never from the session it reports on, and never from any session
   created after it — and only when that earlier session is itself in
-  good standing: signed in by password, or its own `session_created`
-  item already marked read. A `POST /me/notifications/read` from any
-  other session skips the item, through `ids` and `up_to` alike, and
-  marks the rest. So a session obtained through a mailbox can hide
+  good standing (above). It is marked read only through `ids` — the
+  explicit "This was me", or the item in the session list — and never
+  through `up_to`: "mark all read" skips every `security` item, so
+  tidying the bell never confirms a sign-in. A `POST
+  /me/notifications/read` from a session that may not mark the item
+  skips it as well, and marks the rest. So a session obtained through a mailbox can hide
   neither its own alert nor that of a second session it obtains next
   (by another mail sign-in, or by a device code it approves). An item
   that no session may mark read — the human had no session in good
@@ -1084,8 +1112,8 @@ notification of the kind `security` (#160, §17.1), title `New sign-in:
   reports on shows no banner. So a mail sign-in that an agent with
   mailbox access made cannot be hidden by deleting a mail, from the
   session it obtained, or from a session it obtains next (§2.3); and
-  for its first hour that session cannot end the sessions that show
-  the banner (above).
+  that session, not being in good standing, cannot end the human's
+  sessions in good standing that show the banner, at any age (above).
 - **By mail** it goes to the human's verified address, `immediate` by
   default; `email.kinds.security.mode` (#160, §17.4) is `immediate` or
   `off` — no digest, since a delayed alert is no alert — and quiet
@@ -1165,7 +1193,10 @@ event; the accounts design's instance audit log records it (pending).
   a human without one it says the change waits for approval from a
   session at least 24 hours old, and such sessions show the held change
   with "Approve" and "Reject" (§2.6.3).
-- **Ending sessions** from a session younger than 1 hour: "End" on an
+- **Ending sessions** from a session not in good standing: "End" on a
+  session in good standing is disabled, with "Confirm this session's
+  sign-in from another session first"; and, while it is younger than
+  1 hour, "End" on an
   older session and "End all other sessions" are disabled, with "This
   session is too new to end older ones" (§2.6.5).
 
@@ -3308,10 +3339,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/auth/email-link`, `/auth/email-code` | — (`email-code`: the pending cookie) | 2.6.3 |
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
-| DELETE | `/auth/sessions/{id}` | human, own sessions; an older one not from a session younger than 1 hour | 2.6.5 |
-| POST | `/auth/sessions/end-others` | human; not from a session younger than 1 hour | 2.6.5 |
-| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
-| POST | `/me/notification-settings/email/address-change/reject` | human; `{id, address}` of the held change | 2.6.3 |
+| DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
+| POST | `/auth/sessions/end-others` | human; from a session not in good standing it ends only the others not in good standing, and not at all while it is younger than 1 hour | 2.6.5 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
+| POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
