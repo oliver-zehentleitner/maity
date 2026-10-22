@@ -177,6 +177,8 @@ window.Maity = window.Maity || {};
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     card.updated_at = nowIso();
     return card;
+  }
+
   let attachSerial = 0;
   const activeAttachments = (slug) => runnersFile().attachments
     .filter((a) => a.project === slug && !a.detached_at)
