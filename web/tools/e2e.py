@@ -72,6 +72,9 @@ class Run:
     def shot(self, page: Page, name: str) -> None:
         self.shots += 1
         path = self.artifacts / f"{self.shots:02d}-{name}.png"
+        # The sticky header would land mid-page in a full-page shot of a
+        # scrolled page; from the top it stays where it belongs.
+        page.evaluate("window.scrollTo(0, 0)")
         # The artifacts are public: the join line (URL and code) is painted over.
         page.screenshot(path=str(path), full_page=True, mask=[page.locator(".paste-line")])
         print(f"   screenshot {path.name}", flush=True)
