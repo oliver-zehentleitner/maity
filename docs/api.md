@@ -2488,9 +2488,10 @@ is a member of the project. A personal request is in the owner's
   admins, who read every event (§8.2), learn that a personal request
   exists and how far it is, not what it says; the asker reads it in
   full through `GET`, answer included.
-- The notifications of humans count and list it for the owner as an
-  `inbox` item through its addressing, member of the project or not
-  (#160, §17.1), not through the event's audience.
+- The notifications of humans count and list it for the owner exactly
+  once, member of the project or not: every state change of it writes
+  an account record of the owner (#160, §17.1), and the record — never
+  the event's audience — makes the `inbox` item.
 
 Delivery to the agent is by reference and by content (a personal
 request excepted, above, whose events carry ids only): the
