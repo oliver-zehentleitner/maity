@@ -1737,7 +1737,7 @@ def change_password(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if "/api/v1/auth/password answered 400" not in p]
     page.locator("#password-current").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Change password", exact=True).click()
-    expect(page.locator("main .send-status")).to_contain_text(
+    expect(page.locator("main form.project-form .send-status")).to_contain_text(
         "Password changed. Every other session of yours was signed out"
     )
     run.shot(page, "password-changed")
