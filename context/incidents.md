@@ -129,9 +129,10 @@ fixtures had hidden the first real defect.
 
 **Id:** f3bec014-28b7-4bfe-9ca8-304f1481fceb
 **Type:** incident
-**Status:** open
+**Status:** active
 **Evidence:** confirmed
-**Source:** build session, 2026-10-21
+**Source:** build session, 2026-10-21; the coordinator's observations, 2026-10-22
+**Revisit when:** push or pull request events stop triggering workflows again
 
 Two external changes broke checks that had nothing to do with the code.
 A release of the Keep the Why linter moved its rolling action tag before
@@ -139,8 +140,14 @@ the package was on PyPI, so every project's linter job failed for
 several minutes. And from a certain merge on, the forge stopped creating
 push events for merges into `main`: pull request runs went on, but no
 workflow ran on `main` and the project site was not deployed, with the
-platform's status page reporting everything operational. The second is
-unexplained; the site is deployed by hand meanwhile.
+platform's status page reporting everything operational.
+
+On 2026-10-22 push runs on `main` came back (CI, pages and audit ran on
+the merges again), so the site is deployed by its workflow again and the
+manual deploy has ended. The cause stays unexplained and lies on the
+forge's side. The same day showed more of it: jobs left `in_progress` on
+runs that had completed, and pull requests that started no CI at all;
+closing and reopening such a pull request triggered the runs.
 
 **Learned:** a green pull request is not a deployed main branch. Maity's
 read-only forge probe observes what actually ran, and "the default
