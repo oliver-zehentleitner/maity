@@ -1134,6 +1134,7 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
+| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -3023,11 +3024,17 @@ it, settles it in the same transaction:
 | withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
 | the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
-Who may answer is the rule for every consent request (§2.3): holders of
-`requests:answer` — the owner, `admin` and `proxy` roles, agents
-included — never the proposer (`self_answer`) (default pending the
-maintainer; open: §12 3 of the design). Requests do not expire; an
-unanswered proposal stays pending.
+Who may answer a placement's consent request follows
+`policy.spawn_consent_by` (§6.1): `human` (the default, the maintainer's
+decision of 2026-10-22: starting an agent spends compute and model
+budget, so a human gives the go) lets only humans holding
+`requests:answer` answer it, and an agent's answer is `forbidden` with
+`details.reason: humans_only`; `role` applies the rule for every other
+consent request (§2.3): holders of `requests:answer` — the owner,
+`admin` and `proxy` roles, agents included. Either way never the
+proposer (`self_answer`). Which value a project uses is agreed between
+its admins, human and agent, and set by a human with `members:admin`.
+Requests do not expire; an unanswered proposal stays pending.
 
 ### 15.7 Reported state
 
