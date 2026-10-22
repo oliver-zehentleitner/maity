@@ -134,7 +134,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(markOf("Sample shop").tagName === "SPAN" && markOf("Sample shop").textContent === "SS" && markOf("Sample shop").getAttribute("aria-hidden") === "true"
     && /^#[0-9a-f]{6}$/.test(markOf("Sample shop").style.background), "logo: without one, a monogram from the initials in a colour of the slug");
   expect(main.querySelectorAll(".project-label .project-mark").length === 4, "logo: every #/all entry carries its project's mark");
-  expect(gets.includes("/projects"), "logo: the project views are read for the logos");
+  expect(!gets.includes("/projects"), "logo: with logos on /me's projects, no extra read of the project views");
   const refuses = (src) => { try { win.Maity.dom.h("img", { src }); return false; } catch (e) { return true; } };
   expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maity/logo?v=%22f1%22"),
@@ -693,6 +693,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "images: removed, the forge's logo applies again");
   expect(text(header).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
   btn(header, "Project settings").click(); await tick();
+  // A hub before /me's logo: the switcher falls back to GET /projects.
+  const realGet7 = win.Maity.api.get;
+  const fallbackGets = [];
+  win.Maity.api.get = (p) => { fallbackGets.push(p); return p === "/me" ? realGet7(p).then((m) => { m.projects.forEach((x) => { delete x.logo; }); return m; }) : realGet7(p); };
+  await go("#/all"); await go("#/p/maity/inbox");
+  expect(fallbackGets.includes("/projects") && chip("Maity").querySelector(".project-mark").tagName === "IMG",
+    "logo: without logos on /me, the project views are read and the logo still shows");
+  win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // Account: change the password (docs/api.md §2.1).
   const accountLink = header.querySelectorAll("a").find((a) => a.textContent === "Account");

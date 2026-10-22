@@ -112,6 +112,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: the Why view offers Read again in every state and turns it off while a read runs,
   shows a missing linter count per field, words an unreadable root on its own, and links
   an entry only into its own part's dashboard
+- web: the switcher takes each project's logo from `/me` where the hub puts it there, and
+  reads `GET /projects` only from a hub that does not
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-

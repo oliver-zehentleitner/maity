@@ -532,9 +532,15 @@ window.Maity = window.Maity || {};
     return ctx;
   }
 
-  // The full project views (GET /projects, docs/api.md §6.1) for each
-  // project's logo; without them the switcher draws monograms, it does not fail.
-  async function projectViews() {
+  // Each project's logo for the switcher: from /me's projects where the hub
+  // puts it there (docs/api.md §5.1), else from the full project views
+  // (GET /projects, §6.1); without either the switcher draws monograms.
+  async function projectViews(me) {
+    if (me.projects.every((p) => "logo" in p)) {
+      const bySlug = {};
+      me.projects.forEach((p) => { bySlug[p.slug] = p; });
+      return bySlug;
+    }
     try {
       const list = await M.api.get("/projects");
       const bySlug = {};
@@ -711,7 +717,7 @@ window.Maity = window.Maity || {};
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
-      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews()]);
+      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me)]);
       ctx = loaded;
       ctx.projectViews = views;
       if (seq !== renderSeq) return;
