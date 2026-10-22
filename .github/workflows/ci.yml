@@ -2,7 +2,8 @@ name: ci
 
 # The dashboard's checks and smoke test; the hub's checks: lint, types and
 # tests on SQLite; the test suite against PostgreSQL and MariaDB; the built
-# wheel on Python 3.13; the image.
+# wheel on Python 3.13; the image. Every hub job installs the locked set from
+# hub/requirements/, and hub-lock checks the locks follow pyproject.toml.
 on:
   push:
     branches: [main]
@@ -36,7 +37,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      - run: make install
       - run: make check
 
   # What ships: the wheel, installed non-editable, so a file missing from it
@@ -48,9 +49,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: pip wheel --no-deps --wheel-dir dist .
-      - run: pip install "$(ls dist/*.whl)[dev]"
+      - run: pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
+      - run: pip wheel --no-deps --no-build-isolation --wheel-dir dist .
+      - run: pip install --no-deps "$(ls dist/*.whl)"
       - run: rm -rf src && pytest
+
+  # The locks in hub/requirements/ follow pyproject.toml: recompiled with the
+  # pinned uv, they must come out unchanged (`make lock` was run).
+  hub-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes -r requirements/tools.txt
+      - run: make lock-check
 
   hub-image:
     runs-on: ubuntu-latest
@@ -76,7 +90,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -e hub -e cli
+      - run: pip install --require-hashes -r hub/requirements/runtime.txt -r hub/requirements/build.txt
+      - run: pip install --no-deps --no-build-isolation -e hub
+      - run: pip install -e cli
       - run: hub/scripts/smoke_join.sh
 
   hub-postgresql:
@@ -99,7 +115,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      - run: make install
       - run: make test
 
   hub-mariadb:
@@ -123,7 +139,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      - run: make install
       - run: make test
 
   # The agent-side command: lint, types and tests on the oldest and the newest

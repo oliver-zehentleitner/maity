@@ -2,11 +2,15 @@
 # before a pull request.
 
 PYTHON ?= python3
+UV ?= uv
 
-.PHONY: install format check lint typecheck test revision
+.PHONY: install format check lint typecheck test revision lock lock-upgrade lock-check
 
+# The tested set: every dependency pinned with hashes in requirements/, the
+# hub itself on top without resolving anything again.
 install:
-	$(PYTHON) -m pip install -e '.[dev]'
+	$(PYTHON) -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
+	$(PYTHON) -m pip install --no-deps --no-build-isolation -e .
 
 format:
 	$(PYTHON) -m black src tests scripts
@@ -27,3 +31,37 @@ test:
 # make revision m="add the task table"
 revision:
 	$(PYTHON) scripts/new_revision.py "$(m)"
+
+# The locks in requirements/: runtime (the image), dev (CI and `install`,
+# with the runtime pins as constraints), build (hatchling, with the dev pins
+# as constraints) and tools (uv itself, for lock-check in CI).
+# `lock` keeps every pin and only follows pyproject.toml; `lock-upgrade`
+# moves everything to the newest versions that resolve. Either way, commit
+# the four files and let CI prove them on all three engines.
+LOCK = $(UV) pip compile --quiet --generate-hashes --universal --python-version 3.12 \
+	--custom-compile-command "make lock"
+
+lock:
+	$(MAKE) --no-print-directory _lock DIR=requirements FLAGS=
+
+# `make lock-upgrade PACKAGE=fastapi` moves only that package (and what it needs).
+lock-upgrade:
+	$(MAKE) --no-print-directory _lock DIR=requirements \
+		FLAGS="$(if $(PACKAGE),--upgrade-package $(PACKAGE),--upgrade)"
+
+# Recompiles copies of the locks and fails when they differ: a dependency
+# changed in pyproject.toml without `make lock`.
+# The copy keeps the relative paths, which the files name in their comments.
+lock-check:
+	@tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT \
+	&& cp -r pyproject.toml requirements "$$tmp/" \
+	&& $(MAKE) --no-print-directory -C "$$tmp" -f "$(CURDIR)/Makefile" _lock DIR=requirements FLAGS= \
+	&& for f in runtime dev build tools; do \
+		diff -u "requirements/$$f.txt" "$$tmp/requirements/$$f.txt" || exit 1; done \
+	&& echo "lock-check: requirements/ matches pyproject.toml"
+
+_lock:
+	$(LOCK) $(FLAGS) pyproject.toml -o $(DIR)/runtime.txt
+	$(LOCK) $(FLAGS) pyproject.toml --extra dev -c $(DIR)/runtime.txt -o $(DIR)/dev.txt
+	$(LOCK) $(FLAGS) requirements/build.in -c $(DIR)/dev.txt -o $(DIR)/build.txt
+	$(LOCK) $(FLAGS) requirements/tools.in -o $(DIR)/tools.txt

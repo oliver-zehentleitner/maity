@@ -22,7 +22,6 @@ that need the maintainer are marked **[maintainer]**.
 - Before the events slice: the long-poll as `async` on an in-process event with database access off the event loop; recorded in `hub/context/` first.
 - Helm chart.
 - MySQL 8 in CI if a difference to MariaDB shows up (`hub/context/testing.md`).
-- A constraints file pinning the tested dependency versions for CI and the image.
 
 ## Requirements collected so far (not yet designed)
 
