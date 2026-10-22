@@ -64,6 +64,7 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
+    if (parts[0] === "account") return { scope: "account" };
     if (parts[0] === "p" && parts[1]) {
       return { scope: "project", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -360,11 +361,12 @@ window.Maity = window.Maity || {};
         h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
           ? [h("span", { class: "project" }, ctx.project.name), stateBadge(ctx.project.state, ctx.project.state_note), toggle]
-          : h("span", { class: "project" }, ctx.scope === "new" ? "New project" : "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
         h("span", { class: "me" }, ctx.me.display_name,
+          h("a", { href: "#/account", class: "small-link", "aria-current": ctx.scope === "account" ? "page" : null }, "Account"),
           h("button", { type: "button", class: "small", onclick: logout }, "Sign out"))),
       switcher(ctx),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
@@ -570,10 +572,10 @@ window.Maity = window.Maity || {};
     renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = where.scope === "all" || where.scope === "new"
+    const known = where.scope === "all" || where.scope === "new" || where.scope === "account"
       || (item && own(M.views, item.route) && !(item.admin && !ctx.canAdmin));
     let viewName = "unknown";
-    if (where.scope === "all" || where.scope === "new") viewName = where.scope;
+    if (where.scope === "all" || where.scope === "new" || where.scope === "account") viewName = where.scope;
     else if (known) viewName = where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -583,6 +585,8 @@ window.Maity = window.Maity || {};
         await M.views.inbox(ctx, root, []);
       } else if (where.scope === "new") {
         await M.views.newProject(ctx, root);
+      } else if (where.scope === "account") {
+        await M.views.account(ctx, root);
       } else if (known) {
         await M.views[item.route](ctx, root, where.args);
       } else {
@@ -599,6 +603,7 @@ window.Maity = window.Maity || {};
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";
     else if (where.scope === "new") label = "New project";
+    else if (where.scope === "account") label = "Your account";
     else if (known) label = item.label + " · " + ctx.project.name;
     document.title = label + " · Maity";
   }

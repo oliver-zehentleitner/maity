@@ -564,13 +564,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/agents");
   expect(text(main).includes("(signed)") && text(main).includes("(bearer token)"), "credentials: how each was last used");
   await go("#/p/maity/inbox");
+  // Account: change the password (docs/api.md §2.1).
+  const accountLink = header.querySelectorAll("a").find((a) => a.textContent === "Account");
+  expect(accountLink && accountLink.getAttribute("href") === "#/account", "the header links to the account");
+  await go("#/account");
+  expect(document.title === "Your account · Maity" && text(main).includes("@maintainer") && byId("password-current"), "the account view");
+  const pwPosts = [];
+  const realPost5 = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
+  const pwSubmit = () => main.querySelector("form").dispatch("submit");
+  byId("password-current").value = "initial-generated"; byId("password-new").value = "short"; byId("password-repeat").value = "short";
+  pwSubmit(); await tick();
+  expect(!pwPosts.length && text(byId("password-new-error")) === "At least 12 characters.", "password: under 12 characters is refused locally");
+  byId("password-new").value = "a long new password"; byId("password-repeat").value = "a long new passw0rd";
+  pwSubmit(); await tick();
+  expect(!pwPosts.length && text(byId("password-repeat-error")) === "The two new passwords differ.", "password: a repeat that differs is refused locally");
+  byId("password-repeat").value = "a long new password";
+  pwSubmit(); await tick(); await tick();
+  expect(pwPosts.length === 1 && pwPosts[0][0] === "/auth/password"
+    && JSON.stringify(pwPosts[0][1]) === JSON.stringify({ current: "initial-generated", new: "a long new password" })
+    && text(main).includes("Password changed. Every other session of yours was signed out") && byId("password-current").value === "",
+    "password: changed, the fields cleared, the other sessions named");
+  byId("password-current").value = "not the current one"; byId("password-new").value = "another long password"; byId("password-repeat").value = "another long password";
+  pwSubmit(); await tick(); await tick();
+  expect(text(byId("password-current-error")) === "This is not your current password." && byId("password-current").getAttribute("aria-invalid") === "true",
+    "password: a wrong current one is put next to its field");
+  win.Maity.api.post = realPost5;
 
   // sign out, sign in
   btn(header, "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
-  byId("login-handle").value = "maintainer"; byId("login-password").value = "wrong-but-nonempty";
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
-  expect(!byId("login-handle") && !main.querySelector(".error"), "sign in returns to the dashboard");
+  expect(byId("login-handle") && text(main).includes("wrong"), "password: the old password no longer signs in");
+  byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
+  expect(!byId("login-handle") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
 
   // No memberships: the empty state, then creating a project.
   let noProjects = true;
