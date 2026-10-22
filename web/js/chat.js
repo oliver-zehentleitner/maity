@@ -41,13 +41,12 @@ window.Maity = window.Maity || {};
     return chats.slice().sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.title.localeCompare(b.title)));
   }
 
-  const initials = (name) => (name.match(/[\p{L}\p{N}]+/gu) || ["?"]).slice(0, 2).map((w) => [...w][0].toUpperCase()).join("");
-
-  // Up to three participants' initials; with one, its presence as a dot.
+  // Up to three participants' pictures (js/avatar.js); with one, its
+  // presence as a dot.
   function avatars(chat) {
     const shown = chat.participants.slice(0, 3);
     return h("span", { class: "avatars", "aria-hidden": "true" },
-      shown.map((m) => h("span", { class: "avatar" }, initials(m.display_name))),
+      shown.map((m) => M.avatar(m, 32)),
       chat.participants.length === 1 ? h("span", { class: "dot " + chat.participants[0].presence }) : null);
   }
 

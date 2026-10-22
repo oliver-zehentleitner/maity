@@ -300,8 +300,8 @@ a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
 the same one — as SVG nodes, decorative next to the name; the theme sets
 its lightness and background, so it reads in light and dark. A member
 that carries an `avatar_url` the page may load (the hub's own images
-today) shows that one instead. On the agents' cards and in the
-organisation.
+today) shows that one instead. On the agents' cards, in the
+organisation and in the chat list.
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;

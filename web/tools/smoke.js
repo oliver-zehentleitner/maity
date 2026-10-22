@@ -898,7 +898,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const convA = conv("Agent A");
   expect(convA.getAttribute("href") === "#/p/maity/chat/agt-a" && text(convA).includes("Endpoints for join, tasks and requests are drafted.")
     && convA.querySelector(".count") && convA.querySelector(".count").textContent === "1" && convA.classList.contains("unread")
-    && text(convA).includes("online") && convA.querySelector(".avatar").textContent === "AA",
+    && text(convA).includes("online") && convA.querySelector(".avatars svg").style["--avatar-h"] === "340",
     "chat: an entry has the agent, the last message, its time, the unread count, presence and an avatar");
   expect(text(conv("Agent D")).includes("You: Keep the inbox usable"), "chat: one's own last message reads You:");
   expect(!conv("Agent B").querySelector(".preview") && text(conv("Agent C")).includes("paused"), "chat: no messages, no preview; presence in words");
@@ -913,7 +913,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelector("textarea").value === "half a thought", "chat: the draft is back in its chat");
   expect(!text(conv("Agent A")).includes("Draft:"), "chat: the open chat's draft is in its composer, not in its row");
-  expect(!conv("Agent D").getAttribute("aria-label") && /^AD ?Agent D, .+, online: You: Keep the inbox/.test(text(conv("Agent D"))),
+  expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, .+, online: You: Keep the inbox/.test(text(conv("Agent D"))),
     "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
   // A redacted last message.
