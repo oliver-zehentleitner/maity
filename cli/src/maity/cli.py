@@ -229,6 +229,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
             event = items[0]
             session.data["cursor"] = event.get("seq", cursor)
             session.save()
+            note = _pause_note(event, session.data.get("member_id"))
+            if note:
+                _err(note)
             _print_json(event)
             return EXIT_OK
         new_cursor = page.get("cursor")
@@ -803,6 +806,44 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+STILL_WORKS = "checkpoint, report, unclaim, ask, answer, say, the chat, resume and wait"
+
+
+def _pause_text(paused: dict[str, Any]) -> str:
+    who = onboarding.inline(paused.get("by") or "a human")
+    since = paused.get("since")
+    when = f" since {onboarding.inline(since)}" if since else ""
+    reason = onboarding.inline(paused.get("reason") or "no reason given")
+    return f"by {who}{when}: {reason}"
+
+
+def _explain(exc: Exception) -> str:
+    """The error line; a refusal because a human paused this agent says what that means."""
+    if isinstance(exc, hub.HubError) and exc.code == "paused":
+        paused = exc.details.get("paused")
+        detail = _pause_text(paused) if isinstance(paused, dict) else "by a human"
+        return (
+            f"refused: you are paused {detail}. You take no new work until the pause is "
+            f"lifted; {STILL_WORKS} still work. Park what you hold, then `maity wait`."
+        )
+    return str(exc)
+
+
+def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
+    """A plain line for a `session_paused` event about this agent itself; None otherwise."""
+    if event.get("kind") != "session_paused" or not member_id:
+        return None
+    if onboarding.get(event, "subject", "id") != member_id:
+        return None  # a manager seeing a report's pause
+    paused = onboarding.get(event, "payload", "paused")
+    if isinstance(paused, dict):
+        return (
+            f"you were paused {_pause_text(paused)}. Park what you hold (checkpoint, report or "
+            "unclaim), then `maity wait` for the lift."
+        )
+    return "your pause was lifted; you can take new work again."
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler: Handler = args.handler
@@ -817,7 +858,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         CommandError,
         OSError,
     ) as exc:
-        _err(str(exc))
+        _err(_explain(exc))
         return EXIT_ERROR
     except UsageError as exc:
         _err(str(exc))

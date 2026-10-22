@@ -33,6 +33,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   block in `AGENTS.md`; redirects refused, git and gh run without prompts and
   with a timeout; `wait` never runs past its `--timeout`, even when the hub stops
   answering; the agent skill in `cli/skill/maity/SKILL.md`.
+- cli: a refusal with `paused` says who paused the agent, why, and what still works; `wait`
+  adds a plain line on stderr when the agent itself was paused or its pause was lifted.
 - cli: `join` and `resume` print the onboarding as text: the pause, the briefing the
   humans wrote (`membership.briefing`, quoted line by line), identity, project, rules,
   cards, requests, missed events and the next step; people's text is quoted or kept on one
