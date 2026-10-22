@@ -9,6 +9,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -35,13 +36,22 @@ GIT_ALLOWED = re.compile(
 )
 # What a clone's `.git` holds at its top level. Anything else may change where git reads its
 # configuration from (`commondir`, `config.worktree`) and is refused rather than understood.
-GIT_ENTRIES = frozenset({
+# What a clone's `.git` holds at its top level, and of which type (a file, or a directory).
+# Anything else may change where git reads its configuration from (`commondir`,
+# `config.worktree`) and is refused rather than understood.
+GIT_FILES = frozenset({
     "AUTO_MERGE", "BISECT_LOG", "CHERRY_PICK_HEAD", "COMMIT_EDITMSG", "FETCH_HEAD", "HEAD",
-    "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG", "ORIG_HEAD", "REVERT_HEAD", "branches", "config",
-    "description", "gc.log", "hooks", "index", "index.lock", "info", "logs", "maity", "objects",
-    "packed-refs", "rebase-apply", "rebase-merge", "refs", "sequencer", "shallow",
+    "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG", "ORIG_HEAD", "REVERT_HEAD", "config",
+    "description", "gc.log", "index", "index.lock", "packed-refs", "shallow",
 })  # fmt: skip
-INFO_ENTRIES = frozenset({"exclude", "refs"})
+GIT_DIRS = frozenset({
+    "branches", "hooks", "info", "logs", "maity", "objects", "rebase-apply", "rebase-merge",
+    "refs", "sequencer",
+})  # fmt: skip
+INFO_FILES = frozenset({"exclude", "refs"})
+# Other object stores git would read from (and, over http, fetch from).
+ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
+CONFIG_MAX = 64 * 1024
 REVOKED = re.compile(r": credential_revoked:")
 
 
@@ -191,15 +201,11 @@ def not_inspectable(path: Path) -> str | None:
     if dot_git.is_symlink() or not dot_git.is_dir():
         return "its .git is not a plain directory"
     try:
-        unexpected = [entry.name for entry in dot_git.iterdir() if entry.name not in GIT_ENTRIES]
-        if (dot_git / "info").is_dir():
-            unexpected += [f"info/{entry.name}" for entry in (dot_git / "info").iterdir()
-                           if entry.name not in INFO_ENTRIES]  # fmt: skip
-    except OSError:
-        return "its .git cannot be listed"
-    if unexpected:
-        return f".git/{onboarding.inline(sorted(unexpected)[0])} is not a plain clone's"
-    try:
+        reason = _not_a_plain_git_dir(dot_git)
+        if reason is None and (dot_git / "config").lstat().st_size > CONFIG_MAX:
+            reason = f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"
+        if reason is not None:
+            return reason
         text = (dot_git / "config").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return "its .git/config cannot be read"
@@ -215,6 +221,29 @@ def not_inspectable(path: Path) -> str | None:
         key = line.split("=", 1)[0].strip().lower()
         if not GIT_ALLOWED.match(f"{section}.{key}"):
             return f"its .git/config sets {onboarding.inline(section)}.{onboarding.inline(key)}"
+    return None
+
+
+def _not_a_plain_git_dir(dot_git: Path) -> str | None:
+    """Why `dot_git` is not laid out like a plain clone's, or None: an entry git does not
+    create, an entry of the wrong type, another object store, or a symlink anywhere (git
+    follows them, so a link would put any file in the place of one that was checked)."""
+    for entry in dot_git.iterdir():
+        mode = entry.lstat().st_mode
+        expected = stat.S_ISREG if entry.name in GIT_FILES else stat.S_ISDIR
+        if entry.name not in GIT_FILES | GIT_DIRS or not expected(mode):
+            return f".git/{onboarding.inline(entry.name)} is not a plain clone's"
+    for entry in (dot_git / "info").iterdir() if (dot_git / "info").is_dir() else ():
+        if entry.name not in INFO_FILES:
+            return f".git/info/{onboarding.inline(entry.name)} is not a plain clone's"
+    for name in ALTERNATES:
+        if os.path.lexists(dot_git / name):
+            return f".git/{name} exists"
+    for root, dirs, files in os.walk(dot_git):  # os.walk does not descend into links
+        for name in dirs + files:
+            if os.path.islink(os.path.join(root, name)):
+                where = os.path.relpath(os.path.join(root, name), dot_git)
+                return f".git/{onboarding.inline(where)} is a symlink"
     return None
 
 

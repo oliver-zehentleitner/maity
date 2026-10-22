@@ -439,9 +439,10 @@ maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made
 `gc` asks the hub through each clone's own `maity`, so the runner never
 holds an agent's credential, and asks the hub which placements are active,
 so a clone a new placement continues is kept. git runs in a clone only
-when its `.git` holds nothing but a plain clone's entries (no
-`commondir`, `config.worktree`, `info/attributes` or submodules) and its
-configuration nothing but a plain clone's keys. git can run programs
+when its `.git` holds nothing but a plain clone's entries, each of the
+expected type (no `commondir`, `config.worktree`, `info/attributes`,
+submodules, object alternates or symlinks anywhere), and its
+configuration, at most 64 KiB, nothing but a plain clone's keys. git can run programs
 from all of those, and the agent wrote them. git runs pinned to the
 clone (`GIT_DIR`, `GIT_WORK_TREE`, no inherited `GIT_*`), so a broken
 clone fails instead of git reading a parent repository. Any other clone

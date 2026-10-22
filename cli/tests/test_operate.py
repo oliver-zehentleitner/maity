@@ -234,6 +234,55 @@ def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
     assert place.path.exists() and not marker.exists()
 
 
+@pytest.mark.parametrize(
+    "plant",
+    [
+        "config-symlink",  # the checked file is a link to one that sets a filter
+        "info-symlink",  # info/ points at a directory with attributes
+        "objects-symlink",  # an allowed name, but a link
+        "hooks-file",  # an allowed name with the wrong type
+        "alternates",  # another object store
+        "huge-config",
+    ],
+)
+def test_a_git_directory_not_laid_out_like_a_clone_is_not_inspected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    plant: str,
+) -> None:  # fmt: skip
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    dot_git = place.path / ".git"
+    marker = tmp_path / "ran"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    if plant == "config-symlink":
+        evil = elsewhere / "config"
+        evil.write_text(
+            (dot_git / "config").read_text() + f'[filter "x"]\n\tclean = touch {marker}\n'
+        )
+        (dot_git / "config").unlink()
+        (dot_git / "config").symlink_to(evil)
+    elif plant == "info-symlink":
+        (elsewhere / "attributes").write_text("* filter=x\n")
+        shutil.rmtree(dot_git / "info")
+        (dot_git / "info").symlink_to(elsewhere)
+    elif plant == "objects-symlink":
+        shutil.move(str(dot_git / "objects"), str(elsewhere / "objects"))
+        (dot_git / "objects").symlink_to(elsewhere / "objects")
+    elif plant == "hooks-file":
+        shutil.rmtree(dot_git / "hooks")
+        (dot_git / "hooks").write_text("")
+    elif plant == "alternates":
+        (dot_git / "objects" / "info").mkdir(exist_ok=True)
+        (dot_git / "objects" / "info" / "alternates").write_text(f"{elsewhere}\n")
+    else:
+        with (dot_git / "config").open("a") as fh:
+            fh.write("# padding\n" * 8000)
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "not inspected" in out and "not removed" in out
+    assert place.path.exists() and not marker.exists()
+
+
 def test_the_operators_git_environment_does_not_hide_a_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
