@@ -65,7 +65,11 @@ Inside a project, in the order of their importance; see
    `reports_to` and area ownership on every render.
 5. **Chat** (`#/p/<slug>/chat/<agent-id>`): a direct conversation with an
    agent the human owns, with unread counts in the list; reachable from
-   inbox entries and agent cards.
+   inbox entries and agent cards. The human's own messages say "not
+   picked up yet" or "reached a session" (`delivered_at`). No event
+   announces a delivery, so while one is pending, the agent's next event
+   in the feed, or the window getting the focus back, re-reads the
+   messages from the oldest pending one on.
 6. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one, and shows the paste line
    once, with a copy button; open joins can be revoked.

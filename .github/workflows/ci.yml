@@ -53,8 +53,12 @@ jobs:
       # 52 s to 5 min, mostly apt. A library still missing afterwards fails
       # here, before the test.
       - run: python -m playwright install --only-shell chromium
-      - run: |
+      # bash: -e and pipefail, so a failing ls or ldd fails the step.
+      - shell: bash
+        run: |
           shell="$(ls ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell)"
+          test -x "$shell"
+          ldd "$shell" >/dev/null
           missing="$(ldd "$shell" | awk '/not found/ {print $1}' | tr '\n' ' ')"
           echo "missing before: ${missing:-none}"
           if [ -n "$missing" ]; then

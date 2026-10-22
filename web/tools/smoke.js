@@ -239,6 +239,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   feed = [chatEvent];
   await fireIntervals(); await tick();
   expect(main.querySelectorAll(".msg").length === 4, "a message seen twice is shown once");
+  // Delivery: no event says a message reached the session. The agent's next
+  // event, or the window's focus, re-reads the human's pending messages.
+  const convPath = "/projects/maity/conversations/agt-a/messages";
+  const feedStub = win.Maity.api.get;
+  const thanks = (await realGet2(convPath)).items.find((m) => m.body === "Thanks.");
+  const msgReads = [];
+  let delivered = false;
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) { const items = feed; feed = []; return Promise.resolve({ items, cursor: 10000, superseded: false }); }
+    if (p.startsWith(convPath + "?after=")) {
+      msgReads.push(p);
+      return Promise.resolve({ items: [Object.assign({}, thanks, { delivered_at: delivered ? "2026-10-21T14:01:00Z" : null })], cursor: thanks.seq });
+    }
+    return realGet2(p);
+  };
+  const thanksLine = () => main.querySelectorAll(".msg.out").find((li) => li.textContent.includes("Thanks.")).textContent;
+  feed = [{ seq: 10000, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(!msgReads.length && thanksLine().includes("not picked up yet"), "another member's event does not re-read the conversation");
+  delivered = true;
+  feed = [{ seq: 10001, kind: "session_resumed", actor: { member_id: "agt-a" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(msgReads.length === 1 && msgReads[0] === convPath + "?after=" + (thanks.seq - 1) + "&limit=200"
+    && thanksLine().includes("reached a session"), "the agent's next event marks the message as picked up");
+  feed = [{ seq: 10002, kind: "session_resumed", actor: { member_id: "agt-a" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(msgReads.length === 1, "nothing pending: no further re-read");
+  delivered = false;
+  main.querySelector("textarea").value = "One more.";
+  main.querySelector("form").dispatch("submit"); await tick();
+  const oneMore = (await realGet2(convPath)).items.find((m) => m.body === "One more.");
+  win.Maity.api.get = (p) => (p.startsWith(convPath + "?after=")
+    ? (msgReads.push(p), Promise.resolve({ items: [Object.assign({}, oneMore, { delivered_at: "2026-10-21T14:02:00Z" })], cursor: oneMore.seq }))
+    : realGet2(p));
+  win.onfocus(); await tick(); await tick();
+  expect(main.querySelectorAll(".msg.out").find((li) => li.textContent.includes("One more.")).textContent.includes("reached a session"),
+    "the window's focus marks a pending message as picked up");
+  win.Maity.api.get = feedStub;
 
   // The feed in other views: someone else's card event offers a reload,
   // one's own does not; a request event re-reads the counts at once.
