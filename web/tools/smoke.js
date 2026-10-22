@@ -102,6 +102,7 @@ let intervalId = 0;
 const win = {
   location: { protocol: "file:", search: "", hash: "", replace(h) { this.hash = h; setTimeout(() => win.onhashchange(), 0); } },
   addEventListener: (t, f) => { win["on" + t] = f; },
+  removeEventListener: (t, f) => { if (win["on" + t] === f) win["on" + t] = null; },
   confirm: () => true,
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (id) => clearTimeout(id),
@@ -2046,6 +2047,141 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Nothing waits for you.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
+
+  // The overview (docs/api.md §6.11): the project at a glance, every count a link.
+  const ovGets = [];
+  const ovGet = win.Maity.api.get;
+  // Its own feed: the events the test hands over, then none.
+  let ovFeed = [];
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) { const items = ovFeed; ovFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 10099, superseded: false }); }
+    if (p.includes("/overview")) ovGets.push(p);
+    return ovGet(p);
+  };
+  await go("#/p/maity/overview");
+  const ovTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Overview");
+  expect(ovTab() && ovTab().getAttribute("href") === "#/p/maity/overview" && header.querySelectorAll("nav.views a")[1] === ovTab()
+    && ovTab().getAttribute("aria-current") === "page", "overview: a tab, next to the inbox, marked while open");
+  const ov = await ovGet(ovGets[0]);
+  expect(ovGets.length === 1 && /^\/projects\/maity\/overview\?closed_after=\d{4}-\d\d-\d\dT[\d:]+Z$/.test(decodeURIComponent(ovGets[0]))
+    && Math.abs(Date.parse(decodeURIComponent(ovGets[0].split("=")[1])) - (Date.now() - 14 * 86400000)) < 60000,
+    "overview: read once, with the board's 14-day window");
+  const ovPart = (id) => main.querySelector("section.overview-part[aria-labelledby=\"" + id + "\"]");
+  const repoLink = ovPart("overview-links").querySelectorAll("a")[0];
+  expect(repoLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity" && repoLink.getAttribute("rel") === "noopener noreferrer"
+    && repoLink.getAttribute("target") === "_blank", "overview: the repository, linked in a new tab without an opener");
+  const whyItems = ovPart("overview-links").querySelectorAll(".overview-why li");
+  expect(whyItems.length >= 2 && whyItems[0].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/"
+    && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")
+    && text(ovPart("overview-links")).includes("hierarchical"), "overview: each Keep the Why dashboard with its attention, and the policy preset");
+  expect(text(ovPart("overview-members")).includes("owner") && text(ovPart("overview-members")).includes("Maintainer")
+    && ovPart("overview-members").querySelector("a").getAttribute("href") === "#/p/maity/members", "overview: members by role, linking to Members");
+  const ovCounts = ovPart("overview-board").querySelectorAll(".overview-counts li");
+  expect(ovCounts.length === 7 && ovCounts.every((li) => li.querySelector("a").getAttribute("href") === "#/p/maity/board")
+    && text(ovCounts.find((li) => li.attrs["data-status"] === "in_progress")).startsWith(String(ov.board.counts.in_progress)),
+    "overview: every column's count, each linking to the board");
+  // The fixtures' requests are answered by now: the count and its empty state.
+  expect(text(ovPart("overview-requests")).includes(String(ov.requests.open))
+    && (ov.requests.open ? text(ovPart("overview-requests")).includes(" for you") : text(ovPart("overview-requests")).includes("Nothing waits for an answer."))
+    && ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox", "overview: the open requests, those for oneself, linking to the inbox");
+  const ovReport = ovPart("overview-reports").querySelector("li");
+  expect(ovReport && text(ovReport).includes("Agent B") && text(ovReport).includes("tsk-0005")
+    && ovReport.querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/3") && text(ovReport).includes("PR #3 open"),
+    "overview: the latest report with its card, its author and its pull request as the probe saw it");
+  // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
+  ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(ovGets.length === 1, "overview: a member event does not re-read the counts");
+  ovFeed = [{ seq: 10101, kind: "probe_observed", actor: null, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(ovGets.length === 2 && !btn(main, "Reload"), "overview: probe_observed re-reads it in place, no Reload offered");
+  ovFeed = [{ seq: 10102, kind: "task_reported", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(ovGets.length === 3, "overview: a card event re-reads it");
+  // Empty states, and a value from data that is no https link stays text.
+  win.Maity.api.get = (p) => (p.includes("/overview")
+    ? Promise.resolve({ server_time: "2026-10-22T14:00:00Z", board: { counts: { proposed: 0, open: 0, in_progress: 0, blocked: 0, review: 0, done: 0, cancelled: 0 }, closed_after: null },
+      requests: { open: 0, to_me: 0, by_priority: { urgent: 0, high: 0, normal: 0, low: 0 }, oldest_open_at: null },
+      reports: [{ task: { id: "tsk-x", title: "X", status: "done", kind: "task", label: null }, reported_by: { member_id: "agt-b", handle: "agent-b", display_name: "Agent B", avatar_url: null },
+        reported_at: "2026-10-22T13:10:00Z", code: true, verification: "signed", pr: { number: 9, url: "javascript:alert(1)" }, pr_state: "merged", observed_at: null, mismatch: true }] })
+    : p === "/projects/maity" ? ovGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : ovGet(p));
+  await go("#/p/maity/overview");
+  expect(text(ovPart("overview-board")).includes("No cards yet.") && text(ovPart("overview-requests")).includes("Nothing waits for an answer.")
+    && text(ovPart("overview-links")).includes("No repository.") && text(ovPart("overview-links")).includes("No Keep the Why dashboard is published.")
+    && text(ovPart("overview-links")).includes("dashboard-state line"), "overview: empty states, and for an owner where the Keep the Why link comes from");
+  btn(ovPart("overview-links"), "Set the repository").click(); await tick();
+  expect(header.all().some((e) => e.id === "project-panel"), "overview: Set the repository opens Project settings");
+  const badPr = ovPart("overview-reports").querySelector("li");
+  expect(!badPr.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").startsWith("javascript")) && text(badPr).includes("PR #9 merged")
+    && text(badPr).includes("does not match what was reported"), "overview: a pull request URL that is no https link stays text; a mismatch is said");
+  // A hub without the endpoint: links and members still, the counts said missing.
+  win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : ovGet(p));
+  await go("#/p/maity/overview");
+  expect(!main.querySelector(".error") && ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
+    && text(main).includes("The counts could not be read: this hub has no overview yet."), "overview: without the endpoint the rest stays, the counts said missing");
+  win.Maity.api.get = ovGet;
+  // An owner gets no timer: the events reach them. A redraw keeps the focus on the same link.
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) { const items = ovFeed; ovFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 10199, superseded: false }); }
+    if (p.includes("/overview")) ovGets.push(p);
+    return ovGet(p);
+  };
+  const ovReads = () => ovGets.length;
+  await go("#/p/maity/overview");
+  let ovBefore = ovReads();
+  await fireIntervals(); await tick(); await tick();
+  expect(ovReads() === ovBefore && !docListeners.visibilitychange, "overview: an owner's view has no 60-second re-read and no tab-focus re-read");
+  const ovProto = Object.getPrototypeOf(main);
+  const ovFocus = ovProto.focus;
+  ovProto.focus = function () { document.activeElement = this; };
+  const openCount = () => main.querySelector(".overview-counts li[data-status=\"open\"] a");
+  const firstOpen = openCount();
+  firstOpen.focus();
+  ovFeed = [{ seq: 10200, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick(); await tick();
+  expect(openCount() !== firstOpen && document.activeElement === openCount(), "overview: a redraw puts the focus back on the same count");
+  ovProto.focus = ovFocus; document.activeElement = undefined;
+  // A member (neither owner nor admin): every 60 seconds and on the tab's return, one follow-up for a burst.
+  const ovMe = win.Maity.api.get;
+  let ovSlow = null;
+  win.Maity.api.get = (p) => {
+    if (p === "/me") return ovMe(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; });
+    if (p.includes("/overview") && ovSlow) { ovGets.push(p); return new Promise((done) => { ovSlow.push(() => ovGet(p).then(done)); }); }
+    return ovMe(p);
+  };
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview");
+  expect(!btn(main, "Set the repository") && !text(main).includes("dashboard-state line"), "overview: a member sees neither Set the repository nor where the link comes from");
+  ovBefore = ovReads();
+  await fireIntervals(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 1, "overview: a member's view re-reads every 60 seconds");
+  document.visibilityState = "visible";
+  docListeners.visibilitychange(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 2, "overview: and when the tab comes back");
+  win.onfocus(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 3, "overview: and when its window gets the focus back");
+  ovSlow = [];
+  ovBefore = ovReads();
+  docListeners.visibilitychange(); docListeners.visibilitychange(); docListeners.visibilitychange(); await tick();
+  ovSlow.shift()(); await tick(); await tick();
+  ovSlow.length && ovSlow.shift()(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 2, "overview: triggers during a read give one more read, not none and not one each");
+  ovSlow = null;
+  win.Maity.api.get = ovMe;
+  // A mismatch the probe has not looked at yet (null) is no warning.
+  const ovGet2 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.includes("/overview") ? ovGet2(p).then((o) => Object.assign({}, o, { reports: o.reports.map((r) => Object.assign({}, r, { mismatch: null })) })) : ovGet2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview");
+  expect(!text(ovPart("overview-reports")).includes("does not match"), "overview: mismatch null is no warning");
+  win.Maity.api.get = ovGet;
+  await go("#/p/maity/inbox");
+
+  // The mock as the hub: closed cards counted after closed_after only; a bad limit is invalid.
+  const allTime = await ovGet("/projects/maity/overview");
+  const recent = await ovGet("/projects/maity/overview?closed_after=2030-01-01T00:00:00Z");
+  let badLimit = null;
+  try { await ovGet("/projects/maity/overview?limit=0"); } catch (err) { badLimit = err; }
+  expect(allTime.board.closed_after === null && recent.board.counts.done === 0 && recent.board.counts.open === allTime.board.counts.open
+    && badLimit && badLimit.details.fields.limit, "overview: the mock counts closed cards in the window, open ones in full, and refuses a bad limit");
 
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
   win.location.search = "?as=agt-a";

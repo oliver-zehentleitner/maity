@@ -21,6 +21,8 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // The overview counts closed cards over the same window (js/overview.js).
+  M.boardWindowDays = CLOSED_WINDOW_DAYS;
 
   // The hub's bound on a pull request number (docs/api.md §6.7).
   const PR_MAX = 2 ** 31;

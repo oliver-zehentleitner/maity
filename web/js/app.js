@@ -21,6 +21,8 @@ window.Maity = window.Maity || {};
   // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
+    // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
+    { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
     { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
@@ -537,6 +539,13 @@ window.Maity = window.Maity || {};
         if (first) first.focus();
       }
     }
+    // Views open the panel too (the overview's Set the repository), at the
+    // repository field where the panel has one.
+    ctx.openSettings = mayConfigure ? () => {
+      if (!panelOpen) togglePanel();
+      const repo = document.getElementById("repo-url");
+      if (repo) repo.focus();
+    } : null;
     // Settings: this project's (with the rights for it) and the hub's.
     const settings = M.menuButton({
       label: "Settings",
