@@ -32,7 +32,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## D
 
 ## E
-- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database
+- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to
 
 ## F
 

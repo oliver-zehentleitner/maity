@@ -37,3 +37,29 @@ is in-process, which fits the one replica V1 runs.
 - PostgreSQL `LISTEN/NOTIFY`: the natural cross-replica signal, refused for
   V1 by the database-agnostic decision; it is the first candidate when a
   second replica comes.
+
+## A runner's stream reads every project it was ever attached to
+
+**Id:** 96643c34-fc6f-4279-8a89-39882e3ab3d8
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** implementation of the runner stream, 2026-10-22; proposed to the contract owner the same day
+
+`GET /runner/events` (`docs/api.md` §15.8) scans the events of every
+project the runner has an attachment row in, active or detached, and
+delivers those whose audience names `runner:<id>`. What the runner
+otherwise reads — the projects in the hello packet, its placements —
+stays on the projects it is attached to now.
+
+**Reason:** `runner_detached` is written into the project being detached,
+at the moment the project leaves the runner's set. A stream limited to
+the current set would never deliver it. Reading the old projects as well
+exposes nothing: an event names the runner only while it concerns it.
+
+**Rejected alternative:** the stream on the current set only, as the
+contract's first text reads. The runner would learn of a detachment only
+by noticing that a project is missing from its next hello.
+
+**Rejected alternative:** writing the detachment somewhere outside the
+project. Every event belongs to exactly one project (§15.10).
