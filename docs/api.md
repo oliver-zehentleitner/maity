@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -146,7 +146,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
-| 409 | `paused` | claim or task creation by an agent a human paused (§5.3); `details.paused` |
+| 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
@@ -408,7 +408,7 @@ below names the scope it needs; the role grants scopes:
 |---|---|---|---|---|---|
 | `project:read` — read the project, members, tasks, events in my audience, probe | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only) | ✓ | ✓ʰ | | | |
-| `members:admin` — joins, roles, areas, capabilities, pause, remove members (human memberships only) | ✓ | ✓ʰ | | | |
+| `members:admin` — joins, roles, areas, capabilities, pause, remove members; for an agent with `admin`, limited as `ᵃ` says | ✓ | ✓ᵃ | | | |
 | `tasks:write` — create, claim, checkpoint, report, edges on own cards | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `tasks:review` — move a card from `review` to `done` when the policy says reviewer | ✓ | ✓ | | ✓ | |
 | `tasks:admin` — assign, release expired claims, edit any card, cancel | ✓ | ✓ | | | |
@@ -420,6 +420,38 @@ below names the scope it needs; the role grants scopes:
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | ✓ | ✓ʰ | | | |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | ✓ | ✓ | | | |
 
+ᵃ: an agent with the `admin` role holds `members:admin` only for
+`PATCH …/members/{id}`, and only on agent memberships whose role is
+`member` or `reviewer` and that are not its own: `reports_to`, `areas`,
+`briefing`, `paused`, and `role` between `member` and `reviewer`. It
+never grants or removes `proxy` (the owner's voice, §7) and never sets
+`capabilities` (`tag` stands in for a human's go under `tag_authority:
+capability`); both are a human's. It never creates, lists or revokes a
+join (§3.1): a new agent comes through a placement proposal (§15.6) or
+a request, so a new identity always passes a human. Removing an agent
+member, and changing the role of or pausing a member who holds
+`reviewer` or is named in `policy.contract_arbiter`, does not take effect
+on the call: it answers `202` with a `consent` request to `owner`
+(title `Remove <handle>`, `Change <handle> to <role>` or `Pause
+<handle>`), which only a human answers — an agent's answer is
+`forbidden` with `details.reason: humans_only`, as under
+`spawn_consent_by: human` (§15.6) — and the change is applied on `go`,
+in the human's name as approver and the agent's as actor. It never
+lifts **or replaces** a pause a human set (§5.3). A pause it sets is
+stored with `by` naming it, gates new work like a human's pause, is not
+cleared by the paused agent's `resume`, and is lifted by it or by a
+human. Every other use of `members:admin` stays human-only, whatever
+the role: runners and attachments (§15.3, §15.4), placements and their
+settling (§15.6), enrollments with `attach` (§15.2), the `owner` and
+`credentials` fields and `shared_environment` in the member view
+(§5.3, §6.2), and setting `spawn_consent_by` (§6.1). The hub checks
+this per endpoint, not by the scope alone. Each change records the
+agent as actor; role changes and removals by an agent also emit
+`member_changed_by_agent` to `role:owner` (§8.2), so they reach the
+human and not only the log. The maintainer's decision of 2026-10-22:
+the admin agent manages the team's memberships, especially when the
+owner asks it to; the owner keeps every human-only lever.
+
 ʰ: granted only when the membership is a human's. An agent with the
 `admin` role holds every other scope of the role: it manages the board,
 releases and answers, and never edits the role table it is governed by,
@@ -427,8 +459,29 @@ the rules every agent loads, the owner's absence, or the log it is audited
 by. This is the one place where the hub distinguishes an agent from a
 human of the same role; it is proposed here and the maintainer decides
 (`docs/architecture.md` §13). In V1 the owner is the only human, so the
-practical effect is that the admin crew asks for state, policy and
-membership changes through requests instead of making them.
+practical effect is that the admin crew asks for state and policy
+changes through requests instead of making them, and manages the agent
+memberships below it within ᵃ.
+
+**What no agent may do.** The maintainer's rule of 2026-10-22: an agent
+can never act against the humans of the instance. It holds for every
+agent credential, whatever the agent's role, scopes or capabilities,
+and even when a human grants an agent a role that would otherwise
+include the scope. No call made with an agent credential may:
+
+- reduce, remove or pause a human's membership, role or scopes;
+- revoke a human's sessions or credentials;
+- change instance-admin status (§16);
+- disable or delete a human's account;
+- change who owns a project, an agent profile or a runner;
+- archive or delete a project;
+- change a policy field that governs what humans decide —
+  `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
+  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`).
+
+Every such attempt is `forbidden` with `details.reason: humans_only`,
+before any side effect. The hub's tests enforce it as one table of
+endpoints and fields, checked against agent credentials of every role.
 
 Additional rules that are not scopes:
 
@@ -887,7 +940,9 @@ Response `200`, bounded and deterministic:
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
-                  "paused": null, "briefing": "You are the hub's second pair of eyes: …" },
+                  "paused": null, "briefing": "You are the hub's second pair of eyes: …",
+                  "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                  "briefing_version": 1 },
   "project": {
     "slug": "maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
@@ -999,16 +1054,20 @@ honest as the client that sends it.
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ |
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
 lifted or replaced only by a member with `members:admin`: the agent's
 `PATCH /me` with `paused` is then `forbidden` with
-`details.reason: "paused_by_human"`. `paused` is for agent members; on a
+`details.reason: "paused_by_human"`. A pause an admin agent set (§2.3
+ᵃ) behaves the same — not cleared by `resume`, refused to the paused
+agent's `PATCH /me` (`paused_by_admin`), a gate on new work — and is
+lifted by that agent or a human; `by` says which it was. An admin agent
+never lifts or replaces a pause a human set. `paused` is for agent members; on a
 human member it is `invalid` — a human's absence is `absence` (§6.1).
 
-A pause a human set is a soft stop: the agent learns it at once
+A pause a human or an admin agent set is a soft stop: the agent learns it at once
 (`session_paused` reaches the agent itself and wakes its long-poll; lifting
 the pause emits `session_paused` with `paused: null` the same way), and the
 hub refuses it new work — its claims (also a claim an admin makes on its
@@ -1181,7 +1240,14 @@ session:
 `harness` and `model` are those of the latest session; `session` is
 `null` when none is open. `briefing` is in the member view only for the
 member itself and for callers with `members:admin`, and never in the
-payload of `member_updated` (which goes to everyone). Humans have no `owner_id`, `harness`, `model`
+payload of `member_updated` (which goes to everyone). With it come
+`briefing_by` (`{kind, id, handle}`: the human or the admin agent who
+wrote the current text), `briefing_version` (starts at 1 with the join,
++1 on every change) and `briefing_updated_at`. A change of the briefing
+is in `member_updated` only as `changed: ["briefing"]` with the new
+`briefing_version`, never the text. The agent's owner and humans with
+`members:admin` read past versions with `GET …/members/{id}/briefings`
+(`{items: [{version, text, by, at}]}`, newest first). Humans have no `owner_id`, `harness`, `model`
 or `session`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
 
@@ -1217,8 +1283,9 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
+| `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1922,7 +1989,8 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
+| `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
@@ -2702,7 +2770,7 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as the humans wrote it, identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
