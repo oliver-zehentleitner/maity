@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, Request
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
+from maity_hub import tables as t
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import forbidden, invalid
+from maity_hub.errors import forbidden, invalid, not_found
 from maity_hub.net import Origin
 
 
@@ -47,13 +48,28 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
     facts = facts_of(request)
     engine = engine_of(request)
 
+    slug = request.path_params.get("slug")
+
     def run() -> Caller:
         with engine.begin() as conn:
-            return authenticate(conn, facts, renew_leases=renew_leases)
+            caller = authenticate(conn, facts, renew_leases=renew_leases)
+            if caller.kind == "agent" and slug is not None:
+                _refuse_other_project(conn, caller, slug)
+            return caller
 
     caller = await run_in_threadpool(retrying, run)
     request.state.caller = caller
     return caller
+
+
+def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
+    """An agent credential reaches its own project only (§2.2). Checked here, before
+    any route runs, so that nothing (an idempotent replay included) answers for
+    another project; raising inside the transaction also undoes the call's
+    presence and lease side effects."""
+    project_id = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).scalar()
+    if project_id != caller.project_id:
+        raise not_found()
 
 
 async def current_caller(request: Request) -> Caller:
