@@ -3723,7 +3723,11 @@ does not scan `GET /events` (§8.3) from the start to find them.
 Conversations are not listed here; they are read through §9.
 
 **Who sees what.** Exactly the readable set of `GET /events` (§8.2),
-restricted to `kind: message` without a `conversation_id`: a message
+restricted to `kind: message` that is not a conversation's message, as
+stored: the hub records a message's conversation when it is written, and
+that record survives redaction, so a redacted chat message — whose
+payload, `conversation_id` included, is gone — is never listed here. A
+message
 whose audience holds `all`, `member:<the caller>` or `role:<a role the
 caller holds>` — a mention puts `member:<id>` there (§8.6) — and the
 messages the caller sent. Owners and admins, humans and agents, read
@@ -3731,7 +3735,10 @@ every project message, as they read every event of the project that is
 not a conversation's. The exceptions §8.2 makes for conversations do not
 arise: no `chat` message is listed. A message the caller could not read
 through `/events` is never listed here, and nothing listed here is
-readable only through this endpoint.
+readable only through this endpoint. A caller who is not a member of
+the project gets `not_found`, as on every project route (§1.3) — an
+owner outside the project included: reading along in a group chat
+(§9.2) opens that chat, not the project's messages.
 
 **Order and paging.** Newest first by `seq`, paged (§1.4): `limit`
 (default 50, maximum 200), `cursor`, `{items, next_cursor}`. Two
@@ -3743,9 +3750,15 @@ starting points, as `seq` from an event or an earlier page:
   the events endpoint (§8.3) and the ticker listing (§17.9): catching up
   from what the client last saw.
 
-`after` and `before` together are `invalid`. `next_cursor` continues in
-the same direction; a cursor is valid for one starting point, one
-ordering and one filter set (§1.4). There is no `wait`: the long-poll
+`after` and `before` are integers ≥ 0; anything else, `latest`
+included, is `invalid` (`details.fields.after` or `.before`), and the
+two together are `invalid`. `before` pages backwards newest first here,
+unlike `before` on a conversation's messages (§9.1, §9.2), which returns
+its page oldest first: a chat is read top to bottom, this listing from
+the newest down. `next_cursor` continues in the same direction. A cursor
+is valid only with the same `after`, `before` and `type` it was handed
+out with (§1.4); a cursor sent with any of them changed, added or left
+out is `invalid` (`details.fields.cursor`). There is no `wait`: the long-poll
 is `GET /events`, whose `message` events a client merges into the list
 it shows. Reading the listing acknowledges nothing, moves no event
 cursor, sets no `delivered_at` and wakes nobody; like every call it is
@@ -3773,8 +3786,12 @@ through this listing. Without `type` every project message is listed.
 `task_id`, `body`, `mentions` (§8.6) and `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) are the
 event's payload. The full event, `audience` included, is `GET /events`;
-this is the message's reading form, the shape of §9.1 with `type`, `to`
-and `task_id` in place of `conversation_id`.
+this is the message's reading form. Against the message shape of §9.1 it
+keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
+`role:<role>` or a member id), `body`, `sent_at`, `mentions`,
+`attachments`, `redacted` and `redaction`; it drops `conversation_id`
+and `delivered_at` (a project message has no single recipient whose
+first read could be recorded); it adds `type` and `task_id`.
 
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
