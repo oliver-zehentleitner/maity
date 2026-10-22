@@ -54,7 +54,7 @@ def test_the_packet_has_every_part_of_the_contract(
     assert set(packet) == PACKET
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
-    assert packet["hints"] == {"wait_timeout": 600}
+    assert packet["hints"] == {"wait_timeout": 540}  # Claude Code
     assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer"}
     assert packet["membership"] == {
         "role": "member",
@@ -102,9 +102,31 @@ def test_the_harness_fields_are_optional_and_client_is_not(
     assert missing.json()["error"]["details"]["fields"] == {"client": "missing"}
 
 
-def test_cline_gets_a_shorter_wait(owner: flow.Human, make_client: ClientFactory) -> None:
+@pytest.mark.parametrize(
+    ("harness", "seconds"),
+    [
+        ("Cline", 25),
+        ("Cline CLI", 25),
+        ("opencode", 110),
+        ("Hermes Agent", 170),
+        ("Kimi Code", 280),
+        ("oh-my-pi", 290),
+        ("OMP", 290),
+        ("Claude Code", 540),
+        ("claude", 540),
+        ("claude-code", 540),
+        ("Codex CLI", 600),
+        ("pi", 600),
+        ("a harness nobody listed", 600),
+        (None, 600),
+    ],
+)
+def test_the_wait_hint_follows_the_declared_harness(
+    owner: flow.Human, make_client: ClientFactory, harness: str | None, seconds: int
+) -> None:
     agent = flow.agent(make_client, owner)
-    assert agent.resume(harness="Cline").json()["hints"]["wait_timeout"] == 240
+    body = {"harness": harness} if harness is not None else {}
+    assert agent.resume(**body).json()["hints"]["wait_timeout"] == seconds
 
 
 def test_a_human_cannot_resume(owner: flow.Human) -> None:
