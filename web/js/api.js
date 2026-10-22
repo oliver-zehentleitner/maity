@@ -251,7 +251,7 @@ window.Maity = window.Maity || {};
       const key = m[1] + "/" + m[2];
       if (p[m[2]] && p[m[2]].source === "forge") forgeImages[key] = p[m[2]];
       if (uploaded[key] && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(uploaded[key]);
-      uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body) : "uploaded-" + key;
+      uploaded[key] = window.URL && URL.createObjectURL ? URL.createObjectURL(body.blob) : "uploaded-" + key;
       imageSerial += 1;
       p[m[2]] = { available: true, source: "uploaded", etag: "\"up" + imageSerial + "\"" };
       return { [m[2]]: p[m[2]] };
@@ -553,7 +553,10 @@ window.Maity = window.Maity || {};
   }
 
   function request(method, path, body, raw) {
-    const p = source === "fixtures" ? fromFixtures(method, path, body) : fromApi(method, path, body, raw);
+    // In fixture mode an image travels with the Content-Type the page sniffed.
+    const p = source === "fixtures"
+      ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
+      : fromApi(method, path, body, raw);
     if (path === "/auth/session") {
       return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
     }

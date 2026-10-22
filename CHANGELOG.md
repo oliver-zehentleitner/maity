@@ -253,4 +253,4 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   next event or when the window gets the focus back, instead of only after a reload
 - web: on a narrow screen the current tab and project are scrolled into their rows;
   the 15-second count re-read redraws only the switcher, so it no longer closes an
-  open State & absence panel with what was typed in it, nor resets a scrolled tab row
+  open State & absence panel (now Project settings) with what was typed in it, nor resets a scrolled tab row

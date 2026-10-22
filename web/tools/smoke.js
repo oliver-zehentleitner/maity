@@ -135,6 +135,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && /^#[0-9a-f]{6}$/.test(markOf("Sample shop").style.background), "logo: without one, a monogram from the initials in a colour of the slug");
   expect(main.querySelectorAll(".project-label .project-mark").length === 4, "logo: every #/all entry carries its project's mark");
   expect(gets.includes("/projects"), "logo: the project views are read for the logos");
+  const refuses = (src) => { try { win.Maity.dom.h("img", { src }); return false; } catch (e) { return true; } };
+  expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
+    && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maity/logo?v=%22f1%22"),
+    "dom: an image is a local file or the hub's own image, never another origin, not even https");
   let cur = main.querySelector(".current");
   expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Freeze") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
@@ -464,14 +468,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "a changed count reloads an empty list on its own, without a notice");
   expect(main.querySelector(".notice") && main.querySelector(".notice").getAttribute("role") === "status" && text(main.querySelector(".notice")).includes("1 new request."),
     "the quiet reload says \"1 new request.\" in the status notice");
-  // The same with the State & absence panel open and typed in: no reload, the offer instead.
+  // The same with the Project settings panel open and typed in: no reload, the offer instead.
   win.Maity.api.get = realGet2; await go("#/p/maity/board"); await go("#/p/maity/inbox");
   btn(header, "Project settings").click(); await tick();
   byId("state-reason").value = "typed, not sent";
   win.Maity.api.get = bump("maity");
   await fireIntervals(); await tick(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
-    "with the State & absence panel open the empty list is not reloaded; the panel and its text stay");
+    "with the Project settings panel open the empty list is not reloaded; the panel and its text stay");
   btn(header, "Project settings").click(); await tick();
   // An open entry on screen: the change is offered as a reload instead.
   win.Maity.api.get = realGet2;
@@ -528,7 +532,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const switcherBefore = header.querySelector("nav.switcher");
   await fireIntervals(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
-    "the count re-read keeps the open State & absence panel and its input");
+    "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
@@ -608,12 +612,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await pick("upload-logo", fakeFile(WEBP, 2000, "image/png"));
   expect(JSON.stringify(imgPuts[0]) === JSON.stringify(["PUT", "/projects/maity/logo", "image/webp", 2000]),
     "images: the upload is a PUT of the raw file, typed by its bytes (WebP, whatever the file claims)");
-  btn(header, "Project settings").click(); await tick();
+  // The panel opens again by itself and says what happened.
   const removeLogo = btn(header, "Remove the uploaded logo");
-  expect(removeLogo && text(header.querySelector(".images")).includes("uploaded here"), "images: an uploaded logo can be removed");
+  expect(removeLogo && text(header.querySelector(".images")).includes("Logo uploaded.") && text(header.querySelector(".images")).includes("uploaded here"),
+    "images: after an upload the panel says so, and the logo can be removed");
   removeLogo.click(); await tick(); await tick(); await tick();
   expect(JSON.stringify(imgPuts[1]) === JSON.stringify(["DELETE", "/projects/maity/logo"]) && header.querySelector(".bar .project-mark").getAttribute("src") === "fixtures/maity/logo.png",
     "images: removed, the forge's logo applies again");
+  expect(text(header).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
+  btn(header, "Project settings").click(); await tick();
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // Account: change the password (docs/api.md §2.1).
   const accountLink = header.querySelectorAll("a").find((a) => a.textContent === "Account");

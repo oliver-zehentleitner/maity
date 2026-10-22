@@ -297,7 +297,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     form and the paused card say what a human's pause does. Where the hub
     knows briefings, the owner writes one on the card and the agent's
     `resume` packet carries it; where it does not, no editor is offered;
-11. **State & absence**: the owner freezes the project with a note and a
+11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
     packet carries the state, the note and the absence; then back to build

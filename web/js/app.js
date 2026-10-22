@@ -218,8 +218,15 @@ window.Maity = window.Maity || {};
     return null;
   }
 
+  // Set by an upload or a removal; the next header opens the panel with it.
+  let imagesNote = null;
+
   function imagesForm(ctx) {
     const status = statusLine();
+    if (imagesNote) {
+      append(status.el, h("span", { class: "ok" }, imagesNote));
+      imagesNote = null;
+    }
     const box = h("div", { class: "images" }, h("h3", null, "Logo and banner"));
     [["logo", "Logo", "Square; shown next to the project's name everywhere."],
       ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
@@ -236,6 +243,7 @@ window.Maity = window.Maity || {};
         status.busy("Uploading the " + kind + "…");
         try {
           await M.api.putImage(ctx.base + "/" + kind, file, type);
+          imagesNote = label + " uploaded.";
           render();
         } catch (err) {
           const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
@@ -258,6 +266,7 @@ window.Maity = window.Maity || {};
               status.busy("Removing the " + kind + "…");
               try {
                 await M.api.del(ctx.base + "/" + kind);
+                imagesNote = "Uploaded " + kind + " removed" + (kind === "logo" ? "; the forge's logo, or a monogram, shows again." : ".");
                 render();
               } catch (err) {
                 status.fail(label + " not removed: ", err);
@@ -505,6 +514,8 @@ window.Maity = window.Maity || {};
           }, item.label)))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    // After an image was uploaded or removed, the panel opens again to say so.
+    if (toggle && imagesNote) toggle.click();
   }
 
   // ---- context ------------------------------------------------------------
@@ -697,8 +708,9 @@ window.Maity = window.Maity || {};
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
-      ctx = await loadContext(where, me);
-      ctx.projectViews = await projectViews();
+      const [loaded, views] = await Promise.all([loadContext(where, me), projectViews()]);
+      ctx = loaded;
+      ctx.projectViews = views;
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;

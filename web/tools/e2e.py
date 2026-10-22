@@ -943,7 +943,8 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     ), "the logo did not load from the hub"
     icon = page.evaluate("() => (document.querySelector('link[rel=icon]') || {}).href || ''")
     assert "/api/v1/projects/e2e-alpha/logo?v=" in icon, icon
-    page.get_by_role("button", name="Project settings", exact=True).click()
+    # The panel opened again by itself to say the logo was uploaded.
+    expect(page.locator("#project-panel")).to_contain_text("Logo uploaded.")
     page.locator("#upload-banner").set_input_files(
         files=[
             {
@@ -953,7 +954,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
             }
         ]
     )
-    expect(page.locator("header .bar img.project-mark")).to_be_visible()
+    expect(page.locator("#project-panel")).to_contain_text("Banner uploaded.")
     page.locator("nav.views").get_by_role("link", name="Inbox", exact=True).click()
     banner = page.locator("main img.project-banner")
     expect(banner).to_have_attribute("src", re.compile(r"^/api/v1/projects/e2e-alpha/banner\?v="))
@@ -966,6 +967,8 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     run.a11y(page, "project settings with images")
     page.get_by_role("button", name="Remove the uploaded logo", exact=True).click()
     expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
+    expect(page.locator("#project-panel")).to_contain_text("Uploaded logo removed")
+    page.get_by_role("button", name="Project settings", exact=True).click()
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
 
