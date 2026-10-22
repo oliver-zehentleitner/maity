@@ -448,13 +448,15 @@ window.Maity = window.Maity || {};
         status.fail(label + " failed: ", E.said(err));
         return false;
       }
-      status.done();
-      append(status.el, h("span", { class: "ok" }, done));
+      // Said once the board shows it: the words and the board never disagree.
       try {
         await reload(focusKey);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
+        return true;
       }
+      status.done();
+      append(status.el, h("span", { class: "ok" }, done));
       return true;
     }
 
