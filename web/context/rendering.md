@@ -51,7 +51,7 @@ project's logo and banner are loaded only from the hub's own path, which
 the page builds from the slug and the ETag
 (`/api/v1/projects/<slug>/logo?v=<etag>`, `docs/api.md` §11.2), or from an
 object URL of a file chosen in the same tab; `Maity.dom.h` refuses any
-other `src`. The hub serves the image from its own origin and never lets
+other `src` — an `https` URL of another origin included (links may be https, images may not). The hub serves the image from its own origin and never lets
 the browser load one from the forge.
 
 **Reason:** text-only rendering stops markup, but an `href` is a second
