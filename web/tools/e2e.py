@@ -264,6 +264,15 @@ ONE_LINE_JS = """sel => Array.from(document.querySelectorAll(sel)).map(el => {
 })"""
 
 
+# Each tab row's current tab, whether it lies fully inside the row's box.
+CURRENT_SHOWN_JS = """() => Array.from(document.querySelectorAll("header nav")).map(nav => {
+  const cur = nav.querySelector('[aria-current="page"]');
+  if (!cur) return [nav.className, true];
+  const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
+  return [nav.className, c.left >= n.left - 1 && c.right <= n.right + 1];
+})"""
+
+
 def board_card(page: Page, title: str):
     return page.locator("article.card", has=page.get_by_text(title, exact=True))
 
@@ -533,6 +542,9 @@ def scenario(run: Run, page: Page) -> None:
         expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
+        # The current tab and project chip are scrolled into their rows.
+        hidden = [cls for cls, shown in page.evaluate(CURRENT_SHOWN_JS) if not shown]
+        assert not hidden, f"{view}: the current entry of nav.{hidden} is scrolled out of view"
         # Revoke keeps its label on one line: one line box for its text.
         lines = page.evaluate(ONE_LINE_JS, ".credentials button, .joins button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
