@@ -22,6 +22,9 @@ PREFIXES = {
     "release": "rel",
     "contract": "ctr",
     "request": "req",
+    "runner": "rnr",
+    "runner_enrollment": "renr",
+    "runner_credential": "rcrd",
 }
 
 

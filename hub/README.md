@@ -11,7 +11,9 @@ profiles, joins with the join page, the resume packet and credentials of
 claims, leases, checkpoints and reports, requests to humans with the
 cross-project inbox, events with the long-poll, messages and conversations
 are in, and release and contract cards with their checklist, and the
-forge probe.
+forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
+signed-only caller confined to `/runner/*`, and the owner's runner calls
+are in; attachments, placements and the runner's own endpoints follow.
 
 ## Run it locally with plain Python
 
@@ -120,7 +122,7 @@ All settings come from the environment.
 
 The hub logs each request as method, path and status on the
 `maity_hub.access` logger, never a query string or a header value, with
-join tokens shown as `…`; uvicorn's own access log is off.
+join and pairing tokens shown as `…`; uvicorn's own access log is off.
 
 The machine-readable API description is at `/api/v1/openapi.json`;
 `/api/v1/help` is the one written for agents.

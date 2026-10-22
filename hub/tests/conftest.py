@@ -76,10 +76,11 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import clock, forge
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
-    from maity_hub.routes import auth, joins
+    from maity_hub.routes import auth, joins, runners
 
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
+    runners.PAIR_BY_ADDRESS.reset()
     auth.LOGIN_BY_HANDLE.reset()
     caller.NONCES = NonceWindow()
     forge._visible.clear()

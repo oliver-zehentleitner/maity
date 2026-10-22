@@ -51,7 +51,7 @@ class Membership:
 
 def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
-    if project is None:
+    if project is None or caller.kind == "runner":  # a runner is no member (§15.1)
         raise not_found()
     # An agent credential belongs to one membership, of one project (§2.2): the
     # profile's memberships elsewhere are not reachable through it.

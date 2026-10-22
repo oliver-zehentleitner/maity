@@ -37,6 +37,7 @@ from maity_hub.routes import (
     members,
     projects,
     requests,
+    runners,
     tasks,
 )
 from maity_hub.routes import auth as auth_routes
@@ -96,7 +97,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
+    app.include_router(runners.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
+    app.include_router(runners.page_router)  # /r/{token}, likewise
     _mount_web(app, settings)
     if settings.public_url_guessed:
         log.warning(

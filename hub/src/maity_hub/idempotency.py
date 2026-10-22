@@ -52,11 +52,13 @@ class Outcome:
 
 
 def key_for(request: Request, caller: Caller) -> str | None:
-    """The request's key; required on an agent's POST and PATCH outside the exemptions."""
+    """The request's key; required on an agent's or a runner's POST and PATCH outside
+    the exemptions."""
     key = request.headers.get(HEADER)
     path = request.url.path
     exempt = path in EXEMPT_PATHS or path.startswith(EXEMPT_PREFIXES)
-    required = caller.kind == "agent" and request.method in ("POST", "PATCH") and not exempt
+    required = caller.kind in ("agent", "runner") and request.method in ("POST", "PATCH")
+    required = required and not exempt
     if key is None:
         if required:
             raise invalid({"Idempotency-Key": "required"}, "Idempotency-Key is required")

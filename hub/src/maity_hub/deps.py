@@ -55,10 +55,13 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
     engine = engine_of(request)
 
     slug = request.path_params.get("slug")
+    path = request.url.path
 
     def run() -> Caller:
         with engine.begin() as conn:
             caller = authenticate(conn, facts, renew_leases=renew_leases)
+            if caller.kind == "runner":
+                _confine_runner(path)
             if caller.kind == "agent" and slug is not None:
                 _refuse_other_project(conn, caller, slug)
             return caller
@@ -76,6 +79,20 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
     project_id = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).scalar()
     if project_id != caller.project_id:
         raise not_found()
+
+
+RUNNER_PATH = "/api/v1/runner"
+
+
+def _confine_runner(path: str) -> None:
+    """A runner calls `/runner/*` and nothing else (§15.1). Decided here, once, so that
+    no route ever sees a runner it was not written for: a project route answers as
+    for a project the runner is not a member of, every other route `forbidden`."""
+    if path == RUNNER_PATH or path.startswith(RUNNER_PATH + "/"):
+        return
+    if path.startswith("/api/v1/projects/"):
+        raise not_found()
+    raise forbidden(message="a runner credential calls /runner/* only")
 
 
 async def current_caller(request: Request) -> Caller:

@@ -255,6 +255,75 @@ agent_session = Table(
     **MYSQL_TABLE,
 )
 
+# --- runners (docs/api.md §15) ------------------------------------------------------
+#
+# A runner is a caller of its own, owned by a human: not an agent profile and
+# not a membership (§15.1), so none of these tables references `membership`.
+
+runner = Table(
+    "runner",
+    metadata,
+    _id(primary_key=True),
+    _ref("owner_id", "human.id", nullable=False),
+    Column("name", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("removed_at", UtcDateTime),
+    Column("last_seen_at", UtcDateTime),  # any call of its credential (§2.4)
+    Column("version", Text),  # the `client` of its last hello
+    Column("capabilities", JSON_VALUE),  # what it last advertised (§15.3), never a grant
+    Column("capabilities_at", UtcDateTime),
+    # True until the runner is removed, NULL afterwards: a name is unique among
+    # one owner's runners, and a removed runner's name is free again.
+    Column("active", Boolean, default=True),
+    UniqueConstraint("owner_id", "name", "active"),
+    CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+runner_enrollment = Table(
+    "runner_enrollment",
+    metadata,
+    _id(primary_key=True),
+    # A re-pair names its runner; a new runner has only its name until the exchange.
+    _ref("runner_id", "runner.id"),
+    Column("name", String(HANDLE)),
+    Column("attach", JSON_VALUE, nullable=False),  # project ids to attach at the exchange
+    Column("token_hash", String(HEX_SHA256), nullable=False, unique=True),
+    Column("code_hash", String(HEX_SHA256), nullable=False),
+    _ref("created_by", "human.id", nullable=False, index=True),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    Column("failed_attempts", Integer, nullable=False),
+    Column("burned_at", UtcDateTime),
+    Column("revoked_at", UtcDateTime),
+    CheckConstraint("runner_id IS NOT NULL OR name IS NOT NULL", name="names_a_runner"),
+    **MYSQL_TABLE,
+)
+
+runner_credential = Table(
+    "runner_credential",
+    metadata,
+    _id(primary_key=True),
+    _ref("runner_id", "runner.id", nullable=False),
+    # sha256 over the secret's text, hex; the HMAC key (a runner signs every call).
+    Column("verifier", String(HEX_SHA256), nullable=False),
+    _ref("enrollment_id", "runner_enrollment.id", nullable=False),
+    Column("client", Text),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("last_used_at", UtcDateTime),
+    Column("last_used_via", String(16)),
+    Column("revoked_at", UtcDateTime),
+    Column("revoked_by", String(ID)),
+    Column("revoked_reason", MARKDOWN_TEXT),
+    # True while unrevoked, NULL afterwards: one live credential per runner (§15.1).
+    Column("live", Boolean, default=True),
+    UniqueConstraint("runner_id", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
 idempotency_key = Table(
     "idempotency_key",
     metadata,

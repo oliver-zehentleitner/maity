@@ -1,10 +1,12 @@
-"""Who is calling: a human with a cookie session, or an agent with a credential.
+"""Who is calling: a human with a cookie session, or an agent or a runner with a
+credential.
 
 `authenticate` resolves the caller from one request and applies the side
 effects every authenticated call has (docs/api.md §2.4): presence on the
 human, the membership and the session; for an agent, the renewal of its
 leases (except on the events long-poll) and the move of its claims to the
-live session.
+live session; for a runner, its own last use and nothing on any membership
+(§15.1).
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ class RequestFacts:
 
 @dataclass(frozen=True)
 class Caller:
-    kind: str  # human, agent
+    kind: str  # human, agent, runner
     via: str  # cookie, bearer, signed
     human_id: str | None = None
     human_session: str | None = None  # id_hash of the dashboard session
@@ -62,10 +64,12 @@ class Caller:
     project_id: str | None = None  # an agent's one project
     harness: str | None = None
     model: str | None = None
+    runner_id: str | None = None
 
     @property
     def principal_id(self) -> str:
-        principal = self.human_id if self.kind == "human" else self.agent_id
+        """The member id; a runner is no member and has none (§15.1)."""
+        principal = {"human": self.human_id, "agent": self.agent_id}.get(self.kind)
         if principal is None:
             raise RuntimeError("a caller without a principal")
         return principal
@@ -178,6 +182,9 @@ def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> C
     if not credentials.secret_matches(presented.secret, row.verifier):
         raise unauthenticated()
     _refuse_revoked(row)  # only now: the caller proved possession (§1.3)
+    if is_runner_credential(row.id):
+        # Whatever any project's policy says, before any side effect (§15.1).
+        raise ApiError(403, "signature_required", "a runner credential signs every call")
     return _agent(conn, row, "bearer", renew)
 
 
@@ -211,6 +218,8 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     # Only a verified request spends its nonce, so a forger cannot burn them.
     if not NONCES.first_use(credential_id, nonce):
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
+    if is_runner_credential(row.id):
+        return _runner(conn, row)
     return _agent(conn, row, "signed", renew)
 
 
@@ -233,7 +242,17 @@ def _nonce_shape(nonce: str) -> bool:
     )
 
 
+RUNNER_CREDENTIAL_PREFIX = "rcrd-"
+
+
+def is_runner_credential(credential_id: str) -> bool:
+    """Runner and agent credentials share the format and differ by the id's prefix."""
+    return credential_id.startswith(RUNNER_CREDENTIAL_PREFIX)
+
+
 def _credential(conn: Connection, credential_id: str) -> Any:
+    if is_runner_credential(credential_id):
+        return _runner_credential(conn, credential_id)
     row = conn.execute(
         select(
             t.credential.c.id,
@@ -325,4 +344,42 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool) -> Caller:
         project_id=project_id,
         harness=session.harness if session else None,
         model=session.model if session else None,
+    )
+
+
+# --- runners -----------------------------------------------------------------------
+
+
+def _runner_credential(conn: Connection, credential_id: str) -> Any:
+    row = conn.execute(
+        select(
+            t.runner_credential.c.id,
+            t.runner_credential.c.verifier,
+            t.runner_credential.c.revoked_at,
+            t.runner_credential.c.revoked_reason,
+            t.runner_credential.c.runner_id,
+            t.runner.c.owner_id,
+        )
+        .join(t.runner, t.runner.c.id == t.runner_credential.c.runner_id)
+        .where(t.runner_credential.c.id == credential_id)
+    ).first()
+    if row is None:
+        raise unauthenticated()
+    return row
+
+
+def _runner(conn: Connection, row: Any) -> Caller:
+    now = clock.now()
+    conn.execute(
+        update(t.runner_credential)
+        .where(t.runner_credential.c.id == row.id)
+        .values(last_used_at=now, last_used_via="signed")
+    )
+    conn.execute(update(t.runner).where(t.runner.c.id == row.runner_id).values(last_seen_at=now))
+    return Caller(
+        kind="runner",
+        via="signed",
+        runner_id=row.runner_id,
+        owner_id=row.owner_id,
+        credential_id=row.id,
     )
