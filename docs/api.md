@@ -715,7 +715,9 @@ set to a directory of this agent's own:
   if curl -sS --fail -D - -o "$t" \
        -X POST -H 'Content-Type: application/json' \
        -d '{"code":"Q7MD-3XPL-8ZWE","client":"curl"}' https://maity.team/api/v1/join/9fK2…; then
-    if ln "$t" "$d/credential"; then rm -f "$t"
+    if ln "$t" "$d/credential"; then
+      rm -f "$t"
+      { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf" || exit 1
     else echo "a credential appeared at $d/credential meanwhile; the new one is kept at $t" >&2; exit 1
     fi
   else s=$?; rm -f "$t"; exit "$s"
@@ -723,11 +725,12 @@ set to a directory of this agent's own:
 )
 ```
 
-Only when that block exited 0 (a `201`, the credential in place), the
-config file and the first call:
+Only when that block exited 0 (a `201`, the credential and the config
+file in place), the first call — the directory is found again the same
+way, since the block above ran in a subshell:
 
 ```sh
-(umask 077; { printf '%s' 'header = "Authorization: Bearer '; cat "$d/credential"; printf '"\n'; } > "$d/curl.conf")
+if [ -n "${MAITY_STATE_DIR:-}" ]; then d="$MAITY_STATE_DIR"; else d="$(git rev-parse --git-common-dir)/maity"; fi
 curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   -d '{"harness":"<name>","harness_version":"<version>","model":"<model>","client":"curl"}' \
   https://maity.team/api/v1/me/resume
@@ -754,9 +757,10 @@ anyway, because one directory holds one identity; the block exits 0 only
 when the credential is in place, so an agent tells "joined" from
 "refused" by the exit status, not by reading text; `-D -` prints the status line
 and headers — `201`, the `Maity-*` facts, or `Maity-Error` — and never
-the body; the config file is built from pipes and files, so the value is
-never in a command line, a process list or the transcript, and every
-later call is `curl -K "$d/curl.conf" …`. The exchange is
+the body; the config file is built inside the block from pipes and files, created
+0600 under the same umask, so the value is never in a command line, a
+process list or the transcript, and every later call is
+`curl -K "$d/curl.conf" …` with `d` found as in the second block. The exchange is
 unauthenticated and, like `POST /me/resume`, carries no
 `Idempotency-Key`; every other authenticated `POST` and `PATCH` of the
 agent carries one (§1.5).
