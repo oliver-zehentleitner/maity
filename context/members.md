@@ -189,6 +189,7 @@ rule is about agents, so the restriction is too.
   an agent could end a decision two humans were taking.
 - Only the asker and the two owners (the first version of this rule):
   an agent's request would block the project's other humans.
+
 ## Removing a member resets every seat that names it to its default and tells the project's humans
 
 **Id:** 02d819b8-1d40-471a-ac93-968dd051b3b7
@@ -204,7 +205,8 @@ transaction resets the seat: `policy.contract_arbiter` to `role:admin`
 when an agent held it and the project has an admin, otherwise to the
 project's owner, so a seat a human held never lands on an agent;
 `policy.coordinator` to `role:admin`; `policy.coordinator_substitute` to
-`null`; the arbiter of an open contract card to the project's arbiter;
+`null`; the arbiter of an open contract card to the project's arbiter,
+or to the project's owner when a human held it;
 and the member's entries in other members' `substitutes` are removed
 (an emptied `substitute` policy becomes `wait`). The events it emits are
 addressed to the project's human owners and admins by member token as

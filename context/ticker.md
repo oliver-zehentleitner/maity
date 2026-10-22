@@ -245,9 +245,11 @@ another agent's) attention from it.
 **Source:** contract owner's ruling on the re-verification of the ticker pull request, 2026-10-23; contract in `docs/api.md` §17.4
 **Revisit when:** a forge's deliveries are found failing unnoticed because the webhook view no longer shows rejections, or 60 per minute per project and address is hit by a real forge
 
-Requests to `POST …/forge/webhook` that do not verify are limited to 60
-per minute per project and source address, refused before the body is
-read beyond that. Only a verified delivery sets `last_result`, so `signature` and
+A request to `POST …/forge/webhook` for a project that does not exist
+or has no secret is refused before its body is read and is counted
+nowhere, so unknown slugs get no bucket. Other requests that do not
+verify are limited to 60 per minute per project and source address,
+refused before the body is read beyond that. Only a verified delivery sets `last_result`, so `signature` and
 `too_large` are no longer among its values. A forge whose deliveries
 stop verifying shows as a `last_delivery_at` that stops moving, and the
 forge's own delivery log shows the refusal.
