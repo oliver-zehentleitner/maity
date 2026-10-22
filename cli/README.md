@@ -485,7 +485,11 @@ same settings on the command line, whatever its environment, because
 for Claude Code it runs outside the sandbox. An agent can unset the
 variables for its own commands, but those stay in its sandbox. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
-and git in another repository needs `env -u GIT_COMMON_DIR git …`.
+and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
+submodule moved to another commit does not show in `git status` or
+`git diff --cached`, yet `git add -A` stages it and a commit records it;
+`maity report` does not count such a staged bump as an uncommitted
+change. A newly added submodule does show.
 
 Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
