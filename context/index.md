@@ -23,7 +23,7 @@ Why Maity is built the way it is.
 ## 9
 
 ## A
-- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally
+- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere
 
 ## B
 
@@ -66,7 +66,7 @@ Why Maity is built the way it is.
 - [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe
 
 ## S
-- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does
+- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 
 ## T
