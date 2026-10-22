@@ -42,9 +42,9 @@ is in-process, which fits the one replica V1 runs.
 
 **Id:** 96643c34-fc6f-4279-8a89-39882e3ab3d8
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** implementation of the runner stream, 2026-10-22; proposed to the contract owner the same day
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation of the runner stream, 2026-10-22; accepted by the contract owner the same day, `docs/api.md` §15.8 (PR #83)
 
 `GET /runner/events` (`docs/api.md` §15.8) scans the events of every
 project the runner has an attachment row in, active or detached, and
@@ -58,7 +58,7 @@ the current set would never deliver it. Reading the old projects as well
 exposes nothing: an event names the runner only while it concerns it.
 
 **Rejected alternative:** the stream on the current set only, as the
-contract's first text reads. The runner would learn of a detachment only
+contract's first text read. The runner would learn of a detachment only
 by noticing that a project is missing from its next hello.
 
 **Rejected alternative:** writing the detachment somewhere outside the
