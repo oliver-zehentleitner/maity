@@ -83,3 +83,70 @@ loop answers, which a TCP check would not.
   as the database is down.
 - A TCP socket check for liveness: passes even when the event loop no
   longer answers.
+
+## The Ingress is a plain networking.k8s.io/v1 Ingress; ingress-nginx annotations are only defaults
+
+**Id:** adc362f5-08ef-41e0-ab34-05f07cd5fa26
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart's review)
+**Revisit when:** the maintainer's cluster moves to a controller that serves only Gateway API, or a second controller's annotations become defaults
+
+The chart's Ingress is a plain `networking.k8s.io/v1` object that any
+controller serves through `ingress.className`. Its default annotations
+carry the long-poll settings for ingress-nginx: 75 s read and send
+timeouts, buffering off. They merge with the operator's annotations and can
+each be set to null. The chart README says that upstream ingress-nginx has
+been retired since March 2026, with no further releases or security fixes,
+and that a new cluster should use a maintained controller with its own
+equivalents of the three settings.
+
+**Reason:** the hub needs only what every Ingress controller offers, plus
+two properties of the long-poll: at least 55 s per request, and an
+unbuffered response. Naming one controller's settings as defaults gives
+the common case a working install. A plain Ingress keeps every controller
+open, including the one the maintainer's cluster runs.
+
+**Rejected alternatives:**
+- A Gateway API `HTTPRoute` instead of the Ingress: the direction of the
+  ecosystem, but not every cluster has the Gateway CRDs, and the
+  long-poll timeouts are policy attachments that differ per
+  implementation. It is the revisit, not the default.
+- No default annotations at all: neutral, but every ingress-nginx install
+  would buffer the long-poll and cut it at 60 s until someone notices.
+
+## A hub serves only on its own schema head; rollback is not a downgrade
+
+**Id:** cc9f37de-1684-41f1-b090-a2dc344a3673
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (the Helm chart's review)
+**See:** persistence.md — ce7a3627-d04d-4708-bac9-ed0c7d64cfe4 — as of 2026-10-22
+**See:** kubernetes.md — eced7109-a606-4549-b2f2-962e7436f8a8 — as of 2026-10-22
+**Revisit when:** a migration has to run while the old version keeps serving (expand/contract migrations), or `maity-hub` gets a downgrade command
+
+A hub process serves only when the database is at exactly the migration
+head of its own version. There are three consequences on Kubernetes.
+- **During an upgrade:** once the hook Job has migrated, the old pod's
+  readiness fails with `schema_outdated`, so an upgrade with a migration
+  is unavailable for the migration plus the new pod's start.
+- **Rollback:** `helm rollback` runs no migration (the hook is
+  `pre-install,pre-upgrade` only) and `maity-hub` has no downgrade
+  command, so a rollback to a version with an older schema head starts a
+  hub that refuses to serve and crash-loops. The chart README says to
+  roll back only to a version with the same schema head and otherwise to
+  fix forward.
+- **Helm's timeout:** the Job's deadline (300 s by default) stays under
+  the `--timeout` the README's commands pass (10 m), so a Job that
+  outlived Helm cannot still migrate under the old pod after Helm
+  reported the failure.
+
+**Reason:** this follows from serving only on the current schema
+(persistence.md). Writing it down here keeps the upgrade and rollback
+instructions honest about what Helm can and cannot undo.
+
+**Alternatives:** none were in contention for this chart. Expand/contract
+migrations, where old and new versions both run on the new schema, would
+lift the rule. They are the revisit, not something V1 needs with one pod.
