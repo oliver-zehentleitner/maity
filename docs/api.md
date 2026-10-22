@@ -1286,7 +1286,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -1297,8 +1297,26 @@ stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
 with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
 join that carries `reports_to`, against the project's current members.
-Removing a member sets `reports_to` to `null` on everyone who reported to
-them (`member_updated` for each), so the chain never names a former member.
+**Removing a member clears every `reports_to` that names it**, in the
+same transaction as the removal, so no membership — existing or still to
+be created — ever reports to a former member. Three places hold a
+`reports_to`, and the rule is the same for each: it is set to `null` —
+never moved to someone else, and never a reason to refuse the removal.
+
+| Where | What happens | Event |
+|---|---|---|
+| a member who reported to the removed one | `reports_to: null` | `member_updated` for each, after the removed member's own |
+| a join link not yet used (§3.1), the pickup's join (§15.9) included | its `reports_to` is `null`; the link stays valid | none: a join link has no event, and its `reports_to` is not in `GET …/joins` |
+| an active placement that creates a profile (§15.6), until its join's exchange has created the membership | its stored `reports_to` is `null` | none: the stored join fields are not in the placement view or in any event, and the runner never reads them; `generation` does not move |
+
+The join link or placement whose boss went away is still wanted, so it
+is neither revoked nor closed; it now creates a member that reports to
+nobody, and the admin sets a boss with `PATCH …/members/{id}` once it
+has joined. The exchange (§3.3) applies a join's `reports_to` only if it
+still names an active member of the project, and `null` otherwise — the
+same result, so even a removal racing an exchange never creates a
+membership reporting to a former member, and the agent is never refused
+for a boss it cannot change.
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
@@ -3335,7 +3353,9 @@ POST /api/v1/projects/maity/placements
   `reports_to`, `areas`, `capabilities` and `briefing` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
   (§15.9). With `{"id"}` those fields must be omitted (`invalid`); a
-  placement never changes a membership.
+  placement never changes a membership. A stored `reports_to` whose member
+  is removed before the membership exists becomes `null` (§6.2); every
+  pickup builds its join from the stored fields as they are then.
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `freeze`/`fixes-only`.
 - Placement creation by a human against a runner without a live
