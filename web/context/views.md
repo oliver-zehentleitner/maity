@@ -113,3 +113,32 @@ calls "expired" what the hub calls "used".
 client's skew, which on a laptop can be minutes. Hiding Revoke exactly at
 `expires_at` — the second the hub and the page disagree is the second a
 leaked line is pasted.
+
+## Cards move by a Move menu and by dragging, only where the hub's transition table allows; nothing is drag-only
+
+**Id:** c285771a-0b3a-4867-b66b-a1c7faa837de
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request for card management and drag and drop, relayed by the coordinator, 2026-10-22; web PR #126 and its review, 2026-10-22
+**Revisit when:** the contract gives cards an order within a column, or the hub exposes the moves a caller may make
+
+Each card a human may move has a **Move** menu with exactly the moves the
+hub allows them, mirrored from its transition check (proposed ↔ open for
+the creator, holder or an admin; review → done or back with done
+authority; cancel for an admin or an open card's creator). A pointer may
+drag the card instead: while dragging, the allowed columns are outlined
+and the others dimmed; a card let go over a refused column is said in
+words on `dragend` (a browser fires no drop there) and nothing is sent.
+There is no order within a column. The board's filters (member, area)
+work on the cards already loaded.
+
+**Reason:** a drag-only board leaves keyboard and phone users without a
+way to move a card; the menu is the path for both, and dragging is a
+shortcut over the same rule. Mirroring the table means the page offers
+no move the hub would refuse, and the hub still decides.
+
+**Rejected alternative:** offering every column and letting the hub
+refuse — every refusal would be a round trip and a surprise. Filters as
+query parameters to the hub — the board already holds every card of the
+window, so filtering there is instant and needs no new contract.
