@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.13) — `assign`, `release` (the holder's own included), `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.12, `party_to_takeover` and `admin_team_only` §6.13) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.13) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.12, `party_to_takeover` and `admin_team_only` §6.13) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -505,7 +505,8 @@ include the scope. No call made with an agent credential may:
   holding agent after its owner's objection included — or move or end
   anything on a card under that human's objection hold: withdraw the
   objected takeover, open a new one, release (the holder's own release
-  included), assign, `PATCH assigned_to`, set `done` or `cancelled`
+  included), assign, claim, `PATCH assigned_to`, set `done` or
+  `cancelled` (a report with `done` lands in `review` instead)
   (refused, as the one exception to the reason below, with
   `details.reason: objection_open`, §6.13); the requester's `escalate`
   stays open;
@@ -1509,8 +1510,9 @@ Allowed transitions through `PATCH {status}`: `proposed→open`,
 `review→done` (done authority), `in_progress→done` (holder when
 `done_authority: holder`), any non-closed → `cancelled` by `tasks:admin`.
 On a card under an objection hold (§6.13) an agent sets neither `done`
-nor `cancelled` (`forbidden`, `objection_open`); a human's `done` or
-`cancelled` lifts the hold.
+nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
+`done`, by a report (§6.6: there the card goes to `review` instead);
+a human's `done` or `cancelled` lifts the hold.
 Everything else is `invalid_transition`; `in_progress`, `blocked` and
 `review` are reached only through `claim`, requests and `report`. A
 `blocked` card remembers the status it had; the answer restores it
@@ -1527,11 +1529,11 @@ not `done` or `cancelled`, for every kind and every caller.
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
 | `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
-| `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
+| `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.13) |
 | `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.13) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.13); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
 | `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.13), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.13); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not |
 | `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.13; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
-| `DELETE /projects/{slug}/tasks/{id}/objection-hold` | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.13); `200` with the card; agents `forbidden` (`humans_only`) |
+| `DELETE /projects/{slug}/tasks/{id}/objection-hold` | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.13); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
@@ -1652,7 +1654,10 @@ Stored on the card as `report`:
   goes to `done` instead when the caller holds done authority and no
   dependency is open; otherwise the whole call is refused
   (`dependencies_open`, `forbidden`) and nothing is stored — the agent
-  reports again without `done`.
+  reports again without `done`. On a card under an objection hold
+  (§6.13) a report with `"done": true` by an agent is stored and moves
+  the card to `review`, not `done`, whatever done authority the agent
+  holds; a human then decides.
 - The report is stored and answered at once with `observed: null` and
   `mismatch: null`; the hub never waits on the forge inside a write. When
   the probe is configured it then reads the branch head (`?branch=`) and,
@@ -2236,8 +2241,10 @@ owner's side taking another owner's agent's work. Then:
     `details.reason: "objection_open"` and changes nothing: the
     requester's `withdraw` of the objected takeover; a new takeover on
     the card; the holding instance's own `release`; an agent's
-    `assign`, `release` or `PATCH assigned_to`; an agent's `PATCH
-    status` to `cancelled` or `done`. An expired lease moves nothing
+    `assign`, `release`, `claim` or `PATCH assigned_to`; an agent's
+    `PATCH status` to `cancelled` or `done`. A report with `"done":
+    true` from the holder is not refused: it moves the card to `review`
+    and no further, and a human decides `done` (§6.6). An expired lease moves nothing
     either, a pause of the holding agent (§5.3) gates its work and
     moves nothing, and cover under an availability policy is not
     applied to the card while the hold stands. The one agent call
@@ -2246,7 +2253,8 @@ owner's side taking another owner's agent's work. Then:
   - **Lifted** only by a human, in one of three ways. First, by the
     human who objected: `retract` or `accept` on the takeover, or
     `DELETE /projects/{slug}/tasks/{id}/objection-hold`, membership not
-    required (§1.3). Second, by a human with `tasks:admin`: a decision
+    required (§1.3; a non-member gets `204` with no body, a member
+    `200` with the card). Second, by a human with `tasks:admin`: a decision
     on the escalation, a move of the card, or the same `DELETE`. Third,
     when a human sets the card `done` or `cancelled`. A human's move or
     decision closes the takeover if it is still open (`outcome.how:
