@@ -102,6 +102,7 @@ let intervalId = 0;
 const win = {
   location: { protocol: "file:", search: "", hash: "", replace(h) { this.hash = h; setTimeout(() => win.onhashchange(), 0); } },
   addEventListener: (t, f) => { win["on" + t] = f; },
+  removeEventListener: (t, f) => { if (win["on" + t] === f) win["on" + t] = null; },
   confirm: () => true,
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (id) => clearTimeout(id),
@@ -2156,6 +2157,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   document.visibilityState = "visible";
   docListeners.visibilitychange(); await tick(); await tick();
   expect(ovReads() === ovBefore + 2, "overview: and when the tab comes back");
+  win.onfocus(); await tick(); await tick();
+  expect(ovReads() === ovBefore + 3, "overview: and when its window gets the focus back");
   ovSlow = [];
   ovBefore = ovReads();
   docListeners.visibilitychange(); docListeners.visibilitychange(); docListeners.visibilitychange(); await tick();
