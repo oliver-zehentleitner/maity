@@ -191,7 +191,9 @@ def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub
     body = owner.get("/projects/maity/probe?branch=agent-b/probe&tag=v0.1.0").json()
     assert body["branch"] == {"name": "agent-b/probe", "head_sha": OTHER, "found": True}
     assert body["tag"]["sha"] == SHA and body["tag"]["found"] is True
-    assert body["tag"]["observed_at"] == body["observed_at"]
+    # The tag carries its own time (§11); the answer's is the oldest of its reads, and the
+    # branch and the tag are read one after the other, maybe in different seconds.
+    assert body["observed_at"] <= body["tag"]["observed_at"]
     missing = owner.get("/projects/maity/probe?branch=gone").json()["branch"]
     assert missing == {"name": "gone", "head_sha": None, "found": False}
 
