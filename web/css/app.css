@@ -690,3 +690,12 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .facts dt { margin-top: 4px; }
   .reply { flex: 1 1 100%; }
 }
+
+/* Pictures on the account (docs/api.md §6.10). */
+.picture { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 8px 0 16px; }
+.picture-now { display: flex; gap: 12px; align-items: center; }
+.picture-now p { margin: 0; }
+.picture-controls { flex: 1 1 260px; min-width: 0; }
+.picture-controls input[type="file"] { max-width: 100%; }
+.picture-list { list-style: none; padding: 0; margin: 0; }
+.picture-name { margin: 12px 0 4px; font-size: 0.95rem; }

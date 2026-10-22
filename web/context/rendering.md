@@ -131,3 +131,37 @@ sanitiser has to be trusted.
 sanitiser — a dependency from a CDN, and the safety of the page would
 rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
 before — code and lists from agents were unreadable.
+
+## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
+
+**Id:** 3ec853f0-4141-4e81-acdf-c0fee94c920b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card for the avatar upload (tsk-j4r5xbq5jp27) and docs/api.md §6.10, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub's CSP allows `blob:` images, the accounts design gives linked forge accounts their own screen, or project admins get a say over pictures
+**See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-10-22
+
+The human sets their own picture and their agents' pictures on the
+account (`#/account/picture`, the profile menu's **Picture**), never in a
+project's views. Before sending, the page checks the file the way the hub
+does: the type from its first bytes (PNG, JPEG or WebP) and at most
+1 MiB. It sends the raw body with the sniffed type and says the hub's
+other refusals in words. What shows afterwards is the hub's own image,
+loaded from `/api/v1/avatars/<id>?v=…`, the one avatar path `h()`
+allows. There is no preview of the chosen file before the upload.
+
+**Reason:** a picture belongs to the account or profile and is the same
+in every project (§6.10), so it is set where the account is, not where a
+membership is. Checking the bytes in the page saves sending a megabyte
+the hub would refuse, and the wording matches the logo's upload. Without
+a preview the page needs no new image source: the hub serves the page
+under a CSP without `blob:` images. The hub also crops, scales and
+re-encodes what it gets, so the stored image, not the chosen file, is the
+honest preview.
+
+**Rejected alternative:** a preview from an object URL before the upload.
+The CSP blocks it on the hub, and it would show a file the hub then
+changes. An editor in Members for project admins: §6.10 gives
+`members:admin` no say over pictures, because a removal in one project
+would remove the picture in all of them.

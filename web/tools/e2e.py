@@ -792,6 +792,7 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
+    picture_step(run, page)
 
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
@@ -1723,6 +1724,36 @@ def members_step(run: Run, page: Page) -> None:
     no_problems(run, "members")
 
 
+def picture_step(run: Run, page: Page) -> None:
+    """docs/api.md §6.10: the owner's picture, from the profile menu; uploaded where the hub has it."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+    page.get_by_role("menuitem", name="Picture", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/account/picture$"))
+    expect(page.locator(".picture-heading")).to_be_focused()
+    run.a11y(page, "account picture")
+    page.locator("#avatar-file-" + page.evaluate("Maity.api.get('/me').then((m) => m.member.id)")).set_input_files(
+        files=[{"name": "me.png", "mimeType": "image/png", "buffer": tiny_png(48, 48, (217, 102, 26))}]
+    )
+    expect(page.locator("main")).to_contain_text(re.compile(r"Picture uploaded\.|Not uploaded"))
+    if "Not uploaded" in page.locator("main").inner_text():
+        # Only a hub without the endpoint is skipped, and the page has to say so.
+        run.step("picture: this hub has no avatar upload yet, and the page says so")
+        run.problems = [p for p in run.problems if p != "PUT /api/v1/me/avatar answered 404"]
+        no_problems(run, "picture")
+        return
+    run.step("picture: the owner uploads a picture from the profile menu, it shows in the header, then removes it")
+    face = page.locator("header .profile-menu img.avatar-img")
+    expect(face).to_have_attribute("src", re.compile(r"^/api/v1/avatars/[A-Za-z0-9_-]+\?v="))
+    page.wait_for_function("() => { const i = document.querySelector('header .profile-menu img.avatar-img'); return i && i.complete; }")
+    assert page.evaluate("() => document.querySelector('header .profile-menu img.avatar-img').naturalWidth") > 0
+    run.shot(page, "account-picture")
+    page.get_by_role("button", name="Remove the upload", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Uploaded picture removed")
+    expect(page.locator("header .profile-menu svg.avatar-svg")).to_be_visible()
+    no_problems(run, "picture")
+
+
 def change_password(run: Run, page: Page) -> None:
     """docs/api.md §2.1: the new password works, the old one does not, other sessions end."""
     run.step("account: change the password; another session ends; sign in with the new one")
@@ -1750,7 +1781,7 @@ def change_password(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if "/api/v1/auth/password answered 400" not in p]
     page.locator("#password-current").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Change password", exact=True).click()
-    expect(page.locator("main .send-status")).to_contain_text(
+    expect(page.locator("main form.project-form .send-status")).to_contain_text(
         "Password changed. Every other session of yours was signed out"
     )
     run.shot(page, "password-changed")
