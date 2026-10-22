@@ -145,7 +145,8 @@ no override: [`context/report.md`](context/report.md).
 Each of these makes one signed call. Writes carry an `Idempotency-Key`.
 Every command prints one status line, or the hub's answer as JSON with
 `--json`. A refusal by the hub is exit 1 with the hub's error code in the
-message.
+message. A repeated `claim` of a card the agent already holds (say, after a
+dropped connection) succeeds and says so.
 
 | Command | Call (`docs/api.md`) |
 |---|---|

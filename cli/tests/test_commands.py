@@ -355,3 +355,106 @@ def test_other_errors_print_no_field_list(
     answer(fake, "POST", f"{TASK}/claim", refusal, status=403)
     assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
     assert "  a: b" not in capsys.readouterr().err
+
+
+# --- review round: refs, ids, empty values, retries ----------------------------------------
+
+
+def test_checkpoint_outside_a_work_tree_is_an_error(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MAITY_STATE_DIR", str(joined))
+    elsewhere = tmp_path / "not-a-clone"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert cli.main(["checkpoint", "tsk-0004", "-m", "a", "--next", "b"]) == cli.EXIT_ERROR
+    assert fake.signed() == []
+
+
+def test_checkpoint_on_an_unborn_head_is_an_error(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    git(joined.parent.parent, "switch", "--quiet", "--orphan", "fresh")
+    assert cli.main(["checkpoint", "tsk-0004", "-m", "a", "--next", "b"]) == cli.EXIT_ERROR
+    assert "no commit yet" in capsys.readouterr().err
+    assert fake.signed() == []
+
+
+@pytest.mark.parametrize("bad", ["", " ", ".", ".."])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["claim", "{}"],
+        ["unclaim", "{}"],
+        ["checkpoint", "{}", "-m", "a", "--next", "b"],
+        ["answer", "{}", "--reply", "o1"],
+        ["release", "show", "{}"],
+        ["release", "tick", "{}"],
+        ["release", "tick", "chk-1", "--release", "{}"],
+        ["say", "all", "hi", "--type", "notice", "--task", "{}"],
+        ["report", "--task", "{}", "--summary", "s"],
+    ],
+)
+def test_empty_and_dot_ids_are_usage_errors(argv: list[str], bad: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.build_parser().parse_args([bad if a == "{}" else a for a in argv])
+    assert exc.value.code == cli.EXIT_USAGE
+
+
+def test_a_credential_shaped_id_is_not_sent(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["claim", fakehub.CREDENTIAL]) == cli.EXIT_ERROR
+    assert fake.signed() == []
+    assert fakehub.SECRET not in capsys.readouterr().err
+
+
+def test_an_empty_reason_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -> None:
+    assert cli.main(["claim", "tsk-0004", "--reason", ""]) == cli.EXIT_USAGE
+    assert fake.signed() == []
+
+
+def test_message_indentation_is_kept(joined: Path, fake: fakehub.FakeHub) -> None:
+    answer(fake, "POST", "/api/v1/projects/maity/events", {"seq": 1})
+    body = "    code block\n- item\n"
+    assert cli.main(["say", "all", body, "--type", "notice"]) == cli.EXIT_OK
+    assert last(fake).json()["body"] == body
+
+
+def test_a_repeated_claim_of_an_own_card_succeeds(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details = {"holder": "agt-b", "lease_until": "T2", "expired": False}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    answer(fake, "GET", TASK, {"id": "tsk-0004", "claim": {"holder": "agt-b", "lease_until": "T2"}})
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "claimed tsk-0004 (it was already yours); lease until T2\n"
+
+
+def test_a_claim_held_by_someone_else_stays_an_error(joined: Path, fake: fakehub.FakeHub) -> None:
+    details = {"holder": "agt-c", "lease_until": "T2", "expired": False}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+
+
+@pytest.mark.parametrize(
+    ("argv", "method", "path"),
+    [
+        (["checkpoint", "tsk-0004", "-m", "a", "--next", "b"], "POST", f"{TASK}/checkpoint"),
+        (["say", "all", "hi", "--type", "notice"], "POST", "/api/v1/projects/maity/events"),
+        (["say", "human", "hi"], "POST", "/api/v1/projects/maity/conversations/agt-b/messages"),
+        (
+            ["release", "tick", "chk-1", "--release", "tsk-0010"],
+            "POST",
+            f"{TASKS}/tsk-0010/checklist/chk-1",
+        ),
+    ],
+)
+def test_every_write_carries_an_idempotency_key(
+    joined: Path, fake: fakehub.FakeHub, argv: list[str], method: str, path: str
+) -> None:
+    answer(fake, method, path, {"id": "x", "seq": 1})
+    assert cli.main(argv) == cli.EXIT_OK
+    assert len(last(fake).headers["idempotency-key"]) >= 16

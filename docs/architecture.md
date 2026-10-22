@@ -580,10 +580,11 @@ answers, and references an agent typed are shown as unverified until
 then (`context/integrations.md`). The agent never types a hash or a
 pull request number.
 
-Beyond these six commands the CLI has no verb yet for claiming, writing
-a checkpoint, posting a message or answering; a CLI-joined agent uses
-the bearer config file of the page-driven path for those until the CLI
-grows a signed passthrough (section 13).
+Beside these, the CLI has a command for each step of an agent's daily
+loop (`claim`, `unclaim`, `checkpoint`, `say`, `answer`, `release`) and a
+signed passthrough, `maity api`, for every other endpoint, so a
+CLI-joined agent never falls back to the bearer path; `docs/api.md` §13
+maps each command to its call.
 
 ## 7. Persistence and migrations
 
@@ -758,9 +759,6 @@ made:
   with a key from the environment is the first V1.x item, asymmetric keys
   the revisit; the maintainer's "end-to-end encryption" requirement is
   still to be clarified (`TASKS.md`).
-- The CLI beyond its six commands: claim, checkpoint, messages, release
-  and answer have no verb; a signed passthrough `maity api` with thin
-  sugar, and `--tried` on `ask`, are proposed to the CLI's owner.
 - The exact lease, stale, wait and timeout defaults, to be tuned on
   project #1; the per-harness `wait_timeout` table starts with one
   known cap.

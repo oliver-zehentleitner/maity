@@ -330,20 +330,36 @@ def _field(data: Any, *keys: str) -> Any:
 
 
 def _text(value: str, what: str) -> str:
-    value = value.strip()
-    if not value:
+    """Refuse an empty or blank value; return it as given, Markdown indentation included."""
+    if not value.strip():
         raise UsageError(f"{what} is empty")
+    return value
+
+
+def _id(value: str) -> str:
+    """An argparse type for card, request and item ids: one non-empty path segment."""
+    if not value.strip() or value in (".", ".."):
+        raise argparse.ArgumentTypeError(f"{value!r} is not an id")
     return value
 
 
 def cmd_claim(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {}
-    if args.reason:
+    if args.reason is not None:
         body["reason"] = _text(args.reason, "--reason")
     session = Session()
-    task = session.client.call("POST", session.project_path("tasks", args.card, "claim"), body=body)
+    path = session.project_path("tasks", args.card)
+    note = ""
+    try:
+        task = session.client.call("POST", f"{path}/claim", body=body)
+    except hub.HubError as exc:
+        # A repeated claim after a dropped connection: the first one went through.
+        mine = session.data.get("member_id")
+        if exc.code != "already_claimed" or not mine or exc.details.get("holder") != mine:
+            raise
+        task, note = session.client.call("GET", path), " (it was already yours)"
     lease = _field(task, "claim", "lease_until")
-    return _done(args, task, f"claimed {args.card}; lease until {lease}")
+    return _done(args, task, f"claimed {args.card}{note}; lease until {lease}")
 
 
 def cmd_unclaim(args: argparse.Namespace) -> int:
@@ -358,19 +374,14 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
         "next_step": _text(args.next, "--next"),
     }
     session = Session()
-    where = gitfacts.position(Path.cwd())
-    if where is None:
-        _err("no commit in this clone; the checkpoint goes without branch and head")
-        refs = "without refs"
-    else:
-        head, branch = where
-        body["head"] = head
-        if branch is not None:
-            body["branch"] = branch
-        refs = f"at {head[:12]} on {branch or 'a detached HEAD'}"
+    head, branch = gitfacts.position(Path.cwd())
+    body["head"] = head
+    if branch is not None:
+        body["branch"] = branch
     path = session.project_path("tasks", args.card, "checkpoint")
     task = session.client.call("POST", path, body=body)
-    return _done(args, task, f"checkpoint on {args.card} {refs}")
+    where = f"at {head[:12]} on {branch or 'a detached HEAD'}"
+    return _done(args, task, f"checkpoint on {args.card} {where}")
 
 
 SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "handover", "notice")
@@ -379,7 +390,7 @@ SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "hand
 def cmd_say(args: argparse.Namespace) -> int:
     text = _text(args.body, "the message")
     if args.to == "human":
-        if args.type or args.task:
+        if args.type is not None or args.task is not None:
             raise UsageError("a chat with your human takes neither --type nor --task")
         session = Session()
         member_id = session.data.get("member_id")
@@ -391,7 +402,7 @@ def cmd_say(args: argparse.Namespace) -> int:
     if args.type is None:
         raise UsageError(f"--type is required when writing to {args.to}: {', '.join(SAY_TYPES)}")
     body: dict[str, Any] = {"kind": "message", "type": args.type, "to": args.to, "body": text}
-    if args.task:
+    if args.task is not None:
         body["task_id"] = args.task
     session = Session()
     event = session.client.call("POST", session.project_path("events"), body=body)
@@ -605,7 +616,7 @@ def build_parser() -> argparse.ArgumentParser:
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
         "changes exist, the branch is not pushed, or the pull request's head differs.",
     )
-    p.add_argument("--task", required=True, help="the task id the report is for")
+    p.add_argument("--task", required=True, type=_id, help="the task id the report is for")
     p.add_argument("--summary", required=True, help="one or two sentences on what was done")
     p.add_argument(
         "--done", action="store_true", help="close the task, when your role holds done authority"
@@ -638,7 +649,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--tried", help="what you tried before asking")
     p.add_argument("--priority", choices=PRIORITIES, default="normal", help="default: normal")
-    p.add_argument("--task", help="the task id the request belongs to")
+    p.add_argument("--task", type=_id, help="the task id the request belongs to")
     _json_flag(p)
     p.set_defaults(handler=cmd_ask)
 
@@ -649,7 +660,7 @@ def build_parser() -> argparse.ArgumentParser:
         "agent makes; nothing is released automatically. In a project under freeze or "
         "fixes-only, --reason is required.",
     )
-    p.add_argument("card", help="the card id, e.g. tsk-0004")
+    p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
     p.add_argument("--reason", help="why, when the project is in freeze or fixes-only")
     _json_flag(p)
     p.set_defaults(handler=cmd_claim)
@@ -660,7 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Give a card back (POST …/tasks/{card}/release): it is open again and claimable. Use "
         "`report` for finished work instead.",
     )
-    p.add_argument("card", help="the card id")
+    p.add_argument("card", type=_id, help="the card id")
     _json_flag(p)
     p.set_defaults(handler=cmd_unclaim)
 
@@ -670,8 +681,10 @@ def build_parser() -> argparse.ArgumentParser:
         "Record the last and the next step on a card you hold. The branch and the head commit "
         "come from git, not from you. The next session reads it from the resume packet.",
     )
-    p.add_argument("card", help="the card id")
-    p.add_argument("-m", "--last", dest="message", required=True, help="the step just finished")
+    p.add_argument("card", type=_id, help="the card id")
+    p.add_argument(
+        "-m", "--last", dest="message", metavar="LAST", required=True, help="the step just finished"
+    )
     p.add_argument("--next", required=True, help="the step to take next")
     _json_flag(p)
     p.set_defaults(handler=cmd_checkpoint)
@@ -684,10 +697,10 @@ def build_parser() -> argparse.ArgumentParser:
         "(POST …/conversations/{you}/messages) and takes no --type. Status is not a message: the "
         "board shows it.",
     )
-    p.add_argument("to", help="'all', 'role:<role>', a member id, or 'human'")
+    p.add_argument("to", type=_id, help="'all', 'role:<role>', a member id, or 'human'")
     p.add_argument("body", help="the message, Markdown")
     p.add_argument("--type", choices=SAY_TYPES, help="required unless TO is 'human'")
-    p.add_argument("--task", help="the card the message is about")
+    p.add_argument("--task", type=_id, help="the card the message is about")
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
 
@@ -698,7 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
         "both. Agents answer decision, contract and info requests addressed to them, and any "
         "request when their role holds requests:answer; never their own.",
     )
-    p.add_argument("request", help="the request id, e.g. req-0012")
+    p.add_argument("request", type=_id, help="the request id, e.g. req-0012")
     p.add_argument("--reply", help="the id of one of the request's replies")
     p.add_argument("--text", help="a free-text answer, alone or with --reply")
     _json_flag(p)
@@ -711,18 +724,36 @@ def build_parser() -> argparse.ArgumentParser:
         "the hub from observed state only; nothing here tags, merges or pushes.",
     )
     rsub = p.add_subparsers(dest="release_command", metavar="<action>", required=True)
-    r = rsub.add_parser("list", help="every release of the project", formatter_class=fmt)
+    r = rsub.add_parser(
+        "list",
+        help="every release of the project",
+        description="List every release card (GET …/tasks?kind=release&status=all, all pages). "
+        "With --json, the cards of all pages as one array.",
+        formatter_class=fmt,
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_release_list)
     r = rsub.add_parser(
-        "show", help="one release: readiness, what blocks it, the checklist", formatter_class=fmt
+        "show",
+        help="one release: readiness, what blocks it, the checklist",
+        description="Show one release card (GET …/tasks/{card}); without a card, the release "
+        "that is neither done nor cancelled.",
+        formatter_class=fmt,
     )
-    r.add_argument("card", nargs="?", help="the release card id (default: the one in flight)")
+    r.add_argument(
+        "card", nargs="?", type=_id, help="the release card id (default: the one in flight)"
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_release_show)
-    r = rsub.add_parser("tick", help="tick a checklist item", formatter_class=fmt)
-    r.add_argument("item", help="the checklist item id, e.g. chk-2")
-    r.add_argument("--release", help="the release card id (default: the one in flight)")
+    r = rsub.add_parser(
+        "tick",
+        help="tick a checklist item",
+        description="Tick or untick one checklist item (POST …/tasks/{card}/checklist/{item}); "
+        "the holder of the release and members with releases:write may.",
+        formatter_class=fmt,
+    )
+    r.add_argument("item", type=_id, help="the checklist item id, e.g. chk-2")
+    r.add_argument("--release", type=_id, help="the release card id (default: the one in flight)")
     r.add_argument("--undo", action="store_true", help="untick it instead")
     _json_flag(r)
     r.set_defaults(handler=cmd_release_tick)

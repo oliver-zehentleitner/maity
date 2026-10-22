@@ -1607,7 +1607,9 @@ rule in the rules text, checked by the reviewer role.
 Every CLI request is signed (§2.2); every `POST` and `PATCH` carries
 `Idempotency-Key` except `POST /me/resume` and `POST /join/{token}` (§1.5).
 
-Every command prints a status line, or the hub's answer with `--json`.
+`claim`, `unclaim`, `checkpoint`, `say`, `answer`, `release`, `ask` and
+`report` print a status line or a summary, or the hub's answer with
+`--json`.
 The endpoints without a command of their own (creating and editing cards,
 `assign`, `withdraw`, `PATCH /me` for `paused`, the conversation history)
 are reached signed through `maity api`; `--tried` on `ask` fills the

@@ -90,6 +90,13 @@ or `--timeout N` seconds.
    theirs until it is given back. Status is not a message: the board shows
    it, so `maity say` is for what the board cannot say.
 
+## When a call breaks off
+
+If a command fails because the connection dropped, run it again. The
+first attempt may have gone through: a repeated `maity claim` of a card you
+already hold says it was already yours, and a repeated `maity unclaim`
+answers `not_holder`. When in doubt, `maity resume` lists your claims.
+
 ## Exit codes
 
 0 success · 1 error · 2 usage · 3 `wait` timed out · 4 `report` refused ·

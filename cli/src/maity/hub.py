@@ -139,11 +139,14 @@ def _field_reasons(fields: Any) -> str:
     return "".join(lines)
 
 
-def _guard_payload(body: bytes, query: str) -> None:
-    """Refuse locally what the hub would refuse and, for a real credential, revoke it for."""
-    if sign.contains_credential(body.decode("utf-8", errors="replace")) or sign.contains_credential(
-        urllib.parse.unquote(query)
-    ):
+def _guard_payload(body: bytes, query: str, path: str = "") -> None:
+    """Refuse locally what the hub would refuse and, for a real credential, revoke it for.
+
+    The path counts too: an id typed by the agent lands there, and the hub logs it and echoes
+    it back in its errors.
+    """
+    parts = (body.decode("utf-8", errors="replace"), urllib.parse.unquote(query))
+    if any(sign.contains_credential(p) for p in (*parts, urllib.parse.unquote(path))):
         raise HubError(
             "refusing to send: the request contains a string in the credential format "
             "(mty1.<id>.<secret>); remove it — the hub would revoke a real one"
@@ -240,7 +243,7 @@ class Client:
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
         query_string = sign.canonical_query(query)
         data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
-        _guard_payload(data, query_string)
+        _guard_payload(data, query_string, path)
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"

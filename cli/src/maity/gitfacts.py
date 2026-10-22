@@ -122,11 +122,16 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     return None
 
 
-def position(cwd: Path) -> tuple[str, str | None] | None:
-    """The head commit and the branch (None when detached), or None without a commit."""
-    head = _git(cwd, "rev-parse", "--verify", "HEAD")
+def position(cwd: Path) -> tuple[str, str | None]:
+    """The head commit and the branch (None when detached).
+
+    Every failure is an error, an unborn HEAD included: a checkpoint is stored as signed, which
+    says its refs came from git, so it never goes out without them.
+    """
+    _git_required(cwd, "rev-parse", "--git-dir")  # outside a clone, dubious ownership: an error
+    head = _git(cwd, "rev-parse", "--verify", "--quiet", "HEAD")
     if head is None:
-        return None
+        raise FactsError("this clone has no commit yet; commit before writing a checkpoint")
     return head, _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
 
 
