@@ -467,6 +467,7 @@ def main() -> int:
                 page = context.new_page()
                 watch_page(run, page)
                 scenario(run, page)
+                fixture_views(run, browser)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -712,6 +713,8 @@ def scenario(run: Run, page: Page) -> None:
     signing_step(run, page, alpha, agent_id)
     images_step(run, page, alpha)
 
+    why_step(run, page, alpha)
+
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -725,6 +728,9 @@ def scenario(run: Run, page: Page) -> None:
         ("org", "Organisation"),
         ("join", "Join an agent"),
     )
+    # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
+    if page.locator("nav.views").get_by_role("link", name="Why", exact=True).count():
+        tabs += (("why", "Why"),)
     for view, tab in tabs:
         page.locator("nav.views").get_by_role("link", name=tab, exact=True).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
@@ -745,6 +751,7 @@ def scenario(run: Run, page: Page) -> None:
         if view == "agents":
             assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
+        run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
     # The create form: its preset select has long option labels.
     page.locator("nav.switcher").get_by_role("link", name="+ New project", exact=True).click()
     expect(page.locator("main section.view-new")).to_be_visible()
@@ -971,6 +978,70 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     page.get_by_role("button", name="Project settings", exact=True).click()
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
+
+
+def fixture_views(run: Run, browser) -> None:
+    """Views whose richer states the hub here cannot reach, in fixture mode (file://):
+    the Why view with the published maity.dev family, one part failing, the root unreadable."""
+    run.step("fixtures: the Why view as the published family shows it, and its failure states")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    index = (WEB / "index.html").as_uri()
+    try:
+        for query, name, says in (
+            ("", "why", "1 entry needs attention · 71 entries in 4 parts of the project"),
+            (
+                "?ktw=member_failed",
+                "why-part-failed",
+                "Could not be read: its state.json did not answer in time",
+            ),
+            ("?ktw=unavailable", "why-root-unreadable", "Shown is its last good read"),
+        ):
+            page.goto(f"{index}{query}#/p/maity/why")
+            expect(page.locator("main section.view-why")).to_contain_text(says)
+            assert not errors, errors  # the page's own errors, before axe runs
+            run.shot(page, f"fixtures-{name}")
+            run.a11y(page, f"fixtures: {name}")
+            # axe reads stylesheets by XHR, which file:// refuses; that is axe's, not the page's.
+            errors.clear()
+        # The family at phone width: the summary, the entries, the table that scrolls.
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.goto(f"{index}#/p/maity/why")
+        expect(page.locator("main section.view-why")).to_contain_text("1 entry needs attention")
+        width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert width[0] <= width[1], f"the Why view is {width[0]} px wide at {width[1]} px"
+        assert not errors, errors
+        run.shot(page, "fixtures-why-phone")
+    finally:
+        context.close()
+
+
+def why_step(run: Run, page: Page, alpha: Path) -> None:
+    """The Keep the Why export (docs/api.md §11.3) where the hub has it."""
+    project = run.api(alpha, "GET", "/projects/e2e-alpha")
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    tab = page.locator("nav.views").get_by_role("link", name="Why", exact=True)
+    if "keep_the_why_export" not in project:
+        run.step("why: this hub has no Keep the Why export, so there is no Why tab")
+        expect(tab).to_have_count(0)
+        return
+    # The e2e project has no repository: the export is not configured.
+    run.step("why: the project has no repository, so the Why view says what it needs")
+    assert project["keep_the_why_export"] is None, project["keep_the_why_export"]
+    tab.click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/why$"))
+    expect(page.locator("main")).to_contain_text(
+        "This project publishes no Keep the Why dashboard yet."
+    )
+    expect(page.locator("main")).to_contain_text("It needs a repository first")
+    # The hub's 409 ktw_not_configured is the expected answer here.
+    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
+    run.shot(page, "why-not-configured")
+    run.a11y(page, "why, not configured")
+    no_problems(run, "why")
 
 
 def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:

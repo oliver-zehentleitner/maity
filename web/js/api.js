@@ -34,6 +34,9 @@ window.Maity = window.Maity || {};
   let fixturePassword = null;
   // ?no_projects=1 starts it with no memberships, to show the empty state.
   const fixtureNoProjects = params.get("no_projects") === "1";
+  // ?ktw=unavailable: the root .keep-the-why cannot be read; ?ktw=member_failed:
+  // one family member's read fails (docs/api.md §11.3).
+  const fixtureKtw = params.get("ktw");
 
   // The bundle is loaded on the first fixture request, never on an
   // http(s) origin (it is not referenced from index.html).
@@ -365,6 +368,29 @@ window.Maity = window.Maity || {};
       if (!item) fail(404, "not_found", "no such checklist item", path);
       Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
       return card;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why$/, (m, body, path, query) => {
+      if (!project(m[1], path).keep_the_why_export) {
+        fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
+      }
+      let answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why.json", path)));
+      if (fixtureKtw === "member_failed" && answer.members.length > 1) {
+        const failed = answer.members[answer.members.length - 1];
+        failed.error = { code: "ktw_unavailable", reason: "timeout" };
+        answer.summary.failed = 1;
+      }
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the root .keep-the-why could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      if (query.has("member")) {
+        const one = answer.members.find((x) => x.path === query.get("member"));
+        if (!one) fail(404, "not_found", "no such family member", path);
+        answer = Object.assign(answer, { members: [one], summary: one.summary,
+          attention: answer.attention.filter((a) => a.member === one.path) });
+      }
+      answer.fresh = query.get("max_age") === "0" || answer.fresh;
+      return answer;
     }],
     ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => file(m[1], "members.json", path)],
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {

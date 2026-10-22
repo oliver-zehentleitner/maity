@@ -370,6 +370,19 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .image-row label { font-size: 0.85rem; color: var(--muted); }
 .image-preview-logo { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
 .image-preview-banner { width: 100%; max-height: 120px; object-fit: cover; border-radius: 6px; }
+/* Why: the Keep the Why export (docs/api.md §11.3). */
+.why-summary { margin: 8px 0 16px; }
+.why-headline { margin: 0 0 4px; font-size: 1.05rem; }
+.flag-inline { color: var(--warn); }
+.why-members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
+.why-members th, .why-members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.why-members tr.failed td:first-child { border-left: 3px solid var(--warn); }
+.view-why > h3 { margin: 20px 0 6px; }
+.why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
+.why-entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.why-entries li { overflow-wrap: anywhere; }
+.badge.why-needs-review, .badge.why-pending-confirmation { color: var(--warn); }
+.badge.why-open { color: var(--accent); }
 .signing-impact ul { margin: 4px 0; padding-left: 18px; }
 .briefing h4 { margin: 0 0 4px; }
 .briefing .pre { margin: 0 0 6px; max-height: 12rem; overflow: auto; }
