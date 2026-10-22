@@ -213,6 +213,29 @@ window.Maity = window.Maity || {};
     h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
   }
 
+  // A tab row scrolls sideways on its own when it is wider than the screen;
+  // the current tab is scrolled into it, without moving the page.
+  function showCurrent(nav) {
+    const cur = nav && nav.querySelector('[aria-current="page"]');
+    if (!cur || !nav.clientWidth) return;
+    const left = cur.offsetLeft - nav.offsetLeft;
+    const right = left + cur.offsetWidth;
+    if (left < nav.scrollLeft) nav.scrollLeft = Math.max(0, left - 8);
+    else if (right > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = right - nav.clientWidth + 8;
+  }
+
+  // The counts changed: only the switcher is replaced, so an open State &
+  // absence panel and the tab row's scroll position stay as they are.
+  function renderSwitcher(ctx) {
+    const old = document.getElementById("header").querySelector("nav.switcher");
+    if (!old) return;
+    const fresh = switcher(ctx);
+    const scrolled = old.scrollLeft;
+    old.parentNode.insertBefore(fresh, old);
+    old.remove();
+    fresh.scrollLeft = scrolled;
+  }
+
   function renderHeader(ctx, current) {
     const header = clear(document.getElementById("header"));
     const absence = ctx.scope === "project" ? ctx.project.absence : null;
@@ -256,6 +279,7 @@ window.Maity = window.Maity || {};
             "aria-current": item.route === current ? "page" : null,
           }, item.label)))
         : null);
+    header.querySelectorAll("nav").forEach(showCurrent);
   }
 
   // ---- context ------------------------------------------------------------
@@ -287,7 +311,7 @@ window.Maity = window.Maity || {};
       refreshCounts: async () => {
         const fresh = await M.api.get("/me");
         ctx.projects = fresh.projects;
-        renderHeader(ctx, where.route);
+        renderSwitcher(ctx);
       },
     };
     if (where.scope !== "project") return ctx;

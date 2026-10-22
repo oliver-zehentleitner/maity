@@ -291,6 +291,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(header, "State & absence").click(); await tick();
   const sel = byId("state-select"); sel.value = "freeze";
   byId("state-reason").value = "release 0.1.0";
+  // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
+  const switcherBefore = header.querySelector("nav.switcher");
+  await fireIntervals(); await tick(); await tick();
+  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
+    "the count re-read keeps the open State & absence panel and its input");
+  expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
+    "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header).includes("Freeze"), "state changed to freeze");
   btn(header, "State & absence").click(); await tick();

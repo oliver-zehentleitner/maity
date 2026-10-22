@@ -129,7 +129,8 @@ fails while the bundle is stale.
 - `GET /me` every 15 seconds and after every answer, for the switcher's
   counts. When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
-  reading.
+  reading. Only the switcher is redrawn: an open **State & absence** panel,
+  what is typed in it, and how far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 5 seconds, page by page.
@@ -211,7 +212,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    `maity resume` sees that answer.
 9. at phone width (390 px) the inbox, board, agents, organisation and join
    views, each reached through its tab, load without an error, none of
-   them scrolls sideways, and every Revoke label stays on one line.
+   them scrolls sideways, the current tab and project stay visible in
+   their rows, and every Revoke label stays on one line.
 
 Every step leaves a screenshot (`NN-<step>.png`) in `--artifacts` (by
 default a temp directory, kept), with the join line painted over; the
