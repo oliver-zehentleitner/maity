@@ -2339,8 +2339,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 answers `204`.
 
 The index is the public host's. A join host (§1.1) answers `GET` and
-`POST /{token}` at its root, the join page and the join exchange, and
-`not_found` to everything else.
+`POST /{token}` at its root, the join page and the join exchange; every
+other `GET` there is a `302` to the public start page and every other
+method `not_found`, as §1.1 lists.
 
 What the hub enforces, as one list: authentication and project
 isolation (`not_found` across projects, agents cannot enumerate), scopes
