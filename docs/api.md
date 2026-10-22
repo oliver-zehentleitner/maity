@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: session_too_new` for approving a held change of the verified address from a session younger than 24 hours (§17.4) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: session_too_new` for approving a held change of the verified address from a session younger than 24 hours (§17.4); `details.reason: not_in_good_standing` for approving, rejecting or replacing a held change from a session not in good standing (§17.4, #169 §2.6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -2790,8 +2790,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notifications/read` | human | 17.3 |
 | GET, PATCH | `/me/notification-settings` | human | 17.4 |
 | POST | `/me/notification-settings/email/verify` | human | 17.4 |
-| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old; `{id, address}` of the held change | 17.4 |
-| POST | `/me/notification-settings/email/address-change/reject` | human; `{id, address}` of the held change | 17.4 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 17.4 |
+| POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 17.4 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 17.6 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -4132,10 +4132,14 @@ builds one itself. The rules that make a position safe to resume from:
   serializable), so items, counts and `next_after` describe one moment.
 - **Numbers become visible in order.** The hub allocates an event's
   `seq` and a record's number in the transaction that writes the row,
-  under a lock on that sequence held until commit, and stamps `at` from
-  the hub's clock under the same lock; so neither sequence shows a
-  number before every lower one is visible, and `at` never decreases
-  along either sequence. A position therefore never skips an item that
+  under a lock on that sequence held until commit, and takes `at` under
+  the same lock. Both come from the database, never from a hub process:
+  the number from the database's sequence (or the locked counter row),
+  `at` from the database's clock in that transaction, raised to the
+  previous row's `at` should that clock ever step back. So with several
+  hub replicas writing at once, neither sequence shows a number before
+  every lower one is visible, and `at` never decreases along either
+  sequence. A position therefore never skips an item that
   commits later.
 - **One order.** Items are ordered by `at`, then events before records,
   then by number — the same order in both directions, and consistent
@@ -4239,9 +4243,12 @@ session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
 already marked read by an allowed session — never read by age, §17.2)
 — never from the session it reports on and never from a
-session created after it. From any other session the item is skipped,
-through `ids` (ignored as an unknown id) and `up_to` alike, and the
-rest of the call applies. Answers `200` with the counts
+session created after it. Security items (`session_created` and every
+other `security` kind) are marked read only through `ids`, never through
+`up_to`: "mark all read" skips them, so tidying the bell never confirms
+a sign-in or grants good standing. From a session that may not mark
+such an item it is skipped through `ids` too (ignored as an unknown
+id), and the rest of the call applies. Answers `200` with the counts
 of §17.2. No event: reading is not news to anyone.
 
 ### 17.4 `GET`, `PATCH /me/notification-settings`
@@ -4320,15 +4327,20 @@ device; the browser's own permission is per browser and is not stored.
   `current_password` beside `email` (missing: `invalid` with
   `details.fields.current_password: "required"`; wrong: `"mismatch"`,
   counted against the login limit of §2.1). A human without a password
-  needs the change approved from a session of theirs at least 24 hours
-  old: a `PATCH` from such a session is the approval; from a younger
+  needs the change approved from a session of theirs in good standing
+  (#169 §2.6.5) and at least 24 hours old: a `PATCH` from such a session
+  is the approval; from a younger
   one the change is held (`202`, `email.address_change: {id, address,
   requested_at, session_id}`, `id` an immutable `adc-<random>`) until
   `POST /me/notification-settings/email/address-change/approve` `{id,
-  address}` from a session at least 24 hours old (younger: `forbidden`,
-  `details.reason: session_too_new`) or `…/address-change/reject`
-  `{id, address}`. One change is held per human: a newer `PATCH` of the
-  address replaces it atomically under a new `id`, and an approval or
+  address}` from a session in good standing at least 24 hours old
+  (younger: `forbidden`, `details.reason: session_too_new`) or
+  `…/address-change/reject` `{id, address}` from a session in good
+  standing. A session not in good standing can neither approve, reject
+  nor replace a held change (`forbidden`, `details.reason:
+  not_in_good_standing`); it may file one only while none is held. One
+  change is held per human: a newer `PATCH` of the address from a
+  session in good standing replaces it atomically under a new `id`, and an approval or
   rejection that names the old `id`, or an address that is not the held
   change's, is `conflict` (§1.3) and changes nothing. A held change
   lapses after 7 days. When the new address is verified, or
@@ -4342,13 +4354,12 @@ device; the browser's own permission is per browser and is not stored.
   sign-in factor. What this rule guarantees: neither a session obtained
   through the mailbox nor one approved by device code on an unlocked
   dashboard can move the sign-in path to another mailbox without the
-  password. For a human without a password the guard is an age gate:
-  only a session at least 24 hours old approves the change, so a
-  session obtained a moment ago cannot, and one that waits to approve
-  its own change stays signed in for a day, listed in the human's
-  sessions with an unread `security` item in the bell (and, after a
-  mail sign-in, a banner in the human's other sessions; a device-code
-  session has no banner, #169 §2.6.5). `address_status`:
+  password. For a human without a password the guard is an age gate
+  plus good standing: only a session in good standing and at least 24
+  hours old approves the change, so a session obtained a moment ago
+  cannot, and one that waits a day still cannot while its own sign-in
+  alert is unread (#169 §2.6.5); nor can it reject or replace a change
+  the human filed. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§17.7). Setting the address again, also the same one,
   sends a new link and voids the old one. `null` removes the address and
