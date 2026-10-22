@@ -330,7 +330,7 @@ def test_not_configured(owner: flow.Human, fake: Fake, setup: str) -> None:
         ((500, b"oops"), "http_status", {"status": 500}),
         (b"<html>", "not_json", {}),
         (outbound.Refused("timeout"), "timeout", {}),
-        (outbound.Refused("unavailable"), "timeout", {}),
+        (outbound.Refused("unavailable"), "unavailable", {}),
         (outbound.Refused("address_refused"), "address_refused", {}),
         (outbound.Refused("redirect_refused"), "redirect_refused", {}),
         (outbound.Refused("too_large"), "too_large", {}),

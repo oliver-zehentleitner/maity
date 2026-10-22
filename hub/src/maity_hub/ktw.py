@@ -260,6 +260,7 @@ _REFUSALS = {
     "timeout": "timeout",
     "too_large": "too_large",
     "url_invalid": "state_url_invalid",
+    "unavailable": "unavailable",  # connection or TLS refused: the host did not answer
 }
 
 
@@ -268,9 +269,7 @@ def read_state(url: str) -> Read:
     try:
         answer = outbound.read(url, cap=STATE_CAP, headers={"Accept": "application/json"})
     except outbound.Refused as refused:
-        # §11.3 has no reason for a host that did not answer at all (refused connection,
-        # failed TLS): it is reported as `timeout`, the nearest "did not answer".
-        raise MemberError(_REFUSALS.get(refused.reason, "timeout")) from None
+        raise MemberError(_REFUSALS.get(refused.reason, "unavailable")) from None
     if answer.status != 200:
         raise MemberError("http_status", status=answer.status)
     try:
