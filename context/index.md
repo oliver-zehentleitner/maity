@@ -62,6 +62,7 @@ Why Maity is built the way it is.
 ## Q
 
 ## R
+- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe
 
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does
