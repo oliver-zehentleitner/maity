@@ -143,7 +143,33 @@ cd "$work/clone-cli"
 printf '{"contract":{"state":"final"}}' | maity api PATCH "/projects/smoke/tasks/$ctr" --json - \
     | json '"contract " + d["id"] + " is " + d["contract"]["state"]' | tee "$work/final" && grep -q "is final$" "$work/final"
 
+step "pause: the human pauses the cli agent; it is told, takes no new work, and can still park its card"
+cd "$work/clone-cli"
+git -c user.name=smoke -c user.email=smoke@example.org commit -q --allow-empty -m "smoke"
+held="$(human -d '{"title":"Pause: held card","area":"/"}' "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
+spare="$(human -d '{"title":"Pause: spare card","area":"/"}' "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
+maity claim "$held"
+maity resume --json >/dev/null  # the wait starts after everything so far
+maity wait --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
+pause_wait=$!
+sleep 1
+human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: hold on"}}' \
+    "$hub/api/v1/projects/smoke/members/$cli_agent"
+wait "$pause_wait"
+grep -q '^maity: you were paused by .*: smoke: hold on' "$work/pause-wait.err"
+json '"cli agent woke on: " + d["kind"]' <"$work/pause-wait.out" | tee "$work/pause-woke"
+grep -q "woke on: session_paused$" "$work/pause-woke"
+if maity claim "$spare" >"$work/pause-claim.out" 2>&1; then
+    echo "smoke: a paused agent's claim was accepted" >&2
+    exit 1
+fi
+cat "$work/pause-claim.out"
+grep -q '^maity: refused: you are paused by .*: smoke: hold on' "$work/pause-claim.out"
+maity checkpoint "$held" -m "paused mid-way" --next "continue after the pause"
+human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/smoke/members/$cli_agent"
+maity claim "$spare"
+
 step "human: both agents are members"
 human "$hub/api/v1/projects/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
-printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message and worked a release and a contract\n'
+printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, and the cli agent was paused and resumed\n'
