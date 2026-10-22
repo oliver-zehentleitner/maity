@@ -656,7 +656,7 @@ pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli
 until the package is published on PyPI; from then on the default is
 `pipx install maity`. An operator who runs a fork points it at the fork.
 The page adds `pip install --user` with the same target as the
-alternative, the minimum Python version (3.10), and that the curl
+alternative, the minimum Python version (3.11), and that the curl
 exchange needs no install at all.
 
 **Where the credential lives.** Next to the install line the page says,
