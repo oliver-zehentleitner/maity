@@ -44,7 +44,7 @@ is in-process, which fits the one replica V1 runs.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation of the runner stream, 2026-10-22; accepted by the contract owner the same day, `docs/api.md` §15.8 (PR #83)
+**Source:** implementation of the runner stream, 2026-10-22; accepted by the contract owner the same day, `docs/api.md` §15.8 (PR #84)
 
 `GET /runner/events` (`docs/api.md` §15.8) scans the events of every
 project the runner has an attachment row in, active or detached, and
