@@ -1991,7 +1991,8 @@ error of the call: it is that member's `error`, `{code:
 (its `.keep-the-why` read failed), `config_missing` (no `.keep-the-why`
 at the path), `no_state_url` (no `dashboard-state:` line),
 `location_not_followed`, `state_url_invalid`, `address_refused`,
-`redirect_refused`, `timeout`, `http_status` (with `status`),
+`redirect_refused`, `unavailable` (the host did not answer: connection
+or TLS refused), `timeout`, `http_status` (with `status`),
 `too_large`, `not_json`, `state_json_version` (with `version`), `shape`.
 
 ## 12. Endpoint index
