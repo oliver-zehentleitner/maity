@@ -999,7 +999,8 @@ POST /projects/{slug}/tasks/{id}/report
 `pr_status` is `found` (`pr` set), `none` (the forge tool answered that
 the branch has no pull request; `pr` is null) or `unknown` (no forge tool
 available; `pr` is null and `pr_unknown_reason` says why). A report whose
-`pr_status` does not match `pr` is `invalid`.
+`pr_status` does not match `pr` is `invalid`, and so is a `pr.head` that is
+not 40 hex, like `head`: heads are compared whole, never as a prefix.
 
 Stored on the card as `report`:
 
@@ -1030,6 +1031,10 @@ Stored on the card as `report`:
   with `pr` set, the pull request (§11), fills `observed`, sets `mismatch`
   (true when the observed PR head differs from `pr.head`, or the observed
   branch head differs from `remote_head`) and emits `probe_observed`. A
+  branch the forge no longer has (deleted, as after a merge) is not a
+  mismatch: `observed.branch_head_sha` is null and only the PR head is
+  compared. A pull request the forge does not have is: `observed.pr_state`
+  is null and `mismatch` is true. A
   probe that fails leaves `observed: null`; the next probe run fills it.
   Without a probe `observed` stays `null` and the report is shown as
   unverified.
@@ -1099,8 +1104,9 @@ The `release` object on the card:
   reported`) plus `pull_requests_typed` (`source: typed`, set by
   `releases:write` through `PATCH`; a typed entry may carry `state` as an
   attestation). With the probe configured every entry is refreshed from
-  the forge (`source` stays; `state`, `checks`, `head_sha`, `merged_at`,
-  `observed_at` are observed). Without it, typed and reported states are
+  the forge (`source` stays; `found`, `state`, `checks`, `head_sha`,
+  `merged_at`, `observed_at` are observed; `found` is null before the
+  first observation). Without it, typed and reported states are
   displayed as unverified and count for nothing.
 - `groups` are the connected `ships_with` components of the shipped
   cards, followed over all edges — a partner that is not in `depends_on`
@@ -1116,7 +1122,9 @@ The `release` object on the card:
   `probe_not_configured`; a release in such a project can be `cancelled`
   but not `done`. Reasons and their detail keys: `probe_not_configured`
   (none), `task_open` (`task`), `pr_open` (`pr`), `pr_unverified` (`pr`;
-  typed or reported, no observation yet), `pr_mismatch` (`pr`),
+  typed or reported, no observation yet), `pr_not_found` (`pr`; observed,
+  and the forge has no such pull request — a typo in a typed number, or a
+  repository that moved), `pr_mismatch` (`pr`),
   `group_incomplete` (`tasks`), `checklist_open` (`item`). When `ready`
   flips to true the hub emits `release_ready` to everyone.
 - `done` on a release additionally requires `ready`
@@ -1482,7 +1490,7 @@ to the forge.
   "repository": "oliver-zehentleitner/maity",
   "observed_at": "2026-10-21T13:35:00Z",
   "fresh": true,
-  "pr": { "number": 3, "url": "…", "title": "hub: skeleton", "state": "open", "draft": false,
+  "pr": { "number": 3, "found": true, "url": "…", "title": "hub: skeleton", "state": "open", "draft": false,
           "head_sha": "…", "base": "main", "mergeable": "conflicting",
           "checks": "pending", "checks_detail": [ { "name": "ci / sqlite", "status": "success" } ],
           "merged_at": null, "merge_sha": null },
@@ -1493,8 +1501,10 @@ to the forge.
 
 `state`: `open`, `merged`, `closed`; `checks`: `success`, `failure`,
 `pending`, `none` (no runs — the "conflicting, so no CI" case is
-`mergeable: conflicting` with `checks: none`), `unknown`. For `branch`:
-`{name, head_sha, found}`. For `tag`: `{name, sha, found, observed_at}`,
+`mergeable: conflicting` with `checks: none`), `unknown`. A pull request
+the forge does not have is `{number, found: false}` and nothing else; it
+is an answer, not an error. For `branch`:
+`{name, head_sha, found}`, `head_sha` null when not found. For `tag`: `{name, sha, found, observed_at}`,
 the same shape as `release.tag`. Errors: `probe_not_configured`,
 `probe_unavailable` (with the last observation in `details.last` when one
 exists). The same reads feed `report.observed` and
