@@ -241,6 +241,7 @@ def main() -> int:
             try:
                 context = browser.new_context(viewport={"width": 1280, "height": 900})
                 context.set_default_timeout(TIMEOUT_MS)
+                expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
                 page = context.new_page()
                 watch_page(run, page)
                 scenario(run, page)
@@ -298,6 +299,9 @@ def scenario(run: Run, page: Page) -> None:
     run.step("the agent claims a card; the open board offers a reload")
     page.locator("nav.views").get_by_role("link", name="Board", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/board$"))
+    # The view has read the event head once its columns are drawn; what the
+    # agent does from here on is offered as a reload.
+    expect(page.get_by_role("region", name="Proposed")).to_be_visible()
     task = run.api(
         alpha, "POST", "/projects/e2e-alpha/tasks", {"title": "E2E card", "area": "web/"}
     )
