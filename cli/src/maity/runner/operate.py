@@ -34,8 +34,6 @@ GIT_ALLOWED = re.compile(
     r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
     r"|user\.(name|email))$"
 )
-# What a clone's `.git` holds at its top level. Anything else may change where git reads its
-# configuration from (`commondir`, `config.worktree`) and is refused rather than understood.
 # What a clone's `.git` holds at its top level, and of which type (a file, or a directory).
 # Anything else may change where git reads its configuration from (`commondir`,
 # `config.worktree`) and is refused rather than understood.
