@@ -34,3 +34,36 @@ at write time rather than on every read is not recorded.
 - A mention in a private chat as a link without a ping: the rendering
   would promise a notification that never happened. To bring a third
   member in, post a project message.
+
+## A mention of a member the message's `to` already reaches adds no audience token
+
+**Id:** 919edfc7-c184-4f8c-bbfa-d8c4e74a18ee
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the review of the contract-notes pull request, 2026-10-22
+**Revisit when:** members want a mention under `to: all` to wake them, or the hub needs the token to filter a member's own feed
+**See:** messages.md#mentions-are-resolved-by-the-hub-at-write-time-a-requests-mention-links-but-never-pings-a-chats-is-not-resolved — f0420440-3572-4771-a358-dc47fea0a707 — as of 2026-10-22
+
+When `to` already reaches the mentioned member — `all`, its own
+`role:<role>`, or its `member:<id>` — the mention adds no `member:<id>`
+to the message's audience; it stays in the message's `mentions`. Such a
+mention costs the writer nothing against the ping rate and wakes nobody
+`to` did not wake.
+
+The decision is the contract owner's ruling (confirmed); the reasons are
+the review finding it answered, and why the alternatives lost is
+inferred from it.
+
+**Reason:** a supervised member is not woken by an audience of `all`
+alone (§15.11). Adding the token under `to: all` woke it anyway, and,
+since such a mention was not charged, gave every writer an unmetered
+wake path — up to ten members per message, each wake a model run under
+a runner — around the rate that exists to bound exactly that.
+
+**Rejected alternatives:**
+- Keep adding the token and charge the mention under `to: all`: the wake
+  stays, only metered; and a mention inside a broadcast is a reference,
+  not a second address.
+- Keep adding the token, uncharged, and document that it wakes: leaves
+  the unmetered wake path open.
