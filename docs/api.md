@@ -2675,8 +2675,12 @@ rule of §13 before it writes anything.
   whichever it advertises.
 - `harnesses[].id` is one of `claude-code`, `codex`, `opencode`, `pi`,
   `hermes`, `kimi`, `cline`, `omp`, `stub`. `confinement`: `allowlist`
-  (the harness's own command allowlist), `pod` (no allowlist; the pod is
-  the only boundary) or `none` (`stub` only). Whether the harnesses
+  (the harness's own command allowlist), `sandbox` (no command allowlist,
+  the harness's OS sandbox is the boundary — `codex`; a placement whose
+  repository grant lists commands is refused for it, `harness_refused`),
+  `pod` (no allowlist; the pod is the only boundary) or `none` (`stub`
+  only). A runner advertises the confinement it actually enforces, never
+  one it only configures. Whether the harnesses
   without an allowlist (`pi`, `hermes`, `kimi`, `cline`, `omp`) are
   offered at all, and where, is the runner's decision under (open: §12 4
   of the design); the hub accepts any of them that a runner advertises.
