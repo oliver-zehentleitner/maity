@@ -269,6 +269,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-x";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
+  expect(byId("join-agent").value === "agt-x", "after creating, the select keeps the joined profile");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   btn(main, "Revoke").click(); await tick(); await tick();

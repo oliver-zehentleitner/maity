@@ -369,6 +369,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .login { margin: 10vh auto 0; }
 
 .join-result { margin: 12px 0; }
+.join-result button + button { margin-left: 6px; }
 .paste-line { display: block; padding: 8px; background: var(--surface); border-radius: 4px; overflow-wrap: anywhere; user-select: all; }
 .joins { list-style: none; padding: 0; display: grid; gap: 6px; }
 .joins li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

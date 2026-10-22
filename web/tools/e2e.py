@@ -202,6 +202,7 @@ def join_line(run: Run, page: Page, slug: str, handle: str | None) -> tuple[str,
     page.get_by_role("button", name="Create join line", exact=True).click()
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
+    expect(page.locator("ul.joins li").first).to_contain_text("E2E Agent as member")
     words = shlex.split(line.inner_text())
     assert words[:2] == ["maity", "join"] and words[3] == "--code", words
     return words[2], words[4]

@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
   }
 
   M.views.join = async function (ctx, root) {
-    const [profiles, joins] = await Promise.all([
+    let [profiles, joins] = await Promise.all([
       M.api.getAll("/agents"),
       M.api.getAll(ctx.base + "/joins"),
     ]);
@@ -28,10 +28,12 @@ window.Maity = window.Maity || {};
       return p ? p.display_name : id;
     };
 
-    const agentSelect = h("select", { id: "join-agent" },
+    const agentSelect = h("select", { id: "join-agent" });
+    const profileOptions = () => append(clear(agentSelect),
       profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + p.handle + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
+    profileOptions();
     const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9\\-]{1,30}" });
     const display = h("input", { id: "join-display", placeholder: "display name" });
     const newFields = h("div", { class: "new-agent", hidden: true },
@@ -95,7 +97,12 @@ window.Maity = window.Maity || {};
           const j = await M.api.post(ctx.base + "/joins", body);
           status.done();
           showLine(j);
-          drawJoins(await M.api.getAll(ctx.base + "/joins"));
+          // A new profile is named in the list and offered in the select.
+          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+          profileOptions();
+          agentSelect.value = j.agent_id;
+          newFields.hidden = agentSelect.value !== "";
+          drawJoins(joins);
         } catch (err) {
           status.fail("No join created: ", err);
         }
