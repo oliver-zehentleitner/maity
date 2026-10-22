@@ -344,3 +344,37 @@ a read before it.
   the first write, so the reads before it ran unlocked: two crossing
   `depends_on` changes stored a cycle, and a claim racing a cancel
   answered 500.
+
+## SQLite migrations run with foreign keys off, then check them, then switch them back on
+
+**Id:** 84988fb8-49b5-4b1d-8783-c90a8676deed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-22 (migration 0003, the briefing columns)
+**See:** persistence.md — ce7a3627-d04d-4708-bac9-ed0c7d64cfe4 — as of 2026-10-22
+**Revisit when:** SQLite support is dropped, or Alembic's batch mode alters columns in place on SQLite
+
+On SQLite, `migrations/env.py` sets `PRAGMA foreign_keys=OFF` on the driver
+connection before the migration transaction begins. After the revisions
+have run, it checks `PRAGMA foreign_key_check` and fails the migration on
+any dangling reference. In a `finally` it switches the pragma back on, so
+the pooled connection goes back to the hub as it came. The other engines
+are untouched.
+
+**Reason:** SQLite cannot drop or change most columns in place. Alembic's
+batch mode rebuilds the table (copy, drop, rename), and with foreign keys
+on the drop of a referenced table fails: `membership` and `credential` are
+referenced from half the schema, and the first `drop_column` on one of
+them (0003's downgrade) failed. The pragma has no effect inside a
+transaction, hence the driver connection before the begin. The check
+afterwards keeps the guarantee foreign keys give, for the moment they are
+off.
+
+**Rejected alternatives:**
+- Writing downgrades without `drop_column` on referenced tables: every
+  later migration would have to work around SQLite, and the rule that
+  every revision downgrades would bend for one engine.
+- Native `ALTER TABLE … DROP COLUMN` (SQLite 3.35+): Alembic's SQLite
+  dialect still goes through batch mode for it, and columns with
+  constraints cannot be dropped natively anyway.
