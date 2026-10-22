@@ -769,6 +769,7 @@ def scenario(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if p != "GET /api/v1/runners?limit=200 answered 404"]
     no_problems(run, "phone width")
 
+    users_step(run, page)
     change_password(run, page)
 
 
@@ -1367,6 +1368,31 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
     no_problems(run, "signing")
+
+
+def users_step(run: Run, page: Page) -> None:
+    """Users of this hub (docs/api.md §16.1), where the hub names an instance admin."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    link = page.locator("header .me").get_by_role("link", name="Users", exact=True)
+    if "instance_admin" not in me:
+        run.step("users: this hub names no instance admin yet, so there is no Users link")
+        expect(link).to_have_count(0)
+        return
+    run.step("users: the instance admin lists the hub's humans")
+    assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
+    page.goto(f"{run.base}/#/all")
+    link.click()
+    expect(page).to_have_url(re.compile(r"#/admin/users$"))
+    owner = page.locator("table.users tbody tr", has_text="(you)")
+    expect(owner).to_contain_text("instance admin")
+    expect(owner).to_contain_text("@" + OWNER)
+    page.locator("#users-q").fill("nobody-by-this-name")
+    expect(page.locator("main")).to_contain_text("No account matches.")
+    page.locator("#users-q").fill(OWNER)
+    expect(owner).to_be_visible()
+    run.shot(page, "users")
+    run.a11y(page, "users")
+    no_problems(run, "users")
 
 
 def change_password(run: Run, page: Page) -> None:

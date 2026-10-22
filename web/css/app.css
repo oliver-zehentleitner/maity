@@ -397,6 +397,23 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .why-summary { margin: 8px 0 16px; }
 .why-headline { margin: 0 0 4px; font-size: 1.05rem; }
 .flag-inline { color: var(--warn); }
+/* A table that becomes cards on a phone, its cells labelled (Users). */
+.table-wrap { overflow-x: auto; margin-bottom: 16px; }
+.card-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.card-table th, .card-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.card-table tbody th { font-weight: normal; }
+.card-table tr.disabled { color: var(--muted); }
+.user-name { font-weight: 600; }
+.users-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-bottom: 12px; }
+.users-filter label { font-size: 0.85rem; color: var(--muted); flex-basis: 100%; margin-bottom: -4px; }
+.users-filter label + input, .users-filter label + select { flex: 0 1 18rem; }
+@media (max-width: 600px) {
+  .card-table, .card-table tbody, .card-table tr, .card-table th, .card-table td { display: block; width: auto; }
+  .card-table thead { display: none; }
+  .card-table tbody tr { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 4px 0; }
+  .card-table tbody tr > * { border-bottom: none; padding: 3px 10px; }
+  .card-table tbody td::before { content: attr(data-label) ": "; color: var(--muted); }
+}
 .why-members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
 .why-members th, .why-members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .why-members tr.failed td:first-child { border-left: 3px solid var(--warn); }

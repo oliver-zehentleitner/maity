@@ -3,7 +3,8 @@
     "id": "hum-maintainer",
     "kind": "human",
     "handle": "maintainer",
-    "display_name": "Maintainer"
+    "display_name": "Maintainer",
+    "instance_admin": true
   },
   "projects": [
     {
