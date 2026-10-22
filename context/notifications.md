@@ -56,7 +56,7 @@ or a secret store is more setup than the install itself.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the notifications contract and the contract owner's rulings on them (three rounds), 2026-10-22; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
+**Source:** security reviews of the notifications contract and the contract owner's rulings on them (four rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §6.4, §16.2, §16.3, §17.1, §17.4, §17.5
 **See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
 The hub's mail is treated as a trusted channel that members must not
@@ -83,11 +83,13 @@ proposal addressed to an agent's owner) is an account record of that
 human too — one record per state change — so it reaches their inbox
 once, member of the project or not. Because the bell reads two
 sequences, its position is two-part, read from one snapshot and only
-ever moved forward per component. Security items are never read by
-age. The test send connects
+ever moved forward per component; its numbers and times come from the
+database, since several hub replicas write at once. Security items are
+read only one by one — never by age and never by "mark all read",
+which would confirm an intruding session in passing. The test send connects
 only to the configured server.
 
-The rules are the contract owner's rulings on the reviews (two rounds); the reasons
+The rules are the contract owner's rulings on the reviews (four rounds); the reasons
 below are this contract's reading of them.
 
 **Reason:** the hub's `From` address is the one a human trusts, and
