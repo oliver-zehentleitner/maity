@@ -49,6 +49,11 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - ci: the `audit` workflow runs pip-audit (pinned with hashes in `hub/requirements/tools.txt`)
   against all four hub locks on every push to main, every pull request and daily.
 - docs: `docs/join-page.md`, the join page template the hub serves.
+- hub: a project's logo and banner (`docs/api.md` §11.2): upload by a project admin (PNG,
+  JPEG or WebP by their bytes, at most 1 MiB, human only) or the repository's image read
+  from the forge (the owner's avatar, a custom social preview), served from the hub with
+  `ETag`; `logo`/`banner` on the project view; `project_updated`, which never wakes; every
+  read whose host comes from data under the transport rule of §11.1 (`outbound.py`).
 - deploy: `deploy/k3s-single/`, the hub with PostgreSQL 17, cert-manager and a daily
   `pg_dump` on one small instance with k3s, and its walkthrough in `docs/install/`.
 - docs: `docs/install/`, the entry page for self-hosters: which of the three paths
