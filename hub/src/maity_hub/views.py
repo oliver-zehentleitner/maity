@@ -290,6 +290,7 @@ def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
         "created_at": ts(row.created_at),
         "resumed_at": ts(row.resumed_at),
         "last_used_at": ts(row.last_used_at),
+        "last_used_via": row.last_used_via,
         "session_id": session,
         "revoked_at": ts(row.revoked_at),
         "revoked_by": row.revoked_by,

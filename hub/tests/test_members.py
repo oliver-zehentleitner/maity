@@ -249,6 +249,7 @@ def test_credentials_are_listed_without_values(
         "created_at",
         "resumed_at",
         "last_used_at",
+        "last_used_via",
         "session_id",
         "revoked_at",
         "revoked_by",

@@ -38,6 +38,7 @@ class PolicyIn(Strict):
     tag_authority: str | None = None
     steward_writes: str | None = None
     lease_seconds: int | None = None
+    signing: str | None = None
 
 
 class AbsenceIn(Strict):
@@ -93,7 +94,9 @@ def _apply_policy(
     if change.preset is not None:
         if change.preset not in policy.PRESETS:
             raise invalid({"policy.preset": "unknown"})
-        proposed = policy.filled(change.preset, owner_id)
+        # A preset refills every field but `signing`: switching presets must not
+        # quietly drop a required signature (§6.1); only `policy.signing` changes it.
+        proposed = {**policy.filled(change.preset, owner_id), "signing": current["signing"]}
     errors: dict[str, str] = {}
     for name, choices in policy.CHOICES.items():
         value = getattr(change, name)

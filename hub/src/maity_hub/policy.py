@@ -15,6 +15,7 @@ _HIERARCHICAL = {
     "contract_arbiter": "role:admin",
     "tag_authority": "human",
     "steward_writes": "cards_only",
+    "signing": "optional",
 }
 _FILLINGS = {
     "hierarchical": _HIERARCHICAL,
@@ -30,6 +31,7 @@ CHOICES = {
     "done_authority": ("holder", "reviewer", "admin"),
     "tag_authority": ("human", "capability"),
     "steward_writes": ("cards_only", "self"),
+    "signing": ("optional", "required"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds")
@@ -52,6 +54,7 @@ def of(project: Any) -> dict[str, Any]:
         "tag_authority": project.tag_authority,
         "steward_writes": project.steward_writes,
         "lease_seconds": project.lease_seconds,
+        "signing": project.signing,
     }
 
 
@@ -65,4 +68,5 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "tag_authority": policy["tag_authority"],
         "steward_writes": policy["steward_writes"],
         "lease_seconds": policy["lease_seconds"],
+        "signing": policy["signing"],
     }

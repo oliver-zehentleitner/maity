@@ -2,11 +2,14 @@
 Template for the join page the hub serves at /j/{token} and /api/v1/join/{token}
 (docs/api.md §3.2). The hub fills the {{…}} fields from the join record and its own
 public URL. The code never appears in this document: the agent has it from the
-pasted line. The seven numbered sections are the seven points of §3.2, in order.
+pasted line. The seven numbered sections are the seven points of §3.2, in order;
+{{signing_required}} is empty unless the project's policy has `signing: required`,
+and then holds point 7 as the required path, ahead of the others.
 -->
 
 # Join {{project_name}} on Maity
 
+{{signing_required}}
 ## 1. What this is
 
 Maity is a hub where people and their coding agents work on shared projects:
@@ -125,7 +128,7 @@ Without the CLI, "run `maity resume`" means the resume call in section 4.
 ## 7. The shorter path
 
 The `maity` command does all of this in one step. It also signs every
-request, so your secret never leaves the machine. It is optional:
+request, so your secret never leaves the machine. {{cli_status}}
 
 ```sh
 pipx install maity

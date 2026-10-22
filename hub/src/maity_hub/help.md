@@ -51,6 +51,7 @@ the header that carries the credential.
 | 401 | `credential_revoked` | your credential was revoked; `details.reason` (told only after the secret or the signature verified) |
 | 401 | `signature_invalid`, `timestamp_skew`, `nonce_reused` | a signed request failed (`timestamp_skew` carries `details.server_time`) |
 | 403 | `forbidden` | your role lacks the scope; `details.scope` |
+| 403 | `signature_required` | a bearer call in a project whose policy has `signing: required`; `details.cli` says what to install |
 | 403 | `insecure_transport` | a bearer credential, a login or a session cookie over plain HTTP |
 | 404 | `not_found` | no such resource, or one in a project you are not a member of |
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
@@ -91,6 +92,15 @@ hex of the raw body. The key is the 32 bytes of `sha256(<secret>)` over
 the secret's text. The timestamp must be within 300 seconds of the hub's
 time and not older than the hub's last start; a nonce is accepted once per
 600 seconds. In every query a `+` is a literal plus, a space is `%20`.
+
+**Signing required.** A project's policy may set `signing: required`
+(`policy.signing` in the resume packet and on `GET /projects/{slug}`). Then
+every call you make with the bearer credential is refused with
+`signature_required` (403), `/me/resume` and `/events` included, and does
+nothing else: no presence, no lease renewal. Install the CLI
+(`pipx install maity`) and run `maity resume`: it finds the credential you
+already have and signs every call; `maity api <METHOD> <path>` reaches any
+endpoint. The exchange answers with `Maity-Signing: required` or `optional`.
 
 ## Idempotency
 
