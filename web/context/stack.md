@@ -107,3 +107,40 @@ a separate driver to match to the browser, and no waiting on the page's
 state built in, which the feed's 5-second interval needs. Only a
 documented local script — on this VM it could not run, so nobody would
 have seen the dashboard in a browser before the maintainer.
+
+## The browser test checks accessibility with axe-core from the npm tarball, pinned by its sha512 and read without npm
+
+**Id:** fedb8f92-42ff-4918-9840-5bfcc6c7c6cb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request for an automated accessibility pass in the browser test, 2026-10-22
+**Revisit when:** axe-core stops shipping `axe.min.js` in its npm package, or the dashboard gets a Node toolchain
+**See:** stack.md#a-real-browser-end-to-end-test-runs-in-ci-with-playwright-for-python-next-to-the-smoke-test — fb1daf22-fe54-4073-b89e-9e099a5a389e — as of 2026-10-22
+
+`tools/e2e.py` runs axe-core on each view as the scenario reaches it:
+at 1280 and 390 px in the light scheme, and at 1280 px dark. A serious or
+critical violation fails the run after the last step; every finding goes
+to `a11y.json` and `a11y.txt` in the artifacts. The engine is the npm
+package's tarball at a fixed version. The script fetches it from the
+registry once, checks it against the registry's sha512 integrity on every
+run, and reads `package/axe.min.js` from it in memory, without npm and
+without extracting anything. It is evaluated into the page through the
+DevTools protocol, so the hub's `default-src 'self'` CSP stays as served.
+
+**Reason:** axe-core is the engine the usual accessibility tools build on,
+and its npm package is its own release, signed and with provenance. The
+sha512 pins exactly that file, the way a lock pins a Python dependency. No
+`package.json`, no `node_modules` and no build step come into `web/`, which
+the stack entries exclude.
+
+**Rejected alternatives:**
+- `axe-playwright-python` from PyPI: a third-party wrapper that bundles a
+  copy of axe of its own choosing, so it adds a second party to trust for
+  the same file.
+- Vendoring `axe.min.js` into the repository: 650 KB of minified
+  third-party code in every diff and review.
+- Loading axe from a CDN in the page: the hub's CSP refuses it, and
+  relaxing the CSP for the test would test a different page.
+- `bypass_csp` in the browser context, to inject a script tag: the same
+  objection, a page the hub does not serve.
