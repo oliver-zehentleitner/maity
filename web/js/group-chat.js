@@ -260,6 +260,7 @@ window.Maity = window.Maity || {};
     // Managing: rename, add, remove; anyone in it leaves. The disclosure
     // stays open across a redraw of the head.
     let manageOpen = false;
+    let renameDraft = null;
     function manage() {
       if (observer || closed) return null;
       const box = h("details", { class: "group-manage" }, h("summary", null, manager() ? "Manage this chat" : "Leave this chat"));
@@ -282,10 +283,13 @@ window.Maity = window.Maity || {};
       };
       if (manager()) {
         const name = h("input", { id: "group-rename", maxlength: "200", autocomplete: "off" });
-        name.value = view.title || "";
+        // A title being typed survives someone else's change of the chat.
+        name.value = renameDraft !== null ? renameDraft : view.title || "";
+        name.addEventListener("input", () => { renameDraft = name.value; });
         append(box, h("form", { class: "inline-form", onsubmit: (e) => {
           e.preventDefault();
-          act("Renaming", "Renamed.", () => M.api.patch(base, { title: name.value.trim() || null }));
+          const typed = name.value.trim() || null;
+          act("Renaming", "Renamed.", () => M.api.patch(base, { title: typed }).then(() => { renameDraft = null; }));
         } }, h("label", { for: "group-rename" }, "Title"), name, h("button", { type: "submit", class: "small" }, "Rename")));
         const free = ctx.members.filter((m) => !inChat(m.id) && !m.removed_at);
         if (projectClosed) {
@@ -322,6 +326,7 @@ window.Maity = window.Maity || {};
     const key = ctx.slug + "/" + id;
     let text = null;
     let compose = null;
+    let hintMention = () => {};
     if (observer) {
       compose = h("p", { class: "muted group-readonly" }, "You read along as the owner of an agent in this chat. You do not write here.");
     } else if (closed) {
@@ -331,8 +336,9 @@ window.Maity = window.Maity || {};
       text.value = parts.drafts.get(key) || "";
       const hint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
       const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
-      const handles = new Set(view.participants.map((p) => p.handle));
-      const hintMention = () => {
+      // Read from the view each time: someone added in place is reachable at once.
+      hintMention = () => {
+        const handles = new Set(view.participants.map((p) => p.handle));
         const outside = [...parts.withoutCode(text.value).matchAll(MENTIONED)].map((x) => x[2]).filter((hd) => !handles.has(hd));
         clear(hint);
         hint.hidden = !outside.length;
@@ -371,10 +377,16 @@ window.Maity = window.Maity || {};
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());
     const head = h("div", { class: "group-head" });
+    // The head drawn again keeps the focus on the same field, and the
+    // mention hint follows the people now in the chat.
     function drawHead() {
+      const had = document.activeElement && head.contains(document.activeElement) ? document.activeElement.id : null;
       heading.textContent = titleOf();
       pane.setAttribute("aria-label", "Group chat " + titleOf());
       append(clear(head), people(), observers(), manage());
+      const again = had && Array.from(head.querySelectorAll("input, select, button")).find((e) => e.id === had);
+      if (again) again.focus();
+      hintMention();
     }
     // The chat as the hub has it now, drawn in place; access or closed
     // changed (removed, the chat closed) means the whole view again.
