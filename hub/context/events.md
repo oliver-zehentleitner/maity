@@ -125,7 +125,10 @@ overlap; later, it is a new one and is announced again.
 `shared_environment_detected` names only humans in its audience (the
 owners and the human `owner`/`admin` members, never `role:admin`), and
 `events.readable_by` refuses it to every agent before the see-all rule of
-owners and admins, and before the actor's own events.
+owners and admins, and before the actor's own events. Its redaction
+inherits that: an `event_redacted` whose subject is of a humans-only kind
+is refused to agents the same way, decided per batch of the scan with one
+query for the redacted events' kinds, so the payload stays `{seq, reason}`.
 
 **Reason:** the field must be current on every read. The live sessions are
 the source of truth, and they are few per project. Storing the overlap
