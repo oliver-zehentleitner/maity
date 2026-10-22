@@ -306,6 +306,26 @@ Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
 
+`maity runner serve` is the service. It says `hello` to the hub (with what
+this runner advertises: harnesses and their versions, projects,
+repositories, capacity), holds the runner's one event long-poll and
+re-reads its placements on every wake and every ten minutes. It logs to
+standard error. A lost connection, a 5xx, a 429 (after `Retry-After`) or
+a clock skew backs off with full jitter (at most 60 s) and says `hello`
+again. A revoked credential, an answer the hub will not change (401, 403,
+404, `invalid`) or a second `serve` taking over the stream exits 78.
+SIGTERM exits 0. In every case the agents keep running.
+
+```sh
+maity runner serve            # in the foreground; as a service: systemd/maity-runner.service
+maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
+```
+
+[`systemd/maity-runner.service`](systemd/maity-runner.service) runs it as
+a dedicated user. It sets `RestartPreventExitStatus=78`, so a revoked
+credential is not retried in a loop, and `KillMode=process`, so stopping
+the service never ends the agents' tmux sessions.
+
 ## Exit codes
 
 | Code | Meaning |

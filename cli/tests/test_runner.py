@@ -455,7 +455,7 @@ def test_check_finds_the_harness_and_its_version(
     paired.write_text(paired.read_text() + "\n[harness.codex]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
-    assert any("codex-cli 0.40.0" in line for line in lines(capsys))
+    assert any("(0.40.0)" in line for line in lines(capsys))
 
 
 def test_check_warns_about_inherited_claude_settings(
