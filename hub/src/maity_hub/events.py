@@ -182,11 +182,16 @@ def read(
             return found, examined, False
 
 
+# Readable by everyone they name, but never a reason to wake (§8.2): what a project
+# shows changed, nothing anybody has to act on.
+NON_WAKING = frozenset({"project_updated"})
+
+
 def wakes(row: Any, membership: Any, principal: str) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
-    admin never wakes."""
-    if row.actor_membership == membership.id:
+    admin never wakes, and neither does a kind in NON_WAKING."""
+    if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
     audience = row.audience or []
     return (

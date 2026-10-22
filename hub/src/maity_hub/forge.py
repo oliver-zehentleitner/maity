@@ -99,10 +99,19 @@ class Forge:
         """GET on the forge API; `None` for 404, `ForgeUnavailableError` for anything else."""
         if self.token is None:
             raise ForgeUnavailableError("no forge token")
-        request = urllib.request.Request(f"https://{API_HOST}{path}")
+        return self._call(path)
+
+    def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+        """A read on the forge API, with the token when the hub holds one and without it
+        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads."""
+        data = None if query is None else json.dumps(query).encode()
+        request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
-        request.add_header("Authorization", f"Bearer {self.token}")
+        if self.token is not None:
+            request.add_header("Authorization", f"Bearer {self.token}")
+        if data is not None:
+            request.add_header("Content-Type", "application/json")
         request.add_header("User-Agent", "maity-hub")
         try:
             with _opener.open(request, timeout=TIMEOUT) as response:
@@ -226,3 +235,40 @@ class Forge:
             annotated = self._get(f"/repos/{repository}/git/tags/{sha}")
             sha = annotated["object"]["sha"] if annotated else sha
         return {"name": name, "sha": sha, "found": True}
+
+    # --- the repository's images (docs/api.md §11.2) ------------------------------------------
+
+    def owner_avatar(self, repository: str) -> str | None:
+        """The owner's avatar URL (GitHub has no repository avatar), read with the token
+        where the hub holds one and without it for a public repository; None when the
+        repository or the avatar is not there."""
+        found = self._call(f"/repos/{repository}")
+        url = ((found or {}).get("owner") or {}).get("avatar_url")
+        return url if isinstance(url, str) else None
+
+    def social_preview(self, repository: str) -> str | None:
+        """The repository's own social preview image, only when it set one (GitHub's generated
+        card is not a banner). GraphQL needs a token: without one there is no banner."""
+        if self.token is None:
+            return None
+        owner, name = repository.split("/", 1)
+        found = self._call(
+            "/graphql",
+            {
+                "query": "query($owner: String!, $name: String!) { repository(owner: $owner, "
+                "name: $name) { openGraphImageUrl usesCustomOpenGraphImage } }",
+                "variables": {"owner": owner, "name": name},
+            },
+        )
+        if not isinstance(found, dict):
+            raise ForgeUnavailableError("the forge answered GraphQL with no object")
+        repo = (found.get("data") or {}).get("repository")
+        if repo is None:
+            errors = found.get("errors") or []
+            if all(isinstance(e, dict) and e.get("type") == "NOT_FOUND" for e in errors):
+                return None
+            raise ForgeUnavailableError("the forge answered GraphQL with errors")
+        if repo.get("usesCustomOpenGraphImage") is not True:
+            return None
+        url = repo.get("openGraphImageUrl")
+        return url if isinstance(url, str) else None
