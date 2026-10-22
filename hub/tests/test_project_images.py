@@ -119,6 +119,17 @@ def test_an_upload_is_served_with_the_image_headers(owner: flow.Human, migrated:
     assert owner.get("/projects/maity").headers["cache-control"] == "no-store"
 
 
+def test_me_carries_each_projects_logo(owner: flow.Human) -> None:
+    flow.project(owner, "maity")
+    flow.project(owner, "other")
+    tag = put(owner, "/projects/maity/logo", PNG, "image/png").json()["logo"]["etag"]
+    logos = {p["slug"]: p["logo"] for p in owner.get("/me").json()["projects"]}
+    assert logos == {
+        "maity": {"available": True, "etag": tag},
+        "other": {"available": False, "etag": None},
+    }
+
+
 def test_a_matching_etag_is_304_without_a_body(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     tag = put(owner, "/projects/maity/banner", WEBP, "image/webp").json()["banner"]["etag"]
