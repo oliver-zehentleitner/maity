@@ -549,3 +549,98 @@ def test_a_new_repository_forgets_the_export(owner: flow.Human, fake: Fake) -> N
     owner.get("/projects/widget/keep-the-why")
     owner.patch("/projects/widget", {"repository": {"url": "https://github.com/acme/other"}})
     assert owner.get("/projects/widget").json()["keep_the_why_export"] is None
+
+
+# --- review: foreign data stays with its member; the budget -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [(b"[" * 200000, "not_json"), (json.dumps(export(topics=5)).encode(), None)],
+    ids=["deep-nesting", "topics-not-a-list"],
+)
+def test_a_broken_export_fails_only_its_member(
+    owner: flow.Human, fake: Fake, body: bytes, reason: str | None
+) -> None:
+    fake.family()
+    fake.states[f"{BASE}/hub/state.json"] = body
+    flow.project(owner, "widget", repository={"url": REPO})
+    answer = owner.get("/projects/widget/keep-the-why")
+    assert answer.status_code == 200
+    hub = answer.json()["members"][1]
+    assert (hub["error"] or {}).get("reason") == reason
+    assert answer.json()["members"][0]["error"] is None
+
+
+def test_an_unexpected_error_digesting_an_export_is_shape(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake.family()
+    real = ktw.digest
+
+    def digest(data: Any, link_base: str) -> ktw.Read:
+        if "hub/" in link_base and "api" not in link_base:
+            raise ZeroDivisionError("anything")
+        return real(data, link_base)
+
+    monkeypatch.setattr(ktw, "digest", digest)
+    flow.project(owner, "widget", repository={"url": REPO})
+    answer = owner.get("/projects/widget/keep-the-why")
+    assert answer.status_code == 200
+    assert answer.json()["members"][1]["error"]["reason"] == "shape"
+
+
+def test_a_slow_family_ends_at_the_deadline(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.3)
+    fake.family()
+    fake.delay = 2.0
+    flow.project(owner, "widget", repository={"url": REPO})
+    started = time.monotonic()
+    body = owner.get("/projects/widget/keep-the-why").json()
+    assert time.monotonic() - started < 1.5
+    read = [m for m in body["members"] if m["state_url"]]
+    assert {m["error"]["reason"] for m in read} == {"timeout"}
+
+
+def test_configs_past_the_deadline_are_not_read(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.0)
+    fake.family()
+    flow.project(owner, "widget", repository={"url": REPO})
+    body = owner.get("/projects/widget/keep-the-why").json()
+    assert fake.file_reads == [".keep-the-why"]
+    children = [m for m in body["members"][1:] if "://" not in m["path"]]
+    assert {m["error"]["reason"] for m in children} == {"timeout"}
+
+
+def test_a_request_waiting_on_a_long_read_gets_the_cache_or_503(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.1)
+    monkeypatch.setattr(ktw, "LOCK_GRACE", 0.1)
+    fake.family()
+    flow.project(owner, "widget", repository={"url": REPO})
+    project_id = _project_id(owner)
+    lock = ktw.CACHE._lock(project_id)
+    lock.acquire()
+    try:
+        busy = owner.get("/projects/widget/keep-the-why")
+        assert busy.status_code == 503
+        assert busy.json()["error"]["code"] == "ktw_unavailable"
+    finally:
+        lock.release()
+    owner.get("/projects/widget/keep-the-why")  # cached now
+    lock.acquire()
+    try:
+        cached = owner.get("/projects/widget/keep-the-why", params={"max_age": 0})
+        assert cached.status_code == 200 and cached.json()["fresh"] is False
+    finally:
+        lock.release()
+
+
+def test_zero_width_and_direction_marks_are_removed() -> None:
+    marks = "a​b‌c‍d‎e‏f؜g﻿h"
+    assert ktw.text(marks, 100) == "abcdefgh"

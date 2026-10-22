@@ -15,17 +15,21 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import re
 import threading
 import time
 import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from maity_hub import clock, forge, outbound
+
+log = logging.getLogger(__name__)
 
 CONFIG_CAP = 64 * 1024
 STATE_CAP = 1024 * 1024
@@ -34,6 +38,8 @@ MAX_MEMBERS = 32
 MAX_ATTENTION = 200
 IN_FLIGHT = 4
 DEFAULT_MAX_AGE = 600
+FAMILY_DEADLINE = 30.0  # seconds for one read of a whole family, configs and exports
+LOCK_GRACE = 5.0
 FORCE_INTERVAL = 30.0
 STATUSES = ("active", "open", "needs-review", "pending-confirmation", "superseded")
 ATTENTION_ORDER = ("needs-review", "pending-confirmation", "open")
@@ -48,11 +54,17 @@ _CHILDREN_BLOCK = re.compile(
 _SETTING = re.compile(r"^\s*-\s*([A-Za-z0-9_-]+)\s*:\s*(.*?)\s*$")
 _CHILD = re.compile(r"^\s*-\s*([^:]+?)\s*:\s*(\S+)(?:\s+—\s+.*)?\s*$")
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ‪-‮⁦-⁩]")
+_CONTROL = re.compile(
+    "[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200b-\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ufeff]"
+)
 
 
 def _now() -> float:
     return time.monotonic()
+
+
+class Busy(Exception):
+    """The family is being read by another request beyond the budget, and nothing is cached."""
 
 
 class NotConfigured(Exception):
@@ -200,7 +212,8 @@ def digest(data: Any, link_base: str) -> Read:
     if not isinstance(raw_entries, list):
         raise MemberError("shape")
     topics: dict[str, str] = {}
-    for topic in data.get("topics") or []:
+    raw_topics = data.get("topics")
+    for topic in raw_topics if isinstance(raw_topics, list) else []:
         if isinstance(topic, dict) and isinstance(topic.get("file"), str):
             title = text(topic.get("title"), 200)
             if title is not None:
@@ -274,7 +287,7 @@ def read_state(url: str) -> Read:
         raise MemberError("http_status", status=answer.status)
     try:
         data = json.loads(answer.body)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):  # nesting deep enough to recurse
         raise MemberError("not_json") from None
     return digest(data, dashboard_url(url))
 
@@ -315,9 +328,10 @@ def _error(reason: str, **details: Any) -> dict[str, Any]:
     return {"code": "ktw_unavailable", "reason": reason, **details}
 
 
-def walk(reader: forge.Forge, repository: str) -> Family:
+def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Family:
     """The family's members in order, depth first, with their config read; the exports are
-    read afterwards. `NotConfigured`/`RootUnavailable` for the root."""
+    read afterwards. `NotConfigured`/`RootUnavailable` for the root. A child whose config
+    would be read after `deadline` (`_now()`) is listed with `timeout`, not read."""
     members: list[Member] = []
     seen: set[str] = set()
     truncated = False
@@ -362,6 +376,9 @@ def walk(reader: forge.Forge, repository: str) -> Family:
             if depth + 1 > MAX_DEPTH:
                 truncated = True
                 continue
+            if deadline is not None and _now() >= deadline:
+                members.append(Member(path=target, name=clean_name, error=_error("timeout")))
+                continue
             try:
                 child_source = read_config(target)
             except MemberError as failed:
@@ -383,20 +400,40 @@ def walk(reader: forge.Forge, repository: str) -> Family:
     return Family(members, truncated)
 
 
-def _read_exports(family: Family) -> None:
-    """Every member's export, at most IN_FLIGHT at once."""
+def _one_export(url: str) -> Read | dict[str, Any]:
+    """A member's export, or its error. The export is foreign data: whatever goes wrong
+    reading or digesting it stays with this member (§11.3)."""
+    try:
+        return read_state(url)
+    except MemberError as failed:
+        return _error(failed.reason, **failed.details)
+    except Exception:
+        log.warning("a Keep the Why export could not be digested", exc_info=False)
+        return _error("shape")
+
+
+def _read_exports(family: Family, deadline: float) -> None:
+    """Every member's export, at most IN_FLIGHT at once; a member not read by `deadline`
+    is `timeout`. The results are assigned here, never by the reading threads, so a read
+    that finishes late changes nothing."""
     readable = [m for m in family.members if m.state_url and m.error is None]
-
-    def one(member: Member) -> None:
-        assert member.state_url is not None
-        try:
-            member.read = read_state(member.state_url)
-        except MemberError as failed:
-            member.error = _error(failed.reason, **failed.details)
-        member.observed_at = clock.rfc3339(clock.now())
-
-    with ThreadPoolExecutor(max_workers=IN_FLIGHT) as pool:
-        list(pool.map(one, readable))
+    if not readable:
+        return
+    pool = ThreadPoolExecutor(max_workers=IN_FLIGHT, thread_name_prefix="maity-ktw-read")
+    try:
+        futures = {pool.submit(_one_export, m.state_url or ""): m for m in readable}
+        for future, member in futures.items():
+            try:
+                found = future.result(timeout=max(deadline - _now(), 0.0))
+            except FutureTimeout:
+                found = _error("timeout")
+            if isinstance(found, Read):
+                member.read = found
+            else:
+                member.error = found
+            member.observed_at = clock.rfc3339(clock.now())
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 # --- the answer ------------------------------------------------------------------------------
@@ -530,7 +567,15 @@ class Cache:
     ) -> tuple[_Entry, bool]:
         """(entry, fresh): a cached answer younger than `max_age`, else a new read. A forced
         read (`max_age=0`) within FORCE_INTERVAL of the last one answers from the cache."""
-        with self._lock(project_id):
+        lock = self._lock(project_id)
+        if not lock.acquire(timeout=FAMILY_DEADLINE + LOCK_GRACE):
+            # Another request has been reading this family for the whole budget: answer
+            # what is cached rather than hold this thread too.
+            entry = self.cached(project_id)
+            if entry is not None and entry.repository_url == repository_url:
+                return entry, False
+            raise Busy
+        try:
             entry = self.cached(project_id)
             if entry is not None and entry.repository_url == repository_url:
                 age = _now() - entry.at
@@ -540,6 +585,8 @@ class Cache:
             with self.guard:
                 self.entries[project_id] = entry
             return entry, True
+        finally:
+            lock.release()
 
     def _read(
         self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None
@@ -549,8 +596,9 @@ class Cache:
         if forge.kind_of(repository_url) != "github" or repository_url is None:
             return _Entry(None, now, repository_url)
         repository = forge.repository_of(repository_url)
+        deadline = _now() + FAMILY_DEADLINE
         try:
-            family = walk(reader, repository)
+            family = walk(reader, repository, deadline)
         except NotConfigured:
             return _Entry(None, now, repository_url)
         except RootUnavailable:
@@ -562,8 +610,10 @@ class Cache:
                 previous.observed_at, previous.members, previous.family_truncated, error
             )
             return _Entry(kept, now, repository_url)
-        _read_exports(family)
+        _read_exports(family, deadline)
         for member in family.members:
+            if (member.error or {}).get("reason") == "location_not_followed":
+                continue  # its path is location text, never read: no last good read
             key = (project_id, member.path)
             if member.read is not None:
                 self.last_good[key] = (member.read, member.observed_at)

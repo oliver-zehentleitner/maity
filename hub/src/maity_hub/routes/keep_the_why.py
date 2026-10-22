@@ -25,7 +25,17 @@ def read_keep_the_why(
         mine = membership(conn, caller, slug)
         mine.require("project:read")
     project = mine.project
-    entry, fresh = ktw.CACHE.get(reader_of(request), project.id, project.repository_url, max_age)
+    try:
+        entry, fresh = ktw.CACHE.get(
+            reader_of(request), project.id, project.repository_url, max_age
+        )
+    except ktw.Busy:
+        raise ApiError(
+            503,
+            "ktw_unavailable",
+            "the Keep the Why family is being read; try again shortly",
+            {"reason": "forge_unavailable"},
+        ) from None
     snapshot = entry.snapshot
     if snapshot is None:
         raise ApiError(
