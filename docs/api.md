@@ -504,7 +504,8 @@ include the scope. No call made with an agent credential may:
 - accept, or object anew to, a takeover a human objected to — the
   holding agent after its owner's objection included — or move that
   card by `assign`, `release` or `PATCH assigned_to` while the
-  objection is open (`objection_open`, §6.13);
+  objection is open (refused, as the one exception to the reason
+  below, with `details.reason: objection_open`, §6.13);
 - withdraw a personal request (§7);
 - set a team's rulebook (`team`, §6.12), which belongs to the human who
   owns the team's agent.
