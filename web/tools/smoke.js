@@ -2424,10 +2424,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(atCalls.slice(-1)[0][0] === "DELETE" && atCalls.slice(-1)[0][1].endsWith("/" + atZ.id) && !atEarlierItem("z.txt"), "attachments: one waiting from before removed");
   btn(atEarlierItem("y.txt"), "Attach").click(); await tick();
   expect(text(main.querySelector(".attach-pending")).includes("y.txt") && !atEarlierItem("y.txt"), "attachments: one waiting from before attached");
+  // Attached, then removed: deleted on the hub, so no longer offered as waiting.
+  btn(atEarlierItem("draft.png"), "Attach").click(); await tick();
+  btn(main.querySelectorAll(".attach-pending li").find((li) => text(li).includes("draft.png")), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!atEarlierItem("draft.png") && !text(main.querySelector(".attach-pending")).includes("draft.png"), "attachments: one attached from before and removed is gone from both lists");
   byId("chat-text").value = "the rest"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   const atRest = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maity/conversations/agt-b/messages").pop();
-  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && atEarlierItem("draft.png") && !main.querySelectorAll(".attach-pending li").length,
-    "attachments: it is sent with the message, the others still wait");
+  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: it is sent with the message");
   // An image that fails to load: said, its download link kept.
   const atImg = main.querySelectorAll("li.msg").find((li) => li.querySelector("img.attach-image"));
   atImg.querySelector("img.attach-image").dispatch("error");

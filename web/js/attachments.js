@@ -109,9 +109,10 @@ window.Maity = window.Maity || {};
       try {
         earlier = (await M.api.getAll(ctx.base + "/attachments?status=pending&uploaded_by=" + encodeURIComponent(ctx.me.id))).items;
       } catch (err) {
-        // A hub without attachments, or none to read: nothing to offer.
         earlier = [];
+        // A hub without attachments has nothing to offer; any other failure is said.
         if (err.status === 404 || err.status === 405) hubWithout = true;
+        else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
     };
@@ -131,6 +132,8 @@ window.Maity = window.Maity || {};
               return;
             }
             pending.splice(pending.indexOf(p), 1);
+            // Deleted on the hub: no longer waiting from before either.
+            earlier = earlier.filter((a) => a.id !== p.att.id);
             draw();
             input.focus();
           },
