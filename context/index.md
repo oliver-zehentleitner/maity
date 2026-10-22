@@ -29,6 +29,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
+- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along
 
 ## D
 
@@ -62,6 +63,7 @@ Why Maity is built the way it is.
 
 ## P
 - [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule
+- [projects.md](projects.md) — project state: a closed project refuses additions, never removal
 
 ## Q
 
