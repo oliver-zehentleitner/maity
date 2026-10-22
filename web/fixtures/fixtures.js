@@ -1417,7 +1417,7 @@ window.MAITY_FIXTURES = {
         "claim": null,
         "closed_at": null,
         "contract": {
-          "arbiter": "hum-maintainer",
+          "arbiter": "role:admin",
           "state": "final",
           "watchers": [
             "agt-s1"

@@ -59,8 +59,9 @@ window.Maity = window.Maity || {};
         : (claim.lease_until ? h("span", { class: "lease" }, " · lease until " + formatTime(claim.lease_until)) : null));
   }
 
-  function edges(label, ids, byId) {
+  function edges(label, ids, byId, frozen) {
     if (!ids || !ids.length) return null;
+    if (frozen) return h("div", { class: "deps" }, h("span", { class: "label" }, label), h("ul", null, ids.map((id) => h("li", null, id))));
     return h("div", { class: "deps" },
       h("span", { class: "label" }, label),
       h("ul", null, ids.map((id) => {
@@ -122,15 +123,26 @@ window.Maity = window.Maity || {};
   }
 
   // The connected ships_with components: they ship together or not at all.
-  function shipGroups(rel, byId) {
+  // Complete only by the hub's word: green when the release is ready, amber
+  // when the hub names the group incomplete, neither while it observes
+  // nothing. A member outside the release's depends_on is said so; a live
+  // status is shown only for an open release, never in a frozen record.
+  function shipGroups(c, byId, closed) {
+    const rel = c.release;
     const groups = rel.groups || [];
     if (!groups.length) return null;
-    const incomplete = new Set(((rel.readiness || {}).blocking || [])
+    const r = rel.readiness || { ready: false, blocking: [] };
+    const incomplete = new Set((r.blocking || [])
       .filter((b) => b.reason === "group_incomplete").map((b) => (b.tasks || []).join(" ")));
+    const shipped = new Set(c.depends_on || []);
+    const member = (id) => id
+      + (shipped.has(id) ? "" : " (not in this release)")
+      + (!closed && byId[id] ? " (" + status(byId[id].status) + ")" : "");
     return h("div", { class: "deps groups" },
       h("span", { class: "label" }, "Ship together"),
-      h("ul", null, groups.map((g) => h("li", { class: incomplete.has(g.join(" ")) ? "unmet" : "met" },
-        g.map((id) => id + (byId[id] ? " (" + status(byId[id].status) + ")" : " (not in this release)")).join(" + ")))));
+      h("ul", null, groups.map((g) => h("li", {
+        class: r.ready ? "met" : (incomplete.has(g.join(" ")) ? "unmet" : "unknown"),
+      }, g.map(member).join(" + ")))));
   }
 
   function tagLine(rel) {
@@ -141,23 +153,26 @@ window.Maity = window.Maity || {};
       + " · " + formatAgo(rel.tag.observed_at));
   }
 
-  function release(ctx, c, byId) {
+  function release(ctx, c, byId, closed) {
     const rel = c.release;
     const r = rel.readiness || { ready: false, blocking: [] };
-    const closed = c.status === "done" || c.status === "cancelled";
     const noProbe = r.blocking.some((b) => b.reason === "probe_not_configured");
     return [
-      closed ? h("p", { class: "muted" }, "Closed: this is the record frozen when it closed; later changes do not alter it.") : null,
+      closed ? h("p", { class: "muted" }, "Closed: its pull requests, groups and readiness are the record frozen when it closed; "
+        + "later changes do not alter them.") : null,
       pullRequests(rel),
-      shipGroups(rel, byId),
+      shipGroups(c, byId, closed),
       rel.checklist && rel.checklist.length
         ? h("ul", { class: "checklist" }, rel.checklist.map((item) =>
           h("li", { class: item.done ? "met" : "unmet" }, (item.done ? "✓ " : "○ ") + item.text,
             item.done && item.by ? h("span", { class: "muted" }, " · " + ctx.nameOf(item.by) + (item.at ? " " + formatAgo(item.at) : "")) : null)))
         : null,
       r.ready
-        ? h("div", { class: "readiness ready" }, h("strong", null, "Ready to tag"),
-          h("span", null, " — every shipped card is done and every pull request observed merged."))
+        ? h("div", { class: "readiness ready" },
+          c.status === "done"
+            ? h("strong", null, "Shipped: it was ready when it closed.")
+            : [h("strong", null, "Ready to tag"),
+              h("span", null, " — every shipped card is done, every pull request observed merged, every group complete and the checklist done.")])
         : h("div", { class: "readiness not-ready" }, h("strong", null, "Not ready: "),
           h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId))))),
       noProbe && !closed
@@ -169,7 +184,11 @@ window.Maity = window.Maity || {};
     ];
   }
 
+  // A contract's arbiter may be a role ("role:admin"): named in words.
+  const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : ctx.nameOf(a));
+
   function card(ctx, c, byId) {
+    const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     return h("article", { class: "card card-" + c.kind, "aria-label": c.title },
       h("header", null,
         h("span", { class: "card-id" }, c.id),
@@ -180,19 +199,19 @@ window.Maity = window.Maity || {};
         c.area ? h("span", { class: "area" }, c.area) : null),
       h("h3", null, c.title),
       claimLine(ctx, c),
-      edges("Depends on", c.depends_on, byId),
+      edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
       c.blocked_by_request
         ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "an answer"), " (",
           h("span", { class: "request-id" }, c.blocked_by_request), ")")
         : null,
       c.contract
-        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter " + ctx.nameOf(c.contract.arbiter)
+        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter " + arbiterName(ctx, c.contract.arbiter)
           + ((c.contract.watchers || []).length ? " · watched by " + c.contract.watchers.map(ctx.nameOf).join(", ") : ""))
         : null,
       checkpoint(c),
       report(c),
-      c.kind === "release" && c.release ? release(ctx, c, byId) : null);
+      c.kind === "release" && c.release ? release(ctx, c, byId, frozen) : null);
   }
 
   M.views.board = async function (ctx, root) {

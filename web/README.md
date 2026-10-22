@@ -57,7 +57,10 @@ Inside a project, in the order of their importance; see
      reported one only as a claim beside **unverified**; one the forge
      does not have as **not on the forge**;
    - the `ships_with` groups that ship together, each card with its
-     status;
+     status (none in a closed release's frozen record) and a member outside
+     the release's `depends_on` named as such; a group is green only when
+     the hub calls the release ready, amber when the hub names it
+     incomplete, neither while the hub observes nothing;
    - the checklist with who ticked what, and the tag as observed;
    - the hub's readiness with each reason in words, never computed in
      the browser.

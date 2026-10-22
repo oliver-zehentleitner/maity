@@ -764,6 +764,8 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     # The hub lists a group's ids sorted; random ids decide the order.
     expect(card.locator(".groups")).to_contain_text(f"{card_id} (in progress)")
     expect(card.locator(".groups")).to_contain_text(f"{partner['id']} ({partner['status']})")
+    # Without a probe the hub says nothing about the group: neither green nor amber.
+    expect(card.locator(".groups li.unknown")).to_have_count(1)
     expect(card).to_contain_text("Tag v0.1.0: not observed")
     view = run.api(rev, "GET", f"/projects/e2e-alpha/tasks/{rel['id']}")["release"]
     assert view["readiness"] == {"ready": False, "blocking": [{"reason": "probe_not_configured"}]}
@@ -781,6 +783,9 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
     expect(page.get_by_role("region", name="Cancelled")).to_contain_text("0.1.0 — e2e")
     expect(card).to_contain_text("Closed: this is the record frozen when it closed")
     expect(card).not_to_contain_text("it can be cancelled but not marked done")
+    expect(card.locator(".groups")).not_to_contain_text(
+        "(in progress)"
+    )  # no live status in a record
     run.shot(page, "release-cancelled")
     no_problems(run, "release cancelled")
 

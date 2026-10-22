@@ -152,6 +152,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: at phone width a credential's or join's Revoke button keeps its label on one line,
   and a credential's id, client and dates wrap as one text beside it
 - web: a request id on a blocked card no longer breaks at its hyphen
+- web: at phone width a form's select no longer widens the page past the screen when an
+  option is long (the join view's agent list, the create view's presets)
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
 - web: the project switcher's state dot shows the state's colour; a later `.dot` rule
   had made every dot grey

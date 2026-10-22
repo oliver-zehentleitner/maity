@@ -186,13 +186,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "release: checklist with who ticked it; the tag as observed");
   await go("#/p/sample/board");
   const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
-  expect(closedRel && text(closedRel).includes("Closed: this is the record frozen when it closed")
+  expect(closedRel && text(closedRel).includes("Closed: its pull requests, groups and readiness are the record frozen when it closed")
     && text(closedRel).includes("the hub observes nothing for this project (no forge probe)")
     && !text(closedRel).includes("it can be cancelled but not marked done") && text(closedRel).includes("Tag v0.3.0: not observed"),
     "closed release without a probe: frozen record, honest reason, no hint to act, tag not observed");
-  expect(text(closedRel).includes("tsk-0021 (review) + tsk-0022 (done)"), "closed release: its group with each card's status");
+  expect(text(closedRel).includes("tsk-0021 + tsk-0022 (not in this release)") && !text(closedRel).includes("(review)")
+    && closedRel.querySelector(".groups li.unknown"),
+    "closed release: its group without live statuses, the partner outside depends_on named, neither green nor amber without a probe");
   const contractCard = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label") === "Contract: receipt fields");
-  expect(contractCard && text(contractCard).includes("Contract final · arbiter") && text(contractCard).includes("watched by "),
+  expect(contractCard && text(contractCard).includes("Contract final · arbiter the admins · watched by "),
     "contract card: state, arbiter and watchers");
   await go("#/p/maity/board");
   expect(text(main).includes("lease expired"), "expired lease shown");

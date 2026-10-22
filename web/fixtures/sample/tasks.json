@@ -87,7 +87,7 @@
       "ktw_ref": null,
       "report": null,
       "contract": {
-        "arbiter": "hum-maintainer",
+        "arbiter": "role:admin",
         "state": "final",
         "watchers": [
           "agt-s1"
