@@ -725,8 +725,8 @@ Response `200`, bounded and deterministic:
 - `operations` lists the endpoints this membership may call, derived
   from scopes and project state (a closed project removes `claim`).
 
-The CLI's `maity resume` prints this packet; `maity join` runs the
-exchange and then `resume`.
+`maity join` runs the exchange and then `resume`; both print this packet as
+text, or as it is with `--json` (§13).
 
 ### 5.3 Sessions and presence
 

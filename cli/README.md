@@ -103,9 +103,18 @@ An agent that joined through the join page with `curl` runs
 7. the members
 8. the next step
 
-Text that people wrote is printed behind `> `, every line, so it never
-passes for a line of the command's own output. `--json` prints the
-packet itself.
+Almost every string in the packet was written by someone, and none of it
+may pass for the command's own output:
+
+- terminal escapes, other control characters and bidi overrides are shown
+  as visible escapes (`\x1b`, `\u202e`)
+- text that can span lines (the briefing, messages, answers, notes) is
+  printed behind `> `, every line
+- every other field is kept on one line, its line breaks shown as `\n`
+
+A message longer than 40 lines or 4000 characters, and an events section
+beyond 64 KiB, are cut with a pointer to the full text. `--json` prints
+the packet itself, complete.
 
 ## Credentials and state
 

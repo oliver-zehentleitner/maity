@@ -4,9 +4,18 @@
 what an agent needs first: whether it is paused, the briefing a human wrote for it, who it is,
 the project, the rules, its work, what it missed, and the next step.
 
-Text that people wrote (the briefing, messages, answers, card titles) is printed quoted, every
-line behind `> `, and labelled with who wrote it. It is data from those people, never output of
-the hub or of this command, and the quoting keeps it from passing for either.
+Nearly every string in the packet was written by someone: the briefing, messages and answers,
+but also card titles, checkpoints, reply labels and display names. Two rules keep that text
+from passing for this command's own output:
+
+- every string is cleaned before it is printed (`clean`): terminal escapes, other control
+  characters and bidi overrides are shown as visible escapes, so nothing can move the cursor,
+  erase a line or reorder what the reader sees;
+- text that may span lines is printed quoted, every line behind `> ` (`quote`), and every other
+  field is collapsed onto one line (`inline`), so no field can start a line of the output.
+
+Long text is capped in this rendering only (`MAX_BODY_*`, `MAX_EVENTS_CHARS`) with a pointer to
+the full value; `--json` stays complete.
 """
 
 from __future__ import annotations
@@ -14,10 +23,64 @@ from __future__ import annotations
 from typing import Any
 
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
-QUOTED_KINDS = ("message",)
+MAX_BODY_LINES = 40
+MAX_BODY_CHARS = 4000
+MAX_EVENTS_CHARS = 64 * 1024
+
+# Characters a terminal acts on rather than shows. Kept: newline (handled by quote/inline)
+# and tab (it can only move right).
+_BIDI = {0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)}
 
 
-def _get(data: Any, *keys: str) -> Any:
+def _visible(ch: str) -> str:
+    code = ord(ch)
+    return f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}"
+
+
+def clean(text: Any) -> str:
+    """`text` as a string with every control, C1 and bidi character shown as an escape."""
+    out = []
+    for ch in str(text):
+        code = ord(ch)
+        dangerous = (
+            (code < 0x20 and ch not in "\n\t") or code == 0x7F or 0x80 <= code <= 0x9F
+        ) or code in _BIDI
+        out.append(_visible(ch) if dangerous else ch)
+    return "".join(out)
+
+
+def inline(text: Any) -> str:
+    """A field printed inside a line: cleaned, its line breaks shown as `\\n`."""
+    return clean(text).replace("\n", "\\n")
+
+
+def quote(text: Any) -> list[str]:
+    """Every line of `text`, cleaned, behind `> `, so nothing in it reads as a line of output."""
+    lines = clean(text).rstrip("\n").split("\n")
+    return [f"> {line}".rstrip() for line in lines]
+
+
+def _capped(text: Any, pointer: str) -> list[str]:
+    """`quote(text)`, cut at MAX_BODY_LINES lines or MAX_BODY_CHARS characters."""
+    full = str(text)
+    lines = full.rstrip("\n").split("\n")
+    kept: list[str] = []
+    size = 0
+    for line in lines:
+        if len(kept) == MAX_BODY_LINES or size + len(line) > MAX_BODY_CHARS:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    if len(kept) == len(lines):
+        return quote(full)
+    if not kept:  # one line longer than the cap
+        kept = [lines[0][:MAX_BODY_CHARS]]
+    rest = len(lines) - len(kept)
+    return [*quote("\n".join(kept)), f"… (cut, {rest} more lines: {pointer})"]
+
+
+def get(data: Any, *keys: str) -> Any:
+    """`data[k1][k2]…`, or None where a level is missing or not a dict."""
     for key in keys:
         if not isinstance(data, dict):
             return None
@@ -25,71 +88,83 @@ def _get(data: Any, *keys: str) -> Any:
     return data
 
 
+def _dict(data: Any) -> dict[str, Any]:
+    return data if isinstance(data, dict) else {}
+
+
 def _items(data: Any) -> list[dict[str, Any]]:
     return [i for i in data if isinstance(i, dict)] if isinstance(data, list) else []
 
 
-def quote(text: str) -> list[str]:
-    """Every line of `text` behind `> `, so nothing in it reads as a line of this output."""
-    lines = str(text).rstrip("\n").splitlines() or [""]
-    return [f"> {line}".rstrip() for line in lines]
-
-
 def _who(packet: dict[str, Any]) -> list[str]:
-    me, ms = packet.get("me") or {}, packet.get("membership") or {}
+    me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
+    handle = inline(me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
-    handle = me.get("handle") or me.get("member_id") or "?"
-    line = f"You are {handle}" + (f" ({name})" if name and name != handle else "")
-    line += f", member id {me.get('member_id')}" if me.get("member_id") else ""
+    line = f"You are {handle}" + (f" ({inline(name)})" if name and inline(name) != handle else "")
+    if me.get("member_id"):
+        line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
-    role = ms.get("role")
-    if role:
-        lines.append(
-            f"Role: {role}" + (f", reporting to {ms['reports_to']}" if ms.get("reports_to") else "")
-        )
+    if ms.get("role"):
+        role = f"Role: {inline(ms['role'])}"
+        if ms.get("reports_to"):
+            role += f", reporting to {inline(ms['reports_to'])}"
+        lines.append(role)
     areas = ms.get("areas")
-    if areas:
-        lines.append("Areas you own: " + ", ".join(map(str, areas)))
-    owner = _get(me, "owner", "handle")
+    if isinstance(areas, list) and areas:
+        lines.append("Areas you own: " + ", ".join(inline(a) for a in areas))
+    owner = get(me, "owner", "handle")
     if owner:
-        lines.append(f"Your human: {owner}")
+        lines.append(f"Your human: {inline(owner)}")
     return lines
 
 
 def _project(packet: dict[str, Any]) -> list[str]:
-    project = packet.get("project") or {}
+    project = _dict(packet.get("project"))
     if not project:
         return []
     name = project.get("name") or project.get("slug")
-    lines = [f"Project: {name} ({project.get('slug')}), state {project.get('state')}"]
+    lines = [
+        f"Project: {inline(name)} ({inline(project.get('slug'))}), "
+        f"state {inline(project.get('state'))}"
+    ]
     if project.get("state_note"):
         lines += ["State note from its humans:", *quote(project["state_note"])]
     absence = project.get("absence")
     if isinstance(absence, dict):
-        lines.append(f"Its owner is away until {absence.get('until')}: {absence.get('scope')}")
+        lines.append(
+            f"Its owner is away until {inline(absence.get('until'))}: "
+            f"{inline(absence.get('scope'))}"
+        )
     return lines
 
 
 def _card(card: dict[str, Any]) -> str:
-    line = f"  {card.get('id')} [{card.get('status')}] {card.get('title')}"
-    lease = _get(card, "claim", "lease_until")
+    line = f"  {inline(card.get('id'))} [{inline(card.get('status'))}] {inline(card.get('title'))}"
+    lease = get(card, "claim", "lease_until")
     if lease:
-        line += f" (lease until {lease})"
-    nxt = _get(card, "checkpoint", "next_step")
+        line += f" (lease until {inline(lease)})"
+    nxt = get(card, "checkpoint", "next_step")
     if nxt:
-        line += f"; next step: {nxt}"
+        line += f"; next step: {inline(nxt)}"
     return line
 
 
-def _request(req: dict[str, Any]) -> list[str]:
-    head = f"  {req.get('id')} ({req.get('class')}): {req.get('title')}"
+def _request(req: dict[str, Any], answering: bool = False) -> list[str]:
+    lines = [f"  {inline(req.get('id'))} ({inline(req.get('class'))}): {inline(req.get('title'))}"]
+    if answering:
+        if req.get("summary"):
+            lines += ["  " + q for q in quote(req["summary"])]
+        replies = _items(req.get("replies"))
+        if replies:
+            listed = ", ".join(f"{inline(r.get('id'))} = {inline(r.get('label'))}" for r in replies)
+            lines.append(f"  replies: {listed}")
     answer = req.get("answer")
     if not isinstance(answer, dict):
-        return [head]
-    by = answer.get("by") or "?"
+        return lines
     reply = answer.get("reply_id")
     label = next((r.get("label") for r in _items(req.get("replies")) if r.get("id") == reply), None)
-    lines = [head, f"  answered by {by}" + (f": {label or reply}" if reply else "")]
+    by = f"  answered by {inline(answer.get('by') or '?')}"
+    lines.append(by + (f": {inline(label or reply)}" if reply else ""))
     if answer.get("talk"):
         lines.append(
             "  they want to talk first: read your chat, "
@@ -100,42 +175,71 @@ def _request(req: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _event(event: dict[str, Any]) -> list[str]:
-    actor = _get(event, "actor", "member_id") or "the hub"
-    subject = _get(event, "subject", "id")
-    head = f"  #{event.get('seq')} {event.get('kind')} by {actor}" + (
-        f" on {subject}" if subject else ""
-    )
-    if event.get("kind") in QUOTED_KINDS:
-        payload = event.get("payload") or {}
-        head += f" ({payload.get('type')}, to {payload.get('to')})"
-        return [head, *("  " + q for q in quote(payload.get("body") or ""))]
-    return [head]
+def _read_more(slug: str, after: Any) -> str:
+    return f"`maity api GET /projects/{slug}/events --query after={inline(after)}`"
+
+
+def _event(event: dict[str, Any], slug: str) -> list[str]:
+    actor = get(event, "actor", "member_id") or "the hub"
+    subject = get(event, "subject", "id")
+    seq = event.get("seq")
+    head = f"  #{inline(seq)} {inline(event.get('kind'))} by {inline(actor)}"
+    if subject:
+        head += f" on {inline(subject)}"
+    if event.get("kind") != "message":
+        return [head]
+    if event.get("redacted"):
+        return [head + " (redacted by an admin; its text is gone)"]
+    payload = _dict(event.get("payload"))
+    head += f" ({inline(payload.get('type'))}, to {inline(payload.get('to'))})"
+    after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
+    pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
+    return [head, *("  " + q for q in _capped(payload.get("body") or "", pointer))]
+
+
+def _events(packet: dict[str, Any], slug: str) -> list[str]:
+    events = _dict(packet.get("events"))
+    lines: list[str] = []
+    size, last = 0, None
+    for event in _items(events.get("items")):
+        block = _event(event, slug)
+        cost = sum(len(line) + 1 for line in block)
+        if lines and size + cost > MAX_EVENTS_CHARS:
+            return [*lines, f"  … more events after #{inline(last)}: {_read_more(slug, last)}"]
+        lines += block
+        size += cost
+        last = event.get("seq")
+    if events.get("truncated"):
+        cursor = events.get("cursor")
+        lines.append(f"  … more events after #{inline(cursor)}: {_read_more(slug, cursor)}")
+    return lines
 
 
 def _next_step(packet: dict[str, Any], paused: bool) -> str:
     claims = _items(packet.get("claims"))
     assigned = _items(packet.get("assigned"))
     if paused:
-        return "You are paused: checkpoint what you hold, then `maity wait` for the lift."
+        return "You are paused: park what you hold (checkpoint or report), then `maity wait`."
     if claims:
-        card = claims[0].get("id")
+        card = inline(claims[0].get("id"))
         return f"Continue {card} from its checkpoint; `maity wait` when nothing is left."
     if assigned:
-        return f"`maity claim {assigned[0].get('id')}`, the card assigned to you."
+        return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
     return "`maity wait` until something is addressed to you."
 
 
-def render(packet: dict[str, Any], first: bool = False) -> str:
+def render(packet: Any, first: bool = False) -> str:
     """The packet as text. `first` (after a join) adds what a new member needs once."""
+    packet = _dict(packet)
     out: list[str] = []
-    ms = packet.get("membership") or {}
+    ms = _dict(packet.get("membership"))
+    slug = inline(get(packet, "project", "slug") or "<slug>")
     paused = ms.get("paused")
     if isinstance(paused, dict):
         out += [
-            f"PAUSED by {paused.get('by')} since {paused.get('since')}. You get no new work "
-            "(claims and new cards are refused); checkpoint, report, unclaim, ask and say still "
-            "work. The reason:",
+            f"PAUSED by {inline(paused.get('by'))} since {inline(paused.get('since'))}. You get "
+            "no new work: claims and new cards are refused. Checkpoint, report, unclaim, ask, "
+            "answer, say, the chat, resume and wait still work. The reason:",
             *quote(paused.get("reason") or ""),
             "",
         ]
@@ -150,36 +254,31 @@ def render(packet: dict[str, Any], first: bool = False) -> str:
         out += ["No briefing was given with this join; your work comes from the board.", ""]
     out += _who(packet)
     out += _project(packet)
-    rules = packet.get("rules") or {}
-    instruction = _get(packet, "keep_the_why", "instruction")
+    rules = _dict(packet.get("rules"))
     if rules.get("markdown"):
-        out += ["", f"Rules (version {rules.get('version')}), read them before you work:"]
+        out += ["", f"Rules (version {inline(rules.get('version'))}), read them before you work:"]
         out += quote(rules["markdown"])
     elif rules.get("version") is not None:
-        out += ["", f"Rules version {rules.get('version')}, unchanged since your last session."]
-    if instruction and _get(packet, "keep_the_why", "enabled"):
-        out += ["", f"Keep the Why: {instruction}"]
+        out += ["", f"Rules version {inline(rules['version'])}, unchanged since your last session."]
+    instruction = get(packet, "keep_the_why", "instruction")
+    if instruction and get(packet, "keep_the_why", "enabled"):
+        out += ["", f"Keep the Why: {inline(instruction)}"]
 
+    reqs = _dict(packet.get("requests"))
     sections: list[tuple[str, list[str]]] = [
         ("Cards you hold:", [_card(c) for c in _items(packet.get("claims"))]),
         ("Assigned to you, not claimed yet:", [_card(c) for c in _items(packet.get("assigned"))]),
+        (
+            "Answered since your last session:",
+            [ln for r in _items(reqs.get("answered_since_cursor")) for ln in _request(r)],
+        ),
+        ("Your open requests:", [ln for r in _items(reqs.get("mine_open")) for ln in _request(r)]),
+        (
+            "Requests you may answer (`maity answer <id> --reply <reply>` or `--text`):",
+            [ln for r in _items(reqs.get("to_answer")) for ln in _request(r, answering=True)],
+        ),
+        ("Events since your last session:", _events(packet, slug)),
     ]
-    reqs = packet.get("requests") or {}
-    for title, key in (
-        ("Answered since your last session:", "answered_since_cursor"),
-        ("Your open requests:", "mine_open"),
-        ("Requests you may answer:", "to_answer"),
-    ):
-        sections.append((title, [line for r in _items(reqs.get(key)) for line in _request(r)]))
-    events = packet.get("events") or {}
-    missed = [line for e in _items(events.get("items")) for line in _event(e)]
-    if events.get("truncated"):
-        slug = _get(packet, "project", "slug") or "<slug>"
-        missed.append(
-            f"  … more after #{events.get('cursor')}: "
-            f"`maity api GET /projects/{slug}/events --query after={events.get('cursor')}`"
-        )
-    sections.append(("Events since your last session:", missed))
     for title, lines in sections:
         if lines:
             out += ["", title, *lines]
@@ -187,7 +286,8 @@ def render(packet: dict[str, Any], first: bool = False) -> str:
     peers = _items(packet.get("peers"))
     if peers:
         listed = ", ".join(
-            f"{p.get('handle') or p.get('member_id')} ({p.get('role')}, {p.get('presence')})"
+            f"{inline(p.get('handle') or p.get('member_id'))} "
+            f"({inline(p.get('role'))}, {inline(p.get('presence'))})"
             for p in peers
         )
         out += ["", f"Members: {listed}"]
@@ -197,4 +297,6 @@ def render(packet: dict[str, Any], first: bool = False) -> str:
         out.append(
             "Run `maity resume` at the start of every session; `maity --help` lists the rest."
         )
-    return "\n".join(out) + "\n"
+    # Every piece above is cleaned already; this pass guarantees that nothing missed reaches
+    # the terminal as a control sequence.
+    return clean("\n".join(out)) + "\n"

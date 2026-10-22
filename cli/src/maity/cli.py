@@ -117,24 +117,30 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
-    session.data["session_id"] = (packet.get("session") or {}).get("id")
-    slug = (packet.get("project") or {}).get("slug")
-    member_id = (packet.get("me") or {}).get("member_id")
+    # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
+    # the events in it.
+    text = None if args.json else onboarding.render(packet, first=first)
+    field = onboarding.get
+    session_id = field(packet, "session", "id")
+    if isinstance(session_id, str):
+        session.data["session_id"] = session_id
+    slug = field(packet, "project", "slug")
+    member_id = field(packet, "me", "member_id")
     if isinstance(slug, str):
         session.data["project"] = slug
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
-    cursor = (packet.get("events") or {}).get("cursor")
+    cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
-    wait_timeout = (packet.get("hints") or {}).get("wait_timeout")
+    wait_timeout = field(packet, "hints", "wait_timeout")
     if isinstance(wait_timeout, int) and wait_timeout > 0:
         session.data["wait_timeout"] = wait_timeout
     session.save()
-    if args.json:
+    if text is None:
         _print_json(packet)
     else:
-        print(onboarding.render(packet, first=first), end="")
+        print(text, end="")
     return EXIT_OK
 
 
@@ -175,7 +181,10 @@ def cmd_join(args: argparse.Namespace) -> int:
     try:
         return _resume(Session(), args, first=True)
     except hub.HubError as exc:
-        _err(f"joined, but the first resume failed: {exc}; run `maity resume`")
+        _err(
+            f"joined, but the first resume failed: {exc}; run `maity resume`. "
+            f"How to work as a member: {onboarding.HANDBOOK}"
+        )
         return EXIT_ERROR
 
 
