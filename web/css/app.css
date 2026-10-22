@@ -369,7 +369,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
 .panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
-.inline-form, .login, .join-form { display: grid; gap: 6px; max-width: 32rem; }
+/* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
+   "Agent Name (@handle) · already a member" pushed the page past 390 px. */
+.inline-form, .login, .join-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button, .join-form button { justify-self: start; }
