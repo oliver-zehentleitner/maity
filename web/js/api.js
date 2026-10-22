@@ -31,6 +31,7 @@ window.Maity = window.Maity || {};
   let store = null;
   // ?signed_out=1 starts fixture mode without a session, to show the login.
   let fixtureSignedIn = params.get("signed_out") !== "1";
+  let fixturePassword = null;
   // ?no_projects=1 starts it with no memberships, to show the empty state.
   const fixtureNoProjects = params.get("no_projects") === "1";
 
@@ -153,10 +154,21 @@ window.Maity = window.Maity || {};
       return fixtures()["auth-session.json"];
     }],
     ["POST", /^\/auth\/login$/, (m, body, path) => {
-      if (body.handle !== me().member.handle || !body.password) {
+      if (body.handle !== me().member.handle || !body.password
+        || (fixturePassword !== null && body.password !== fixturePassword)) {
         fail(401, "unauthenticated", "Handle or password is wrong", path);
       }
       fixtureSignedIn = true;
+      return { member: me().member };
+    }],
+    // docs/api.md §2.1: any password signs in until one is set here; then
+    // that one. The new one has at least 12 characters, as the hub wants.
+    ["POST", /^\/auth\/password$/, (m, body, path) => {
+      if (!body.current || (fixturePassword !== null && body.current !== fixturePassword)) {
+        fail(400, "invalid", "the current password is wrong", path, { fields: { current: "mismatch" } });
+      }
+      if ([...(body.new || "")].length < 12) fail(400, "invalid", "a password has at least 12 characters", path, { fields: { new: "too_short" } });
+      fixturePassword = body.new;
       return { member: me().member };
     }],
     ["POST", /^\/auth\/logout$/, () => {

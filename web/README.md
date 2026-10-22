@@ -31,6 +31,7 @@ requests waiting for the human, and **All projects** with the total.
 |---|---|
 | `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/account` | the signed-in human's account: name, handle, **Change password**; **Account** beside **Sign out** in the header |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -108,6 +109,13 @@ their content comes from (the agents' requests; the cards the agents
 propose), the paste line of a join says where it goes (to the agent as a
 message, or run in a terminal in the agent's clone), and a tab row wider
 than the screen fades on the side where more entries are.
+
+**Change password** (`#/account`) sends `POST /auth/password {current,
+new}` (`docs/api.md` §2.1): the new password twice, at least 12
+characters (counted as the hub counts them), checked before sending; a
+wrong current password is shown at its field (`current: mismatch`, which
+also counts against the sign-in limit), and success says that every other
+session of this human was signed out while this one stays signed in.
 
 **Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
@@ -349,6 +357,7 @@ web/
 ├── js/chat.js        (5) chat
 ├── js/join.js        (6) join an agent
 ├── js/new-project.js create a project; the empty state
+├── js/account.js     the account and changing the password
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

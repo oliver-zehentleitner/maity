@@ -751,6 +751,8 @@ def scenario(run: Run, page: Page) -> None:
     run.a11y(page, "create a project")
     no_problems(run, "phone width")
 
+    change_password(run, page)
+
 
 def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     tabs = page.locator("nav.views")
@@ -1096,6 +1098,55 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
     no_problems(run, "signing")
+
+
+def change_password(run: Run, page: Page) -> None:
+    """docs/api.md §2.1: the new password works, the old one does not, other sessions end."""
+    run.step("account: change the password; another session ends; sign in with the new one")
+    new_password = "e2e changed password, long enough"
+    other = page.context.browser.new_context()
+    second = other.new_page()
+    second.goto(run.base + "/")
+    second.locator("#login-handle").fill(OWNER)
+    second.locator("#login-password").fill(OWNER_PASSWORD)
+    second.get_by_role("button", name="Sign in", exact=True).click()
+    expect(second.locator("header .me")).to_contain_text("Owner")
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator("header .me").get_by_role("link", name="Account", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/account$"))
+    page.locator("#password-current").fill("not the password")
+    page.locator("#password-new").fill(new_password)
+    page.locator("#password-repeat").fill(new_password)
+    page.get_by_role("button", name="Change password", exact=True).click()
+    expect(page.locator("#password-current-error")).to_have_text(
+        "This is not your current password."
+    )
+    # The hub answered 400 invalid on purpose; that is not a failure of the page.
+    run.problems = [p for p in run.problems if "/api/v1/auth/password answered 400" not in p]
+    page.locator("#password-current").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Change password", exact=True).click()
+    expect(page.locator("main .send-status")).to_contain_text(
+        "Password changed. Every other session of yours was signed out"
+    )
+    run.shot(page, "password-changed")
+    run.a11y(page, "account")
+
+    second.reload()
+    expect(second.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
+    other.close()
+
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.locator("main")).to_contain_text("wrong")
+    # The refused old password is the point of this step.
+    run.problems = [p for p in run.problems if "/api/v1/auth/login answered 401" not in p]
+    page.locator("#login-password").fill(new_password)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    no_problems(run, "change password")
 
 
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:

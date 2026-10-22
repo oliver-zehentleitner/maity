@@ -417,6 +417,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .project-form button { justify-self: start; margin-top: 6px; }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
 .field-error:empty { display: none; }
+.me .small-link { font-size: 0.82rem; margin: 0 4px; }
+.send-status .ok { color: var(--ok); }
 [aria-invalid="true"] { border-color: var(--bad); }
 .empty-state { max-width: 32rem; margin: 8vh auto 0; }
 a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text); text-decoration: none; }
