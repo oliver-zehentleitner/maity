@@ -36,3 +36,49 @@ lower latency and fewer calls — the two gaps above. Polling each
 resource of the open view (the chat's messages, the board's tasks) on
 its own interval, as before — one call per view and interval instead of
 one feed, and nothing for the views that have no cheap "after" query.
+
+## Notification counts ride on the 15-second /me read; browser notifications long-poll their own endpoint, and only after the human turned them on
+
+**Id:** e849f49d-bbdf-462c-972d-a67e7f6740e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the notifications contract (docs/api.md §17, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub offers per-project unread counts of chats and mentions, a push channel without an open tab, or the 50-item read proves too short
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
+
+The badges, the bell and the tab title come from one read of
+`GET /me/notifications?limit=50`, made with the existing 15-second `/me`
+read and after every answer. The hub's counts are cross-project, so the
+unread chats and mentions per project are counted from those 50 items.
+An item's link is built from its `target`, never from its `url`. A hub
+that answers 404 leaves the page as it was, with no bell. Any other
+failure is said in the notice and stops nothing.
+
+Browser notifications run only when the account wants them and the
+browser allows them. They use the long-poll `?after=<seq>&wait=55`,
+which §17.2 gives a session beside its events long-poll. A `superseded`
+answer means another tab took that slot, so this tab waits five
+minutes; the item id as tag stops a second display. A quick empty
+answer gets a 30-second pause. The browser's permission is asked only
+in the change handler of the switch.
+
+**Reason:** a separate interval for counts would be a second clock
+beside `/me`, and the inbox already reads `/me` for the same numbers. The
+events decision above (`wait=0` instead of the long-poll) holds because
+the events long-poll leaves out the admin's see-all. The notifications
+long-poll does not have that gap: it carries exactly what notifies this
+human, so its lower latency costs nothing. Building links from `target`
+keeps the dashboard's routes in the dashboard: a `url` names the hub's
+public address, which a page opened elsewhere may not share. Asking the
+browser on a click is the only time a browser reliably shows the
+prompt, and it is the human's own decision to be asked.
+
+**Rejected alternative:** one notifications read per project for the
+per-project badges. That is one call per project every 15 seconds, for
+a number the 50 newest items already give closely enough. Showing
+browser notifications from the 15-second poll: fifteen seconds late,
+and every open tab would show them. Asking for permission when the
+page loads: browsers block or suppress prompts without a click, and a
+prompt nobody asked for is what people learn to deny.
