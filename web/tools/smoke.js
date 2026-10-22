@@ -550,6 +550,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "users: no link and no list for anyone else");
   win.Maity.api.get = uGet;
   await go("#/p/maity/inbox");
+  // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
+  const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
+  expect(prTab() && prTab().getAttribute("href") === "#/p/maity/runners", "project runners: a tab for the project's admin");
+  const prWrites = [];
+  const prPost = win.Maity.api.post, prDel = win.Maity.api.del;
+  win.Maity.api.post = (p, b) => { prWrites.push(["POST", p, b]); return prPost(p, b); };
+  win.Maity.api.del = (p) => { prWrites.push(["DELETE", p]); return prDel(p); };
+  await go("#/p/maity/runners"); await tick();
+  const prCard = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
+  expect(document.title === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
+    "project runners: the attached runners, by name");
+  const prLaptop = text(prCard("home-laptop"));
+  expect(prLaptop.includes("online") && prLaptop.includes("1 agent running here") && prLaptop.includes("Claude Code 2.1.308")
+    && prLaptop.includes("Agents on home-laptop run as one user, oliver") && !prLaptop.includes("does not allow"),
+    "project runners: presence, agents running here, capabilities in plain words");
+  expect(text(prCard("cluster")).includes("cannot start anything until it is paired again"), "project runners: a revoked runner says it starts nothing");
+  const prSelect = byId("allow-runner");
+  expect(prSelect && prSelect.querySelectorAll("option").length === 1 && prSelect.value === "rnr-0003", "project runners: only the own runners not attached here are offered");
+  main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(prWrites[0]) === JSON.stringify(["POST", "/projects/maity/runners", { runner_id: "rnr-0003" }]) && prCard("build-box")
+    && text(prCard("build-box")).includes("Its own configuration does not allow maity, so it starts nothing here"),
+    "project runners: allowed, and warned where its own configuration does not allow the project");
+  expect(text(main).includes("All your runners are allowed here."), "project runners: nothing left to allow");
+  let prAsked = "";
+  const prConfirm = win.confirm;
+  win.confirm = (q) => { prAsked = q; return true; };
+  btn(prCard("home-laptop"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked === "Detach home-laptop from Maity? The hub closes the placement of the 1 agent it runs here, and the runner stops it."
+    && JSON.stringify(prWrites[1]) === JSON.stringify(["DELETE", "/projects/maity/runners/rnr-0002"]) && !prCard("home-laptop"),
+    "project runners: detaching names the agents it stops");
+  btn(prCard("build-box"), "Detach").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(prAsked === "Detach build-box from Maity? Nothing runs on it here.", "project runners: detaching a runner with nothing running says so");
+  win.confirm = () => false;
+  btn(prCard("cluster"), "Detach").click(); await tick();
+  expect(prWrites.length === 3 && prCard("cluster"), "project runners: a declined detach sends nothing");
+  win.confirm = prConfirm;
+  // A runner attached meanwhile (another tab): said, and the list re-read.
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("the runner is attached already", 409, p, "already_attached", {}));
+  main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("It was allowed here already."), "project runners: already attached is no failure");
+  // Put the fixtures back for the instance-level view.
+  win.Maity.api.post = prPost; win.Maity.api.del = prDel;
+  await prPost("/projects/maity/runners", { runner_id: "rnr-0002" });
+  // A hub before attachments; the empty state; no tab for a member.
+  const prAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : prAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(text(main).includes("This hub cannot allow runners in projects yet.") && !main.querySelector(".error"), "project runners: a hub without attachments says so");
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/runners" || p === "/runners" ? Promise.resolve({ items: [], next_cursor: null }) : prAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/runners"); await tick();
+  expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page."),
+    "project runners: the empty state points to pairing");
+  win.Maity.api.getAll = prAll;
+  const prGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : prGet(p));
+  await go("#/p/maity/runners"); await tick();
+  expect(!prTab() && text(main).includes("No such view."), "project runners: no tab and no view for a member");
+  win.Maity.api.get = prGet;
+  await go("#/p/maity/agents");
 
   // Runners (docs/api.md §15): the instance-level view.
   const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");

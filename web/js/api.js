@@ -177,6 +177,14 @@ window.Maity = window.Maity || {};
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     card.updated_at = nowIso();
     return card;
+  let attachSerial = 0;
+  const activeAttachments = (slug) => runnersFile().attachments
+    .filter((a) => a.project === slug && !a.detached_at)
+    .sort((x, y) => runnerOf(x.runner_id, "").name.localeCompare(runnerOf(y.runner_id, "").name));
+  function attachmentView(a) {
+    const counts = (runnersFile().active_placements || {})[a.runner_id] || {};
+    return { id: a.id, runner: runnerOf(a.runner_id, ""), project: a.project, attached_by: a.attached_by,
+      attached_at: a.attached_at, detached_at: a.detached_at, active_placements: a.detached_at ? 0 : counts[a.project] || 0 };
   }
 
   // A release card that may still change: closed ones are a record.
@@ -416,8 +424,39 @@ window.Maity = window.Maity || {};
         r.credential_state = "revoked";
         r.removed_at = nowIso();
         r.projects = [];
+        runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
       return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+    }],
+    // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
+    ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: activeAttachments(m[1]).map(attachmentView), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
+      project(m[1], path);
+      const r = runnersFile().items.find((x) => x.id === body.runner_id && !x.removed_at);
+      if (!r || r.owner_id !== me().member.id) fail(400, "invalid", "attach one of your own runners", path, { fields: { runner_id: "not_yours" } });
+      const open = activeAttachments(m[1]).find((a) => a.runner_id === r.id);
+      if (open) fail(409, "already_attached", "the runner is attached already", path, { attachment: attachmentView(open) });
+      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: m[1],
+        attached_by: me().member.id, attached_at: nowIso(), detached_at: null };
+      runnersFile().attachments.push(a);
+      r.projects = (r.projects || []).concat(m[1]);
+      return attachmentView(a);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/runners\/([^/]+)$/, (m, body, path) => {
+      const all = runnersFile().attachments.filter((x) => x.project === m[1] && x.runner_id === m[2]);
+      if (!all.length) fail(404, "not_found", "the runner was never attached here", path);
+      const a = all.find((x) => !x.detached_at) || all[all.length - 1];
+      if (!a.detached_at) {
+        a.detached_at = nowIso();
+        const r = runnerOf(m[2], path);
+        r.projects = (r.projects || []).filter((s) => s !== m[1]);
+        const counts = (runnersFile().active_placements || {})[r.id];
+        if (counts) delete counts[m[1]];
+      }
+      return attachmentView(a);
     }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
