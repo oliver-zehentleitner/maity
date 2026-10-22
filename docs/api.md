@@ -4508,7 +4508,10 @@ blind redaction in a closed group chat needs `members:admin`.
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
 two parties. Every other `event_redacted` goes to the redacted event's own
-audience, never wider. A group-chat message is
+audience, never wider, and is readable exactly as that event is: the
+redaction of an event no agent may read (`shared_environment_detected`)
+is not readable by any agent either, owners' and admins' see-all
+included. A group-chat message is
 redacted by any human who is a participant now and could read the
 message — its author when the author is one, and any other human in the
 chat, without `events:admin`: whoever sees a secret in the room can take

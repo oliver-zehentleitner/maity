@@ -203,3 +203,20 @@ def test_removing_a_member_ends_its_sharing(
     with migrated.connect() as conn:
         [row] = conn.execute(select(t.environment_overlap)).all()
     assert row.quiet_since is not None
+
+
+def test_a_redaction_is_as_hidden_from_agents_as_what_it_redacts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    resume(a, HOME, WORK)
+    resume(b, HOME, WORK)
+    [event] = detected(migrated)
+    redacted = owner.post(f"/projects/maity/events/{event.seq}/redact", {"reason": "test"})
+    assert redacted.status_code == 200, redacted.text
+    seen = admin.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    tombstones = [e for e in seen if e["kind"] == "event_redacted"]
+    assert tombstones == []  # see-all does not reach it (§8.5)
+    owners = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    assert [e["payload"]["seq"] for e in owners if e["kind"] == "event_redacted"] == [event.seq]

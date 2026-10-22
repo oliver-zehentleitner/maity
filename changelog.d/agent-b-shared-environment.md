@@ -13,4 +13,5 @@
 
 - hub: `event_redacted` goes to the redacted event's own audience, never wider (a chat
   message's to its two parties, as before), instead of `role:owner` and `role:admin`
-  (`docs/api.md` §8.5)
+  (`docs/api.md` §8.5), and is readable exactly as that event is: no agent reads the
+  redaction of a `shared_environment_detected`
