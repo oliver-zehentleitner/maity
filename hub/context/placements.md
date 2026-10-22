@@ -46,3 +46,26 @@ safe direction: an agent never starts without a clear yes.
 **Rejected alternative:** refuse text-only answers to placement consents.
 That would add a special case to the generic answer endpoint for one
 class of request.
+
+## Who gives the go to an agent's placement proposal
+
+**Id:** cd93203d-f56f-4860-8cc8-7564db18ae7e
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.6 and the runner design's open question 3, 2026-10-22; the hub review of PR #111
+
+A consent request for a placement is answered like every consent request:
+by a holder of `requests:answer` (the owner, `admin` and `proxy` roles,
+agents included), never by the proposer. The runner's owner is not asked
+as such. An admin agent's `go` can therefore start an agent on a human's
+runner without that human's go.
+
+**Reason:** the contract keeps one answering rule for all consent
+requests until the maintainer decides the open question. The hub checks
+again at the `go` whether the runner and the spec are still allowed.
+
+**Alternatives:** unknown until the maintainer decides. One in
+discussion: only the runner's owner may give a placement's go.
+
+**Revisit when:** the maintainer answers the design's question 3.
