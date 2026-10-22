@@ -1394,8 +1394,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat");
   const convs = () => main.querySelectorAll(".chat-list a.conv");
   const conv = (name) => convs().find((a) => a.querySelector(".conv-title").textContent === name);
-  expect(convs().length === 5 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents, nothing open yet");
-  expect(convs()[0].querySelector(".conv-title").textContent === "Agent D" && convs()[1].querySelector(".conv-title").textContent === "Agent A",
+  // Own agents' direct chats and the fixtures' one group chat (§9.3).
+  expect(convs().length === 6 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents and group chats, nothing open yet");
+  expect(convs()[0].querySelector(".conv-title").textContent === "Agent D" && convs()[1].querySelector(".conv-title").textContent === "Release 0.2 go/no-go"
+    && convs()[2].querySelector(".conv-title").textContent === "Agent A",
     "chat: the newest chat first, the ones without messages after");
   const convA = conv("Agent A");
   expect(convA.getAttribute("href") === "#/p/maity/chat/agt-a" && text(convA).includes("Endpoints for join, tasks and requests are drafted.")
@@ -1442,7 +1444,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return hGet(p);
   };
   const hAll = win.Maity.api.getAll;
-  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations"
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true"
     ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3 }) : c)), next_cursor: null })) : hAll(p));
   await go("#/p/maity/chat/agt-c");
   const histList = main.querySelector("ol.messages");
@@ -1451,7 +1453,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && histList.childNodes[nl + 1].attrs["data-seq"] === "201", "chat: the history is read to its end, the unread line before the first unread at the end");
   // The unread count that cannot be read draws no line, and says so.
   win.Maity.api.get = hGet;
-  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
   await go("#/p/maity/chat/agt-a");
   expect(!main.querySelector("li.new-line") && text(main).includes("Which messages are new could not be read: down"), "chat: a failed unread read is said");
   win.Maity.api.getAll = hAll;
@@ -1471,19 +1473,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
-  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c
+  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations?observed=true" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c
     : Object.assign({}, c, { last_message: Object.assign({}, c.last_message, { body: null, redacted: true }) }))), next_cursor: null }));
   await go("#/p/maity/chat");
   expect(text(conv("Agent D")).includes("A message was removed.") && !text(conv("Agent D")).includes("null"), "chat: a redacted last message");
   // A hub before last_message: no preview, the rest stays.
-  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations" ? r
+  win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maity/conversations?observed=true" ? r
     : { items: r.items.map((c) => { const o = Object.assign({}, c); delete o.last_message; return o; }), next_cursor: null }));
   await go("#/p/maity/chat");
-  expect(convs().length === 5 && !main.querySelector(".chat-list .preview"), "chat: a hub without last_message shows no preview");
+  expect(convs().length === 6 && !main.querySelector(".chat-list .preview"), "chat: a hub without last_message shows no preview");
   // A refresh asked for while a read runs is read once more after it.
   let convReads = 0;
   win.Maity.api.getAll = (p) => {
-    if (p !== "/projects/maity/conversations") return cAll(p);
+    if (p !== "/projects/maity/conversations?observed=true") return cAll(p);
     convReads += 1;
     return new Promise((r) => setTimeout(r, 40)).then(() => cAll(p));
   };
@@ -1495,11 +1497,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Agents appearing later fill an empty list.
   const cGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maity/members" ? cGet(p).then((r) => ({ items: r.items.filter((m) => m.kind === "human"), next_cursor: null })) : cGet(p));
+  const cAll2 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true" ? cAll2(p).then((r) => ({ items: r.items.filter((c) => c.kind !== "group"), next_cursor: null })) : cAll2(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat");
-  expect(text(main).includes("You own no agents in this project.") && !convs().length, "chat: no agents, said");
-  win.Maity.api.get = cGet;
+  expect(text(main).includes("You own no agents in this project, and are in no group chat.") && !convs().length, "chat: no agents and no group chat, said");
+  win.Maity.api.get = cGet; win.Maity.api.getAll = cAll2;
   await fireIntervals(); await tick(); await tick();
-  expect(convs().length === 5 && main.querySelector(".chat-list-pane p.muted").hidden, "chat: agents that appear fill the list");
+  expect(convs().length === 6 && main.querySelector(".chat-list-pane p.muted").hidden, "chat: agents that appear fill the list");
   await go("#/p/maity/chat/agt-a");
   main.querySelector("textarea").value = "Thanks.";
   main.querySelector("form").dispatch("submit"); await tick();
@@ -1643,7 +1647,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = realGet2;
   win.Maity.api.get = realGet2;
   await go("#/p/maity/chat/nobody");
-  expect(text(main).includes("No agent of yours"), "unknown agent id reported");
+  expect(text(main).includes("No conversation of yours"), "unknown conversation id reported");
 
   await go("#/p/maity/join");
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
@@ -2047,6 +2051,131 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Nothing waits for you.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
+
+  // Group chats (docs/api.md §9.2): in the list, open, write, manage, remove, read along.
+  await go("#/p/maity/chat");
+  const gcConv = () => main.querySelectorAll(".chat-list a.conv").find((a) => a.getAttribute("href") === "#/p/maity/chat/cnv-0007");
+  expect(gcConv() && text(gcConv()).includes("Release 0.2 go/no-go") && gcConv().querySelector(".count").textContent === "1"
+    && gcConv().querySelector(".mention-count") && text(gcConv()).includes("Agent A, Agent B"),
+    "group chat: listed with its title, its unread, that it mentions you, and who is in it");
+  expect(main.querySelector(".chat-list-pane a.new-group") && main.querySelector(".chat-list-pane a.new-group").getAttribute("href") === "#/p/maity/chat/new",
+    "group chat: New group chat beside the list");
+  const gcWrites = [];
+  const gcPost = win.Maity.api.post, gcPatch = win.Maity.api.patch, gcDel = win.Maity.api.del;
+  win.Maity.api.post = (p, b) => { gcWrites.push(["POST", p, b]); return gcPost(p, b); };
+  win.Maity.api.patch = (p, b) => { gcWrites.push(["PATCH", p, b]); return gcPatch(p, b); };
+  win.Maity.api.del = (p) => { gcWrites.push(["DELETE", p]); return gcDel(p); };
+  await go("#/p/maity/chat/cnv-0007");
+  const gcList = () => main.querySelector(".group-chat ol.messages");
+  expect(main.querySelector(".group-chat") && text(main.querySelector(".group-chat .group-title")) === "Release 0.2 go/no-go"
+    && text(main.querySelector(".group-people-line")) === "In it: Maintainer, Agent A (agent), Agent B (agent)" && !main.querySelector(".group-observers")
+    && gcList().querySelectorAll("li.msg").length === 3, "group chat: opens with its title, its people and its messages");
+  const gcNew = gcList().childNodes.findIndex((li) => li.className === "new-line");
+  expect(gcNew > 0 && gcList().childNodes[gcNew + 1].attrs["data-seq"] === "5020" && !main.querySelector(".earlier button"),
+    "group chat: the unread line before the first unread; no earlier part for someone there from the start");
+  expect(text(gcList().querySelectorAll("li.msg")[1]).includes("Agent A") && !text(main).includes("not picked up yet"), "group chat: senders named, no delivery line (several recipients)");
+  // Writing, with mentions that reach only someone in the chat.
+  byId("chat-text").value = "@agent-c look"; byId("chat-text").dispatch("input");
+  expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is not in this chat: it reaches nobody.",
+    "group chat: a mention of someone not in it is said to reach nobody");
+  byId("chat-text").value = "@agent-a go ahead"; byId("chat-text").dispatch("input");
+  expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a mention of a participant gives no hint");
+  main.querySelector(".group-chat form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(gcWrites[0]) === JSON.stringify(["POST", "/projects/maity/conversations/cnv-0007/messages", { body: "@agent-a go ahead" }])
+    && gcList().querySelectorAll("li.msg").length === 4 && byId("chat-text").value === "", "group chat: a message is sent and shown");
+  // Removing a message for everyone (§8.5).
+  const gcPrompt = win.prompt;
+  win.prompt = () => "pasted a token";
+  btn(gcList().querySelectorAll("li.msg")[0], "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(gcWrites[1]) === JSON.stringify(["POST", "/projects/maity/events/5010/redact", { reason: "pasted a token" }])
+    && text(gcList().querySelectorAll("li.msg")[0]).includes("This message was removed by Maintainer: pasted a token.")
+    && !btn(gcList().querySelectorAll("li.msg")[0], "Remove"), "group chat: a human in it removes a message, its tombstone says by whom and why");
+  win.prompt = () => null;
+  btn(gcList().querySelectorAll("li.msg")[1], "Remove").click(); await tick();
+  expect(gcWrites.length === 2, "group chat: a cancelled removal sends nothing");
+  win.prompt = gcPrompt;
+  // Managing: rename, add (the latecomer's history said), remove.
+  byId("group-rename").value = "Release 0.2"; header.querySelector && main.querySelector(".group-manage form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(gcWrites[2]) === JSON.stringify(["PATCH", "/projects/maity/conversations/cnv-0007", { title: "Release 0.2" }])
+    && text(main.querySelector(".group-chat .group-title")) === "Release 0.2", "group chat: the creator renames it");
+  expect(text(main.querySelector(".group-manage")).includes("can read what came before with Show earlier messages"), "group chat: adding says what a latecomer reads");
+  byId("group-add").value = "agt-c";
+  main.querySelectorAll(".group-manage form")[1].dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(gcWrites[3]) === JSON.stringify(["POST", "/projects/maity/conversations/cnv-0007/participants", { member_id: "agt-c" }])
+    && text(main.querySelector(".group-people-line")).includes("Agent C (agent)"), "group chat: a participant added");
+  const gcConfirm = win.confirm;
+  win.confirm = () => true;
+  btn(main.querySelectorAll(".group-members li").find((li) => text(li).startsWith("Agent C")), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(gcWrites[4]) === JSON.stringify(["DELETE", "/projects/maity/conversations/cnv-0007/participants/agt-c"])
+    && !text(main.querySelector(".group-people-line")).includes("Agent C"), "group chat: a participant removed");
+  // The earlier part, on demand.
+  const gcGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => {
+    if (p === "/projects/maity/conversations/cnv-0007/messages?limit=200") return gcGet(p).then((r) => Object.assign({}, r, { items: r.items.slice(1), earlier: 5010 }));
+    if (p === "/projects/maity/conversations/cnv-0007/messages?before=5010&limit=50") return Promise.resolve({ items: [{ id: "evt-5001", seq: 5001, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T12:00:00Z", mentions: [] }], cursor: 5001, earlier: null });
+    return gcGet(p);
+  };
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
+  const gcBefore = gcList().querySelectorAll("li.msg").length;
+  btn(main.querySelector(".earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(gcList().querySelectorAll("li.msg").length === gcBefore + 1 && text(gcList().querySelectorAll("li.msg")[0]).includes("before you came")
+    && !main.querySelector(".earlier button"), "group chat: the earlier part is read on demand and put before");
+  // Reading along as an agent's owner: no writing, no managing, no removing; the observers named.
+  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007"
+    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer"],
+      participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
+    : gcGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
+  expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
+    && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
+    && text(main.querySelector(".group-observers")).includes("Also read by: Maintainer (owner of Agent A, Agent B)"),
+    "group chat: an owner reads along, writes and manages nothing, and is named as reading along");
+  // A closed chat stays readable and takes nothing.
+  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007" ? gcGet(p).then((v) => Object.assign({}, v, { closed_at: "2026-10-22T10:00:00Z", closed_reason: "no_human" })) : gcGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
+  expect(!byId("chat-text") && text(main).includes("This chat is closed") && !main.querySelector(".group-manage") && gcList().querySelectorAll("li.msg").length >= 4,
+    "group chat: a closed chat is read only");
+  win.Maity.api.get = gcGet;
+  // Creating: at least one other, not one's own agent alone, then the chat opens.
+  await go("#/p/maity/chat/new");
+  const gcBox = (id) => byId("group-member-" + id);
+  main.querySelector("form.group-form").dispatch("submit"); await tick();
+  expect(text(byId("group-people-error")) === "Choose at least one other participant." && gcWrites.length === 5, "group chat: none chosen, said, nothing sent");
+  gcBox("agt-a").checked = true;
+  main.querySelector("form.group-form").dispatch("submit"); await tick();
+  expect(text(byId("group-people-error")).startsWith("That is your direct chat with Agent A") && byId("group-people-error").querySelector("a").getAttribute("href") === "#/p/maity/chat/agt-a",
+    "group chat: one's own agent alone is the direct chat, and it says so");
+  gcBox("agt-b").checked = true; byId("group-title").value = "Hub and CLI";
+  main.querySelector("form.group-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const gcMade = gcWrites[5];
+  expect(gcMade[0] === "POST" && gcMade[1] === "/projects/maity/conversations" && JSON.stringify(gcMade[2]) === JSON.stringify({ title: "Hub and CLI", participants: ["agt-a", "agt-b"] })
+    && /^#\/p\/maity\/chat\/cnv-/.test(win.location.hash), "group chat: created with its title and participants, and opened");
+  await go(win.location.hash);
+  expect(text(main.querySelector(".group-chat .group-title")) === "Hub and CLI" && text(main).includes("No messages yet."), "group chat: the new chat is empty and open");
+  // Leaving as the last human closes it; it is gone from one's list.
+  win.confirm = (q) => { gcWrites.push(["CONFIRM", q]); return true; };
+  btn(main.querySelector(".group-manage"), "Leave the chat").click(); for (let k = 0; k < 6; k++) await tick();
+  const gcLeft = gcWrites.filter((w) => w[0] === "DELETE").pop();
+  expect(gcWrites.some((w) => w[0] === "CONFIRM" && w[1].includes("You are its last human: it closes")) && /\/participants\/hum-maintainer$/.test(gcLeft[1])
+    && win.location.hash === "#/p/maity/chat", "group chat: leaving as its last human says it closes, and goes back to the list");
+  win.confirm = gcConfirm;
+  win.Maity.api.post = gcPost; win.Maity.api.patch = gcPatch; win.Maity.api.del = gcDel;
+  // The mock as the hub: its refusals (§9.2).
+  const gcErr = async (call) => { try { await call(); return null; } catch (err) { return err; } };
+  const tooMany = await gcErr(() => gcPost("/projects/maity/conversations", { participants: Array.from({ length: 12 }, (_, i) => "agt-" + i) }));
+  const direct = await gcErr(() => gcPost("/projects/maity/conversations", { participants: ["agt-a"] }));
+  const both = await gcErr(() => win.Maity.api.get("/projects/maity/conversations/cnv-0007/messages?after=1&before=9"));
+  expect(tooMany && tooMany.details.fields.participants === "not_a_member" && direct && direct.details.fields.participants === "use_direct"
+    && both && both.code === "invalid", "group chat: the mock refuses a non-member, one's own agent alone, and after with before");
+  // A closed project: no new group chat.
+  const gcMe = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "accepted" })) : gcMe(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat");
+  expect(!main.querySelector("a.new-group"), "group chat: a closed project offers no new group chat");
+  await go("#/p/maity/chat/new");
+  expect(text(main).includes("The project is closed: it takes no new group chat.") && !main.querySelector("form.group-form"), "group chat: nor its form");
+  win.Maity.api.get = gcMe;
+  await go("#/p/maity/inbox");
 
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.
   const ovGets = [];

@@ -165,7 +165,7 @@ Inside a project, in the order of their importance; see
    a card with its cells labelled.
 5. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
-6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>`): two panes,
+6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left the human's chats, one per agent they own
    in the project, newest first: avatar, name, presence, the time and a
    preview of the last message (where the hub sends `last_message`; "You:"
@@ -193,13 +193,38 @@ Inside a project, in the order of their importance; see
    headings as strong lines, lists, quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. A chat is shaped
-   for several participants (title, their avatars), for group chats to
-   come. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
+   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the
    messages from the oldest pending one on.
+
+   **Group chats** (`docs/api.md` §9.2, `js/group-chat.js`) are in the
+   same list and panes, and the hub says which kind each chat is.
+   - **The list.** A group chat shows its title (or its participants'
+     names) and the people in it. An `@` marks a chat that mentions you.
+     The list reads `?observed=true`, so the chats you read along as an
+     agent's owner are in it too.
+   - **New group chat** (`#/p/<slug>/chat/new`, not in a closed project)
+     takes a title and two to eleven others. Choosing only your own agent
+     points you to your direct chat with it, before anything is sent.
+   - **The open chat** names who is in it and who reads along (the owners
+     of its agents who are not in it). It shows the window since you
+     joined, with the unread line. **Show earlier messages** reads what
+     came before, on demand.
+   - **Writing.** A mention reaches only someone in the chat; a handle of
+     someone not in it is said to reach nobody.
+   - **Removing.** A human in the chat can remove a message for everyone,
+     with a reason (`POST …/events/{seq}/redact`, §8.5). The tombstone
+     says by whom and why.
+   - **Managing.** The creator and an admin rename the chat, add people
+     (with the note that a latecomer starts fresh and can read the earlier
+     part) and remove people. Anyone in it leaves; the last human leaving
+     is told that the chat closes.
+   - **Read only.** An owner reading along writes and manages nothing; the
+     view re-reads every 30 s, since no event reaches them. A closed chat
+     stays readable and takes nothing.
+   - **A closed project** offers no new chat and no adding.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending), optionally with a briefing
@@ -709,6 +734,7 @@ web/
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
 ├── js/chat.js        (6) chat
+├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/overview.js    (10) overview: the project at a glance
