@@ -128,12 +128,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: objection_open` for an agent's `assign`, `release` or `PATCH assigned_to` on a card whose takeover a human objected to (§6.13); other reasons are named where they apply (`same_team_review` §6.12, `party_to_takeover` and `admin_team_only` §6.13) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.13) — `assign`, `release` (the holder's own included), `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.12, `party_to_takeover` and `admin_team_only` §6.13) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (except the two calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent, §6.13, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.12), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (except the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.13, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.12), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -502,10 +502,13 @@ include the scope. No call made with an agent credential may:
   with anything while a human of the admin team is reachable or after
   a human objected (§6.13);
 - accept, or object anew to, a takeover a human objected to — the
-  holding agent after its owner's objection included — or move that
-  card by `assign`, `release` or `PATCH assigned_to` while the
-  objection is open (refused, as the one exception to the reason
-  below, with `details.reason: objection_open`, §6.13);
+  holding agent after its owner's objection included — or move or end
+  anything on a card under that human's objection hold: withdraw the
+  objected takeover, open a new one, release (the holder's own release
+  included), assign, `PATCH assigned_to`, set `done` or `cancelled`
+  (refused, as the one exception to the reason below, with
+  `details.reason: objection_open`, §6.13); the requester's `escalate`
+  stays open;
 - withdraw a personal request (§7);
 - set a team's rulebook (`team`, §6.12), which belongs to the human who
   owns the team's agent.
@@ -1455,6 +1458,7 @@ create the profile (§3.1).
   "depends_on": ["tsk-0001"],
   "ships_with": [],
   "blocked_by_request": "req-0012",
+  "objection_hold": null,
   "ktw_ref": null,
   "report": null,
   "release": null,
@@ -1504,6 +1508,9 @@ Allowed transitions through `PATCH {status}`: `proposed→open`,
 `release`), `review→in_progress` (rework, by done authority),
 `review→done` (done authority), `in_progress→done` (holder when
 `done_authority: holder`), any non-closed → `cancelled` by `tasks:admin`.
+On a card under an objection hold (§6.13) an agent sets neither `done`
+nor `cancelled` (`forbidden`, `objection_open`); a human's `done` or
+`cancelled` lifts the hold.
 Everything else is `invalid_transition`; `in_progress`, `blocked` and
 `review` are reached only through `claim`, requests and `report`. A
 `blocked` card remembers the status it had; the answer restores it
@@ -1521,9 +1528,10 @@ not `done` or `cancelled`, for every kind and every caller.
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
 | `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
-| `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.13) unless a takeover of the card is open (`takeover_open`; after a human's objection `forbidden`, `objection_open`); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
-| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.13), unless a takeover of the card is open (`takeover_open`; after a human's objection `forbidden`, `objection_open`); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not |
-| `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.13 |
+| `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.13) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.13); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
+| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.13), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.13); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not |
+| `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.13; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
+| `DELETE /projects/{slug}/tasks/{id}/objection-hold` | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.13); `200` with the card; agents `forbidden` (`humans_only`) |
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
@@ -2217,17 +2225,43 @@ owner's side taking another owner's agent's work. Then:
   applies only to an `open` takeover, cannot reach it. The holding
   agent's own `accept` after its owner's objection is `forbidden` with
   `details.reason: humans_only`, and so is an agent's later `object`
-  that would replace the owner's reasons. The requester may still
-  `withdraw` (the objection's goal) and either party may `escalate`.
-- **While a human's objection is open** — the takeover `objected` or
-  `escalated` after an objection by a human — the card moves only by a
-  human's decision. An agent's `assign`, `release` or `PATCH
-  assigned_to` on it is `forbidden` with `details.reason:
-  "objection_open"`, whatever its scopes and whether the holder's
-  lease is active or not. A pause of the holding agent (§5.3) gates its
-  work and moves nothing. A human with `tasks:admin` who moves the card
-  decides the takeover: it closes `transferred` or `refused` with
-  `outcome.how: "decided"`.
+  that would replace the owner's reasons. The requester may
+  `escalate`, and nothing else (the objection hold, next).
+- **The objection hold.** A human's objection binds the **card**, not
+  only the takeover. When a human objects, the hub puts an **objection
+  hold** on the card, which stays until a human lifts it:
+  - **While it holds, no agent call moves or ends anything on that
+    card**, whatever the agent's scopes and whether the holder's lease
+    is active or has run out. Each of these is `forbidden` with
+    `details.reason: "objection_open"` and changes nothing: the
+    requester's `withdraw` of the objected takeover; a new takeover on
+    the card; the holding instance's own `release`; an agent's
+    `assign`, `release` or `PATCH assigned_to`; an agent's `PATCH
+    status` to `cancelled` or `done`. An expired lease moves nothing
+    either, a pause of the holding agent (§5.3) gates its work and
+    moves nothing, and cover under an availability policy is not
+    applied to the card while the hold stands. The one agent call
+    that remains is the requester's `escalate`. The holder may go on
+    working: `checkpoint`, `report` and `review` are not moves.
+  - **Lifted** only by a human, in one of three ways. First, by the
+    human who objected: `retract` or `accept` on the takeover, or
+    `DELETE /projects/{slug}/tasks/{id}/objection-hold`, membership not
+    required (§1.3). Second, by a human with `tasks:admin`: a decision
+    on the escalation, a move of the card, or the same `DELETE`. Third,
+    when a human sets the card `done` or `cancelled`. A human's move or
+    decision closes the takeover if it is still open (`outcome.how:
+    "decided"`). A takeover that closes in another way, such as a
+    `cancelled` takeover after a human removed the holder's membership,
+    leaves the hold in place until a human lifts it.
+  - **On the card** it shows as `objection_hold: {takeover_id, by:
+    {kind, id, member_id}, at}`, or `null`. The board marks the card
+    "Held by <name>'s objection", and the card view links the takeover.
+  - **Events:** `objection_hold_set` when the hold starts and
+    `objection_hold_lifted` when it ends, with `{task_id, takeover_id,
+    by, at}` and, on lifting, `lifted_by: {kind, id}` and `how`
+    (`retracted`, `accepted`, `decided`, `lifted`, `card_done`,
+    `card_cancelled`). Ids only, no reasons: the reasons stay in the
+    takeover.
 - **These decisions are only as strong as the human's sign-in.** "Only
   a human decides", "reachable" and the owner's objection all rest on
   the human's session. An agent that holds a human's mailbox can sign
@@ -2293,7 +2327,7 @@ runs out **after** a takeover was opened does not end it — the open
 takeover holds the card until its own procedure closes it, and an
 agent's `assign`, `release` or `PATCH assigned_to` meanwhile is
 `takeover_open` (409, `details.takeover`), or `forbidden` with
-`objection_open` after a human's objection (above).
+`objection_open` under an objection hold (above).
 
 **Cover is not a takeover.** A card that moves to a substitute because
 its holder is out — cover under the holder's own `availability_policy`
@@ -2324,7 +2358,7 @@ follows this section.
 | Status | Meaning, and what moves it |
 |---|---|
 | `open` | the holder has until `window_ends_at` (project policy `takeover_window_minutes`, default 60, §6.1) to answer. `accept` → `transferred`. `object` with reasons → `objected`. No answer by the end → `transferred` (`outcome.how: "window_elapsed"`). An admin's override → `transferred` at once |
-| `objected` | the holder or its owner gave reasons (`objection: {reasons, at, by: {kind, id, member_id}}`). The two settle it: whoever may answer for the holder may still `accept` (→ `transferred`) — after a human's objection only that human — or that human may `retract` it (→ `open` again; when the first window has already ended, the card transfers at once with `outcome.how: "window_elapsed"`); the requester may `withdraw` (→ `withdrawn`). Either may `escalate`; without a settlement within a second window of `window_minutes` (frozen when the takeover opened) from the objection, the hub escalates itself; after a human's objection only a human decides the escalation |
+| `objected` | the holder or its owner gave reasons (`objection: {reasons, at, by: {kind, id, member_id}}`). The two settle it: whoever may answer for the holder may still `accept` (→ `transferred`) — after a human's objection only that human — or that human may `retract` it (→ `open` again; when the first window has already ended, the card transfers at once with `outcome.how: "window_elapsed"`); the requester may `withdraw` (→ `withdrawn`) — not after a human's objection, which puts the card under an objection hold (above). Either may `escalate`; without a settlement within a second window of `window_minutes` (frozen when the takeover opened) from the objection, the hub escalates itself; after a human's objection only a human decides the escalation |
 | `escalated` | the hub filed a `decision` request to the admin team (below); its answer closes the takeover: `transfer` → `transferred`, `keep` → `refused` |
 | `transferred`, `withdrawn`, `refused`, `cancelled` | closed. `cancelled` when the card stopped being held by `from` some other way — the holder released or finished it, a human reassigned it, the card was cancelled, the membership was removed |
 
@@ -2338,7 +2372,7 @@ follows this section.
 | `GET /projects/{slug}/takeovers` | `project:read` | `status` (default open ones: `open`, `objected`, `escalated`; or `all`), `task_id`; newest first; paged |
 | `GET /projects/{slug}/takeovers/{id}` | `project:read` | |
 | `POST /projects/{slug}/takeovers/{id}/respond` | the holding instance (`from`); for a cross-owner takeover also the human who owns the holding agent, member or not. After a human's objection only that human (anyone else: `forbidden`, `humans_only`) | `{"accept": true}`, `{"object": {"reasons": "…"}}` (reasons required, Markdown, the body cap) or, by the human who objected, `{"retract": true}` |
-| `POST /projects/{slug}/takeovers/{id}/withdraw` | the requester | `{"reason"?}` |
+| `POST /projects/{slug}/takeovers/{id}/withdraw` | the requester; not while the card is under an objection hold (`forbidden`, `objection_open`) | `{"reason"?}` |
 | `POST /projects/{slug}/takeovers/{id}/escalate` | either party, while `objected` | `{"reason"?}` |
 | `POST /projects/{slug}/takeovers/{id}/override` | the admin team, not a party, while `open`; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | `{reason}` (required); transfers at once |
 
@@ -2575,6 +2609,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new) | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
+| `objection_hold_set`, `objection_hold_lifted` | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.13). Ids only |
 | `takeover_opened` | `instance:` of the holder (`from`; always wakes it), the requester, `to`, the card's creator; for a cross-owner takeover the holding agent's owner when a member | the takeover (§6.13) |
 | `takeover_answered` | the requester, `to`, the holder; the holding agent's owner as above | the takeover, with `accept`, the objection (its author's `kind` included) or a retraction |
 | `takeover_escalated`, `takeover_overridden` | the parties, `role:admin`, `role:owner`; the holding agent's owner as above | the takeover; the request id, the override's `by` and `reason` |
@@ -3333,9 +3368,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/tasks/{id}/release` | holder / `tasks:admin` | 6.5 |
 | POST | `/projects/{slug}/tasks/{id}/assign` | `tasks:admin` / the team's lead instance | 6.5, 6.12 |
 | POST | `/projects/{slug}/tasks/{id}/takeover` | `tasks:write` | 6.13 |
+| DELETE | `/projects/{slug}/tasks/{id}/objection-hold` | the human who objected (member or not), or a human with `tasks:admin` | 6.13 |
 | GET | `/projects/{slug}/takeovers`, `/projects/{slug}/takeovers/{id}` | `project:read` | 6.13 |
 | POST | `/projects/{slug}/takeovers/{id}/respond` | the holding instance; for a cross-owner takeover also the human who owns the holding agent, member or not | 6.13 |
-| POST | `/projects/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester / either party | 6.13 |
+| POST | `/projects/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester (withdraw not under an objection hold) / either party | 6.13 |
 | POST | `/projects/{slug}/takeovers/{id}/override` | the admin team, not a party; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | 6.13 |
 | GET, POST | `/projects/{slug}/memory` | the store's readers / writers | 17.2 |
 | DELETE | `/projects/{slug}/memory/{id}` | the store's deleters | 17.2 |
