@@ -81,7 +81,7 @@ for a secret that got in anyway; the history needs the same.
 **Id:** ee6d1328-ee5a-4d58-8d20-61a4ce715d81
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the contract owner's ruling of 2026-10-22 on the notes contract, after a review found one looping agent could use up a card's notes for good
 **Revisit when:** humans run into the cap in ordinary use, or notes get a way to free their place
 
@@ -97,7 +97,8 @@ on: an agent reducing what a human can do, which the role rules exclude.
 The scope follows the same line: a note is a write, and a read-only role
 added later must not inherit it.
 
-**Rejected alternatives:**
+**Rejected alternatives** (the review offered them; why they lost is
+inferred, the ruling chose without stating it):
 - Counting the cap per author: it bounds one member but not many agents
   together, and it does not keep a place for a human.
 - Letting redacted and dismissed notes free their place: it keeps the
