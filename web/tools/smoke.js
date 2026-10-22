@@ -2447,6 +2447,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let atForeign = null;
   try { win.Maity.dom.h("a", { href: "/api/v1/projects/maity/attachments/../../me" }); } catch (err) { atForeign = err; }
   expect(atForeign && win.Maity.dom.h("img", { src: "/api/v1/projects/maity/attachments/att-1/content" }), "attachments: only the attachment path itself is allowed");
+  // A hub without attachments is asked for the waiting uploads once per page load.
+  const atAll2 = win.Maity.api.getAll;
+  let atAsked = 0;
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
+    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : atAll2(p));
+  await go("#/p/maity/chat/agt-b"); await go("#/p/maity/message"); await go("#/p/maity/chat/agt-b");
+  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub without them is asked once, nothing offered");
+  win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
   await go("#/p/maity/inbox");
 

@@ -18,6 +18,9 @@ window.Maity = window.Maity || {};
   const CLOSED_STATES = ["accepted", "archived"];
   // The types the hub re-encodes an image to (§8.7): only these inline.
   const INLINE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+  // A hub that answered 404 or 405 to attachments has none: not asked again
+  // until the page is loaded anew.
+  let hubWithout = false;
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
@@ -102,11 +105,13 @@ window.Maity = window.Maity || {};
         }, "Remove"))));
     };
     const loadEarlier = async () => {
+      if (hubWithout) return;
       try {
         earlier = (await M.api.getAll(ctx.base + "/attachments?status=pending&uploaded_by=" + encodeURIComponent(ctx.me.id))).items;
       } catch (err) {
         // A hub without attachments, or none to read: nothing to offer.
         earlier = [];
+        if (err.status === 404 || err.status === 405) hubWithout = true;
       }
       drawEarlier();
     };

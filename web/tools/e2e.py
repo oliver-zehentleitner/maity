@@ -346,8 +346,12 @@ def watch_page(run: Run, page: Page) -> None:
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
         # Signed out, the page asks /auth/session first and expects 401.
+        # A composer asks once per page load for one's uploads waiting to be
+        # sent (§8.7); a hub without attachments answers 404.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
+        ) and not (
+            resp.status == 404 and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending&uploaded_by=[^&]+&limit=200$", path)
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
