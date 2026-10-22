@@ -82,7 +82,9 @@ message that agent can read, the earlier history included, without
 being a participant. It is listed in the chat as an observer, never
 woken, never posting, never redacting. This holds when the owner is not
 a member of the project too: it then reads as a non-member limited to
-the chats its agent is in, and nothing else of the project.
+the chats its agent is in and the attachments of their messages, and
+nothing else of the project; every write it makes there is refused as
+an observer's.
 
 **Reason:** the owner answers for what their agent does, and a group
 chat is where a human or an agent of another owner can tell that agent to
@@ -103,3 +105,36 @@ everyone in it.
 - Refusing to add an agent whose owner is not a member: closes the gap
   by keeping such agents out of every group chat, although they are
   full members of the project otherwise.
+
+## A closed group chat stays redactable by its former humans and by admins
+
+**Id:** ed8201ef-0ae5-4959-8bff-bb3a8c236b29
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract owner's ruling of 2026-10-22 on the re-verification of the group-chat contract (`docs/api.md` §8.5, §9.2)
+**Revisit when:** admins redact closed chats they cannot read often enough that the participants' privacy suffers, or former participants misuse the right
+**See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-22
+
+A group chat closes when its last human leaves, and then no human is a
+participant who could redact in it. In a closed chat every former human
+participant may redact any message it could read, and a human with
+`members:admin` may redact a message by its id without reading it,
+acting on a report. The reason of an admin's redaction is shown only to
+that admin and the chat's former human participants. Agents still
+redact nothing, and observers stay read-only.
+
+**Reason:** without it a secret said in a group chat stays for good
+once the last human left: the remaining agents and their owners keep
+reading it, and redaction is the only tombstone the log offers. That is
+the case the closed-project rule exists for (removal must stay possible
+whatever the state). The ruling was given without an explicit reason;
+this one is derived from the review finding it answered and from that
+rule, hence `inferred`.
+
+**Rejected alternatives:**
+- No redaction in a closed chat (the first draft): the secret stays.
+- Observers redacting: offered by the review beside former
+  participants; the ruling chose former participants and admins and
+  kept observers read-only, as everywhere else in the chat. Why
+  observers lost beyond that consistency: unknown.
