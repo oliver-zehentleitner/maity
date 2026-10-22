@@ -63,7 +63,7 @@ because mail scanners open links before the human does.
 **Type:** constraint
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the sign-in contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §2.3 and §2.6.3–§2.6.5
+**Source:** security reviews of the sign-in contract and the contract owner's rulings on them (four rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §2.3 and §2.6.3–§2.6.5
 **Revisit when:** the hub gains a way to tell an agent from a browser on an unauthenticated call, or the mail link is made weaker than a full session
 **See:** sign-in.md#humans-may-sign-in-without-a-password--a-device-code-approved-on-a-signed-in-device-or-a-link-by-mail--and-no-agent-credential-yields-a-human-session — ce4670d6-650f-4cac-9a44-a1b28797f333 — as of 2026-10-22
 
@@ -79,16 +79,22 @@ mailbox; every mail sign-in, whatever browser it comes from, appears at
 once as a banner with a one-click "End this session" in every other
 session of the human, and only a session that existed before that
 sign-in (and is itself signed in by password or already confirmed) can
-mark it read, and no alert is ever read by age — it stays unread until
-such a session reads it or its record expires; a session younger than an hour cannot end older ones;
+mark it read, explicitly and one by one, never by "mark all read" or
+by age — it stays unread until such a session reads it or its record
+expires; a session is in good standing once signed in by password or
+once its own alert was confirmed so; a session in good standing may end
+any other, one not in good standing never ends one in good standing
+and, in its first hour, no older session at all;
 changing the verified address needs the account password in the same
 request, or, for a human without a password, approval from a session
-at least a day old for exactly the change it was shown, and tells the
+in good standing at least a day old for exactly the change it was
+shown (only such a session may also reject or replace a held change),
+and tells the
 old address; sign-in mails, which
 anyone can trigger, have a cap of their own, and security alerts have a
 budget that queues instead of dropping.
 
-The decision is the contract owner's rulings (three rounds); the reasons
+The decision is the contract owner's rulings (four rounds); the reasons
 below are this contract's reading of them.
 
 **Reason:** an overclaimed invariant is worse than a stated limit — an
@@ -98,7 +104,11 @@ the mail warning of a new sign-in lands in the same mailbox the agent
 reads and can delete; the dashboard is a channel the agent does not
 control. It holds only if the obtained session can neither dismiss it
 — itself or through a second session it makes — nor end the sessions
-that show it, hence the read rule and the one-hour rule. The password
+that show it, hence the read rule and the rules on ending sessions.
+Those rules hang on good standing rather than on age because an age
+rule alone turns against the human: an intruding session older than
+an hour could end every session, and the human's fresh password
+session, being the younger, could not end it. The password
 is the one factor neither a mailbox nor a moment at an unlocked
 dashboard provides, so it, and not the age or method of a session,
 guards the address.
@@ -113,6 +123,11 @@ guards the address.
   the address (the first round): a device-code session approved on an
   unlocked dashboard, and any mail-link session, is fresh by
   definition, so the condition stopped neither case it was meant for.
+- A pure age rule for ending sessions — no session younger than an hour
+  ends an older one (the second round): it locked the human out once
+  the intruding session was an hour old.
+- Letting "mark all read" mark sign-in alerts: one tidy-up of the bell
+  would have confirmed an intruding session and given it good standing.
 - Alerting only mail sign-ins from a browser without the device cookie
   (the first round): the cookie a first mail sign-in leaves behind made
   the next one from the same place silent.
