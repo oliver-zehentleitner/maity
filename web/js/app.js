@@ -23,6 +23,7 @@ window.Maity = window.Maity || {};
     { route: "inbox", label: "Inbox" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
     { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
+    { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     { route: "join", label: "Join an agent", admin: true },

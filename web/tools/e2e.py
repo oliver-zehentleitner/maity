@@ -709,6 +709,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     chat_pause_state(run, page, alpha, agent_id)
+    members_step(run, page)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
     images_step(run, page, alpha)
@@ -727,6 +728,7 @@ def scenario(run: Run, page: Page) -> None:
         ("inbox", "Inbox"),
         ("board", "Board"),
         ("agents", "Agents"),
+        ("members", "Members"),
         ("org", "Organisation"),
         ("join", "Join an agent"),
     )
@@ -1516,6 +1518,38 @@ def join_expiry_step(run: Run, page: Page) -> None:
     run.shot(second, "join-expired")
     other.close()
     no_problems(run, "joins")
+
+
+def members_step(run: Run, page: Page) -> None:
+    """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
+    run.step("members: the owner and the agent in one list; an agent's role changed and back")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    page.locator("nav.views").get_by_role("link", name="Members", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/members$"))
+    humans, agents = page.locator("table.members").nth(0), page.locator("table.members").nth(1)
+    expect(humans.locator("tr.member")).to_have_count(1)
+    expect(humans.locator("tr.member")).to_contain_text("owner")
+    row = agents.locator("tr.member", has_text="E2E Agent")
+    expect(row.locator("td").nth(1)).to_have_text("member")
+    # Owner and credentials only where the hub sends them (members:admin).
+    listed = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/members").json()["items"]
+    header = agents.locator("thead th")
+    if any("credentials" in m for m in listed):
+        expect(header.filter(has_text="Credentials")).to_have_count(1)
+        expect(row).to_contain_text("active")
+    else:
+        expect(header.filter(has_text="Credentials")).to_have_count(0)
+    run.a11y(page, "members")
+    row.get_by_role("button", name="Manage E2E Agent").click()
+    manage = page.locator("tr.member-manage")
+    manage.locator("select").select_option("reviewer")
+    manage.get_by_role("button", name="Change role", exact=True).click()
+    expect(row.locator("td").nth(1)).to_have_text("reviewer")
+    run.shot(page, "members")
+    manage.locator("select").select_option("member")
+    manage.get_by_role("button", name="Change role", exact=True).click()
+    expect(row.locator("td").nth(1)).to_have_text("member")
+    no_problems(run, "members")
 
 
 def change_password(run: Run, page: Page) -> None:

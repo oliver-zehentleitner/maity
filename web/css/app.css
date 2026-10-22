@@ -443,6 +443,16 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .card-table tbody tr > * { border-bottom: none; padding: 3px 10px; }
   .card-table tbody td::before { content: attr(data-label) ": "; color: var(--muted); }
 }
+/* Members: one table per kind; the managed row opens under its member. */
+.members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; margin-bottom: 16px; }
+.members th, .members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.members .member-name { font-weight: 600; }
+.members tr.paused td:first-child { border-left: 3px solid var(--warn); }
+.members .member-actions { text-align: right; white-space: nowrap; }
+.member-manage td { background: var(--surface); }
+.member-manage form, .member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
+.member-manage label { font-size: 0.85rem; color: var(--muted); }
+.member-manage .member-remove { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
 .why-members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
 .why-members th, .why-members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .why-members tr.failed td:first-child { border-left: 3px solid var(--warn); }
