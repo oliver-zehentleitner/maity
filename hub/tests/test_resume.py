@@ -62,6 +62,7 @@ def test_the_packet_has_every_part_of_the_contract(
         "areas": ["hub/"],
         "capabilities": [],
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
+        "paused": None,
     }
     assert packet["project"]["slug"] == "maity" and packet["project"]["keep_the_why"] is True
     assert packet["keep_the_why"]["enabled"] is True
@@ -236,3 +237,16 @@ def test_concurrent_resumes_of_one_credential_leave_one_live_session(
             select(t.agent_session.c.id).where(t.agent_session.c.live.is_(True))
         ).all()
     assert len(live) == 1
+
+
+def test_the_packet_carries_the_agents_own_pause(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    paused = owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "quota"}})
+    assert paused.status_code == 200, paused.text
+    shown = agent.resume().json()["membership"]["paused"]
+    assert (shown["reason"], shown["by"]) == ("quota", owner.id)
+    assert shown["since"] is not None
+    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": None})
+    assert agent.resume().json()["membership"]["paused"] is None

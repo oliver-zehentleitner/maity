@@ -28,6 +28,7 @@ from maity_hub.views import (
     event_view,
     git_identity,
     member_view,
+    paused,
     principal_id,
     repository,
     task_view,
@@ -274,6 +275,7 @@ def _packet(
             "areas": mine.row.areas,
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
+            "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
         },
         "project": {
             "slug": project.slug,
