@@ -39,23 +39,23 @@ MAX_ATTENTION = 200
 IN_FLIGHT = 4
 DEFAULT_MAX_AGE = 600
 FAMILY_DEADLINE = 30.0  # seconds for one read of a whole family, configs and exports
-LOCK_GRACE = 5.0
+LOCK_WAIT = 0.5  # seconds a request with nothing cached waits for a read in progress
 FORCE_INTERVAL = 30.0
 STATUSES = ("active", "open", "needs-review", "pending-confirmation", "superseded")
 ATTENTION_ORDER = ("needs-review", "pending-confirmation", "open")
 STATE_JSON_MAJOR = 2
 
-_CONFIG_BLOCK = re.compile(
-    r"<!--\s*keep-the-why:config\s*-->(.*?)<!--\s*/keep-the-why:config\s*-->", re.S
-)
-_CHILDREN_BLOCK = re.compile(
-    r"<!--\s*keep-the-why:children\s*-->(.*?)<!--\s*/keep-the-why:children\s*-->", re.S
-)
+_OPEN = {name: re.compile(rf"<!--\s*keep-the-why:{name}\s*-->") for name in ("config", "children")}
+_CLOSE = {
+    name: re.compile(rf"<!--\s*/keep-the-why:{name}\s*-->") for name in ("config", "children")
+}
+_RFC3339 = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 _SETTING = re.compile(r"^\s*-\s*([A-Za-z0-9_-]+)\s*:\s*(.*?)\s*$")
 _CHILD = re.compile(r"^\s*-\s*([^:]+?)\s*:\s*(\S+)(?:\s+—\s+.*)?\s*$")
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 _CONTROL = re.compile(
-    "[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200b-\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ufeff]"
+    "[\\x00-\\x1f\\x7f-\\x9f\\u061c\\u200b-\\u200f\\u2028-\\u202e\\u2066-\\u2069\\ufeff"
+    "\\ud800-\\udfff]"  # lone surrogates: json.loads accepts them, UTF-8 cannot encode them
 )
 
 
@@ -86,8 +86,9 @@ class MemberError(Exception):
 
 
 def text(value: Any, limit: int) -> str | None:
-    """A string from outside the hub: control characters removed, cut at `limit`
-    characters with `…` as the last one; None when it is not a string."""
+    """A string from outside the hub: control, direction and zero-width characters and lone
+    surrogates removed, cut at `limit` characters with `…` as the last one; None when it is
+    not a string."""
     if not isinstance(value, str):
         return None
     cleaned = _CONTROL.sub("", value)
@@ -101,11 +102,21 @@ def _unquote(value: str) -> str:
     return value.strip().strip("`").strip()
 
 
+def _block(source: str, name: str) -> str:
+    """The text between the first `keep-the-why:<name>` marker and the closing one after it.
+    Two linear searches: a non-greedy regex over the whole block is quadratic on a file of
+    unclosed markers."""
+    opened = _OPEN[name].search(source)
+    if opened is None:
+        return ""
+    closed = _CLOSE[name].search(source, opened.end())
+    return source[opened.end() : closed.start()] if closed else ""
+
+
 def config(source: str) -> dict[str, str]:
     """The `- key: value` lines of the config block."""
-    block = _CONFIG_BLOCK.search(source)
     found: dict[str, str] = {}
-    for line in (block.group(1) if block else "").splitlines():
+    for line in _block(source, "config").splitlines():
         match = _SETTING.match(line)
         if match and match.group(1) not in found:
             found[match.group(1)] = _unquote(match.group(2))
@@ -114,9 +125,8 @@ def config(source: str) -> dict[str, str]:
 
 def children(source: str) -> list[tuple[str, str]]:
     """(name, location) of each line of the children block, in order."""
-    block = _CHILDREN_BLOCK.search(source)
     found = []
-    for line in (block.group(1) if block else "").splitlines():
+    for line in _block(source, "children").splitlines():
         match = _CHILD.match(line)
         if match:
             found.append((match.group(1), _unquote(match.group(2))))
@@ -137,8 +147,9 @@ def child_path(parent: str, location: str) -> str | None:
 
 def state_url_valid(url: str) -> bool:
     """https, at most 2048 characters, a host name (no address literal), no user info, no
-    port but 443."""
-    if len(url) > 2048:
+    port but 443, and nothing a viewer could be misled by: no whitespace, control, direction
+    or zero-width character."""
+    if len(url) > 2048 or _CONTROL.search(url) or any(c.isspace() for c in url):
         return False
     try:
         parts = urllib.parse.urlsplit(url)
@@ -167,7 +178,9 @@ def dashboard_url(state_url: str) -> str:
 
 @dataclass
 class Read:
-    """One member's export as the hub relies on it."""
+    """One member's export as the hub relies on it: the counts, and only the entries that
+    can reach the attention list (at most MAX_ATTENTION + 1, in attention order), so that a
+    family of large exports does not stay in memory."""
 
     summary: dict[str, Any]
     entries: list[dict[str, Any]]
@@ -189,11 +202,19 @@ def _major(version: Any) -> int | None:
 def _generated(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
+    if not _RFC3339.match(value):
+        return None
     try:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
     return text(value, 40)
+
+
+def _attention_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """Attention order inside one member: status, then file and line (§11.3)."""
+    line = entry["line"] if entry["line"] is not None else 0
+    return (ATTENTION_ORDER.index(entry["status"]), entry["file"] or "", line)
 
 
 def _count(value: Any) -> int | None:
@@ -219,6 +240,7 @@ def digest(data: Any, link_base: str) -> Read:
             if title is not None:
                 topics.setdefault(topic["file"], title)
     entries: list[dict[str, Any]] = []
+    valid = 0
     skipped = 0
     status_counts = {s: 0 for s in STATUSES} | {"other": 0}
     for raw in raw_entries:
@@ -235,6 +257,9 @@ def digest(data: Any, link_base: str) -> Read:
         )
         status: str = raw["status"] if raw.get("status") in STATUSES else "other"
         status_counts[status] += 1
+        valid += 1
+        if status not in ATTENTION_ORDER:
+            continue
         file = text(raw.get("file"), 200)
         line = raw.get("line") if _count(raw.get("line")) is not None else None
         anchor = urllib.parse.quote(uuid or entry_id, safe="")
@@ -251,12 +276,14 @@ def digest(data: Any, link_base: str) -> Read:
                 "link": f"{link_base}#entry/{anchor}",
             }
         )
+    entries.sort(key=_attention_key)
+    del entries[MAX_ATTENTION + 1 :]
     found_findings = data.get("findings")
     findings: dict[str, Any] = found_findings if isinstance(found_findings, dict) else {}
     summary = {
         "generated": _generated(data.get("generated")),
         "state_json": major,
-        "entries": len(entries),
+        "entries": valid,
         "status": status_counts,
         "attention": sum(status_counts[s] for s in ATTENTION_ORDER),
         "findings": {
@@ -365,7 +392,10 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             clean_name = text(child_name, 200)
             target = child_path(path, location)
             if target is None:
-                shown = text(location, 200) or ""
+                shown = text(location, 200)
+                if not shown or shown in seen:
+                    continue  # nothing left to show, or listed already: never a second ""
+                seen.add(shown)
                 members.append(
                     Member(path=shown, name=clean_name, error=_error("location_not_followed"))
                 )
@@ -469,14 +499,8 @@ def _attention(members: list[Member]) -> tuple[list[dict[str, Any]], bool]:
     found: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     for order, member in enumerate(members):
         for entry in member.read.entries if member.read else []:
-            if entry["status"] in ATTENTION_ORDER:
-                key = (
-                    ATTENTION_ORDER.index(entry["status"]),
-                    order,
-                    entry["file"] or "",
-                    entry["line"] if entry["line"] is not None else 0,
-                )
-                found.append((key, {"member": member.path, **entry}))
+            status, *place = _attention_key(entry)
+            found.append(((status, order, *place), {"member": member.path, **entry}))
     found.sort(key=lambda item: item[0])
     return [entry for _key, entry in found[:MAX_ATTENTION]], len(found) > MAX_ATTENTION
 
@@ -565,22 +589,27 @@ class Cache:
         repository_url: str | None,
         max_age: int = DEFAULT_MAX_AGE,
     ) -> tuple[_Entry, bool]:
-        """(entry, fresh): a cached answer younger than `max_age`, else a new read. A forced
-        read (`max_age=0`) within FORCE_INTERVAL of the last one answers from the cache."""
+        """(entry, fresh): a cached answer younger than `max_age`, else a new read. No
+        `max_age` reads more often than FORCE_INTERVAL (`0` forces a read at that rate).
+
+        While another request reads the family, the cached answer is served at once, and a
+        request with nothing cached waits at most LOCK_WAIT before `Busy`: a waiter holds a
+        request thread, and a family read may take FAMILY_DEADLINE."""
+        current = self.cached(project_id)
         lock = self._lock(project_id)
-        if not lock.acquire(timeout=FAMILY_DEADLINE + LOCK_GRACE):
-            # Another request has been reading this family for the whole budget: answer
-            # what is cached rather than hold this thread too.
-            entry = self.cached(project_id)
-            if entry is not None and entry.repository_url == repository_url:
-                return entry, False
+        usable = current is not None and current.repository_url == repository_url
+        if not (lock.acquire(blocking=False) if usable else lock.acquire(timeout=LOCK_WAIT)):
+            if current is not None and usable:
+                return current, False
             raise Busy
         try:
             entry = self.cached(project_id)
-            if entry is not None and entry.repository_url == repository_url:
-                age = _now() - entry.at
-                if age < max_age or (max_age == 0 and age < FORCE_INTERVAL):
-                    return entry, False
+            if (
+                entry is not None
+                and entry.repository_url == repository_url
+                and _now() - entry.at < max(max_age, FORCE_INTERVAL)
+            ):
+                return entry, False
             entry = self._read(reader, project_id, repository_url, entry)
             with self.guard:
                 self.entries[project_id] = entry

@@ -327,7 +327,9 @@ Your human may write to you directly: those are `chat` messages with
   `.keep-the-why` family: per member a summary, and the entries that need
   attention (`needs-review`, `pending-confirmation`, `open`) with links into
   the published dashboard; `ktw_not_configured` when the repository names
-  none.
+  none. Cached; never re-read more often than every 30 seconds, whatever
+  `max_age` says. While a read runs, the cached answer comes back with
+  `fresh: false`, or `503 ktw_unavailable` when nothing is cached yet.
 - `GET /api/v1/projects/{slug}/members`, `…/members/{id}` — who is in the
   project, their role, areas, presence and pause.
 - `GET`/`POST /api/v1/projects/{slug}/tasks`, `GET`/`PATCH …/tasks/{id}`,

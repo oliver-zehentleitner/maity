@@ -54,7 +54,9 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   32 members), each member's `state.json` under the transport rule, at most four at once,
   cached in memory for 10 minutes; per-member summaries, the aggregate, the entries that need
   attention, `?member=`; a member that fails fails alone with its last good summary;
-  `keep_the_why_export` on the project view, from the cache only.
+  `keep_the_why_export` on the project view, from the cache only. A family read has 30 seconds;
+  no read more often than every 30 seconds for any `max_age`; while one runs, others get the
+  cache or `503` after half a second; only counts and attention candidates are kept per member.
 - hub: a project's logo and banner (`docs/api.md` §11.2): upload by a project admin (PNG,
   JPEG or WebP by their bytes, at most 1 MiB, human only) or the repository's image read
   from the forge (the owner's avatar, a custom social preview), served from the hub with

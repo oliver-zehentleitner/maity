@@ -227,11 +227,31 @@ def test_the_export_is_read_for_what_the_hub_relies_on() -> None:
         "attention": 1,
         "findings": {"errors": 0, "warnings": 1},
     }
-    first, second, third = read.entries
+    (only,) = read.entries  # counts for all; entries only where attention can use them
+    assert only["title"] == "t.md#u" and only["type"] == ["question"]
+    assert only["link"] == "https://d.example/#entry/t.md%23u" and only["topic"] is None
+
+
+def test_attention_entries_are_cleaned_and_cut() -> None:
+    read = ktw.digest(
+        export(
+            entry(1, "needs-review"),
+            entry(3, "open", type=[f"t{n}" for n in range(12)], title="T" * 300),
+        ),
+        "https://d.example/",
+    )
+    first, second = read.entries
     assert first["link"] == "https://d.example/#entry/uuid-1" and first["topic"] == "Hub"
-    assert second["title"] == "t.md#u" and second["type"] == ["question"]
-    assert second["link"] == "https://d.example/#entry/t.md%23u" and second["topic"] is None
-    assert len(third["type"]) == 8 and len(third["title"]) == 200
+    assert len(second["type"]) == 8 and len(second["title"]) == 200
+
+
+def test_a_member_keeps_at_most_one_entry_past_the_attention_cap() -> None:
+    entries = [entry(n, "open") for n in range(ktw.MAX_ATTENTION + 50)]
+    entries.append(entry(9999, "needs-review"))
+    read = ktw.digest(export(*entries), "https://d.example/")
+    assert read.summary["entries"] == ktw.MAX_ATTENTION + 51
+    assert len(read.entries) == ktw.MAX_ATTENTION + 1
+    assert read.entries[0]["status"] == "needs-review"
 
 
 @pytest.mark.parametrize(
@@ -620,7 +640,7 @@ def test_a_request_waiting_on_a_long_read_gets_the_cache_or_503(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.1)
-    monkeypatch.setattr(ktw, "LOCK_GRACE", 0.1)
+    monkeypatch.setattr(ktw, "LOCK_WAIT", 0.1)
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
     project_id = _project_id(owner)
