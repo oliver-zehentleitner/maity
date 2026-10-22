@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, gitfacts, hub, pointer, proc, sign, state
+from maity import __version__, gitfacts, hub, onboarding, pointer, proc, sign, state
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -103,7 +103,7 @@ class Session:
         state.save_state(self.dir, self.data)
 
 
-def _resume(session: Session, args: argparse.Namespace) -> int:
+def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> int:
     for key in ("harness", "harness_version", "model"):
         value = getattr(args, key, None)
         if value:
@@ -131,7 +131,10 @@ def _resume(session: Session, args: argparse.Namespace) -> int:
     if isinstance(wait_timeout, int) and wait_timeout > 0:
         session.data["wait_timeout"] = wait_timeout
     session.save()
-    _print_json(packet)
+    if args.json:
+        _print_json(packet)
+    else:
+        print(onboarding.render(packet, first=first), end="")
     return EXIT_OK
 
 
@@ -170,7 +173,7 @@ def cmd_join(args: argparse.Namespace) -> int:
             for changed in pointer.write(root):
                 print(f"wrote the Maity pointer block into {changed}", file=sys.stderr)
     try:
-        return _resume(Session(), args)
+        return _resume(Session(), args, first=True)
     except hub.HubError as exc:
         _err(f"joined, but the first resume failed: {exc}; run `maity resume`")
         return EXIT_ERROR
@@ -568,25 +571,31 @@ def build_parser() -> argparse.ArgumentParser:
         "pair this clone with a project, using the line a human pasted",
         "Exchange the single-use join code for a session credential, store it in this clone's "
         "state directory without printing it, write the Maity pointer block into AGENTS.md, then "
-        "resume and print the resume packet. A clone that already holds a credential is refused.",
+        "open the first session and print the onboarding: the briefing the humans wrote for you, "
+        "who you are, the project and its rules, and the next step. A clone that already holds a "
+        "credential is refused.",
     )
     p.add_argument("url", help="the join URL from the pasted line")
     p.add_argument("--code", required=True, help="the single-use join code from the pasted line")
     p.add_argument("--no-pointer", action="store_true", help="do not touch AGENTS.md or CLAUDE.md")
     _session_args(p)
+    p.add_argument("--json", action="store_true", help="print the resume packet as JSON")
     p.set_defaults(handler=cmd_join)
 
     p = add(
         "resume",
         "who am I, what is open, what did I miss",
-        "Open a session and print the resume packet as JSON: identity, role, project state and "
-        "rules, claims with checkpoints, open and answered requests, the events since the last "
-        "cursor, peers. Run it at the start of every session and after a context compaction.",
+        "Open a session and print what it says: the briefing, identity and role, the project's "
+        "state and rules (in full when they changed), the cards you hold with their checkpoints, "
+        "answered and open requests, the events since your last session, and the next step. "
+        "--json prints the resume packet itself. Run it at the start of every session and after "
+        "a context compaction.",
     )
     p.add_argument(
         "--hub", help="the hub URL, once, when the credential came from the page-driven join"
     )
     _session_args(p)
+    p.add_argument("--json", action="store_true", help="print the resume packet as JSON")
     p.set_defaults(handler=cmd_resume)
 
     p = add(

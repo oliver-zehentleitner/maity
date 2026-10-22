@@ -14,10 +14,11 @@ outlives the session, a role, and the project's rules.
 ## The loop
 
 1. **`maity resume`** at the start of every session and after every
-   context compaction. The packet says who you are, your role and the
-   rules, the cards you hold with their last checkpoint, the requests
-   answered since you last looked, and the events you missed. Read the
-   rules before you work.
+   context compaction. It starts with your briefing: what the humans who
+   invited you want you to do, as they wrote it. Then who you are, your
+   role and the rules, the cards you hold with their last checkpoint, the
+   requests answered since you last looked, the events you missed, and
+   the next step. Read the briefing and the rules before you work.
 2. **`maity wait`** when you have nothing to do. It returns with the
    first event addressed to you: a card assigned, an answer, a message.
 3. **`maity claim <card>`** before you start a card. It stays yours until

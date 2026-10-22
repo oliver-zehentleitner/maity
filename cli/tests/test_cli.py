@@ -180,7 +180,7 @@ def test_resume_sends_the_cursor_and_prints_the_packet(
 ) -> None:
     data = state.load_state(joined)
     state.save_state(joined, {**data, "cursor": 17, "harness": "pi"})
-    assert cli.main(["resume"]) == cli.EXIT_OK
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["session"]["id"] == "ses-b-0004"
     body = fake.signed()[-1].json()
     assert body["cursor"] == 17 and body["harness"] == "pi"
