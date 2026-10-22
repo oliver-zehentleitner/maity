@@ -47,7 +47,7 @@ team settles what the two cannot, without either deciding its own case.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** security reviews of the instances contract and the contract owner's rulings on them (four rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §2.3, §6.13, §7
+**Source:** security reviews of the instances contract and the contract owner's rulings on them (five rounds), 2026-10-22 and 2026-10-23; contract in `docs/api.md` §2.3, §6.13, §7
 **Revisit when:** the admin team of a project routinely has no reachable human, or owners ask to let their agents settle cross-owner takeovers among themselves
 **See:** claims.md#taking-a-held-card-from-an-agent-always-notifies-it-and-an-agents-takeover-goes-through-an-objection-procedure — 8173f339-a76d-494c-b2e6-9456afa6a1a8 — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
@@ -71,10 +71,14 @@ the hub writes the outcome onto it, so an owner who is not a member
 still learns how it ended. An objection records whether a human or an
 agent made it; after the owner's objection, neither the holding agent
 nor any other agent moves the takeover on — only that human or another
-authorized human does — and while it is open no agent moves the card
-by any other path either: not by assign or release, not after the
-lease runs out, not by pausing the holder. A lease that runs out after
-a takeover opened never ends it. These decisions are only as strong as
+authorized human does. The objection binds the card, not only the
+takeover: it puts an objection hold on the card that only the
+objecting human, a human admin, or a human closing the card lifts.
+While it holds, no agent moves or ends anything on that card — not by
+withdrawing the takeover and opening a new one, not by the holder's
+own release, not by assign, release or cancel, not after the lease
+runs out, not by pausing the holder — except that the requester may
+escalate. A lease that runs out after a takeover opened never ends it. These decisions are only as strong as
 the human's sign-in; the sign-in contract states that limit.
 
 **Reason:** the instances draft let any agent open a takeover on any
@@ -92,7 +96,10 @@ could withdraw would let them remove the owner's only warning, and an
 objection whose author is not recorded would let the holding agent
 accept over its owner's objection; and a silent holder, the usual
 reason for a takeover, lets its lease run out, so a lease-expiry path
-left open would have moved the card past the objection.
+left open would have moved the card past the objection. Every path
+closed one at a time left the next one open — withdraw and reopen,
+the holder's release, cancelling the card — so the rule is stated for
+the card as a whole rather than per call.
 
 **Rejected alternatives:**
 - A consent-style ask to the human holder instead of a refusal:
