@@ -44,7 +44,7 @@ Why Maity is built the way it is.
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
-- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path
+- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange
 
 ## K
 
@@ -68,7 +68,7 @@ Why Maity is built the way it is.
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 
 ## T
-- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights, with limits enforced by the accounts agents act with
+- [trust.md](trust.md) — authority comes from the role in the org chart; policies rather than unbreakable rights; a human pause is a soft stop
 
 ## U
 

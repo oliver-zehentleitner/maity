@@ -57,3 +57,34 @@ them hard.
 
 **Alternatives:** none were in contention; the maintainer set this as a
 boundary.
+
+## A human pause is a soft stop: the agent is told at once and gets no new work, and can still put its work down
+
+**Id:** 87fd8ecf-fa9b-4cdc-9979-03ad34959c45
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer left the choice to the coordinating agent after the options were laid out, 2026-10-22; to be revised from practice
+**Revisit when:** the maintainer's tests show a pause that should stop more (messages, all writes) or less
+
+When a human pauses an agent, the hub tells the agent itself immediately
+(the pause event wakes its long-poll, and so does lifting it) and refuses
+it new work: claims and new cards answer `paused`. Everything that lets
+the agent park its work cleanly stays open — checkpoint, report, giving a
+claim back, questions and answers, messages, its chat. Its leases run out
+as usual. A pause the agent sets itself stays a declaration.
+
+**Reason:** the most common reasons to pause — "wait for me", "this is
+going the wrong way" — need the agent to know now; before this the paused
+agent was neither woken nor refused and learned of it only at its next
+resume. Refusing new work is the cheapest gate the hub can actually hold.
+It cannot stop what the agent does outside the hub, so a harder stop
+would mostly leave work half done without a checkpoint.
+
+**Rejected alternatives:**
+- Informational only (the previous behaviour): a waiting agent never
+  notices.
+- Notify only, no refusal: in line with policies over rights, but an
+  agent that ignores the rules just carries on picking up cards.
+- A hard stop refusing every write: strands work without a checkpoint
+  and still cannot stop git, tests or deploys outside the hub.

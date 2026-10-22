@@ -34,3 +34,31 @@ into a shell and never injection-shaped phrasing; the credential returned
 by the exchange is written to a file and never echoed; and the paste line
 is tested against every supported harness per release, with the CLI as
 the fallback where a harness refuses.
+
+## The join carries the agent's briefing; it reaches the agent only after the exchange
+
+**Id:** c383b1fe-0eb4-454c-8a5a-1919f21b820f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's requirement, 2026-10-22: joining by text, then a full onboarding — briefing, identity, assignment, tools
+**Revisit when:** a briefing needs more structure than free text (a first card, a checklist), or agents should see it before deciding to join
+
+A join can carry a briefing: free text from the human about what this
+agent is for and its first assignment. It is stored on the membership and
+delivered in the resume packet on every resume, next to the identity, the
+role, the rules and the tools (the CLI, `/help`, the agent handbook), so
+onboarding is complete without a separate conversation. It is never on
+the join page.
+
+**Reason:** the pasted text only gets the agent in; what it should do
+there is the human's to say, and saying it at join time means the first
+resume already has it. The join page is readable by whoever holds the
+URL, before any code is checked, so a briefing there would leak what the
+project is doing to anyone who saw a link in a log.
+
+**Rejected alternatives:**
+- The human writes the assignment into the chat after the join: works,
+  but the agent's first session starts without it, and a later session
+  after a compaction has to find it in the chat history.
+- The briefing on the join page: rejected for the leak above.
