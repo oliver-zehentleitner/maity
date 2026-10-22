@@ -217,7 +217,11 @@ def test_codex_config(tmp_path: Path) -> None:
     assert found["approval_policy"] == "never" and found["default_permissions"] == "maity"
     assert found["projects"][str(ctx.clone)]["trust_level"] == "untrusted"  # no .codex/ layers
     assert found["permissions"]["maity"]["extends"] == ":workspace"
-    assert found["permissions"]["maity"]["filesystem"] == {str(ctx.clone / ".git"): "write"}
+    assert found["permissions"]["maity"]["filesystem"] == {
+        str(ctx.clone / ".git"): "write",
+        str(ctx.clone / ".git" / "hooks"): "read",
+        str(ctx.clone / ".git" / "config"): "read",
+    }
     domains = found["permissions"]["maity"]["network"]["domains"]
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
 
@@ -252,9 +256,8 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
     assert list(rules["bash"])[-1] in adapters.GIT_DENIED  # denies last: the last match wins
-    secret = f"{ctx.clone}/.git/maity/*"
-    for tool in ("read", "edit"):
-        assert rules[tool] == {"*": "allow", secret: "deny"}
+    assert rules["read"] == {"*": "allow", f"{ctx.clone}/.git/maity/*": "deny"}
+    assert rules["edit"] == {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
     assert settings["instructions"] == [str(ctx.clone / "AGENTS.md")]
 

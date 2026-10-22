@@ -198,7 +198,10 @@ def codex_config(ctx: Context) -> str:
         "[features]\nnetwork_proxy = true\n\n"
         '[permissions.maity]\nextends = ":workspace"\n\n'
         "[permissions.maity.filesystem]\n"
-        f"{json.dumps(str(ctx.clone / '.git'))} = \"write\"\n\n"
+        f"{json.dumps(str(ctx.clone / '.git'))} = \"write\"\n"
+        # Commits need .git; its hooks and config would turn an allowed git call into anything.
+        f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
+        f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
     )
@@ -238,13 +241,16 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         bash[f"{cmd} *"] = "allow"
     bash.update({rule: "deny" for rule in GIT_DENIED})  # after the allows: the last match wins
     secret = f"{ctx.clone}/.git/maity/*"
-    files = {"*": "allow", secret: "deny"}  # the clone's credential, in neither direction
+    # The clone's credential is neither readable nor writable; nothing under .git is edited
+    # (agents commit through git; its config and hooks would turn a git call into anything).
+    read = {"*": "allow", secret: "deny"}
+    edit = {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     return {
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            "read": files, "glob": "allow", "grep": "allow", "list": "allow",
-            "edit": files,
+            "read": read, "glob": "allow", "grep": "allow", "list": "allow",
+            "edit": edit,
             "bash": bash,
             "webfetch": "deny",
             "external_directory": "deny",
