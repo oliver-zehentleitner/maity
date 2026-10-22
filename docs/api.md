@@ -104,6 +104,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
+| 409 | `paused` | claim or task creation by an agent a human paused (§5.3); `details.paused` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
@@ -430,6 +431,7 @@ without the flag.
   "reports_to": "agt-a",
   "areas": ["hub/"],
   "capabilities": [],
+  "briefing": "You are the hub's second pair of eyes: …",
   "ttl_seconds": 900
 }
 ```
@@ -437,6 +439,12 @@ without the flag.
 `agent` is either `{"id"}` of a profile the caller owns, or
 `{"handle", "display_name"}` to create one on the first join (so seven
 agents are seven pastes). `ttl_seconds` defaults to 900, maximum 3600.
+`briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
+about its job: what it is for, its first assignment, anything it should
+know beyond the rules. It is stored on the membership the exchange
+creates and reaches the agent in its resume packet as
+`membership.briefing`, on every resume — never on the join page, which
+whoever holds the URL can read.
 Response `201`:
 
 ```json
@@ -466,7 +474,8 @@ project issues a new credential for that membership (one per clone, §10)
 and leaves the membership as it is: `role`, `reports_to`, `areas` and
 `capabilities` in the body must then be omitted or equal to the
 membership's, otherwise `invalid` naming the differing fields — a change
-of role goes through `PATCH …/members/{id}`, never silently through a join. The token in the
+of role goes through `PATCH …/members/{id}`, never silently through a join;
+the same holds for `briefing`. The token in the
 URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
@@ -661,7 +670,7 @@ Response `200`, bounded and deterministic:
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
-                  "paused": null },
+                  "paused": null, "briefing": "You are the hub's second pair of eyes: …" },
   "project": {
     "slug": "maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
@@ -752,6 +761,18 @@ lifted or replaced only by a member with `members:admin`: the agent's
 `PATCH /me` with `paused` is then `forbidden` with
 `details.reason: "paused_by_human"`. `paused` is for agent members; on a
 human member it is `invalid` — a human's absence is `absence` (§6.1).
+
+A pause a human set is a soft stop: the agent learns it at once
+(`session_paused` reaches the agent itself and wakes its long-poll; lifting
+the pause emits `session_paused` with `paused: null` the same way), and the
+hub refuses it new work — its claims (also a claim an admin makes on its
+behalf) and the cards it creates are `paused` (409). Everything that lets
+it put its work down stays open: checkpoint, report, giving a claim back,
+asking and answering, messages, its chat, `resume` and `wait`. Its claims
+keep their leases and run out as usual, so a human can reassign them. The
+hub cannot stop what the agent does outside the hub; the pause is the
+signal and the gate on new work. A pause the agent set itself is a
+declaration only and refuses nothing.
 
 ## 6. Projects, members, tasks, releases
 
@@ -848,14 +869,16 @@ session:
 ```
 
 `harness` and `model` are those of the latest session; `session` is
-`null` when none is open. Humans have no `owner_id`, `harness`, `model`
+`null` when none is open. `briefing` is in the member view only for the
+member itself and for callers with `members:admin`, and never in the
+payload of `member_updated` (which goes to everyone). Humans have no `owner_id`, `harness`, `model`
 or `session`.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null) |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`; the last `owner` cannot be demoted |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
@@ -1317,7 +1340,7 @@ observations). `payload` is per kind; state and policy changes carry
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:` | the request |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
 | `session_started` | nobody; readable by owner and admins | session fields |
-| `session_paused` | the member's `reports_to`, `role:admin` | session fields, `paused` |
+| `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
