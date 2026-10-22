@@ -180,7 +180,15 @@ Inside a project, in the order of their importance; see
    history at its end unless the human scrolled up. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. Messages
+   back; opening a chat there moves the focus to its heading. The history
+   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   sender's messages within five minutes grouped (the agent's picture and
+   name only on the first), and a "New messages" line before what was
+   unread when the chat was opened; scrolled up, a **Newest** button (with
+   the count of what arrived meanwhile; arriving messages leave the view
+   where it is) goes back to the end and puts the focus in the composer.
+   An unread count that cannot be read is said. An empty chat
+   says that the agent reads it at its next wait or resume. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
    headings as strong lines, lists, quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain

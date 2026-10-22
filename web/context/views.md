@@ -214,3 +214,35 @@ newer hub added.
 role and a reports-to change that belong together would land as two
 writes, and a failure in between leaves half a change. Sending every
 field every time — a stale form would overwrite a change made meanwhile.
+
+## The chat's history: days apart, a sender's run grouped, and the line before what was unread when it opened
+
+**Id:** abe93ad2-1a75-4abc-a5d0-70e074d17335
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's chat feedback relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Revisit when:** the hub gives a conversation a read marker of its own (then the line comes from it), or group chats need another grouping
+
+The open chat draws its history with a separator per day ("Today",
+"Yesterday", else the date), groups a sender's messages that follow
+within five minutes (the picture and name only on the first), and puts a
+"New messages" line before the first of the agent's messages that were
+unread when the chat was opened. The history is read to its end, in
+pages of 200, because the hub returns the oldest page first and the
+unread messages are at the end. A button back to the newest shows when
+the human has scrolled up, with the count of what arrived meanwhile;
+someone else's message never moves the view, and the button hands the
+focus to the composer when it goes. An unread count that cannot be read
+draws no line and is said.
+
+**Reason:** the hub marks a conversation read when its messages are
+returned (docs/api.md §9), so the unread count has to be read from the
+conversation list before the messages are; that count is "the agent's
+last n messages", which is where the line goes. Five minutes keeps a
+burst of an agent's replies together without merging separate exchanges.
+
+**Rejected alternative:** a "new" line kept from the last visit in this
+browser — it would disagree with the unread count the list shows, and
+another device would never see it. Grouping by a fixed number of
+messages — a long pause would hide that the agent came back later.
