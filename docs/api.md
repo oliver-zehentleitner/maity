@@ -664,7 +664,7 @@ Response `200`, bounded and deterministic:
   "hub_version": "0.1.0",
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 600 },
+  "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
