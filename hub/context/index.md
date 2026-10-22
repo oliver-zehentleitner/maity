@@ -41,6 +41,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## H
 
 ## I
+- [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only
 
 ## J
 - [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel
@@ -55,6 +56,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## N
 
 ## O
+- [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
 
 ## P
 - [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`
