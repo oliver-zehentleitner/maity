@@ -232,6 +232,9 @@ the hub records it on the session.
 | Events inside the resume packet | 100, then `truncated: true` |
 | Options per request | 8 |
 | `wait` on the events endpoint | 55 seconds; a larger value is clamped |
+| Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
+| Mention pings by one membership | 30 per 10 minutes (§8.6) |
+| `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -446,6 +449,11 @@ Additional rules that are not scopes:
   call `/runner/*` and nothing else (§15.1). Who may create placements
   is `members:admin` plus ownership of the runner, or `agents:propose`
   under the project's `spawn_requests` (§15.6).
+- `instance:admin` is not a project scope and no role grants it: it
+  belongs to the human account that is the instance admin (§16), is
+  checked on `/admin/*` only, and opens no project, inbox or chat. An
+  agent or runner credential on `/admin/*` is `forbidden`, whatever its
+  scopes.
 - Capabilities are per membership and not enforced by the hub (policies,
   not rights, `context/trust.md`): V1 knows `tag` (may tag a release).
   They are shown in the resume packet and in the member view; the forge
@@ -739,7 +747,9 @@ returns for this caller with its defaults (`to=me`, `status=open`, §7),
 and `logo` (`available`, `etag`; §11.2) so a project switcher can show
 each project's image without reading every project.
 For an agent exactly one project, with `owner_id` on `member` and no
-`open_requests`. The dashboard re-reads `/me` for its counts after an
+`open_requests`. A human's `member` carries `instance_admin` (`true` or
+`false`, §16), so the dashboard shows the admin area only to the instance
+admin; an agent's `member` has no such field. The dashboard re-reads `/me` for its counts after an
 answer and on an interval.
 
 ### 5.2 `POST /me/resume` — the resume packet
@@ -1050,9 +1060,36 @@ member itself and for callers with `members:admin`, and never in the
 payload of `member_updated` (which goes to everyone). Humans have no `owner_id`, `harness`, `model`
 or `session`.
 
+**What an admin sees in addition.** For a caller with `members:admin`
+the member view — in the list and for one member — carries two more
+fields; for an agent's owner they are on that owner's own agents too.
+Nobody else gets them, and neither is ever in an event payload:
+
+```json
+{
+  "owner": { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer" },
+  "credentials": { "active": 2, "never_resumed": 0, "revoked_recent": 1,
+                   "last_used_at": "2026-10-21T13:39:30Z", "last_used_via": "signed" }
+}
+```
+
+- `owner` is the agent's human as an object (the human may not be a
+  member of the project, §7); `null` for a human member.
+- `credentials` counts the agent credentials of the membership (§10):
+  `active` (not revoked), `never_resumed` (active, `resumed_at` null),
+  `revoked_recent` (revoked within the 30 days §10 keeps listing them),
+  and the latest `last_used_at` with its `last_used_via` over the active
+  ones. Counts and times only — never an id list, a secret or a
+  verifier; the credentials themselves are `GET …/members/{id}/credentials`
+  under that endpoint's scope. `null` for a human member.
+
+With those two the list answers what an admin asks of it — role, kind,
+owner, presence, `joined_at`, `paused`, `last_seen_at` and the
+credentials — in one call. The fields every reader gets stay as above.
+
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null) |
+| `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -1112,6 +1149,7 @@ create the profile (§3.1).
   "report": null,
   "release": null,
   "contract": null,
+  "mentions": [],
   "created_at": "2026-10-21T09:12:00Z",
   "updated_at": "2026-10-21T13:20:00Z",
   "closed_at": null
@@ -1161,6 +1199,12 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | holder | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | holder | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
+
+`mentions` holds the resolved `@handle` mentions of the card's `body`
+(§8.6); the hub fills it on every write of `body`, a client never sends
+it. A mention newly added to the body pings that member with a
+`mentioned` event. `title` and the checkpoint's `last_step` and
+`next_step` are not scanned.
 
 A member id in `assigned_to`, an assignee or a claim's `holder` that is
 not an active member of the project is `invalid` with
@@ -1228,6 +1272,7 @@ Stored on the card as `report`:
 { "summary": "…", "head": "…", "branch": "…", "upstream": "…", "remote_head": "…",
   "pr": { "…": "" }, "pr_status": "found", "pr_unknown_reason": null,
   "verification": "signed", "reported_by": "agt-b", "session_id": "ses-b-0003", "reported_at": "…",
+  "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
   "mismatch": false }
@@ -1260,6 +1305,9 @@ Stored on the card as `report`:
   unverified.
 - A card may be reported more than once; the latest report is on the
   card, earlier ones are events (`task_reported`).
+- `mentions` are the resolved mentions of `summary` (§8.6), filled by
+  the hub; each mentioned member is pinged with a `mentioned` event,
+  once per report.
 
 The agent never types a hash or a PR number into a message; the report is
 the one place for refs, and the CLI is the one tool that fills it.
@@ -1417,6 +1465,7 @@ cursor was given or the cursor is below that seq. Agents compare
   "while_open": "wait",
   "needs_in_session": null,
   "ktw_ref": null,
+  "mentions": [],
   "status": "open",
   "answer": null,
   "created_at": "2026-10-21T13:20:00Z",
@@ -1437,7 +1486,8 @@ cursor was given or the cursor is below that seq. Agents compare
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
 | `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
 | `status` | `open`, `answered`, `withdrawn`. There is no deferred state: an unanswered request stays open; the inbox may push an entry down its list locally |
-| `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id"}` |
+| `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
+| `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -1518,7 +1568,8 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4) | `type`, `to`, `body`, `conversation_id?`, `task_id?` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
 | `task_checkpoint` | holder | the checkpoint |
@@ -1567,6 +1618,12 @@ Two sets per reader, because reading and waking are different things:
   its audience but does not end its next `wait`; a manager in `wait` is
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
+
+A mention wakes through this rule and no other: it puts `member:<id>` in
+the audience of the message or the `mentioned` event, so the mentioned
+member's `maity wait` returns it — a supervised session too, since the
+audience is then more than `all`. A member who mentions itself is not
+woken (its own echo).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -1632,11 +1689,14 @@ Scope `events:post`. Only `kind: message`:
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `chat`; `to` is `all`, `role:<role>`, or a member id; the
-audience is the addressee(s) and the sender. `chat` requires
+audience is the addressee(s) and the sender, plus every member
+`body` mentions (§8.6). `chat` requires
 `conversation_id` and is accepted only from one of the conversation's
-two parties (`forbidden` otherwise); its audience is the two parties.
-Status reports are not messages: the board shows status. Returns `201`
-with the event.
+two parties (`forbidden` otherwise); its audience is the two parties,
+and a mention never widens it (§8.6). The body carries no `mentions`
+(`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
+them. Status reports are not messages: the board shows status. Returns
+`201` with the event, `payload.mentions` filled.
 
 ### 8.5 Redaction
 
@@ -1655,6 +1715,100 @@ the hub emits `event_redacted` so that the one mutation the log allows is
 itself on record. The log is append-only; this is the one tombstone it
 offers, for a secret that got in anyway.
 
+### 8.6 Mentions
+
+A mention is `@handle` of an active member of the project, written in a
+text the hub scans. The hub resolves it at write time, stores it as data
+on the object, and — where the text is project-readable — pings the
+member. A client never supplies the list: a `mentions` field in any
+request body is `invalid` (`details.fields.mentions: "read_only"`).
+
+**Where the hub scans.**
+
+| Text | Resolved | Pings | Why |
+|---|---|---|---|
+| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience | the message is the conversation of the project; a mention is how one draws someone into it |
+| card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
+| report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
+| request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
+| chat (`type: chat`, §9) | no | no | below |
+| titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
+
+**The rule.** In a scanned text, a mention is `@` followed by a handle,
+taken as the longest run of `[a-z0-9-]` after the `@`:
+
+- **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
+  is no mention. A trailing `-` is not part of the run.
+- **Word boundary.** The character before `@` is the start of the text
+  or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
+  `a/@b` are no mention); the character after the run is the end of the
+  text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
+- **Not in code.** Inside an inline code span (backticks, as CommonMark
+  pairs them) or a fenced code block (a line starting with three or
+  more backticks or tildes, to its closing fence or the end of the text)
+  nothing is a mention: agents quote decorators, emails and shell there.
+  Nothing else of Markdown is interpreted; `\@` is no escape.
+- **Members only.** The handle must be that of exactly one active
+  membership of this project, human or agent. An unknown handle, a
+  removed member, a runner (never a member, §15.1) or a handle two active
+  members share (possible across owners, pending the accounts design)
+  stays plain text and is not reported back as an error — writing
+  `@someone` is not wrong.
+- **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
+  `@role:…` are never mentions, even if a member's handle is one of them
+  (the accounts design reserves such names, pending). Addressing a role
+  or everyone is the message's `to` (§8.4).
+- **Caps.** At most 10 distinct members and 50 occurrences per text
+  field; more is `invalid` with `details.fields.<field>:
+  "too_many_mentions"` and nothing is stored — fail loud rather than
+  ping the first ten and drop the rest silently.
+- **Rate.** At most 30 pings (one per mentioned member per write) by one
+  membership in 10 minutes; the write that would exceed it is
+  `rate_limited` with `Retry-After` and stores nothing. A self-mention,
+  a resolved mention that pings nobody (request, answer) and a mention
+  of a member already in the message's audience by `to` count nothing.
+
+**Stored shape**, on the object, oldest offset first:
+
+```json
+"mentions": [
+  { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 }
+]
+```
+
+`offset` and `length` count Unicode code points of the field's text as
+stored; `length` covers `@` and the handle. `handle` is the handle at
+write time; the link goes by `member_id`. Mentions are resolved once, at
+write time: a later rename or removal does not rewrite them, and a
+mention written before a member joined stays text. `field` is the field
+on the object (`body`, `summary`, `tried`, `text`). A message keeps them
+in `payload.mentions`, a card in `mentions`, a report in
+`report.mentions`, a request in `mentions` and its answer in
+`answer.mentions`. Redacting a message (§8.5) removes them with the
+payload.
+
+**Private chats stay private.** A chat (§9) has exactly two parties and
+nobody else reads it, admins included. A `@handle` in a chat is not
+resolved: the message carries `mentions: []`, nobody is added to the
+audience, nobody is pinged, and the dashboard renders it as plain text.
+Refusing the message was the alternative: rejected, because "ask
+@agent-c about it" is an ordinary sentence between a human and their
+agent, and a refusal would teach people to misspell handles. A link
+that pings nobody was the other: rejected, because a rendered mention
+promises the member was told. Whoever wants the third member involved
+posts a project message, which is visible as what it is.
+
+**Rendering.** Clients render each stored mention as a link to the
+member (the dashboard's member card), taking the text at
+`offset`/`length` and nothing typed by the writer; a stored mention
+whose text does not match `@<handle>` at its offset is rendered as text.
+The dashboard's `@` picker offers the handles of `GET
+/projects/{slug}/members` (§6.2), which the writer may already read;
+there is no search endpoint, so a mention reveals no member to a caller
+who cannot list members. Agents get mentions as data: in `payload` of
+the `message` and `mentioned` events through `wait` and the resume
+packet's `events`, and on the card, report and request they read.
+
 ## 9. Conversations
 
 A direct conversation between a human and an agent profile they own,
@@ -1664,7 +1818,7 @@ parties as the audience — nobody else, admins included.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/conversations` | human | the caller's owned agents in this project with `{agent_id, last_message_at, unread}`; for an agent, its one conversation |
+| `GET /projects/{slug}/conversations` | human | the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one conversation |
 | `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>`, `limit`; oldest first; `{items, cursor}` |
 | `POST /projects/{slug}/conversations/{agent_id}/messages` | the same two | `{body}`; `201` with the message |
 
@@ -1672,8 +1826,29 @@ Message shape:
 
 ```json
 { "id": "evt-4237", "seq": 4237, "conversation_id": "agt-a", "from": "hum-maintainer", "to": "agt-a",
-  "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z" }
+  "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z",
+  "mentions": [] }
 ```
+
+`mentions` is always `[]`: a `@handle` in a chat is plain text, never
+resolved, never a ping, and never widens the two-party audience (§8.6).
+
+`last_message` in the list is the conversation's newest message as a
+preview, or `null` when there is none:
+
+```json
+{ "agent_id": "agt-a", "last_message_at": "2026-10-21T13:10:00Z", "unread": 1,
+  "last_message": { "seq": 4237, "from": "hum-maintainer",
+                    "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z",
+                    "redacted": false } }
+```
+
+`body` is cut at 200 characters (Unicode code points, never inside
+one; a cut body ends there, the full text stays at `…/messages`). A
+redacted last message shows `body: null` and `redacted: true`. The
+preview has the list's audience — the agent's owner, or the agent for
+its own conversation — and is text for the list: mentions in it are not
+resolved again, and it carries none.
 
 `delivered_at` is the first time the message was returned to the
 recipient — to a session of the agent through `wait`, `resume` or this
@@ -2135,6 +2310,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/admin/users` | `instance:admin`, human only | 16 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
@@ -2157,7 +2333,9 @@ revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
 rule (§11.1) with the image and export checks (§11.2, §11.3), an image
 upload by a human only and by its sniffed type, the Keep the Why family's
-path rule and caps; for runners (§15):
+path rule and caps, mentions resolved by the hub against active members
+with their caps and rate (§8.6) and a chat never widened by one,
+`instance:admin` for `/admin/*` (§16); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
@@ -2967,3 +3145,71 @@ each is written so that either answer fits.
 | 6 — what revoking a runner's key does to its agents | `POST /runners/{id}/revoke` (§15.3): the hub stops nothing |
 | 7 — the CLI's minimum Python version | `maity runner …` (§13) |
 | 8 — a CLI login for humans | `maity placement …` (§13) is signed with an agent credential; humans use the dashboard |
+
+## 16. Instance administration
+
+The hub has one instance admin role above every project: the person who
+runs the instance, not a member of anything. It is the scope
+`instance:admin` (§2.3), held by a human account and by nothing else.
+
+**Who holds it today.** The human `maity-hub owner create` made first —
+the earliest-created human account — is the instance admin; every other
+human is not. `GET /me` says which (`member.instance_admin`, §5.1). How
+further admins are named (a flag on the account, `maity-hub admin grant
+--handle X` and `revoke`, an existing admin granting in the dashboard,
+the last admin revocable only from the server) is pending the accounts
+design, which proposes exactly this and sets the flag on the first human
+in its migration — so nothing changes for the instance that exists
+today.
+
+**What it is not.** Instance admin opens no project, no inbox, no chat
+and no event log: a project is read only through a membership. The admin
+endpoints answer metadata about accounts, never content.
+
+### 16.1 `GET /admin/users`
+
+Scope `instance:admin`, human only — a cookie session (§2.1); an agent or
+runner credential is `forbidden`. The humans of the instance, paged
+(§1.4), ordered by `handle`.
+
+| Query | Meaning |
+|---|---|
+| `q` | 1–64 characters; case-insensitive substring of `handle` or `display_name`; otherwise `invalid` |
+| `disabled` | `true` or `false`; omitted: both |
+| `limit`, `cursor` | §1.4 |
+
+```json
+{
+  "items": [
+    { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
+      "instance_admin": true, "disabled": false,
+      "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
+      "last_seen_at": "2026-10-22T11:40:00Z",
+      "memberships": 2, "agents": 7 }
+  ],
+  "next_cursor": null
+}
+```
+
+- `last_login_at` is the time of the human's latest successful `POST
+  /auth/login`, `null` when none; `last_seen_at` is the one every call
+  renews (§2.1).
+- `memberships` counts the human's own active project memberships;
+  `agents` the agent profiles they own (§6.3). Counts only: which
+  projects, which agents and what is in them is not part of this answer.
+- `disabled` is `false` for every account until the accounts design adds
+  suspension (`status: suspended` there, set by an instance admin, which
+  ends the account's sessions and refuses its login); the filter and the
+  field exist now so that the list does not change shape (pending the
+  accounts design). There is no endpoint that disables an account yet.
+- Never in an item: a password or its hash, a session or CSRF token, a
+  credential, a join or pairing code, a briefing, any project content.
+  The email address is not part of V1; the accounts design shows it to
+  instance admins (pending).
+- The read is not an event (there is no project to put it in); the
+  accounts design's instance audit log records admin actions, not reads
+  (pending).
+
+The name of the path follows this contract; the accounts design's draft
+lists the same read as `/admin/humans` (pending the accounts design,
+which takes this name or keeps both).
