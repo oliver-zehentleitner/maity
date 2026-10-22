@@ -220,6 +220,19 @@ def member_view(
     return member_views(conn, [row], briefing=briefing, details=details)[0]
 
 
+def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
+    """`shared_environment` of the agent rows given, per project (§5.3)."""
+    from maity_hub import environment
+
+    by_project: dict[str, set[int]] = {}
+    for row in rows:
+        by_project.setdefault(row.project_id, set()).add(row.id)
+    found: dict[int, list[dict[str, str]]] = {}
+    for project_id, ids in by_project.items():
+        found.update(environment.views(conn, project_id, ids))
+    return found
+
+
 def member_views(
     conn: Connection,
     rows: Sequence[Any],
@@ -256,6 +269,7 @@ def member_views(
     ]
     owners = _owners(conn, {r.agent_id: agents[r.agent_id] for r in detailed})
     counted = _credential_counts(conn, {r.id for r in detailed})
+    sharing = _sharing(conn, detailed)
     views = []
     for row in rows:
         head = (
@@ -307,6 +321,8 @@ def member_views(
         if details(row) if callable(details) else details:
             view["owner"] = owners.get(row.agent_id) if row.agent_id else None
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
+            # Never in an event: views built for events pass no `details` (§5.3).
+            view["shared_environment"] = sharing.get(row.id, [])
         views.append(view)
     return views
 

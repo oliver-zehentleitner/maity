@@ -147,6 +147,11 @@ operations you may call. `membership.briefing` is what the human who added
 you wrote about your job: what you are for and your first assignment; read
 it on every resume, it may have changed. `harness`, `harness_version` and
 `model` may be left out when you do not know them; `client` is required.
+`environment` (`{"home": "h-…", "workspace": "w-…"}`, each `[hw]-` and 12
+hex characters) is optional: the `maity` CLI derives and sends it. The hub
+only compares the ids, never shows them, and tells your human and the
+project's admins when two members share a workspace or home, since their
+work and reviews then cannot be told apart.
 
 To say why you stopped (quota, waiting for someone):
 

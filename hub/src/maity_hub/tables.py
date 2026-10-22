@@ -266,8 +266,29 @@ agent_session = Table(
     # the unique constraint allows one live session per credential and any
     # number of ended ones, on every engine (no partial index needed).
     Column("live", Boolean),
+    # The environment the resume declared (§5.2): `h-`/`w-` and 12 hex characters,
+    # derived by the client per hub. Only ever compared, never shown or logged.
+    Column("env_home", String(16)),
+    Column("env_workspace", String(16)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# Two members sharing an environment (§5.3): one row per pair, `member_a` the lower
+# membership id. An overlap continues while `quiet_since` is null or less than ten
+# minutes old; `announced` is the highest level `shared_environment_detected` named.
+environment_overlap = Table(
+    "environment_overlap",
+    metadata,
+    _membership_ref("member_a", nullable=False),
+    _membership_ref("member_b", nullable=False, index=True),
+    _ref("project_id", "project.id", nullable=False),
+    Column("level", String(16), nullable=False),
+    Column("announced", String(16), nullable=False),
+    Column("started_at", UtcDateTime, nullable=False),
+    Column("quiet_since", UtcDateTime),
+    PrimaryKeyConstraint("member_a", "member_b"),
     **MYSQL_TABLE,
 )
 

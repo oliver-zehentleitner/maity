@@ -159,12 +159,17 @@ def emit(
 
 
 SEE_ALL_ROLES = ("owner", "admin")
+# Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
+# environment, which only the humans responsible may know.
+HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
 
 
 def readable_by(row: Any, membership: Any, principal: str) -> bool:
     """§8.2: audience `all`, `member:<id>`, `role:<role>`, or one's own; owners and
     admins read every event of the project."""
     audience = row.audience or []
+    if row.kind in HUMANS_ONLY_KINDS and membership.agent_id is not None:
+        return False
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
