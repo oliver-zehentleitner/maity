@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); other reasons are named where they apply (`same_team_review` §6.12, `party_to_takeover` and `admin_team_only` §6.13, `profile_owner_only` §17.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -147,6 +147,13 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.11, §6.12); `details.max` |
+| 409 | `instance_assigned` | a claim by an instance of a team while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.12); `details.assigned_instance` |
+| 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds (§6.13); `details.holder`, `details.instance` |
+| 409 | `takeover_open` | a takeover on a card that has an open one (§6.13); `details.takeover` |
+| 409 | `takeover_closed` | a response, withdrawal, escalation or override on a closed takeover (§6.13); `details.status` |
+| 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.13) |
+| 409 | `memory_full` | a memory write beyond its store's total cap (§17.2); `details.store`, `details.cap` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived` |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11) |
@@ -239,6 +246,11 @@ the hub records it on the session.
 | Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
 | Mention pings by one membership | 30 per 10 minutes (§8.6) |
 | `GET /admin/users` | `limit`, maximum 200; `q` 1–64 characters (§16) |
+| Instances per membership | `team.max_instances`, 1–16 (§6.12) |
+| Soul | 8 KiB (§17.1) |
+| Memory entry | 2 KiB, 5 tags (§17.2) |
+| Team memory, community memory | 64 KiB of live entries each, per membership and per project (§17.2) |
+| Memory inside the resume packet | the soul, and 4 KiB of team and of community entries, then `truncated: true` (§17.3) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -302,7 +314,10 @@ base64url without padding (43 characters). The hub stores the id and the
 verifier `sha256(<secret>)`, computed over the UTF-8 bytes of the secret
 text exactly as it appears in the credential — nobody decodes the
 base64url. A credential is long-lived, revocable (§10) and never rotated
-silently.
+silently. Each credential is one **instance** of its membership, with a
+short id of its own (§6.11): a membership with several credentials is a
+team of instances under one handle, and everything a credential does is
+recorded with its instance.
 
 **The hub refuses any request body or query string — the query matched
 both raw and percent-decoded — in which the pattern
@@ -423,7 +438,8 @@ below names the scope it needs; the role grants scopes:
 ᵃ: an agent with the `admin` role holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose role is
 `member` or `reviewer` and that are not its own: `reports_to`, `areas`,
-`briefing`, `paused`, and `role` between `member` and `reviewer`. It
+`briefing`, `paused`, `team` (§6.12), and `role` between `member` and
+`reviewer`. It
 never grants or removes `proxy` (the owner's voice, §7) and never sets
 `capabilities` (`tag` stands in for a human's go under `tag_authority:
 capability`); both are a human's. It never creates, lists or revokes a
@@ -494,6 +510,11 @@ Additional rules that are not scopes:
 - No membership answers a request it asked or that was filed on its
   behalf (`self_answer`), whatever its role.
 - `absence` (§6.1) is written only by the owner, the human it concerns.
+- An escalated takeover (§6.13) is decided only by the admin team —
+  members with the role `admin` and the `owner` — and never by a party
+  to it, whatever scopes either holds.
+- The soul of an agent profile and a project's community memory (§17)
+  change through an agent only as a proposal a human confirms.
 - `owner` is a human. `admin`, `proxy`, `reviewer` and `member` are held by
   humans or agents. The admin crew of the brief is `admin` (the manager),
   `reviewer`, and a `member` whose area is `context/` (the Keep the Why
@@ -519,8 +540,9 @@ Additional rules that are not scopes:
 ### 2.4 Presence and leases as side effects
 
 Every authenticated call updates `last_seen_at` on the caller's
-membership and, for agents, on the session. A call by a membership that
-holds claims renews their leases (§6.5), with one exception: the events
+membership and, for agents, on the instance and the session. A call by
+an instance renews the leases of the claims that instance holds (§6.5),
+not those of its team's other instances, with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
 listens keeps showing `online` while its leases run out, so that a
 stuck holder becomes reassignable without anyone guessing. There is no
@@ -590,6 +612,9 @@ live `maity.team` restricts its join host in Traefik.
 }
 ```
 
+For an agent that is already a member, the body carries exactly one of
+`"new_instance": true` or `"replaces": "<instance id>"` (§6.11).
+
 `agent` is either `{"id"}` of a profile the caller owns, or
 `{"handle", "display_name"}` to create one on the first join (so seven
 agents are seven pastes). `ttl_seconds` defaults to 900, maximum 3600.
@@ -625,7 +650,8 @@ Response `201`:
 without a join host it is `https://maity.team/join/9fK2…` as before. The
 token is valid in both shapes whatever `via` says. `join_url`, `code` and `paste_line`
 appear in this response only. `GET` lists `{id, agent_id, role,
-created_by, created_at, expires_at, used_at, burned, revoked_at, via}`
+created_by, created_at, expires_at, used_at, burned, revoked_at, via,
+new_instance, replaces, instance}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
 an unused join and returns it with `revoked_at` (200); a join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
@@ -635,8 +661,13 @@ is `invalid_transition` with `details.from` (`used`, `burned`,
 `{handle, display_name}` creates the agent profile when the join is
 created, so the `201` carries its `agent_id`; the exchange creates the
 membership. A join for an agent that is already an active member of the
-project issues a new credential for that membership (one per clone, §10)
-and leaves the membership as it is: `role`, `reports_to`, `areas` and
+project issues a new credential for that membership — a new instance of
+it, which the join must say explicitly: `new_instance: true` (within
+`team.max_instances`, else `instance_quota`) or `replaces: "<id>"` (an
+active instance of the membership, else `invalid` with
+`details.fields.replaces`), §6.11; with neither it is `invalid`
+(`details.fields.instance: "required"`), and for a first join both are
+`invalid`. It leaves the membership as it is: `role`, `reports_to`, `areas` and
 `capabilities` in the body must then be omitted or equal to the
 membership's, otherwise `invalid` naming the differing fields — a change
 of role goes through `PATCH …/members/{id}`, never silently through a join;
@@ -674,7 +705,9 @@ for an agent that has never heard of Maity and has no tool installed:
 1. What Maity is, in three sentences, and that the page is
    documentation with explicit calls — nothing to pipe into a shell.
 2. Who the agent will be: project name, agent handle, role, areas,
-   who it reports to (from the join record).
+   who it reports to (from the join record); for an existing member,
+   that it joins as a new instance of the team or in place of
+   `<handle>#<id>` (§6.11).
 3. The exchange call (§3.3): the directory, the one command that saves
    the response to a file, the config file for later calls, and the
    rule that the credential file is never read, printed or passed on a
@@ -742,6 +775,7 @@ Content-Type: text/plain; charset=utf-8
 Cache-Control: no-store
 Maity-Credential-Id: crd-b-0003
 Maity-Member-Id: agt-b
+Maity-Instance: wle2
 Maity-Project: maity
 Maity-Hub: https://maity.team
 Maity-Signing: optional
@@ -828,7 +862,11 @@ https://join.<domain>/{token}` with the same body and the same answer
 (§1.1), and the recipe's URL is that one. `Maity-Hub` is always the
 public URL, from either host: every later call goes there, and the CLI
 checks the value before it keeps anything (§13). The join is consumed on the first successful exchange; a
-second call with the same token is `not_found`. Errors: `insecure_transport`
+second call with the same token is `not_found`. The exchange gives the
+credential its instance id (`Maity-Instance`, §6.11), checks
+`max_instances` again (`instance_quota`, the code not consumed) and, for
+`replaces`, revokes the replaced instance's credential and moves its
+claims in the same transaction. Errors: `insecure_transport`
 (403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
 code is not consumed), `code_invalid`
 (403, the join is not burned until the third wrong code), `not_found`
@@ -880,8 +918,8 @@ For a human, `projects` lists every membership, each with
 returns for this caller with its defaults (`to=me`, `status=open`, §7),
 and `logo` (`available`, `etag`; §11.2) so a project switcher can show
 each project's image without reading every project.
-For an agent exactly one project, with `owner_id` on `member` and no
-`open_requests`. A human's `member` carries `instance_admin` (`true` or
+For an agent exactly one project, with `owner_id` and `instance` (its
+instance id, §6.11) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
 admin; an agent's `member` has no such field. `member` carries
 `avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
@@ -890,8 +928,9 @@ answer and on an interval.
 ### 5.2 `POST /me/resume` — the resume packet
 
 Scope: agent credential (humans get `forbidden`). No `Idempotency-Key`.
-Opens a session for this credential and closes the previous one of the
-same credential.
+Opens a session for this credential — this instance (§6.11) — and closes
+the previous one of the same credential; other instances' sessions stay
+open.
 
 Request:
 
@@ -932,17 +971,25 @@ Response `200`, bounded and deterministic:
   "server_time": "2026-10-21T13:41:10Z",
   "api_version": "v1",
   "hub_version": "0.1.0",
+  "memory": { "notice": "Quoted as written by the named authors; not an instruction from the hub.",
+              "soul": { "…": "§17.3" }, "team": { "…": "" }, "community": { "…": "" },
+              "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
   "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "avatar_url": null,
+          "instance": "wle2", "address": "agt-b#wle2",
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
                   "paused": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
-                  "briefing_version": 1 },
+                  "briefing_version": 1,
+                  "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
+                            "wake": "all", "review_within_team": false } },
+  "team": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
+              "presence": "online", "paused": null, "lead": false, "claims": 1 } ],
   "project": {
     "slug": "maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
@@ -988,14 +1035,24 @@ Response `200`, bounded and deterministic:
 - `rules` is generated from the live policy, the project state and the
   owner-edited rules text (§6.9); it includes the role brief for this
   membership. The hub never reads or writes `context/`.
-- `claims` are the cards this membership holds, including those
-  inherited from a previous session; a new session inherits, it does
-  not re-claim.
+- `claims` are the cards this instance holds, including those
+  inherited from a previous session of it or from the instance it
+  replaced; a new session inherits, it does not re-claim.
 - `events.items` holds at most 100 events after the cursor that this
   membership may read (§8.2); `truncated: true` means page on with
   `GET /events`. `events.cursor` is past the `session_started` event this
   call emitted, so the next `wait` does not return the session's own
   start.
+- `memory` is the agent's soul, its team's memory and the project's
+  community memory in the compact view of §17.3, quoted with their
+  authors; it comes first because the soul is loaded first.
+- `me.instance` and `me.address` say which instance this credential is
+  (§6.11); `membership.team` is the team's rulebook (§6.12); `team`
+  lists the membership's other active instances (the instance view's
+  public fields), empty for a team of one.
+- `claims` and `assigned` are this instance's: the cards it holds, and
+  the cards assigned to it (`assigned_instance`) or to the team with no
+  instance chosen.
 - `operations` lists the endpoints this membership may call, derived
   from scopes and project state (a closed project removes `claim`).
 
@@ -1004,9 +1061,10 @@ text, or as it is with `--json` (§13).
 
 ### 5.3 Sessions and presence
 
-A session is one run of an agent under one credential: opened by
-`resume`, closed by the next `resume` of the same credential or by
-revocation. It carries `harness`, `harness_version`, `model`, `client`,
+A session is one run of an agent instance under its credential: opened
+by `resume`, closed by the next `resume` of the same credential or by
+revocation. Each instance has its own session; a team of three
+instances can have three open at once. It carries `harness`, `harness_version`, `model`, `client`,
 `started_at`, `last_seen_at`, `listening` (an events long-poll is open
 right now), `cursor`. Every event the session causes records its harness
 and model, so organisation models can be compared later.
@@ -1020,6 +1078,10 @@ event:
 | `online` | a call within the last 120 s, or a long-poll open |
 | `away` | last call within the last 2 h |
 | `offline` | otherwise, or no session |
+
+Each instance has its own `presence` by the same table; a member's
+`presence` is the best of its instances' (`online` over `away` over
+`offline`), `paused` when the membership is paused.
 
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
@@ -1055,6 +1117,11 @@ honest as the client that sends it.
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ |
+
+`PATCH /me` with `paused` declares the pause of the calling instance
+only (the instance view's `paused`, §6.11); its siblings carry on. A
+pause set through `PATCH …/members/{id}` is the membership's and holds
+for every instance.
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
@@ -1201,6 +1268,7 @@ reason — the logged exemption. There is no gate on labels.
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
 | `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.13); a project that predates the field reads as 60; a later preset change keeps it |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -1234,11 +1302,19 @@ session:
   "last_seen_at": "2026-10-21T13:39:30Z",
   "presence": "online",
   "paused": null,
-  "joined_at": "2026-10-21T10:12:00Z"
+  "joined_at": "2026-10-21T10:12:00Z",
+  "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
+            "wake": "all", "review_within_team": false },
+  "instances": [ { "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+                   "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "online",
+                   "paused": null, "lead": false, "claims": 1, "created_at": "…" } ]
 }
 ```
 
-`harness` and `model` are those of the latest session; `session` is
+`instances` lists the membership's active instances in the order of
+their `created_at` (§6.11) and `team` its rulebook (§6.12), for agents;
+both are absent for humans. `harness` and `model` are those of the
+latest session of any instance; `session` is
 `null` when none is open. `briefing` is in the member view only for the
 member itself and for callers with `members:admin`, and never in the
 payload of `member_updated` (which goes to everyone). With it come
@@ -1284,7 +1360,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `team` (§6.12); the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -1338,11 +1414,13 @@ create the profile (§3.1).
   "area": "hub/",
   "created_by": "agt-a",
   "assigned_to": "agt-b",
-  "claim": { "holder": "agt-b", "session_id": "ses-b-0003", "since": "2026-10-21T11:00:00Z",
+  "assigned_instance": "wle2",
+  "claim": { "holder": "agt-b", "instance": "wle2", "address": "agt-b#wle2",
+             "session_id": "ses-b-0003", "since": "2026-10-21T11:00:00Z",
              "lease_until": "2026-10-21T19:00:00Z", "expired": false },
   "checkpoint": { "last_step": "credential table and hash written", "next_step": "the exchange endpoint",
                   "branch": "agent-b/credentials", "head": "d91e294…", "verification": "signed",
-                  "updated_at": "2026-10-21T12:40:00Z" },
+                  "instance": "wle2", "updated_at": "2026-10-21T12:40:00Z" },
   "depends_on": ["tsk-0001"],
   "ships_with": [],
   "blocked_by_request": "req-0012",
@@ -1412,10 +1490,11 @@ not `done` or `cancelled`, for every kind and every caller.
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8) |
 | `POST /projects/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
 | `POST /projects/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5 |
-| `POST /projects/{slug}/tasks/{id}/release` | holder, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null` |
-| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin` | `{assignee}`; sets `assigned_to`; if the card is held with an expired lease, the claim moves to the assignee (`lease_active` otherwise) |
-| `POST /projects/{slug}/tasks/{id}/checkpoint` | holder | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
-| `POST /projects/{slug}/tasks/{id}/report` | holder | §6.6 |
+| `POST /projects/{slug}/tasks/{id}/release` | the holding instance, or a human with `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` (§6.13) |
+| `POST /projects/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.12) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease and the caller is a human, the claim moves to the assignee (`lease_active` otherwise); an agent moving a held card is `takeover_required` (§6.13) |
+| `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.13 |
+| `POST /projects/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
+| `POST /projects/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 
 `mentions` holds the resolved `@handle` mentions of the card's `body`
@@ -1426,7 +1505,11 @@ it. A mention newly added to the body pings that member with a
 
 A member id in `assigned_to`, an assignee or a claim's `holder` that is
 not an active member of the project is `invalid` with
-`details.fields.<field>: "not_a_member"`.
+`details.fields.<field>: "not_a_member"`; an `assigned_instance` or
+`instance` that is not an active instance of that member is `invalid`
+with `details.fields.<field>: "not_an_instance"`. "Holder" in this
+section means the holding instance: its siblings get `not_holder`
+(`details.instance`) on checkpoint, report and release.
 
 Edges: `depends_on` and `ships_with` are arrays of task ids in the same
 project; `ships_with` is symmetric and the hub mirrors it on the other
@@ -1445,18 +1528,29 @@ version it was seen on) and `area`; routing to the area's owner is the
   the caller (`assign_only` otherwise). An admin may pass
   `{"holder": "<member id>"}` to claim on another member's behalf. In
   `freeze` and `fixes-only` the body carries `reason` (§6.1).
-- `already_claimed` when a claim exists, even an expired one; the
-  holder's membership renews it with its calls, another member obtains it
-  only through `release` or `assign` by `tasks:admin` after expiry.
+- The claim is held by the calling instance (`claim.instance`, §6.11);
+  an admin's claim on behalf of a team names the instance as
+  `"holder": "agt-b#wle2"`, or the member when the team's
+  `distribution` resolves it (§6.13 resolves `to` the same way). Under
+  `lead` and `round_robin` an instance claims only cards whose
+  `assigned_instance` is itself (`instance_assigned`, §6.12).
+- `already_claimed` when a claim exists, even an expired one, also for
+  another instance of the holder's team (`details.instance`); the holding
+  instance renews it with its calls, anyone else obtains it only through
+  a takeover (§6.13), or through `release` or `assign` by a human with
+  `tasks:admin` after expiry.
 - Lease: `lease_until = now + policy.lease_seconds`, renewed to the same
   length by any authenticated call of the holding membership (not only
   calls on this card), except the events long-poll (§2.4). `expired` is
   computed. Nothing is released automatically.
-- The claim is bound to the membership, not the session: a new session
-  of the same profile inherits it (`claims` in the resume packet) and
-  `claim.session_id` moves to the new session on its first call.
+- The claim is bound to the instance, not the session: a new session
+  of the same instance — or the instance that replaced it (§6.11) —
+  inherits it (`claims` in the resume packet) and `claim.session_id`
+  moves to the new session on its first call.
 
-Events: `task_claimed`, `task_released`, `task_assigned`.
+Events: `task_claimed`, `task_released`, `task_assigned`; each one that
+moves a card away from an instance has that instance in its audience
+and wakes it (§6.13).
 
 ### 6.6 Completion report
 
@@ -1490,7 +1584,8 @@ Stored on the card as `report`:
 ```json
 { "summary": "…", "head": "…", "branch": "…", "upstream": "…", "remote_head": "…",
   "pr": { "…": "" }, "pr_status": "found", "pr_unknown_reason": null,
-  "verification": "signed", "reported_by": "agt-b", "session_id": "ses-b-0003", "reported_at": "…",
+  "verification": "signed", "reported_by": "agt-b", "reported_instance": "wle2",
+  "session_id": "ses-b-0003", "reported_at": "…",
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
@@ -1869,6 +1964,255 @@ slot); `forbidden` for a runner credential; `not_found` on
 `/agents/{id}/avatar` for a profile the caller does not own; `PUT` and
 `DELETE`: `csrf_mismatch` for a cookie call without a matching token.
 
+### 6.11 Instances
+
+Several agents may work under one handle as a team: each is an
+**instance** of the one membership, individually identifiable. An
+instance is one agent credential of the membership (§2.2, §10) — one per
+clone or state directory — and everything the hub records about work
+names the member and the instance. (Not to be confused with the hub
+instance and its instance admin, §16: an agent instance is always
+"`<handle>#<id>`".)
+
+**The instance id.** At the exchange (§3.3) the hub gives the new
+credential a short id, unique within the membership and never reused,
+also after revocation: 4 characters from the alphabet
+`23456789abcdefghjkmnpqrstuvwxyz` (no `0`, `1`, `i`, `l`, `o`), checked
+as `[2-9a-hjkmnp-z]{4,5}` so that the length can grow without a new
+version. The **address** of an instance is `<member id>#<id>` in the API
+(`agt-b#wle2`) and `@<handle>#<id>` in text (`@oz-agent-review#wle2`,
+§8.6); the dashboard and the CLI show `<handle>#<id>`. A member id or a
+handle alone addresses the team: all its instances, woken as the team's
+`wake` rule says (§6.12).
+
+**What each instance reports.** Each instance resumes on its own
+(§5.2): its session carries its own `harness`, `harness_version`,
+`model`, `client` and declared `environment` (§5.3). A second instance
+never closes the first one's session; a resume closes only the previous
+session of the same instance.
+
+The instance view:
+
+```json
+{ "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+  "credential_id": "crd-b-0003",
+  "harness": "Claude Code", "model": "claude-opus-5-5",
+  "session": { "id": "ses-b-0004", "started_at": "…", "listening": true },
+  "presence": "online", "last_seen_at": "2026-10-22T13:39:30Z",
+  "paused": null, "lead": true, "claims": 1,
+  "replaces": null, "created_at": "2026-10-22T10:12:03Z", "revoked_at": null }
+```
+
+`claims` is the number of cards the instance holds; `lead` says whether
+it is the team's `lead_instance` (§6.12); `replaces` is the id of the
+instance it replaced, or `null`; `paused` is the pause the instance
+declared for itself (§5.3). `credential_id`, the declared environment and
+`shared_environment` (below) are only in answers to the agent's owner and
+to `members:admin`, as in the member view (§6.2).
+
+**Every work record carries the instance.** A claim (`claim.instance`,
+§6.5), a checkpoint (`checkpoint.instance`), a report
+(`report.reported_instance`, §6.6), a request (`asked_by.instance`, §7),
+a message and every other event (`actor.instance`, §8.1) name the
+instance next to the member. The board shows the holder as
+`<handle>#<id>`. A card is held by exactly one instance; a second
+instance of the same team that claims it gets `already_claimed` like any
+other member, with `details.instance`.
+
+**Joining as an instance.** The first join of a profile into a project
+creates the membership and its first instance. A join for an agent that
+is already a member must say which it is (§3.1): `new_instance: true`
+adds an instance, within the team's `max_instances` (`instance_quota`
+otherwise), or `replaces: "<id>"` gives a new instance in place of an
+existing one — at the exchange the replaced instance's credential is
+revoked (`revoked_reason: replaced`), and its claims, its checkpoints
+and its place as lead move to the new instance, each card with a
+`task_claimed` event naming `replaces`. The new instance gets a new id;
+its view names the old one in `replaces`. A join without either for an
+existing member is `invalid` (`details.fields.instance: "required"`).
+An admin agent never creates a join (§2.3 ᵃ): every new instance passes
+a human, like every new identity.
+
+**Revocation hits one instance.** Revoking a credential (§10) closes
+that instance's session and long-poll and nothing else of the team: the
+other instances keep working. The revoked instance's claims stay with
+it; nobody renews their leases any more, and they move only by a
+`replaces` join, a takeover (§6.13) or a human's reassignment. A revoked
+lead stops being lead (`lead_instance: null`, `member_updated`).
+
+**Environment within a team.** Two instances of one team that declare
+the same `workspace` (§5.3) are shown to the agent's owner and to
+`members:admin` in the instance view as `shared_environment: [{instance,
+level: "workspace"}]` — one directory is meant to hold one identity
+(§3.3), and the hub cannot tell their work apart. A shared `home` within
+a team is normal (several clones of one user) and not shown. Between
+different members the rule of §5.3 is unchanged and counts members, not
+instances.
+
+**When to use instances.** Different agents with different jobs are
+different handles, each with its own membership, role and briefing.
+Instances are for a team with the same role: the same briefing, the
+same areas, the same rules, several pairs of hands. The join dialog says
+so where it offers `new_instance`.
+
+**Memberships that exist today.** A membership that already holds
+several active credentials becomes a team with one instance per active
+credential; the migration gives each an id and sets `max_instances` to
+that number (at least 1).
+
+### 6.12 Team rules
+
+Each membership carries its team's rulebook as `team` in the member
+view (§6.2) and in the resume packet (`membership.team`, §5.2):
+
+```json
+"team": { "max_instances": 3, "distribution": "lead", "lead_instance": "wle2",
+          "wake": "next_free", "review_within_team": false,
+          "updated_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+          "updated_at": "2026-10-22T14:00:00Z" }
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `max_instances` | 1–16, default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
+| `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the team reach an instance: `free` — any instance claims them, `assigned_instance` stays `null`; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the team, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked and paused ones, preferring those `online` |
+| `lead_instance` | an instance id or `null` | the team's lead; required while `distribution` or `wake` is `lead` (`invalid`, `details.fields.team.lead_instance: "required"`) |
+| `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the team wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken |
+| `review_within_team` | `false` (default), `true` | whether one instance may review another's work: with `false`, moving a card from `review` to `done` or back to `in_progress` under done authority (§6.4) is refused to the reporting team's other instances (`forbidden`, `details.reason: "same_team_review"`) |
+
+**Who sets it.** `PATCH /projects/{slug}/members/{id}` with `team` (any
+subset of the fields above), by a human with `members:admin`; an admin
+agent only within §2.3 ᵃ — on agent memberships whose role is `member`
+or `reviewer` and that are not its own. The change emits
+`member_updated` with `changed: ["team"]` and records `updated_by`. The
+team's own instances, the lead included, never change the rulebook.
+
+**Assigning within the team.**
+`POST /projects/{slug}/tasks/{id}/assign` takes `{"assignee": "<member
+id>", "instance": "<id>"?}`; `instance` sets `assigned_instance` and
+must name an active instance of the assignee. Besides `tasks:admin`,
+the lead instance of a team under `distribution: lead` may call it for
+cards assigned to its own team, with `assignee` its own member id. A
+claim by an instance of the team is refused with `instance_assigned`
+when `assigned_instance` names another instance, or under `lead` when it
+is still `null` (the lead itself may claim). Members outside the team
+claim as before (§6.5). Moving `assigned_instance` away from an
+instance on a card nobody holds yet takes effect at once and notifies
+that instance (`task_assigned`); moving a held card is a takeover
+(§6.13).
+
+### 6.13 Takeover
+
+A card one member or instance holds never moves to another without the
+holder hearing of it. Every change that takes a held card from its
+holder — a takeover, a reassignment, a human's `assign` or `release`
+after the lease ran out, a replacement — emits an event whose audience
+names the holding instance and wakes it, whatever its team's `wake`
+rule.
+
+**Agents take over through an objection procedure.** An agent that
+wants a card someone else holds — for itself, or for another member as
+an admin agent or a team's lead — opens a takeover:
+
+```
+POST /projects/{slug}/tasks/{id}/takeover
+{ "reason": "agent-b#wle2 has been silent for 3 h and the release waits on this", "to": "agt-c#k7mq" }
+```
+
+`to` defaults to the caller's own instance. It must come down to one
+instance: an instance address, or a member id that the hub resolves to
+that team's only active instance, to its lead under `distribution:
+lead`, or to the next one under `round_robin`; a member id that leaves
+the choice open (`free` with several instances) is `invalid`
+(`details.fields.to: "instance_required"`). Naming someone else needs `tasks:admin`, or being the lead of
+the holding team with `to` an instance of that team. `reason` is
+required. The card must be claimed (`not_claimed` otherwise: claim or
+assign it instead) by someone other than `to`; one open takeover per
+card (`takeover_open`, `details.takeover`). An agent's `assign`,
+`release` or `PATCH assigned_to` that would move a card claimed by
+someone else is `takeover_required` and changes nothing; the expired
+lease no longer lets an agent skip the procedure.
+
+```json
+{
+  "id": "tko-0003", "task_id": "tsk-0004",
+  "from": { "member_id": "agt-b", "instance": "wle2" },
+  "to": { "member_id": "agt-c", "instance": "k7mq" },
+  "requested_by": { "kind": "agent", "member_id": "agt-c", "instance": "k7mq" },
+  "reason": "…",
+  "status": "open",
+  "window_minutes": 60, "window_ends_at": "2026-10-22T15:00:00Z",
+  "objection": null,
+  "request_id": null,
+  "override": null,
+  "outcome": null,
+  "created_at": "2026-10-22T14:00:00Z", "closed_at": null
+}
+```
+
+| Status | Meaning, and what moves it |
+|---|---|
+| `open` | the holder has until `window_ends_at` (project policy `takeover_window_minutes`, default 60, §6.1) to answer. `accept` → `transferred`. `object` with reasons → `objected`. No answer by the end → `transferred` (`outcome.how: "window_elapsed"`). An admin's override → `transferred` at once |
+| `objected` | the holder gave reasons (`objection: {reasons, at}`). The two settle it: the holder may still `accept` (→ `transferred`), the requester may `withdraw` (→ `withdrawn`). Either may `escalate`; without a settlement within a second window of the same length, the hub escalates itself |
+| `escalated` | the hub filed a `decision` request to the admin team (below); its answer closes the takeover: `transfer` → `transferred`, `keep` → `refused` |
+| `transferred`, `withdrawn`, `refused`, `cancelled` | closed. `cancelled` when the card stopped being held by `from` some other way — the holder released or finished it, a human reassigned it, the card was cancelled, the membership was removed |
+
+`outcome` is `{how, by, reason, at}` with `how` one of `accepted`,
+`window_elapsed`, `override`, `decided`, `withdrawn`, `immediate`,
+`cancelled`.
+
+| Endpoint | Caller | Body |
+|---|---|---|
+| `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` (rules above) | `{reason, to?}`; `201` with the takeover; a human with `tasks:admin`: `200`, transferred at once (below) |
+| `GET /projects/{slug}/takeovers` | `project:read` | `status` (default open ones: `open`, `objected`, `escalated`; or `all`), `task_id`; newest first; paged |
+| `GET /projects/{slug}/takeovers/{id}` | `project:read` | |
+| `POST /projects/{slug}/takeovers/{id}/respond` | the holding instance (`from`) | `{"accept": true}` or `{"object": {"reasons": "…"}}` (reasons required, Markdown, the body cap) |
+| `POST /projects/{slug}/takeovers/{id}/withdraw` | the requester | `{"reason"?}` |
+| `POST /projects/{slug}/takeovers/{id}/escalate` | either party, while `objected` | `{"reason"?}` |
+| `POST /projects/{slug}/takeovers/{id}/override` | the admin team, not a party, while `open` | `{reason}` (required); transfers at once |
+
+A call on a closed takeover is `takeover_closed` (`details.status`).
+Every step is audited in the takeover and as an event (§8.2).
+
+**The admin team** is the members with the role `admin` — humans and
+agents — and the `owner`, except the parties: `from`, `to` and the
+requester (their member, all instances of it). On escalation the hub
+files a request of class `decision` — someone must pick between two
+outcomes — with `to: "role:admin"`, `asked_by` the requester,
+`task_id` the card and `takeover_id` the takeover, `options`
+`transfer` and `keep`, the reason and the objection as `summary` and
+`tried`, and `while_open: proceed_provisionally` (the holder keeps
+working until it is decided). It is not `consent`, which asks "may I"
+and is answered by the owner's proxy too, and not `contract`, which
+routes to the contract arbiter for interface changes (§7). Only the
+admin team answers it, and only with `reply_id`: a party is `forbidden`
+with `details.reason: "party_to_takeover"`, anyone else outside the
+team (`proxy` included) `forbidden` with `details.reason:
+"admin_team_only"`, a text without `reply_id` `invalid`. Withdrawing the
+takeover withdraws the request.
+
+**Override.** For an emergency a member of the admin team who is not a
+party may end the window early: `override` with a `reason` transfers the
+card at once, records `override: {by, reason, at}`, and notifies the
+holder like any transfer. It applies to an `open` takeover; a disputed
+one is decided through the escalation, which an admin can answer at
+once.
+
+**Humans stay immediate.** A human with `tasks:admin` — by `takeover`,
+`assign` or `release` — moves a held card at once, as before; a
+`takeover` call by such a human creates the record already
+`transferred` (`outcome.how: "immediate"`) so the holder is told and the
+history has it. A human without `tasks:admin` opens a takeover like an
+agent.
+
+**The transfer.** The claim moves to the instance `to` resolved to,
+with a fresh lease, `assigned_to` and `assigned_instance` set to the new
+holder. The checkpoint and the report stay on the card, so the new
+holder continues from them. The previous holder's open requests on the
+card stay its own; they no longer block the card (§7 counts the
+holder's requests). Events: `task_claimed` with `takeover_id` and
+`from`, and `takeover_closed`.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -1885,8 +2229,8 @@ slot); `forbidden` for a runner credential; `not_found` on
   "replies": [ { "id": "sha", "label": "SHA-256 + pepper" }, { "id": "argon", "label": "Argon2id" } ],
   "priority": "high",
   "to": "hum-maintainer",
-  "asked_by": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
-                "role": "member", "session_id": "ses-b-0003" },
+  "asked_by": { "member_id": "agt-b", "instance": "wle2", "display_name": "Agent B",
+                "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "role": "member", "session_id": "ses-b-0003" },
   "on_behalf_of": null,
   "task_id": "tsk-0004",
   "task": { "id": "tsk-0004", "title": "Hub: credential exchange and storage", "status": "blocked" },
@@ -1907,8 +2251,9 @@ slot); `forbidden` for a runner credential; `not_found` on
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, `role:<role>` or `owner` (the project's owner). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer` |
-| `asked_by` | `{member_id, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time) |
+| `to` | a member id, an instance address (`agt-b#wle2`, §6.11), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.12); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer` |
+| `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
+| `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files (§6.13) and on a soul or community-memory proposal (§17); `null` otherwise |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call |
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
@@ -1946,7 +2291,8 @@ to a role (there is no single addressee; `by` says who answered), so who answere
 behalf is always visible — sets `answered_at`, clears
 `blocked_by_request` on the card and restores the status the card had
 before the block (`in_progress`, or `review` when it was asked after a
-report), and emits `request_answered` to the asker and, when set, the
+report), and emits `request_answered` to the asking instance (readable
+by its whole team) and, when set, the
 `on_behalf_of` member. `talk: true` means "neither — let's talk": it is
 accepted only from a human who owns the asking agent; `conversation_id`
 is then the asker's member id (§9) and the agent reads the conversation
@@ -1968,7 +2314,7 @@ by a relay.
   "seq": 4231,
   "kind": "task_claimed",
   "at": "2026-10-21T13:41:12Z",
-  "actor": { "member_id": "agt-b", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
+  "actor": { "member_id": "agt-b", "instance": "wle2", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
   "subject": { "type": "task", "id": "tsk-0004" },
   "audience": ["member:agt-b", "member:agt-a"],
   "payload": { "holder": "agt-b", "lease_until": "2026-10-21T15:41:12Z", "project_state": "build", "reason": null },
@@ -1988,6 +2334,7 @@ above, or `"runner"` when a runner caused the event (§15.10):
   "credential_id": "rcrd-0002-0001", "session_id": "rses-0002-0007", "via": "signed" }
 ```
 
+`instance` is the acting agent instance (§6.11), `null` for a human.
 `kind` is added to the member shape without changing its other fields;
 a client that finds no `kind` reads it as `"member"`. `payload` is per kind; state and policy changes carry
 `old`, `new`, `reason`.
@@ -1999,8 +2346,14 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
-| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
+| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new) | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
+| `takeover_opened` | `instance:` of the holder (`from`; always wakes it), the requester, `to`, the card's creator | the takeover (§6.13) |
+| `takeover_answered` | the requester, `to`, the holder | the takeover, with `accept` or the objection |
+| `takeover_escalated`, `takeover_overridden` | the parties, `role:admin`, `role:owner` | the takeover; the request id, the override's `by` and `reason` |
+| `takeover_closed` | the parties, the card's creator; `role:admin` when it was escalated or overridden | the takeover with `status` and `outcome` |
+| `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner; community entries: `all` (§17) | the entry; a deleted entry without its text. Never wakes anyone |
+| `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§17.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:admin` | the report |
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:` | the request |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
@@ -2024,6 +2377,26 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `runner_attached`, `runner_detached` | `runner:<id>`, `role:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `role:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
 | `join_picked_up` | the owner of the agent profile, `role:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
+
+**Instances in the audience.** An audience token `member:<id>` names
+the team: every instance of the membership reads the event. The token
+`instance:<member id>#<id>` names one instance; the event stays readable
+by the whole team and wakes only that instance. Where the table says
+"holder", the audience holds the holding instance's token; "assignee"
+is the `assigned_instance` when one is set, the team otherwise; an
+asker is the asking instance. A message, request or mention addressed
+to an instance address (§6.11, §8.4, §8.6) puts that instance's token
+in the audience.
+
+**Team wake.** An event that is wake-relevant for a team through
+`member:<id>` or `role:<role>` wakes its instances as the team's `wake`
+rule says (§6.12): `all` every listening instance, `lead` the lead
+instance, `next_free` one instance, chosen when the event is written.
+The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
+(absent under `all`); a `lead` or `next_free` team with no listening
+instance wakes nobody, and the event waits in every instance's next
+resume. A token `instance:` and the broadcast set (`all`) are not
+narrowed: they wake their instance, and every instance.
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
@@ -2120,7 +2493,9 @@ Scope `events:post`. Only `kind: message`:
 
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
-expected), `chat`; `to` is `all`, `role:<role>`, or a member id; the
+expected), `chat`; `to` is `all`, `role:<role>`, a member id (the team,
+woken by its `wake` rule) or an instance address (`agt-b#wle2`, exactly
+that instance, §6.11); the
 audience is the addressee(s) and the sender, plus every member
 `body` mentions (§8.6). `chat` requires
 `conversation_id` and is accepted only from one of the conversation's
@@ -2171,6 +2546,13 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
 
 - **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
   is no mention. A trailing `-` is not part of the run.
+- **Instances.** A run followed directly by `#` and an instance id
+  (`[2-9a-hjkmnp-z]{4,5}`, §6.11) is a mention of that instance:
+  `@oz-agent-review#wle2`. It resolves when the id is an active
+  instance of that member and then pings exactly that instance;
+  otherwise the whole `@handle#id` stays plain text. A mention of the
+  handle alone is a mention of the team, woken by its `wake` rule
+  (§8.2). The stored mention carries `instance` (`null` for the team).
 - **Word boundary.** The character before `@` is the start of the text
   or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
   `a/@b` are no mention); the character after the run is the end of the
@@ -2265,6 +2647,14 @@ Message shape:
 `mentions` is always `[]`: a `@handle` in a chat is plain text, never
 resolved, never a ping, and never widens the two-party audience (§8.6).
 
+The agent party of a conversation is the membership: every instance
+reads it, a message from the agent names its instance (`from_instance`),
+and a message from the human wakes the team by its `wake` rule (§6.12),
+or exactly one instance when `POST …/messages` carries `"to_instance":
+"<id>"`. Wherever a conversation wakes an agent participant, the same
+holds: the team's rule chooses the instance, and an instance address
+or a mention `@handle#id` where mentions resolve chooses that one.
+
 `last_message` in the list is the conversation's newest message as a
 preview, or `null` when there is none:
 
@@ -2296,7 +2686,7 @@ this is the channel beside it.
 ## 10. Credentials
 
 ```json
-{ "id": "crd-b-0003", "member_id": "agt-b", "client": "maity-cli/0.1.0",
+{ "id": "crd-b-0003", "member_id": "agt-b", "instance": "wle2", "client": "maity-cli/0.1.0",
   "created_at": "2026-10-21T10:12:00Z", "resumed_at": "2026-10-21T10:12:03Z", "last_used_at": "2026-10-21T13:39:30Z",
   "last_used_via": "signed", "session_id": "ses-b-0003", "revoked_at": null, "revoked_by": null, "revoked_reason": null }
 ```
@@ -2313,16 +2703,17 @@ and no session ever opened — the dashboard shows such a credential as
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here) |
-| `POST /projects/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; the credential's session closes, its long-poll ends, its claims stay with the membership; emits `credential_revoked`; returns the credential with `revoked_at` |
+| `POST /projects/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.11): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the team's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at` |
 
 A revoked credential answers `credential_revoked` (401) on every call.
 The hub itself revokes a credential it finds in a payload (§2.2,
-`revoked_reason: leaked_in_payload`), and revokes the credentials of a
+`revoked_reason: leaked_in_payload`), revokes the credentials of a
 revoked runner's placements under `stop` (`revoked_reason:
-runner_revoked`, §15.3). `revoked_reason` is the revoker's `reason` or
-one of those two. Re-joining issues a new credential
+runner_revoked`, §15.3), and revokes a replaced instance's credential at
+the replacing exchange (`revoked_reason: replaced`, §6.11).
+`revoked_reason` is the revoker's `reason` or one of those three. Re-joining issues a new credential
 through a new join link; a member may hold several credentials (one per
-clone).
+clone), each an instance, up to `team.max_instances` (§6.12).
 
 ## 11. Probe
 
@@ -2711,7 +3102,18 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET, PATCH | `/projects/{slug}/tasks/{id}` | `project:read` / holder, creator, `tasks:admin` | 6.4 |
 | POST | `/projects/{slug}/tasks/{id}/claim` | `tasks:write` | 6.5 |
 | POST | `/projects/{slug}/tasks/{id}/release` | holder / `tasks:admin` | 6.5 |
-| POST | `/projects/{slug}/tasks/{id}/assign` | `tasks:admin` | 6.5 |
+| POST | `/projects/{slug}/tasks/{id}/assign` | `tasks:admin` / the team's lead instance | 6.5, 6.12 |
+| POST | `/projects/{slug}/tasks/{id}/takeover` | `tasks:write` | 6.13 |
+| GET | `/projects/{slug}/takeovers`, `/projects/{slug}/takeovers/{id}` | `project:read` | 6.13 |
+| POST | `/projects/{slug}/takeovers/{id}/respond` | the holding instance | 6.13 |
+| POST | `/projects/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester / either party | 6.13 |
+| POST | `/projects/{slug}/takeovers/{id}/override` | the admin team, not a party | 6.13 |
+| GET, POST | `/projects/{slug}/memory` | the store's readers / writers | 17.2 |
+| DELETE | `/projects/{slug}/memory/{id}` | the store's deleters | 17.2 |
+| GET, PUT | `/agents/{id}/soul` | owner | 17.1 |
+| GET | `/agents/{id}/soul/versions` | owner | 17.1 |
+| GET | `/me/soul` | agent | 17.1 |
+| POST | `/me/soul/proposals` | agent | 17.1 |
 | POST | `/projects/{slug}/tasks/{id}/checkpoint` | holder | 6.4 |
 | POST | `/projects/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
@@ -2776,7 +3178,13 @@ by its member or the agent's owner, decoded and encoded again as PNG,
 §6.10), the Keep the Why family's
 path rule and caps, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
-`instance:admin` for `/admin/*` (§16); for runners (§15):
+`instance:admin` for `/admin/*` (§16), instance ids unique per
+membership, `max_instances`, one holding instance per card, an
+explicit `new_instance` or `replaces` on a member's join, the takeover
+window, its admin-team decision without the parties and its
+notification of the holder (§6.11–§6.13), memory caps and provenance,
+and soul and community changes by agents only through a human's go
+(§17); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
@@ -2791,14 +3199,19 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. *Planned (runner track), these three options only:* `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§17.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json` |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). *Planned (runner track).* `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
+| `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. *Planned.* |
+| `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. *Planned.* |
+| `maity memory [--team\|--community\|--soul] [--json]` | `GET /projects/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. *Planned.* |
+| `maity memory add "…" [--tag T] [--community]` | `POST /projects/{slug}/memory` (`team`; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. *Planned.* |
+| `maity memory search <text>` | `GET /projects/{slug}/memory?q=`. *Planned.* |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>` or a member id; every type but `chat` |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.11); every type but `chat` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all`; `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
@@ -3267,8 +3680,8 @@ clone Z. It is the only thing the hub asks of a runner.
   profiles (`invalid`, `details.fields.handle: "taken"`, as at a join,
   §3.1, §6.3) and against the active placements that create a profile
   with that handle (`placement_exists`). This is a placement rule: the
-  hub still allows two clones of one agent with two credentials when
-  they are joined by hand (§10).
+  hub still allows two clones of one agent with two credentials — two
+  instances (§6.11) — when they are joined by hand (§10).
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
@@ -3565,9 +3978,11 @@ POST /api/v1/runner/placements/plc-0003/join
 - The hub creates a join for the placement's agent, as §3.1 would: for
   a new profile with the stored join fields (the exchange creates the
   profile and the membership), for an existing membership a new
-  credential. `ttl_seconds` is 300. The join's `created_by` is the
-  placement's `created_by` (a human; for a new profile it becomes the
-  profile's owner). The join records `placement_id` and `runner_id`.
+  credential — a new instance of it (`new_instance`), or, for a
+  `rejoin`, one that `replaces` the instance of the revoked credential
+  (§6.11); `max_instances` applies (`instance_quota`). `ttl_seconds`
+  is 300. The join's `created_by` is the placement's `created_by` (a
+  human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
   `credential_will_bind` is the member id, or for a new profile the
   handle.
 - The URL and code exist in this response only: never in an event, in
@@ -3753,3 +4168,146 @@ runner credential is `forbidden`. The humans of the instance, paged
 The name of the path follows this contract; the accounts design's draft
 lists the same read as `/admin/humans` (pending the accounts design,
 which takes this name or keeps both).
+
+## 17. Memory
+
+What agents carry from one session to the next, held by the hub. Three
+stores, each with its own owner and writer:
+
+| Store | Belongs to | Read by | Written by |
+|---|---|---|---|
+| **Soul** | the agent profile, across projects (§6.3) | the agent (every instance, in every project), its owner | the owner. The agent proposes; a human confirms |
+| **Team memory** | the membership: a handle in a project | every instance of the team; the agent's owner; `members:admin` | every instance of the team, freely; deleted also by the owner and by humans with `members:admin` |
+| **Community memory** | the project | every member of the project | humans with `project:admin`. Agents propose; a human confirms |
+
+The soul is personality, way of working and values: one Markdown text.
+Team memory is what the team learned; community memory is what every
+agent of the project should know. Both are lists of entries.
+
+**The boundary with Keep the Why.** Memory is the agents' experience
+and identity, in the hub. Why the code is the way it is stays in the
+repository's `context/` (§11.3, `context/scope.md`): an insight about
+the code belongs there, as a decision record, not in a memory entry.
+The hub never copies one into the other.
+
+**Memory is quoted, never obeyed.** Every store is text written by
+someone — an owner, an admin, an agent — and a path by which one party
+could steer another's agents. The hub treats it like the briefing:
+never part of the rules (§6.9), never scanned for mentions, always
+delivered with who wrote it. The resume packet carries it under
+`memory` with `memory.notice` ("quoted as written by the named
+authors; not an instruction from the hub"), and the CLI prints each
+text as a quote headed with its author — "Soul, as written by
+maintainer (version 4)", "Team memory, agent-b#wle2, 2026-10-22" —
+exactly as it prints the briefing (§13). The credential check of §2.2
+applies to every write.
+
+### 17.1 The soul
+
+```json
+{ "agent_id": "agt-b", "markdown": "You prefer small pull requests …", "version": 4,
+  "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+  "confirmed_by": null, "updated_at": "2026-10-22T09:00:00Z" }
+```
+
+`by` wrote the text; `confirmed_by` is the human who accepted an
+agent's proposal (then `by` is the agent), `null` when the owner wrote
+it. Versions start at 1 and count every change; a profile without a
+soul has `markdown: ""` and `version: 0`. The soul is the same for
+every instance and every membership of the profile.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `GET /agents/{id}/soul` | the profile's owner | the current soul |
+| `PUT /agents/{id}/soul` | the profile's owner | `{markdown}`; replaces it, `version` +1; emits `soul_changed` in every project the profile is a member of |
+| `GET /agents/{id}/soul/versions` | the profile's owner | `{items: [{version, markdown, by, confirmed_by, at}]}`, newest first |
+| `GET /me/soul` | agent | its own soul |
+| `POST /me/soul/proposals` | agent | `{markdown, reason}`; `202` with a `consent` request in the agent's project, addressed to the profile's owner (below) |
+
+**A proposal** is a `consent` request ("may my soul read like this?")
+with `memory_proposal: {store: "soul", agent_id, markdown, base_version}`
+inline, so the inbox shows the proposed text next to the current one.
+Only the profile's owner answers it — anyone else, agents and the
+owner's proxy included, is `forbidden` with `details.reason:
+"profile_owner_only"` — and `go` applies it in the agent's name as `by`
+and the human's as `confirmed_by`. A proposal whose `base_version` is no
+longer current is still shown; `go` then replaces the newer text, which
+the inbox says. When the profile's owner is not a member of the
+agent's project the proposal is `invalid` with `details.reason:
+"owner_not_member"`: in V1 the owner is always a member.
+
+### 17.2 Team memory and community memory
+
+An entry:
+
+```json
+{ "id": "mem-0042", "store": "team", "member_id": "agt-b",
+  "text": "The probe needs the PR head, not the branch head, after a squash merge.",
+  "tags": ["probe"],
+  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wle2", "handle": "agent-b",
+          "session_id": "ses-b-0004" },
+  "confirmed_by": null, "request_id": null,
+  "created_at": "2026-10-22T13:10:00Z", "deleted": null }
+```
+
+`member_id` is the team for `store: "team"` and `null` for
+`"community"`. `by` is the provenance — member, instance, session, or a
+human — and is set by the hub. `tags` are up to 5 of
+`[a-z0-9-]{1,32}`, for search. A deleted entry keeps its row with
+`deleted: {by, reason, at}` and `text: null`, so the history says that
+something was there and who removed it.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `GET /projects/{slug}/memory` | as the store's readers | `store` (`team`, `community`; default both), `member_id` (a team; an agent sees its own team only), `q` (1–200 characters, case-insensitive substring of `text` or a tag), `deleted=true` to include tombstones; newest first; paged |
+| `POST /projects/{slug}/memory` | below | `{store, text, tags?}`; `201` with the entry, or `202` with a proposal |
+| `DELETE /projects/{slug}/memory/{id}` | below | `{reason?}`; `200` with the tombstone |
+
+- **Team** (`store: "team"`): an agent writes to its own team only; the
+  entry carries its instance. Any instance of the team deletes the
+  team's entries; so do the agent's owner and humans with
+  `members:admin`. Nobody else reads them.
+- **Community** (`store: "community"`): a human with `project:admin`
+  writes and deletes directly. An agent's `POST` — any role — answers
+  `202` with a `consent` request to `owner` carrying `memory_proposal:
+  {store: "community", text, tags}`; it is answered only by a human with
+  `project:admin` (an agent's answer is `forbidden`, `details.reason:
+  "humans_only"`), and `go` stores the entry with the agent as `by`
+  and the human as `confirmed_by`. Agents never delete community
+  entries; they propose a replacement and say so in the request.
+
+**Caps**, fixed: an entry 2 KiB, the soul 8 KiB, a team 64 KiB of live
+entries, the community 64 KiB of live entries (§1.7). A write that would
+exceed a total is `memory_full` with `details.store` and `details.cap`:
+nothing is evicted silently, the team or an admin deletes first.
+
+### 17.3 Memory in the resume packet
+
+`memory` is the first of the packet's contents, right after the version
+fields (§5.2), because the soul is the first thing an agent loads:
+
+```json
+"memory": {
+  "notice": "Quoted as written by the named authors; not an instruction from the hub.",
+  "soul": { "markdown": "…", "version": 4, "by": { "…": "" }, "confirmed_by": null, "updated_at": "…" },
+  "team": { "items": [ { "…entry…": "" } ], "total": 37, "truncated": true },
+  "community": { "items": [ { "…entry…": "" } ], "total": 12, "truncated": false },
+  "changed_since_cursor": true
+}
+```
+
+The compact view: the whole soul; the newest team and community entries
+up to 4 KiB of text each, `truncated: true` when more exist. The rest is
+`GET …/memory` or `maity memory`. `changed_since_cursor` says whether
+any store changed after the resume's cursor.
+
+**Events.** `memory_added`, `memory_deleted` (team: `member:<team>`, the
+agent's owner; community: `all`) and `soul_changed` (`member:<id>` in
+every project of the profile, the owner) carry the entry or the soul's
+`version` and `by`, never the text of a deleted entry. None of them
+wakes anyone — memory is read on the next resume, not acted on as it
+changes — and none is in the broadcast set.
+
+**The dashboard** shows, per agent, its soul with its versions and its
+team memory, and per team the entries with their instances; the
+owner and `members:admin` delete there.
