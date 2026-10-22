@@ -454,9 +454,9 @@ SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "hand
 def cmd_say(args: argparse.Namespace) -> int:
     text = _text(args.body, "the message")
     to_owner = args.to == "human"
-    if not to_owner and args.type is None and args.to.startswith("hum-"):
-        # A reply to your own human is the chat of your conversation (§8.4, §9); to any
-        # other human a message needs a type.
+    if not to_owner and args.type is None:
+        # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
+        # else a message needs a type. Ids are opaque (§1.1): compared, never parsed.
         to_owner = Session().data.get("owner_id") == args.to
     if to_owner:
         if args.type is not None or args.task is not None:
