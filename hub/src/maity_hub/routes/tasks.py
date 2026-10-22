@@ -648,6 +648,8 @@ def patch_task(
                 changed_via=caller.via,
             )
         )
+        if card.kind == "release" and changed.get("status") in cards.CLOSED:
+            releases.close(conn, card.id)
         card = _card(conn, card.id)
         view = task_view(conn, card)
         payload = {k: view[k] for k in changed if k in view}
@@ -1003,6 +1005,8 @@ def report(
                 changed_via=caller.via,
             )
         )
+        if body.done and card.kind == "release":
+            releases.close(conn, card.id)
         card = _card(conn, card.id)
         targets = _member(principal_id(conn, card.claim_holder)) + _member(
             principal_id(conn, card.created_by)

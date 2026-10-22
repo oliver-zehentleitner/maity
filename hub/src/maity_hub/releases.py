@@ -18,8 +18,9 @@ from maity_hub import tables as t
 from maity_hub.events import emit
 
 # SemVer 2.0 core with an optional pre-release; no build metadata (§6.7).
-_ID = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
-SEMVER = re.compile(rf"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-{_ID}(?:\.{_ID})*)?")
+# ASCII digits only: `\d` would take every Unicode digit, and `1٠.0.0` looks like 10.0.0.
+_ID = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+SEMVER = re.compile(rf"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-{_ID}(?:\.{_ID})*)?")
 PR_STATES = ("open", "merged", "closed")
 
 
@@ -185,23 +186,62 @@ def probe_configured(conn: Connection, project_id: str) -> bool:
     return forge.configured_for(url)
 
 
-def release_view(conn: Connection, card: Any) -> dict[str, Any]:
-    data = card.release_data or {}
+FROZEN = ("pull_requests", "groups", "readiness")
+
+
+def _live(conn: Connection, card: Any) -> dict[str, Any]:
+    """Pull requests, groups and readiness as the release stands now."""
     shipped = _shipped(conn, card.id)
     prs = pull_requests(conn, card, shipped)
     grouped = groups(conn, shipped)
+    ready = readiness(card, shipped, prs, grouped, probe_configured(conn, card.project_id))
+    return {"pull_requests": prs, "groups": grouped, "readiness": ready}
+
+
+def release_view(conn: Connection, card: Any) -> dict[str, Any]:
+    """The release object; a closed release serves what was frozen at its close (§6.7)."""
+    data = card.release_data or {}
     version = data.get("version") or card.release_version
+    computed = data.get("frozen") or _live(conn, card)
     return {
         "version": version,
-        "pull_requests": prs,
+        "pull_requests": computed["pull_requests"],
         "pull_requests_typed": data.get("pull_requests_typed", []),
-        "groups": grouped,
+        "groups": computed["groups"],
         "checklist": data.get("checklist", []),
-        "readiness": readiness(
-            card, shipped, prs, grouped, probe_configured(conn, card.project_id)
-        ),
+        "readiness": computed["readiness"],
         "tag": _observation(conn, card.project_id, "tag", f"v{version}"),
     }
+
+
+def close(conn: Connection, card_id: str) -> None:
+    """Called by the write that closes a release, after its own update.
+
+    A release that turned ready in this very write is announced here (the
+    write also cleared `release_in_flight`, so `recheck` no longer sees it),
+    and its pull requests, groups and readiness are frozen into the card: a
+    closed release is a record, and later edges or observations do not
+    change it.
+    """
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+    data = dict(card.release_data or {})
+    live = _live(conn, card)
+    if card.status == "done" and live["readiness"]["ready"] and not data.get("ready_announced"):
+        data["ready_announced"] = True
+        _announce(conn, card, data.get("version") or card.release_version)
+    data["frozen"] = live
+    conn.execute(update(t.card).where(t.card.c.id == card.id).values(release_data=data))
+
+
+def _announce(conn: Connection, card: Any, version: str) -> None:
+    emit(
+        conn,
+        card.project_id,
+        "release_ready",
+        ["all"],
+        {"release": card.id, "version": version},
+        subject=("task", card.id),
+    )
 
 
 def recheck(conn: Connection, project_id: str) -> None:
@@ -226,11 +266,4 @@ def recheck(conn: Connection, project_id: str) -> None:
     data["ready_announced"] = ready
     conn.execute(update(t.card).where(t.card.c.id == card.id).values(release_data=data))
     if ready:
-        emit(
-            conn,
-            project_id,
-            "release_ready",
-            ["all"],
-            {"release": card.id, "version": view["version"]},
-            subject=("task", card.id),
-        )
+        _announce(conn, card, view["version"])

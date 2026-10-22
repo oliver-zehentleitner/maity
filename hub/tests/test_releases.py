@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, delete, insert, select, update
 
 from maity_hub import clock, forge
 from maity_hub import tables as t
+from maity_hub.routes import tasks as tasks_routes
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -89,6 +91,11 @@ def _blocking(who: Any, card: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _unordered(items: list[dict[str, Any]]) -> list[str]:
+    """§6.7 gives `blocking` no order."""
+    return sorted(json.dumps(item, sort_keys=True) for item in items)
+
+
 def _events(engine: Engine, kind: str) -> list[Any]:
     with engine.connect() as conn:
         return list(conn.execute(select(t.event).where(t.event.c.kind == kind)).all())
@@ -113,7 +120,9 @@ def test_a_release_card_has_the_contract_shape(owner: flow.Human) -> None:
     assert task(owner)["release"] is None
 
 
-@pytest.mark.parametrize("version", ["1.0", "01.0.0", "1.0.0+build", "v1.0.0", "1.0.0-"])
+@pytest.mark.parametrize(
+    "version", ["1.0", "01.0.0", "1.0.0+build", "v1.0.0", "1.0.0-", "1\u0660.0.0", "0.0.1-\u0661a"]
+)
 def test_a_version_is_semver(owner: flow.Human, version: str) -> None:
     response = owner.post(
         "/projects/maity/tasks",
@@ -175,19 +184,21 @@ def test_readiness_comes_from_observed_state_only(
         (1, "typed", None, "merged"),  # attested, not observed: counts for nothing
         (7, "reported", shipped["id"], None),
     ]
-    assert view["readiness"]["blocking"] == [
-        {"reason": "task_open", "task": shipped["id"]},
-        {"reason": "pr_unverified", "pr": 1},
-        {"reason": "pr_unverified", "pr": 7},
-        {"reason": "checklist_open", "item": "chk-1"},
-        {"reason": "checklist_open", "item": "chk-2"},
-    ]
+    assert _unordered(view["readiness"]["blocking"]) == _unordered(
+        [
+            {"reason": "task_open", "task": shipped["id"]},
+            {"reason": "pr_unverified", "pr": 1},
+            {"reason": "pr_unverified", "pr": 7},
+            {"reason": "checklist_open", "item": "chk-1"},
+            {"reason": "checklist_open", "item": "chk-2"},
+        ]
+    )
     _observe(migrated, 1)
     _observe(migrated, 7, state="open", head="e" * 40)
-    assert _blocking(owner, card)[1:3] == [
-        {"reason": "pr_open", "pr": 7},
-        {"reason": "pr_mismatch", "pr": 7},
-    ]
+    blocking = _blocking(owner, card)
+    assert {"reason": "pr_open", "pr": 7} in blocking
+    assert {"reason": "pr_mismatch", "pr": 7} in blocking
+    assert not [b for b in blocking if b.get("pr") == 1]
     entry = _get(owner, card)["release"]["pull_requests"][1]
     assert (entry["state"], entry["head_sha"], entry["checks"]) == ("open", "e" * 40, "success")
     assert entry["observed_at"] is not None
@@ -354,10 +365,7 @@ def test_only_the_arbiter_finalises_and_the_watchers_hear(
     )
 
 
-# --- review round on #30 ----------------------------------------------------------------------
-
-
-def _ready_project(owner: flow.Human) -> None:
+def _empty_checklist(owner: flow.Human) -> None:
     response = owner.patch("/projects/maity", {"settings": {"release_checklist": []}})
     assert response.status_code == 200, response.text
 
@@ -365,7 +373,7 @@ def _ready_project(owner: flow.Human) -> None:
 def test_a_partner_outside_the_release_blocks_its_group(
     owner: flow.Human, migrated: Engine, probe: None
 ) -> None:
-    _ready_project(owner)
+    _empty_checklist(owner)
     first = task(owner)
     second = task(owner, ships_with=[first["id"]])
     _reported(migrated, first, 3)
@@ -387,7 +395,7 @@ def test_a_partner_outside_the_release_blocks_its_group(
 def test_done_is_judged_on_the_data_as_it_will_be_stored(
     owner: flow.Human, migrated: Engine, probe: None
 ) -> None:
-    _ready_project(owner)
+    _empty_checklist(owner)
     card = release(owner)
     assert _get(owner, card)["release"]["readiness"]["ready"] is True
     _set(migrated, card, status="review")
@@ -404,7 +412,7 @@ def test_done_is_judged_on_the_data_as_it_will_be_stored(
 def test_a_ready_release_is_announced_at_creation(
     owner: flow.Human, migrated: Engine, probe: None
 ) -> None:
-    _ready_project(owner)
+    _empty_checklist(owner)
     card = release(owner)
     [announced] = _events(migrated, "release_ready")
     assert announced.payload == {"release": card["id"], "version": "0.1.0"}
@@ -478,3 +486,134 @@ def test_a_removed_checklist_id_is_never_given_out_again(owner: flow.Human) -> N
         path, {"release": {"checklist": [{"id": "chk-1", "text": "keep"}, {"text": "new"}]}}
     )
     assert [i["id"] for i in added.json()["release"]["checklist"]] == ["chk-1", "chk-3"]
+
+
+# --- the close, the frozen record ---------------------------------------------------------
+
+
+def test_a_release_made_ready_by_its_closing_patch_is_announced(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _empty_checklist(owner)
+    card = release(owner)  # ready, and announced, at creation
+    path = f"/projects/maity/tasks/{card['id']}"
+    owner.patch(path, {"release": {"pull_requests_typed": [{"number": 9}]}})  # unready again
+    _set(migrated, card, status="review")
+    done = owner.patch(path, {"status": "done", "release": {"pull_requests_typed": []}})
+    assert done.status_code == 200, done.text
+    announced = _events(migrated, "release_ready")
+    assert len(announced) == 2
+    assert announced[-1].payload == {"release": card["id"], "version": "0.1.0"}
+    assert done.json()["release"]["readiness"] == {"ready": True, "blocking": []}
+
+
+def test_a_report_that_closes_a_ready_release_announces_it_and_frees_the_slot(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, probe: None
+) -> None:
+    _empty_checklist(owner)
+    releaser = flow.agent(make_client, owner, role="admin")
+    shipped = task(owner)
+    _set(migrated, shipped, status="done")
+    _reported(migrated, shipped, 11)
+    card = release(owner, depends_on=[shipped["id"]])
+    assert _blocking(owner, card) == [{"reason": "pr_unverified", "pr": 11}]
+    assert releaser.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    report = {
+        "summary": "Released 0.1.0",
+        "head": SHA,
+        "branch": "main",
+        "remote_head": SHA,
+        "pr_status": "none",
+        "done": True,
+    }
+    refused = releaser.post(f"/projects/maity/tasks/{card['id']}/report", report)
+    assert refused.json()["error"]["code"] == "release_not_ready"
+    _observe(migrated, 11)  # observed without a recheck: ready, not yet announced
+    assert _events(migrated, "release_ready") == []
+    closed = releaser.post(f"/projects/maity/tasks/{card['id']}/report", report)
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "done"
+    [announced] = _events(migrated, "release_ready")
+    assert announced.payload["release"] == card["id"]
+    assert release(owner, "0.2.0")["release"]["version"] == "0.2.0"  # the slot is free
+
+
+def test_a_closed_release_keeps_what_it_froze(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _empty_checklist(owner)
+    shipped = task(owner)
+    _set(migrated, shipped, status="done")
+    _reported(migrated, shipped, 12)
+    _observe(migrated, 12)
+    card = release(owner, depends_on=[shipped["id"]])
+    _set(migrated, card, status="review")
+    done = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
+    assert done.status_code == 200, done.text
+    frozen = _get(owner, card)["release"]
+    assert frozen["readiness"] == {"ready": True, "blocking": []}
+    partner = task(owner, ships_with=[shipped["id"]])  # a later edge
+    with migrated.begin() as conn:  # a later observation, as the probe would replace it
+        conn.execute(delete(t.forge_observation).where(t.forge_observation.c.ref == "12"))
+    _observe(migrated, 12, state="closed")
+    assert _get(owner, partner)["ships_with"] == [shipped["id"]]
+    after = _get(owner, card)["release"]
+    assert {k: after[k] for k in ("pull_requests", "groups", "readiness")} == {
+        k: frozen[k] for k in ("pull_requests", "groups", "readiness")
+    }
+
+
+def test_ships_with_never_names_a_release_card(owner: flow.Human) -> None:
+    card = release(owner)
+    other = task(owner)
+    naming = owner.post("/projects/maity/tasks", {"title": "x", "ships_with": [card["id"]]})
+    assert naming.json()["error"]["details"]["fields"] == {"ships_with": "release_card"}
+    own = owner.patch(f"/projects/maity/tasks/{card['id']}", {"ships_with": [other["id"]]})
+    assert own.json()["error"]["details"]["fields"] == {"ships_with": "release_card"}
+    owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"})
+    closed = owner.patch(f"/projects/maity/tasks/{card['id']}", {"ships_with": [other["id"]]})
+    assert closed.status_code == 400
+
+
+def test_a_repository_change_resets_and_reannounces_readiness(
+    owner: flow.Human, migrated: Engine, probe: None
+) -> None:
+    _empty_checklist(owner)
+    card = release(owner)
+    assert len(_events(migrated, "release_ready")) == 1
+    owner.patch("/projects/maity", {"repository": None})
+    assert _blocking(owner, card) == [{"reason": "probe_not_configured"}]
+    owner.patch("/projects/maity", {"repository": REPO})
+    assert _get(owner, card)["release"]["readiness"]["ready"] is True
+    assert len(_events(migrated, "release_ready")) == 2
+
+
+def test_a_lost_race_on_the_constraints_is_still_a_409(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-checks skipped, as when two creations pass them at once: the unique
+    constraints answer, and the error is mapped, on every engine."""
+
+    def unchecked(_conn: Any, _mine: Any, body: Any) -> dict[str, Any]:
+        data = {
+            "version": body.version,
+            "pull_requests_typed": [],
+            "checklist": [],
+            "next_item": 1,
+            "ready_announced": False,
+        }
+        return {"release_version": body.version, "release_in_flight": True, "release_data": data}
+
+    first = release(owner, "1.0.0")
+    monkeypatch.setattr(tasks_routes, "_new_release", unchecked)
+    in_flight = owner.post(
+        "/projects/maity/tasks", {"title": "x", "kind": "release", "release": {"version": "2.0.0"}}
+    )
+    assert in_flight.status_code == 409, in_flight.text
+    assert in_flight.json()["error"]["code"] == "release_in_flight"
+    owner.patch(f"/projects/maity/tasks/{first['id']}", {"status": "cancelled"})
+    taken = owner.post(
+        "/projects/maity/tasks", {"title": "x", "kind": "release", "release": {"version": "1.0.0"}}
+    )
+    assert taken.status_code == 409, taken.text
+    assert taken.json()["error"]["code"] == "version_exists"

@@ -171,6 +171,14 @@ def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[st
     if card_id in ids:
         raise invalid({"ships_with": "self"}, "a card cannot ship with itself")
     check_edge_targets(conn, project_id, "ships_with", ids)
+    if (
+        ids
+        and conn.execute(
+            select(t.card.c.id).where(t.card.c.id.in_([card_id, *ids]), t.card.c.kind == "release")
+        ).first()
+    ):
+        # A release ships cards; it is never one of the cards shipped together (§6.7).
+        raise invalid({"ships_with": "release_card"}, "ships_with never names a release card")
     both = (t.card_edge.c.from_card == card_id) | (t.card_edge.c.to_card == card_id)
     conn.execute(delete(t.card_edge).where(both, t.card_edge.c.kind == "ships_with"))
     for other in ids:

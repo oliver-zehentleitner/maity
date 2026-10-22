@@ -15,7 +15,9 @@ This hub implements the conventions, authentication, projects, members,
 agent profiles, the join, the resume packet, credentials, cards with
 claims, checkpoints and reports, requests to humans, events with the
 long-poll, messages and conversations, release and contract cards. The
-forge probe is being built; until it lands no release is ready. Paths are
+forge probe is being built; until it lands, readiness counts no pull
+request as merged, so only a release without pull requests can be ready,
+and only on a hub that holds a forge token. Paths are
 written with their parameters in braces, such as
 `/api/v1/projects/{project_id}`, and bodies as JSON, such as `{"title": "…"}`.
 
@@ -191,8 +193,11 @@ probe observed; without the probe it is `false` with
 (`release_not_ready` with `details.blocking`). When a release turns ready,
 everyone gets `release_ready`. A `PATCH` that sets `done` and changes
 `release` is judged on the new data. Anyone with `releases:write` edits
-the release fields, holder or not; a closed release is not edited any
-more (`invalid_transition`). The hub never tags; the holder does.
+the release fields, holder or not. A closed release is a record: its
+`release` fields and `depends_on` are `invalid_transition`, and its
+`pull_requests`, `groups` and `readiness` are frozen at the close and
+served as stored. `ships_with` never names a release card (`invalid`,
+`ships_with: release_card`). The hub never tags; the holder does.
 
 A contract card (`kind: contract`) carries `{"contract": {"arbiter",
 "state", "watchers"}}`; the arbiter defaults to the project's
