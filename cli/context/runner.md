@@ -480,3 +480,51 @@ in the code so that the decision costs a line, not a slice.
 **Rejected alternative:** offering every built adapter: opencode's
 project-configuration switch and `instructions` path are still
 unverified (design §6.1).
+
+## Model access is the operator's to arrange
+
+**Id:** 889e6702-afb6-429c-8e89-b5d7a1561992
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 2, relayed 2026-10-22
+**Revisit when:** the hub is asked to hand out or meter model access, or operators want per-agent spend visible in the dashboard
+
+How agents pay for their model is up to the operator: a subscription
+login or API keys, one shared by all agents or one per agent. Maity
+prescribes nothing. The runner passes on what the operator configured
+(the agents' user's own harness login, a harness `env_file`, Codex's
+linked `auth.json`), and nothing about it reaches the hub.
+
+**Reason:** the operator already holds the accounts and knows their
+terms. A hub-side model credential would make the hub a store of the most
+valuable secret in the setup, and it would add a billing concept the
+project does not need.
+
+**Rejected alternative:** model keys managed by the hub and handed to
+runners per placement: a secret store in the hub, and a second place for
+a key to leak from.
+
+## Default session modes: Claude Code attachable, Codex woken by events
+
+**Id:** 46741392-ca22-48e6-9417-d509c67d31a8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision on the runner design's question 5, relayed 2026-10-22; runner design v2 §6.2
+**Revisit when:** a harness's interactive mode stops waking on a background `maity wait`, or a supervised run costs model calls while idle
+
+A placement that names no mode gets the harness's advertised
+`default_mode`. In the shipped configuration examples that is
+`interactive` for Claude Code locally and over ssh (a tmux session a
+human can attach to) and `supervised` for Codex (headless runs woken by
+events). The mode can be chosen per start.
+
+**Reason:** Claude Code wakes on a background `maity wait`, so an
+attachable session costs nothing while idle and lets a human answer in
+the session. Codex has no such wake-up in its interactive UI, and
+`codex exec` ends and closes its terminals when its turn ends. The
+supervised loop starts it again on the next event.
+
+**Rejected alternative:** one default mode for every harness: it fits
+only one of them.
