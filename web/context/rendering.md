@@ -183,8 +183,17 @@ shown: no preview, no viewer, no excerpt. The page lets `h()` use only
 that path, built from the project and the attachment id, as a link or an
 image source. A file is uploaded when it is chosen, and shows as pending
 by name and size until the message is sent; there is no preview of the
-chosen file. An image that does not load reads as removed, which covers a
-deletion and an access that ended.
+chosen file. An image that does not load says so and keeps its download
+link: a failed load is not known to be a deletion. One's own uploads that
+no message names yet are read back from the hub in the composer, since
+they count against the pending cap.
+
+Known limits: after a reload, a non-image file deleted earlier still
+shows as a download (the payload is not rewritten, §8.7; telling would
+take a metadata read per file). The uploader of a file in a group chat
+that has closed cannot delete it from here, because the payload does not
+say who uploaded it. In fixture mode a chosen file's object URL keeps its
+original type; its link downloads it.
 
 **Reason:** the hub re-encodes images and serves every other file as
 `octet-stream` with `attachment`, `nosniff` and a sandbox CSP, so the
