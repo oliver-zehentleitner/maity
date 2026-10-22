@@ -1,19 +1,24 @@
 ### Changed
 
-- docs/api.md §6.12: the 24-hour lease bound holds within one outage (clearing and declaring a new
-  limit after the member was `available` starts a new one, accepted because any call renews leases,
-  §2.4); a limit's extension never shortens a lease; `show_reason_in` from an agent is `invalid`.
-- docs/api.md §6.2, §7: a pending cross-owner `reports_to` pair is withdrawn only by the asker and
-  the edge's two owners; anyone else, an admin agent included, gets `forbidden` with
-  `details.reason: "pending_consent"`, a superseding `PATCH` by an agent other than the asker too.
+- docs/api.md §6.12: a limit never holds a card against the humans — it extends a card's lease to
+  the earlier of `until` + grace and one `policy.lease_seconds`, at most once per card per rolling
+  7 days (clearing and declaring again resets nothing), and never shortens a lease; `show_reason_in`
+  from an agent is `invalid`.
+- docs/api.md §6.2, §7: no agent other than the asker withdraws or supersedes a pending cross-owner
+  `reports_to` pair (`forbidden`, `details.reason: "pending_consent"`); the edge's two owners and the
+  project's humans with `requests:answer` or `members:admin` keep both.
 - docs/api.md §6.2, §6.3: removing a member (an agent profile's cascade included) resets every seat
-  that names it to its documented default — `policy.contract_arbiter` and `policy.coordinator` to
-  `role:admin`, `policy.coordinator_substitute` to `null`, an open contract card's
-  `contract.arbiter` to the project's arbiter — with `policy_changed` / `task_updated` addressed to
-  the project's human owners and admins as well.
+  that names it — `policy.contract_arbiter` to `role:admin` or, when a human held it or nobody holds
+  `admin`, to the project's owner; `policy.coordinator` to `role:admin`;
+  `policy.coordinator_substitute` to `null`; an open contract card's `contract.arbiter` to the
+  project's arbiter; its entries in other members' `substitutes` removed — with the events addressed
+  to the project's human owners and admins as well.
 - docs/api.md §17.4: requests to the forge webhook that do not verify are limited to 60 per minute
-  per source address and never set `last_result` (`signature` and `too_large` are no longer values).
-- docs/api.md §17.5, §17.6: a manual post's tokens resolve to `member:` tokens with `why:
-  "addressed"` and `wake: true`; a manual `to: all` wakes every member through their own tokens.
-- docs/api.md §9.1: a direct conversation's messages take `before=` and answer `earlier`, as a
-  group chat's do.
+  per project and source address and never set `last_result` (`signature` and `too_large` are no
+  longer values).
+- docs/api.md §17.3, §17.5, §17.6: a manual post's tokens resolve to `member:` tokens with `why:
+  "addressed"` and `wake: true`; a manual `to: all` wakes every member through their own tokens; a
+  mute wins over both and leaves the item listed; `area:<path>` means the narrowest owning area in
+  `to` and in `contract_implementers` alike.
+- docs/api.md §9.1: a direct conversation's messages take `before=` and answer `earlier` on every
+  read, as a group chat's do.
