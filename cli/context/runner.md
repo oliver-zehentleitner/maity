@@ -166,10 +166,10 @@ reports them; that describes the machine, not how the agent runs.
 **Status:** active
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
-**Revisit when:** the join from the runner (R4) and the harness adapters (R5) are in; then this case no longer exists
+**Revisit when:** the harness adapters (R5) are in; then this case no longer exists
 
-While only the `stub` adapter exists and the runner cannot pick up a
-join, a placement that needs either is left as it is. It gets no
+While only the `stub` adapter exists, a placement for another harness is
+left as it is (until R4, a placement that needed a join was too). It gets no
 report, and the runner logs one line naming the missing slice. A start
 that fails in tmux itself is reported as `failed`/`harness_missing`, and
 the log line carries tmux's message.
@@ -243,3 +243,30 @@ doubt.
   `PrivateTmp`.
 - Keeping `-` and parsing names more cleverly: the split is ambiguous
   by construction.
+
+## The runner's `maity join` finds the clone's state without git
+
+**Id:** 6f21f308-885a-4882-b043-162c3d582ed2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.3 (no git in agent clones) and §15.9; implementation of runner slice R4, 2026-10-22
+**Revisit when:** the agent-side CLI keeps its state anywhere but `<clone>/.git/maity`, or the runner runs the join as a different user (the `agent_user` layout)
+
+The runner runs `maity join --join-file - --no-resume --no-pointer` in
+the clone with `MAITY_STATE_DIR` set to `<clone>/.git/maity`. Its
+output is mapped to a `join_failed` detail and never logged.
+
+**Reason:** without the variable, the CLI finds its state with `git
+rev-parse` in the clone, a clone whose `.git/config` the agent may have
+written. That would break the rule that the runner runs no git in an
+existing clone. Its error output can name the join URL, so it can name
+the token. `--no-pointer` keeps the join from writing into the
+repository: the runner starts the session with its own prompt, so the
+pointer block has nothing to do here.
+
+**Rejected alternatives:**
+- Letting the CLI call `git rev-parse`: a read-only command, but it reads
+  the agent-writable config, and the rule is simpler kept whole.
+- Logging the CLI's error text for diagnosis: a token in a log file
+  outlives the join.
