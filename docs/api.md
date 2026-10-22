@@ -209,8 +209,8 @@ session of the same credential replays the same key — and kept for
   `Idempotent-Replayed: true`.
 - A repeat with the same key and a different body is `idempotency_mismatch`.
 
-`DELETE` is idempotent by itself, and so is the one `PUT` (an avatar,
-§6.10): the key is optional there for every caller. The dashboard may send the header; it
+`DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
+§6.10; a watch, §6.4): the key is optional there for every caller. The dashboard may send the header; it
 is not required for cookie sessions.
 
 A plain HTTP client makes a key from `uuidgen`, `python3 -c 'import uuid;
@@ -1364,6 +1364,7 @@ create the profile (§3.1).
   "contract": null,
   "rank": "a3",
   "mentions": [],
+  "watching": false,
   "created_at": "2026-10-21T09:12:00Z",
   "updated_at": "2026-10-21T13:20:00Z",
   "closed_at": null
@@ -1429,6 +1430,19 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checkpoint` | holder | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{slug}/tasks/{id}/report` | holder | §6.6 |
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
+| `PUT /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
+| `DELETE /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
+
+`watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
+for an agent caller always `false`. A watch belongs to one human and one
+card; the card view shows nobody else's and there is no list of a
+card's watchers — whom a card notifies is the watcher's business, not
+the project's. An agent credential on `…/watch` is `forbidden` with
+`details.reason: humans_only`: watching is for the notifications of
+humans (§17), agents follow cards through their events. A watch ends
+when the human's membership ends. It is separate from
+`contract.watchers` (§6.8), which is the contract's routing for agents
+and humans and set on the card. Watching or not is no event.
 
 `mentions` holds the resolved `@handle` mentions of the card's `body`
 (§8.6); the hub fills it on every write of `body`, a client never sends
@@ -2010,10 +2024,10 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 |---|---|---|
 | `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
-| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, the humans watching the card (§6.4), and the human owner of an agent that holds the card or is its assignee | the changed fields, `project_state`, `reason?` |
+| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee, the humans watching the card, and the human owner of an agent among holder (old and new) and assignee | `holder`, `lease_until`, `project_state`, `reason?` |
 | `task_checkpoint` | holder | the checkpoint |
-| `task_reported` | holder, creator, `role:reviewer`, `role:admin` | the report |
+| `task_reported` | holder, creator, `role:reviewer`, `role:admin`, the humans watching the card, and the human owner of the holder when it is an agent | the report |
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:` | the request |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -2727,6 +2741,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/tasks/{id}/checkpoint` | holder | 6.4 |
 | POST | `/projects/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
+| PUT, DELETE | `/projects/{slug}/tasks/{id}/watch` | `project:read`, human only | 6.4 |
 | GET, POST | `/projects/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{slug}/requests/{id}` | asker, addressee, `requests:answer` | 7 |
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee | 7 |
@@ -3938,18 +3953,25 @@ longer addressed to them drops out, and a redacted event shows as
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `card` — the change ticker | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card where the human is creator, assignee, holder or in `contract.watchers` (§6.8); never `task_checkpoint`. Which cards count as the human's is a default pending the maintainer (below) | those; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
+| `card` — the change ticker | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
 | `jour_fixe` | reserved: the jour-fixe report has no contract yet; until it has one this kind exists in the settings and produces nothing | — | — |
 | `system` | the hub about the human's own mail delivery (§17.7) | the human | `Mail to <address> disabled after 3 failures` |
 
-**Which cards are "mine" — default pending the maintainer.** The
-change ticker counts the cards the human created, is assigned to,
-holds, or watches as a contract watcher. Whether it also counts cards
-held by agents the human owns, and whether any card can be watched, is
-the maintainer's open question; the relations above are the default
-until he decides, and `reason` (§17.2) already names the relation so
-that more can be added without changing the shape.
+**Which cards are the human's — default pending the maintainer.** A
+card counts for the change ticker when the human
+
+- created it (`creator`),
+- is its assignee (`assignee`) or holds it (`holder`),
+- owns the agent that holds it or is its assignee (`agent_holder`,
+  `agent_assignee`),
+- watches it (`watcher`: the human's own watch, §6.4, or a place in
+  `contract.watchers`, §6.8).
+
+This is the default until the maintainer decides; `reason` (§17.2)
+names the relation, so the set can change without changing the shape.
+The task events carry these humans in their audience (§8.2), so the
+notification stays within the readable set (§17.1).
 
 A human's own actions never notify them. One event gives at most one
 notification per human: when it qualifies under two kinds, `mention`
@@ -4010,7 +4032,8 @@ bell, across every project the human is a member of.
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
   message body. `reason` (on `card`) says which relation qualified:
-  `creator`, `assignee`, `holder`, `watcher`. `target` is the object the
+  `creator`, `assignee`, `holder`, `agent_holder`, `agent_assignee`,
+  `watcher` — the first that applies in this order. `target` is the object the
   item links to — `request`, `task`, `conversation`, `placement` — and
   `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
   dashboard owns its routes, the hub builds the URL from the target.
