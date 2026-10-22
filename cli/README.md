@@ -437,9 +437,14 @@ maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made
 ```
 
 `gc` asks the hub through each clone's own `maity`, so the runner never
-holds an agent's credential. It reads uncommitted files and unpushed
-commits with git's hooks, fsmonitor and pagers switched off, and removes
-nothing without `--yes`.
+holds an agent's credential, and asks the hub which placements are active,
+so a clone a new placement continues is kept. git runs in a clone only
+when its configuration holds nothing but a plain clone's keys and it has
+no `.git/info/attributes` or submodules. git can run programs from all
+of those, and the agent wrote them. Any other clone is listed as "not
+inspected" and never removed, as is one where git fails. `--yes` needs
+the service stopped, and a record whose path is not the workspace it
+names is never followed.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](src/maity/runner/maity-runner.service)). It runs the

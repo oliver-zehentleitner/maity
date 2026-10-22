@@ -422,6 +422,13 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _seconds(value: str) -> int:
+    seconds = int(value)
+    if seconds < 0:
+        raise argparse.ArgumentTypeError("0 or more seconds")
+    return seconds
+
+
 def _operate(name: str) -> Any:
     """A handler for one of `operate`'s commands: the configuration first, its refusals as
     this module's (exit 2)."""
@@ -525,6 +532,9 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     )
     r.add_argument("which", help="the placement id, or the agent's handle")
     r.add_argument("--follow", action="store_true", help="keep printing what is appended")
+    r.add_argument(
+        "--raw", action="store_true", help="the bytes as written, escape sequences included"
+    )
     r.set_defaults(handler=_operate("cmd_logs"))
 
     r = runner_cmd(
@@ -542,7 +552,7 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "For emergencies and decommissioning: SIGTERM to every agent session, then kill-session "
         "after --grace seconds. Refused while the service runs, since it would start them again.",
     )
-    r.add_argument("--grace", type=int, default=operate.STOP_ALL_GRACE, metavar="N")
+    r.add_argument("--grace", type=_seconds, default=operate.STOP_ALL_GRACE, metavar="N")
     r.set_defaults(handler=_operate("cmd_stop_all"))
 
     r = runner_cmd(

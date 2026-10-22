@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import git
@@ -121,6 +122,7 @@ def test_gc_lists_and_only_removes_with_yes(
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # no placement any more
     monkeypatch.setattr(operate, "credential_revoked", lambda p: True)
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
     out = capsys.readouterr().out
     assert "agent agt-g  credential revoked" in out and "?? draft.txt" in out
@@ -170,3 +172,141 @@ def test_workspace_claim_refuses_a_path_outside(tmp_path: Path) -> None:
         ["runner", "workspace", "claim", "../x", "--agent", "agt-h", "--config", str(path)]
     )
     assert code == cli.EXIT_USAGE
+
+
+# --- review round: gc never runs the clone's code, never removes what it could not read ----
+
+
+def revoked_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "agent-g") -> Any:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", name)
+    place.path.mkdir(parents=True)
+    git(place.path, "init", "-q")
+    (place.path / "draft.txt").write_text("unsaved")
+    workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
+    monkeypatch.setattr(operate, "credential_revoked", lambda p: True)
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    return path, place
+
+
+@pytest.mark.parametrize(
+    "plant",
+    [
+        "attributes",  # a filter driver, run by `git status`
+        "gpg",  # gpg.program with log.showSignature, run by `git log`
+        "alias",
+        "include",
+    ],
+)
+def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    plant: str,
+) -> None:  # fmt: skip
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    marker = tmp_path / "ran"
+    config_file = place.path / ".git" / "config"
+    with config_file.open("a") as fh:
+        if plant == "attributes":
+            (place.path / ".git" / "info").mkdir(exist_ok=True)
+            (place.path / ".git" / "info" / "attributes").write_text("* filter=x\n")
+            fh.write(f'[filter "x"]\n\tclean = touch {marker}\n')
+        elif plant == "gpg":
+            fh.write(f"[log]\n\tshowSignature = true\n[gpg]\n\tprogram = touch {marker}\n")
+        elif plant == "alias":
+            fh.write(f"[alias]\n\tstatus = !touch {marker}\n")
+        else:
+            fh.write(f"[include]\n\tpath = {tmp_path}/evil\n")
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "not inspected" in out and "not removed" in out
+    assert place.path.exists() and not marker.exists()
+
+
+def test_a_git_failure_keeps_the_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    (place.path / ".git" / "HEAD").write_text("garbage\n")  # git exits 128
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert "git failed" in capsys.readouterr().out and place.path.exists()
+
+
+def test_a_record_pointing_outside_the_workspaces_is_never_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, _place = revoked_clone(tmp_path, monkeypatch)
+    cfg = config.load(path)
+    important = tmp_path / "operator-home" / "important"
+    important.mkdir(parents=True)
+    records = workspace.records(cfg.state_dir)
+    records[str(important)] = {"project": "maity", "agent": "agt-z", "placement_id": "plc-9"}
+    state.save_state(cfg.state_dir, records, name=workspace.RECORDS)
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert important.exists()
+
+
+def test_a_clone_an_active_placement_continues_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    monkeypatch.setattr(operate, "_active", lambda cfg: ({("maity", "agent-g")}, set()))
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert place.path.exists()
+
+
+def test_gc_yes_is_refused_while_the_service_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    lock = serve.hold_lock(tmp_path / "st")
+    try:
+        code = cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)])
+    finally:
+        lock.close()
+    assert code == cli.EXIT_USAGE and place.path.exists()
+
+
+def test_logs_on_a_terminal_show_escapes_instead_of_running_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    logs = tmp_path / "st" / supervisor.LOGS
+    logs.mkdir()
+    (logs / "plc-0003.log").write_bytes(b"ok\n\x1b]52;c;ZXZpbA==\x07\n")
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    assert cli.main(["runner", "logs", "plc-0003", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\\x1b]52" in out
+
+
+def test_an_exact_placement_id_wins_over_a_handle(tmp_path: Path) -> None:
+    path = setup(tmp_path)
+    state.save_state(
+        tmp_path / "st",
+        {"placements": [{"id": "plc-0003", "agent": "plc-0004"}, {"id": "plc-0004", "agent": "x"}]},
+        name=serve.STATUS_FILE,
+    )
+    cfg = config.load(path)
+    assert operate._placement_id(cfg, "plc-0004") == "plc-0004"
+
+
+def test_only_an_exact_credential_revoked_code_counts(monkeypatch: pytest.MonkeyPatch,
+                                                       tmp_path: Path) -> None:  # fmt: skip
+    place = workspace.Workspace(tmp_path, "maity", "c")
+    (tmp_path / ".git" / "maity").mkdir(parents=True)
+    (tmp_path / ".git" / "maity" / "credential").write_text("mty1.x.y")
+
+    def answer(stderr: str) -> Any:
+        return lambda *a, **k: subprocess.CompletedProcess([], 1, "", stderr)
+
+    monkeypatch.setattr(
+        "maity.runner.operate.subprocess.run",
+        answer("maity: GET /api/v1/me: credential_revoked: revoked"),
+    )
+    assert operate.credential_revoked(place)
+    monkeypatch.setattr(
+        "maity.runner.operate.subprocess.run", answer("maity: hub says the credential_revoked flag")
+    )
+    assert not operate.credential_revoked(place)

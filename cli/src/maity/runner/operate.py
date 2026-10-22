@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,16 +15,25 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .. import onboarding, state
+from .. import hub, onboarding, state
 from . import config, serve, supervisor, workspace
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
-# git run by the operator in an agent's clone: nothing the agent wrote may run (§7.5).
+# git run by the operator in an agent's clone: nothing the agent wrote may run (§7.5). The
+# overrides below are a second line; the first is `not_inspectable`.
 SAFE_GIT = [
     "git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
     "-c", "core.pager=cat", "-c", "diff.external=", "-c", "protocol.allow=never",
+    "-c", "log.showSignature=false", "-c", "gpg.program=false", "-c", "core.attributesFile=",
 ]  # fmt: skip
+GIT_SECTION = re.compile(r'^\[\s*([A-Za-z0-9.-]+)\s*(?:"([^"]*)")?\s*\]$')
+GIT_ALLOWED = re.compile(
+    r"^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase"
+    r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
+    r"|user\.(name|email))$"
+)
+REVOKED = re.compile(r": credential_revoked:")
 
 
 class Refused(Exception):
@@ -37,10 +47,20 @@ def _status(cfg: config.Config) -> dict[str, Any]:
 
 
 def _placement_id(cfg: config.Config, which: str) -> str:
-    """A placement id from an id, or from an agent handle the service last saw."""
-    for placement in _status(cfg).get("placements") or []:
-        if isinstance(placement, dict) and which in (placement.get("id"), placement.get("agent")):
-            return str(placement["id"])
+    """A placement id: `which` itself when it is one the service last saw, else the one
+    placement of the agent with that handle; never a guess between two."""
+    known = [
+        p for p in _status(cfg).get("placements") or []
+        if isinstance(p, dict) and isinstance(p.get("id"), str)
+        and supervisor.PLACEMENT_ID.match(p["id"])
+    ]  # fmt: skip
+    if any(p["id"] == which for p in known):
+        return which
+    by_agent = [p["id"] for p in known if p.get("agent") == which]
+    if len(by_agent) > 1:
+        raise Refused(f"{onboarding.inline(which)} names more than one placement; use the id")
+    if by_agent:
+        return str(by_agent[0])
     if supervisor.PLACEMENT_ID.match(which):
         return which
     raise Refused(f"no placement {onboarding.inline(which)} on this runner")
@@ -54,14 +74,23 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
     path = cfg.state_dir / supervisor.LOGS / f"{pid}.log"
     if not path.is_file():
         raise Refused(f"no log for {pid} in {path.parent}")
-    with path.open("rb") as fh:
-        sys.stdout.buffer.write(fh.read())
+    # A terminal acts on escape sequences the agent printed (an OSC 52 writes the operator's
+    # clipboard): shown, not executed, unless --raw.
+    raw = args.raw or not sys.stdout.isatty()
+
+    def emit(chunk: bytes) -> None:
+        if raw:
+            sys.stdout.buffer.write(chunk)
+        else:
+            sys.stdout.write(onboarding.clean(chunk.decode("utf-8", errors="replace")))
         sys.stdout.flush()
+
+    with path.open("rb") as fh:
+        emit(fh.read())
         while args.follow:
             chunk = fh.read()
             if chunk:
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.flush()
+                emit(chunk)
             else:
                 time.sleep(FOLLOW_EVERY)
     return 0
@@ -90,12 +119,19 @@ def cmd_stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
     if cfg.local is None:
         raise Refused("stop-all is for the local backend")
     try:
-        serve.hold_lock(cfg.state_dir).close()
+        lock = serve.hold_lock(cfg.state_dir)  # held to the end: no restart in between
     except serve.Fatal:
         raise Refused(
             "the runner service is running and would start the agents again; stop it first "
             "(systemctl stop maity-runner, or end `maity runner serve`)"
         ) from None
+    try:
+        return _stop_all(cfg, args)
+    finally:
+        lock.close()
+
+
+def _stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
     backend = supervisor.local_backend(cfg)
     sessions = {n: s for n, s in backend.sessions().items() if s.placement and not s.dead}
     if not sessions:
@@ -120,60 +156,173 @@ def cmd_stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
 
 def credential_revoked(place: workspace.Workspace) -> bool:
     """Whether the hub refuses the clone's credential as revoked, asked by the agent's own
-    CLI (the runner never holds the credential) and isolated from the clone's modules."""
+    CLI (the runner never holds the credential) and isolated from the clone's modules. Any
+    other answer, or none, is "not known to be revoked"."""
     if not place.credential.is_file():
         return False
     env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
     env[state.STATE_DIR_ENV] = str(place.credential.parent)
-    done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
-        [sys.executable, "-I", "-m", "maity", "api", "GET", "/me"],
-        cwd=Path.home(), env=env, capture_output=True, text=True, timeout=60, check=False,
-    )  # fmt: skip
-    return done.returncode != 0 and "credential_revoked" in done.stderr
+    try:
+        done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+            [sys.executable, "-I", "-m", "maity", "api", "GET", "/me"],
+            cwd=Path.home(), env=env, capture_output=True, text=True, timeout=60, check=False,
+        )  # fmt: skip
+    except subprocess.TimeoutExpired:
+        return False
+    return done.returncode != 0 and REVOKED.search(done.stderr) is not None
 
 
-def unsaved_work(path: Path) -> list[str]:
-    """Uncommitted files and commits on no remote, read with git defused (§7.5)."""
+def not_inspectable(path: Path) -> str | None:
+    """Why git must not run in this clone, or None. git runs programs named in its
+    configuration (filter drivers, gpg.program, fsmonitor, pagers, aliases) and reads
+    `.git/info/attributes` and submodules' own configuration; the agent wrote all of them.
+    Only a configuration made of the keys a plain clone has is read."""
+    dot_git = path / ".git"
+    if dot_git.is_symlink() or not dot_git.is_dir():
+        return "its .git is not a plain directory"
+    for extra in ("info/attributes", "modules"):
+        if (dot_git / extra).exists():
+            return f".git/{extra} exists"
+    try:
+        text = (dot_git / "config").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "its .git/config cannot be read"
+    section = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        header = GIT_SECTION.match(line)
+        if header:
+            section = header.group(1).lower() + (f".{header.group(2)}" if header.group(2) else "")
+            continue
+        key = line.split("=", 1)[0].strip().lower()
+        if not GIT_ALLOWED.match(f"{section}.{key}"):
+            return f"its .git/config sets {onboarding.inline(section)}.{onboarding.inline(key)}"
+    return None
+
+
+def unsaved_work(path: Path) -> list[str] | None:
+    """Uncommitted files and commits on no remote, or None when git could not tell: then
+    nothing may be removed. Neither the operator's own git configuration nor the clone's
+    hooks, filters, signatures or submodules take part."""
+    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
     lines: list[str] = []
     for command in (
-        [*SAFE_GIT, "-C", str(path), "status", "--porcelain"],
-        [*SAFE_GIT, "-C", str(path), "log", "--oneline", "--branches", "--not", "--remotes"],
-    ):
-        done = subprocess.run(  # noqa: S603 - fixed argv, a path the runner recorded
-            command, capture_output=True, text=True, timeout=60, check=False
-        )
+        [*SAFE_GIT, "-C", str(path), "status", "--porcelain", "--ignore-submodules=all"],
+        [*SAFE_GIT, "-C", str(path), "log", "--oneline", "--no-show-signature", "--branches",
+         "--not", "--remotes"],
+    ):  # fmt: skip
+        try:
+            done = subprocess.run(  # noqa: S603 - fixed argv, a path the runner recorded
+                command, env=env, capture_output=True, text=True, timeout=60, check=False
+            )
+        except subprocess.TimeoutExpired:
+            return None
+        if done.returncode != 0:
+            return None
         lines += [onboarding.inline(line) for line in done.stdout.splitlines() if line.strip()]
     return lines
+
+
+def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
+    """(project, clone) pairs and agents of every active placement, asked of the hub: a
+    clone a new placement continues names an old placement in its record until it starts."""
+    runner_state = state.load_state(cfg.state_dir, name=serve.RUNNER_FILE)
+    try:
+        service = serve.open_service(cfg, runner_state)
+        answer = service.client.call("GET", "/runner/placements")
+    except (serve.Fatal, hub.HubError) as exc:
+        raise Refused(f"cannot ask the hub which placements are active ({exc})") from None
+    pairs: set[tuple[str, str]] = set()
+    agents: set[str] = set()
+    for p in (answer.get("items") if isinstance(answer, dict) else None) or []:
+        if not supervisor.valid(p):
+            continue
+        pairs.add((p["project"], p["workspace"]["clone"]))
+        agent = p.get("agent") or {}
+        agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
+    return pairs, agents
 
 
 def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
     if not args.revoked:
         raise Refused("gc removes only workspaces whose credential is revoked: pass --revoked")
-    placed = {p.get("id") for p in _status(cfg).get("placements") or [] if isinstance(p, dict)}
-    found = workspace.records(cfg.state_dir)
-    gone: list[str] = []
-    for path_text, record in sorted(found.items()):
-        if not isinstance(record, dict) or record.get("placement_id") in placed:
-            continue
-        path = Path(path_text)
-        place = workspace.Workspace(path, str(record.get("project")), path.name)
-        if not path.is_dir() or not credential_revoked(place):
-            continue
-        work = unsaved_work(path)
-        print(f"{path}  agent {onboarding.inline(record.get('agent'))}  credential revoked")
-        for line in work:
-            print(f"  {line}")
-        if args.yes:
-            shutil.rmtree(path)
-            gone.append(path_text)
-            print("  removed")
-    if gone:
-        for path_text in gone:
-            found.pop(path_text, None)
-        state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
-    elif not args.yes:
-        print("nothing removed; pass --yes to remove the workspaces listed")
+    if cfg.local is None:
+        raise Refused("gc is for the local backend")
+    # Removing holds the service's lock: nothing starts in a clone while it goes.
+    try:
+        lock = serve.hold_lock(cfg.state_dir) if args.yes else None
+    except serve.Fatal:
+        raise Refused(
+            "the runner service is running; stop it before removing workspaces, or run gc "
+            "without --yes to list them"
+        ) from None
+    try:
+        pairs, agents = _active(cfg)
+        found = workspace.records(cfg.state_dir)
+        gone: list[str] = []
+        try:
+            for path_text, record in sorted(found.items()):
+                if _collect(cfg, path_text, record, pairs, agents, args.yes):
+                    gone.append(path_text)
+        finally:
+            if gone:
+                for path_text in gone:
+                    found.pop(path_text, None)
+                state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
+        if not args.yes:
+            print("nothing removed; pass --yes to remove the workspaces listed as removable")
+    except serve.Fatal as exc:
+        raise Refused(str(exc)) from None
+    finally:
+        if lock is not None:
+            lock.close()
     return 0
+
+
+def _collect(
+    cfg: config.Config,
+    path_text: str,
+    record: Any,
+    pairs: set[tuple[str, str]],
+    agents: set[str],
+    remove: bool,
+) -> bool:
+    """One workspace: listed when its credential is revoked; removed (True) only when its
+    path is the one its record implies, no placement uses it, and git could say what is in
+    it."""
+    assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
+    if not isinstance(record, dict):
+        return False
+    path = Path(path_text)
+    try:
+        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
+    except workspace.Refused:
+        return False
+    if str(expected.path) != path_text or path.is_symlink() or not path.is_dir():
+        return False  # a record pointing anywhere else is never followed
+    if (expected.project, expected.clone) in pairs or record.get("agent") in agents:
+        return False  # a placement uses it, or will
+    if not credential_revoked(expected):
+        return False
+    print(f"{path}  agent {onboarding.inline(record.get('agent'))}  credential revoked")
+    reason = not_inspectable(path)
+    work = None if reason else unsaved_work(path)
+    if reason or work is None:
+        print(f"  not inspected ({reason or 'git failed'}); not removed")
+        return False
+    for line in work:
+        print(f"  {line}")
+    if not remove:
+        return False
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        print(f"  not removed: {exc}")
+        return False
+    print("  removed")
+    return True
 
 
 # --- workspace claim -------------------------------------------------------------------------
