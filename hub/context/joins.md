@@ -76,3 +76,30 @@ mounted for the join host. It would need the join routes registered twice
 or factored out, and every later route added to the main app would have to
 be kept off the join host deliberately; with the rewrite, nothing but the
 two token paths can be reached there by construction.
+
+## The join host is matched on the hostname alone, failing closed
+
+**Id:** 0db8ec23-5525-4884-9df4-369fcd3973c2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of PR #148, 2026-10-22
+
+A request is on the join host when the `Host` header's hostname, lower
+case and without trailing dots, is the join URL's; the port is not
+compared. `join.example.`, `join.example:80` and `join.example:0443` are the
+join host too, and a malformed port does not move a request to the public
+app. The log masks the first path segment of anything on the join host that
+was not rewritten to the join, since `HEAD /{token}` or `/{token}/` still
+carry the token. The page for a link that no longer works is answered only
+on the join host; the public host keeps the envelope's `not_found`.
+
+**Reason:** an exact `host[:port]` match let every variant fall through to
+the full public app, login cookie included, which the join host must
+never serve (§1.1, §2.1); a trailing-dot host is even its own browser
+origin. `MAITY_JOIN_URL` must already name another hostname than the
+public URL, so ignoring the port cannot capture public traffic.
+
+**Rejected alternative:** normalising the port (default ports dropped,
+leading zeros parsed) and comparing `host:port` exactly — closer to the
+URL, but every form it misses fails open, onto the public app.
