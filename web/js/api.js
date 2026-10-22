@@ -262,6 +262,8 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  // A message item as §9 shows it (#206): redacted and redaction always there.
+  const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
   // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
   // each { view, items, read }; joined_seq is where a participant's window begins.
   function groupChats(slug) {
@@ -1139,7 +1141,7 @@ window.Maity = window.Maity || {};
       // yet, everything said so far lies before it.
       const first = items.length ? items[0].seq : (win.length ? win[0].seq : (c.items.length ? c.items[c.items.length - 1].seq + 1 : null));
       const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
-      return { items: items.map((x) => Object.assign({}, x)), cursor: items.length ? items[items.length - 1].seq : null, earlier };
+      return { items: items.map(messageView), cursor: items.length ? items[items.length - 1].seq : null, earlier };
     }],
     ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/messages$/, (m, body, path) => {
       const c = groupChat(m[1], m[2], path);
@@ -1169,8 +1171,9 @@ window.Maity = window.Maity || {};
       }
       // §8.5: the reason is required, as the hub's own check has it.
       if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
-      // …/messages shows a removed message as body null and redacted true (§9), nothing more.
-      Object.assign(msg, { body: null, mentions: [], redacted: true });
+      // …/messages shows a removed message as body null, redacted true and
+      // its redaction {at, by, reason} (§9, #206).
+      Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { at: nowIso(), by: me().member.id, reason: body.reason } });
       return { seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: me().member.id, at: nowIso() } };
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
@@ -1179,7 +1182,7 @@ window.Maity = window.Maity || {};
       conv.items.forEach((x) => { x.seen_by_human = true; });
       return {
         items: conv.items.filter((x) => x.seq > after).map((x) => {
-          const copy = Object.assign({}, x);
+          const copy = messageView(x);
           delete copy.seen_by_human;
           return copy;
         }),

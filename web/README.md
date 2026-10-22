@@ -217,9 +217,9 @@ Inside a project, in the order of their importance; see
    - **Removing.** A human in the chat can remove a message for everyone,
      with a reason, which the hub requires (`POST …/events/{seq}/redact`,
      §8.5). A removed message is one whose body is `null`. It reads "This
-     message was removed", plus by whom and why where the page knows it:
-     its own removal, or the `event_redacted` that arrives in the open
-     chat, direct ones included.
+     message was removed", plus by whom and why from its `redaction`
+     (`{at, by, reason}`, §9, #206) or from the `event_redacted` that
+     arrives in the open chat, direct ones included.
    - **Managing.** The creator and an admin rename the chat, add people
      (with the note that a latecomer starts fresh and can read the earlier
      part) and remove people. Such changes, also someone else's, are drawn

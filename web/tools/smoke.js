@@ -2090,6 +2090,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(gcWrites[1]) === JSON.stringify(["POST", "/projects/maity/events/5010/redact", { reason: "pasted a token" }])
     && text(gcList().querySelectorAll("li.msg")[0]).includes("This message was removed by Maintainer: pasted a token.")
     && !btn(gcList().querySelectorAll("li.msg")[0], "Remove"), "group chat: a human in it removes a message, its tombstone says by whom and why");
+  const gcHub = (await win.Maity.api.get("/projects/maity/conversations/cnv-0007/messages?before=5011&limit=5")).items[0];
+  const gcKept = (await win.Maity.api.get("/projects/maity/conversations/cnv-0007/messages?before=5016&limit=5")).items.find((m) => m.seq === 5015);
+  expect(gcHub.body === null && gcHub.redacted === true && gcHub.redaction.by === "hum-maintainer" && gcHub.redaction.reason === "pasted a token" && gcHub.redaction.at
+    && gcKept.redacted === false && gcKept.redaction === null, "group chat: the mock gives redacted and redaction on every message item (§9, #206)");
   win.prompt = () => null;
   btn(gcList().querySelectorAll("li.msg")[1], "Remove").click(); await tick();
   expect(gcWrites.length === 2, "group chat: a cancelled removal sends nothing");
