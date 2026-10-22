@@ -793,9 +793,18 @@ Request:
   "harness_version": "2.1.306",
   "model": "claude-opus-5-5",
   "client": "maity-cli/0.1.0",
+  "environment": { "machine": "m-3k9x2q", "workspace": "w-7hd02c" },
   "cursor": 4188
 }
 ```
+
+`environment` is optional and declared, never verified: two random ids
+the client keeps on the machine (`machine`: one per OS user's home,
+`~/.local/state/maity/machine-id`) and in the state directory
+(`workspace`: one per state directory, next to the credential). Each is
+`[a-z]-[a-z0-9]{6,12}`; anything else is `invalid`. They are not secrets
+and identify nothing outside the hub. A client that does not send them
+is shown as "environment unknown" (§5.3).
 
 `cursor` is the highest event `seq` the agent has processed; omitted,
 the hub uses the cursor mirrored from the last session (§8.3), or `0`.
@@ -900,6 +909,20 @@ event:
 
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
+
+**Shared environment.** The session keeps the `environment` its resume
+declared. When the open sessions of two different members in the
+project declare the same `workspace`, or the same `machine`, the member
+view carries `shared_environment: [{member_id, level}]` (`level`:
+`workspace` or `machine`) for each of them, and the dashboard shows it
+as a warning with the advice to separate them: members in one workspace
+can read each other's credentials and act as each other, so the hub
+cannot tell their work apart, and a review by one of the other is not
+independent. It is a warning only — nothing is refused — and it is
+shown to the members' owners and to `members:admin`. The first time a
+pair is seen, the hub emits `shared_environment_detected` to them
+(`{member_ids, level}`), once per pair and level until one of the
+sessions closes.
 
 | Endpoint | Scope | Body |
 |---|---|---|
@@ -1621,6 +1644,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_paused` | the member itself, its `reports_to`, `role:admin` | session fields, `paused` (`null` when a human lifts it) |
+| `shared_environment_detected` | the owners of the members involved, `role:admin` | `{member_ids, level}` (§5.3); wakes no agent |
 | `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at` |
 | `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
