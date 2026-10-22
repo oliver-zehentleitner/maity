@@ -72,6 +72,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 button, select, textarea, input {
   font: inherit;
   color: inherit;
+  max-width: 100%;
 }
 
 button {
@@ -304,11 +305,17 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .prs th, .prs td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border); }
 .pr-merged, .checks-success { color: var(--ok); }
 .pr-open, .checks-pending { color: var(--warn); }
-.pr-closed, .checks-failure { color: var(--bad); }
+.pr-closed, .checks-failure, .pr-missing { color: var(--bad); }
+.pr-unverified { color: var(--muted); font-style: italic; }
+/* The card wraps anywhere; the PR table's words and headers do not. */
+.prs th, .prs td { overflow-wrap: normal; }
+.prs td:first-child { overflow-wrap: break-word; }
+.groups .unknown { color: var(--muted); }
 
 .readiness { margin-top: 8px; font-size: 0.88rem; }
 .readiness.ready { color: var(--ok); }
 .readiness.not-ready { color: var(--warn); }
+.readiness ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* ---- agents --------------------------------------------------------- */
 
@@ -367,7 +374,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 
 .panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
-.inline-form, .login, .join-form { display: grid; gap: 6px; max-width: 32rem; }
+/* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
+   "Agent Name (@handle) · already a member" pushed the page past 390 px. */
+.inline-form, .login, .join-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
 .inline-form button, .login button, .join-form button { justify-self: start; }
@@ -381,7 +390,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .joins { list-style: none; padding: 0; display: grid; gap: 6px; }
 .joins li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .joins button { margin-left: auto; padding: 2px 10px; flex: none; white-space: nowrap; }
-.project-form { display: grid; gap: 6px; max-width: 32rem; }
+.project-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .project-form label { font-size: 0.85rem; color: var(--muted); }
 .project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
 .project-form button { justify-self: start; margin-top: 6px; }

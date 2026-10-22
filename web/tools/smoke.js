@@ -172,6 +172,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".error"), "board renders");
   ["Proposed", "Cancelled", "Context round", "Contract"].forEach((s) => expect(text(main).includes(s), "board shows " + s));
   expect(text(main).includes("Release 0.1.0") && text(main).includes("Not ready:") && text(main).includes("checklist item chk-2 is open"), "release readiness from the hub");
+  const relCard = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.1.0"));
+  const prRow = (n) => relCard.querySelectorAll("tr").find((tr) => tr.textContent.startsWith("#" + n));
+  expect(prRow(4).textContent.includes("not on the forge") && text(relCard).includes("#4 is not on the forge (a mistyped number"),
+    "release: a PR the forge does not have, and its pr_not_found reason");
+  expect(prRow(5).textContent.includes("unverified · typed as merged") && prRow(5).textContent.includes("never")
+    && text(relCard).includes("#5 is not observed yet; what was typed or reported counts for nothing"),
+    "release: a typed state is shown as a claim, unverified, not as merged");
+  expect(prRow(1).querySelector(".pr-merged") && prRow(1).textContent.includes("merged"), "release: an observed merged PR is shown as merged");
+  expect(relCard.querySelector(".groups li.unmet") && text(relCard).includes("Ship together") && text(relCard).includes("tsk-0005 (review) + tsk-0006 (open)"),
+    "release: the ships_with group, incomplete");
+  expect(text(relCard).includes("CHANGELOG has a section for this version · ") && text(relCard).includes("Tag v0.1.0: not on the forge"),
+    "release: checklist with who ticked it; the tag as observed");
+  await go("#/p/sample/board");
+  const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
+  expect(closedRel && text(closedRel).includes("Closed: its pull requests, groups and readiness are the record frozen when it closed")
+    && text(closedRel).includes("the hub observes nothing for this project (no forge probe)")
+    && !text(closedRel).includes("it can be cancelled but not marked done") && text(closedRel).includes("Tag v0.3.0: not observed"),
+    "closed release without a probe: frozen record, honest reason, no hint to act, tag not observed");
+  expect(text(closedRel).includes("tsk-0021 + tsk-0022 (not in this release)") && !text(closedRel).includes("(review)")
+    && closedRel.querySelector(".groups li.unknown"),
+    "closed release: its group without live statuses, the partner outside depends_on named, neither green nor amber without a probe");
+  const contractCard = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label") === "Contract: receipt fields");
+  expect(contractCard && text(contractCard).includes("Contract final · arbiter the admins · watched by "),
+    "contract card: state, arbiter and watchers");
+  await go("#/p/maity/board");
   expect(text(main).includes("lease expired"), "expired lease shown");
   expect(text(main).includes("Checkpoint") && text(main).includes("Report"), "checkpoint and report shown");
   expect(main.querySelectorAll("a").some((a) => a.attrs.href === "https://github.com/oliver-zehentleitner/maity/pull/3"), "https PR link kept");

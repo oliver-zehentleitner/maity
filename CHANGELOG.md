@@ -68,6 +68,11 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   the join line says where to paste it, the board's subtitle says that open cards are
   all shown, a tab row wider than the screen fades where more tabs are, and an inbox
   with nothing open on screen reloads on its own when a request arrives
+- web: release cards against the hub's §6.7: a typed or reported PR state is shown as an
+  unverified claim, a PR the forge does not have as such (`found`, `pr_not_found`), the
+  `ships_with` groups, every readiness reason in words, an honest note when the project
+  has no forge probe, a closed release as its frozen record; contract cards show their
+  watchers
 - hub: the API conventions and authentication of `docs/api.md` §1–§2 —
   error envelope with `Maity-Error`, `Maity-Server-Time`, no-store and
   nosniff on every response, the 64 KiB body cap, refusal of credential-
@@ -147,6 +152,8 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 - web: at phone width a credential's or join's Revoke button keeps its label on one line,
   and a credential's id, client and dates wrap as one text beside it
 - web: a request id on a blocked card no longer breaks at its hyphen
+- web: at phone width a form's select no longer widens the page past the screen when an
+  option is long (the join view's agent list, the create view's presets)
 - web: a join whose list cannot be re-read afterwards says it was created, not "No join created"
 - web: the project switcher's state dot shows the state's colour; a later `.dot` rule
   had made every dot grey

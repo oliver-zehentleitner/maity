@@ -51,10 +51,23 @@ Inside a project, in the order of their importance; see
 2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
-   and report; contract cards and context rounds are marked. Releases
-   show their pull requests as the hub observed them, the checklist, the
-   tag, and the hub's readiness with its reasons — never computed in the
-   browser.
+   and report; context rounds are marked, contract cards show their
+   state, arbiter and watchers. Releases (`docs/api.md` §6.7) show:
+   - their pull requests: an observed state as a fact; a typed or
+     reported one only as a claim beside **unverified**; one the forge
+     does not have as **not on the forge**;
+   - the `ships_with` groups that ship together, each card with its
+     status (none in a closed release's frozen record) and a member outside
+     the release's `depends_on` named as such; a group is green only when
+     the hub calls the release ready, amber when the hub names it
+     incomplete, neither while the hub observes nothing;
+   - the checklist with who ticked what, and the tag as observed;
+   - the hub's readiness with each reason in words, never computed in
+     the browser.
+
+   Without a forge probe the hub observes nothing, and the card says so:
+   such a release is never ready and can be cancelled but not done. A
+   closed release is marked as the record frozen at its close.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
@@ -235,7 +248,14 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     dot differs from the building project's, and the agent's `resume`
     packet carries the state, the note and the absence; then back to build
     and "I am back", which the packet shows too;
-12. at phone width (390 px) the inbox, board, agents, organisation and join
+12. **Release and contract**: a reviewer joins through the dashboard
+    (role `reviewer`), opens a release over the claimed card and a
+    `ships_with` partner, types PR #7 as merged and adds a contract card
+    watched by the first agent. Without a forge probe the board shows #7
+    as unverified (not merged), the reason in words and that the release
+    cannot be done; the group, the tag as not observed, and the contract's
+    watchers. Cancelled, the release moves to Cancelled as a frozen record;
+13. at phone width (390 px) the inbox, board, agents, organisation and join
     views, each reached through its tab, load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither

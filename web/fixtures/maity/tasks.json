@@ -328,7 +328,8 @@
             "head_sha": "e3fcd8b",
             "merged_at": "2026-10-21T12:25:00Z",
             "observed_at": "2026-10-21T12:30:00Z",
-            "source": "typed"
+            "source": "typed",
+            "found": true
           },
           {
             "number": 2,
@@ -340,7 +341,8 @@
             "head_sha": "d91e294",
             "merged_at": null,
             "observed_at": "2026-10-21T13:35:00Z",
-            "source": "typed"
+            "source": "typed",
+            "found": true
           },
           {
             "number": 3,
@@ -352,7 +354,34 @@
             "head_sha": "5c1e0aa",
             "merged_at": null,
             "observed_at": "2026-10-21T13:35:00Z",
-            "source": "reported"
+            "source": "reported",
+            "found": true
+          },
+          {
+            "number": 4,
+            "url": null,
+            "title": null,
+            "task_id": null,
+            "state": null,
+            "checks": null,
+            "head_sha": null,
+            "merged_at": null,
+            "observed_at": "2026-10-21T13:35:00Z",
+            "source": "typed",
+            "found": false
+          },
+          {
+            "number": 5,
+            "url": null,
+            "title": null,
+            "task_id": null,
+            "state": "merged",
+            "checks": null,
+            "head_sha": null,
+            "merged_at": null,
+            "observed_at": null,
+            "source": "typed",
+            "found": null
           }
         ],
         "pull_requests_typed": [
@@ -362,6 +391,13 @@
           },
           {
             "number": 2
+          },
+          {
+            "number": 4
+          },
+          {
+            "number": 5,
+            "state": "merged"
           }
         ],
         "groups": [
@@ -412,6 +448,14 @@
             {
               "reason": "pr_open",
               "pr": 3
+            },
+            {
+              "reason": "pr_not_found",
+              "pr": 4
+            },
+            {
+              "reason": "pr_unverified",
+              "pr": 5
             },
             {
               "reason": "group_incomplete",
