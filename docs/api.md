@@ -1092,14 +1092,19 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`; the last `owner` cannot be demoted |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` | removes the membership, revokes its credentials, releases its claims, clears `reports_to` on everyone who reported to it; the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
 with an `area` and no `assigned_to` is assigned to the narrowest owning
 area's member. `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
-stored.
+stored. The chain it forms is a tree: a `reports_to` that names the
+member itself, or a member that already reports up to it, is `invalid`
+with `details.fields.reports_to: "cycle"` — checked on the PATCH and on a
+join that carries `reports_to`, against the project's current members.
+Removing a member sets `reports_to` to `null` on everyone who reported to
+them (`member_updated` for each), so the chain never names a former member.
 
 **Invitations** for further humans (`/projects/{slug}/invitations`) are
 not in V1; the path is reserved.
