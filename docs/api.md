@@ -1908,7 +1908,7 @@ There is no pairing page: whatever the token, `GET /r/{token}` answers
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?}`; revokes the live credential, ends its long-poll; placements keep `desired` and show the runner as revoked; returns the runner view. Runner-side effect on its agents: (open: §12 6 of the design) — the hub stops nothing here; a human stops placements first, or uses `DELETE` |
-| `DELETE /runners/{id}` | the owner | revokes the credential, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the placements whose last report was `starting` or `running`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
+| `DELETE /runners/{id}` | the owner | revokes the credential, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
 
 ```json
 {
@@ -2027,6 +2027,7 @@ clone Z. It is the only thing the hub asks of a runner.
   "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120,
   "approval": { "status": "approved", "request_id": null, "pending_change": null },
   "credential_id": "crd-b-0007",
+  "reported_current": true,
   "active": true, "closed_at": null, "closed_reason": null,
   "created_by": "hum-maintainer", "proposed_by": null,
   "created_at": "2026-10-22T13:39:02Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-22T13:58:10Z",
@@ -2057,7 +2058,8 @@ clone Z. It is the only thing the hub asks of a runner.
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `runner_removed` |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
-| `reported` | the runner's latest report (§15.7), `null` until the first one |
+| `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
+| `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
 | `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
 | `logs_hint` | set by the hub: `maity runner logs <placement id>` |
 
@@ -2074,9 +2076,14 @@ clone Z. It is the only thing the hub asks of a runner.
 
 - **One placement per membership.** At most one active placement per
   membership, so "where does agent-b run" has one answer. A second is
-  `placement_exists`. This is a placement rule: the hub still allows two
-  clones of one agent with two credentials when they are joined by hand
-  (§10).
+  `placement_exists`. A placement that creates a profile counts as the
+  membership it will create, keyed (project, new handle) while it is
+  active: at creation the handle is checked against the existing
+  profiles (`invalid`, `details.fields.handle: "taken"`, as at a join,
+  §3.1, §6.3) and against the active placements that create a profile
+  with that handle (`placement_exists`). This is a placement rule: the
+  hub still allows two clones of one agent with two credentials when
+  they are joined by hand (§10).
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
@@ -2101,7 +2108,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Cause | `closed_reason` | How it closes |
 |---|---|---|
-| `DELETE` of the placement | `removed` | uniform: `desired: stopped`; closed when the runner reports `stopped` for it, or at once if the runner never acted on it (no report yet) |
+| `DELETE` of the placement | `removed` | uniform: `desired: stopped`; closed by the runner's next terminal report for it — `stopped`, `failed`, or `exited` with `retry_at: null` — or at once if the runner never acted on it (no report yet) or has no live credential (nobody can report) |
 | detaching the runner from the project | `detached` | uniform, as above |
 | the project moves to `archived` | `project_archived` | uniform, as above |
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
@@ -2109,8 +2116,13 @@ clone Z. It is the only thing the hub asks of a runner.
 | the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
 | the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
 
-`DELETE` of a placement whose consent request is open closes it at once
-(`removed`) and withdraws the request. Workspaces are never deleted by
+A placement closing the uniform way is still active and reads as
+`desired: stopped` until a terminal report closes it: under `desired:
+stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
+`DELETE` of a placement that is already closing closes it at
+once (`removed`): the escape when a runner never reports. `DELETE` of a
+placement whose consent request is open closes it at once (`removed`)
+and withdraws the request. Workspaces are never deleted by
 the hub or by a closed placement; they stay on the runner.
 
 ### 15.6 Placement endpoints, proposals and consent
@@ -2120,10 +2132,10 @@ the hub or by a closed placement; they stay on the runner.
 | `GET /projects/{slug}/placements` | `project:read`; agents: their own, all with `agents:propose` | `{items}`, active ones, ordered by agent handle; `closed=true` adds those closed in the last 30 days |
 | `POST /projects/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests` | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent` |
 | `GET /projects/{slug}/placements/{id}` | as the list | |
-| `GET /projects/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1) |
+| `GET /projects/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{slug}/placements/{id}` | as `POST`; `desired` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`; a change of anything but `desired` bumps `generation`, and a running agent is restarted on the new spec |
 | `POST /projects/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked |
-| `DELETE /projects/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement; a second `DELETE` answers `200` as it is |
+| `DELETE /projects/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
 ```
 POST /api/v1/projects/maity/placements
@@ -2155,7 +2167,7 @@ POST /api/v1/projects/maity/placements
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent |
+| a human with `members:admin` who owns the runner | create (new profiles included), change, stop, start, restart, delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH` approves a proposed creation |
 | the owner of the agent profile | `desired` and restart on that profile's placement |
 | an agent with `agents:propose` | propose a placement for an **existing** membership (never a new profile, never a role, area or briefing), propose a change of spec; stop, start, restart and delete existing placements of the project |
 | everyone else | nothing: `forbidden` |
@@ -2179,17 +2191,21 @@ POST /api/v1/projects/maity/placements
 Stop, start, restart and delete are never proposals and are allowed to
 `agents:propose` under every value of `spawn_requests`: stopping is the
 safe direction, and a restart re-runs something already approved. While
-a consent request is open, a further change of spec or a restart is
-`approval_pending`; `desired: stopped` and `DELETE` are never refused.
+a consent request is open, a further change of spec or a restart by an
+agent or by the profile's owner without the right is `approval_pending`;
+the same action by a human with the right settles the proposal instead
+(below). `desired: stopped` and `DELETE` are never refused.
 
 **Settling.** Answering or withdrawing a request that carries a
-placement settles it in the same transaction:
+placement, or a human with `members:admin` who owns the runner acting on
+it, settles it in the same transaction:
 
 | Outcome | Creation | Change of spec |
 |---|---|---|
 | `go` | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
 | withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
+| the human with the right acts (their own action is their consent) | their `PATCH` approves it: `approval.status: approved` with the `PATCH` applied, the request answered `go` in their name; `placement_updated` reaches the runner | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
 Who may answer is the rule for every consent request (§2.3): holders of
 `requests:answer` — the owner, `admin` and `proxy` roles, agents
@@ -2205,7 +2221,7 @@ placement as `reported`; the history is the `placement_reported` events.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed` | `pending` with `reason: null` is set by the hub only: the runner has not acted on this generation yet. `pending` with a reason is the runner's |
+| `state` | `pending`, `starting`, `running`, `stopping`, `stopped`, `exited`, `failed` | always the runner's; `pending` comes with a reason (below). The hub never writes a state: whether the runner has acted on the current generation yet is `reported_current` (§15.5) |
 | `reason` | `null` or a code from the table below | |
 | `detail` | `null` or a code from the detail list below | never free text |
 | `exit_code` | integer or `null` | the harness process's own code |
@@ -2322,11 +2338,16 @@ A placement as the runner reads it:
 - **Status reports** are a compare-and-set on `seq`: a `seq` not above
   the stored one answers `200` with the stored state and changes
   nothing, so a resend with another `since` or `session_hint` is never
-  an error. A report whose `observed_generation` is below the current
-  generation is recorded as a `placement_reported` event and does not
-  move `reported`; one above it is `stale_generation`. `stopped` on a
-  placement that is closing closes it (§15.5). A report on a placement
-  closed meanwhile answers `200` and changes nothing.
+  an error. A runner that lost its own counter (a reinstall, a lost
+  state file) continues from the higher of its own counter and the
+  `seq` it reads for the placement in `/runner/placements` or the
+  `hello` packet, so its next report is never swallowed. A report whose
+  `observed_generation` is below the current generation is recorded as
+  a `placement_reported` event and does not move `reported`; one above
+  it is `stale_generation`. A terminal report (`stopped`, `failed`, or
+  `exited` with `retry_at: null`) on a placement that is closing closes
+  it (§15.5). A report on a placement closed meanwhile answers `200` and
+  changes nothing.
 - `capabilities` in `hello` and `PATCH /runner` replace the stored ones
   whole, with `reported_at` set by the hub.
 
@@ -2370,8 +2391,8 @@ POST /api/v1/runner/placements/plc-0003/join
 - When the join's exchange succeeds, the placement's `credential_id` is
   set to the new credential (and `rejoin` cleared); for a new profile,
   `agent.id` is filled.
-- Emits `placement_reported` with `state: starting`, `reason: null`, and
-  `join_picked_up`.
+- Emits `join_picked_up` only. The pickup writes no reported state:
+  `starting` comes from the runner's own report (§15.7).
 - The exchange is the ordinary `POST /join/{token}` (§3.3), run by the
   agent-side CLI in the clone (`maity join --join-file -`), so the agent
   credential is written by the agent's CLI and the runner never holds
@@ -2402,7 +2423,9 @@ The kinds are in §8.2. Rules that apply to all of them:
 - `agent_stop_requested` is emitted with every change to `desired:
   stopped` on a placement whose agent has a membership, so the agent can
   checkpoint before the process ends; it is not emitted for
-  `membership_removed`.
+  `membership_removed`, nor when the stop comes from revoking that
+  agent's own credential (§15.5) — in neither case could the agent read
+  it.
 - `runner_credential_revoked.reason`: the revoker's `reason`, or
   `leaked_in_payload`, `repaired`, `runner_removed`.
 
