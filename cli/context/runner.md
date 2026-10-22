@@ -585,3 +585,52 @@ now held to a plain clone's entries as well.
   kept as a second line, not as the rule.
 - Reading the credential in the runner to ask the hub: a second holder
   of every agent's credential.
+
+## Sandboxed agents: git redirects are pinned, other clones and secrets unreadable
+
+**Id:** ea36c196-f8e6-43ae-bc47-49c8d5379a65
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`
+**See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, or git learns another file in `.git` that redirects where it reads configuration
+
+Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
+environment the runner gives the harness. Git then ignores a
+`.git/commondir` the agent wrote from inside its sandbox. That covers
+the harness's own git calls, which run outside the sandbox, and any
+other git started from the session. Codex's profile reads nothing under
+the workspaces root but its own clone, nothing in the runner's state
+directory, and none of the logins and keys in the agents' home. Claude
+Code's sandbox gets the same read denies except the workspaces root, so
+it still reads other clones. Both keep the clone's own credential
+readable from the sandbox, because the agent's `maity` needs it (for
+Claude Code, `maity` runs outside the sandbox). The forge login stays
+readable, because pushing needs it. The runner runs git in a clone only
+to clone into a missing directory and in `gc`; a test pins that.
+
+**Reason:** git creates lock files, `ORIG_HEAD` and `COMMIT_EDITMSG` in
+`.git`, so the directory has to stay writable, and an agent that can
+write there can write `commondir`. Read-only `config` and `hooks` meant
+nothing once git read them from elsewhere. The variable is part of the
+harness process's environment, which a sandboxed command cannot change.
+An agent that unsets it for its own git runs the planted program as
+itself, inside its own sandbox, which it could do anyway. Without read
+denies, one agent read another's credential (another identity on the
+hub), the operator's ssh keys and the model login, and could send them
+to an allowed host. For Claude Code the workspaces root is left
+readable: re-opening the clone inside it with `allowRead` may re-open
+the clone's credential as well, and that order could not be checked
+without a model run.
+
+**Rejected alternatives:**
+- A read-only `.git` with write access to `objects`, `refs` and the
+  index only: git creates its lock files and `ORIG_HEAD` in `.git`
+  itself, so commits fail.
+- Denying writes to each redirecting file (`commondir`,
+  `config.worktree`, `info/attributes`): files that do not exist yet
+  cannot be bound read-only reliably, and it is the enumeration the gc
+  fix already moved away from.
+- Hiding the whole home from Codex: the agent's `maity`, `git` and
+  toolchains are often installed there.
