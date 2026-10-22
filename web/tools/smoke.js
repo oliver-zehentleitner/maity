@@ -82,6 +82,8 @@ const win = {
   location: { protocol: "file:", search: "", hash: "", replace(h) { this.hash = h; setTimeout(() => win.onhashchange(), 0); } },
   addEventListener: (t, f) => { win["on" + t] = f; },
   confirm: () => true,
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (id) => clearTimeout(id),
   setInterval: (fn) => { intervalId += 1; intervals.set(intervalId, fn); return intervalId; },
   clearInterval: (id) => { intervals.delete(id); },
 };
@@ -352,6 +354,79 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "an agent's own pause is a declaration, without that line");
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
+
+  // Users of this hub (docs/api.md §16.1), for the instance admin only.
+  const usersLink = header.querySelectorAll("a").find((a) => a.textContent === "Users");
+  expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: a header link for the instance admin");
+  await go("#/admin/users"); await tick();
+  const userRows = () => main.querySelectorAll("table.users tbody tr");
+  const userNames = () => userRows().map((tr) => tr.querySelector(".user-name").textContent);
+  expect(document.title === "Users · Maity" && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
+    "users: every human, by handle");
+  const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
+  expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
+    "users: the admin's own row, its counts");
+  const opsRow = userRows().find((tr) => text(tr).includes("Ops on call"));
+  expect(opsRow.className === "disabled" && text(opsRow).includes("disabled") && text(userRows()[0]).includes("never"), "users: a disabled account, a never-signed-in one");
+  const uq = byId("users-q"); uq.value = "OPS"; uq.dispatch("input");
+  await new Promise((r) => setTimeout(r, 350)); await tick();
+  expect(JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: search by handle or name, case-insensitive");
+  uq.value = ""; const ud = byId("users-disabled"); ud.value = "false"; ud.dispatch("change"); await tick(); await tick();
+  expect(JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer"]), "users: only active accounts");
+  // Paged by the hub's cursor: Load more appends.
+  const uGet = win.Maity.api.get;
+  const uPaths = [];
+  win.Maity.api.get = (p) => {
+    if (!p.startsWith("/admin/users")) return uGet(p);
+    uPaths.push(p);
+    return uGet(p.replace("limit=50", "limit=1"));
+  };
+  ud.value = ""; ud.dispatch("change"); await tick(); await tick();
+  expect(userRows().length === 1 && btn(main, "Load more") && text(main).includes("1+ account"), "users: one page, and more to load");
+  const uProto = Object.getPrototypeOf(main);
+  const uFocus = uProto.focus;
+  uProto.focus = function () { document.activeElement = this; };
+  btn(main, "Load more").click(); await tick(); await tick();
+  expect(userRows().length === 2 && uPaths[uPaths.length - 1].includes("cursor=1"), "users: Load more reads the next page by its cursor");
+  expect(document.activeElement === userRows()[1].querySelector("th"), "users: after Load more the focus is on the first new row");
+  uProto.focus = uFocus; document.activeElement = undefined;
+  // A cursor belongs to its filter: typing ends the old paging at once, and the
+  // next page then asks with the filter it was read with, not what is typed.
+  uq.value = "a"; uq.dispatch("input");
+  expect(!btn(main, "Load more"), "users: a filter edit takes Load more away at once");
+  await new Promise((r) => setTimeout(r, 350)); await tick(); await tick();
+  uq.value = "m"; uq.dispatch("input"); uq.value = "a";
+  btn(main, "Load more") && btn(main, "Load more").click();
+  await tick(); await tick();
+  expect(!uPaths.some((p) => p.includes("cursor=") && p.includes("q=m")), "users: no next page is read with a filter it was not given for");
+  // A slower, older answer never replaces a newer one.
+  let slow = true;
+  win.Maity.api.get = (p) => {
+    if (!p.startsWith("/admin/users")) return uGet(p);
+    const answer = uGet(p);
+    if (slow && p.includes("q=guest")) { slow = false; return new Promise((r) => setTimeout(r, 500)).then(() => answer); }
+    return answer;
+  };
+  uq.value = "guest"; uq.dispatch("input"); await new Promise((r) => setTimeout(r, 330));
+  uq.value = "ops"; uq.dispatch("input"); await new Promise((r) => setTimeout(r, 400)); await tick();
+  const sawOps = JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]);
+  await new Promise((r) => setTimeout(r, 300)); await tick();
+  expect(sawOps && JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: a delayed older search answer, arriving after the newer one, is dropped " + JSON.stringify(userNames()));
+  // The endpoint itself refusing (403) is said, not hidden.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("instance:admin needed", 403, p, "forbidden")) : uGet(p));
+  await go("#/all"); await go("#/admin/users"); await tick();
+  expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
+  uq.value = "";
+  // A hub without the list, and someone who is not the instance admin.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
+  await go("#/all"); await go("#/admin/users"); await tick();
+  expect(text(main).includes("This hub has no user list yet.") && !main.querySelector(".error"), "users: a hub without the list says so");
+  win.Maity.api.get = (p) => (p === "/me" ? uGet(p).then((x) => { x.member.instance_admin = false; return x; }) : uGet(p));
+  await go("#/all"); await go("#/admin/users"); await tick();
+  expect(!header.querySelectorAll("a").some((a) => a.textContent === "Users") && text(main).includes("Only the instance admin sees the users of this hub."),
+    "users: no link and no list for anyone else");
+  win.Maity.api.get = uGet;
+  await go("#/p/maity/inbox");
 
   // Runners (docs/api.md §15): the instance-level view.
   const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");

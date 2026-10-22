@@ -3,6 +3,46 @@
 "use strict";
 
 window.MAITY_FIXTURES = {
+  "admin-users.json": {
+    "items": [
+      {
+        "agents": 6,
+        "created_at": "2026-10-21T07:45:00Z",
+        "disabled": false,
+        "display_name": "Maintainer",
+        "handle": "maintainer",
+        "id": "hum-maintainer",
+        "instance_admin": true,
+        "last_login_at": "2026-10-22T08:02:11Z",
+        "last_seen_at": "2026-10-22T11:40:00Z",
+        "memberships": 2
+      },
+      {
+        "agents": 0,
+        "created_at": "2026-10-22T09:00:00Z",
+        "disabled": false,
+        "display_name": "Guest Reviewer",
+        "handle": "guest",
+        "id": "hum-guest",
+        "instance_admin": false,
+        "last_login_at": null,
+        "last_seen_at": null,
+        "memberships": 0
+      },
+      {
+        "agents": 2,
+        "created_at": "2026-10-21T12:00:00Z",
+        "disabled": true,
+        "display_name": "Ops on call",
+        "handle": "ops",
+        "id": "hum-ops",
+        "instance_admin": false,
+        "last_login_at": "2026-10-21T12:05:00Z",
+        "last_seen_at": "2026-10-21T18:30:00Z",
+        "memberships": 1
+      }
+    ]
+  },
   "agents.json": {
     "items": [
       {
@@ -1454,6 +1494,7 @@ window.MAITY_FIXTURES = {
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",
+      "instance_admin": true,
       "kind": "human"
     },
     "projects": [

@@ -212,6 +212,25 @@ window.Maity = window.Maity || {};
       return data;
     }],
     ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    // §16.1: the instance admin's list, by handle, filtered and paged.
+    ["GET", /^\/admin\/users$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const q = query.get("q");
+      if (q !== null && ([...q].length < 1 || [...q].length > 64)) fail(400, "invalid", "q is 1 to 64 characters", path, { fields: { q: "string_too_long" } });
+      const d = query.get("disabled");
+      if (d !== null && d !== "true" && d !== "false") fail(400, "invalid", "disabled is true or false", path, { fields: { disabled: "not_boolean" } });
+      const all = fixtures()["admin-users.json"].items
+        .filter((u) => !q || (u.handle + "\n" + u.display_name).toLowerCase().includes(q.toLowerCase()))
+        .filter((u) => d === null || String(u.disabled) === d)
+        .sort((a, b) => a.handle.localeCompare(b.handle));
+      // §1.4: limit 1–200, the cursor one this list gave out.
+      const limit = Number(query.get("limit") || 50);
+      const start = Number(query.get("cursor") || 0);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) fail(400, "invalid", "limit is 1 to 200", path, { fields: { limit: "out_of_range" } });
+      if (!Number.isInteger(start) || start < 0) fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid_cursor" } });
+      const items = all.slice(start, start + limit);
+      return { items, next_cursor: start + limit < all.length ? String(start + limit) : null };
+    }],
     // Runners (docs/api.md §15.2–§15.3), instance level.
     ["GET", /^\/runners$/, () => ({ items: runnersFile().items.filter((r) => !r.removed_at), next_cursor: null })],
     ["GET", /^\/runners\/enrollments$/, () => ({ items: fixtures()["runner-enrollments.json"].items.slice().reverse(), next_cursor: null })],

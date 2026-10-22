@@ -32,6 +32,7 @@ requests waiting for the human, and **All projects** with the total.
 | `#/all` | the inbox across every project, each entry labelled with its project and state; the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
+| `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
 | `#/account` | the signed-in human's account: name, handle, **Change password**; **Account** beside **Sign out** in the header |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -160,6 +161,18 @@ revocable. Each runner can be renamed, re-paired (a new line for the same
 runner; the old credential ends at the exchange), revoked, and removed;
 removing lists the agents that were still running on it, which are then
 the operator's to end on that machine (`maity runner stop-all`).
+
+**Users of this hub** (`#/admin/users`, `docs/api.md` §16.1) lists the
+instance's humans for the instance admin, by handle: name and handle
+("(you)" for oneself), whether instance admin, active or disabled, when
+created, last signed in and last seen, and how many projects they are in
+and how many agents they own — counts and times only; being the instance
+admin opens no project, and the view links into none. A search by handle
+or name (case-insensitive, 1–64 characters, read 300 ms after typing
+stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
+**Load more** follows its cursor. A hub without the list (404) says so;
+anyone else gets neither the link nor the list. On a phone each row is a
+card.
 
 **Change password** (`#/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
@@ -465,6 +478,7 @@ web/
 ├── js/why.js         (7) why: the Keep the Why export
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account and changing the password
+├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
