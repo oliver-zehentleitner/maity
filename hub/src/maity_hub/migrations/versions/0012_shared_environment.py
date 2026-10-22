@@ -66,7 +66,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_environment_overlap_member_b"), table_name="environment_overlap")
+    # The table takes its index along; dropping the index first is refused by MariaDB,
+    # which needs it for the foreign key on member_b.
     op.drop_table("environment_overlap")
     with op.batch_alter_table("agent_session", schema=None) as batch_op:
         batch_op.drop_column("env_workspace")
