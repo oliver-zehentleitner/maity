@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: reauth_required` for a change that needs a sign-in within the last 10 minutes (§17.4) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: session_too_new` for approving a held change of the verified address from a session younger than 24 hours (§17.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -2789,6 +2789,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notifications/read` | human | 17.3 |
 | GET, PATCH | `/me/notification-settings` | human | 17.4 |
 | POST | `/me/notification-settings/email/verify` | human | 17.4 |
+| POST | `/me/notification-settings/email/address-change/approve` | human, from a session at least 24 hours old | 17.4 |
+| POST | `/me/notification-settings/email/address-change/reject` | human | 17.4 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 17.6 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -3801,15 +3803,26 @@ the `security` notifications of §17.1, the notice to an old address
 and codes. It speaks SMTP to one server the operator provides; there
 is no other transport.
 
-**Two budgets.** Notification mail and security mail (verification
-included) are counted separately, and neither can use up the other:
-`max_per_hour` covers notification mail only, `security_max_per_hour`
-covers security mail only. So event churn — by any member, an agent
-included — can delay notifications but never a verification, a sign-in
-link or a security alert. Over `max_per_hour`, notification mail waits
-and is merged into each human's next mail (§17.5); over
-`security_max_per_hour`, a security mail is not sent and
-`security_dropped_last_hour` counts it.
+**Three budgets.** Each kind of mail is counted on its own, and none
+can use up another:
+
+- `max_per_hour` — notification mail. Over it, notification mail waits
+  and is merged into each human's next mail (§17.5).
+- `security_max_per_hour` — verification mails, `security`
+  notifications and the old-address notice: mail that a human's own
+  account activity triggers. Over it, a mail is **queued** for the next
+  hour, in order, and `security_queued` counts it; a security mail is
+  never dropped for budget reasons.
+- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3), the
+  one kind of mail an unauthenticated caller can trigger. It has, in
+  addition, the per-source-address limits of #169 §2.6.4. Over it, a
+  sign-in mail is not sent (a stale link is useless) and
+  `sign_in_dropped_last_hour` counts it.
+
+So event churn by any member, an agent included, can delay
+notifications only, and anonymous sign-in requests can stop sign-in
+mails only; neither delays an alert, a verification or the notice to
+an old address.
 
 **Where each value lives.** Every value may come from the environment
 or be set by the instance admin through `PATCH`; a value set in the
@@ -3856,7 +3869,8 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§17.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice, sign-in links and codes), all humans together; default 100; notification mail does not count here. Over it, a security mail is not sent |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §17.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -3886,13 +3900,16 @@ Scope `instance:admin`, human only (§16.1):
   "reply_to": { "value": null, "source": "default" },
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
+  "sign_in_max_per_hour": { "value": 60, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
   "last_test": { "at": "2026-10-22T14:02:11Z", "ok": true, "stage": null, "smtp_code": 250 },
   "sent_last_hour": 12,
   "security_sent_last_hour": 1,
-  "security_dropped_last_hour": 0,
+  "security_queued": 0,
+  "sign_in_sent_last_hour": 0,
+  "sign_in_dropped_last_hour": 0,
   "failed_last_hour": 0
 }
 ```
@@ -3914,7 +3931,7 @@ PATCH /admin/settings/mail
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
-`max_per_hour`, `security_max_per_hour`; `null` returns a field to its default (for `password`:
+`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -3980,21 +3997,30 @@ when it is read or sent, from two sources, plus a read flag per human:
   is not an audience token (§6.4), so for a watcher the check is
   whether the human may read the card (`project:read` in its project),
   and the item carries only what the card view shows.
+- **Personal requests** (#162, §7) — `inbox` items for the human the
+  request is addressed to through `profile_owner:<agent id>`, whether or
+  not that human is a member of the request's project. They are
+  resolved through the addressing, never through the event's audience,
+  and belong to the account like account records do: the hub files
+  them, only the addressed human reads them.
 - **Account records** — the kinds `security` and `system`. An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
-  carry it. Its number comes from the same instance-wide sequence as
-  events (§8.1), so `seq` orders both sources and `after` (§17.2)
-  covers both; `/events` never returns it. It is readable by that
+  carry it. Its id is `acr-<n>` from a sequence of its own, never the
+  event sequence (§8.1): a record takes no `seq`, so it leaves no gap in
+  any project's `/events` from which an owner or admin, an admin agent
+  included, could time the humans' sign-ins and logouts. `/events` never
+  returns it, and `POST …/events/{seq}/redact` cannot name it. It is
+  readable by that
   human alone — no other member, no instance admin, no agent, no
   runner — and kept 90 days. The types: `mail_disabled` (§17.7) and
   `email_address_changed` (§17.4); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
-  account's session list.
+  account's session list; `session_ended` is no notification.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
@@ -4036,7 +4062,9 @@ wins over `card` and `chat`, `inbox` over everything.
 ### 17.2 `GET /me/notifications`
 
 Human only. The counts for the badges and the newest items for the
-bell, across every project the human is a member of.
+bell, across every project the human is a member of, plus the human's
+personal requests (#162, §7) and account records, which need no
+membership.
 
 | Query | Meaning |
 |---|---|
@@ -4044,7 +4072,7 @@ bell, across every project the human is a member of.
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists |
-| `after` | a `seq`: only items with a higher `seq`, oldest first — for the browser notifications (§17.8) |
+| `after` | a position (below), normally the `next_after` of an earlier answer: only items past it, oldest first — for the browser notifications (§17.8) |
 | `wait` | 0–55 with `after`: hold the request until an item newer than `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
 ```json
@@ -4055,7 +4083,7 @@ bell, across every project the human is a member of.
     "lasteverlm": { "inbox": 1, "chat": 0, "mention": 0, "card": 0, "agent": 0, "ticker": 0, "jour_fixe": 0, "total": 1 }
   },
   "items": [
-    { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
+    { "id": "ntf-4237", "seq": 4237, "position": "4237.118", "kind": "chat", "at": "2026-10-22T13:10:00Z",
       "project": { "slug": "maity", "name": "Maity" },
       "actor": { "member_id": "agt-a", "display_name": "Agent A", "avatar_url": "/api/v1/avatars/agt-a?v=1c2d" },
       "title": "Agent A in agent-a",
@@ -4063,7 +4091,7 @@ bell, across every project the human is a member of.
       "target": { "type": "conversation", "id": "agt-a" },
       "url": "https://maity.team/#/p/maity/chat/agt-a",
       "read": false, "redacted": false },
-    { "id": "ntf-4231", "seq": 4231, "kind": "card", "at": "2026-10-22T12:41:12Z",
+    { "id": "ntf-4231", "seq": 4231, "position": "4231.118", "kind": "card", "at": "2026-10-22T12:41:12Z",
       "project": { "slug": "maity", "name": "Maity" },
       "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
       "title": "tsk-0004 Hub: credential exchange and storage: status review",
@@ -4073,12 +4101,25 @@ bell, across every project the human is a member of.
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
+  "next_after": "4237.118",
   "server_time": "2026-10-22T13:10:05Z"
 }
 ```
 
+**Positions.** Events and account records have two sequences (§17.1),
+so a place in the list is a **position** `<event seq>.<account record
+n>`: for an event item its `seq` and the newest record number at that
+moment, for a record item the newest `seq` at that moment and its
+number. Each item carries its `position`; an item is past position
+`a.b` when its event `seq` is above `a` or its record number above `b`.
+`next_after` is the position the answer reached (the current one when
+there is no item); the dashboard passes positions back unchanged and
+never builds one itself.
+
 - **Counts.** `inbox` is the number of open requests addressed to the
-  human across projects — the sum of `open_requests` in `/me` (§5.1); it
+  human across projects — the sum of `open_requests` in `/me` (§5.1)
+  plus the human's open personal requests (#162, §7) in projects where
+  `/me` does not list the human; it
   falls when a request is answered or withdrawn, not when its
   notification is read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
@@ -4093,11 +4134,17 @@ bell, across every project the human is a member of.
   not over the listed items, so the dashboard never counts from the
   newest 50. `inbox` is that project's `open_requests`, `chat` the
   `unread` of that project's conversations, `total` the per-project
-  `inbox + chat + mention`. `security` and `system` belong to no
+  `inbox + chat + mention`. A project whose only count is a personal
+  request of a non-member appears here too, by its slug, with
+  `"member": false` and only `inbox` set; the dashboard shows it as a
+  badge on the personal inbox, not in the project switcher, since the
+  human cannot open the project. `security` and `system` belong to no
   project and appear only in `counts`. `limit=0` answers `counts` and
   `by_project`.
 - **Items.** Newest first, one per event, the last 30 days; older ones
-  count as read and are not listed. `id` is `ntf-<seq>`. `title` is
+  count as read and are not listed. `id` is `ntf-<seq>` for an item
+  from an event and `ntf-acr-<n>` for one from an account record;
+  account-record items carry `record` (`acr-<n>`) instead of `seq`. `title` is
   composed from fields the human may read, at most 200 characters, text
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
@@ -4124,16 +4171,22 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §17.1).
-- `{"up_to": 4237, "kind"?: "card", "project"?: "maity"}` — every item
-  with `seq ≤ up_to`, optionally of one kind or one project ("mark all
-  read").
+- `{"up_to": "4237.118", "kind"?: "card", "project"?: "maity"}` —
+  every item not past that position (§17.2; the newest listed item's
+  `position` for "mark all read"), optionally of one kind or one
+  project.
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items are
 marked read, the open requests stay open. A `security` item about a
-new session (#169, §2.6.5) is not marked read by a call made from that
-very session; the id is ignored as an unknown one. Answers `200` with the counts
+new session (`session_created`, #169 §2.6.5) is marked read only from a
+session that existed before that sign-in and is itself in good
+standing (signed in by password, or its own `session_created` item
+already read) — never from the session it reports on and never from a
+session created after it. From any other session the item is skipped,
+through `ids` (ignored as an unknown id) and `up_to` alike, and the
+rest of the call applies. Answers `200` with the counts
 of §17.2. No event: reading is not news to anyone.
 
 ### 17.4 `GET`, `PATCH /me/notification-settings`
@@ -4206,17 +4259,33 @@ device; the browser's own permission is per browser and is not stored.
   address to SMTP as the single recipient; it never parses a list out of
   it.
 - **Changing a verified address.** Once a verified address exists,
-  setting another one or removing it (`null`) needs a fresh sign-in:
-  the calling session was created within the last 10 minutes,
-  otherwise `forbidden` with `details.reason: reauth_required`. When
-  the new address is verified, or the address is removed, the old
-  address gets one security mail saying the address was changed (the
-  new one masked to its first character and its domain), when, and
-  from which browser, operating system and IP address, and the hub
-  writes the account record `email_address_changed` (a `security`
-  notification, §17.1). With the sign-in contract (#169, §2.6.3) the
-  verified address is a sign-in factor; this rule is why a moment at an
-  unlocked dashboard does not become a lasting way in. `address_status`:
+  setting another one or removing it (`null`) needs the human's own
+  confirmation; how young a session is or how it was made does not
+  count. A human with a password puts it in the same request,
+  `current_password` beside `email` (missing: `invalid` with
+  `details.fields.current_password: "required"`; wrong: `"mismatch"`,
+  counted against the login limit of §2.1). A human without a password
+  needs the change approved from a session of theirs at least 24 hours
+  old: a `PATCH` from such a session is the approval; from a younger
+  one the change is held (`202`, `email.address_change: {address,
+  requested_at, session_id}`) until `POST
+  /me/notification-settings/email/address-change/approve` from a
+  session at least 24 hours old (younger: `forbidden`,
+  `details.reason: session_too_new`) or `…/address-change/reject`; a
+  held change lapses after 7 days. When the new address is verified, or
+  the address is removed, the old address gets one security mail saying
+  the address was changed (the new one masked to its first character
+  and its domain), when, and from which browser, operating system and
+  IP address — whatever `email.kinds.security.mode` says, since `off`
+  silences only alerts of new sign-ins — and the hub writes the account
+  record `email_address_changed` (a `security` notification, §17.1).
+  With the sign-in contract (#169, §2.6.3) the verified address is a
+  sign-in factor. What this rule guarantees: neither a session obtained
+  through the mailbox nor one approved by device code on an unlocked
+  dashboard can move the sign-in path to another mailbox without the
+  password; for a human without a password, not before the change has
+  waited for a session a day old, while the alerts of the new session
+  (#169, §2.6.5) are on every earlier screen. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§17.7). Setting the address again, also the same one,
   sends a new link and voids the old one. `null` removes the address and
@@ -4254,7 +4323,9 @@ device; the browser's own permission is per browser and is not stored.
   proposes the browser's.
 - `PATCH` takes any subset of `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
-  `sign_in_link`); the
+  `sign_in_link`), and `current_password` beside `email` when the
+  address changes (above; never stored, never echoed, ignored
+  otherwise); the
   read-only fields (`address_status`, `verified_at`, `pending_address`,
   `hard_failures`, `disabled_at`, `mail_available`, `kinds` at the top)
   in a body are `invalid` with `read_only`. Answers the `GET` shape.
@@ -4366,7 +4437,7 @@ mail.
   title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
   each linking to its `url`, unread ones marked, with "mark all read".
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
-  also in the background, it long-polls `GET /me/notifications?after=<seq>&wait=55`
+  also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`
   and shows each new item of a kind the human switched on through the
   Notification API, with the item's `id` as `tag` so that two open tabs
   show it once; a click focuses the tab and opens the `url`. There is no
