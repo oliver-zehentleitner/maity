@@ -10,5 +10,7 @@
   those sharing a project with it and the instance admin, `not_found` to anyone else,
   `private, no-cache`; `avatar_url` next to every `display_name` (`/me`, the resume
   packet, members and their owner, the agent profile, requests, placements,
-  `/admin/users`), `avatar_source` on `/me` and the profile (migration `0013_avatars`)
+  `/admin/users`), `avatar_source` on `/me` and the profile; `avatar_changed` (audience
+  `all`, wakes nobody) in every project of the member when its picture's source or
+  content changes, the member as actor only for its own change (migration `0013_avatars`)
 - hub: depends on Pillow (`>=12.3,<13`)

@@ -143,6 +143,13 @@ def current(conn: Connection, owner_id: str) -> tuple[bytes, str] | None:
     return bytes(data), row.etag
 
 
+def lock_owner(conn: Connection, owner_id: str) -> None:
+    """Serialise changes of one picture: two uploads must not both find no row and
+    both insert one."""
+    table = t.agent_profile if owner_id.startswith("agt-") else t.human
+    conn.execute(select(table.c.id).where(table.c.id == owner_id).with_for_update()).first()
+
+
 def store_upload(conn: Connection, owner_id: str, png: bytes) -> None:
     values = {"data": png, "etag": images.etag(png), "updated_at": clock.now()}
     key = (t.avatar_image.c.owner_id == owner_id) & (t.avatar_image.c.source == "uploaded")
@@ -156,6 +163,34 @@ def remove_upload(conn: Connection, owner_id: str) -> None:
             t.avatar_image.c.owner_id == owner_id, t.avatar_image.c.source == "uploaded"
         )
     )
+
+
+def announce(conn: Connection, owner_id: str, before: dict[str, str | None], caller: Any) -> None:
+    """`avatar_changed` in every project the member is in, when the effective picture's
+    source or content changed (§6.10, §8.2). The member is the actor where it made the
+    change itself; an owner's change has none, so the event does not name the owner."""
+    from maity_hub.events import emit
+
+    after = state(conn, owner_id)
+    if after == before:  # the same bytes give the same URL: nothing changed
+        return
+    column = t.membership.c.agent_id if owner_id.startswith("agt-") else t.membership.c.human_id
+    memberships = conn.execute(
+        select(t.membership.c.id, t.membership.c.project_id).where(
+            column == owner_id, t.membership.c.active.is_(True)
+        )
+    ).all()
+    own = caller.principal_id == owner_id
+    for membership in sorted(memberships, key=lambda m: m.project_id):
+        emit(
+            conn,
+            membership.project_id,
+            "avatar_changed",
+            ["all"],
+            {"member_id": owner_id, "avatar_url": after["avatar_url"]},
+            actor=caller.actor(membership.id) if own else None,
+            subject=("member", owner_id),
+        )
 
 
 def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:

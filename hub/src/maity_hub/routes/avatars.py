@@ -77,10 +77,13 @@ def _change(
         if check is not None:
             check(conn)
         avatars.count_change(owner_id)  # a replay never gets here and counts nothing
+        avatars.lock_owner(conn, owner_id)
+        before = avatars.state(conn, owner_id)
         if png is None:
             avatars.remove_upload(conn, owner_id)
         else:
             avatars.store_upload(conn, owner_id, png)
+        avatars.announce(conn, owner_id, before, caller)
         return idempotency.Outcome(200, "avatar", owner_id, avatars.state(conn, owner_id))
 
     return idempotency.run(engine, request, caller, action)

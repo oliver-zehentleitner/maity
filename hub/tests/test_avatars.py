@@ -252,3 +252,44 @@ def test_the_instance_admin_reads_a_humans_picture(
     stranger = flow.human(make_client, migrated, "stranger")  # no project shared
     url = put_human(stranger, "/me/avatar", image()).json()["avatar_url"]
     assert owner.client.get(url).status_code == 200  # the earliest human (§16)
+
+
+def _changed(engine: Engine) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(
+                select(t.event).where(t.event.c.kind == "avatar_changed").order_by(t.event.c.seq)
+            )
+        )
+
+
+def test_avatar_changed_only_when_the_picture_changes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    flow.project(owner, "second")
+    agent = flow.agent(make_client, owner)
+    url = put_human(owner, "/me/avatar", image()).json()["avatar_url"]
+    events = _changed(migrated)
+    assert len(events) == 2  # one per project the member is in
+    assert {e.payload["avatar_url"] for e in events} == {url}
+    assert all(e.audience == ["all"] and e.subject_id == owner.id for e in events)
+    assert all(e.actor_membership is not None for e in events)  # its own change
+    put_human(owner, "/me/avatar", image())  # the same bytes: the same picture
+    assert len(_changed(migrated)) == 2
+    owner.delete(f"/agents/{agent.id}/avatar")  # nothing uploaded: nothing changes
+    assert len(_changed(migrated)) == 2
+    put_human(owner, f"/agents/{agent.id}/avatar", image("JPEG"), "image/jpeg")
+    [by_owner] = _changed(migrated)[2:]
+    assert by_owner.payload["member_id"] == agent.id
+    assert by_owner.actor_membership is None  # an owner's change names nobody
+    put_agent(agent, image("PNG", (90, 90)))
+    [own] = _changed(migrated)[3:]
+    assert own.actor_membership is not None
+    owner.delete("/me/avatar")
+    assert [e.payload["avatar_url"] for e in _changed(migrated)[4:]] == [None, None]
+
+
+def test_avatar_changed_wakes_nobody(owner: flow.Human, make_client: ClientFactory) -> None:
+    from maity_hub import events
+
+    assert "avatar_changed" in events.NON_WAKING
