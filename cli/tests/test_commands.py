@@ -321,3 +321,37 @@ def test_ask_json_prints_the_request(
     answer(fake, "POST", "/api/v1/projects/maity/requests", request, status=201)
     assert cli.main(["ask", "Which port?", "--to", "human", "--class", "info", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == request
+
+
+# --- invalid answers -------------------------------------------------------------------------
+
+
+def test_invalid_prints_field_reasons_but_no_values(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fields = {
+        "priority": "urgent_needs_requests_answer",
+        "to": "not_a_member",
+        "title": "value 'Tag 0.2.0 now?' is too long",
+    }
+    refusal = {"error": {"code": "invalid", "message": "the request does not validate",
+                         "details": {"fields": fields}}}  # fmt: skip
+    answer(fake, "POST", "/api/v1/projects/maity/requests", refusal, status=400)
+    argv = ["ask", "Tag 0.2.0 now?", "--to", "agt-x", "--class", "info", "--priority", "urgent"]
+    assert cli.main(argv) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "invalid: the request does not validate" in err
+    assert "\n  priority: urgent_needs_requests_answer" in err
+    assert "\n  to: not_a_member" in err
+    assert "\n  title: (reason not shown)" in err
+    assert "Tag 0.2.0" not in err
+
+
+def test_other_errors_print_no_field_list(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details = {"fields": {"a": "b"}}
+    refusal = {"error": {"code": "forbidden", "message": "not yours", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=403)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    assert "  a: b" not in capsys.readouterr().err

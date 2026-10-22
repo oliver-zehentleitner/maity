@@ -195,7 +195,7 @@ Why a passthrough as well as commands:
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 1 | error (the hub's error code is in the message) |
+| 1 | error (the hub's error code is in the message; for `invalid`, each field with its reason code, never a value) |
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |

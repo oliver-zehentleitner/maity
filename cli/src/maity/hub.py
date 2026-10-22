@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -108,9 +109,34 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         details = error.get("details") or {}
     except (ValueError, OSError):
         pass
-    err = HubError(f"{what}: {code or 'error'}: {message}", code=code, status=exc.code)
-    err.details = details if isinstance(details, dict) else {}
+    details = details if isinstance(details, dict) else {}
+    text = f"{what}: {code or 'error'}: {message}"
+    if code == "invalid":
+        text += _field_reasons(details.get("fields"))
+    err = HubError(text, code=code, status=exc.code)
+    err.details = details
     return err
+
+
+_TOKEN = re.compile(r"^[A-Za-z0-9_.:\-]{1,64}$")
+
+
+def _field_reasons(fields: Any) -> str:
+    """`details.fields` of an `invalid` answer as `field: reason` lines.
+
+    Only field names and reason codes are printed. The hub's reasons are codes such as
+    `not_a_member`; anything that is not shaped like one could be a value echoed back and is
+    replaced, so no value reaches the agent's context through an error message.
+    """
+    if not isinstance(fields, dict):
+        return ""
+    lines = []
+    for name, reason in fields.items():
+        name = name if _TOKEN.match(str(name)) else "(field)"
+        if not (isinstance(reason, str) and _TOKEN.match(reason)):
+            reason = "(reason not shown)"
+        lines.append(f"\n  {name}: {reason}")
+    return "".join(lines)
 
 
 def _guard_payload(body: bytes, query: str) -> None:
