@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Dialect, Integer, Text
+from sqlalchemy import JSON, BigInteger, DateTime, Dialect, Integer, LargeBinary, Text
 from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.types import TypeDecorator, TypeEngine
 
@@ -36,6 +36,9 @@ MYSQL_TABLE: dict[str, Any] = {
     "mariadb_charset": "utf8mb4",
     "mariadb_collate": "utf8mb4_bin",
 }
+
+# An image of up to 1 MiB (docs/api.md §11.2): BLOB on MySQL/MariaDB holds 64 KiB only.
+IMAGE_BYTES: TypeEngine[bytes] = LargeBinary().with_variant(mysql.LONGBLOB(), "mysql", "mariadb")
 
 # SQLite autoincrements only an INTEGER PRIMARY KEY.
 BIG_ID: TypeEngine[int] = BigInteger().with_variant(Integer(), "sqlite")

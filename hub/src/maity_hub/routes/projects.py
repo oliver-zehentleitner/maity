@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, policy, releases, rules
+from maity_hub import clock, idempotency, images, policy, releases, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -126,8 +126,13 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
+def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+    shown = images.views(conn, [project.id])[project.id]
+    return project_view(project, settings_of(request), shown)
+
+
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
-    return project_view(_load(conn, project_id), settings_of(request))
+    return _view(conn, _load(conn, project_id), request)
 
 
 idempotency.LOADERS["project"] = load_project
@@ -145,8 +150,9 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                 t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True)
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
+        shown = images.views(conn, [r.id for r in rows])
         return JSONResponse(
-            {"items": [project_view(r, settings) for r in rows], "next_cursor": None}
+            {"items": [project_view(r, settings, shown[r.id]) for r in rows], "next_cursor": None}
         )
 
 
@@ -207,9 +213,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             subject=("member", caller.principal_id),
         )
         project = _load(conn, project_id)
-        return idempotency.Outcome(
-            201, "project", project_id, project_view(project, settings_of(request))
-        )
+        return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -219,7 +223,7 @@ def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(project_view(mine.project, settings_of(request)))
+        return JSONResponse(_view(conn, mine.project, request))
 
 
 @router.patch("/projects/{slug}")
@@ -263,6 +267,8 @@ def patch_project(
                         t.forge_observation.c.project_id == project.id
                     )
                 )
+                # Nor are the forge's images: the new repository's are read afresh.
+                images.forget_forge(conn, project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
         if state_changes:
@@ -339,7 +345,7 @@ def patch_project(
             payload = {"reason": body.reason} if body.reason else {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
         return idempotency.Outcome(
-            200, "project", project.id, project_view(_load(conn, project.id), settings_of(request))
+            200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)

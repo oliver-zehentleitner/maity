@@ -63,7 +63,14 @@ def absence(project: Any) -> dict[str, Any] | None:
     return {"until": ts(project.absence_until), "scope": project.absence_scope}
 
 
-def project_view(project: Any, settings: Settings) -> dict[str, Any]:
+NO_IMAGE = {"available": False, "source": None}
+
+
+def project_view(
+    project: Any, settings: Settings, shown: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """`shown` is what `images.views` says the project shows as logo and banner."""
+    shown = shown or {}
     return {
         "slug": project.slug,
         "name": project.name,
@@ -71,6 +78,8 @@ def project_view(project: Any, settings: Settings) -> dict[str, Any]:
         "state_note": project.state_note,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings),
+        "logo": shown.get("logo", NO_IMAGE),
+        "banner": shown.get("banner", NO_IMAGE),
         "keep_the_why": project.keep_the_why,
         "policy": policy.of(project),
         "absence": absence(project),

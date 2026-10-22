@@ -84,7 +84,13 @@ def test_bearer_over_tls_answers_the_agents_me(
         "owner_id": agent.owner_id,
     }
     assert body["projects"] == [
-        {"slug": "maity", "name": "Project maity", "state": "build", "role": "member"}
+        {
+            "slug": "maity",
+            "name": "Project maity",
+            "state": "build",
+            "role": "member",
+            "logo": {"available": False, "etag": None},
+        }
     ]
     assert "open_requests" not in body["projects"][0]
 

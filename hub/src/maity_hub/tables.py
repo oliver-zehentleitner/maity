@@ -35,7 +35,14 @@ from sqlalchemy import (
 )
 
 from maity_hub.db import metadata
-from maity_hub.types import BIG_ID, JSON_VALUE, MARKDOWN_TEXT, MYSQL_TABLE, UtcDateTime
+from maity_hub.types import (
+    BIG_ID,
+    IMAGE_BYTES,
+    JSON_VALUE,
+    MARKDOWN_TEXT,
+    MYSQL_TABLE,
+    UtcDateTime,
+)
 
 ID = 40  # length of a hub-generated id
 HANDLE = 64
@@ -494,6 +501,27 @@ conversation_read = Table(
 )
 
 # --- probe --------------------------------------------------------------------------------
+
+# A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
+# the forge's image as the hub last read it. A forge row without `data` records that
+# the forge had none at `checked_at`; an upload always has data.
+project_image = Table(
+    "project_image",
+    metadata,
+    _ref("project_id", "project.id", nullable=False),
+    Column("kind", String(16), nullable=False),  # logo, banner
+    Column("source", String(16), nullable=False),  # uploaded, forge
+    Column("data", IMAGE_BYTES),
+    Column("content_type", String(32)),  # image/png, image/jpeg, image/webp
+    Column("etag", String(80)),
+    Column("checked_at", UtcDateTime, nullable=False),
+    _membership_ref("uploaded_by"),
+    PrimaryKeyConstraint("project_id", "kind", "source"),
+    CheckConstraint("kind IN ('logo', 'banner')", name="kind"),
+    CheckConstraint("source IN ('uploaded', 'forge')", name="source"),
+    CheckConstraint("source = 'forge' OR data IS NOT NULL", name="upload_has_data"),
+    **MYSQL_TABLE,
+)
 
 forge_observation = Table(
     "forge_observation",
