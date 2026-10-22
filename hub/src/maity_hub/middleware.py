@@ -36,6 +36,8 @@ BODY_CAP = 64 * 1024
 IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/(logo|banner)$")
 CSP = "default-src 'self'"
+# The only Cache-Control a route may set instead of no-store (images.HEADERS).
+ROUTE_CACHE = frozenset({b"private, max-age=21600"})
 
 
 class HubMiddleware:
@@ -182,9 +184,10 @@ def _with_headers(send: Send) -> Send:
             given = message.get("headers", [])
             headers = [(k, v) for k, v in given if k.lower() not in _SET]
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
-            # Every answer is no-store, except one whose route chose its own caching:
-            # the logo and banner, revalidated by ETag (§1.1, §11.2).
-            cache = next((v for k, v in given if k.lower() == b"cache-control"), b"no-store")
+            # Every answer is no-store, except the caching a route may choose from
+            # ROUTE_CACHE: the logo and banner, revalidated by ETag (§1.1, §11.2).
+            chosen = next((v for k, v in given if k.lower() == b"cache-control"), None)
+            cache = chosen if chosen in ROUTE_CACHE else b"no-store"
             headers += [
                 (b"maity-server-time", clock.rfc3339(clock.now(), millis=True).encode()),
                 (b"cache-control", cache),

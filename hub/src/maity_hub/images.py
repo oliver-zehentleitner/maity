@@ -170,7 +170,9 @@ def upload(
     actor: events.Actor,
 ) -> dict[str, Any]:
     """Store an upload, already checked by the caller; announce it when the shown image
-    changes. Returns the kind's state."""
+    changes. Returns the kind's state. Under the project lock: two first uploads at once
+    would both find no row and both insert."""
+    events.lock_project(conn, project_id)
     before = _state(_shown(_rows(conn, [project_id]), kind))
     _write(
         conn,
@@ -194,6 +196,7 @@ def upload(
 def remove_upload(
     conn: Connection, project_id: str, kind: str, actor: events.Actor
 ) -> dict[str, Any]:
+    events.lock_project(conn, project_id)
     before = _state(_shown(_rows(conn, [project_id]), kind))
     conn.execute(
         delete(t.project_image).where(
@@ -240,11 +243,8 @@ def _image_url(reader: forge.Forge, repository: str, kind: str) -> str | None:
 def _download(url: str, kind: str) -> tuple[bytes, str] | None:
     """The image at `url` if it is on the kind's image host and is an image the hub
     accepts; None for anything else (another host, a 404, SVG, too large)."""
-    host = url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
-    if not url.startswith("https://") or host != IMAGE_HOSTS[kind]:
-        return None
     try:
-        answer = outbound.read(url, cap=CAP)
+        answer = outbound.read(url, cap=CAP, host=IMAGE_HOSTS[kind])
     except outbound.Refused as refused:
         if refused.reason == "too_large" or refused.reason == "url_invalid":
             return None

@@ -169,6 +169,10 @@ def _body(response: http.client.HTTPResponse, cap: int, deadline: float, sock: A
             sock.settimeout(remaining)
         chunk = response.read1(CHUNK)
         if not chunk:
+            # A gzip answer must end where its stream ends: a truncated stream or a second
+            # member after the first is not the body the server meant.
+            if decoder is not None and (not decoder.eof or decoder.unused_data):
+                raise Refused("unavailable")
             return bytes(out)
         if decoder is None:
             out += chunk
@@ -188,10 +192,15 @@ def read(
     method: str = "GET",
     headers: Mapping[str, str] | None = None,
     body: bytes | None = None,
+    host: str | None = None,
 ) -> Answer:
     """One read under the transport rule. Any status the server answers with is returned,
-    errors included; the caller decides what a 404 means."""
+    errors included; the caller decides what a 404 means. `host`, when given, is the only
+    host the URL may name (`url_invalid` otherwise)."""
+    expected = host
     host, path = _target(url)
+    if expected is not None and host != expected.lower():
+        raise Refused("url_invalid")
     addresses = resolver(host)
     if not all(routable(ip) for ip in addresses):
         raise Refused("address_refused")
