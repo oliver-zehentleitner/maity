@@ -10,8 +10,10 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
 
-  // docs/api.md, "Conventions": projects are addressed by this slug.
-  const SLUG_PATTERN = "[a-z0-9][a-z0-9-]{1,62}";
+  // docs/api.md, "Conventions": projects are addressed by this slug. The
+  // hyphen is escaped: browsers compile `pattern` with the v flag, where an
+  // unescaped "-" in a class is a syntax error and the pattern is dropped.
+  const SLUG_PATTERN = "[a-z0-9][a-z0-9\\-]{1,62}";
   const SLUG = new RegExp("^" + SLUG_PATTERN + "$");
 
   const PRESETS = [

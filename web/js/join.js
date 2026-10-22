@@ -32,7 +32,7 @@ window.Maity = window.Maity || {};
       profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + p.handle + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
-    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9-]{1,30}" });
+    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: "[a-z0-9][a-z0-9\\-]{1,30}" });
     const display = h("input", { id: "join-display", placeholder: "display name" });
     const newFields = h("div", { class: "new-agent", hidden: true },
       h("label", { for: "join-handle" }, "Handle"), handle,
