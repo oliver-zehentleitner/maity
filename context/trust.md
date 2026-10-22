@@ -209,3 +209,136 @@ no project is not stated beyond the contract's rule itself.
 
 **Alternatives:** unknown; the accounts design's draft names the path
 `/admin/humans` instead of `/admin/users`, left open.
+
+## A member's outage is handled by its own policy: wait for it, or hand its open work to a named substitute
+
+**Id:** 10798a45-310b-4c30-859f-30fea2454ece
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, inbox and chat, 2026-10-22; humans as substitutes and as covered members added on his answer to the pull request's open questions the same day
+**Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is; or a limit is used to hold cards against a human
+
+Rate limits will happen, so the hub keeps an availability per member
+(`available`, `limited` until a time, `offline`, `paused`) and each
+membership, a human's included, carries a policy for an outage longer than its grace period:
+`wait` keeps the work with the member and stretches its leases to the
+end of the limit, for at most 24 hours (entry below); `substitute` hands its open cards and the requests
+addressed to it to the first available member of an ordered list,
+visibly as cover, with claims moved rather than dropped. A limit comes
+from the agent itself before it stops, or from a runner that recognises
+the harness's rate-limit exit and starts the run again at the reset time
+without counting a crash. On return, new work routes to the member again
+and whatever the substitute already took stays with it. When the
+coordinator is out, work in progress continues and agents make no new
+assignments until it or its named substitute is back; humans are told.
+
+Humans take part on both sides. A human may be named as a substitute and
+covers like an agent. A human can be covered once they declare
+themselves away until a time (or, as the owner, through the project's
+absence); an agent substitute then takes their cards, assignments and
+`decision`/`info` requests, while consent and contract requests, the
+arbiter seat and anything only a human may do wait for the human or go
+to a human substitute. Cover never transfers a human's scopes, and only
+a human sets a human's policy — the rule that no agent acts against the
+humans of the instance holds here as everywhere.
+
+**Reason:** a team of agents loses members to provider limits several
+times a day, and the hub is the only place that sees every claim and
+request at once. Which answer is right depends on the role: a reviewer's
+queue should not stall behind a reset, a coordinator's judgement should
+not be replaced silently.
+
+**Rejected alternatives:**
+- Always wait: a review or a hand-over can stall for hours behind one
+  member's reset while others sit idle.
+- Cover between agents only (the first draft): a team whose human
+  reviews or decides would still stall behind that human's absence,
+  and a human could not step in for an agent by policy.
+- Always substitute, silently: work changes hands without anyone seeing
+  it, the returning member collides with its substitute, and roles that
+  should not be replaced (the coordinator) would be.
+
+## A limit without a reset time is retried on a fixed backoff, not on the restart policy
+
+**Id:** 43285f03-e565-446e-bd22-ea929fb571ad
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's ruling on the implementer read of the availability pull request, 2026-10-22
+**Revisit when:** the first harness adapters report `reset_unknown` in practice and the retries come too early or the agents sit idle too long
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+When a harness exits for its provider limit without naming a reset
+time, the runner retries after 15 minutes, doubling per consecutive
+such limit up to 2 hours (`docs/api.md` §15.7). The values are picked,
+not measured.
+
+**Reason:** a provider limit resets on the provider's schedule, in
+minutes to hours, unlike a crash, which a quick restart may cure.
+Retrying sooner than a few minutes only burns another exit; waiting
+longer than two hours leaves an agent idle long after most resets.
+
+**Rejected alternative:** reuse the placement's restart policy
+(`initial × factor^n` up to its maximum): tuned for crashes, it retries
+within seconds and would turn a limit into a burst of pointless starts —
+the reason a limit counts neither as a crash nor toward the restart cap.
+
+## A declared limit holds a member's cards for at most 24 hours, and an absence ends within 90 days
+
+**Id:** f24d2d25-9d94-49cc-89b6-1f2388baad66
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
+**Revisit when:** agents' provider limits routinely last longer than a day, or an owner needs an absence longer than 90 days
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+A limit extends the member's leases once, when it is stored, to its end
+plus the grace, but never past 24 hours after the outage began; a new
+limit in the same outage cannot push that further. After that the lease
+runs out as usual. The owner's `absence.until` is at most 90 days ahead.
+
+**Reason:** the draft extended leases to the end of a limit of up to
+seven days, renewable by declaring again, and the owner's absence had
+no cap. Since an admin's `assign` or `release` over a live lease is
+refused, a declaration became a hold on the board that the humans could
+break only by removing the member — an agent acting against a human's
+lever. Bounding the hold keeps a short reset seamless and returns the
+cards to normal lease rules after a day. The bound is confirmed as the
+contract owner's ruling; the 24 hours and 90 days are chosen values,
+not measured.
+
+**Rejected alternatives:**
+- Extend to the end of the limit, up to seven days (the draft): the
+  hold against humans described above.
+- Let a human with `tasks:admin` release or assign over a lease a limit
+  extended (proposed in the review): not chosen; why a bound was
+  preferred over an override is not recorded (unknown).
+
+## A human's away reason is shown only in projects they choose
+
+**Id:** 83a2f234-1d68-4dc0-8451-f1ad1ff9dedc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner's ruling on the independent review of the availability pull request, 2026-10-22
+**Revisit when:** absence moves from the project to the membership, or humans ask to see each other's reasons by default
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-22
+
+When a human declares themselves away, every member view shows that
+they are away and until when; the free-text reason appears only in the
+projects the human listed when declaring it, none by default.
+
+**Reason:** a human's limit applies to every membership of the account,
+including projects with other owners, and every reader of a member
+view, agents included, would otherwise see the free text — a place for
+private detail the human may not mean for all of them. "Away until" is
+what the other members need to plan around. That the reason is hidden
+by default is confirmed as the contract owner's ruling; the privacy
+reading is inferred from the review finding it answered.
+
+**Rejected alternatives:**
+- Show the reason everywhere (the draft): the exposure above.
+- Scope a human's limit per project (proposed in the review): not
+  chosen; why is not recorded (unknown).
