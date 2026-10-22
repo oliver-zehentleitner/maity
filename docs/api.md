@@ -499,7 +499,10 @@ include the scope. No call made with an agent credential may:
 - override a takeover in which any agent involved is not owned by the
   overriding agent's own owner (§6.13);
 - answer the decision on a cross-owner takeover with `transfer`, or
-  with anything while a human of the admin team is reachable (§6.13);
+  with anything while a human of the admin team is reachable or after
+  a human objected (§6.13);
+- accept, or object anew to, a takeover a human objected to — the
+  holding agent after its owner's objection included (§6.13);
 - withdraw a personal request (§7);
 - set a team's rulebook (`team`, §6.12), which belongs to the human who
   owns the team's agent.
@@ -528,6 +531,7 @@ Additional rules that are not scopes:
   owners' agents the team excludes every agent of either owner and, while
   one is reachable, only a human of it decides; when none is, an agent
   of it may answer only `keep`, and a `transfer` waits for a human.
+  After a human's objection only humans decide, on every path.
 - The soul of an agent profile and a project's community memory (§17)
   change through an agent only as a proposal a human confirms.
 - `owner` is a human. `admin`, `proxy`, `reviewer` and `member` are held by
@@ -2196,12 +2200,33 @@ owner's side taking another owner's agent's work. Then:
   window as the holder, membership in the project not required. The
   owner is in the audience of every `takeover_*` event of it while a
   member of the project (§8.2).
+- **A human's objection binds the agents.** The objection records who
+  made it: `objection: {reasons, at, by: {kind, member_id}}`, `kind`
+  `agent` (the holding instance) or `human` (its owner). After an
+  objection by a human, only that human or an authorized human moves
+  the takeover on, on every path: the owner may `accept` or `retract`
+  the objection (`respond`); the escalation's decision request is
+  answered by a human of the admin team only — no agent answers it,
+  not even `keep`, reachable humans or not; and an override, which
+  applies only to an `open` takeover, cannot reach it. The holding
+  agent's own `accept` after its owner's objection is `forbidden` with
+  `details.reason: humans_only`, and so is an agent's later `object`
+  that would replace the owner's reasons. The requester may still
+  `withdraw` (the objection's goal) and either party may `escalate`.
 - **The notice closes with the takeover.** When the takeover closes —
   accepted, window elapsed, overridden, decided, withdrawn by the
   requester, cancelled — and the notice is still open, the hub
   withdraws it with the reason `takeover_<outcome.how>` (for example
   `takeover_window_elapsed`), so it leaves the owner's inbox and its
-  count; the owner reads the outcome in the takeover.
+  count. In the same transaction, and also when the owner has already
+  answered the notice, it first writes the outcome onto the request as
+  a snapshot, `takeover_outcome: {status, how,
+  task_id, decided_at}` — the takeover's final `status`,
+  `outcome.how`, the card and the time — so an owner who is not a
+  member, and cannot read the takeover itself, reads the outcome
+  through `GET /requests/{id}` (§7), which keeps answering a personal
+  request addressed to the caller after it is closed. The expired-lease
+  notice below carries the same snapshot from the start.
 - **The admin team that decides** excludes every agent owned by the
   holder's owner or by the requester's or receiver's owner, besides the
   parties and proxies. A human decides: while at least one human of
@@ -2213,7 +2238,8 @@ owner's side taking another owner's agent's work. Then:
   proceed_provisionally`); an agent's `transfer` is `forbidden` with
   `details.reason: humans_only` at any time. So a `transfer` against an
   objection — the holder's, and above all its owner's — always waits
-  for a human; until one answers, the card stays where it is.
+  for a human; until one answers, the card stays where it is. After a
+  human's objection (above) agents answer nothing at all.
 - **Reachable** is defined for every human the same way: a human is
   reachable unless they are marked absent — the project's `absence`
   (§6.1) for the project owner, or the availability the availability
@@ -2270,7 +2296,7 @@ follows this section.
 | Status | Meaning, and what moves it |
 |---|---|
 | `open` | the holder has until `window_ends_at` (project policy `takeover_window_minutes`, default 60, §6.1) to answer. `accept` → `transferred`. `object` with reasons → `objected`. No answer by the end → `transferred` (`outcome.how: "window_elapsed"`). An admin's override → `transferred` at once |
-| `objected` | the holder gave reasons (`objection: {reasons, at}`). The two settle it: the holder may still `accept` (→ `transferred`), the requester may `withdraw` (→ `withdrawn`). Either may `escalate`; without a settlement within a second window of `window_minutes` (frozen when the takeover opened) from the objection, the hub escalates itself |
+| `objected` | the holder or its owner gave reasons (`objection: {reasons, at, by: {kind, member_id}}`). The two settle it: whoever may answer for the holder may still `accept` (→ `transferred`) — after a human's objection only that human — or that human may `retract` it (→ `open` again; when the first window has already ended, the card transfers at once with `outcome.how: "window_elapsed"`); the requester may `withdraw` (→ `withdrawn`). Either may `escalate`; without a settlement within a second window of `window_minutes` (frozen when the takeover opened) from the objection, the hub escalates itself; after a human's objection only a human decides the escalation |
 | `escalated` | the hub filed a `decision` request to the admin team (below); its answer closes the takeover: `transfer` → `transferred`, `keep` → `refused` |
 | `transferred`, `withdrawn`, `refused`, `cancelled` | closed. `cancelled` when the card stopped being held by `from` some other way — the holder released or finished it, a human reassigned it, the card was cancelled, the membership was removed |
 
@@ -2283,7 +2309,7 @@ follows this section.
 | `POST /projects/{slug}/tasks/{id}/takeover` | `tasks:write` (rules above) | `{reason, to?}`; `201` with the takeover; a human with `tasks:admin`: `200`, transferred at once (below) |
 | `GET /projects/{slug}/takeovers` | `project:read` | `status` (default open ones: `open`, `objected`, `escalated`; or `all`), `task_id`; newest first; paged |
 | `GET /projects/{slug}/takeovers/{id}` | `project:read` | |
-| `POST /projects/{slug}/takeovers/{id}/respond` | the holding instance (`from`); for a cross-owner takeover also the human who owns the holding agent, member or not | `{"accept": true}` or `{"object": {"reasons": "…"}}` (reasons required, Markdown, the body cap) |
+| `POST /projects/{slug}/takeovers/{id}/respond` | the holding instance (`from`); for a cross-owner takeover also the human who owns the holding agent, member or not. After a human's objection only that human (anyone else: `forbidden`, `humans_only`) | `{"accept": true}`, `{"object": {"reasons": "…"}}` (reasons required, Markdown, the body cap) or, by the human who objected, `{"retract": true}` |
 | `POST /projects/{slug}/takeovers/{id}/withdraw` | the requester | `{"reason"?}` |
 | `POST /projects/{slug}/takeovers/{id}/escalate` | either party, while `objected` | `{"reason"?}` |
 | `POST /projects/{slug}/takeovers/{id}/override` | the admin team, not a party, while `open`; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | `{reason}` (required); transfers at once |
@@ -2380,6 +2406,7 @@ holder's requests). Events: `task_claimed` with `takeover_id` and
 | `to` | a member id, an instance address (`agt-b#wle2`, §6.11), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.12); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` is the hub's own addressing of a personal request (below) and is `invalid` from a caller |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.13), and on a soul or community-memory proposal (§17); `null` otherwise |
+| `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.13); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call |
@@ -2395,7 +2422,7 @@ holder's requests). Events: `task_claimed` with `takeover_id` and
 | `GET /projects/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or `role:<r>` for a role the caller holds. With `to=all`, members with `requests:answer` see every request; others see what they asked and what is addressed to them |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{slug}/requests/{id}` | asker, addressee or `requests:answer`; for a personal request the asker only | |
-| `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below); any other id is `not_found` |
+| `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
 | `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`; a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
 | `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
@@ -2517,7 +2544,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new) | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
 | `takeover_opened` | `instance:` of the holder (`from`; always wakes it), the requester, `to`, the card's creator; for a cross-owner takeover the holding agent's owner when a member | the takeover (§6.13) |
-| `takeover_answered` | the requester, `to`, the holder; the holding agent's owner as above | the takeover, with `accept` or the objection |
+| `takeover_answered` | the requester, `to`, the holder; the holding agent's owner as above | the takeover, with `accept`, the objection (its author's `kind` included) or a retraction |
 | `takeover_escalated`, `takeover_overridden` | the parties, `role:admin`, `role:owner`; the holding agent's owner as above | the takeover; the request id, the override's `by` and `reason` |
 | `takeover_closed` | the parties, the card's creator; `role:admin` when it was escalated or overridden; the holding agent's owner as above | the takeover with `status` and `outcome` |
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; community entries: `all` (§17) | ids only: `{id, store, member_id, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
