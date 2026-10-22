@@ -166,6 +166,12 @@ window.Maity = window.Maity || {};
   // a Quote button that puts it into the composer as a quote. grouped: it
   // follows the same sender's within GROUP_MS, so it shows neither the
   // picture nor the name again.
+  const isRemoved = (msg) => !!msg.redacted || msg.body === null;
+  function tombstone(ctx, r) {
+    const by = r && r.by ? " by " + ctx.nameOf(r.by) : "";
+    return h("p", { class: "muted msg-redacted" }, "This message was removed" + by + (r && r.reason ? ": " + r.reason : "") + ".");
+  }
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -178,15 +184,15 @@ window.Maity = window.Maity || {};
     const meta = h("span", { class: "meta" }, said(msg));
     if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
-    const r = msg.redaction || {};
-    const body = msg.redacted
-      ? h("p", { class: "muted msg-redacted" }, "This message was removed" + (r.by ? " by " + ctx.nameOf(r.by) : "") + (r.reason ? ": " + r.reason : "") + ".")
-      : h("div", { class: "md" }, M.markdown(msg.body));
+    // A removed message reads body null (§9); who and why only where known
+    // (this page's own removal, or the event_redacted that said so).
+    const removed = isRemoved(msg);
+    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body, meta,
-        onQuote && !msg.redacted ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null,
-        o.onRedact && !msg.redacted ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Remove this message for everyone", onclick: () => o.onRedact(msg) }, "Remove") : null));
+        onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null,
+        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Remove this message for everyone", onclick: () => o.onRedact(msg) }, "Remove") : null));
   }
 
   // Messages of one sender this close together are one group.
@@ -243,7 +249,7 @@ window.Maity = window.Maity || {};
   }
 
   // The quote of a message, as Markdown: each line behind "> ", the sender first.
-  const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + msg.body.split("\n").map((l) => "> " + l).join("\n") + "\n\n";
+  const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + String(msg.body || "").split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
   // The chat fills the screen below the header, so that only its history
   // scrolls and the composer stays at the bottom; the visual viewport
@@ -270,7 +276,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, fitToScreen, drafts, HISTORY_PAGE };
+  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, fitToScreen, drafts, isRemoved, HISTORY_PAGE };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -283,7 +289,7 @@ window.Maity = window.Maity || {};
     const layout = h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
     append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
-    ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_/.test(e.kind))) list.refresh(false); });
+    ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
     ctx.every(LIST_MS, () => list.refresh(true));
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
     if (args[0] === "new") { M.groupChat.create(ctx, layout, list); await list.refresh(false); return; }
@@ -391,6 +397,15 @@ window.Maity = window.Maity || {};
 
     const mentions = (e) => isChat(e) && e.payload.conversation_id === agent.id && !shown.has(e.seq);
     ctx.onEvents(async (events) => {
+      // A message of this chat removed (§8.5): its text goes at once.
+      events.filter((e) => e.kind === "event_redacted" && e.payload).forEach((e) => {
+        const li = Array.from(messages.querySelectorAll("li.msg")).find((x) => x.getAttribute("data-seq") === String(e.payload.seq));
+        const md = li && li.querySelector(".md");
+        if (!md) return;
+        md.parentNode.insertBefore(tombstone(ctx, { by: e.actor && e.actor.member_id, reason: e.payload.reason }), md);
+        md.remove();
+        Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
+      });
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
       if (!events.some(mentions)) return;
       try {

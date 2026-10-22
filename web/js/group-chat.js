@@ -105,19 +105,24 @@ window.Maity = window.Maity || {};
     const id = item.id;
     const base = ctx.base + "/conversations/" + encodeURIComponent(id);
     const path = base + "/messages";
-    const [view, unreadBefore] = [await M.api.get(base), item.unread || 0];
+    // The view changes in place (a rename, someone added); a change of the
+    // caller's access or of closed draws the whole chat again.
+    let view = await M.api.get(base);
+    const unreadBefore = item.unread || 0;
     const observer = view.access === "observer";
     const closed = !!view.closed_at;
     const projectClosed = CLOSED_STATES.includes(ctx.project.state);
     const inChat = (memberId) => view.participants.some((p) => p.member_id === memberId);
-    const isAdmin = ["owner", "admin"].includes(ctx.role);
-    const manager = !observer && !closed && (view.created_by === ctx.me.id || isAdmin);
-    const title = view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
+    const manager = () => !observer && !closed && (view.created_by === ctx.me.id || ctx.canAdmin || ctx.isOwner);
+    const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
+    // An observer outside the project is not in the member list: said so, not by id.
+    const observerName = (o) => (ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
 
-    const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + title });
+    const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
     const pollStatus = M.statusLine();
     const status = M.statusLine();
+    status.el.setAttribute("tabindex", "-1");
 
     // The window: from this participant's latest join on (§9.2), read to its end.
     const first = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
@@ -136,14 +141,16 @@ window.Maity = window.Maity || {};
     // observer, and no agent uses this page.
     const mayRedact = !observer;
     async function redact(msg) {
-      const reason = window.prompt("Remove this message for everyone in the chat? Its text is replaced by a note; say why (optional).", "");
+      // The hub needs a reason (§8.5): asked again until one is given, or cancelled.
+      let reason = window.prompt("Remove this message for everyone in the chat? Its text is replaced by a note. Say why:", "");
+      while (reason !== null && !reason.trim()) reason = window.prompt("A reason is needed to remove a message. Say why, or cancel:", "");
       if (reason === null) return;
       status.busy("Removing…");
       try {
-        await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason: reason.trim() || null });
+        await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason: reason.trim() });
         // The answer is the event (§8.5); the message shows its tombstone.
         const at = all.findIndex((m) => m.seq === msg.seq);
-        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason: reason.trim() || null } });
+        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason: reason.trim() } });
         redraw();
         status.done();
         append(status.el, h("span", { class: "ok" }, "Removed."));
@@ -167,8 +174,9 @@ window.Maity = window.Maity || {};
       draw = parts.timeline(ctx, new Map(), firstUnread, observer || closed ? null : quote, opts);
       clear(messages);
       if (!all.length) {
-        append(messages, h("li", { class: "empty" }, h("p", null, "No messages yet."),
-          h("p", { class: "muted" }, "The agents in it read it when they resume, and answer when mentioned.")));
+        append(messages, h("li", { class: "empty" }, h("p", null, earlier === null ? "No messages yet." : "Nothing new since you joined."),
+          h("p", { class: "muted" }, earlier === null ? "The agents in it read it when they resume, and answer when mentioned."
+            : "What was said before is there with Show earlier messages.")));
       } else {
         all.forEach((m) => append(messages, draw(m)));
       }
@@ -213,11 +221,20 @@ window.Maity = window.Maity || {};
     }
 
     // A message of this chat fetches what is new; a change of the chat
-    // (people, title, closed) draws it again.
+    // (people, title) is drawn in place; a removal takes the text out.
     ctx.onEvents(async (events) => {
       if (events.some((e) => /^conversation_/.test(e.kind) && ((e.subject && e.subject.id === id) || (e.payload && e.payload.id === id)))) {
-        ctx.refresh();
-        return;
+        refreshView();
+      }
+      const removedHere = events.filter((e) => e.kind === "event_redacted" && e.payload && all.some((m) => m.seq === e.payload.seq));
+      if (removedHere.length) {
+        removedHere.forEach((e) => {
+          const at = all.findIndex((m) => m.seq === e.payload.seq);
+          all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: e.actor && e.actor.member_id, reason: e.payload.reason } });
+        });
+        const top = messages.scrollTop;
+        redraw();
+        messages.scrollTop = top;
       }
       if (!events.some((e) => e.kind === "message" && e.payload && e.payload.conversation_id === id)) return;
       try {
@@ -231,31 +248,39 @@ window.Maity = window.Maity || {};
     });
 
     // Who is in it, and who else reads it (§9.2: shown in the chat itself).
-    const people = h("p", { class: "muted group-people-line" }, "In it: ",
+    const people = () => h("p", { class: "muted group-people-line" }, "In it: ",
       view.participants.map((p, i) => [i ? ", " : null, nameOf(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
-    const observers = (view.observers || []).length
+    const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, "Also read by: ",
-        view.observers.map((o, i) => [i ? ", " : null, nameOf(ctx, o),
+        view.observers.map((o, i) => [i ? ", " : null, observerName(o),
           " (owner of " + view.participants.filter((p) => p.owner_id === o).map((p) => nameOf(ctx, p.member_id)).join(", ") + ")"]),
         ". They read every message and write nothing.")
-      : null;
+      : null);
 
-    // Managing: rename, add, remove; anyone in it leaves.
+    // Managing: rename, add, remove; anyone in it leaves. The disclosure
+    // stays open across a redraw of the head.
+    let manageOpen = false;
     function manage() {
       if (observer || closed) return null;
-      const box = h("details", { class: "group-manage" }, h("summary", null, manager ? "Manage this chat" : "Leave this chat"));
+      const box = h("details", { class: "group-manage" }, h("summary", null, manager() ? "Manage this chat" : "Leave this chat"));
+      if (manageOpen) box.setAttribute("open", "");
+      box.addEventListener("toggle", () => { manageOpen = box.hasAttribute ? box.hasAttribute("open") : manageOpen; });
+      // A change is drawn in place; the status line says what happened and has the focus.
       const act = async (label, done, call, after) => {
         status.busy(label + "…");
         try {
           await call();
-          status.done();
-          append(status.el, h("span", { class: "ok" }, done));
-          if (after) after(); else ctx.refresh();
         } catch (err) {
           status.fail(label + " failed: ", said(err));
+          return;
         }
+        if (after) { after(); return; }
+        await refreshView();
+        status.done();
+        append(status.el, h("span", { class: "ok" }, done));
+        status.el.focus();
       };
-      if (manager) {
+      if (manager()) {
         const name = h("input", { id: "group-rename", maxlength: "200", autocomplete: "off" });
         name.value = view.title || "";
         append(box, h("form", { class: "inline-form", onsubmit: (e) => {
@@ -277,7 +302,7 @@ window.Maity = window.Maity || {};
             + "Write here as for everyone who is or will be in the chat."));
         }
         append(box, h("ul", { class: "group-members" }, view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) =>
-          h("li", null, nameOf(ctx, p.member_id), " ", h("button", { type: "button", class: "small", onclick: () => {
+          h("li", null, nameOf(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
             if (!window.confirm("Remove " + nameOf(ctx, p.member_id) + " from this chat? They no longer read it.")) return;
             act("Removing", nameOf(ctx, p.member_id) + " is no longer in the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
           } }, "Remove")))));
@@ -344,12 +369,33 @@ window.Maity = window.Maity || {};
         text, hint, button);
     }
 
-    const heading = h("h2", { class: "group-title", tabindex: "-1" }, title);
+    const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());
+    const head = h("div", { class: "group-head" });
+    function drawHead() {
+      heading.textContent = titleOf();
+      pane.setAttribute("aria-label", "Group chat " + titleOf());
+      append(clear(head), people(), observers(), manage());
+    }
+    // The chat as the hub has it now, drawn in place; access or closed
+    // changed (removed, the chat closed) means the whole view again.
+    async function refreshView() {
+      let fresh;
+      try {
+        fresh = await M.api.get(base);
+      } catch (err) {
+        if (err.status === 404) { ctx.refresh(); return; }
+        pollStatus.fail("The chat could not be read again: ", err);
+        return;
+      }
+      if (fresh.access !== view.access || !!fresh.closed_at !== closed) { ctx.refresh(); return; }
+      view = fresh;
+      drawHead();
+    }
+    drawHead();
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" }, heading, closed ? h("span", { class: "flag" }, "closed") : null),
-      people, observers,
-      manage(),
+      head,
       earlierBox,
       messages,
       pollStatus.el,

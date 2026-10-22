@@ -1135,7 +1135,9 @@ window.Maity = window.Maity || {};
         items = win.filter((x) => x.seq > Number(query.get("after") || 0)).slice(0, limit);
         if (item.access === "participant" && items.length) c.read[me().member.id] = Math.max(c.read[me().member.id] || 0, items[items.length - 1].seq);
       }
-      const first = items.length ? items[0].seq : (win.length ? win[0].seq : null);
+      // earlier: the seq to pass as before; for a window with nothing in it
+      // yet, everything said so far lies before it.
+      const first = items.length ? items[0].seq : (win.length ? win[0].seq : (c.items.length ? c.items[c.items.length - 1].seq + 1 : null));
       const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
       return { items: items.map((x) => Object.assign({}, x)), cursor: items.length ? items[items.length - 1].seq : null, earlier };
     }],
@@ -1165,8 +1167,11 @@ window.Maity = window.Maity || {};
         if (!item) fail(404, "not_found", "Not found", path);
         if (item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
       }
-      Object.assign(msg, { body: null, mentions: [], redacted: true, redaction: { reason: body.reason || null, by: me().member.id, at: nowIso() } });
-      return msg;
+      // §8.5: the reason is required, as the hub's own check has it.
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      // …/messages shows a removed message as body null and redacted true (§9), nothing more.
+      Object.assign(msg, { body: null, mentions: [], redacted: true });
+      return { seq, kind: "message", redacted: true, payload: { redacted: true, reason: body.reason, by: me().member.id, at: nowIso() } };
     }],
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);

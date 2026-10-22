@@ -2093,11 +2093,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.prompt = () => null;
   btn(gcList().querySelectorAll("li.msg")[1], "Remove").click(); await tick();
   expect(gcWrites.length === 2, "group chat: a cancelled removal sends nothing");
+  const gcAsks = [];
+  win.prompt = (q) => { gcAsks.push(q); return gcAsks.length === 1 ? "   " : null; };
+  btn(gcList().querySelectorAll("li.msg")[1], "Remove").click(); await tick();
+  expect(gcAsks.length === 2 && gcAsks[1].startsWith("A reason is needed") && gcWrites.length === 2, "group chat: an empty reason is asked again, never sent (§8.5 needs one)");
+  let gcNoReason = null;
+  try { await gcPost("/projects/maity/events/5015/redact", {}); } catch (err) { gcNoReason = err; }
+  expect(gcNoReason && gcNoReason.code === "invalid", "group chat: the mock refuses a removal without a reason");
   win.prompt = gcPrompt;
+  const gcComposer = byId("chat-text");
   // Managing: rename, add (the latecomer's history said), remove.
   byId("group-rename").value = "Release 0.2"; header.querySelector && main.querySelector(".group-manage form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(gcWrites[2]) === JSON.stringify(["PATCH", "/projects/maity/conversations/cnv-0007", { title: "Release 0.2" }])
     && text(main.querySelector(".group-chat .group-title")) === "Release 0.2", "group chat: the creator renames it");
+  expect(byId("chat-text") === gcComposer && main.querySelectorAll(".group-chat .send-status").some((el) => text(el).includes("Renamed.")),
+    "group chat: a rename is drawn in place, the composer kept and the result said");
   expect(text(main.querySelector(".group-manage")).includes("can read what came before with Show earlier messages"), "group chat: adding says what a latecomer reads");
   byId("group-add").value = "agt-c";
   main.querySelectorAll(".group-manage form")[1].dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
@@ -2108,6 +2118,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main.querySelectorAll(".group-members li").find((li) => text(li).startsWith("Agent C")), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(gcWrites[4]) === JSON.stringify(["DELETE", "/projects/maity/conversations/cnv-0007/participants/agt-c"])
     && !text(main.querySelector(".group-people-line")).includes("Agent C"), "group chat: a participant removed");
+  expect(main.querySelectorAll(".group-members button").every((b) => /^Remove .+ from the chat$/.test(b.getAttribute("aria-label") || "")),
+    "group chat: each participant's Remove names whom it removes");
+  // Someone else's removal and someone else's rename reach the open chat in place.
+  const gcEvGet = win.Maity.api.get;
+  let gcFeed = [];
+  let gcRenamed = false;
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?")) { const items = gcFeed; gcFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 9000, superseded: false }); }
+    if (p === "/projects/maity/conversations/cnv-0007" && gcRenamed) return gcEvGet(p).then((v) => Object.assign({}, v, { title: "Renamed by Ops" }));
+    return gcEvGet(p);
+  };
+  const gcTyping = byId("chat-text");
+  gcFeed = [{ seq: 9101, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 5015, reason: "a key" } }];
+  await fireIntervals(); await tick(); await tick();
+  const gcMsg5015 = gcList().querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === "5015");
+  expect(text(gcMsg5015).includes("This message was removed by Maintainer: a key.") && !btn(gcMsg5015, "Quote"), "group chat: a removal by someone else takes the text out at once");
+  gcRenamed = true;
+  gcFeed = [{ seq: 9102, kind: "conversation_updated", subject: { type: "conversation", id: "cnv-0007" }, actor: { member_id: "hum-ops" }, payload: { id: "cnv-0007" } }];
+  await fireIntervals(); await tick(); await tick();
+  expect(text(main.querySelector(".group-chat .group-title")) === "Renamed by Ops" && byId("chat-text") === gcTyping,
+    "group chat: someone else's rename is drawn in place, the composer untouched");
+  // A direct chat takes a removal the same way.
+  await go("#/p/maity/chat/agt-a");
+  gcFeed = [{ seq: 9103, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 4202, reason: "pasted" } }];
+  await fireIntervals(); await tick(); await tick();
+  const gcDirect = main.querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === "4202");
+  expect(gcDirect && text(gcDirect).includes("This message was removed by Maintainer: pasted.") && !btn(gcDirect, "Quote"), "direct chat: a removal reaches the open chat too");
+  win.Maity.api.get = gcEvGet;
+  // A removed message as the hub gives it: body null, with or without redacted.
+  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200"
+    ? gcEvGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m, i) => (i === 1 ? Object.assign({}, m, { body: null }) : m)) })) : gcEvGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
+  const gcNull = gcList().querySelectorAll("li.msg")[1];
+  expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
+  // A latecomer with nothing new: said, with the earlier part a button away.
+  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200" ? Promise.resolve({ items: [], cursor: null, earlier: 5021 }) : gcEvGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
+  expect(text(gcList()).includes("Nothing new since you joined.") && btn(main.querySelector(".earlier"), "Show earlier messages"), "group chat: a latecomer with nothing new is told the earlier part is there");
+  win.Maity.api.get = gcEvGet;
   // The earlier part, on demand.
   const gcGet = win.Maity.api.get;
   win.Maity.api.get = (p) => {
@@ -2122,13 +2171,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector(".earlier button"), "group chat: the earlier part is read on demand and put before");
   // Reading along as an agent's owner: no writing, no managing, no removing; the observers named.
   win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007"
-    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer"],
+    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside"],
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
-    && text(main.querySelector(".group-observers")).includes("Also read by: Maintainer (owner of Agent A, Agent B)"),
+    && text(main.querySelector(".group-observers")).includes("Also read by: Maintainer (owner of Agent A, Agent B), an owner outside the project"),
     "group chat: an owner reads along, writes and manages nothing, and is named as reading along");
   // A closed chat stays readable and takes nothing.
   win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007" ? gcGet(p).then((v) => Object.assign({}, v, { closed_at: "2026-10-22T10:00:00Z", closed_reason: "no_human" })) : gcGet(p));
