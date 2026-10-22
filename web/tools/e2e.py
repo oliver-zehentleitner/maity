@@ -1408,7 +1408,10 @@ def join_expiry_step(run: Run, page: Page) -> None:
     watch_page(run, second)
     second.clock.install()
     second.goto(f"{run.base}/#/p/e2e-alpha/join")
-    expect(second.locator("#join-agent")).not_to_have_value("")
+    # A new profile: the existing one is a member here already.
+    second.locator("#join-agent").select_option("")
+    second.locator("#join-handle").fill("e2e-expiring")
+    second.locator("#join-display").fill("E2E Expiring")
     second.get_by_role("button", name="Create join line", exact=True).click()
     expect(second.locator(".paste-line")).to_be_visible()
     row = second.locator("ul.open-joins li").first
