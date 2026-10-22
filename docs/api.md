@@ -128,7 +128,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `signature_invalid` | HMAC does not verify |
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: reauth_required` for a change that needs a sign-in within the last 10 minutes (§2.6.3) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -281,7 +281,9 @@ Login is limited to 10 attempts per minute per source address and per
 handle (`rate_limited`), and refuses `Sec-Fetch-Site: cross-site` like
 every cookie request. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
-agent credential on `/auth/*` is `forbidden` without `details.scope`. Passwords are stored with scrypt from the
+agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
+`forbidden` with `details.reason: humans_only` and no `details.scope`,
+the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
 call and 30 days after login regardless. Every call renews the human's
@@ -474,9 +476,9 @@ include the scope. No call made with an agent credential may:
 
 - reduce, remove or pause a human's membership, role or scopes;
 - revoke a human's sessions or credentials;
-- obtain a human session by any method, or take part in one: create,
-  redeem, approve or complete a device code, request or use a sign-in
-  link or code, list a human's sessions (§2.6);
+- obtain a human session with its credential, or take part in one with
+  it: create, redeem, approve or complete a device code, request or use
+  a sign-in link or code, list a human's sessions (§2.6);
 - change instance-admin status (§16);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
@@ -488,6 +490,33 @@ include the scope. No call made with an agent credential may:
 Every such attempt is `forbidden` with `details.reason: humans_only`,
 before any side effect. The hub's tests enforce it as one table of
 endpoints and fields, checked against agent credentials of every role.
+
+**Where this rule ends: a mailbox the agent controls.** The hub
+enforces the rule against agent and runner *credentials*. The sign-in
+endpoints of §2.6 are unauthenticated by nature, and a caller that
+leaves its credential out looks like any browser. A sign-in link by
+mail is therefore exactly as strong as the human's mailbox: an agent
+that can read and send from the mailbox of its human (a mail connector
+is common for personal agents) can request a link, read it and use it,
+and the hub cannot tell that from the human doing the same. This is a
+limit the hub states, not one it closes. What it does instead:
+
+- **The human decides whether the mailbox is a way in.** Sign-in by
+  mail is a per-human setting, on by default, that the human switches
+  off in the account (`email.sign_in_link`, §2.6.3). A human whose
+  agents can read their mail should switch it off; the dashboard says
+  so beside the switch.
+- **A mail sign-in from a new device is shown where the agent cannot
+  hide it.** Every other active session of the human shows it in the
+  dashboard at once, with the session and a one-click "End this
+  session" (§2.6.5) — not only by a mail the agent could delete.
+- **The device code needs a human at a signed-in screen.** Its approval
+  uses number matching and shows what the hub itself observed
+  (§2.6.2); an agent without a human session cannot approve one.
+- **A new address needs a fresh sign-in.** Changing the verified
+  address, which would move the sign-in path to another mailbox, needs
+  a sign-in within the last 10 minutes and tells the old address
+  (§2.6.3).
 
 Additional rules that are not scopes:
 
@@ -613,13 +642,15 @@ one as **B** (the phone):
    (`K7QM-4XPR`), a QR of the URL, and a countdown.
 2. On B, the login page → "Have a code?" → the code (or the QR's URL,
    which opens that page with the code filled in): `POST
-   /auth/device-login` `{code}`. B shows only "Waiting for approval on
-   your other device" — not which account the code belongs to.
+   /auth/device-login` `{code}`. B shows "Waiting for approval on your
+   other device" and a two-digit **match number** (`47`) — not which
+   account the code belongs to.
 3. A, which waits on `GET /auth/device-codes/{id}?wait=55`, sees the
-   code redeemed and shows "Approve this device?" with B's browser and
-   operating system (from its `User-Agent`) and its IP address. The
-   human approves (`POST …/approve`) or denies
-   (`POST …/deny`).
+   code redeemed and shows "Approve this device?" with what the hub
+   observed — B's IP address and the time of the redemption — beside
+   the browser and operating system B's `User-Agent` claims, and three
+   numbers, one of them B's. The human picks the number B shows
+   (`POST …/approve` `{number}`) or denies (`POST …/deny`).
 4. B, which waits on `GET /auth/device-login?wait=55`, sees `approved`
    — and only now the account: display name, handle, avatar — and calls `POST /auth/device-login/complete`: the hub sets B's own
    session cookies (§2.1). B has a new session; A's session is
@@ -628,19 +659,20 @@ one as **B** (the phone):
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `POST /auth/device-codes` | human (cookie session) | a new code bound to this session and its human; voids an earlier open code of the same session. 201 `{id, code, url, expires_at}` |
-| `GET /auth/device-codes/{id}` `?wait=0–55` | the session that created it | `{id, status, expires_at, device?}`; with `wait`, held until `status` changes, as §8.3 |
-| `POST /auth/device-codes/{id}/approve` | the session that created it | only in `redeemed`; 200 with `status: approved` |
+| `GET /auth/device-codes/{id}` `?wait=0–55` | the session that created it | `{id, status, expires_at, device?, choices?}`; with `wait`, held until `status` changes, as §8.3. Any other caller, another session of the same human included, gets `not_found` here and on the three calls below |
+| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed`; the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
 | `POST /auth/device-codes/{id}/deny` | the session that created it | in `waiting` or `redeemed`; 200 with `status: denied`; the code is dead |
 | `DELETE /auth/device-codes/{id}` | the session that created it | cancels; the same as `deny` |
-| `POST /auth/device-login` `{code, next?}` | anyone (the new device) | redeems the code; sets the pending cookie (below); 200 `{status: "redeemed", expires_at}` — no account |
-| `GET /auth/device-login` `?wait=0–55` | the browser holding the pending cookie | `{status, expires_at, account?}`; `account` `{handle, display_name, avatar_url}` only once `status` is `approved` |
+| `POST /auth/device-login` `{code, next?}` | anyone (the new device) | redeems the code; sets the pending cookie (below); 200 `{status: "redeemed", expires_at, match_number}` — no account |
+| `GET /auth/device-login` `?wait=0–55` | the browser holding the pending cookie | `{status, expires_at, match_number, account?}`; `account` `{handle, display_name, avatar_url}` only once `status` is `approved` |
 | `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved`; sets the session cookies; 200 `{member, next}` (as `POST /auth/login`) |
 
 ```json
 { "id": "dvc-3f9a", "status": "redeemed", "expires_at": "2026-10-22T14:05:00Z",
-  "device": { "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) …",
-              "browser": "Safari", "os": "iOS", "ip": "203.0.113.24",
-              "redeemed_at": "2026-10-22T14:01:12Z" } }
+  "device": { "ip": "203.0.113.24", "redeemed_at": "2026-10-22T14:01:12Z",
+              "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) …",
+              "browser": "Safari", "os": "iOS" },
+  "choices": [ 18, 47, 83 ] }
 ```
 
 - **The code.** 8 characters from Crockford's base32 alphabet
@@ -676,12 +708,25 @@ one as **B** (the phone):
   another account, and B's request names no account. B learns which
   account it is joining only after A approved, so a guessed or leaked
   code tells its holder nothing about the account behind it.
-- **`device`** is what the hub saw on B's redemption: `user_agent` (cut
-  at 300 characters, shown as text), `browser` and `os` parsed from it
-  (`null` when unknown), and `ip` as decided by §2.5. V1 shows the IP
-  address only and has no location field; an optional GeoIP database
-  provided by the operator is a later revisit, which would add a field
-  then (§1.6).
+- **Number matching.** At the redemption the hub draws the match
+  number, a value from 10 to 99 from the secure random source, and
+  stores it with the code; B shows it. A's dialog shows `choices`:
+  three distinct values from 10 to 99 in ascending order, B's number
+  and two others drawn the same way. Only the right pick approves; a
+  wrong pick denies the code at once, so a second guess needs a new
+  code. A human whose own phone shows no number, or a number that is
+  not among the three, sees at once that the device in the dialog is
+  not theirs — the case of a code read off a shared screen and typed
+  first by someone else. The dialog says "Only approve a device you are
+  holding now".
+- **`device`** is what the hub observed on B's redemption, and the
+  dialog leads with it: `ip` as decided by §2.5 and `redeemed_at`, the
+  hub's time. `user_agent` (cut at 300 characters, shown as text),
+  `browser` and `os` parsed from it (`null` when unknown) are what B's
+  browser *claims*; the dialog labels them so ("Says it is Safari on
+  iOS") and never shows them alone. V1 shows the IP address and no
+  location: an approximate location needs a GeoIP database the operator
+  would provide, a later revisit that would add a field then (§1.6).
 
 #### 2.6.3 Sign-in link by mail
 
@@ -703,8 +748,15 @@ A mail is sent only when, at the time of the lookup, the address is a
 human's verified address (`address_status: verified`, §17.4; compared
 case-insensitively, after trimming), the human's account is not
 disabled, the human has not switched sign-in links off for themselves
-(below), and the method and the mail settings are still on. A new
-request voids the human's earlier unused link and code.
+(below), and the method and the mail settings are still on. While the
+instance setting is on but the mail settings are incomplete or
+`enabled: false`, the call still answers `202` and sends nothing — the
+same answer as everywhere else in this flow (`GET /auth/methods`
+already tells the login page not to offer it). A new request voids the
+earlier unused link and code requested from the **same source
+address** for that human; a request from another source address leaves
+them alone, so nobody elsewhere can void the link the human is about to
+use.
 
 **The human's own switch.** Besides the instance setting (§2.6.6), each
 human may turn sign-in links off for their account: `email.sign_in_link`
@@ -713,14 +765,31 @@ in the notification settings (#160, §17.4), `true` by default,
 With `false` the hub sends no link and no code to that human —
 `POST /auth/email-link` still answers `202` as for any address, and
 `GET /auth/methods` is unchanged, since it never speaks about an
-account. Turning it off voids an open link and code.
+account. Turning it off voids an open link and code. The dashboard
+shows the switch with the sentence "Turn this off if an agent or anyone
+else can read this mailbox: whoever reads it can sign in as you"
+(§2.3).
 
+**Changing the verified address.** The verified address is a sign-in
+factor, so changing or removing it (`email.address` in #160, §17.4)
+needs a **fresh sign-in**: the calling session must have been created
+within the last 10 minutes, by any method; otherwise the call is
+`forbidden` with `details.reason: reauth_required`, and the dashboard
+asks the human to sign in again and repeats the change. When the new
+address is confirmed, or the address is removed, the **old** address
+gets a `security` mail ("The sign-in address of your Maity account was
+changed to m…@example.net at <time> from <browser> on <os>, <ip>; if
+this was not you, sign in and end your other sessions"), with the new
+address masked to its first character and its domain. This mail is
+sent even though the old address no longer receives notifications.
 **The mail.** Plain text in the human's `language` (§17.4), with the
 rules of §17.5 for headers and content, minus the unsubscribe parts: a
 sign-in mail is a reply to a request, not a notification, so it ignores
 the human's notification modes, quiet hours and the per-human hourly
-cap, and counts against the instance's `max_per_hour` (§16.2) — over
-it, it is not sent. Subject `[Maity] Sign-in link`. Body:
+cap. It counts against the instance's budget for security mails
+(`security_max_per_hour`, #160 §16.2), which notification mail cannot
+use up; over that budget it is not sent. Subject `[Maity] Sign-in
+link`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/mail/sign-in/{token}`, valid 15 minutes;
 - "Or enter this code in the browser where you asked for it:
@@ -765,7 +834,10 @@ Valid only in the browser that made the request — the one holding the
 pending cookie of that `POST /auth/email-link` — and only for that
 request's human; it carries no address. Spaces are ignored. A wrong
 code is `code_invalid`; the fifth wrong code voids the code (the link
-stays valid). Right: a fresh session as `POST /auth/login`, 200
+stays valid). After 20 wrong mailed codes for one human in a day,
+from any source, mails to that human carry the link only and no code
+until the day ends: the six digits are the only guessable part, and the
+link — signed and 15 minutes long — is not. Right: a fresh session as `POST /auth/login`, 200
 `{member, next}`; the link is then used too. The code is stored as an
 HMAC with the signing key, never in clear.
 
@@ -774,8 +846,8 @@ HMAC with the signing key, never in clear.
 | What | Limit |
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
-| `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 40 bits cannot get far; the password still works) |
-| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per address (existing or not), 10 per hour per source address |
+| `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 40 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
@@ -784,6 +856,15 @@ Over a limit: `rate_limited` with `Retry-After` (§1.3). For
 like an unknown address — a `429` there would tell an address that is
 being used from one that is not; only the per-source-address limit
 answers `429`.
+
+**No lock-out through the limits.** The per-address limit counts per
+(address, source address), so requests from elsewhere do not spend the
+budget of the human's own network: someone who knows the address can
+fill the mailbox with sign-in mails (at most 10 per day per source
+address they control) but cannot stop the human's own requests, nor
+void the human's link (§2.6.3). The device code, the legitimate path
+for a human who is signed in anywhere, has no per-address limit at all
+and is never affected by mail limits; the password is not either.
 
 #### 2.6.5 Rules every method keeps
 
@@ -832,7 +913,7 @@ answers `429`.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `GET /auth/sessions` | human | the caller's own sessions, newest first |
+| `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
 
@@ -845,25 +926,62 @@ answers `429`.
   { "id": "hss-41c7", "current": false, "method": "device_code",
     "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
     "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
-    "ip": "203.0.113.24", "approved_by": "hss-41c0" } ] }
+    "ip": "203.0.113.24", "approved_by": "hss-41c0", "new_device": true,
+    "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
+    "ended_at": null, "ended_by": null } ] }
 ```
 
 `id` is a public id, never the cookie's value. `method` is `password`,
 `device_code`, `email_link` or `email_code`. `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
-call. A session of another human is `not_found`. `GET /auth/session`
-(§2.1) gains `session_id`, the current session's `id`.
+call; `created` is the account record of the sign-in (below), with the
+address and browser the session started from. `new_device` is `true`
+when the browser presented no device cookie of this human at sign-in
+(below). `ended_at` and `ended_by` (`logout`, `revoked`, `end_others`,
+`expired`, `password_change`) are set on an ended session. A session
+of another human is `not_found`. `GET /auth/session` (§2.1) gains
+`session_id`, the current session's `id`.
 
-**Telling the human.** Every new session, whichever the method, records
-`session_created` `{session_id, method, browser, os, ip, approved_by}`
-on the human's account — not in any project, since a session belongs to
-no project — and becomes a notification of the new kind `security`
-(added to #160's §17.1 table), title `New sign-in: <browser> on <os>
-(<method>)`, linking to Profile → Sessions.
+**New device.** At every completed sign-in the hub sets `maity_device`
+(`HttpOnly; Secure; SameSite=Lax; Path=/`, a random 32-byte value
+stored as `sha256` with the human, 400 days, kept on logout) unless
+the browser already holds one of this human. A sign-in from a browser
+that presents no device cookie of this human is a sign-in from a **new
+device**. The cookie authenticates nothing; it only tells a browser
+the human used before from one they did not.
+
+**Telling the human.** Every new session, whichever the method, writes
+`session_created` `{session_id, method, browser, os, ip, approved_by,
+new_device}` as an **account record**: an audit record of the human's
+account, not an event — it belongs to no project, so §8 does not carry
+it and no project member, owner, admin, instance admin or agent reads
+it. Account records are the second source of notifications beside
+events (#160, §17.1: id `acr-<n>` from the instance's account-record
+sequence, kept 90 days, readable by the human alone). The record is
+shown with its session in Profile → Sessions (`created` above), and
+ending a session writes `session_ended` there in the same way. The
+record becomes a notification of the kind `security` (#160, §17.1),
+title `New sign-in: <browser> on <os> (<method>)`, linking to
+Profile → Sessions.
 
 - **In the dashboard** the `security` notification is always there: it
   has no browser or mail switch that hides it from the bell, and it
   counts in `counts.security` (not in `total`).
+- **A mail sign-in from a new device** — method `email_link` or
+  `email_code` with `new_device: true` — is shown in **every other
+  active session** of the human at once, not only in the bell: each
+  open dashboard long-polls the notifications (#160, §17.2) and shows
+  a banner that stays until it is answered: "New sign-in by mail link
+  on a new device: <browser> on <os>, <ip>, <time>", with **End this
+  session** (`DELETE /auth/sessions/{id}`, one click, no confirmation
+  dialog) and **This was me** (marks the item read). A dashboard
+  opened later shows the banner too until the item is read. The item
+  carries the new session's id (`target: {type: "session", id}`); the
+  session it reports on shows no banner, and a `POST
+  /me/notifications/read` made from that session does not mark this
+  item read — only another session of the human can. So a mail
+  sign-in that an agent with mailbox access made cannot be hidden by
+  deleting a mail or from the session it obtained (§2.3).
 - **By mail** it goes to the human's verified address, `immediate` by
   default; `email.kinds.security.mode` (#160, §17.4) is `immediate` or
   `off` — no digest, since a delayed alert is no alert — and quiet
@@ -872,16 +990,21 @@ no project — and becomes a notification of the new kind `security`
   Profile → Sessions, with the unsubscribe line for its kind (§17.5);
   never a session id, a code or a link that signs anyone in. A human
   without a verified address, or an instance without mail, gets the
-  dashboard notification only.
+  dashboard notification only. The mail counts against the security
+  budget (`security_max_per_hour`, #160 §16.2), not against the
+  notification budget.
 
-A session ended from the list is `session_ended`, not notified. No
-agent reads either.
+`session_ended` is not notified.
 
 **Agents and runners.** None of this is for them: an agent or runner
-credential on any endpoint of this section is `forbidden` (§2.1, §2.3),
-and no call with such a credential creates, redeems, approves or
-completes a code, asks for a link or uses one, or lists or ends a
-human's sessions. An agent may never hold a human session.
+credential on any endpoint of this section is `forbidden` with
+`details.reason: humans_only` (§2.1, §2.3), and no call with such a
+credential creates, redeems, approves or completes a code, asks for a
+link or uses one, or lists or ends a human's sessions. What the hub
+cannot do is tell an agent that calls these endpoints *without* its
+credential from a browser; for the sign-in link that means an agent
+holding the human's mailbox can sign in as the human, and §2.3 states
+that limit and what the hub does about it.
 
 #### 2.6.6 Instance settings
 
@@ -921,13 +1044,19 @@ event; the accounts design's instance audit log records it (pending).
   and then signed in.
 - **Profile menu → Sign in another device.** The code, its QR (made in
   the dashboard's own code, no third-party script, §1.1), a countdown,
-  and then the approval dialog with the device's browser, operating
-  system and IP address, "Approve" and "Deny" — "Deny" is the
-  default button.
-- **Profile → Sessions.** The list of §2.6.5 with "End" per session and
-  "End all other sessions".
+  and then the approval dialog: first what the hub observed (IP
+  address, time), then the browser and operating system the device
+  claims, labelled as claimed; "Only approve a device you are holding
+  now"; the three numbers to pick from, and "Deny" — "Deny" is the
+  default button, and there is no plain "Approve".
+- **Profile → Sessions.** The list of §2.6.5 with "End" per session,
+  "End all other sessions", and the ended sessions of the last 30 days.
+- **The new-device banner** of §2.6.5 in every other open session.
 - **Notification settings** (#160, §17.8) gain the `security` mail switch
-  and "Allow sign-in links by mail" (`email.sign_in_link`).
+  and "Allow sign-in links by mail" (`email.sign_in_link`), with the
+  mailbox warning of §2.6.3.
+- **Changing the address** asks for a fresh sign-in when the session is
+  older than 10 minutes (§2.6.3).
 
 ## 3. Join
 
