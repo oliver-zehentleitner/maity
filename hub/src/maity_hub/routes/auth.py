@@ -110,7 +110,11 @@ async def login(body: Login, request: Request) -> JSONResponse:
                     source=origin.address[:64],
                 )
             )
-            conn.execute(update(t.human).where(t.human.c.id == row.id).values(last_seen_at=now))
+            conn.execute(
+                update(t.human)
+                .where(t.human.c.id == row.id)
+                .values(last_seen_at=now, last_login_at=now)
+            )
             return human_member(row), session_id, csrf
 
     member, session_id, csrf = await run_in_threadpool(run)

@@ -124,7 +124,13 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             )
         ).all()
         admin = mine.may("members:admin")
-        views = member_views(conn, rows, briefing=lambda r: admin or r.id == mine.id)
+        owned = _owned_agents(conn, mine)
+        views = member_views(
+            conn,
+            rows,
+            briefing=lambda r: admin or r.id == mine.id,
+            details=lambda r: admin or r.agent_id in owned,
+        )
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 
@@ -136,7 +142,21 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
         own = row.id == mine.id
-        return JSONResponse(member_view(conn, row, briefing=own or mine.may("members:admin")))
+        admin = mine.may("members:admin")
+        details = admin or row.agent_id in _owned_agents(conn, mine)
+        return JSONResponse(member_view(conn, row, briefing=own or admin, details=details))
+
+
+def _owned_agents(conn: Connection, mine: Any) -> set[str]:
+    """The agent profiles a human caller owns: their members' `owner` and
+    `credentials` are theirs to see (§6.2)."""
+    if mine.kind != "human":
+        return set()
+    return set(
+        conn.execute(
+            select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == mine.principal_id)
+        ).scalars()
+    )
 
 
 @router.patch("/projects/{slug}/members/{member_id}")

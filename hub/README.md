@@ -16,7 +16,9 @@ signed-only caller confined to `/runner/*`, the owner's runner calls,
 attaching runners to projects, the runner's hello, event stream and
 capabilities, and placements (desired and reported state, agents'
 proposals with consent, the closing rules) are in; the join pickup and
-supervised sessions follow.
+supervised sessions follow. Mentions (`docs/api.md` §8.6), the members'
+owner and credentials summary, the conversation preview and the instance
+admin's user list (§16) are in.
 
 ## Run it locally with plain Python
 
@@ -34,7 +36,9 @@ maity-hub serve       # http://127.0.0.1:8080
 
 `owner create` makes the first human account; it reads the password from
 the terminal (asked twice) or from the first line of standard input,
-never from the command line.
+never from the command line. The earliest human account is the instance
+admin (`docs/api.md` §16): it sees `GET /admin/users` and nothing of a
+project it is not a member of.
 
 ```sh
 curl http://127.0.0.1:8080/api/v1/health

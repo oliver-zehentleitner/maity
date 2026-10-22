@@ -53,6 +53,8 @@ def test_the_member_view_has_the_contract_shape(
         "joined_at",
         "briefing",  # the owner holds members:admin
         "placement",
+        "owner",  # likewise, and it owns the agent (§6.2)
+        "credentials",
     }
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (

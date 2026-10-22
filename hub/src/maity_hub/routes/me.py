@@ -10,6 +10,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import clock, images
 from maity_hub import tables as t
+from maity_hub.admin import is_instance_admin
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.views import agent_member, human_member
@@ -23,7 +24,10 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
         if caller.kind == "human":
             human = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
             body: dict[str, Any] = {
-                "member": human_member(human),
+                "member": {
+                    **human_member(human),
+                    "instance_admin": is_instance_admin(conn, human.id),
+                },
                 "projects": _human_projects(conn, human.id),
             }
         else:
