@@ -57,14 +57,20 @@ class Loop:
         return None
 
     def turn(self, argv: list[str]) -> int | None:
-        """One headless run. A non-zero exit counts against the cap; a clean one does not,
-        however short: a quick answer to an event is progress."""
-        started = self.now()
-        code = self.run(argv, self.spec.get("env") or {})
-        if code != 0:
+        """Headless runs until one ends cleanly. A non-zero exit counts against the cap and is
+        run again after the backoff, without waiting for a new event: the work it was doing
+        is still there. A clean run does not count, however short: a quick answer to an
+        event is progress."""
+        while True:
+            started = self.now()
+            code = self.run(argv, self.spec.get("env") or {})
+            if code == 0:
+                return None
             self.log(f"the run exited {code}")
-            return self.count(started, self.now())
-        return None
+            stop = self.count(started, self.now())
+            if stop is not None:
+                return stop
+            argv = self.spec["again"]
 
     def main(self) -> int:
         stop = self.turn(self.spec["first"])
@@ -95,7 +101,7 @@ class Loop:
                 self.log("the agent's credential was revoked; stopping")
                 return EXIT_REVOKED
             # 6 (another wait of this clone), or the hub unreachable: back off, not counted.
-            failures += 1
+            failures = min(failures + 1, 6)  # 2^6 > 60: the cap, without growing the power
             self.sleep(self.rand() * min(60.0, 2.0**failures))
 
 
@@ -114,7 +120,16 @@ def _run(argv: list[str], env: dict[str, str]) -> int:
 
 def _wait() -> tuple[int, str, str]:
     done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
-        [sys.executable, "-m", "maity", "wait", "--timeout", str(WAIT_TIMEOUT), "--keep-cursor"],
+        [
+            sys.executable,
+            "-I",
+            "-m",
+            "maity",
+            "wait",
+            "--timeout",
+            str(WAIT_TIMEOUT),
+            "--keep-cursor",
+        ],
         capture_output=True,
         text=True,
         check=False,

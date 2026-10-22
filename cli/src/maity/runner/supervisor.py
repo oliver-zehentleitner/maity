@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -319,7 +320,7 @@ class Supervisor:
                 unconfined = (
                     harness is not None
                     and harness.id == "claude-code"
-                    and not capabilities.sandbox_available(harness)
+                    and not capabilities.sandbox_available(harness, self.agent_path())
                 )
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
@@ -393,7 +394,9 @@ class Supervisor:
         found = self.probes.get(harness.id)
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
-        if harness.require_sandbox and not capabilities.sandbox_available(harness):
+        if harness.require_sandbox and not capabilities.sandbox_available(
+            harness, self.agent_path()
+        ):
             return ("harness_refused", None)  # the operator asked for no run without it
         return None
 
@@ -570,8 +573,20 @@ class Supervisor:
             agent_dir=agent_dir,
             grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
             restart=self.cfg.limits.restart,
-            sandbox=capabilities.sandbox_available(harness),
+            sandbox=capabilities.sandbox_available(harness, self.agent_path()),
+            hosts=tuple(
+                h
+                for h in (
+                    urllib.parse.urlsplit(self.cfg.hub_url).hostname,
+                    urllib.parse.urlsplit(p["workspace"].get("repository") or "").hostname,
+                )
+                if h
+            ),
         )
+
+    def agent_path(self) -> str:
+        """The PATH the agents get: where their sandbox tools must be found."""
+        return capabilities.agent_path(self.cfg, os.environ.get("PATH", ""))
 
     def _wants(self, pid: str, generation: int) -> bool:
         with self.lock:

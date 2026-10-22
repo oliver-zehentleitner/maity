@@ -46,24 +46,34 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     settings = adapters.claude_settings(ctx)
     ws = str(ctx.clone)
     allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
-    assert "Bash(maity *)" in allow and "Bash(git *)" in allow and "Bash(make test)" in allow
+    assert "Bash(maity *)" in allow and "Bash(make test)" in allow
+    assert "Bash(git *)" not in allow  # `-c`, `--no-index` and friends run or read anything
+    assert "Bash(git commit *)" in allow and "Bash(git push *)" in allow
+    assert "Bash(git -c *)" in deny and "Bash(git * --no-index*)" in deny
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny and f"Write(/{ws}/.git/maity/**)" in deny
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
     assert "sandbox" not in settings
-    assert adapters.claude_settings(context(tmp_path / "s", sandbox=True))["sandbox"] == {
-        "enabled": True
+    strict = adapters.claude_settings(
+        context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
+    )["sandbox"]
+    assert strict["enabled"] and strict["failIfUnavailable"]
+    assert strict["allowUnsandboxedCommands"] is False
+    assert strict["autoAllowBashIfSandboxed"] is False  # the allowlist still decides
+    assert strict["network"] == {
+        "allowedDomains": ["github.com", "maity.team"],
+        "strictAllowlist": True,
     }
 
 
 def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     ctx = context(tmp_path, placement={**PLACEMENT, "mode": "supervised", "model": None})
     launch = adapters.launch(ctx)
-    assert launch.argv[1:3] == ["-m", "maity.runner.loop"]
+    assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", adapters.START_PROMPT]
+    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
@@ -142,9 +152,22 @@ def test_runs_that_leave_their_event_unread_end_in_a_hot_loop() -> None:
 
 
 def test_failing_runs_back_off_and_end_in_a_hot_loop() -> None:
-    script = Script([1, 1, 1], [event(5), event(6)])
+    script = Script([1, 1, 1], [])
     assert run(script) == loop.EXIT_HOT_LOOP
     assert script.slept[0] == 10  # the runner's backoff, not a spin
+    assert script.ran == [["first"], ["again"], ["again"]]
+
+
+def test_a_failed_run_is_run_again_without_waiting_for_an_event() -> None:
+    script = Script([1, 0], [])
+    assert run(script) == 99
+    assert script.ran == [["first"], ["again"]]
+
+
+def test_a_long_outage_does_not_overflow_the_backoff() -> None:
+    script = Script([0], [(1, "", "cannot reach")] * 2000)
+    assert run(script) == 99
+    assert max(script.slept) <= 60
 
 
 def test_a_revoked_credential_ends_the_loop() -> None:

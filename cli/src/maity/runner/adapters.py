@@ -107,7 +107,7 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             },
         },  # fmt: skip
     )
-    return Launch([sys.executable, "-m", "maity.runner.loop", "--spec", str(spec)], env)
+    return Launch([sys.executable, "-I", "-m", "maity.runner.loop", "--spec", str(spec)], env)
 
 
 # --- Claude Code ------------------------------------------------------------------------------

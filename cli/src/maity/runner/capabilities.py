@@ -8,6 +8,7 @@ printable ASCII of at most 200 characters.
 from __future__ import annotations
 
 import getpass
+import os
 import re
 import shutil
 import sys
@@ -72,7 +73,7 @@ def agent_path(cfg: config.Config, environ_path: str) -> str:
     return (cfg.local.agent_path if cfg.local else None) or environ_path
 
 
-def harness_entry(harness: config.Harness, found: Probe) -> dict[str, Any]:
+def harness_entry(harness: config.Harness, found: Probe, path: str | None = None) -> dict[str, Any]:
     return {
         "id": harness.id,
         "version": found.version,
@@ -84,7 +85,7 @@ def harness_entry(harness: config.Harness, found: Probe) -> dict[str, Any]:
         "targets": ["local"],
         "confinement": "none" if harness.id == "stub" else "allowlist",
         "sandbox": (
-            "n/a" if harness.id == "stub" else "on" if sandbox_available(harness) else "off"
+            "n/a" if harness.id == "stub" else "on" if sandbox_available(harness, path) else "off"
         ),
     }
 
@@ -110,7 +111,10 @@ def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dic
                 },
             }
         ],
-        "harnesses": [harness_entry(h, probes[h.id]) for h in cfg.harnesses.values()],
+        "harnesses": [
+            harness_entry(h, probes[h.id], agent_path(cfg, os.environ.get("PATH", "")))
+            for h in cfg.harnesses.values()
+        ],
         "projects": list(limits.projects),
         "repositories": list(limits.repositories),
         "require_local_approval": limits.require_local_approval,

@@ -390,8 +390,17 @@ project's own harness configuration is never loaded:
   by the runner outside the clone (`maity`, `git`, the repository's
   `allow` list, file tools inside the clone only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
-  configuration. Its OS sandbox is switched on where bubblewrap and socat
-  are installed.
+  configuration. Where bubblewrap and socat are on the agents' `PATH`,
+  its OS sandbox is switched on strictly. It refuses to start without the
+  sandbox, allows no unsandboxed retry, and the command allowlist still
+  applies inside it. Network goes only to the hub, the forge and the
+  repository's `network` list. `git` is granted by subcommand, and
+  `-c`, `--no-index` and paths under `.git/maity` are denied.
+
+  These lists stop accidents and naive prompt injection; they are not a
+  security boundary. In the `single` layout an agent with a shell can do
+  what the runner's user can, so run it on an account you would trust
+  with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
