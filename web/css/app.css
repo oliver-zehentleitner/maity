@@ -497,13 +497,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
 .avatars { grid-area: av; position: relative; display: flex; align-self: start; }
-.avatar {
-  display: inline-grid; place-items: center;
-  width: 32px; height: 32px; border-radius: 50%;
-  background: var(--border); color: var(--text);
-  font-size: 0.75rem; font-weight: 700;
-}
-.avatar + .avatar { margin-left: -10px; box-shadow: 0 0 0 2px var(--bg); }
+.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img { margin-inline-start: -10px; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
