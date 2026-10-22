@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from maity.runner import adapters, config, loop, supervisor
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 11), reason="maity runner needs 3.11")
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 
@@ -213,7 +211,7 @@ def test_codex_config(tmp_path: Path) -> None:
     ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex",
                   hosts=("maity.team", "github.com"),
                   grant=config.RepositoryGrant(network=("pypi.org",)))  # fmt: skip
-    found = config.require_tomllib().loads(adapters.codex_config(ctx))
+    found = tomllib.loads(adapters.codex_config(ctx))
     assert found["approval_policy"] == "never" and found["default_permissions"] == "maity"
     assert found["projects"][str(ctx.clone)]["trust_level"] == "untrusted"  # no .codex/ layers
     assert found["permissions"]["maity"]["extends"] == ":workspace"

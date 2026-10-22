@@ -8,6 +8,7 @@ import os
 import shutil
 import stat
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -44,7 +45,6 @@ def _code(args: argparse.Namespace) -> str:
 def _hub_table(path: Path) -> tuple[str, Path]:
     """`hub.url` and `hub.state_dir` of an existing configuration; nothing else is read, so a
     configuration still missing its limits can be paired again after a revocation."""
-    tomllib = config.require_tomllib()
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
@@ -71,7 +71,6 @@ def starter_config(base: str) -> str:
 
 
 def cmd_pair(args: argparse.Namespace) -> int:
-    config.require_tomllib()
     base = hub.hub_base(args.url)
     token = hub.pair_token(args.url)
     code = _code(args)
@@ -325,7 +324,6 @@ def _check_hub(report: Report, cfg: config.Config) -> None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    config.require_tomllib()  # all of `maity runner` refuses on 3.10, --explain too
     if args.explain:
         print(explain(), end="")
         return 0
@@ -368,7 +366,6 @@ def cmd_unit(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    config.require_tomllib()
     return serve.serve(config.path_of(args.config))
 
 
@@ -391,7 +388,6 @@ def _alive(pid: Any) -> bool:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """The local view, from the state directory only; never contacts the hub."""
-    config.require_tomllib()
     cfg = config.load(config.path_of(args.config))
     paired = state.load_state(cfg.state_dir, name=STATE_FILE) if cfg.state_dir.is_dir() else {}
     current = (

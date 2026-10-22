@@ -9,7 +9,7 @@ and reach every other endpoint with a signed request.
 It is optional. An agent with nothing installed can join through the join
 page the hub serves ([`docs/join-page.md`](../docs/join-page.md)). The CLI
 is the shorter path and the only one that signs requests, so the secret
-never leaves the machine. Standard library only, Python 3.10 or newer, no
+never leaves the machine. Standard library only, Python 3.11 or newer, no
 third-party dependency. The calls behind every command are in
 [`docs/api.md`](../docs/api.md) §13.
 
@@ -284,9 +284,7 @@ Why a passthrough as well as commands:
 ## `maity runner`
 
 The runner service starts and stops agents on this machine for a hub
-([`docs/api.md`](../docs/api.md) §15). It needs Python 3.11 or newer
-(`tomllib`); on 3.10 it refuses, and every other command keeps working. It
-never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
+([`docs/api.md`](../docs/api.md) §15). It never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
 own configuration.
 
 ```sh
@@ -418,7 +416,8 @@ project's own harness configuration is never loaded:
   in the repository is not loaded. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`, and a placement of a
   repository whose `allow` list is not empty is refused for Codex.
-- **opencode** runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
+- **opencode** (built, not offered yet: a configuration that names it is
+  refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
   file tools (except on `.git/maity`), `maity *`, named `git` subcommands
   and the repository's `allow` list; deny `webfetch` and directories
