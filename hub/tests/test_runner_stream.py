@@ -488,3 +488,23 @@ def test_a_runner_reaches_its_own_routes_only(
     runner = paired(make_client, owner)
     assert call(make_client(), runner, "GET", "/api/v1/runner/events").status_code == 200
     assert call(make_client(), runner, "GET", "/api/v1/projects/maity").status_code == 404
+
+
+def test_attaching_while_the_runner_is_removed_leaves_no_attachment(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    for i in range(5):
+        runner = paired(make_client, owner, name=f"racer-{i}")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            attaching = pool.submit(attach, owner, runner)
+            removal = pool.submit(owner.delete, f"/runners/{runner.id}")
+            assert removal.result(timeout=30).status_code == 200
+            assert attaching.result(timeout=30).status_code in (201, 400)
+        with migrated.begin() as conn:
+            active = conn.execute(
+                select(t.runner_attachment.c.id).where(
+                    t.runner_attachment.c.runner_id == runner.id,
+                    t.runner_attachment.c.active.is_(True),
+                )
+            ).all()
+        assert active == []
