@@ -64,32 +64,40 @@ by noticing that a project is missing from its next hello.
 **Rejected alternative:** writing the detachment somewhere outside the
 project. Every event belongs to exactly one project (§15.10).
 
-## Mention pings are counted in process, before the write commits
+## Mention pings are counted in process and given back when the write does not commit
 
 **Id:** 8a5e4c45-edcd-4c23-89c6-2b784b9d3e14
 **Type:** decision
-**Type:** constraint
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of mentions (`docs/api.md` §8.6), 2026-10-22, PR #151
+**Source:** implementation of mentions (`docs/api.md` §8.6), 2026-10-22, PR #151 and its review
 
 The limit of 30 pings per membership in 10 minutes is a sliding window in
-memory (`mentions.PingRate`), charged inside the write's transaction just
-before the event is emitted. A write past the limit is refused as a whole
-and stores nothing.
+memory (`mentions.PINGS`, a `ratelimit.Limiter`), charged inside the write's
+transaction just before the event is emitted, all pings of one write at
+once. A write past the limit is refused as a whole and stores nothing; its
+`Retry-After` is the time until every one of its pings fits. A write that
+is charged and then does not commit (a later error, a `retrying` attempt,
+a lost idempotency race) gives its pings back through
+`events.on_rollback`.
 
 **Reason:** like the nonce window and the long-poll registry, it is state of
 the one replica (`docs/api.md` §8.3), cheap to check and lost harmlessly on a
 restart. Charging before the emit is what lets the over-limit write fail
-whole, as the contract asks.
+whole, as the contract asks; giving back on rollback keeps a failed write
+from spending budget it never used.
 
-**Known imprecision:** a write that is charged and then fails later in the
-same transaction, or is run again by `retrying`, has counted its pings
-anyway; the limit can only err towards refusing a little early.
+**Known imprecision:** the give-back drops the newest entries of the
+member's window, which under two concurrent writes of the same member may
+be the other write's; both were charged within the same instant, so the
+window's timing is off by that much at most.
 
-**Rejected alternative:** counting pings from the event table (`mentioned`
-events and message audiences of the last 10 minutes). Exact across restarts
-and replicas, but a query over the event log on every write that mentions
-someone, for a spam guard.
+**Rejected alternatives:**
+- Counting pings from the event table (`mentioned` events and message
+  audiences of the last 10 minutes). Exact across restarts and replicas,
+  but a query over the event log on every write that mentions someone, for
+  a spam guard.
+- Charging after the commit. Nothing to give back, but the over-limit
+  write would already be stored when the limit refuses it.
 
 **Revisit when:** the hub runs more than one replica.
