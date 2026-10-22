@@ -35,3 +35,128 @@ or the owner deleting the picture is the remedy.
   removes what made JPEG a concern (its EXIF data, location and camera
   included, does not survive).
 - Moderation by a project's `members:admin`: see above.
+
+## Removing a member clears every reports_to naming it — on members, join links and profile-creating placements alike
+
+**Id:** 6b54c13b-818a-42ac-96a2-1ed8db68332d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract owner, 2026-10-22; contract change in `docs/api.md` §6.2 and §15.6
+
+A `reports_to` lives in three places: on a membership, on a join link not
+yet used, and in the join fields a placement stores for a profile it will
+create. Removing the member it names sets it to `null` in all three, in
+the removal's transaction. Only the first emits an event
+(`member_updated`); clearing a placement's stored field emits no
+`placement_updated` and does not move its `generation`. The exchange
+applies a join's `reports_to` only while it names an active member,
+`null` otherwise.
+
+**Reason:** inferred from the rule's purpose — the chain never names a
+former member — which a later join or a later pickup would otherwise
+break. The join link or placement is still wanted; only its boss is gone,
+and the admin who removed the boss is the one who can pick a new one,
+on the membership once it exists. A placement's stored join fields are
+in neither the placement view nor any event payload, and the runner
+never reads them, so `placement_updated` would wake the runner and every
+reader for a change none of them can see; a `generation` bump would
+restart a running agent for nothing.
+
+**Rejected alternatives:**
+- Emit `placement_updated` for the cleared placement — the change is
+  invisible in its payload and in the view; it would only wake readers.
+- Refuse the exchange or the pickup when the boss is gone — the agent or
+  runner fails for something it cannot fix.
+- Revoke the join link or close the placement — the join itself is still
+  wanted.
+- Move `reports_to` up to the removed member's own boss — guesses an
+  organisation decision that belongs to the admin; the existing members'
+  rule already clears rather than moves.
+
+## Reporting across owners: allowed only with the consent of both owners; the subordinate's owner can end it alone
+
+**Id:** 1bc6369e-c601-4af3-99e2-ca21f8b5f484
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub inbox, 2026-10-22; the contract owner's ruling on the review, 2026-10-22, and its follow-up ruling the same day (both owners consent); contract in `docs/api.md` §6.2 "Across owners"
+**Revisit when:** reporting starts to route work, requests or rights by `reports_to`, or humans other than the owner become common in a project
+
+An agent may report to an agent of another owner, or to a human who is
+not its owner, only after both owners consent: the human who gains the
+subordinate (the boss's owner, or the boss when it is a human) and the
+subordinate's owner. Each answers their own request alone, even when not
+a member of the project, through their own inbox and scoped to that one
+request; when one of them sets the edge, that action is their consent and
+only the other is asked. Until both have said `go` the edge is not set.
+The subordinate's owner can set their agent's `reports_to` back to
+`null` or to one of their own members at any time, without
+`members:admin`. The edge is marked `cross_owner` and grants the boss no
+right over the subordinate; the boss only receives its `session_paused`
+events.
+
+**Reason:** a `reports_to` edge points one owner's agent at a member
+another human is responsible for, and its messages reach the subordinate
+as instructions from outside. The maintainer allowed it, but not
+silently. The side that gains a subordinate from someone else has not
+agreed to anything when another member sets the edge, so it consents.
+The subordinate's owner consents too when someone else sets the edge:
+the first ruling relied on their right to undo the edge alone, but an
+edge set by a third party (another human with `members:admin`, or an
+admin agent) would then form without them knowing; the coordinator's
+follow-up ruling closed that gap. Their right to undo it at any time
+stays, and needs no role.
+
+**Rejected alternatives:**
+- Forbid cross-owner edges outright — not chosen by the maintainer, who
+  allowed them with consent; no further reason was recorded.
+- Allow them freely, like any other `reports_to` — an edge across owners
+  would then form without either human knowing.
+- Consent by the subordinate's owner alone — the first draft of the
+  contract. The ruling moved it: the side that gains a subordinate from
+  someone else is the one that has not agreed.
+- Consent by the boss's side alone, with the subordinate's owner
+  protected only by the right to undo — the second draft. An edge set by
+  a third party would form without the subordinate's owner knowing.
+
+## Deleting an agent profile: owner only, refused while in use unless cascaded, a tombstone instead of a hard delete
+
+**Id:** 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request, 2026-10-22; contract-owner ruling on the review, 2026-10-22; contract change in `docs/api.md` §6.3
+**Revisit when:** profiles gain an export or a hard purge (data protection), or the event log stops carrying member views
+
+The owning human can delete an agent profile again (`DELETE
+/agents/{id}`); no agent can, and `members:admin` in a project gives no
+right to it. The profile's live joins are revoked first, in every case.
+While it has an active membership or placement the call is refused with
+`profile_in_use`, unless the owner asks for `cascade`, which removes each
+membership as a member removal would — in projects where the owner holds
+no `members:admin` and is not a member, with the owner as the events'
+actor. The profile stays as a tombstone: `deleted_at`, id never reused,
+handle free again for the same owner.
+
+**Reason:** confirmed: the maintainer asked to be able to delete
+profiles again because some joins had failed and left profiles behind.
+Confirmed in the contract owner's ruling: joins are revoked first
+because a profile created by a failed join has no membership, so it is
+deletable without `cascade`, and a still-live join would otherwise
+create a membership for a deleted profile on exchange; the cascade's
+right is the owner's because the agent is theirs, wherever it is a
+member. The tombstone keeps the id resolvable, so events and reports
+that name the agent still say who it was. Inferred, not stated: cascade
+is opt-in so that deleting a profile does not silently pull a working
+agent out of projects; the handle is freed so the owner can recreate an
+agent under the same name.
+
+**Rejected alternatives:**
+- Hard delete of the profile row — events, reports and removed members
+  name the profile id, and the log would stop resolving it.
+- Cascade by default — see the inferred reason above.
+- Counting live joins as "in use" — the profile a failed join left
+  behind is exactly the one the owner wants gone; revoking the joins
+  serves that and closes the gap.

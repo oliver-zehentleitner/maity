@@ -130,3 +130,40 @@ shared suffix name a sibling's parent.
 - Trusting the header outright, as before the join host existed: a
   compromised or spoofed join host could move the credential to a hub of
   its choice.
+
+## The environment ids are keyed to the stored hub URL and left out rather than fail a resume
+
+**Id:** f208d20c-976a-4045-9709-d36aa62f2211
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §5.2 and §5.3 (#132), the hub side in #198 and its review, the coordinator's card for the CLI side, 2026-10-22
+**Revisit when:** the contract names the exact string the HMAC is taken over, or the hub starts to refuse a resume without `environment`
+
+`maity resume` sends `environment: {home, workspace}`. Each id is `h-`
+or `w-` plus the first 12 hex characters of HMAC-SHA256 over the hub's
+base URL as the CLI stores it (`hub_base`: scheme, host and port, no
+path, no trailing slash). The key is a random secret kept 0600 in
+`~/.local/state/maity/` and in the clone's state directory, made once and
+by exactly one of two racing processes. A secret that cannot be made or
+read, or one that others can reach, leaves both ids out with a note on
+stderr. When a hub answers `invalid` naming the `environment` field, the
+resume is sent again once without it.
+
+**Reason:** the contract says "the hub's public URL" without fixing its
+spelling, and two clients in one home must hash the same string to give
+the same id; the normalised base the CLI already stores for every call is
+that string. The field is a declaration the hub cannot verify and only
+uses to warn, so a session that cannot declare it is "environment
+unknown", which is better than a member that cannot resume. An older hub
+refuses unknown fields; resuming without the field there keeps the CLI
+usable across a rollout instead of forcing hub and CLI to ship together.
+
+**Rejected alternatives:**
+- Hashing the URL as the user typed it: `https://maity.team/` and
+  `https://maity.team` would give two ids for one place.
+- Failing the resume when a secret is loose: a stricter rule than the
+  credential's own (refused only for use), for a field that changes no
+  right.
+- Sending the field only to hubs that announce support: there is no
+  version field to read it from before the resume itself.

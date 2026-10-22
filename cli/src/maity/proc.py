@@ -21,6 +21,15 @@ NO_PROMPT = {
 }
 
 
+# Every git maity runs itself. A clone holds what an agent wrote: a nested repository it
+# registered as a submodule carries its own configuration, which git reads for a plain
+# `status` even when the clone's own is pinned. maity runs nothing from either.
+GIT = (
+    "git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+    "-c", "diff.ignoreSubmodules=all",
+)  # fmt: skip
+
+
 class ToolError(Exception):
     """git or gh is missing, or did not answer in time."""
 
