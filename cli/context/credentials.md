@@ -110,7 +110,11 @@ when its host equals the join or pair URL's host, or is that host minus
 its first label and still contains a dot (`join.maity.team` →
 `maity.team`). Grandparents and a single-label parent (`team`) are refused.
 The single-segment join-host shape is not taken for `j`, `join`, `r` or `api`, so a
-truncated hub URL is an error instead of an exchange.
+truncated hub URL is an error instead of an exchange. Hosts are compared after IDNA
+encoding with one trailing dot dropped; an address literal has no parent
+and must match exactly. The port is not compared, and a public suffix
+(`join.co.uk` → `co.uk`) passes like any other parent: the contract asks
+for the parent domain, and the CLI carries no public-suffix list.
 
 **Reason:** the header decides where every later signed request and the
 credential go, and the join host is the surface that is most exposed
