@@ -1,0 +1,3 @@
+# The wheel build backend; editables for `pip install -e` without build isolation.
+hatchling>=1.25
+editables

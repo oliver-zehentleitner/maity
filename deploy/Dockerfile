@@ -9,15 +9,22 @@ FROM python:3.12-slim AS build
 WORKDIR /src
 # Dockerfile.dockerignore limits the context to hub/ and web/, without dotfiles.
 COPY . .
-RUN pip wheel --no-cache-dir --wheel-dir /wheels ./hub && mkdir -p web
+# The wheel is built with the pinned backend (hub/requirements/build.txt), not
+# whatever hatchling is newest; every download is checked against its hash.
+RUN pip install --no-cache-dir --require-hashes -r hub/requirements/build.txt \
+    && pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels ./hub \
+    && cp hub/requirements/runtime.txt /wheels/ && mkdir -p web
 
 FROM python:3.12-slim
 RUN useradd --system --uid 10001 --home-dir /app maity \
     && mkdir -p /app/data && chown maity /app/data
 WORKDIR /app
-# Installed from the build stage through a bind mount, so no layer keeps the wheels.
+# The dependencies exactly as CI tested them (hub/requirements/runtime.txt,
+# with hashes), then the hub itself without resolving anything again. Both
+# come from the build stage through a bind mount, so no layer keeps them.
 RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
-    pip install --no-cache-dir /wheels/*.whl
+    pip install --no-cache-dir --require-hashes -r /wheels/runtime.txt \
+    && pip install --no-cache-dir --no-deps /wheels/*.whl
 COPY --from=build /src/web /app/web
 USER maity
 ENV MAITY_BIND=0.0.0.0:8080 \

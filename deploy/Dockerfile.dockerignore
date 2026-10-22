@@ -1,6 +1,7 @@
 *
 !hub/pyproject.toml
 !hub/README.md
+!hub/requirements/*.txt
 !hub/src
 !docs/join-page.md
 !web
