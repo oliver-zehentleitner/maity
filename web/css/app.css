@@ -601,6 +601,19 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md-lang { font-size: 0.72rem; color: var(--muted); }
 .md-invisible { margin: 0 0 4px; font-size: 0.8rem; }
 .msg-quote { margin-top: 4px; font-size: 0.75rem; padding: 1px 6px; opacity: 0.85; }
+/* The history: day separators, the line before what was new, groups by sender. */
+.messages .day, .messages .new-line { list-style: none; display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.78rem; color: var(--muted); }
+.messages .day::before, .messages .day::after, .messages .new-line::before, .messages .new-line::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.messages .new-line { color: var(--accent); }
+.messages .new-line::before, .messages .new-line::after { border-top-color: var(--accent); }
+.msg.in { display: flex; gap: 8px; align-items: flex-start; }
+.msg.in.grouped { margin-top: -4px; padding-inline-start: 48px; }
+.msg-avatar { flex: none; }
+.msg-body { min-width: 0; }
+.msg.grouped .meta { opacity: 0.8; }
+.messages .empty p { margin: 0 0 4px; }
+.jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
+.jump-latest[hidden] { display: none; }
 .msg.out { justify-self: end; background: var(--out-bg); }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 
