@@ -373,6 +373,7 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             .where(t.join_link.c.reports_to == target.id, t.join_link.c.used_at.is_(None))
             .values(reports_to=None)
         )
+        placements.forget_boss(conn, mine.project.id, target.id)
         # The answer goes to the admin who removed it, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 

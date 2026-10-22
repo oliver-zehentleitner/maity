@@ -85,6 +85,19 @@ def test_a_message_mention_joins_the_audience(
     ]
 
 
+@pytest.mark.parametrize("to", ["all", "role:reviewer", "self"])
+def test_a_mention_covered_by_to_adds_no_member_token(
+    make_client: ClientFactory, owner: flow.Human, to: str
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    named = agent_named(make_client, owner, "agent-c", role="reviewer")
+    addressed = named.id if to == "self" else to
+    event = say(writer, to=addressed, body="cc @agent-c").json()
+    assert [m["member_id"] for m in event["payload"]["mentions"]] == [named.id]
+    target = {"all": "all", "role:reviewer": "role:reviewer", "self": f"member:{named.id}"}[to]
+    assert event["audience"] == [target, f"member:{writer.id}"]  # the sender reads its own
+
+
 def test_a_chat_is_never_resolved(make_client: ClientFactory, owner: flow.Human) -> None:
     agent = agent_named(make_client, owner, "agent-a")
     other = agent_named(make_client, owner, "agent-c")

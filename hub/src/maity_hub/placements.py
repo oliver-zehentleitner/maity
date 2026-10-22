@@ -654,6 +654,20 @@ def credential_revoked(conn: Connection, credential_id: str, by: str | None) -> 
         set_desired(conn, placement, "stopped", None, by, tell_agent=False)
 
 
+def forget_boss(conn: Connection, project_id: str, membership_id: int) -> None:
+    """A removed member is no longer the boss of a profile an active placement will
+    create: its stored `reports_to` becomes null (§6.2). No event and no `generation`:
+    the stored join fields are in no view and the runner never reads them."""
+    for row in active_rows(conn, t.placement.c.project_id == project_id):
+        profile = row.new_profile or {}
+        if profile.get("reports_to") == membership_id:
+            conn.execute(
+                update(t.placement)
+                .where(t.placement.c.id == row.id)
+                .values(new_profile={**profile, "reports_to": None})
+            )
+
+
 def membership_removed(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
     for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
