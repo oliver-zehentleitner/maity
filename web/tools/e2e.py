@@ -631,7 +631,7 @@ def scenario(run: Run, page: Page) -> None:
         free.fill("@e2e")
         picker = page.locator("li.entry.current .mention-list")
         expect(picker.locator("li.mention-option").first).to_contain_text("@e2e-agent")
-        expect(free).to_have_attribute("aria-expanded", "true")
+        expect(free).to_have_attribute("aria-activedescendant", re.compile(r"^mention-list-\d+-0$"))
         run.a11y(page, "inbox, @ picker open")
         free.press("Escape")
         expect(picker).to_be_hidden()

@@ -203,10 +203,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
   freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
   expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-c", "@agent-d"])
-    && freeText.getAttribute("aria-expanded") === "true" && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
+    && freeText.getAttribute("aria-expanded") === undefined && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
     "mentions: @ offers the project's members by handle " + JSON.stringify(options()));
   freeText.dispatch("keydown", { key: "ArrowDown" }); freeText.dispatch("keydown", { key: "Enter" }); await tick();
-  expect(freeText.value === "Ask @agent-b " && pickList.hidden && freeText.getAttribute("aria-expanded") === "false", "mentions: arrow and Enter put the handle in");
+  expect(freeText.value === "Ask @agent-b " && pickList.hidden && !freeText.getAttribute("aria-activedescendant"), "mentions: arrow and Enter put the handle in");
   freeText.value = "mail me@age"; freeText.dispatch("input"); await tick();
   expect(pickList.hidden, "mentions: an @ inside a word offers nothing");
   const CR = (t) => JSON.stringify(win.Maity.mentionCode(t));
@@ -242,7 +242,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(listCalls === 2, "mentions: the next @ reads the members again");
   slowText.dispatch("blur");
   releaseList(); await tick(); await tick();
-  expect(slowList.hidden && slowText.getAttribute("aria-expanded") === "false", "mentions: an answer after a blur draws nothing");
+  expect(slowList.hidden && !slowText.getAttribute("aria-activedescendant"), "mentions: an answer after a blur draws nothing");
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
   expect(!slowList.hidden, "mentions: once read, the list is there at once");
   expect(main.querySelectorAll("button").every((b) => !/reply-/.test(b.className)), "no reply id becomes a class");

@@ -68,8 +68,9 @@ window.Maity = window.Maity || {};
     let shown = [];
     let active = 0;
     textarea.setAttribute("aria-autocomplete", "list");
+    // A textarea is a textbox: aria-autocomplete, aria-controls and
+    // aria-activedescendant are its; aria-expanded is not (axe aria-allowed-attr).
     textarea.setAttribute("aria-controls", listId);
-    textarea.setAttribute("aria-expanded", "false");
 
     const caret = () => (typeof textarea.selectionStart === "number" ? textarea.selectionStart : textarea.value.length);
 
@@ -77,7 +78,6 @@ window.Maity = window.Maity || {};
       shown = [];
       list.hidden = true;
       clear(list);
-      textarea.setAttribute("aria-expanded", "false");
       textarea.removeAttribute("aria-activedescendant");
     }
 
@@ -109,7 +109,6 @@ window.Maity = window.Maity || {};
           + (m.kind === "agent" ? " · agent" : ""))));
       });
       list.hidden = !shown.length;
-      textarea.setAttribute("aria-expanded", shown.length ? "true" : "false");
       if (shown.length) textarea.setAttribute("aria-activedescendant", listId + "-" + active);
       else textarea.removeAttribute("aria-activedescendant");
     }
