@@ -133,6 +133,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             differing = {
                 k: "differs_from_membership" for k, v in values.items() if getattr(existing, k) != v
             }
+            if body.briefing is not None and body.briefing != existing.briefing:
+                differing["briefing"] = "differs_from_membership"
             if differing:
                 raise invalid(differing, "the agent is a member; change its membership instead")
             values = {

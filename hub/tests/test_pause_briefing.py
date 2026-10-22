@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -172,3 +174,44 @@ def test_a_briefing_is_at_most_16_kib(owner: flow.Human) -> None:
     )
     assert response.status_code == 400
     assert "briefing" in response.json()["error"]["details"]["fields"]
+
+
+def test_a_removal_tells_everyone_without_the_briefing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    briefed = flow.agent(make_client, owner, briefing=BRIEFING)
+    peer = flow.agent(make_client, owner)
+    cursor = peer.get("/projects/maity/events?after=latest").json()["cursor"]
+    assert owner.delete(f"/projects/maity/members/{briefed.id}").status_code == 200
+    removal = _events(migrated, "member_updated")[-1]
+    assert removal.payload["removed_at"] is not None and "briefing" not in removal.payload
+    assert "second pair of eyes" not in peer.get(f"/projects/maity/events?after={cursor}").text
+
+
+def test_a_join_for_a_member_cannot_change_its_briefing(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner, briefing=BRIEFING)
+    for same in ({"briefing": BRIEFING}, {}):
+        joined = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, **same})
+        assert joined.status_code == 201, joined.text
+    other = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, "briefing": "else"})
+    assert other.json()["error"]["details"]["fields"] == {"briefing": "differs_from_membership"}
+
+
+def test_an_expired_claim_does_not_move_onto_a_paused_assignee(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    paused_one, other = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = task(owner)
+    assert other.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    _pause(owner, paused_one)
+    later = clock.now() + timedelta(days=2)
+    clock.set_source(lambda: later)
+    moved = owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": paused_one.id})
+    assert (moved.status_code, moved.headers["Maity-Error"]) == (409, "paused")
+    unclaimed = task(owner)  # assigning alone is no claim: it stays open
+    assigned = owner.post(
+        f"/projects/maity/tasks/{unclaimed['id']}/assign", {"assignee": paused_one.id}
+    )
+    assert assigned.status_code == 200, assigned.text

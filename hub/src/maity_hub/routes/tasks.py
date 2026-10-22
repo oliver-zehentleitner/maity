@@ -863,7 +863,8 @@ def assign(
                     "the holder's lease has not expired",
                     {"lease_until": clock.rfc3339(card.lease_until)},
                 )
-            # An expired claim moves to the assignee (§6.4).
+            # An expired claim moves to the assignee (§6.4): a claim on its behalf.
+            _refuse_paused(conn, assignee)
             values.update(
                 claim_holder=assignee,
                 claim_session_id=None,

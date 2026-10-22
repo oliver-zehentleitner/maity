@@ -286,7 +286,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             .where(t.membership.c.id == target.id)
             .values(active=None, removed_at=now, changed_via=caller.via)
         )
-        view = load_member(conn, str(target.id))
+        removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+        view = member_view(conn, removed)  # to everyone: never the briefing
         emit(
             conn,
             mine.project.id,
@@ -296,7 +297,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             actor=caller.actor(mine.id),
             subject=("member", member_id),
         )
-        return idempotency.Outcome(200, "member", str(target.id), view)
+        # The answer goes to the admin who removed it, like a repeated DELETE's.
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
