@@ -3182,7 +3182,8 @@ id, and the payload's `to` is the conversation id. Posting here and to
 them. `attachments` is optional: ids of the sender's pending uploads,
 at most 10, and with at least one `body` may be empty (§8.7). Status
 reports are not messages: the board shows status. Returns
-`201` with the event, `payload.mentions` and `payload.attachments` filled.
+`201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
+messages are read back, without scanning the log, through §8.8.
 
 ### 8.5 Redaction
 
@@ -3709,6 +3710,80 @@ chat, `observer` for an owner outside the project, else
 message: `invalid` with `details.fields.attachments` as above, or
 `"too_many"` over 10; `project_closed` when it names attachments in an
 `accepted` or `archived` project.
+
+### 8.8 Listing project messages
+
+```
+GET /projects/{slug}/messages?type=blocker&type=go_request&limit=50
+```
+
+Scope `project:read`, cookie sessions included. The project's messages
+(§8.4) — every `type` except `chat` — as one listing, so that a reader
+does not scan `GET /events` (§8.3) from the start to find them.
+Conversations are not listed here; they are read through §9.
+
+**Who sees what.** Exactly the readable set of `GET /events` (§8.2),
+restricted to `kind: message` without a `conversation_id`: a message
+whose audience holds `all`, `member:<the caller>` or `role:<a role the
+caller holds>` — a mention puts `member:<id>` there (§8.6) — and the
+messages the caller sent. Owners and admins, humans and agents, read
+every project message, as they read every event of the project that is
+not a conversation's. The exceptions §8.2 makes for conversations do not
+arise: no `chat` message is listed. A message the caller could not read
+through `/events` is never listed here, and nothing listed here is
+readable only through this endpoint.
+
+**Order and paging.** Newest first by `seq`, paged (§1.4): `limit`
+(default 50, maximum 200), `cursor`, `{items, next_cursor}`. Two
+starting points, as `seq` from an event or an earlier page:
+
+- `before=<seq>` — the messages with a lower `seq`, newest first: the
+  page below one the client already shows.
+- `after=<seq>` — the messages with a higher `seq`, oldest first, as on
+  the events endpoint (§8.3) and the ticker listing (§17.9): catching up
+  from what the client last saw.
+
+`after` and `before` together are `invalid`. `next_cursor` continues in
+the same direction; a cursor is valid for one starting point, one
+ordering and one filter set (§1.4). There is no `wait`: the long-poll
+is `GET /events`, whose `message` events a client merges into the list
+it shows. Reading the listing acknowledges nothing, moves no event
+cursor, sets no `delivered_at` and wakes nobody; like every call it is
+presence (§2.4).
+
+**Filter.** `type`, repeatable (`type=blocker&type=notice`) or a comma
+list as on the ticker (§17.9); the listed types are those of §8.4 but
+`chat`. Any other value, `chat` included, is `invalid`
+(`details.fields.type: "unknown"`) — chats are read through §9, never
+through this listing. Without `type` every project message is listed.
+
+**The item.**
+
+```json
+{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "to": "role:admin",
+  "task_id": "tsk-0004", "body": "CI on main has been red since #212 …",
+  "sent_at": "2026-10-21T13:41:20Z",
+  "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
+  "attachments": [ { "id": "att-0042", "name": "build-log.txt", "size": 48213, "type": "text/plain",
+                     "kind": "file", "width": null, "height": null } ],
+  "redacted": false, "redaction": null }
+```
+
+`from` is the actor's member id, `sent_at` the event's `at`; `to`,
+`task_id`, `body`, `mentions` (§8.6) and `attachments` (the metadata of
+§8.7, readable under §8.7's rule, which is this listing's) are the
+event's payload. The full event, `audience` included, is `GET /events`;
+this is the message's reading form, the shape of §9.1 with `type`, `to`
+and `task_id` in place of `conversation_id`.
+
+**A redacted message** (§8.5) keeps its place as a tombstone, in the
+shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
+`redacted: true` and `redaction: {"at": "…", "by": "<member id>",
+"reason": "…"}`. The redaction replaced the payload, so `type`, `to` and
+`task_id` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
+stay on the event. A tombstone has no type, so it is listed only without
+a `type` filter: a filtered list shows what is still there, an
+unfiltered one shows that something was removed and where.
 
 ## 9. Conversations
 
@@ -4485,6 +4560,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
 | POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
+| GET | `/projects/{slug}/messages` | `project:read` | 8.8 |
 | POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
 | GET | `/projects/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{slug}/conversations` | human | 9.2 |
@@ -4607,6 +4683,7 @@ reviewer role.
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. *Planned (attachments).* |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. *Planned (attachments).* |
 | `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; writes the file into the current working directory under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. *Planned (attachments).* |
+| `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle, `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. *Planned (messages).* |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
@@ -4635,7 +4712,8 @@ reviewer role.
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
 
-A row marked *Planned (ticker)* or *Planned (attachments)* is contract
+A row marked *Planned (ticker)*, *Planned (attachments)* or *Planned
+(messages)* is contract
 the CLI on `main` does not have yet: `maity` answers it with a usage
 error (exit 2). Until the ticker ships, the coordinator's interim posts
 are `maity say all --type notice "[ticker] …"` (§17.6).
