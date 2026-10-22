@@ -52,9 +52,13 @@ lock-upgrade:
 # Recompiles copies of the locks and fails when they differ: a dependency
 # changed in pyproject.toml without `make lock`.
 # The copy keeps the relative paths, which the files name in their comments.
+# Its hash lines are dropped first: uv would keep them as given, so a hash
+# edited by hand would pass; this way every hash is fetched again and compared.
 lock-check:
 	@tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT \
 	&& cp -r pyproject.toml requirements "$$tmp/" \
+	&& for f in "$$tmp"/requirements/*.txt; do \
+		sed -e '/^ *--hash=/d' -e 's/ \\$$//' "$$f" >"$$f.bare" && mv "$$f.bare" "$$f"; done \
 	&& $(MAKE) --no-print-directory -C "$$tmp" -f "$(CURDIR)/Makefile" _lock DIR=requirements FLAGS= \
 	&& for f in runtime dev build tools; do \
 		diff -u "requirements/$$f.txt" "$$tmp/requirements/$$f.txt" || exit 1; done \

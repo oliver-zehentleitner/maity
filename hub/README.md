@@ -19,8 +19,8 @@ Python 3.12 or newer. From `hub/`:
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-pip install --require-hashes -r requirements/runtime.txt   # the tested versions
-pip install -e .
+pip install --require-hashes -r requirements/runtime.txt -r requirements/build.txt   # the tested versions
+pip install --no-deps --no-build-isolation -e .   # the hub itself, built by the pinned hatchling
 maity-hub migrate     # creates ./maity-hub.db and brings the schema to the current version
 maity-hub owner create --handle maintainer --display-name "Maintainer"   # asks for the password
 maity-hub serve       # http://127.0.0.1:8080
@@ -119,7 +119,8 @@ MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`pip install -e hub -e cli`
+join page says, and with the `maity` CLI (`make install`, then
+`pip install -e ../cli`
 first). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
@@ -153,10 +154,15 @@ make lock-upgrade   # moves everything to the newest versions that resolve
 make lock-check     # what CI runs: fails when the files do not follow pyproject.toml
 ```
 
+The locking needs uv, in the pinned version:
+`pip install --require-hashes -r requirements/tools.txt`.
+
 To bump: run `make lock-upgrade`, commit the four `.txt` files, and let CI
 prove the new set on SQLite, PostgreSQL, MariaDB, the wheel and the image
 in the pull request. `make lock-upgrade PACKAGE=<name>` bumps one package
-only. A bump is its own pull request.
+only. A bump is its own pull request. A security fix in a dependency:
+`make lock-upgrade PACKAGE=<name>`, its own pull request, merged as soon as
+CI is green. Nothing watches for such fixes automatically yet (`TASKS.md`).
 
 ### Migrations
 
