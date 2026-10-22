@@ -467,6 +467,7 @@ def main() -> int:
                 page = context.new_page()
                 watch_page(run, page)
                 scenario(run, page)
+                fixture_views(run, browser)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -973,6 +974,35 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     page.get_by_role("button", name="Project settings", exact=True).click()
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
+
+
+def fixture_views(run: Run, browser) -> None:
+    """Views whose richer states the hub here cannot reach, in fixture mode (file://):
+    the Why view with the published maity.dev family, one part failing, the root unreadable."""
+    run.step("fixtures: the Why view as the published family shows it, and its failure states")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    index = (WEB / "index.html").as_uri()
+    try:
+        for query, name, says in (
+            ("", "why", "1 entry needs attention · 71 entries in 4 parts of the project"),
+            (
+                "?ktw=member_failed",
+                "why-part-failed",
+                "Could not be read: its state.json did not answer in time",
+            ),
+            ("?ktw=unavailable", "why-root-unreadable", "Shown is its last good read"),
+        ):
+            page.goto(f"{index}{query}#/p/maity/why")
+            expect(page.locator("main section.view-why")).to_contain_text(says)
+            run.shot(page, f"fixtures-{name}")
+            run.a11y(page, f"fixtures: {name}")
+    finally:
+        context.close()
+    assert not errors, errors
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:
