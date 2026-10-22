@@ -164,11 +164,13 @@ configuration allows; its credential's id and dates, never its value.
 name, the projects to allow it in and how long the line stays valid, and
 shows the steps for the machine (the name follows the handle rule, said
 under the field): install the CLI (from the repository's
-current main; the page says the runner commands are not released yet),
+current main, which has `maity runner pair` and `maity runner check`;
+the page says so),
 save the **starter configuration** generated in the browser as
 `~/.config/maity-runner/runner.toml`, run the pairing line (shown once,
 gone after leaving the view, and replaced by a note once it is used or
-expired), then `maity runner check` and `maity runner serve`. The
+expired), then `maity runner check` and `maity runner serve` (available
+once the runner track lands; the page says so). The
 configuration holds only the keys without a default: this pairing's hub
 URL, the chosen projects and their repositories, the local backend's
 layout and Claude Code's modes and models; no secret. Its "copy as a
@@ -179,7 +181,8 @@ new one) and when it is online (the view re-reads every 30 s). Open pairings are
 revocable. Each runner can be renamed, re-paired (a new line for the same
 runner; the old credential ends at the exchange), revoked, and removed;
 removing lists the agents that were still running on it, which are then
-the operator's to end on that machine (`maity runner stop-all`).
+the operator's to end on that machine (`maity runner stop-all`, available
+once the runner track lands).
 
 **Users of this hub** (`#/admin/users`, `docs/api.md` §16.1) lists the
 instance's humans for the instance admin, by handle: name and handle

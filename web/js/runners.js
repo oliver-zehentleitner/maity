@@ -176,8 +176,8 @@ window.Maity = window.Maity || {};
       h("p", null, h("strong", null, "On the machine that should run agents, in a terminal there (not in an agent session):")),
       h("ol", null,
         h("li", null, "Install the Maity CLI:", h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
-          h("p", { class: "hint" }, "This installs the repository's current main. The runner commands (maity runner) are not released yet; "
-            + "until they are, the steps below do not work.")),
+          h("p", { class: "hint" }, "This installs the repository's current main, which has maity runner pair and maity runner check; "
+            + "maity runner serve and stop-all come with the next runner release, so the runner cannot start agents yet.")),
         config
           ? h("li", null, "Save this configuration as " + CONFIG_PATH + ". It allows the projects you chose and their repositories, "
             + "and one tool, Claude Code; change it as you like.",
@@ -187,7 +187,7 @@ window.Maity = window.Maity || {};
         h("li", { class: "pair-line-step" }, "Pair it. This line is shown once and expires " + formatTime(enrollment.expires_at) + ":",
           h("pre", { class: "paste-line" }, enrollment.pair_line), copyButton(() => enrollment.pair_line)),
         h("li", null, "Check it: ", h("code", null, "maity runner check"), " says what is still missing, such as the tool's login."),
-        h("li", null, "Start it: ", h("code", null, "maity runner serve"), ".")),
+        h("li", null, "Start it: ", h("code", null, "maity runner serve"), " (with the next runner release; not in the CLI yet).")),
       h("p", { class: "muted pair-wait" }, "Waiting for the runner to pair…"),
       h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, "Hide")));
   }

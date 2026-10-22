@@ -407,16 +407,19 @@ window.Maity = window.Maity || {};
     const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
     let items = (await M.api.getAll(listPath)).items;
     const status = M.statusLine();
+    status.el.setAttribute("tabindex", "-1");
     const columnsBox = h("div", { class: "columns" });
     const formBox = h("div", { class: "new-card-box" });
     const intro = h("div");
     const filter = { member: "", area: "" };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
+    // A card that left the view (closed and moved out, or filtered away)
+    // takes no focus with it: the status line that says what happened does.
     function refocus(key) {
       if (!key) return;
-      const again = columnsBox.querySelectorAll("select, button").find((e) => e.getAttribute("data-focus") === key);
-      if (again) again.focus();
+      const again = Array.from(columnsBox.querySelectorAll("select, button")).find((e) => e.getAttribute("data-focus") === key);
+      (again || status.el).focus();
     }
 
     async function reload(focusKey) {
@@ -503,6 +506,7 @@ window.Maity = window.Maity || {};
     }
 
     function draw() {
+      areaOptions();
       byId = {};
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
@@ -528,9 +532,14 @@ window.Maity = window.Maity || {};
     const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, "everyone"),
       ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
     memberSel.value = "";
-    const areaSel = h("select", { id: "board-area" }, h("option", { value: "" }, "every area"),
-      [...new Set(items.map((t) => t.area).filter(Boolean))].sort().map((a) => h("option", { value: a }, a)));
-    areaSel.value = "";
+    const areaSel = h("select", { id: "board-area" });
+    // The areas on the board now; a chosen one stays offered while filtered.
+    function areaOptions() {
+      const areas = new Set(items.map((t) => t.area).filter(Boolean));
+      if (filter.area) areas.add(filter.area);
+      append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
+      areaSel.value = filter.area;
+    }
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
 
@@ -541,11 +550,17 @@ window.Maity = window.Maity || {};
       if (newButton.getAttribute("aria-expanded") === "true") { closeForm(); return; }
       const f = E.newCardForm(ctx, items, async (body) => {
         const created = await M.api.post(ctx.base + "/tasks", body);
+        // Created: the form is done, whatever the re-read says.
         clear(formBox);
         newButton.setAttribute("aria-expanded", "false");
+        const done = created.id + " created in " + created.status.replace("_", " ") + ".";
         status.done();
-        append(status.el, h("span", { class: "ok" }, created.id + " created in " + created.status.replace("_", " ") + "."));
-        await reload("move:" + created.id);
+        append(status.el, h("span", { class: "ok" }, done));
+        try {
+          await reload("move:" + created.id);
+        } catch (err) {
+          status.fail(done + " Could not refresh: ", err);
+        }
       }, closeForm);
       append(clear(formBox), f.form);
       newButton.setAttribute("aria-expanded", "true");

@@ -21,6 +21,23 @@ class Node_ {
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
   set textContent(v) { this.childNodes = []; if (v !== "") this.appendChild(new Text_(String(v))); }
 }
+// A browser's querySelectorAll answers a NodeList, which has forEach and
+// indices but no find, some or map. The page's own scripts (js/…) get one
+// that throws on those, as a browser would; the tests below may keep
+// using array methods on it.
+const ARRAY_ONLY = new Set(["find", "findIndex", "findLast", "some", "every", "map", "filter", "reduce", "includes", "indexOf",
+  "slice", "concat", "flatMap", "join", "sort"]);
+function nodeList(items) {
+  return new Proxy(items, {
+    get(target, prop, receiver) {
+      if (typeof prop === "string" && ARRAY_ONLY.has(prop)) {
+        const caller = (new Error().stack || "").split("\n")[2] || "";
+        if (/[(\s]js\/[\w-]+\.js:\d+/.test(caller)) throw new TypeError("NodeList has no " + prop + " (" + caller.trim() + ")");
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
 class El extends Node_ {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
@@ -54,10 +71,10 @@ class El extends Node_ {
   all() { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof El) { out.push(c); walk(c); } }); walk(this); return out; }
   querySelectorAll(sel) {
     const parts = sel.split(/\s+(?![^\[]*\])/);
-    if (sel.includes(",")) return this.all().filter((e) => e.matches(sel));
+    if (sel.includes(",")) return nodeList(this.all().filter((e) => e.matches(sel)));
     let set = [this];
     parts.forEach((p) => { set = [...new Set(set.flatMap((n) => n.all().filter((e) => e.matches(p))))]; });
-    return set;
+    return nodeList(set);
   }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
 }
@@ -475,8 +492,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "runners: the starter configuration names the hub, the projects and their repositories, and no secret");
   expect(["state_dir", "workspaces", "tmux_socket", "max_agents", "default_mode", "default_model", "binary"].every((k) => !config.includes(k + " =")),
     "runners: the starter configuration holds only the keys without a default");
-  expect(text(steps).includes("installs the repository's current main") && text(steps).includes("not released yet"),
-    "runners: the install step says what it installs, and that the runner commands are not released yet");
+  expect(text(steps).includes("installs the repository's current main, which has maity runner pair and maity runner check")
+    && text(steps).includes("(with the next runner release; not in the CLI yet)"),
+    "runners: the steps say what the CLI has today and what is still to come");
   const hostile = win.Maity.runnerStarterConfig("https://h.example", [{ slug: "a\"b\\c\u007f\n\ud800", repository: null }]);
   expect(hostile.includes('projects = ["a\\"b\\\\c\\u007f\\u000a\ufffd"]'), "runners: TOML strings escape quotes, backslashes, control characters and DEL; a lone surrogate is replaced");
   expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
@@ -712,11 +730,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A new card.
   btn(main, "New card").click(); await tick();
   const nf = main.querySelector("form.new-card");
+  const shipIds = byId("new-card-ships").querySelectorAll("option").map((o) => o.attrs.value);
+  const depIds = byId("new-card-depends").querySelectorAll("option").map((o) => o.attrs.value);
+  expect(!shipIds.includes("rel-0001") && depIds.includes("rel-0001"), "board: a release is never offered to ship with; it may be depended on");
   expect(nf && btn(main, "New card").getAttribute("aria-expanded") === "true" && byId("new-card-assigned"), "board: New card opens the form; an admin may assign");
   nf.dispatch("submit"); await tick();
   expect(!bWrites.some((w) => w[1] === "/projects/maity/tasks") && text(main).includes("Not created: the card needs a title"), "board: no card without a title");
   byId("new-card-title").value = "Web: a card from the board";
-  byId("new-card-area").value = "web/";
+  byId("new-card-area").value = "web/board/";
   byId("new-card-status").value = "open";
   byId("new-card-label").value = "feature";
   byId("new-card-assigned").value = "agt-d";
@@ -724,12 +745,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   nf.dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   const createdW = bWrites.find((w) => w[1] === "/projects/maity/tasks");
   expect(JSON.stringify(createdW) === JSON.stringify(["POST", "/projects/maity/tasks", { title: "Web: a card from the board", kind: "task", status: "open",
-    label: "feature", area: "web/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
+    label: "feature", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
     && !main.querySelector("form.new-card"), "board: a new card, created in Open");
-  // Cancel the new card again with the menu.
+  expect(byId("board-area").querySelectorAll("option").some((o) => o.attrs.value === "web/board/"), "board: the area filter offers a new card's area");
+  // Cancel the new card again with the menu; its menu goes, so the focus goes to what was said.
+  const bProto2 = Object.getPrototypeOf(main);
+  const bFocus2 = bProto2.focus;
+  bProto2.focus = function () { document.activeElement = this; };
   const nSel = bCard("tsk-f001").querySelector("form.card-move select"); nSel.value = "cancelled";
   bCard("tsk-f001").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(colOf("tsk-f001").attrs["data-status"] === "cancelled", "board: cancelled with the menu");
+  expect(colOf("tsk-f001").attrs["data-status"] === "cancelled" && !bCard("tsk-f001").querySelector("form.card-move")
+    && document.activeElement && document.activeElement.className.includes("send-status") && text(document.activeElement).includes("tsk-f001 is now cancelled."),
+    "board: cancelled with the menu; the focus goes to the status line");
+  bProto2.focus = bFocus2; document.activeElement = undefined;
+  let relShip = null;
+  try { await bPost("/projects/maity/tasks", { title: "x", ships_with: ["rel-0001"] }); } catch (err) { relShip = err; }
+  expect(relShip && relShip.details.fields.ships_with === "release_card", "board: the mock refuses shipping with a release, as the hub does");
   win.Maity.api.patch = bPatch; win.Maity.api.post = bPost;
   // A frozen project asks for a reason.
   await go("#/p/sample/board");

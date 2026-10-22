@@ -158,9 +158,15 @@ window.Maity = window.Maity || {};
       if (to === "done") {
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
         if (open.length) fail(409, "dependencies_open", "a dependency is open", path, { open });
+        // A release is done only when the hub judges it ready (§6.7).
+        if (card.kind === "release" && !(card.release && card.release.readiness && card.release.readiness.ready)) {
+          fail(409, "release_not_ready", "the release is not ready", path, { blocking: (card.release.readiness || {}).blocking || [] });
+        }
       }
       card.status = to;
       card.closed_at = closed.includes(to) ? nowIso() : null;
+      // A closed card holds no claim.
+      if (closed.includes(to)) card.claim = null;
     }
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     card.updated_at = nowIso();
@@ -518,6 +524,8 @@ window.Maity = window.Maity || {};
         if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assigned_to)) errors.assigned_to = "not_a_member";
       }
       [...(body.depends_on || []), ...(body.ships_with || [])].forEach((id) => { if (!list.some((t) => t.id === id)) errors.depends_on = "unknown"; });
+      // A release is never one of the cards shipped together (§6.7).
+      if ((body.ships_with || []).length && (body.kind === "release" || body.ships_with.some((id) => (list.find((t) => t.id === id) || {}).kind === "release"))) errors.ships_with = "release_card";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       taskSerial += 1;
       const at = nowIso();

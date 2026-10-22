@@ -27,6 +27,8 @@ window.Maity = window.Maity || {};
     dependencies_open: "Not done yet: a card it depends on is still open.",
     not_holder: "Only the holder moves this card to done.",
     lease_active: "It is claimed with a live lease; it can be assigned once the lease has run out.",
+    release_not_ready: "The release is not ready; its card says what still blocks it.",
+    release_card: "A release is never shipped with other cards; it ships them.",
     project_closed: "The project is closed; no new cards.",
     not_a_member: "Not a member of this project.",
     cycle: "That would make the cards depend on each other in a circle.",
@@ -122,10 +124,12 @@ window.Maity = window.Maity || {};
         ctx.members.map((m) => h("option", { value: m.id }, m.display_name)))
       : null;
     if (assignee) assignee.value = "";
-    const pick = (what) => h("select", { id: id(what), multiple: true, size: "4" },
-      cards.filter((x) => !CLOSED.has(x.status)).map((x) => h("option", { value: x.id }, x.id + " · " + x.title)));
-    const deps = pick("depends");
-    const ships = pick("ships");
+    // A release ships cards; it is never one of the cards shipped together
+    // (docs/api.md §6.7, hub cards.set_ships_with).
+    const pick = (what, keep) => h("select", { id: id(what), multiple: true, size: "4" },
+      cards.filter((x) => !CLOSED.has(x.status) && keep(x)).map((x) => h("option", { value: x.id }, x.id + " · " + x.title)));
+    const deps = pick("depends", () => true);
+    const ships = pick("ships", (x) => x.kind !== "release");
     const closedState = ctx.project.state === "freeze" || ctx.project.state === "fixes-only";
     const reason = closedState ? h("input", { id: id("reason"), required: true, autocomplete: "off" }) : null;
     const status_ = M.statusLine();
