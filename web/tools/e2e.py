@@ -744,6 +744,7 @@ def scenario(run: Run, page: Page) -> None:
 
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
+    direct_removal_step(run, page, agent_id)
     members_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -813,6 +814,24 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
+    """§8.5: the human party removes a message of its direct chat, with a reason; it reads as removed after a reload."""
+    run.step("direct chat: the owner removes the agent's message with a reason; after a reload it still reads as removed")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    incoming = page.locator("ol.messages li.msg.in").first
+    expect(incoming).to_be_visible()
+    seq = incoming.get_attribute("data-seq")
+    page.once("dialog", lambda d: d.accept("e2e: removed on purpose"))
+    incoming.get_by_role("button", name="Remove this message for everyone", exact=True).click()
+    removed = page.locator(f'ol.messages li.msg[data-seq="{seq}"]')
+    expect(removed).to_contain_text("This message was removed by")
+    expect(removed).to_contain_text("e2e: removed on purpose")
+    page.reload()
+    expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]')).to_contain_text("This message was removed")
+    expect(page.locator(f'ol.messages li.msg[data-seq="{seq}"]').get_by_role("button", name="Quote this message")).to_have_count(0)
+    no_problems(run, "direct removal")
 
 
 def group_chat_form_step(run: Run, page: Page) -> None:

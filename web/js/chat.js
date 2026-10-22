@@ -126,9 +126,10 @@ window.Maity = window.Maity || {};
     let reading = null;
     let again = null;
     // observed=true: the group chats read along as an agent's owner too (§9.3).
+    // An owner outside the project reads no member list (§9.2: not_found).
     const read = (withMembers) => Promise.all([
       M.api.getAll(ctx.base + "/conversations?observed=true"),
-      withMembers ? M.api.getAll(ctx.base + "/members") : null,
+      withMembers && !ctx.outsider ? M.api.getAll(ctx.base + "/members") : null,
     ]).then(([list, members]) => {
       byAgent = {};
       groups = [];
@@ -153,9 +154,10 @@ window.Maity = window.Maity || {};
       return reading;
     };
     // A closed project takes no new group chat (§9.2).
-    const closedProject = ["accepted", "archived"].includes(ctx.project.state);
+    // nor one read along from outside the project.
+    const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
-      h("div", { class: "toolbar" }, h("h2", null, "Chat"),
+      h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
         closedProject ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat")),
       none, ul, status.el);
     none.hidden = mine.length > 0;
@@ -167,6 +169,13 @@ window.Maity = window.Maity || {};
   // follows the same sender's within GROUP_MS, so it shows neither the
   // picture nor the name again.
   const isRemoved = (msg) => !!msg.redacted || msg.body === null;
+  // The hub needs a reason for a removal (§8.5): asked again until one is
+  // given; null when cancelled.
+  function askReason(question) {
+    let reason = window.prompt(question, "");
+    while (reason !== null && !reason.trim()) reason = window.prompt("A reason is needed to remove a message. Say why, or cancel:", "");
+    return reason === null ? null : reason.trim();
+  }
   function tombstone(ctx, r) {
     const by = r && r.by ? " by " + ctx.nameOf(r.by) : "";
     return h("p", { class: "muted msg-redacted" }, "This message was removed" + by + (r && r.reason ? ": " + r.reason : "") + ".");
@@ -276,7 +285,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, fitToScreen, drafts, isRemoved, HISTORY_PAGE };
+  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -300,7 +309,7 @@ window.Maity = window.Maity || {};
     }
     if (!agent) {
       if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
-      else if (mine.length) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
+      else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
       await list.refresh(false);
       return;
     }
@@ -330,7 +339,9 @@ window.Maity = window.Maity || {};
     const shown = new Set(conv.items.map((m) => m.seq));
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
-    const draw = timeline(ctx, pending, firstUnread, quote);
+    // The human party removes a message of the chat, the agent's or their own (§8.5).
+    // §8.5: it needs events:admin too, which owner and admin hold.
+    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: ctx.canAdmin ? redactDirect : null });
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map(draw)
         : h("li", { class: "empty" }, h("p", null, "No messages yet."),
@@ -398,14 +409,8 @@ window.Maity = window.Maity || {};
     const mentions = (e) => isChat(e) && e.payload.conversation_id === agent.id && !shown.has(e.seq);
     ctx.onEvents(async (events) => {
       // A message of this chat removed (§8.5): its text goes at once.
-      events.filter((e) => e.kind === "event_redacted" && e.payload).forEach((e) => {
-        const li = Array.from(messages.querySelectorAll("li.msg")).find((x) => x.getAttribute("data-seq") === String(e.payload.seq));
-        const md = li && li.querySelector(".md");
-        if (!md) return;
-        md.parentNode.insertBefore(tombstone(ctx, { by: e.actor && e.actor.member_id, reason: e.payload.reason }), md);
-        md.remove();
-        Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
-      });
+      events.filter((e) => e.kind === "event_redacted" && e.payload)
+        .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
       if (!events.some(mentions)) return;
       try {
@@ -420,6 +425,32 @@ window.Maity = window.Maity || {};
         pollStatus.fail("New messages could not be fetched: ", err);
       }
     });
+    // A message's text replaced by its tombstone, in place; its buttons go.
+    function markRemoved(seq, by, reason) {
+      const li = Array.from(messages.querySelectorAll("li.msg")).find((x) => x.getAttribute("data-seq") === String(seq));
+      const md = li && li.querySelector(".md");
+      if (!md) return;
+      md.parentNode.insertBefore(tombstone(ctx, { by, reason }), md);
+      md.remove();
+      Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
+    }
+    async function redactDirect(msg) {
+      const reason = askReason("Remove this message from the chat with " + agent.display_name + "? Its text is replaced by a note. Say why:");
+      if (reason === null) return;
+      status.busy("Removing…");
+      try {
+        await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
+        markRemoved(msg.seq, ctx.me.id, reason);
+        status.done();
+        append(status.el, h("span", { class: "ok" }, "Removed."));
+        // The button that had the focus is gone with the text.
+        status.el.setAttribute("tabindex", "-1");
+        status.el.focus();
+        list.refresh(false);
+      } catch (err) {
+        status.fail("Not removed: ", err);
+      }
+    }
     // Quote: the message goes into the composer as a quote, before what is there.
     function quote(msg) {
       text.value = quoteOf(ctx, msg) + text.value;

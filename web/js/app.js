@@ -76,6 +76,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
+    if (parts[0] === "observe" && parts[1]) return { scope: "observe", slug: parts[1], args: parts.slice(2) };
     if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
     if (parts[0] === "p" && parts[1]) {
       return { scope: "project", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
@@ -200,6 +201,47 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  // §8.5's blind removal: an owner or admin removes a reported message of a
+  // closed group chat by its number, without reading it; the hub answers
+  // {seq, redacted} only, never the message.
+  function blindRemoveForm(ctx) {
+    const status = statusLine();
+    const seq = h("input", { id: "remove-seq", inputmode: "numeric", autocomplete: "off", "aria-describedby": "remove-seq-hint" });
+    const reason = h("input", { id: "remove-reason", autocomplete: "off", placeholder: "What was reported" });
+    return h("form", {
+      class: "inline-form remove-reported",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const n = seq.value.trim();
+        if (!/^\d+$/.test(n)) { status.fail("Not removed: ", { message: "the message number is a whole number" }); seq.focus(); return; }
+        if (!reason.value.trim()) { status.fail("Not removed: ", { message: "a reason is needed" }); reason.focus(); return; }
+        if (!window.confirm("Remove the closed group chat's message with number " + n + " for everyone who can read it? Its text is replaced by a note.")) return;
+        status.busy("Removing…");
+        try {
+          // expect: the hub removes only a message of a closed group chat, so
+          // a mistyped number never takes out another event (§8.5, #206).
+          await M.api.post(ctx.base + "/events/" + encodeURIComponent(n) + "/redact", { reason: reason.value.trim(), expect: "closed_chat_message" });
+          seq.value = "";
+          reason.value = "";
+          status.done();
+          append(status.el, h("span", { class: "ok" }, "Message " + n + " is removed."));
+        } catch (err) {
+          const mismatch = err.code === "invalid" && err.details && err.details.fields && err.details.fields.expect === "mismatch";
+          status.fail("Not removed: ", mismatch || err.code === "not_found"
+            ? { message: "number " + n + " is no message of a closed group chat in this project; nothing was removed" } : err);
+        }
+      },
+    },
+    h("h2", { class: "panel-title" }, "Remove a reported message"),
+    h("label", { for: "remove-seq" }, "Message number"), seq,
+    h("label", { for: "remove-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Remove"),
+    h("p", { class: "hint", id: "remove-seq-hint" }, "For a message of a closed group chat, which no human is in any more: "
+      + "you remove it by its number without reading it. The chat's former participants see your reason."),
+    status.el);
+  }
+
   function projectPanel(ctx) {
     const status = statusLine();
     const save = async (body, label) => {
@@ -233,6 +275,7 @@ window.Maity = window.Maity || {};
       h("button", { type: "submit" }, "Change state")));
     }
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    if (ctx.canAdmin) append(panel, blindRemoveForm(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).
     if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
     if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
@@ -576,7 +619,7 @@ window.Maity = window.Maity || {};
         h("h1", { class: "brand" }, "Maity"),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -818,17 +861,25 @@ window.Maity = window.Maity || {};
     renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
         M.views.noProjects(ctx, root);
+        // Without a project of one's own, one's agents may still be in others'.
+        const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
+        if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
         await M.views.inbox(ctx, root, []);
+        // Where one's agents are in projects one is not: read along there.
+        const elsewhere = M.observe ? await M.observe.note(ctx) : null;
+        if (elsewhere) append(root, elsewhere);
+      } else if (where.scope === "observe") {
+        await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
@@ -856,6 +907,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";
     else if (where.scope === "admin-users") label = "Users";
+    else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
     document.title = label + " · Maity";
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);

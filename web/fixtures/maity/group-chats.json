@@ -78,5 +78,33 @@
     "read": {
       "hum-maintainer": 5015
     }
+  },
+  "cnv-0011": {
+    "view": {
+      "id": "cnv-0011",
+      "kind": "group",
+      "title": "Closed after the handover",
+      "created_by": "hum-ops",
+      "created_at": "2026-10-20T10:00:00Z",
+      "participants": [],
+      "closed_at": "2026-10-20T12:00:00Z",
+      "closed_reason": "no_human"
+    },
+    "items": [
+      {
+        "id": "evt-4990",
+        "seq": 4990,
+        "conversation_id": "cnv-0011",
+        "from": "hum-ops",
+        "to": "cnv-0011",
+        "body": "the deploy key is …",
+        "sent_at": "2026-10-20T11:00:00Z",
+        "mentions": []
+      }
+    ],
+    "read": {},
+    "former": [
+      "hum-ops"
+    ]
   }
 }
