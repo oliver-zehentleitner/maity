@@ -158,3 +158,33 @@ that, `on` would overstate the confinement.
 
 **Rejected alternative:** derive `on` from the prerequisites, as `check`
 reports them; that describes the machine, not how the agent runs.
+
+## A placement the runner cannot act on yet is logged, not reported as a failure
+
+**Id:** 5ed066bf-d571-489f-902c-1097d3a6b6e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.7 (closed reason list); implementation of runner slice R3, 2026-10-22
+**Revisit when:** the join from the runner (R4) and the harness adapters (R5) are in; then this case no longer exists
+
+While only the `stub` adapter exists and the runner cannot pick up a
+join, a placement that needs either is left as it is. It gets no
+report, and the runner logs one line naming the missing slice. A start
+that fails in tmux itself is reported as `failed`/`harness_missing`, and
+the log line carries tmux's message.
+
+**Reason:** §15.7's reason list is closed, and none of its codes means
+"this runner version cannot do that yet". Reporting `failed` with a
+code that names something else (`join_failed`, `harness_refused`) would
+tell the human a wrong cause and make them act on it. With no report the
+dashboard shows the placement as pending (`reported_current: false`),
+which is what it is. A tmux failure is the closest the list has to "the
+process cannot be started here", and the log keeps the real cause.
+
+**Rejected alternatives:**
+- Adding a reason code for it: a contract change for a state that lasts
+  only until the next two slices merge.
+- Starting a placement without its credential: the agent would run
+  without an identity, against §15.5's rule that a missing expected
+  credential is `join_failed`.
