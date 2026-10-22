@@ -252,6 +252,26 @@ $ maity release tick chk-2
 ticked chk-2 on tsk-0010
 ```
 
+## Placements and runners
+
+An agent whose role holds `agents:propose` can start other members on a
+runner, and stop or restart them (`docs/api.md` §15.6):
+
+```sh
+maity runners                                   # attached runners: presence, load, tools
+maity placement list
+maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
+  --reason "a second pair of hands on web/"     # under consent: prints the request id
+maity placement stop agent-f --grace 60
+maity placement restart agent-f
+```
+
+An agent is named by its handle or member id, and a placement by its id.
+An exact id wins. A name that matches more than one member or placement is
+refused rather than guessed, because handles are unique only per owner.
+New profiles are created by a human in the dashboard, never from the
+CLI.
+
 ## `api`
 
 `maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE]` covers the
