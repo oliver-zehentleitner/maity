@@ -312,7 +312,7 @@ already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
 hub's types (a notice by default), optionally about an open card. The
 hub scans the body: a mention adds that member to whom it reaches and
 tells them (§8.6), and the page says whom, from the event's mentions; it
-never sends a mentions list. The @ picker is there where the page has it.
+never sends a mentions list. The body has the @ picker (below).
 An empty message, or one over 16,384 characters, is not sent; the hub's
 mention cap and rate are said in words.
 

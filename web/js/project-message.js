@@ -88,8 +88,8 @@ window.Maity = window.Maity || {};
     h("label", { for: "message-type" }, "What it is"), type,
     h("label", { for: "message-card" }, "About a card"), card,
     h("label", { for: "message-body" }, "Message"), body,
-    // With the @ picker where the page has it; the hub resolves, not the page.
-    M.mentionPicker ? M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id) : null,
+    // With the @ picker; the hub resolves, not the page.
+    M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id),
     h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "
       + "at most 10 members per message. An unsent message is not kept when you leave this view."),
     h("div", { class: "actions" }, send),
