@@ -10,8 +10,8 @@
 # complete install.
 
 image:
-  # Required. The image built from deploy/Dockerfile and pushed to a registry
-  # the cluster can pull from; the project does not publish one yet.
+  # Required. ghcr.io/oliver-zehentleitner/maity-hub once releases are published
+  # (workflow publish-image), or your own build of deploy/Dockerfile.
   repository: ""
   # Empty: the chart's appVersion. Use an immutable tag (a release or a full
   # commit SHA), never `latest`: the pod would not change on an upgrade.

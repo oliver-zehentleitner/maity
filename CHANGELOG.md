@@ -172,6 +172,11 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
   `membership.briefing`, editable with `PATCH …/members/{id}`, shown only to
   the member itself and to `members:admin`, never on the join page or in
   `member_updated`.
+- deploy: the workflow `publish-image` builds `deploy/Dockerfile` on a `v*`
+  tag or by hand and pushes `ghcr.io/oliver-zehentleitner/maity-hub`, tagged
+  with the version and the commit SHA, never `latest`, with an SBOM and
+  provenance, after a start-and-migrate check of the same build. On a tag
+  the image must report that version. The base image is pinned by digest.
 
 ### Changed
 
