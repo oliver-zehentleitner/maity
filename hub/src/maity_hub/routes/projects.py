@@ -13,7 +13,7 @@ from sqlalchemy import Connection, delete, insert, select, update
 from maity_hub import clock, idempotency, policy, releases, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
-from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid
 from maity_hub.events import emit
 from maity_hub.ids import new_id
@@ -123,15 +123,11 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
-def project_loader(settings: Any) -> idempotency.Loader:
-    def load(conn: Connection, project_id: str) -> dict[str, Any]:
-        return project_view(_load(conn, project_id), settings)
-
-    return load
+def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
+    return project_view(_load(conn, project_id), settings_of(request))
 
 
-def _register(request: Request) -> None:
-    idempotency.LOADERS["project"] = project_loader(settings_of(request))
+idempotency.LOADERS["project"] = load_project
 
 
 @router.get("/projects")
@@ -153,7 +149,6 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
-    _register(request)
 
     def action(conn: Connection) -> idempotency.Outcome:
         if conn.execute(select(t.project.c.id).where(t.project.c.slug == body.slug)).first():
@@ -228,7 +223,6 @@ def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
 def patch_project(
     slug: str, body: ProjectPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
-    _register(request)
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
@@ -266,7 +260,8 @@ def patch_project(
                         t.forge_observation.c.project_id == project.id
                     )
                 )
-            releases.recheck(conn, project.id)  # whether the probe can observe it changed
+            # whether the probe can observe it changed
+            releases.recheck(conn, project.id, reader_of(request))
         if state_changes:
             now = clock.now()
             conn.execute(

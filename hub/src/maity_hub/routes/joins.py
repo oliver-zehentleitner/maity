@@ -95,7 +95,7 @@ def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
     return join_view(conn, row)
 
 
-idempotency.LOADERS["join"] = load_join
+idempotency.LOADERS["join"] = idempotency.plain(load_join)
 
 
 # --- the join link (human) --------------------------------------------------------

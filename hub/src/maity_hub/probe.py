@@ -70,13 +70,13 @@ def _cached(conn: Connection, project_id: str, kind: str, ref: str) -> Any:
     ).first()
 
 
-def _read(repository: str, kind: str, ref: str) -> dict[str, Any]:
+def _read(fg: forge.Forge, repository: str, kind: str, ref: str) -> dict[str, Any]:
     try:
         if kind == "pr":
-            return forge.pull_request(repository, int(ref))
+            return fg.pull_request(repository, int(ref))
         if kind == "branch":
-            return forge.branch(repository, ref)
-        return forge.tag(repository, ref)
+            return fg.branch(repository, ref)
+        return fg.tag(repository, ref)
     except (KeyError, TypeError, AttributeError) as error:
         # An answer of another shape than the API documents: as good as none.
         raise forge.ForgeUnavailableError(
@@ -85,7 +85,7 @@ def _read(repository: str, kind: str, ref: str) -> dict[str, Any]:
 
 
 def observe(
-    engine: Engine, project: Any, kind: str, ref: str, max_age: int = MAX_AGE
+    engine: Engine, fg: forge.Forge, project: Any, kind: str, ref: str, max_age: int = MAX_AGE
 ) -> Observation:
     """The observation of one ref, from the cache when younger than `max_age`.
 
@@ -97,7 +97,7 @@ def observe(
     now = clock.now()
     if row is not None and max_age > 0 and now - row.observed_at < timedelta(seconds=max_age):
         return Observation(dict(row.data), row.observed_at, fresh=False)
-    data = _read(forge.repository_of(project.repository_url), kind, ref)
+    data = _read(fg, forge.repository_of(project.repository_url), kind, ref)
     observed_at = clock.now()
     with transaction(engine) as conn:
         lock_project(conn, project.id)  # one writer per project: delete + insert is the upsert
@@ -120,13 +120,18 @@ def observe(
         observation = Observation(data, observed_at, fresh=True)
         observation.changed = stored is None or _state(stored.data) != _state(data)
         if observation.changed:
-            _announce_for_release(conn, project.id, kind, ref, observation)
-            releases.recheck(conn, project.id)
+            _announce_for_release(conn, fg, project.id, kind, ref, observation)
+            releases.recheck(conn, project.id, fg)
     return observation
 
 
 def _announce_for_release(
-    conn: Connection, project_id: str, kind: str, ref: str, observation: Observation
+    conn: Connection,
+    fg: forge.Forge,
+    project_id: str,
+    kind: str,
+    ref: str,
+    observation: Observation,
 ) -> None:
     """`probe_observed` on the open release when the changed ref is one of its own."""
     card = conn.execute(
@@ -139,7 +144,7 @@ def _announce_for_release(
     if kind == "tag":
         own = ref == f"v{card.release_version}"
     elif kind == "pr":
-        numbers = {e["number"] for e in releases.release_view(conn, card)["pull_requests"]}
+        numbers = {e["number"] for e in releases.release_view(conn, card, fg)["pull_requests"]}
         own = int(ref) in numbers
     else:
         own = False
@@ -174,25 +179,25 @@ def _audience(conn: Connection, card: Any) -> list[str]:
 # --- reports (§6.6) ---------------------------------------------------------------------------
 
 
-def observe_report(engine: Engine, card_id: str, max_age: int = 0) -> bool:
+def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int = 0) -> bool:
     """Fill `report.observed` and `mismatch`; True when the card changed."""
     with engine.connect() as conn:
         card = conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
     if card is None or not card.report:
         return False
     project = _project(engine, card.project_id)
-    if not forge.configured_for(project.repository_url):
+    if not fg.configured_for(project.repository_url):
         return False
     report = card.report
     branch = (
-        observe(engine, project, "branch", report["branch"], max_age)
+        observe(engine, fg, project, "branch", report["branch"], max_age)
         if report.get("branch")
         else None
     )
     pr_number = (
         (report.get("pr") or {}).get("number") if report.get("pr_status") == "found" else None
     )
-    pr = observe(engine, project, "pr", str(pr_number), max_age) if pr_number else None
+    pr = observe(engine, fg, project, "pr", str(pr_number), max_age) if pr_number else None
     times = [o.observed_at for o in (branch, pr) if o is not None]
     if not times:
         return False
@@ -232,7 +237,7 @@ def observe_report(engine: Engine, card_id: str, max_age: int = 0) -> bool:
             {"task": card_id, "observed": observed, "mismatch": mismatch},
             subject=("task", card_id),
         )
-        releases.recheck(conn, card.project_id)
+        releases.recheck(conn, card.project_id, fg)
     return True
 
 
@@ -250,10 +255,12 @@ def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
 # --- the open release (§6.7) ------------------------------------------------------------------
 
 
-def observe_release(engine: Engine, project_id: str, max_age: int = MAX_AGE) -> bool:
+def observe_release(
+    engine: Engine, fg: forge.Forge, project_id: str, max_age: int = MAX_AGE
+) -> bool:
     """Refresh the open release's pull requests and tag; True when anything changed."""
     project = _project(engine, project_id)
-    if project is None or not forge.configured_for(project.repository_url):
+    if project is None or not fg.configured_for(project.repository_url):
         return False
     with engine.connect() as conn:
         card = conn.execute(
@@ -265,12 +272,12 @@ def observe_release(engine: Engine, project_id: str, max_age: int = MAX_AGE) -> 
             return False
         refs = [
             ("pr", str(entry["number"]))
-            for entry in releases.release_view(conn, card)["pull_requests"]
+            for entry in releases.release_view(conn, card, fg)["pull_requests"]
         ]
     refs.append(("tag", f"v{card.release_version}"))
     changed = False
     for kind, ref in refs:  # each observe() announces and rechecks its own change
-        changed = observe(engine, project, kind, ref, max_age).changed or changed
+        changed = observe(engine, fg, project, kind, ref, max_age).changed or changed
     return changed
 
 
@@ -283,7 +290,7 @@ def _state(data: dict[str, Any]) -> tuple[Any, ...]:
 # --- the worker --------------------------------------------------------------------------------
 
 
-def sweep(engine: Engine, stop: threading.Event | None = None) -> None:
+def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
     """One round: every report without an observation on an open card or one closed
     within REPORT_WINDOW, then every open release. The round ends at the first read
     the forge does not answer (down or rate-limited: the rest would fail alike) and
@@ -301,13 +308,13 @@ def sweep(engine: Engine, stop: threading.Event | None = None) -> None:
                 (t.card.c.closed_at.is_(None)) | (t.card.c.closed_at > since),
             )
         ).all()
-    observable = {p.id for p in projects if forge.configured_for(p.repository_url)}
+    observable = {p.id for p in projects if fg.configured_for(p.repository_url)}
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
-        (observe_report, (engine, card.id, MAX_AGE))
+        (observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
         if card.project_id in observable and card.report.get("observed") is None
     ]
-    work += [(observe_release, (engine, project_id)) for project_id in sorted(observable)]
+    work += [(observe_release, (engine, fg, project_id)) for project_id in sorted(observable)]
     for job, args in work:
         if stop is not None and stop.is_set():
             return
@@ -330,8 +337,8 @@ def _guarded(work: Callable[..., Any], *args: Any) -> bool:
 class Worker:
     """A daemon thread: the cards to probe now, and a sweep every `interval` seconds."""
 
-    def __init__(self, engine: Engine, interval: float = INTERVAL) -> None:
-        self.engine, self.interval = engine, interval
+    def __init__(self, engine: Engine, fg: forge.Forge, interval: float = INTERVAL) -> None:
+        self.engine, self.fg, self.interval = engine, fg, interval
         self.jobs: queue.Queue[str | None] = queue.Queue()
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._run, name="maity-probe", daemon=True)
@@ -356,9 +363,9 @@ class Worker:
             try:
                 job = self.jobs.get(timeout=wait)
             except queue.Empty:
-                _guarded(sweep, self.engine, self.stopping)
+                _guarded(sweep, self.engine, self.fg, self.stopping)
                 next_sweep = clock.now() + timedelta(seconds=self.interval)
                 continue
             if job is None:
                 return
-            _guarded(observe_report, self.engine, job, 0)
+            _guarded(observe_report, self.engine, self.fg, job, 0)

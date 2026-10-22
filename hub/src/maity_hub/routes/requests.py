@@ -129,7 +129,7 @@ def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
     return request_view(conn, _row(conn, request_id))
 
 
-idempotency.LOADERS["request"] = load_request
+idempotency.LOADERS["request"] = idempotency.plain(load_request)
 
 
 def _row(conn: Connection, request_id: str) -> Any:

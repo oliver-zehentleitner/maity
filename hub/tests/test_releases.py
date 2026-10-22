@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock, forge
+from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from maity_hub.probe import Worker
 from maity_hub.routes import tasks as tasks_routes
 from tests import flow
@@ -40,10 +42,18 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 @pytest.fixture
+def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
+    """The operator's forge token, as the environment sets it, for the tests that
+    ask for the probe; the others run without one."""
+    if {"probe", "github"} & set(request.fixturenames):
+        return replace(settings, forge_github_token="test-token")
+    return settings
+
+
+@pytest.fixture
 def probe(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A forge token as the operator would set it; observations are inserted by hand."""
-    monkeypatch.setattr(forge, "_token", "test-token")
-    monkeypatch.setattr(forge, "configure", lambda token: None)
+    """A forge token as the operator would set it (`settings` below); observations are
+    inserted by hand, so the worker never starts."""
     monkeypatch.setattr(Worker, "start", lambda self: None)
 
 

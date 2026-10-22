@@ -38,12 +38,13 @@ class FakeOpener:
         return io.BytesIO(json.dumps(answer).encode())
 
 
+READER = forge.Forge(TOKEN)
+
+
 @pytest.fixture
 def opener(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
     fake = FakeOpener()
     monkeypatch.setattr(forge, "_opener", fake)
-    monkeypatch.setattr(forge, "_token", TOKEN)
-    forge._visible.clear()
     return fake
 
 
@@ -54,7 +55,7 @@ def test_a_read_goes_to_the_api_host_with_the_token_and_the_api_headers(
     opener: FakeOpener,
 ) -> None:
     opener.answers["/repos/a/b"] = {"full_name": "a/b"}
-    assert forge._get("/repos/a/b") == {"full_name": "a/b"}
+    assert READER._get("/repos/a/b") == {"full_name": "a/b"}
     [request] = opener.requests
     assert request.full_url == "https://api.github.com/repos/a/b"
     headers = {k.lower(): v for k, v in request.header_items()}
@@ -65,7 +66,7 @@ def test_a_read_goes_to_the_api_host_with_the_token_and_the_api_headers(
 
 def test_a_404_is_none(opener: FakeOpener) -> None:
     opener.answers["/repos/a/b/pulls/9"] = None
-    assert forge._get("/repos/a/b/pulls/9") is None
+    assert READER._get("/repos/a/b/pulls/9") is None
 
 
 @pytest.mark.parametrize("status", [401, 403, 429, 500, 502])
@@ -74,7 +75,7 @@ def test_any_other_status_is_unavailable_and_never_names_the_token(
 ) -> None:
     opener.answers["/repos/a/b"] = status
     with pytest.raises(forge.ForgeUnavailableError) as raised:
-        forge._get("/repos/a/b")
+        READER._get("/repos/a/b")
     assert raised.value.status == status
     assert TOKEN not in str(raised.value)
 
@@ -93,16 +94,13 @@ def test_a_protocol_or_network_failure_is_unavailable(
 ) -> None:
     opener.answers["/repos/a/b"] = failure
     with pytest.raises(forge.ForgeUnavailableError) as raised:
-        forge._get("/repos/a/b")
+        READER._get("/repos/a/b")
     assert TOKEN not in str(raised.value)
 
 
-def test_without_a_token_nothing_is_sent(
-    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(forge, "_token", None)
+def test_without_a_token_nothing_is_sent(opener: FakeOpener) -> None:
     with pytest.raises(forge.ForgeUnavailableError):
-        forge._get("/repos/a/b")
+        forge.Forge(None)._get("/repos/a/b")
     assert opener.requests == []
 
 
@@ -142,8 +140,8 @@ def test_a_missing_ref_in_a_visible_repository_is_an_answer(opener: FakeOpener) 
     opener.answers["/repos/a/b"] = {"full_name": "a/b"}
     opener.answers["/repos/a/b/pulls/9"] = None
     opener.answers["/repos/a/b/branches/gone"] = None
-    assert forge.pull_request("a/b", 9) == {"number": 9, "found": False}
-    assert forge.branch("a/b", "gone")["found"] is False
+    assert READER.pull_request("a/b", 9) == {"number": 9, "found": False}
+    assert READER.branch("a/b", "gone")["found"] is False
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
     assert len(visibility) == 1  # asked once, then remembered
 
@@ -152,7 +150,7 @@ def test_a_repository_the_token_cannot_see_is_unavailable_not_missing(opener: Fa
     opener.answers["/repos/a/b"] = None
     opener.answers["/repos/a/b/pulls/9"] = None
     with pytest.raises(forge.ForgeUnavailableError, match="not visible"):
-        forge.pull_request("a/b", 9)
+        READER.pull_request("a/b", 9)
 
 
 # --- checks ----------------------------------------------------------------------------------
@@ -175,7 +173,7 @@ def test_commit_statuses_count_like_check_runs(opener: FakeOpener) -> None:
         "state": "failure",
         "statuses": [{"context": "ci/jenkins", "state": "failure"}],
     }
-    summary, detail = forge.checks("a/b", SHA)
+    summary, detail = READER.checks("a/b", SHA)
     assert summary == "failure"
     assert detail == [{"name": "ci/jenkins", "status": "failure"}]
 
@@ -184,7 +182,7 @@ def test_a_failure_on_the_second_page_is_a_failure(opener: FakeOpener) -> None:
     opener.answers[_checks_path(1)] = _runs(*["success"] * 100, total=101)
     opener.answers[_checks_path(2)] = _runs("failure", total=101)
     opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
-    summary, detail = forge.checks("a/b", SHA)
+    summary, detail = READER.checks("a/b", SHA)
     assert (summary, len(detail)) == ("failure", 101)
 
 
@@ -192,7 +190,7 @@ def test_more_runs_than_the_cap_are_unknown(opener: FakeOpener) -> None:
     for page in range(1, forge.MAX_PAGES + 1):
         opener.answers[_checks_path(page)] = _runs(*["success"] * 100, total=5000)
     opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
-    assert forge.checks("a/b", SHA)[0] == "unknown"
+    assert READER.checks("a/b", SHA)[0] == "unknown"
 
 
 def test_no_permission_for_checks_is_unknown_not_a_failed_read(opener: FakeOpener) -> None:
@@ -203,7 +201,7 @@ def test_no_permission_for_checks_is_unknown_not_a_failed_read(opener: FakeOpene
         "merged_at": None,
     }
     opener.answers[_checks_path(1)] = 403
-    pr = forge.pull_request("a/b", 3)
+    pr = READER.pull_request("a/b", 3)
     assert (pr["found"], pr["state"], pr["head_sha"], pr["checks"]) == (
         True,
         "open",
@@ -215,4 +213,8 @@ def test_no_permission_for_checks_is_unknown_not_a_failed_read(opener: FakeOpene
 def test_stale_runs_are_pending(opener: FakeOpener) -> None:
     opener.answers[_checks_path(1)] = _runs("success", "stale")
     opener.answers[f"/repos/a/b/commits/{SHA}/status"] = {"statuses": []}
-    assert forge.checks("a/b", SHA)[0] == "pending"
+    assert READER.checks("a/b", SHA)[0] == "pending"
+
+
+def test_the_token_is_never_in_a_repr() -> None:
+    assert TOKEN not in repr(READER) and TOKEN not in str(READER)

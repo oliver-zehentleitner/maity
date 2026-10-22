@@ -60,8 +60,8 @@ def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
     return credential_view(conn, row)
 
 
-idempotency.LOADERS["member"] = load_member
-idempotency.LOADERS["credential"] = load_credential
+idempotency.LOADERS["member"] = idempotency.plain(load_member)
+idempotency.LOADERS["credential"] = idempotency.plain(load_credential)
 
 
 def validate_assignment(

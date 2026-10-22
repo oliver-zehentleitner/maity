@@ -20,9 +20,10 @@ from maity_hub import cards, clock, idempotency, releases
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import emit, lock_project
+from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, markdown, title
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
@@ -134,8 +135,8 @@ class ReportIn(Strict):
     done: bool = False
 
 
-def load_task(conn: Connection, card_id: str) -> dict[str, Any]:
-    return task_view(conn, _card(conn, card_id))
+def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any]:
+    return task_view(conn, _card(conn, card_id), reader_of(request))
 
 
 idempotency.LOADERS["task"] = load_task
@@ -291,13 +292,13 @@ def _refuse_closed_release(card: Any) -> None:
         raise cards.invalid_transition(card.status, card.status)
 
 
-def _refuse_unready(conn: Connection, card: Any, release_data: Any = None) -> None:
+def _refuse_unready(conn: Connection, card: Any, fg: Forge, release_data: Any = None) -> None:
     """`release_not_ready`, judged on the card as it will be stored."""
     if card.kind != "release":
         return
     if release_data is not None:
         card = SimpleNamespace(**{**card._mapping, "release_data": release_data})
-    readiness = releases.release_view(conn, card)["readiness"]
+    readiness = releases.release_view(conn, card, fg)["readiness"]
     if not readiness["ready"]:
         raise ApiError(
             409,
@@ -376,7 +377,9 @@ def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any
     return {"project_state": state, "reason": reason}
 
 
-def _touch_partners(conn: Connection, mine: Membership, caller: Caller, partners: set[str]) -> None:
+def _touch_partners(
+    conn: Connection, mine: Membership, caller: Caller, partners: set[str], fg: Forge
+) -> None:
     """A mirrored `ships_with` edge changed these cards too: say so on them."""
     for partner_id in sorted(partners):
         conn.execute(
@@ -396,7 +399,7 @@ def _touch_partners(conn: Connection, mine: Membership, caller: Caller, partners
             audience(conn, partner),
             {
                 "id": partner_id,
-                "ships_with": task_view(conn, partner)["ships_with"],
+                "ships_with": task_view(conn, partner, fg)["ships_with"],
                 "project_state": mine.project.state,
             },
             actor=caller.actor(mine.id),
@@ -439,6 +442,7 @@ def list_tasks(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
+    fg = reader_of(request)
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
@@ -483,19 +487,22 @@ def list_tasks(
         ).all()
         page = rows[:limit]
         next_cursor = _cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
-        return JSONResponse({"items": task_views(conn, page), "next_cursor": next_cursor})
+        return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
 
 
 @router.get("/projects/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    fg = reader_of(request)
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id)))
+        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg))
 
 
 @router.post("/projects/{slug}/tasks")
 def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller) -> JSONResponse:
+    fg = reader_of(request)
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
@@ -553,9 +560,9 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             raise _release_conflict(error, body.release) from None
         cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
         partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
-        _touch_partners(conn, mine, caller, partners)
+        _touch_partners(conn, mine, caller, partners, fg)
         card = _card(conn, card_id)
-        view = task_view(conn, card)
+        view = task_view(conn, card, fg)
         emit(
             conn,
             mine.project.id,
@@ -565,7 +572,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             actor=caller.actor(mine.id),
             subject=("task", card_id),
         )
-        releases.recheck(conn, mine.project.id)  # a release may be ready from the start
+        releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
         return idempotency.Outcome(201, "task", card_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -575,6 +582,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
 def patch_task(
     slug: str, card_id: str, body: TaskPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    fg = reader_of(request)
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
@@ -643,14 +651,14 @@ def patch_task(
             cards.check_transition(mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
-                _refuse_unready(conn, card, values.get("release_data"))
+                _refuse_unready(conn, card, fg, values.get("release_data"))
             values["status"] = body.status
             if body.status in cards.CLOSED:
                 values.update(_closing(card))
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
-            return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
         conn.execute(
             update(t.card)
             .where(t.card.c.id == card.id)
@@ -662,7 +670,7 @@ def patch_task(
             )
         )
         card = _card(conn, card.id)
-        view = task_view(conn, card)
+        view = task_view(conn, card, fg)
         payload = {k: view[k] for k in changed if k in view}
         if depends_changed:
             payload["depends_on"] = view["depends_on"]
@@ -670,7 +678,7 @@ def patch_task(
             payload["ships_with"] = view["ships_with"]
         if "release_data" in changed:
             payload["release"] = view["release"]
-        _touch_partners(conn, mine, caller, partners)
+        _touch_partners(conn, mine, caller, partners, fg)
         emit(
             conn,
             mine.project.id,
@@ -681,9 +689,9 @@ def patch_task(
             subject=("task", card.id),
         )
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
-            releases.close(conn, card.id)  # after the write's own event: release_ready last
-        releases.recheck(conn, mine.project.id)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
+            releases.close(conn, card.id, fg)  # after the write's own event: release_ready last
+        releases.recheck(conn, mine.project.id, fg)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -695,6 +703,8 @@ def patch_task(
 def claim(
     slug: str, card_id: str, body: ClaimIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    fg = reader_of(request)
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
@@ -749,7 +759,7 @@ def claim(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -782,6 +792,8 @@ def _lease_expired(card: Any) -> bool:
 
 @router.post("/projects/{slug}/tasks/{card_id}/release")
 def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    fg = reader_of(request)
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
@@ -836,7 +848,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -845,6 +857,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
 def assign(
     slug: str, card_id: str, body: AssignIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    fg = reader_of(request)
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("tasks:admin")
@@ -905,7 +919,7 @@ def assign(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -924,6 +938,7 @@ def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
 def checkpoint(
     slug: str, card_id: str, body: CheckpointIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    fg = reader_of(request)
     if body.head is not None and not SHA.fullmatch(body.head):
         raise invalid({"head": "not_a_sha"})
 
@@ -960,7 +975,7 @@ def checkpoint(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -969,6 +984,7 @@ def checkpoint(
 def report(
     slug: str, card_id: str, body: ReportIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    fg = reader_of(request)
     _check_report(body)
 
     def action(conn: Connection) -> idempotency.Outcome:
@@ -984,7 +1000,7 @@ def report(
                     cards.authority_scope(mine), "done needs done authority; report without done"
                 )
             cards.refuse_open_dependencies(conn, card.id)
-            _refuse_unready(conn, card)
+            _refuse_unready(conn, card, fg)
         now = clock.now()
         stored = {
             "summary": body.summary,
@@ -1034,9 +1050,9 @@ def report(
             subject=("task", card.id),
         )
         if body.done and card.kind == "release":
-            releases.close(conn, card.id)  # after task_reported: release_ready comes last
-        releases.recheck(conn, mine.project.id)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
+            releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
+        releases.recheck(conn, mine.project.id, fg)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
     response = idempotency.run(engine_of(request), request, caller, action)
     if response.status_code == 200 and request.app.state.probe is not None:
@@ -1073,6 +1089,8 @@ def tick_checklist(
     request: Request,
     caller: AnyCaller,
 ) -> JSONResponse:
+    fg = reader_of(request)
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
@@ -1089,7 +1107,7 @@ def tick_checklist(
         if item is None:
             raise not_found()
         if item["done"] == body.done:
-            return idempotency.Outcome(200, "task", card.id, task_view(conn, card))
+            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
         now = clock.now()
         item.update(
             done=body.done,
@@ -1108,7 +1126,7 @@ def tick_checklist(
             )
         )
         card = _card(conn, card.id)
-        view = task_view(conn, card)
+        view = task_view(conn, card, fg)
         emit(
             conn,
             mine.project.id,
@@ -1118,7 +1136,7 @@ def tick_checklist(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        releases.recheck(conn, mine.project.id)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id)))
+        releases.recheck(conn, mine.project.id, fg)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
     return idempotency.run(engine_of(request), request, caller, action)

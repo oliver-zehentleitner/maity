@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 import urllib.request
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -12,12 +13,15 @@ from sqlalchemy import Engine, select
 
 from maity_hub import forge, probe
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
 
 REPO = {"url": "https://github.com/acme/maity", "default_branch": "main"}
 SHA = "d91e294c" + "0" * 32
 OTHER = "e" * 40
+TOKEN = "test-token"
+READER = forge.Forge(TOKEN)  # what the app builds from the settings
 
 
 class FakeGitHub:
@@ -70,11 +74,18 @@ class FakeGitHub:
 
 
 @pytest.fixture
+def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
+    """The operator's forge token, as the environment sets it, for the tests that
+    ask for the probe; the others run without one."""
+    if {"probe", "github"} & set(request.fixturenames):
+        return replace(settings, forge_github_token=TOKEN)
+    return settings
+
+
+@pytest.fixture
 def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     fake = FakeGitHub()
-    monkeypatch.setattr(forge, "_get", fake)
-    monkeypatch.setattr(forge, "_token", "test-token")
-    monkeypatch.setattr(forge, "configure", lambda token: None)
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
     # The tests drive the probe themselves; the worker thread has its own test.
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)
     return fake
@@ -230,7 +241,7 @@ def test_checks_are_summed_up(
     github: FakeGitHub, runs: list[tuple[str, str | None]], summary: str
 ) -> None:
     github.runs(SHA, runs)
-    assert forge.checks("acme/maity", SHA)[0] == summary
+    assert READER.checks("acme/maity", SHA)[0] == summary
 
 
 def test_the_token_never_follows_a_redirect_to_another_host() -> None:
@@ -263,7 +274,7 @@ def test_the_probe_fills_a_report(
     github.pull(7)
     github.branch("agent-b/probe")
     agent, card_id = _reported_card(owner, make_client)
-    assert probe.observe_report(migrated, card_id) is True
+    assert probe.observe_report(migrated, READER, card_id) is True
     report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
     assert report["mismatch"] is False
     observed = report["observed"]
@@ -276,7 +287,7 @@ def test_the_probe_fills_a_report(
     [event] = _events(migrated, "probe_observed")
     assert event.audience == [f"member:{agent.id}", "role:admin"]
     assert event.payload == {"task": card_id, "observed": observed, "mismatch": False}
-    assert probe.observe_report(migrated, card_id, max_age=60) is False  # nothing new
+    assert probe.observe_report(migrated, READER, card_id, max_age=60) is False  # nothing new
 
 
 def test_a_head_the_forge_does_not_show_is_a_mismatch(
@@ -285,7 +296,7 @@ def test_a_head_the_forge_does_not_show_is_a_mismatch(
     github.pull(7, head=OTHER)
     github.branch("agent-b/probe")
     _, card_id = _reported_card(owner, make_client)
-    probe.observe_report(migrated, card_id)
+    probe.observe_report(migrated, READER, card_id)
     assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["mismatch"] is True
 
 
@@ -295,7 +306,7 @@ def test_a_pull_request_the_forge_does_not_have_is_a_mismatch(
     github.answers["/repos/acme/maity/pulls/7"] = None
     github.branch("agent-b/probe")
     _, card_id = _reported_card(owner, make_client)
-    probe.observe_report(migrated, card_id)
+    probe.observe_report(migrated, READER, card_id)
     report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
     assert (report["mismatch"], report["observed"]["pr_state"]) == (True, None)
     assert report["observed"]["branch_head_sha"] == SHA
@@ -306,7 +317,7 @@ def test_a_deleted_branch_is_no_mismatch(
 ) -> None:
     github.pull(7, merged=True)
     _, card_id = _reported_card(owner, make_client)
-    probe.observe_report(migrated, card_id)
+    probe.observe_report(migrated, READER, card_id)
     report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
     assert (report["mismatch"], report["observed"]["branch_head_sha"]) == (False, None)
     assert report["observed"]["pr_state"] == "merged"
@@ -317,11 +328,11 @@ def test_a_failing_probe_leaves_the_report_for_the_next_round(
 ) -> None:
     github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = forge.ForgeUnavailableError("x")
     _, card_id = _reported_card(owner, make_client)
-    probe.sweep(migrated)  # logged, not raised
+    probe.sweep(migrated, READER)  # logged, not raised
     assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["observed"] is None
     github.branch("agent-b/probe")
     github.pull(7)
-    probe.sweep(migrated)
+    probe.sweep(migrated, READER)
     assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["observed"] is not None
 
 
@@ -329,13 +340,12 @@ def test_the_worker_probes_right_after_a_report(
     make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeGitHub()
-    monkeypatch.setattr(forge, "_get", fake)
-    monkeypatch.setattr(forge, "_token", None)  # restored after the test
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
     fake.pull(7)
     fake.branch("agent-b/probe")
 
     def with_token(**overrides: Any) -> Any:  # every app starts its worker
-        return make_client(forge_github_token="test-token", **overrides)
+        return make_client(forge_github_token=TOKEN, **overrides)
 
     human = flow.human(with_token, migrated)
     flow.project(human, "maity", repository=REPO)
@@ -370,20 +380,22 @@ def test_the_release_is_refreshed_and_turns_ready(
     github.answers["/repos/acme/maity/git/ref/tags/v0.1.0"] = None
     project_id = _project(migrated).id
     assert len(_events(migrated, "release_ready")) == 1  # empty at creation, so ready
-    assert probe.observe_release(migrated, project_id) is True
+    assert probe.observe_release(migrated, READER, project_id) is True
     view = owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]
     assert view["readiness"]["blocking"] == [{"reason": "pr_open", "pr": 1}]
     assert view["tag"]["found"] is False and view["tag"]["observed_at"] is not None
     events = _events(migrated, "probe_observed")  # one per changed ref
     assert [set(e.payload["observations"]) for e in events] == [{"pr:1"}, {"tag:v0.1.0"}]
     github.pull(1, merged=True)
-    assert probe.observe_release(migrated, project_id, max_age=0) is True
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
     assert owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]["readiness"] == {
         "ready": True,
         "blocking": [],
     }
     assert len(_events(migrated, "release_ready")) == 2  # announced again on this turn
-    assert probe.observe_release(migrated, project_id, max_age=0) is False  # nothing changed
+    assert (
+        probe.observe_release(migrated, READER, project_id, max_age=0) is False
+    )  # nothing changed
     assert len(_events(migrated, "probe_observed")) == 3
 
 
@@ -403,7 +415,7 @@ def test_whoever_sees_the_merge_first_announces_it(
     github.pull(1)
     github.answers["/repos/acme/maity/git/ref/tags/v0.1.0"] = None
     project_id = _project(migrated).id
-    probe.observe_release(migrated, project_id)
+    probe.observe_release(migrated, READER, project_id)
     before = len(_events(migrated, "probe_observed"))
     ready_before = len(_events(migrated, "release_ready"))
     github.pull(1, merged=True)
@@ -414,7 +426,7 @@ def test_whoever_sees_the_merge_first_announces_it(
     assert events[-1].payload["task"] == release["id"]
     assert events[-1].payload["observations"]["pr:1"]["state"] == "merged"
     assert len(_events(migrated, "release_ready")) == ready_before + 1
-    assert probe.observe_release(migrated, project_id, max_age=0) is False  # already known
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is False  # already known
 
 
 # --- the review round on the probe -----------------------------------------------------------
@@ -428,7 +440,7 @@ def test_a_repository_the_token_cannot_see_leaves_the_report_unverified(
     github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = None
     _, card_id = _reported_card(owner, make_client)
     with pytest.raises(forge.ForgeUnavailableError):
-        probe.observe_report(migrated, card_id)
+        probe.observe_report(migrated, READER, card_id)
     report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
     assert (report["observed"], report["mismatch"]) == (None, None)  # never a false mismatch
     answer = owner.get("/projects/maity/probe?pr=7")
@@ -466,7 +478,7 @@ def test_a_report_replaced_within_the_same_second_keeps_its_own_verdict(
         return observation
 
     monkeypatch.setattr(probe, "observe", a_second_report_arrives)
-    assert probe.observe_report(migrated, card_id) is False
+    assert probe.observe_report(migrated, READER, card_id) is False
     report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
     assert (report["head"], report["observed"]) == (OTHER, None)
 
@@ -477,9 +489,9 @@ def test_only_a_changed_verdict_is_announced_again(
     github.pull(7)
     github.branch("agent-b/probe")
     _, card_id = _reported_card(owner, make_client)
-    assert probe.observe_report(migrated, card_id) is True
+    assert probe.observe_report(migrated, READER, card_id) is True
     time.sleep(1.1)  # observed_at moves on; nothing else does
-    probe.observe_report(migrated, card_id, max_age=0)
+    probe.observe_report(migrated, READER, card_id, max_age=0)
     reported = [e for e in _events(migrated, "probe_observed") if e.payload.get("task") == card_id]
     assert len(reported) == 1
 
@@ -492,7 +504,7 @@ def test_a_round_ends_at_the_first_read_the_forge_does_not_answer(
     github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = forge.ForgeUnavailableError(
         "rate limited"
     )
-    probe.sweep(migrated)
+    probe.sweep(migrated, READER)
     assert len(github.calls) == 1  # not one timeout per card
 
 
@@ -502,7 +514,7 @@ def test_a_set_stop_ends_the_round_before_the_next_read(
     _reported_card(owner, make_client)
     stop = threading.Event()
     stop.set()
-    probe.sweep(migrated, stop)
+    probe.sweep(migrated, READER, stop)
     assert github.calls == []
 
 

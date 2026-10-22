@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from maity_hub import clock, forge, probe
 from maity_hub.access import membership
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid
 
 router = APIRouter()
@@ -34,7 +34,8 @@ def read_probe(
     project = mine.project
     if pr is None and branch is None and tag is None:
         raise invalid({"pr": "one_of_pr_branch_tag"})
-    if not forge.configured_for(project.repository_url):
+    fg = reader_of(request)
+    if not fg.configured_for(project.repository_url):
         raise ApiError(
             409, "probe_not_configured", "the hub holds no forge token for this repository"
         )
@@ -45,7 +46,7 @@ def read_probe(
         if ref is None:
             continue
         try:
-            observation = probe.observe(engine, project, kind, ref, max_age)
+            observation = probe.observe(engine, fg, project, kind, ref, max_age)
         except forge.ForgeUnavailableError:
             stored = probe.last(engine, project.id, kind, ref)
             details = {"last": stored.stamped()} if stored is not None else None

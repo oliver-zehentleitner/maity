@@ -34,7 +34,7 @@ def load_agent(conn: Connection, agent_id: str) -> dict[str, Any]:
     return agent_view(conn, _row(conn, agent_id))
 
 
-idempotency.LOADERS["agent"] = load_agent
+idempotency.LOADERS["agent"] = idempotency.plain(load_agent)
 
 
 def _row(conn: Connection, agent_id: str) -> Any:

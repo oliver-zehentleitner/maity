@@ -59,7 +59,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
-        worker = probe.Worker(engine) if forge.token() is not None else None
+        reader = forge.Forge(settings.forge_github_token)
+        worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
         if worker is not None:
             worker.start()
@@ -80,7 +81,6 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.probe = None  # the worker, from startup on when a forge token is set
-    forge.configure(settings.forge_github_token)
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)

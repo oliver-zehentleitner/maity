@@ -13,6 +13,7 @@ from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
 from maity_hub.errors import forbidden, invalid, not_found
+from maity_hub.forge import Forge
 from maity_hub.net import Origin
 
 
@@ -24,6 +25,11 @@ def engine_of(request: Request) -> Engine:
 def settings_of(request: Request) -> Settings:
     settings: Settings = request.app.state.settings
     return settings
+
+
+def reader_of(request: Request) -> Forge:
+    """The forge reader with the operator's token; the token lives in the settings only."""
+    return Forge(settings_of(request).forge_github_token)
 
 
 def origin_of(request: Request) -> Origin:
