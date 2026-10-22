@@ -1199,7 +1199,7 @@ reason — the logged exemption. There is no gate on labels.
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
 | `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
-| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin` |
+| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included. Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 
@@ -2019,7 +2019,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`) | `type`, `to`, `body`, `conversation_id?`, `task_id?`, `mentions` |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2074,11 +2074,13 @@ Two sets per reader, because reading and waking are different things:
   not woken by every checkpoint. A session opened with `supervisor` has
   a narrower wake-relevant set (§15.11).
 
-A mention wakes through this rule and no other: it puts `member:<id>` in
-the audience of the message or the `mentioned` event, so the mentioned
-member's `maity wait` returns it — a supervised session too, since the
-audience is then more than `all`. A member who mentions itself is not
-woken (its own echo).
+A mention wakes through this rule and no other: unless `to` already
+reaches the member (below), it puts `member:<id>` in the audience of the
+message or the `mentioned` event, so the mentioned member's `maity wait`
+returns it — a supervised session too, since the audience is then more
+than `all`. A member who mentions itself is not
+woken (its own echo). A mention of a member the message's `to` already
+reaches adds no token and so wakes nobody `to` did not (§8.6).
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -2198,6 +2200,13 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   or none of `[A-Za-z0-9_.@/+-]` (so `oliver@example.org` and
   `a/@b` are no mention); the character after the run is the end of the
   text or none of `[A-Za-z0-9_]`. `@agent-b.` and `(@agent-b)` mention.
+  Both classes are ASCII only: any other character, a letter outside
+  ASCII or a combining mark included, is a boundary, so `@agent-bé`
+  and `@agent-b` followed by U+0301 mention `agent-b`. The same holds
+  before the `@`: `andré@agent-b.example` mentions `agent-b`, because
+  `é` is a boundary; an e-mail address is no mention only when the
+  character before its `@` is in the class. This is intended: the classes
+  stay ASCII rather than growing a Unicode definition of a word.
 - **Not in code.** Inside an inline code span (backticks, as CommonMark
   pairs them) or a fenced code block (a line starting with three or
   more backticks or tildes, to its closing fence or the end of the text)
@@ -2222,6 +2231,12 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   `rate_limited` with `Retry-After` and stores nothing. A self-mention,
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
+  "Already in the audience" means `to` is `all`, the member's own
+  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
+  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  already wake: under `to: all` a supervised member, whom `all` alone
+  does not wake (§15.11, §8.2), stays asleep. It stays in the message's
+  `mentions`, so the dashboard still links it.
 
 **Stored shape**, on the object, oldest offset first:
 
