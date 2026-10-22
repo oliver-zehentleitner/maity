@@ -51,7 +51,7 @@ class of request.
 
 **Id:** cd93203d-f56f-4860-8cc8-7564db18ae7e
 **Type:** decision
-**Status:** open
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.6 and the runner design's open question 3, 2026-10-22; the hub review of PR #111
 
