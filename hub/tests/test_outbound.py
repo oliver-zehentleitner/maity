@@ -335,3 +335,56 @@ def test_a_server_that_drips_its_headers_meets_the_total_deadline(
         outbound.read("https://example.org/x", cap=100)
     assert refused.value.reason == "timeout"
     assert time.monotonic() - started < 2
+
+
+@pytest.mark.parametrize(
+    "body",
+    [gzip.compress(b"{}" * 100)[:-12], gzip.compress(b"{}") + gzip.compress(b"[]")],
+    ids=["truncated", "two-members"],
+)
+def test_a_gzip_stream_must_end_where_the_body_ends(net: Net, body: bytes) -> None:
+    net.answers.append(response(body=body, headers={"Content-Encoding": "gzip"}))
+    with pytest.raises(outbound.Refused) as refused:
+        outbound.read("https://example.org/x", cap=1000)
+    assert refused.value.reason == "unavailable"
+
+
+def test_the_expected_host_is_the_only_one_the_url_may_name(net: Net) -> None:
+    with pytest.raises(outbound.Refused) as refused:
+        outbound.read("https://evil.example/x", cap=100, host="example.org")
+    assert refused.value.reason == "url_invalid"
+    assert net.resolved == []
+    net.answers.append(response())
+    assert outbound.read("https://Example.ORG/x", cap=100, host="example.org").status == 200
+
+
+async def _headers_of(route_headers: list[tuple[bytes, bytes]]) -> dict[bytes, bytes]:
+    from maity_hub.middleware import _with_headers
+
+    sent: list[Any] = []
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    await _with_headers(send)(
+        {"type": "http.response.start", "status": 200, "headers": route_headers}
+    )
+    return dict(sent[0]["headers"])
+
+
+@pytest.mark.parametrize(
+    ("chosen", "result"),
+    [
+        (b"private, max-age=21600", b"private, max-age=21600"),
+        (b"public, max-age=31536000", b"no-store"),
+        (b"max-age=60", b"no-store"),
+        (None, b"no-store"),
+    ],
+)
+def test_a_route_may_choose_only_the_image_caching(chosen: bytes | None, result: bytes) -> None:
+    import asyncio
+
+    given = [(b"content-type", b"image/png")]
+    if chosen is not None:
+        given.append((b"cache-control", chosen))
+    assert asyncio.run(_headers_of(given))[b"cache-control"] == result

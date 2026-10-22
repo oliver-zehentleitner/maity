@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import urllib.parse
 from typing import Any
 
 import pytest
@@ -58,7 +59,9 @@ class FakeForge:
                 raise forge.ForgeUnavailableError("down")
             return fake.preview if self.token is not None else None
 
-        def read(url: str, *, cap: int, **kwargs: Any) -> outbound.Answer:
+        def read(url: str, *, cap: int, host: str | None = None, **kwargs: Any) -> outbound.Answer:
+            if host is not None and urllib.parse.urlsplit(url).hostname != host:
+                raise outbound.Refused("url_invalid")  # what the real read does
             fake.reads.append(f"image {url}")
             body = fake.bodies.get(url)
             if isinstance(body, outbound.Refused):
