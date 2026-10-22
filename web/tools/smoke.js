@@ -86,7 +86,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -393,6 +393,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && config.includes('"github.com/oliver-zehentleitner/maity"') && config.includes('"github.com/example/sample-shop"')
     && config.includes("[harness.claude-code]") && config.includes('layout = "single"') && !config.includes("FIXT-URE0") && !config.includes("/r/FIXTURE"),
     "runners: the starter configuration names the hub, the projects and their repositories, and no secret");
+  expect(["state_dir", "workspaces", "tmux_socket", "max_agents", "default_mode", "default_model", "binary"].every((k) => !config.includes(k + " =")),
+    "runners: the starter configuration holds only the keys without a default");
+  expect(text(steps).includes("installs the repository's current main") && text(steps).includes("not released yet"),
+    "runners: the install step says what it installs, and that the runner commands are not released yet");
+  const hostile = win.Maity.runnerStarterConfig("https://h.example", [{ slug: "a\"b\\c\u007f\n\ud800", repository: null }]);
+  expect(hostile.includes('projects = ["a\\"b\\\\c\\u007f\\u000a\ufffd"]'), "runners: TOML strings escape quotes, backslashes, control characters and DEL; a lone surrogate is replaced");
+  expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
   expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
   // A hub before attachments refuses `attach`: paired without it, and said.
   const rPost2 = win.Maity.api.post;
@@ -414,6 +421,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(card("home-laptop"), "Re-pair").click(); await tick(); await tick(); await tick();
   expect(rWrites.some((w) => JSON.stringify(w[2]) === JSON.stringify({ runner_id: "rnr-0002" })) && text(main.querySelector(".pair-steps")).includes("Keep your existing configuration"),
     "runners: re-pairing asks for a line for the same runner");
+  await fireIntervals(); await tick();
+  expect(text(main.querySelector(".pair-wait")).includes("Waiting for the runner") && main.querySelector(".pair-line-step pre"),
+    "runners: a re-pair waits for the new credential, not the old one");
+  const rAll0 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => rAll0(p).then((a) => (p !== "/runners" ? a : { items: a.items.map((r) => (r.id !== "rnr-0002" ? r
+    : Object.assign({}, r, { credential: Object.assign({}, r.credential, { id: "rcrd-0002-0002" }) }))), next_cursor: null }));
+  await fireIntervals(); await tick();
+  expect(text(main.querySelector(".pair-wait")).includes("home-laptop is online.") && !main.querySelector(".pair-line-step pre")
+    && text(main.querySelector(".pair-line-step")).includes("Paired; the line is used up."), "runners: the used line leaves the page once paired");
+  win.Maity.api.getAll = rAll0;
   // Rename, revoke, remove.
   byId("runner-name-rnr-0003").value = "home-laptop";
   card("build-box").querySelector("form.rename").dispatch("submit"); await tick(); await tick(); await tick();

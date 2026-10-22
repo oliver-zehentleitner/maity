@@ -141,13 +141,18 @@ agent, or a pod each); which projects and repositories its own
 configuration allows; its credential's id and dates, never its value.
 **Pair a runner** creates a pairing (`POST /runners/enrollments`) with a
 name, the projects to allow it in and how long the line stays valid, and
-shows the steps for the machine: install the CLI, save the **starter
-configuration** generated in the browser (this hub's URL, the chosen
-projects and their repositories, the local backend, Claude Code; no
-secret) as `~/.config/maity-runner/runner.toml`, run the pairing line
-(shown once, gone after leaving the view), then `maity runner check` and
-`maity runner serve`. The panel says when the runner has paired and when
-it is online (the view re-reads every 30 s). Open pairings are listed and
+shows the steps for the machine: install the CLI (from the repository's
+current main; the page says the runner commands are not released yet),
+save the **starter configuration** generated in the browser as
+`~/.config/maity-runner/runner.toml`, run the pairing line (shown once,
+gone after leaving the view, and replaced by a note once it is used or
+expired), then `maity runner check` and `maity runner serve`. The
+configuration holds only the keys without a default: this pairing's hub
+URL, the chosen projects and their repositories, the local backend's
+layout and Claude Code's modes and models; no secret. Its "copy as a
+command" form never overwrites an existing file (`set -C`). The panel
+says when the runner has paired (for a re-pair: when its credential is a
+new one) and when it is online (the view re-reads every 30 s). Open pairings are listed and
 revocable. Each runner can be renamed, re-paired (a new line for the same
 runner; the old credential ends at the exchange), revoked, and removed;
 removing lists the agents that were still running on it, which are then
@@ -375,12 +380,13 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     /runners/pair/{token}`), after which the panel says the runner is
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
-    credential; revoke; remove with nothing left running;
+    credential; revoke; remove with nothing left running. Only a hub
+    that answers 404 on `GET /runners` skips this step;
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
 17. at phone width (390 px) the inbox, board, agents, organisation, join and (where offered) Why
-    views, each reached through its tab, load without an error, none of
+    views, each reached through its tab, and the Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.

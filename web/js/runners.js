@@ -15,7 +15,8 @@ window.Maity = window.Maity || {};
   const PRESENCE_MS = 30000;
   const NAME_PATTERN = "[a-z0-9][a-z0-9\\-]{1,30}";
   const NAME = /^[a-z0-9][a-z0-9-]{1,30}$/;
-  // Until the CLI is on PyPI it is installed from the repository's cli/.
+  // Until the CLI is on PyPI it is installed from the repository's cli/,
+  // at its current main; the page says so.
   const CLI_INSTALL = "pipx install 'git+https://github.com/oliver-zehentleitner/maity.git#subdirectory=cli'";
   const CONFIG_PATH = "~/.config/maity-runner/runner.toml";
 
@@ -111,8 +112,14 @@ window.Maity = window.Maity || {};
   // From what the dashboard knows: this hub, the projects the human
   // administers with their repositories. No secret: the credential comes
   // from the pairing line and is written by maity runner pair.
+  // A TOML basic string: quote, backslash, control characters and DEL
+  // escaped; a lone surrogate, which TOML cannot carry, becomes U+FFFD.
+  const q = (s) => "\"" + String(s).replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd")
+    .replace(/["\\\u0000-\u001f\u007f]/g, (c) => (c === "\"" || c === "\\" ? "\\" + c : "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))) + "\"";
+
+  // Only the keys without a default (design v2 §5.1): the runner refuses
+  // unknown keys, so the less it says, the less can disagree with it.
   function starterConfig(hubUrl, projects) {
-    const q = (s) => JSON.stringify(s);
     const repos = projects.map((p) => p.repository && p.repository.url).filter(Boolean)
       .map((u) => u.replace(/^https:\/\//, "").replace(/\.git$/, "").replace(/\/$/, ""));
     return [
@@ -121,27 +128,20 @@ window.Maity = window.Maity || {};
       "",
       "[hub]",
       "url = " + q(hubUrl),
-      "state_dir = " + q("~/.local/state/maity-runner"),
       "",
       "[limits]",
-      "max_agents = 2",
-      "projects = [" + projects.map((p) => q(p.slug)).join(", ") + "]",
+      "projects = [" + projects.map((p) => q(p.slug)).join(", ") + "]" + (projects.length ? "" : "   # none chosen: it starts nothing until you add one"),
       "repositories = [" + repos.map(q).join(", ") + "]",
       "",
       "[backend]",
       "kind = \"local\"",
       "",
       "[backend.local]",
-      "workspaces = " + q("~/maity-workspaces"),
-      "tmux_socket = \"maity\"",
       "layout = \"single\"   # agents run as your user, together",
       "",
       "[harness.claude-code]",
       "modes = [\"interactive\", \"supervised\"]",
-      "default_mode = \"interactive\"",
       "models = [\"opus\", \"sonnet\"]",
-      "default_model = \"sonnet\"",
-      "binary = \"claude\"",
       "",
     ].join("\n");
   }
@@ -164,18 +164,21 @@ window.Maity = window.Maity || {};
 
   // The panel that makes a pairing end in a runner that starts.
   function pairSteps(enrollment, config, onHide) {
-    const heredoc = "mkdir -p ~/.config/maity-runner && cat > " + CONFIG_PATH + " <<'EOF'\n" + config + "EOF";
+    // set -C: an existing configuration is never overwritten; the shell says so.
+    const heredoc = "mkdir -p ~/.config/maity-runner && (set -C; cat > " + CONFIG_PATH + ") <<'EOF'\n" + config + "EOF";
     return h("div", { class: "pair-steps flag", "aria-live": "polite" },
       h("p", null, h("strong", null, "On the machine that should run agents, in a terminal there (not in an agent session):")),
       h("ol", null,
-        h("li", null, "Install the Maity CLI:", h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL)),
+        h("li", null, "Install the Maity CLI:", h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
+          h("p", { class: "hint" }, "This installs the repository's current main. The runner commands (maity runner) are not released yet; "
+            + "until they are, the steps below do not work.")),
         config
-          ? h("li", null, "Save this configuration as " + CONFIG_PATH + ". It allows the projects you administer here and their repositories, "
+          ? h("li", null, "Save this configuration as " + CONFIG_PATH + ". It allows the projects you chose and their repositories, "
             + "and one tool, Claude Code; change it as you like.",
           h("pre", { class: "runner-config", tabindex: "0", "aria-label": "Starter configuration" }, config),
           copyButton(() => config, "Copy the configuration"), " ", copyButton(() => heredoc, "Copy as a command that writes the file"))
           : h("li", null, "Keep your existing configuration."),
-        h("li", null, "Pair it. This line is shown once and expires " + formatTime(enrollment.expires_at) + ":",
+        h("li", { class: "pair-line-step" }, "Pair it. This line is shown once and expires " + formatTime(enrollment.expires_at) + ":",
           h("pre", { class: "paste-line" }, enrollment.pair_line), copyButton(() => enrollment.pair_line)),
         h("li", null, "Check it: ", h("code", null, "maity runner check"), " says what is still missing, such as the tool's login."),
         h("li", null, "Start it: ", h("code", null, "maity runner serve"), ".")),
@@ -189,17 +192,17 @@ window.Maity = window.Maity || {};
     const [runners, enrollments, projects] = await Promise.all([
       M.api.getAll("/runners"),
       M.api.getAll("/runners/enrollments"),
-      M.api.get("/projects").catch(() => ({ items: [] })),
+      M.api.get("/projects"),
     ]);
     const admin = new Set(ctx.projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.slug));
     const adminProjects = (projects.items || []).filter((p) => admin.has(p.slug));
-    // The hub this page came from; a fixture page (file://) has none of its own.
-    const hubUrl = M.api.source === "fixtures" ? "https://maity.example" : window.location.origin;
     const status = M.statusLine();
     const list = h("div", { class: "runners" });
     const pending = h("div", { class: "enrollments" });
     const panel = h("div", { class: "pair-panel" });
-    let waitingFor = null;  // {name, runner_id} of the pairing on screen
+    // The pairing on screen: {name, expires_at}, or {runner_id, credential}
+    // for a re-pair, which is done when the credential is another one.
+    let waitingFor = null;
 
     function drawEnrollments(items) {
       const open = items.filter((e) => !e.used_at && !e.revoked_at && !e.burned && Date.parse(e.expires_at) > Date.now());
@@ -269,7 +272,7 @@ window.Maity = window.Maity || {};
           h("button", {
             type: "button",
             onclick: () => act("Creating a new pairing line", () => M.api.post("/runners/enrollments", { runner_id: r.id }),
-              (e) => showPairing(e, null, { runner_id: r.id, name: r.name })),
+              (e) => showPairing(e, null, { runner_id: r.id, name: r.name, expires_at: e.expires_at, credential: cred && cred.id })),
           }, "Re-pair"),
           r.credential_state === "active"
             ? h("button", {
@@ -285,7 +288,8 @@ window.Maity = window.Maity || {};
             type: "button",
             class: "danger",
             onclick: () => {
-              if (!window.confirm("Remove " + r.name + "? Its credential is revoked, it leaves every project, and every agent it runs is stopped from the hub's side.")) return;
+              if (!window.confirm("Remove " + r.name + "? Its credential is revoked, it leaves every project and the hub closes its placements; "
+                + "agents still running on that machine are yours to stop there (maity runner stop-all).")) return;
               act("Removing", () => M.api.del("/runners/" + encodeURIComponent(r.id)), showRemoved);
             },
           }, "Remove")));
@@ -341,7 +345,7 @@ window.Maity = window.Maity || {};
               return M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value) });
             });
           act("Creating the pairing line", create,
-            (enr) => showPairing(enr, starterConfig(hubUrl, chosen.length ? chosen : adminProjects), { name: n }, note));
+            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }, note));
         },
       },
       h("h3", null, "Pair a runner"),
@@ -362,13 +366,20 @@ window.Maity = window.Maity || {};
         return;
       }
       live.forEach((r) => append(list, runnerCard(r)));
-      // The pairing on screen: say when its runner has paired and come online.
+      // The pairing on screen: say when its runner has paired and come online;
+      // once the line is used or expired it leaves the page.
       const wait = panel.querySelector(".pair-wait");
       if (waitingFor && wait) {
         const r = live.find((x) => (waitingFor.runner_id ? x.id === waitingFor.runner_id : x.name === waitingFor.name));
-        if (r && r.credential_state === "active") {
+        const paired = r && r.credential_state === "active" && (!waitingFor.runner_id || (r.credential && r.credential.id) !== waitingFor.credential);
+        const step = panel.querySelector(".pair-line-step");
+        if (paired) {
           wait.textContent = r.presence === "online" ? r.name + " is online." : r.name + " is paired; it shows online once maity runner serve runs.";
           wait.className = "ok pair-wait";
+          if (step) append(clear(step), "Paired; the line is used up.");
+        } else if (step && Date.parse(waitingFor.expires_at) <= Date.now()) {
+          append(clear(step), "The line expired unused; create a new one.");
+          wait.textContent = "";
         }
       }
     }

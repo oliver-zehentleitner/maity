@@ -760,6 +760,13 @@ def scenario(run: Run, page: Page) -> None:
     assert width[0] <= width[1], f"#/new is {width[0]} px wide at {width[1]} px"
     run.shot(page, "phone-new")
     run.a11y(page, "create a project")
+    # The Runners view: the pairing form and its long install line.
+    page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True).click()
+    expect(page.locator("main section.view-runners")).to_be_visible()
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"#/runners is {width[0]} px wide at {width[1]} px"
+    run.shot(page, "phone-runners")
+    run.problems = [p for p in run.problems if p != "GET /api/v1/runners?limit=200 answered 404"]
     no_problems(run, "phone width")
 
     change_password(run, page)
@@ -1045,10 +1052,13 @@ def runners_step(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"#/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.or_(page.locator("main .error"))).to_be_visible()
-    if page.locator("main .error").count():
+    # Only a hub without the endpoint is skipped; any other error fails below.
+    missing = "GET /api/v1/runners?limit=200 answered 404"
+    if page.locator("main .error").count() and missing in run.problems:
         run.step("runners: this hub has no runners yet")
-        run.problems = [p for p in run.problems if "/api/v1/runners" not in p]
+        run.problems = [p for p in run.problems if p != missing]
         return
+    expect(page.locator("main .error")).to_have_count(0)
     run.step(
         "runners: pair a runner from the dashboard, exchange the line, rename, re-pair, revoke, remove"
     )
