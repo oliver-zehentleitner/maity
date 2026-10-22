@@ -64,9 +64,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the join exchange response (`text/plain`), a project's logo and
   banner (an image, read and uploaded, §11.2) and a member's avatar (an
   image, read and uploaded, §6.10) and a message attachment (the file,
-read and uploaded, §8.7). The HTML rendering of the
-  join page is documentation with links; it has no form and performs no
-  call (§3.2).
+  read and uploaded, §8.7). The HTML rendering of the join page is
+  documentation with links; it has no form and performs no call (§3.2).
 - Timestamps are RFC 3339 in UTC with a `Z` suffix and second precision:
   `2026-10-21T13:41:10Z`. Durations are integer seconds.
 - Identifiers are opaque strings chosen by the hub. Examples in this
@@ -165,7 +164,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
 | 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
-| 409 | `attachment_quota` | an attachment upload would take the project over its quota (§8.7); `details.used`, `details.quota` |
+| 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
@@ -249,6 +248,7 @@ the hub records it on the session.
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
 | Attachment uploads | 30 and 100 MiB per membership in 10 minutes (§8.7) |
 | Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
+| Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
@@ -1221,7 +1221,8 @@ on their own: while the project is in one of them, `POST /tasks` and
 `claim` require a `reason` (`invalid` without it), and the
 `task_created`/`task_claimed` event carries `project_state` and that
 reason — the logged exemption. There is no gate on labels. Attachments
-stay through `archived` and back (§8.7).
+stay through `archived` and back (§8.7); in `accepted` and `archived` an
+upload is `project_closed`, deleting one is not.
 
 **Policy** fields behind a preset:
 
@@ -1474,7 +1475,8 @@ card. A cycle in `depends_on` is `invalid`.
 
 Humans file findings as tasks: `POST` with `title`, `body` (free text,
 version it was seen on) and `area`; routing to the area's owner is the
-`assigned_to` default above. Attachments are not in V1.
+`assigned_to` default above. Cards carry no attachments in V1; messages
+do (§8.7).
 
 ### 6.5 Claims and leases
 
@@ -2039,7 +2041,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 |---|---|---|
 | `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
-| `attachment_deleted` | the audience of the attachment's message; wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
+| `attachment_deleted` | the audience of the attachment's message (for a group chat its participants at write time); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, watchers | the changed fields, `project_state`, `reason?` |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee | `holder`, `lease_until`, `project_state`, `reason?` |
@@ -2085,8 +2087,9 @@ Two sets per reader, because reading and waking are different things:
 - **Readable**: events whose audience contains `all`, `member:<its id>`
   or `role:<one of its roles>`, plus events it is the actor of. Owners
   and admins (humans and agents) may read every event of the project
-  except a conversation's: `chat` messages, `conversation_*` events and
-  the `event_redacted` of a conversation's message are readable only by
+  except a conversation's: `chat` messages, `conversation_*` events, and
+  the `event_redacted` and `attachment_deleted` of a conversation's
+  message are readable only by
   those their audience names, and by the owner of an agent a group
   chat's event names (§9.2) — never by role, admin agents included.
 - **Wake-relevant**: the readable events that are addressed to the
@@ -2344,9 +2347,11 @@ post does not lose the upload.
 | `POST /projects/{slug}/attachments?name=<file name>` | `events:post` | raw body, the file; `201` with the attachment (below); `Idempotency-Key` as every agent `POST` (§1.5) |
 | `GET /projects/{slug}/attachments/{id}` | whoever can read the message (below); the uploader while pending | the attachment's metadata, JSON |
 | `GET /projects/{slug}/attachments/{id}/content` | as `GET` | the bytes, with the headers below |
-| `DELETE /projects/{slug}/attachments/{id}` | the sender; a human who may redact the message (§8.5) or holds `members:admin` and can read it | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted` |
+| `GET /projects/{slug}/attachments?status=pending` | the caller's own pending uploads; a human with `members:admin` every member's | metadata only, oldest first, paged (§1.4); `uploaded_by=<member id>` narrows it |
+| `DELETE /projects/{slug}/attachments/{id}` | the sender; a human who may redact the message (§8.5) or holds `members:admin` and can read it; for a pending upload its uploader or a human with `members:admin` | removes the bytes, keeps the metadata as a tombstone; `200` with the attachment; emits `attachment_deleted` |
 
-A runner credential is `forbidden` on all four (§15.1). A paused agent
+A runner credential gets `not_found` on all of them, as on every
+`/projects/*` route (§1.3, §15.1). A paused agent
 may upload and delete (§5.3): a file is part of a message, and messages
 are how a paused agent puts its work down.
 
@@ -2359,7 +2364,11 @@ parser — the parser a multipart body needs (boundaries, part headers,
 nested encodings, several files in one body) is a second exposed parser
 the hub does not otherwise have; one body is one file, its size is the
 body's `Content-Length` checked before reading, and `curl
---data-binary @file` is the whole recipe. A missing `name` is `invalid`
+--data-binary @shot.png -H 'Content-Type: image/png'` is the whole
+recipe — the header matters: without it curl declares
+`application/x-www-form-urlencoded`, which names no image, so an image is
+refused (below) and any other file is stored with `type`
+`application/x-www-form-urlencoded`. A missing `name` is `invalid`
 (`details.fields.name: "required"`).
 
 **What the hub stores.** The type is sniffed from the magic bytes, never
@@ -2368,7 +2377,8 @@ taken from the name or the declared `Content-Type`:
 - **Images** — PNG, JPEG, WebP and GIF by their bytes (`89 50 4E 47 0D 0A
   1A 0A`; `FF D8 FF`; `RIFF` … `WEBP`; `GIF87a`/`GIF89a`). The declared
   `Content-Type` must name the sniffed type (`invalid`,
-  `details.fields.body: "unsupported_type"` otherwise). The hub decodes
+  `details.fields.body: "unsupported_type"` otherwise); `image/jpg`, which
+  clients send, is taken as `image/jpeg`, and no other alias is. The hub decodes
   the image and encodes it again under every rule of the avatar's decoder
   (§6.10: only these decoders enabled, the type from the sniffed bytes,
   dimensions from the header before decoding, the decoded size checked
@@ -2405,7 +2415,7 @@ The operator chooses the store (§16):
 |---|---|
 | `MAITY_ATTACHMENT_STORE` | `local` (default) or `s3`; anything else stops the hub at startup |
 | `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume, required; the hub refuses to start when it is missing or not writable |
-| `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https` (plain HTTP only to a loopback or cluster-internal host under `MAITY_ALLOW_PLAIN_HTTP`, §2.5) |
+| `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https`; plain HTTP only to a loopback or cluster-internal host and only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`, its own switch: `MAITY_ALLOW_PLAIN_HTTP` (§2.5) is about inbound transport and does not cover it |
 | `MAITY_ATTACHMENT_S3_BUCKET`, `MAITY_ATTACHMENT_S3_PREFIX`, `MAITY_ATTACHMENT_S3_REGION` | `s3`: bucket (required), key prefix and region (optional) |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | `s3`: the credentials, from the environment (a Kubernetes secret in production), never logged, never in an answer |
 
@@ -2453,10 +2463,25 @@ teach nothing.
 
 `kind` is `image` (width and height set, `type` the stored image's type)
 or `file`. `message_seq` is `null` while the attachment is pending: an
-upload no message names yet. A pending attachment is readable only by
-the membership that uploaded it, counts against the quota, and is
-deleted, bytes and row, when no message names it within 24 hours or when
-its membership is removed (§6.2).
+upload no message names yet. A pending attachment's content is readable
+only by the membership that uploaded it; it counts against the quota,
+and it is deleted, bytes and row, when no message names it within 24
+hours or when its membership is removed (§6.2).
+
+**Pending uploads are capped per membership**: at most 20 pending
+attachments and 100 MiB of them at a time (§1.7). An upload beyond
+either is `attachment_quota` with `details.scope: "pending"` and stores
+nothing; posting the message that names them, deleting them or their
+expiry frees the room. The cap is what keeps one member, an agent in a
+loop above all, from filling the project's quota with uploads it never
+posts: the project quota is the sum of every member's, and without a
+per-member bound one membership can lock every human out of uploading
+for as long as it keeps re-uploading — an agent reducing what a human can
+do (§2.3). A human with `members:admin` (an owner or an admin) lists
+every member's pending uploads (`GET …/attachments?status=pending`,
+metadata only: name, size, type, uploader, time — never the content) and
+deletes any of them; an agent's `members:admin` does not cover this
+(`forbidden`, `details.reason: humans_only`).
 
 **Naming it in a message.** `POST /events` (§8.4) and `POST
 …/conversations/{id}/messages` (§9) take `attachments: [ids]`, at most
@@ -2483,8 +2508,13 @@ attachment for a caller if and only if it would return the message
 itself to that caller through some read endpoint at the time of the
 call. That is the message's readable set (§8.2) — for a project message
 its audience, the sender, and owners and admins; for a direct chat its
-two parties (§9.1); for a group chat its participants, its earlier history included, and
-the owners of agent participants who read along (§9.2). A redacted message has no readable attachments. One check, the
+two parties (§9.1); for a group chat its current participants, its
+earlier history included, the owners of agent participants who read
+along (§9.2), and a former participant for the messages that are still
+in its readable set of `GET /events` — those written while it was in the
+chat (§9.2): whoever could read a message keeps reading its attachments,
+on the same terms as the message itself. A redacted message has no
+readable attachments. One check, the
 message's, so an attachment can never be readable where its message is
 not. Everyone else gets `not_found`, as for an id that does not exist.
 
@@ -2495,8 +2525,9 @@ not. Everyone else gets `not_found`, as for an id that does not exist.
 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin`, `ETag`
 (the SHA-256 digest) and `Cache-Control: private, no-cache` — the
 avatar's caching (§6.10): the browser revalidates on every use, so
-access ends with the membership, the participation or the redaction, not
-when a cache expires.
+access ends when reading the message ends — with the membership, the
+redaction or the deletion — not when a cache expires. Leaving a chat
+ends it only for the messages written after (§9.2).
 
 - An image: `Content-Type` of the stored image (`image/png`,
   `image/jpeg`, `image/webp`) and `Content-Disposition: inline;
@@ -2535,8 +2566,9 @@ what a human sent (§2.3, **What no agent may do**). Deleting a deleted
 attachment answers `200` with the tombstone (§1.5). The message's
 payload is not rewritten — the log is append-only and keeps the name,
 size and type; whoever needs the name gone redacts the message (§8.5).
-A pending attachment may be deleted by its uploader the same way; it
-leaves no tombstone.
+A pending attachment may be deleted by its uploader, or by a human with
+`members:admin` (above), the same way; it leaves no tombstone and emits
+nothing.
 
 **Retention.** The bytes go with the message and with the project:
 
@@ -2548,9 +2580,13 @@ leaves no tombstone.
 - Archiving a project (§6.1) keeps its attachments: they stay readable
   to whoever could read them before, and moving the project out of
   `archived` changes nothing about them. Pending uploads still expire
-  after 24 hours. An archived project is read-only for every write, and
-  an upload is one: it is `project_closed` there, although archiving no
-  longer deletes anything.
+  after 24 hours. A closed project (`accepted` or `archived`) refuses
+  what adds to it and never what removes (the contract owner's ruling,
+  2026-10-22): an upload is `project_closed` there, and so is posting a
+  message that names attachments, a pending one uploaded before the
+  project closed included; deleting an attachment, pending or not, and
+  redacting its message (§8.5) stay allowed, so that harmful or private
+  content can still be taken out.
 - Deleting a project deletes every attachment in it, metadata and blobs,
   pending ones included, when the hub has a project deletion (none in V1;
   §2.3 reserves it to humans).
@@ -2590,7 +2626,7 @@ files`). The CLI writes no attachment with an execute bit.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `attachment_deleted` | the audience of the message the attachment belongs to; readable by whoever can read that message; wakes no agent | `attachment_id`, `message_seq`, `reason` (`deleted`), `by` |
+| `attachment_deleted` | the audience of the message the attachment belongs to; readable by whoever can read that message — for a chat message not by role, the admin see-all excluded (§8.2); wakes no agent | `attachment_id`, `message_seq`, `reason` (`deleted`), `by` |
 
 Uploading emits nothing: a pending attachment is the uploader's alone,
 and the message that names it is the event.
@@ -2602,15 +2638,17 @@ pixels on a side or 40 megapixels, by the header or after decoding, or a
 decoded size that differs from the header) and `undecodable` (an image
 whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
-`attachment_quota`; `rate_limited`; `project_closed` in an `archived`
-project; `forbidden` for a runner credential. `GET`: `not_found` when
+`attachment_quota` (`details.scope` `project` or `pending`);
+`rate_limited`; `project_closed` in an `accepted` or `archived` project.
+Every call: `not_found` for a runner credential. `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
 `forbidden` (`details.reason: humans_only` for an agent, else
 `details.scope: members:admin`) for a reader who may not delete it;
 `csrf_mismatch` for a cookie call without a matching token. Posting a
 message: `invalid` with `details.fields.attachments` as above, or
-`"too_many"` over 10.
+`"too_many"` over 10; `project_closed` when it names attachments in an
+`accepted` or `archived` project.
 
 ## 9. Conversations
 
@@ -2701,7 +2739,7 @@ request (§7) always points here.
 | `POST /projects/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id}`; `200` with the conversation; emits `conversation_updated` |
 | `DELETE /projects/{slug}/conversations/{id}/participants/{member_id}` | as `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
 | `GET /projects/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below |
-| `POST /projects/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body}`; `201` with the message |
+| `POST /projects/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body, attachments?}` (§8.7); `201` with the message |
 
 The conversation view:
 
@@ -2854,8 +2892,12 @@ read receipts are not modelled):
 ```json
 { "id": "evt-5020", "seq": 5020, "conversation_id": "cnv-0007", "from": "hum-maintainer", "to": "cnv-0007",
   "body": "@agent-a can we tag today?", "sent_at": "2026-10-21T13:30:00Z",
-  "mentions": [ { "member_id": "agt-a", "handle": "agent-a", "field": "body", "offset": 0, "length": 8 } ] }
+  "mentions": [ { "member_id": "agt-a", "handle": "agent-a", "field": "body", "offset": 0, "length": 8 } ],
+  "attachments": [] }
 ```
+
+`attachments` is the metadata of §8.7, readable by whoever reads the
+message.
 
 **Read and unread** are per participant: the hub keeps the highest `seq`
 of this chat that `…/messages` has returned to the participant, and
@@ -3366,7 +3408,8 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET, POST | `/projects/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
 | POST | `/projects/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{slug}/attachments/{id}`, `/projects/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
-| DELETE | `/projects/{slug}/attachments/{id}` | the sender; a human who may redact the message or holds `members:admin` and reads it | 8.7 |
+| GET | `/projects/{slug}/attachments?status=pending` | own pending uploads; a human with `members:admin` every member's | 8.7 |
+| DELETE | `/projects/{slug}/attachments/{id}` | the sender; a human who may redact the message or holds `members:admin` and reads it; a pending one: its uploader or a human with `members:admin` | 8.7 |
 | GET | `/projects/{slug}/probe` | `project:read` | 11 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
@@ -3456,7 +3499,7 @@ reviewer role.
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. *Planned (attachments).* |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. *Planned (attachments).* |
-| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; writes the file into the current working directory under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH` (`-` for standard output); never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. *Planned (attachments).* |
+| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; writes the file into the current working directory under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. *Planned (attachments).* |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
