@@ -128,3 +128,35 @@ reasons in the hub's Kubernetes entry.
 night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
+
+## When a reviewer returns, the cover's finished reviews stand and the returning reviewer takes the unstarted ones
+
+**Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
+**Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
+**See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
+
+While the reviewer was stopped by a usage limit, the coordinator covered
+its reviews. When the reviewer came back it asked for an exact split, so
+that nothing would be reviewed twice. The rule: reviews the cover has
+finished stand; every review not yet started goes to the returning
+reviewer, in the order the coordinator gives, and the reviewer claims
+each card before starting it.
+
+**Reason:** the split keeps finished work and gives the review load back
+to the reviewer.
+
+**Rejected alternatives:**
+- Everything back to the returning reviewer: the cover's finished
+  reviews would be done again.
+- The cover keeps everything it was covering: the coordinator is the
+  cover, and would stay the bottleneck for reviews.
+
+**Incident:** about two hours later the coordinator started reviews of
+its own on pull requests it had already handed back, and stopped them
+when it noticed. Learned: check the handback list before assigning a
+review.
