@@ -217,10 +217,15 @@ Inside a project, in the order of their importance; see
 5. **Organisation** (`#/p/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
 6. **Chat** (`#/p/<slug>/chat`, `#/p/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
-   like a messenger. On the left the human's chats, one per agent they own
-   in the project, newest first: avatar, name, presence, the time and a
-   preview of the last message (where the hub sends `last_message`; "You:"
-   for one's own, a removed one said as such), the unread count. On the
+   like a messenger. On the left, under the heading and **New group
+   chat**, the human's chats, one per agent they own in the project,
+   unread ones first, then the newest: avatar with the presence as its
+   dot, the name (whole and wrapped, never cut, so names that share their
+   owner's prefix stay apart; the full name as its tooltip), the time
+   beside it, a line saying who it is (`agent · @handle · harness`, or
+   `group · ` and its people), and a preview of the last message (where
+   the hub sends `last_message`; "You:" for one's own, a removed one said
+   as such), the unread count. On the
    right the open chat, chosen by the URL; the list stays beside it, marks
    it and re-reads itself on chat events and every 30 s (presence). An
    unsent message is kept per chat while switching in this tab and shown
