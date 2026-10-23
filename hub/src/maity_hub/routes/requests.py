@@ -62,6 +62,9 @@ class AnswerIn(Written):
     reply_id: str | None = Field(default=None, max_length=64)
     text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
+    # A human's edit of a preference proposal, with the version it was made on (§19.4).
+    markdown: str | None = Field(default=None, max_length=16384)
+    base_version: int | None = Field(default=None, ge=0)
 
 
 class WithdrawIn(Strict):
@@ -209,7 +212,7 @@ def _resolve_to(
 
 
 def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
-    if to.startswith("profile_owner:"):  # the hub's own addressing of a personal request
+    if to.startswith(("profile_owner:", "human:")):  # the hub's own personal addressing
         raise invalid({"to": "hub_only"}, "personal requests are filed by the hub")
     if to == "owner":
         return inbox.Addressee("owner")
@@ -683,6 +686,11 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     reply_ids = {r["id"] for r in replies(klass(row), row.options)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
+    edits = body.markdown is not None or body.base_version is not None
+    if edits and (row.proposal or {}).get("kind") != "preferences":
+        raise invalid({"markdown": "not_a_preference_proposal"})
+    if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
+        raise invalid({"markdown": "go_with_markdown_and_base_version"})
 
 
 def _refuse_unless_open(row: Any) -> None:
@@ -994,6 +1002,62 @@ def file_personal(
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        class_,
+        title_text,
+        summary,
+        to_kind="profile_owner",
+        to_profile=agent_id,
+        to_human=owner,
+        options=options,
+        task_id=task_id,
+    )
+
+
+def file_to_human(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    proposal: dict[str, Any],
+) -> str:
+    """A consent request the hub files to a human in person (`to: human:<human id>`,
+    §19.4), with the proposal its go applies; personal like `file_personal`'s."""
+    proposals.check_kind(proposal)
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=human_id,
+        proposal=proposal,
+    )
+
+
+def _file_personal(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    class_: str,
+    title_text: str,
+    summary: str,
+    *,
+    to_kind: str,
+    to_profile: str | None,
+    to_human: str,
+    options: list[dict[str, Any]] | None = None,
+    task_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
+) -> str:
     request_id = new_id("request")
     conn.execute(
         insert(t.request).values(
@@ -1005,10 +1069,11 @@ def file_personal(
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",
-                "to_kind": "profile_owner",
-                "to_profile": agent_id,
-                "to_human": owner,
+                "to_kind": to_kind,
+                "to_profile": to_profile,
+                "to_human": to_human,
                 "personal": True,
+                "proposal": proposal,
                 "asked_by": mine.id,
                 "asked_session_id": caller.session_id,
                 "task_id": task_id,
@@ -1031,6 +1096,27 @@ def file_personal(
         subject=("request", request_id),
     )
     return request_id
+
+
+def _preference_edit(conn: Connection, row: Any, body: AnswerIn) -> Any:
+    """A preference proposal's go on a stale base is `conflict` before anything is
+    answered (§19.4); the human's edit goes into the proposal its settlement applies."""
+    from maity_hub import preferences
+
+    edit = (
+        {"markdown": body.markdown, "base_version": body.base_version}
+        if body.markdown is not None
+        else None
+    )
+    preferences.check_answer(conn, row, body.reply_id, edit)
+    if edit is None:
+        return row
+    conn.execute(
+        update(t.request)
+        .where(t.request.c.id == row.id)
+        .values(proposal={**row.proposal, "edit": edit})
+    )
+    return _row(conn, row.id)
 
 
 def _human(caller: Caller) -> None:
@@ -1083,7 +1169,10 @@ def answer_personal(
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id)
         _refuse_unless_open(row)
+        proposals.require_known(row)
         _check_answer(row, body)
+        if (row.proposal or {}).get("kind") == "preferences":
+            row = _preference_edit(conn, row, body)
         conversation_id = _talk_allowed(conn, row, caller) if body.talk else None
         member = _member_of(conn, row.project_id, caller.human_id)
         now = clock.now()
@@ -1116,6 +1205,9 @@ def answer_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
+        actor = caller.actor(member.id) if member is not None else None
+        outcome = "go" if body.reply_id == "go" else "no"
+        proposals.settle(conn, _row(conn, row.id), outcome, caller.human_id, actor)
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,

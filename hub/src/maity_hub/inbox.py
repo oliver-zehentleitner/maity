@@ -27,16 +27,19 @@ CONSENT_ROLES = ("admin", "proxy")
 
 @dataclass(frozen=True)
 class Addressee:
-    kind: str  # member, role, owner, profile_owner
+    kind: str  # member, role, owner, profile_owner, human
     member: int | None = None
     role: str | None = None
     profile: str | None = None  # profile_owner: the agent profile whose owner is meant
+    human: str | None = None  # human: the human asked in person (§19.4)
 
     def text(self, conn: Connection) -> str:
         if self.kind == "owner":
             return "owner"
         if self.kind == "profile_owner":
             return f"profile_owner:{self.profile}"
+        if self.kind == "human":
+            return f"human:{self.human}"
         if self.kind == "role":
             return f"role:{self.role}"
         from maity_hub.views import principal_id
@@ -47,7 +50,7 @@ class Addressee:
 
 
 def addressee_of(row: Any) -> Addressee:
-    return Addressee(row.to_kind, row.to_member, row.to_role, row.to_profile)
+    return Addressee(row.to_kind, row.to_member, row.to_role, row.to_profile, row.to_human)
 
 
 def owner_membership(conn: Connection, project_id: str) -> Any:

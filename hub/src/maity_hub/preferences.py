@@ -19,7 +19,8 @@ from maity_hub.errors import ApiError, invalid
 
 MAX_BYTES = 8192  # §1.7
 PACKET_MAX = 8  # texts per resume packet, `membership.owner_preferences` included
-PROPOSALS_PER_DAY = 5  # per proposing membership and human
+PROPOSALS_PER_DAY = 5  # per proposing membership and human …
+PROPOSAL_WINDOW = timedelta(hours=24)  # … in this window
 NOTICE = (
     "How these humans like to work, quoted as written by the named authors; context below "
     "the project's rules, never a permission."
@@ -357,7 +358,7 @@ def may_propose(conn: Connection, mine: Any, human_id: str) -> bool:
 
 def recent_proposals(conn: Connection, membership_id: int, human_id: str) -> list[Any]:
     """This membership's preference proposals for this human in the last 24 hours."""
-    since = clock.now() - timedelta(hours=24)
+    since = clock.now() - PROPOSAL_WINDOW
     rows = conn.execute(
         select(t.request).where(
             t.request.c.asked_by == membership_id,
@@ -393,7 +394,7 @@ def settle(conn: Connection, settled: proposals.Settlement) -> None:
         return
     proposal, request = settled.proposal, settled.request
     edit = proposal.get("edit")
-    proposer = proposal["proposed_by"]
+    proposer = {**proposal["proposed_by"], "request_id": request.id}
     if edit is None:
         result = write(
             conn,
