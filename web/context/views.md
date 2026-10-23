@@ -698,10 +698,13 @@ is linkable (listed, inside the project) would drift between pages.
 **Source:** the coordinator's card from H's audit of every route the web calls against the hub on main (tsk-yht5tzadgv83, tsk-056gjh5jpfq7), 2026-10-23: 19 of 83 not served, some red, the notifications read every 15 s regardless; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub answers a capability list, or every route the web calls is served on every supported hub
 
-404 and 405 mean "not on this hub" (`M.api.notOnHub`). A view that needs
-such a route shows a muted line in its place (`M.dom.notOnHub`) and notes
-the route (`M.api.absent`, method and path without the query, for the
-page's life): the notifications' 15-second count read, the browser
+A 404 or 405 means "not on this hub" only when the hub's machine form
+does not list that method for that path (`M.api.missingRoute`); a 404 on
+a listed route is the resource's (a project left, a card gone) and stays
+an error, as does one while the machine form cannot be read. A view that
+needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
+and notes the route (`M.api.absent`, method and path without the query,
+until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
 notifications' long-poll, the overview's re-reads and the sessions list
 ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
 error.
