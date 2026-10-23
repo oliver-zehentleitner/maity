@@ -13,6 +13,7 @@ from maity_hub import (
     API_VERSION,
     __version__,
     avatars,
+    briefings,
     clock,
     environment,
     events,
@@ -322,6 +323,7 @@ def _packet(
         if view["id"] != caller.instance
     ]
     scopes = listed_scopes(mine.role, "agent")
+    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -348,6 +350,8 @@ def _packet(
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
+            "briefing_by": written.get(mine.row.briefing_by) if mine.row.briefing_by else None,
+            "briefing_version": mine.row.briefing_version,
             "team": instances.team(conn, mine.row),
         },
         "team": siblings,

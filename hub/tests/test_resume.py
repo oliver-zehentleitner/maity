@@ -67,6 +67,8 @@ def test_the_packet_has_every_part_of_the_contract(
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
         "briefing": None,
+        "briefing_by": {"kind": "human", "id": owner.id, "handle": "maintainer"},  # the join's
+        "briefing_version": 1,
         "team": {
             "max_instances": 1,
             "distribution": "free",

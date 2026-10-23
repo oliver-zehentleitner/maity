@@ -145,7 +145,10 @@ state, policy and rules (the full text when they changed since your
 events you missed (pass `cursor` from the last packet), your peers and the
 operations you may call. `membership.briefing` is what the human who added
 you wrote about your job: what you are for and your first assignment; read
-it on every resume, it may have changed. `harness`, `harness_version` and
+it on every resume, it may have changed. `briefing_by` says who wrote it and
+`briefing_version` which version it is; a `member_updated` about you with
+`changed: ["briefing"]` and a new `briefing_version` means a new text (the
+event never carries it: resume to read it). `harness`, `harness_version` and
 `model` may be left out when you do not know them; `client` is required.
 `environment` (`{"home": "h-…", "workspace": "w-…"}`, each `[hw]-` and 12
 hex characters) is optional: ids your client derives per hub (§5.2). The hub

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, case, select, update
 
-from maity_hub import admin_agents, clock, idempotency, instances, placements, rules
+from maity_hub import admin_agents, briefings, clock, idempotency, instances, placements, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
@@ -182,6 +182,27 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         return JSONResponse({"items": views, "next_cursor": None})
 
 
+@router.get("/projects/{slug}/members/{member_id}/briefings")
+def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """A member's briefing versions, newest first (§6.2): for the agent's owner, a member
+    of the project or not, and for a human with `members:admin`."""
+    with engine_of(request).begin() as conn:
+        project = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).first()
+        if project is None or caller.kind == "runner":
+            raise not_found()
+        try:
+            target = member_row(conn, project.id, member_id)
+        except ApiError:
+            target = None
+        if target is None or not instances.owns_agent(conn, caller, target):
+            mine = membership(conn, caller, slug)  # not_found for a stranger
+            if target is None or target.agent_id is None:
+                raise not_found()
+            if mine.kind != "human" or not mine.may("members:admin"):
+                raise forbidden("members:admin", "the agent's owner or an admin reads them")
+        return JSONResponse({"items": briefings.history(conn, target.id)})
+
+
 @router.get("/projects/{slug}/members/{member_id}")
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
@@ -245,13 +266,19 @@ def apply_patch(
     member_id = principal_id(conn, target.id)
     assert member_id is not None
     if changed:
+        columns = {k: v for k, v in changed.items() if k != "briefing"}
         conn.execute(
             update(t.membership)
             .where(t.membership.c.id == target.id)
-            .values(**changed, changed_by_credential=change.credential_id, changed_via=change.via)
+            .values(**columns, changed_by_credential=change.credential_id, changed_via=change.via)
         )
+        if "briefing" in changed:
+            # A new version, by whoever wrote it (§6.2); its text is never in an event.
+            briefings.record(conn, target.id, changed["briefing"], change.by, clock.now())
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
         view = member_view(conn, row)  # to everyone: never the briefing
+        if "briefing" in changed:
+            view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
         if {"role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(

@@ -180,6 +180,11 @@ membership = Table(
     Column("paused_by", String(ID)),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
+    # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
+    Column("briefing_version", Integer, nullable=False, server_default="0"),
+    Column("briefing_by", String(ID)),
+    Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
@@ -203,6 +208,20 @@ membership = Table(
     ),
     UniqueConstraint("project_id", "human_id", "active"),
     UniqueConstraint("project_id", "agent_id", "active"),
+    **MYSQL_TABLE,
+)
+
+# Every version of a membership's briefing, the current one included (§6.2):
+# `GET …/members/{id}/briefings` for the agent's owner and `members:admin`.
+member_briefing = Table(
+    "member_briefing",
+    metadata,
+    _membership_ref("membership_id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("text", MARKDOWN_TEXT),
+    Column("by", String(ID)),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("membership_id", "version"),
     **MYSQL_TABLE,
 )
 
