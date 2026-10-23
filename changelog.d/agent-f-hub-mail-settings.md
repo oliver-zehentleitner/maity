@@ -5,7 +5,7 @@
   `MAITY_SMTP_*` / `MAITY_MAIL_*` or set by the admin, the environment
   winning; the SMTP password write-only, stored only AES-256-GCM-encrypted
   with `MAITY_SECRET_KEY` and flagged in Kubernetes; `complete`, `missing`,
-  `warnings` and the hourly counters. Migration `0016`.
+  `warnings` and the hourly counters. Migration `0020`.
 - hub: the test send (`docs/api.md` §16.3) — `POST
   /admin/settings/mail/test`, one fixed mail to the configured server
   only, STARTTLS required (plaintext only with the insecure
