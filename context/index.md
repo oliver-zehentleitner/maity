@@ -62,7 +62,7 @@ Why Maity is built the way it is.
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
-- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private
+- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private; the bell resumes from an opaque token of per-project positions, ordered per project and account, never globally
 
 ## O
 
