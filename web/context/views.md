@@ -478,10 +478,12 @@ they come. **This was me** marks the alert read by its id, the one way
 §18.3 confirms a sign-in. The held address change sits in the same
 section, and the mail sign-in banner is shown at the top of every page of
 every other session. The banner stays while the reported session or one
-it approved is active, applies the list's rules to its End, and follows
-the 15-second count of unread sign-in alerts. "Confirmed" is said only
-when the alert is no longer unread afterwards, because the hub answers
-200 for an id it skipped.
+it approved is active, applies the list's rules to its End, and is built
+again on every 15-second round while a sign-in alert is unread.
+"Confirmed" is said only when the alert is no longer unread afterwards,
+because the hub answers 200 for an id it skipped; when the list cannot
+be read again the result is said to be unknown. A check each minute
+redraws the section when this session crosses an hour or a day of age.
 
 **Reason:** the rules are the hub's, but a button that can only fail
 teaches the human nothing about why, and §2.6.7 asks for the disabled

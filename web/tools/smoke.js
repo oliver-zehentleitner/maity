@@ -2907,6 +2907,51 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = sesPost;
   await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector(".signin-banner"), "sessions: no banner once its alert is confirmed");
+  // After This was me, a list that cannot be read again leaves the result unknown, never "Confirmed".
+  let sesFailNext = false;
+  win.Maity.api.get = (p) => {
+    if (p === "/auth/sessions?ended=true" && sesFailNext) return Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {}));
+    if (p.startsWith("/me/notifications?kind=security")) return sesGet(p).then((r) => Object.assign({}, r, { items: r.items.concat([loose]) }));
+    return sesGet(p);
+  };
+  const sesPostU = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { sesFailNext = true; return sesPostU(p, b); };
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  btn(sesBox().querySelectorAll(".session-alerts li").find((li) => li.getAttribute("data-alert") === "ntf-acr-8"), "This was me").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(sesBox()).includes("whether it was confirmed is not known") && !text(sesBox()).includes("Confirmed"), "sessions: a list that could not be read again leaves the result unknown");
+  win.Maity.api.post = sesPostU;
+  // The banner follows each round while an alert is unread: the session ending elsewhere with the count unchanged takes it down.
+  const mailX = { id: "hss-41f3", method: "email_code", created_at: "2026-10-22T15:00:00Z", last_seen_at: "2026-10-22T15:01:00Z", browser: "Opera", os: "macOS",
+    ip: "192.0.2.90", approved_by: null, good_standing: false, created: { record: "acr-9", ip: "192.0.2.90", browser: "Opera", os: "macOS" }, ended_at: null, ended_by: null };
+  const alertX = { id: "ntf-acr-9", record: "acr-9", kind: "security", at: "2026-10-22T15:00:00Z", project: null, actor: null, title: "New sign-in: Opera on macOS (email_code)",
+    target: { type: "session", id: "hss-41f3" }, read: false, redacted: false };
+  let mailEnded = false;
+  win.Maity.api.get = (p) => {
+    if (p === "/auth/sessions?ended=true") return sesGet(p).then((r) => ({ items: [Object.assign({}, mailX, mailEnded ? { ended_at: "2026-10-22T15:10:00Z", ended_by: "revoked" } : {})].concat(r.items) }));
+    if (p.startsWith("/me/notifications?kind=security")) return Promise.resolve({ items: [alertX], next_cursor: null });
+    if (p === "/me/notifications?limit=0") return sesGet(p).then((r) => Object.assign({}, r, { counts: Object.assign({}, r.counts, { security: 1 }) }));
+    return sesGet(p);
+  };
+  await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(sesBanner() && text(sesBanner()).includes("Opera on macOS"), "sessions: a banner for the new mail sign-in");
+  mailEnded = true;
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(!sesBanner(), "sessions: its session ended elsewhere, the count unchanged: the banner goes with the next round");
+  win.Maity.api.get = sesGet;
+  // Crossing the hour while the section is open: what was too new is offered after the minute's check.
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false })).filter((x) => !x.good_standing || x.id === "hss-41c0")) })) : sesGet(p));
+  const unconfirmedOld = { id: "hss-41aa", method: "email_link", created_at: new Date(Date.now() - 30 * 60000).toISOString(), last_seen_at: new Date().toISOString(), browser: "Vivaldi", os: "Linux",
+    ip: "192.0.2.91", approved_by: null, good_standing: false, created: { record: "acr-10", ip: "192.0.2.91", browser: "Vivaldi", os: "Linux" }, ended_at: null, ended_by: null };
+  const sesGetW = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGetW(p).then((r) => ({ items: r.items.concat([unconfirmedOld]) })) : sesGetW(p));
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(sesRow("hss-41aa"), "End").attrs.disabled !== undefined, "sessions: an older unconfirmed one is not ended from a session under an hour old");
+  const sesNow = win.Maity.api.now;
+  win.Maity.api.now = () => sesNow() + 3600 * 1000;
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(btn(sesRow("hss-41aa"), "End").attrs.disabled === undefined, "sessions: once this session is an hour old, the minute's check offers it");
+  win.Maity.api.now = sesNow;
+  win.Maity.api.get = sesGet;
   // A hub without the session list: said, and asked once per page load.
   let sesAsked = 0;
   win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? (sesAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : sesGet(p));

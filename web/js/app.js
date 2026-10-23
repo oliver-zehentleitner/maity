@@ -753,8 +753,10 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
-        // A new sign-in alert, or one gone: the banner follows at once (§2.6.5).
-        if (securityCount() !== bannerFor) renderBanner(ctx);
+        // While a sign-in alert is unread, or when the last one went: the
+        // banner is built again each round, so a swap of alerts or an
+        // approved session ending elsewhere shows at once (§2.6.5).
+        if (securityCount() || bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
