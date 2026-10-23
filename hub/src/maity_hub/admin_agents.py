@@ -7,8 +7,9 @@ in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused` and `role` between
 membership, `capabilities`, the `proxy`, `admin` and `owner` roles, a pause a human set
 (`humans_only`). A removal, and a change of the role or the pause of a reviewer or of
 the contract arbiter, waits for the owner's go: it is filed as a `member_change`
-proposal (`proposals`), which only a human answers, and applied on `go` with the agent
-as actor and the human as approver. Every other use of `members:admin` stays
+proposal (`proposals`), which only a human with `members:admin` answers, and applied
+on `go` with the agent as actor and the human as approver, when the change is still
+allowed then. Every other use of `members:admin` stays
 human-only through the scope table.
 """
 
@@ -22,8 +23,8 @@ from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import forbidden, humans_only
-from maity_hub.events import Actor, emit
+from maity_hub.errors import ApiError, forbidden, humans_only
+from maity_hub.events import emit
 from maity_hub.views import principal_id
 
 AGENT_ROLES = ("member", "reviewer")
@@ -128,29 +129,40 @@ def announce(
     )
 
 
-def settle(
-    conn: Connection,
-    request: Any,
-    proposal: dict[str, Any],
-    outcome: str,
-    actor: Actor | None,
-    by: str | None,
-) -> None:
-    """Apply the change on `go`, in the approving human's name and the agent's as
-    actor; `no` and a withdrawal change nothing."""
+def _still_allowed(conn: Connection, proposer: Any, target: Any) -> None:
+    """A `go` applies what an admin agent may do now (`hub/context/proposals.md`): the
+    proposer still an active admin agent, the target still a member or reviewer agent.
+    Otherwise the answer is refused and the request stays open."""
+    if proposer is None or proposer.active is not True or proposer.role != "admin":
+        raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")
+    if target.role not in AGENT_ROLES:
+        raise ApiError(
+            409, "target_role_changed", f"the member is {target.role} now, not member or reviewer"
+        )
+
+
+def settle(conn: Connection, s: proposals.Settlement) -> None:
+    """Apply the change on `go`, with the proposing agent as actor and the approving
+    human as the authority for revoked credentials; `no` and a withdrawal change
+    nothing."""
     from maity_hub.routes import members
 
-    if outcome != "go" or by is None:
+    if s.outcome != "go" or s.approver is None:
         return
+    proposal, request = s.proposal, s.request
     target = conn.execute(
         select(t.membership).where(t.membership.c.id == proposal["membership_id"])
     ).one()
     if target.active is None:  # removed meanwhile: nothing left to change
         return
+    proposer = conn.execute(
+        select(t.membership).where(t.membership.c.id == request.asked_by)
+    ).first()
+    _still_allowed(conn, proposer, target)
     project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
     agent = principal_id(conn, request.asked_by)
     assert agent is not None
-    change = members.Change(project, Actor(request.asked_by), agent, by, None, None)
+    change = members.Change(project, s.proposer, agent, s.approver, None, None)
     if proposal["action"] == "remove":
         members.apply_remove(conn, change, target)
         announce(conn, change, target, "removed", target.role, None, request.id)
@@ -171,4 +183,12 @@ def settle(
         announce(conn, change, target, "role", old["role"], values["role"], request.id)
 
 
-proposals.register("member_change", settle, humans_only=True)
+# The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).
+proposals.register(
+    "member_change",
+    settle,
+    proposals.Answerer(
+        scope="members:admin",
+        refusal="a human with members:admin answers an agent's change of a membership",
+    ),
+)

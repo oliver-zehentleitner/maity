@@ -219,3 +219,38 @@ def test_the_packet_lists_the_limited_scope_and_its_operations(
     member_packet = member.resume().json()
     assert "members:admin" not in member_packet["membership"]["scopes"]
     assert "PATCH /projects/maity/members/{id}" not in member_packet["operations"]
+
+
+def test_a_go_applies_only_what_is_still_allowed(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    first = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
+    owner.patch(f"/projects/maity/members/{reviewer.id}", {"role": "proxy"})
+    refused = owner.post(f"/projects/maity/requests/{first}/answer", {"reply_id": "go"})
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "target_role_changed")
+    assert owner.get(f"/projects/maity/requests/{first}").json()["status"] == "open"
+    owner.patch(f"/projects/maity/members/{reviewer.id}", {"role": "reviewer"})
+    second = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
+    owner.patch(f"/projects/maity/members/{admin.id}", {"role": "member"})
+    refused = owner.post(f"/projects/maity/requests/{second}/answer", {"reply_id": "go"})
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "proposer_not_admin")
+    assert owner.get(f"/projects/maity/members/{reviewer.id}").json()["role"] == "reviewer"
+
+
+def test_only_a_human_with_members_admin_gives_the_go(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    proxy = flow.human(make_client, migrated, "proxy")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "proxy", human_id=proxy.id)
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    request_id = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
+    refused = proxy.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
+    assert (refused.status_code, refused.json()["error"]["details"]) == (
+        403,
+        {"scope": "members:admin"},
+    )
