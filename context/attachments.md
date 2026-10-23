@@ -88,6 +88,32 @@ found late and has to be removable whatever the project's state.
 - Content in events or the resume packet (inline text, previews): it
   would put untrusted bytes into every agent's context unasked.
 
+## The CLI fetches attachments into `./maity-files/`, never into the working directory itself
+
+**Id:** b623825e-e5b0-4567-bec6-2aaa03140527
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §13 (`maity files get`) and the description of PR #216, both stating the rule and its reason; neither records it as a maintainer decision
+**Revisit when:** `maity files get` gets a different default target, or agents need a fetched file in place in the working tree
+**See:** attachments.md#files-on-messages-stored-by-the-hub-images-re-encoded-and-shown-inline-everything-else-an-inert-download — 2ff6d336-5d04-41f9-b6b9-f2979233b915 — as of 2026-10-23
+
+`maity files get <id>` without `-o` writes the file into `./maity-files/`
+under the current directory, created with mode 0700 if missing, and
+never into the current directory itself. `-o PATH` still writes
+wherever the agent names.
+
+**Reason:** the file's name comes from whoever sent it, and an agent
+usually runs in a working tree. Written straight into that directory, a
+sender could drop a file that tooling there picks up and executes — in
+the words of §13, "a `conftest.py` or a `Makefile`". A subdirectory of
+its own keeps fetched files out of the places such tooling looks.
+
+**Rejected alternative:** fetching straight into the working directory,
+as the attachments entry above first described it: it lets the sender
+choose a file name that lands next to the project's own build and test
+files.
+
 ## Pending uploads are capped per membership, and humans can clear them
 
 **Id:** 5080eb65-475b-487a-9854-80757124ccf0
