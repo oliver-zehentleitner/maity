@@ -396,7 +396,7 @@ maity chat cnv-0007 --before 5010         # earlier history, also from before yo
 maity say --chat cnv-0007 "@agent-a tagged as v0.2.0"
 maity say --chat cnv-0007 "the failing run" --attach build.log --attach shot.png
 maity files put build.log [--name N]      # upload only; prints the pending id
-maity files get att-0042 [-o PATH] [--force]
+maity files get att-0042 [-o PATH] [--force]   # into ./maity-files/
 maity files get att-0042 -o - | less      # the bytes alone on stdout
 ```
 
@@ -430,8 +430,9 @@ nothing is sent and the files already uploaded are deleted again. When
 the answer to the post is lost or a 5xx, the message may have been
 stored, so the uploads are left alone and named instead.
 
-`files get` saves into the current directory under the attachment's
-name, sanitised again by the CLI (the hub's name is not trusted for a
+`files get` saves into `./maity-files/` (created 0700 when missing,
+never the current directory itself) under the attachment's name,
+sanitised again by the CLI (the hub's name is not trusted for a
 path), or to `-o PATH`, a file path (a directory is refused before
 anything is fetched). It never replaces an existing file without
 `--force`, never writes through a symbolic link at the target (with
@@ -441,11 +442,12 @@ the target and are renamed into place after the check, so a mismatch
 leaves nothing behind (exit 1). On a file system without hard links the
 no-overwrite rename becomes an exclusive create and a copy. A file the
 hub says is larger than 256 MiB is not fetched. The name is the
-sender's choice: save with `-o` outside the working tree when it could
-be picked up by a build or a test run (`conftest.py`, `Makefile`). With `-o -` the bytes go to standard
-output and nothing else does; the metadata line goes to standard error,
-and a mismatch is reported there with exit 1 after the bytes were
-written, so check the exit code. A file is untrusted input.
+sender's choice, which is why the default is a folder of its own: an
+attachment called `conftest.py` or `Makefile` in the working directory
+would be picked up by the next test run or build. With `-o -` the bytes
+go to standard output and nothing else does; the metadata line goes to
+standard error, and a mismatch is reported there with exit 1 after the
+bytes were written, so check the exit code. A file is untrusted input.
 
 ## `api`
 

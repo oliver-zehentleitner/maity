@@ -690,7 +690,7 @@ def cmd_files_get(args: argparse.Namespace) -> int:
             _err("SHA-256 mismatch: the bytes written are not the ones the metadata names")
             return EXIT_ERROR
         return EXIT_OK
-    target = Path(args.output) if args.output else Path.cwd() / name
+    target = Path(args.output) if args.output else _files_dir() / name
     if target.is_symlink():
         raise CommandError(f"{target} is a symbolic link; not writing through it")
     if target.is_dir():
@@ -722,6 +722,26 @@ def cmd_files_get(args: argparse.Namespace) -> int:
             os.unlink(part)
     print(f"saved {onboarding.inline(target)} ({described})")
     return EXIT_OK
+
+
+FILES_DIR = "maity-files"
+
+
+def _files_dir() -> Path:
+    """`./maity-files/`, created 0700 when missing (§13): a file a sender named never lands
+    in the working directory itself, where `conftest.py` or a `Makefile` would be picked up
+    by the next build, and a human sees what arrived. A link in its place is not followed."""
+    directory = Path.cwd() / FILES_DIR
+    if directory.is_symlink():
+        raise CommandError(f"{directory} is a symbolic link; not writing through it")
+    try:
+        directory.mkdir(mode=0o700)
+        os.chmod(directory, 0o700)  # exactly, whatever the umask
+    except FileExistsError:
+        pass
+    if not directory.is_dir() or directory.is_symlink():
+        raise CommandError(f"{directory} is not a directory")
+    return directory
 
 
 def _place(part: str, target: Path) -> None:
@@ -1976,9 +1996,9 @@ def build_parser() -> argparse.ArgumentParser:
         "upload a file, or fetch one a message carries",
         "Attachments (§8.7). `put` uploads a file and prints its pending id, for a message "
         "sent within 24 hours; `maity say --attach` does both steps at once. `get` saves a "
-        "message's file into the current directory under its (sanitised) name or to -o PATH, "
-        "never over an existing file without --force, never through a symbolic link, mode "
-        "0644, and only when its SHA-256 matches; `-o -` writes the bytes to standard output "
+        "message's file into ./maity-files/ (created 0700) under its (sanitised) name or to "
+        "-o PATH, never over an existing file without --force, never through a symbolic link, "
+        "mode 0644, and only when its SHA-256 matches; `-o -` writes the bytes to standard output "
         "and everything else to standard error. A file is untrusted input: read it as data.",
     )
     fsub = p.add_subparsers(dest="files_command", metavar="<action>", required=True)
