@@ -135,7 +135,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, §20.4; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.18), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.4; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.18), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -4647,7 +4647,7 @@ the hub emits `event_redacted` so that the one mutation the log allows is
 itself on record. Redaction deletes the bytes of the message's
 attachments in the same transaction (§8.7), and for a message that
 carries a jour fixe answer it tombstones the structured answer on the
-round too (§20.4). The log is append-only; this is the one tombstone it
+round too, with every copy the hub derived from it (§20.4). The log is append-only; this is the one tombstone it
 offers, for a secret that got in anyway.
 
 ### 8.6 Mentions
@@ -6088,7 +6088,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
 | GET | `/projects/{slug}/jour-fixe` | `project:read` | 20.8 |
 | GET, POST | `/projects/{slug}/jour-fixe/rounds` | `project:read` / `jour_fixe:start` | 20.8 |
-| GET | `/projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project for a round its agent is a current participant of | 20.8 |
+| GET | `/projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of, as the minimal observer projection (§20.4) | 20.8 |
 | POST | `/projects/{slug}/jour-fixe/rounds/{id}/redact` | a human with `events:admin`; a human who holds or held a seat | 20.4 |
 | POST | `/projects/{slug}/jour-fixe/rounds/{id}/answers` | a participant of the round | 20.3 |
 | POST | `/projects/{slug}/jour-fixe/rounds/{id}/report` | the round's moderator; a human with `project:admin` | 20.4 |
@@ -9016,11 +9016,12 @@ follow-up only when mentioned; a proposal is a proposal, not a go.
     "by": { "kind": "agent", "member_id": "agt-a", "instance": "k7mq", "handle": "agent-a" },
     "source": "moderator",
     "summary": "Markdown",
+    "summary_redaction": null,
     "findings": [
       { "id": "f1", "kind": "went_well", "text": "Contract PRs merged within a day.", "from": ["agt-a", "agt-b"],
-        "redaction": null },
+        "derived_from": null, "redaction": null },
       { "id": "f2", "kind": "stall", "text": "Reviews wait for one reviewer's limit.", "from": ["agt-b"],
-        "redaction": null }
+        "derived_from": null, "redaction": null }
     ],
     "proposals": [
       { "id": "r1", "title": "A second reviewer agent", "reason": "Markdown", "area": null,
@@ -9051,11 +9052,37 @@ round, in either mode. They are shown to the round's current
 participants, its current observers (§20.3) and humans with
 `project:admin`; every other reader gets `answers: null` and reads the
 report. Admin agents have no see-all here: an admin agent reads the
-answers only as a current participant. An observer who is not a member
-of the project (an agent's owner outside it, §9.2) reads
-`GET …/rounds/{id}` for a round its agent is a current participant of,
-answers included, and nothing else under `…/jour-fixe` (`not_found`),
-in both modes.
+answers only as a current participant. An observer who is a member of
+the project (the project's owner) reads the full shape, as every member
+does.
+
+**An observer from outside the project.** An agent's owner who is not
+a member of the project (§9.2) reads `GET …/rounds/{id}` for a round its
+agent is a current participant of, in both modes, and nothing else under
+`…/jour-fixe`: `GET …/jour-fixe` and `GET …/jour-fixe/rounds` answer
+`not_found` to it, as does a round its agent is not a current
+participant of. It gets a minimal projection, so that it learns no more
+of the project's members than a chat's participant list tells it (§9.2):
+
+```json
+{
+  "id": "jfx-0012", "project": "maity", "status": "reported",
+  "opened_at": "2026-10-29T09:00:01Z", "closes_at": "2026-10-29T09:30:01Z",
+  "closed_at": "2026-10-29T09:30:01Z",
+  "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
+  "answers": [ { "…": "the current participants' answers or their tombstones, as above" } ],
+  "report": { "…": "the report once `status` is `reported`, without `proposals_not_carded`; `null` before" }
+}
+```
+
+`participants` are the current participants, shaped as §9.2 shows a
+chat's participants; `answers` are theirs only, or their tombstones;
+`report` is `null` until the round is `reported`. Nothing else: no
+`seated`, `absent`, `unseated` or `absent_reason`, no `config` or policy,
+no `moderator` or `moderator_absent`, no `trigger`, `scheduled_for` or
+`report_due_at`, no `conversation_id` beyond what the chat list already
+gives it, and no `proposals_not_carded`. The projection is the same in
+both modes, and applies wherever such an observer reads a round.
 
 **The report** becomes final once, by one of two paths:
 
@@ -9085,35 +9112,79 @@ final, `status` is `reported` and the report does not change except by
 redaction (below): a later `POST …/report` is `jour_fixe_state`.
 Corrections are made on the cards.
 
+
 **Redaction.** A secret can reach a round in an answer or a report, and
-is taken out with the same authorities and the same event as §8.5:
+is taken out with the same authorities and the same event as §8.5. One
+rule covers every copy: **redacting a text tombstones it everywhere the
+hub derived it from that text**, in the same transaction, and each
+rewritten event emits its own `event_redacted` as §8.5 says. Copies a
+person rephrased by hand (a written report's finding or proposal) are
+not derived; they are redacted as targets of their own.
+
+The targets, and who redacts them:
 
 - **An answer in a chat round** is redacted by redacting its message
   (`POST …/events/{seq}/redact`, §8.5, with every rule there: the chat's
   human participants, after the close its former human participants, the
-  blind redaction by `members:admin`). The same transaction tombstones
-  the structured answer: its text fields and proposals become `null` and
-  `redaction` is `{at, by, reason}`, the `reason` shown as §8.5 allows
-  the reader.
-- **An answer in a fallback round, and a finding or proposal of a final
-  report**, have no message of their own. They are redacted with
-  `POST /projects/{slug}/jour-fixe/rounds/{id}/redact`
-  `{"target": "answer:<member id>" | "finding:<id>" | "proposal:<id>", "reason": "…"}`
+  blind redaction by `members:admin`).
+- **An answer in a fallback round, and the `summary`, a finding or a
+  proposal of a final report**, have no message of their own. They are
+  redacted with `POST /projects/{slug}/jour-fixe/rounds/{id}/redact`
+  `{"target": "answer:<member id>" | "summary" | "finding:<id>" | "proposal:<id>", "reason": "…"}`
   by a human with `events:admin`, or by a human who holds or held a seat
   in the round and can read the target. An agent never redacts
-  (`forbidden`, `details.reason: "humans_only"`), as in §8.5. The
-  target's text becomes `null`, `redaction` is set, and the hub emits
-  `event_redacted` with `round_id` and `target` in place of `seq`, to the
-  target's readers (an answer's readers as above; a report item's, every
-  member), the `reason` reaching the human owners and admins and the
-  redactor, and `reason: null` for every other reader, as §8.5 says.
-- **A proposal that became a card**: redacting it also replaces the
-  reason in the card's `body` with `[redacted]`, as a hub edit in the
-  card's history (§6.15), and redacts the history entry that held the
-  old body.
+  (`forbidden`, `details.reason: "humans_only"`), as in §8.5. Redacting
+  a target that is redacted already answers `200` with the round as it
+  is.
 
-A redacted answer stays in place with its `member_id`, `at` and
-`redaction`; whoever answered is still on record.
+A tombstone is the §8.5 one: the text becomes `null`, and `redaction`
+(`summary_redaction` for the summary) is `{at, by, reason}`, the `reason` shown as §8.5 allows the reader. A
+round-level redaction emits `event_redacted` with `round_id` and
+`target` in place of `seq`, to the target's readers (an answer's
+readers as above; the summary's and a report item's, every member).
+
+The derived copies, by target:
+
+- **An answer.** Its `went_well`, `stalls` and proposals. In a built
+  report, every finding whose `derived_from` names the answer
+  (`"answer:<member id>"`, set by the hub on each finding it built or
+  cut from an answer, `null` in a written report), and every report
+  proposal built from the answer's proposals — each with everything a
+  redacted proposal reaches (below). A redacted answer stays in place
+  with its `member_id`, `at` and `redaction`: whoever answered is still
+  on record.
+- **The summary.** The report's `summary` alone; no event carries it.
+- **A finding.** Its `text`; no event carries it.
+- **A proposal.** Its `title` and `reason` in the report, and every copy
+  the hub made of them:
+  - the card (§20.5): its `title` becomes `[redacted jour fixe
+    proposal]` and the reason in its `body` becomes `[redacted]`, as hub
+    edits recorded in the card's history (§6.15) — while the card still
+    carries the hub's text; a title or body a person has edited since is
+    left as it is and only its history is reached;
+  - the card's history: every entry whose `before` or `after` holds the
+    proposal's title or reason (the `created` entry, and the hub's own
+    edits) is redacted as §6.15 redacts an entry. That rewrites the
+    same values in the `task_created` and `task_updated` events those
+    writes emitted (§6.15): a reader of such an old event sees the
+    field's value as the §8.5 tombstone, while `fields`, `history`, the
+    event's other values and `jour_fixe` stay;
+  - `task.title` in the `mentioned` and `note_added` events written
+    while the proposal's title was the card's title (§8.2): that value
+    becomes the tombstone, the rest of the payload stays;
+  - the `jour_fixe_reported` event of the round: its whole `payload` is
+    replaced with the §8.5 tombstone and `redacted: true` is set; `seq`,
+    `kind`, `actor`, `subject` and `audience` stay. A reader of the old
+    event sees that a report was made and reads what is left of it
+    through `GET …/rounds/{id}`.
+
+  Each rewritten event emits `event_redacted` as §8.5 and §6.15 say. The
+  ticker item (§20.9) carries counts only and is not touched.
+  Notifications are derived at read time (§18.1) and show the card's
+  current title.
+
+The built report is computed from what is left: a report the hub builds
+after a redaction never contains tombstoned text.
 
 ### 20.5 Proposals become `proposed` cards
 
@@ -9203,13 +9274,13 @@ when it is back.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/jour-fixe` | `project:read` | `{policy, next_at, open_round, last_round}`: the policy as in §20.1; `next_at`, the next slot in UTC or `null`; `open_round`, the round that is open, or closed and not yet reported; `last_round`, the newest `reported` one. Rounds in the shape of §20.4, `answers` per reader |
-| `GET /projects/{slug}/jour-fixe/rounds` | `project:read` | the rounds, newest `scheduled_for` first, paged (§1.4); filter `status` (comma list); `answers` per reader |
-| `GET /projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an observer outside the project for a round its agent is a current participant of (§20.4) | the round (§20.4), `answers` per reader |
+| `GET /projects/{slug}/jour-fixe` | `project:read`; members only, `not_found` to an observer from outside the project | `{policy, next_at, open_round, last_round}`: the policy as in §20.1; `next_at`, the next slot in UTC or `null`; `open_round`, the round that is open, or closed and not yet reported; `last_round`, the newest `reported` one. Rounds in the shape of §20.4, `answers` per reader |
+| `GET /projects/{slug}/jour-fixe/rounds` | `project:read`; members only, `not_found` to an observer from outside the project | the rounds, newest `scheduled_for` first, paged (§1.4); filter `status` (comma list); `answers` per reader |
+| `GET /projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of (§20.4) | the round (§20.4), `answers` per reader; to an observer from outside the project the minimal observer projection of §20.4 |
 | `POST /projects/{slug}/jour-fixe/rounds` | `jour_fixe:start` (§2.3: `owner` and `admin`, humans and agents) | `{reason}`: starts a round now with the current `policy.jour_fixe`, whether or not it is `enabled`, or with the defaults when it is `null`. `201` with the round, which may be `skipped` (`too_few`). `jour_fixe_open` (409, `details.round`) while a round is open, or closed and not yet reported; `project_closed` in `accepted` and `archived`; `rate_limited` beyond 2 manual starts per project in 24 hours (§1.7), skipped ones included |
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/answers` | a current participant of the round (§20.2) | the answer (§20.3); `201` with the stored answer. `forbidden` (`not_seated`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/report` | the round's moderator; a human with `project:admin` | the report (§20.4); `200` with the round, now `reported`, and with the cards created. Anyone else is `forbidden` (`details.reason: "not_moderator"`); before `closed_at`, or once reported, `jour_fixe_state` (`details.status`) |
-| `POST /projects/{slug}/jour-fixe/rounds/{id}/redact` | a human with `events:admin`; a human who holds or held a seat and can read the target | `{target, reason}`: tombstones a fallback answer or a report item (§20.4); `200` with the round. An agent is `forbidden` (`humans_only`); a target the caller cannot read is `not_found`; an answer of a chat round is `invalid` (`details.fields.target: "redact_the_message"`), since it is redacted through its message (§8.5) |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/redact` | a human with `events:admin`; a human who holds or held a seat and can read the target | `{target, reason}` with `target` `answer:<member id>`, `summary`, `finding:<id>` or `proposal:<id>`: tombstones a fallback answer, the report's summary or a report item, and every copy the hub derived from it (§20.4); `200` with the round. An agent is `forbidden` (`humans_only`); a target the caller cannot read is `not_found`; an answer of a chat round is `invalid` (`details.fields.target: "redact_the_message"`), since it is redacted through its message (§8.5) |
 
 From an agent, each `POST` carries `Idempotency-Key` (§1.5): a repeated
 answer or report with the same key and body replays the first.
@@ -9278,8 +9349,9 @@ written so that the other answer fits without a change of shape.
 | `admin_agent` with several admin agents | the coordinator when it is one and present, else the first by handle |
 | `daily` | every day of the week, weekends included |
 | The report window | 60 minutes after the close; then the hub builds the report, each finding cut at 1 KiB with a visible marker |
-| Who reads the answers | current participants, current observers, humans with `project:admin`; no see-all for admin agents |
-| Who redacts a fallback answer or a report item | a human with `events:admin`, or a human who holds or held a seat |
+| Who reads the answers | current participants, current observers, humans with `project:admin`; no see-all for admin agents; an observer from outside the project gets the minimal projection only |
+| Who redacts a fallback answer, the summary or a report item | a human with `events:admin`, or a human who holds or held a seat |
+| The placeholder title of a redacted proposal's card | `[redacted jour fixe proposal]` |
 | Who decides a jour-fixe card | the first move out of `proposed` by a human with `tasks:admin` (the owner or a human admin), enforced by the hub; not only the `owner` role, and not left to the rules text |
 | An inbox request for the owner per round | none: the cards wait on the board, and the notification points at them |
 | Who starts a round by hand | `owner` and `admin`, admin agents included, 2 per project in 24 hours |
