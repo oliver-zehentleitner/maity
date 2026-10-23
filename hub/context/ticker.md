@@ -50,3 +50,39 @@ shaping. Filtering decisions after reading, in each route: easy to miss on
 one path, which would show a decision to a member who may not read its
 request. Storing `detail` with the item: §17.5 adds it at read time, so a
 renamed request title shows as it is now.
+
+## Merges are read by the probe from the moment the ticker is switched on, and contract sections come from the diff against the file at the merge
+
+**Id:** 66053e8f-9e9b-447b-896d-be37f8007724
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.3 (contract sections, linked cards, the 300-file cap) and §17.4 (the probe, every 2 minutes, nothing older than the switch); the agreed second part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23
+**Revisit when:** the webhook (part 3) makes the probe look sooner, or a forge other than GitHub is observed
+**See:** ticker.md#a-ticker-item-is-an-event-its-dedupe-key-a-row-of-its-own-and-it-is-shaped-per-reader-where-every-event-view-is-made — 746b5971-1a29-458f-90da-a8243a4f2848 — as of 2026-10-23
+
+`ticker_source.merges_since` holds the moment `settings.ticker.enabled`
+was switched on. The probe worker runs a merge round every 2 minutes,
+beside its 5-minute sweep: for each project with a source row and an
+observable repository, it reads the pull requests closed against the
+default branch, keeps those merged after `merges_since` that have no
+`merge:<n>` key yet, reads each one's files (at most 300), and for a
+contract file among them that file at the merge commit and at the base.
+The sections come from the unified diff: added lines are looked up in the
+file at the merge commit, deleted lines in the file at the base. Each
+item is written in a short transaction of its own, under the project
+lock, after the ticker is checked again. Without a patch, or for a file
+over 1 MiB, the sections are unknown and every implementer applies.
+
+**Reason:** §17.4 announces nothing older than the switch, so the moment
+has to be stored; the dedupe key alone would announce the whole history
+the first time. Reading the forge with no connection held is the probe's
+rule (§11). The diff names exactly the changed lines, and the two files
+give the heading above each of them, as §17.3 defines a section. A
+separate cadence keeps the reports' and releases' sweep at its interval.
+
+**Rejected alternative:** a cursor of the last announced merge instead of
+the switch time: merges can be reported out of order by the forge's
+"updated" sort, and the dedupe key already makes a second look harmless.
+Reading only the files' names and taking every section of a touched
+contract file: it would wake every implementer for a one-line change.
