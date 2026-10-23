@@ -117,6 +117,8 @@ class Run:
                         "url": v["helpUrl"],
                         "nodes": [n["target"] for n in v["nodes"]][:10],
                         "count": len(v["nodes"]),
+                        # axe's own words for the first node: which check failed and against what.
+                        "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
                     }
                 )
         page.set_viewport_size({"width": 1280, "height": 900})
