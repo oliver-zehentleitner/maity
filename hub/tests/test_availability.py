@@ -602,3 +602,37 @@ def test_an_admin_agent_sets_a_members_policy_and_asks_for_a_reviewers(
     assert asked.json()["class"] == "consent"
     # Its own policy is not an admin agent's to set.
     assert lead.patch(f"/projects/maity/members/{lead.id}", body).status_code == 403
+
+
+def test_a_cover_proposal_whose_substitute_left_does_not_apply_at_go(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    lead = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    stand_in = flow.agent(make_client, owner)
+    body = {"availability_policy": {"on_unavailable": "substitute", "substitutes": [stand_in.id]}}
+    asked = lead.patch(f"/projects/maity/members/{reviewer.id}", body)
+    assert asked.status_code == 202, asked.text
+    assert owner.delete(f"/projects/maity/members/{stand_in.id}").status_code == 200
+    go = owner.post(f"/projects/maity/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 400, go.text
+    assert go.json()["error"]["details"]["fields"] == {
+        "availability_policy.substitutes": "not_a_member"
+    }
+    still = owner.get(f"/projects/maity/requests/{asked.json()['id']}").json()
+    assert still["status"] == "open"
+    assert member(owner, reviewer.id)["availability_policy"]["on_unavailable"] == "wait"
+
+
+def test_seat_resets_name_the_humans_who_decide(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    covered = flow.agent(make_client, owner)
+    cover = flow.agent(make_client, owner)
+    owner.patch(
+        f"/projects/maity/members/{covered.id}",
+        {"availability_policy": {"on_unavailable": "substitute", "substitutes": [cover.id]}},
+    )
+    owner.delete(f"/projects/maity/members/{cover.id}")
+    reset = [e for e in events(migrated, "member_updated") if e.payload.get("changed")][-1]
+    assert reset.audience == ["all", f"member:{owner.id}"]

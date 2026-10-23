@@ -395,34 +395,17 @@ def _is_member(conn: Connection, project_id: str, member_id: str) -> bool:
 def _availability_policy(
     conn: Connection, mine: Membership, target: Any, change: Any
 ) -> dict[str, Any]:
-    """The policy as it will be stored, `invalid` naming every bad field (§6.12)."""
+    """The policy as it will be stored: the fields named over the current ones, `invalid`
+    naming every bad field (§6.12)."""
     if change is None:
         return dict(availability.DEFAULT_POLICY)
     policy = availability.policy_of(target)
-    errors: dict[str, str] = {}
-    if change.on_unavailable is not None:
-        if change.on_unavailable not in availability.ON_UNAVAILABLE:
-            errors["availability_policy.on_unavailable"] = "unknown"
-        policy["on_unavailable"] = change.on_unavailable
-    if change.grace_minutes is not None:
-        if not 0 <= change.grace_minutes <= availability.GRACE_MAX:
-            errors["availability_policy.grace_minutes"] = "out_of_range"
-        policy["grace_minutes"] = change.grace_minutes
+    for name in ("on_unavailable", "grace_minutes"):
+        if getattr(change, name) is not None:
+            policy[name] = getattr(change, name)
     if change.substitutes is not None:
-        entries = list(dict.fromkeys(change.substitutes))
-        for entry in entries:
-            if entry.startswith("role:"):
-                if entry.removeprefix("role:") not in ROLES:
-                    errors["availability_policy.substitutes"] = "unknown_role"
-                continue
-            if entry == (target.agent_id or target.human_id):
-                errors["availability_policy.substitutes"] = "self"
-                continue
-            if not _is_member(conn, mine.project.id, entry):
-                errors["availability_policy.substitutes"] = "not_a_member"
-        policy["substitutes"] = entries
-    if policy["on_unavailable"] == "substitute" and not policy["substitutes"]:
-        errors.setdefault("availability_policy.substitutes", "required")
+        policy["substitutes"] = list(dict.fromkeys(change.substitutes))
+    errors = availability.policy_errors(conn, mine.project.id, target, policy)
     if errors:
         raise invalid(errors)
     return policy
