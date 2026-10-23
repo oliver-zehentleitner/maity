@@ -560,6 +560,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
+                "imported_from": row.imported_from,
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
