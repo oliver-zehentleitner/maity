@@ -540,3 +540,34 @@ notes that a mistyped project answers the same. Showing the reason
 tokens as they are: they are the CLI's text form, not words for a
 person.
 
+
+## The chat list is a list, not a row of header links; a name wraps whole and a line says who it is
+
+**Id:** 37084cf9-9062-456e-bc7e-f4265fc9ccff
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's screenshot of the deployed chat view, relayed by the coordinator (tsk-2my9kqmjp6nk), 2026-10-23: every entry read "Oliver Zehentleit…", the time sat on the name, the list was a narrow column beside the heading; the dashboard's implementation, 2026-10-23
+**Revisit when:** the header gets a nav that is not a row of links, or the chat list leaves its `<nav>`
+
+The header's link rules (a scrolling flex row, links on one line) apply
+to `nav.switcher` and `nav.views` only, not to every `<nav>`. The chat
+list, a `<nav>` itself, is a block again: heading and **New group chat**
+above the list, a name that wraps instead of running under the time. The
+list is wider (16 to 24 rem). A direct chat's second line says who it is
+(`agent · @handle · harness`), a group's `group · ` and its people;
+presence is the avatar's dot and words for a screen reader. Unread chats
+come first, then the newest.
+
+**Reason:** the generic `nav` rules were meant for the header's rows,
+and the chat list inherited them: a flex row made the heading a column
+of its own, and `white-space: nowrap` cut every name to its owner's
+shared prefix and drew it under the time. The handle is unique where
+the display names are not, and the harness tells agents of different
+kinds apart.
+
+**Rejected alternative:** overriding the header rules for the chat list
+only: the next `<nav>` would inherit them again. Cutting the shared
+prefix off the names: the card asked for the name to stay readable as
+it is, and a prefix shared by today's agents need not be shared
+tomorrow. Presence as a line of its own: the dot already says it.
