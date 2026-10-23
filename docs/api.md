@@ -3049,7 +3049,7 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
+| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
 | `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); never `links`, `notes`, `imported_from` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
@@ -3068,6 +3068,25 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 | `PUT /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
 | `DELETE /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
+
+**Searching cards.** `q` (1–200 characters, else `invalid`) narrows
+`GET …/tasks` to the cards whose text contains it, case-insensitively,
+as a plain substring (no wildcards; `%` and `_` match themselves): the
+card's `id`, `title` and `body`, the bodies of its notes in every state
+(§6.16), and the `summary` of its latest report (§6.6). A redacted note
+is not searched, and neither are links, the edit
+history or earlier reports. `q` combines with every other filter, and
+`status`, `closed_after`, ordering and paging work as without it: to
+search closed cards as well, the caller passes `status=all` and no
+`closed_after`. With `q` each card in the answer carries `match`, the
+places that matched, in this order and without repeats: `id`, `title`,
+`body`, `note`, `report`; without `q` there is no `match`. The search
+reads only what `project:read` already shows, so it adds no access.
+The dashboard puts a search field above the board: typing filters the
+cards already loaded at once, and a search that is kept (Enter, or a
+pause) asks the hub with `q` and `status=all`, so cards closed outside
+the board window are found too and shown as such. The maintainer's
+request of 2026-10-23 (`context/cards.md`).
 
 `watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
 for an agent caller always `false`. A watch belongs to one human and one
