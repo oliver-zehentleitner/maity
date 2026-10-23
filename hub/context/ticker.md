@@ -145,6 +145,12 @@ project exists.
 **Rejected alternative:** a FastAPI route with a dependency for the
 limits: the body would already have been read by then. Writing the item
 from the delivery's body: a forged or replayed body could announce a
-merge that never happened, which §17.4 rules out. Skipping the
-credential scan for this path: chosen, since its body is the forge's,
-read only after the signature verifies.
+merge that never happened, which §17.4 rules out.
+
+**Condition:** the credential scan of the middleware does not run on this
+path. That holds only while the delivery body is never stored, echoed or
+logged: it is parsed for the deployment id and dropped, and only the
+forge's delivery id from the header is kept (`origin.delivery`). Should
+any part of the body ever be stored (in an event, a log line, an
+idempotency record), the scan has to run on it first, or that part is
+not stored.
