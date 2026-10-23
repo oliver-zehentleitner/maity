@@ -1124,7 +1124,7 @@ and is never affected by mail limits; the password is not either.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
-| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code; the current one is a logout; idempotent; answers the session as it is now |
+| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
 
 **Good standing.** A session is **in good standing** when it was
