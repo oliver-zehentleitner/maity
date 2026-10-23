@@ -336,8 +336,11 @@ def test_a_size_past_4096_is_refused_from_the_header(
 ) -> None:
     from maity_hub import avatar_decode
 
+    assert (
+        max(avatar_decode.dimensions(data, content_type)) > avatar_decode.SIDE
+    )  # read, not decoded
     with pytest.raises(avatar_decode.Refused) as refused:
-        avatar_decode.dimensions(data, content_type) and avatar_decode.process(data, content_type)
+        avatar_decode.process(data, content_type)
     assert refused.value.reason == "dimensions"
     answer = put_human(owner, "/me/avatar", data, content_type)
     assert answer.json()["error"]["details"]["fields"] == {"body": "dimensions"}
