@@ -34,6 +34,7 @@ class Actor:
     harness: str | None = None
     model: str | None = None
     runner_id: str | None = None
+    human_id: str | None = None  # a human who is no member of the project (§8.1)
 
 
 class Notifier:
@@ -149,6 +150,7 @@ def emit(
             actor_harness=actor.harness if actor else None,
             actor_model=actor.model if actor else None,
             actor_runner_id=actor.runner_id if actor else None,
+            actor_human_id=actor.human_id if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
             audience=audience,

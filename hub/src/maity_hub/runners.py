@@ -60,11 +60,14 @@ def event_project_ids(conn: Connection, runner_id: str) -> list[str]:
 
 
 def human_actor(conn: Connection, project_id: str, human_id: str | None) -> Actor | None:
-    """The human as an event's actor in one project, when they are a member there."""
+    """The human as an event's actor in one project: their membership there, else the
+    human who is no member (§8.1)."""
     if human_id is None:
         return None
     membership_id = _membership_id(conn, project_id, human_id)
-    return None if membership_id is None else Actor(membership_id=membership_id, via="cookie")
+    if membership_id is None:
+        return Actor(membership_id=None, via="cookie", human_id=human_id)
+    return Actor(membership_id=membership_id, via="cookie")
 
 
 def _membership_id(conn: Connection, project_id: str, human_id: str) -> int | None:

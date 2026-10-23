@@ -15,7 +15,7 @@ from maity_hub import clock, idempotency, images, ktw, placements, policy, relea
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
@@ -283,6 +283,7 @@ def patch_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, given)
         project = mine.project
         actor = caller.actor(mine.id)
@@ -422,6 +423,25 @@ def patch_project(
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+# Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
+HUMANS_ONLY_POLICY = {
+    "spawn_consent_by",
+    "signing",
+    "tag_authority",
+    "on_runner_revoke",
+    "spawn_requests",
+}
+
+
+def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
+    """`humans_only` for what §2.3 lists as no agent's, before any other check."""
+    if mine.kind != "agent":
+        return
+    policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
+    if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
+        raise humans_only("no agent changes this, whatever its role")
 
 
 def _authorise_patch(mine: Membership, given: set[str]) -> None:

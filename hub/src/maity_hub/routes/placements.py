@@ -352,6 +352,13 @@ def _agent_values(
             raise invalid(
                 {k: "not_with_agent_id" for k in given}, "a placement never changes a membership"
             )
+        deleted = conn.execute(
+            select(t.agent_profile.c.id).where(
+                t.agent_profile.c.id == body.agent.id, t.agent_profile.c.deleted_at.is_not(None)
+            )
+        ).first()
+        if deleted is not None:  # a deleted profile is never placed again (§6.3)
+            raise not_found()
         try:
             member = member_row(conn, mine.project.id, body.agent.id)
         except ApiError:
@@ -371,6 +378,7 @@ def _agent_values(
         select(t.agent_profile.c.id).where(
             t.agent_profile.c.owner_id == mine.principal_id,
             t.agent_profile.c.handle == body.agent.handle,
+            t.agent_profile.c.live.is_(True),
         )
     ).first()
     if owned is not None:

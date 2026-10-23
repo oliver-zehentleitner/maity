@@ -133,12 +133,14 @@ def test_the_last_owner_stays(owner: flow.Human) -> None:
     assert remove.json()["error"]["details"]["fields"] == {"member": "last_owner"}
 
 
-def test_members_admin_is_for_human_memberships(
+def test_members_admin_beyond_admin_agents_is_for_human_memberships(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
-    admin_agent = flow.agent(make_client, owner, role="admin")
+    # An admin agent holds members:admin within §2.3 ᵃ only (tests/test_admin_agents.py);
+    # a reviewer agent none of it.
+    reviewer = flow.agent(make_client, owner, role="reviewer")
     other = flow.agent(make_client, owner)
-    response = admin_agent.patch(f"/projects/maity/members/{other.id}", {"role": "reviewer"})
+    response = reviewer.patch(f"/projects/maity/members/{other.id}", {"role": "reviewer"})
     assert response.status_code == 403
     assert response.json()["error"]["details"] == {"scope": "members:admin"}
 
@@ -226,6 +228,7 @@ def test_profiles_belong_to_their_human(
         "git_identity",
         "memberships",
         "created_at",
+        "deleted_at",  # null until its owner deletes it (§6.3)
     }
     assert body["git_identity"] == {"name": "B", "email": "b@x.y"}
     taken = owner.post("/agents", {"handle": "agent-b", "display_name": "Again"})
