@@ -111,8 +111,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         earlier = [];
         // A hub without attachments has nothing to offer; any other failure is said.
-        if (err.status === 404 || err.status === 405) hubWithout = true;
-        else status.fail("Could not read your files waiting from before: ", err);
+        if (err.status === 404 || err.status === 405) { hubWithout = true; offer(false); } else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
     };
@@ -161,10 +160,23 @@ window.Maity = window.Maity || {};
         draw();
       }
     });
-    const el = h("div", { class: "attach" },
-      h("label", { for: id, class: "button small attach-button" }, "Attach files"), input,
-      list, earlierBox, status.el);
-    loadEarlier();
+    // Hidden, the whole part, until the hub is known to take files (§8.7):
+    // a chooser whose every file would be refused is not offered, and no
+    // file field is left in the page without its visible label. An
+    // unreadable machine form offers it, and an upload's failure says itself.
+    const chooser = h("label", { for: id, class: "button small attach-button" }, "Attach files");
+    const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
+    function offer(yes) {
+      el.hidden = !yes;
+      input.disabled = !yes;
+    }
+    if (hubWithout) offer(false);
+    else {
+      M.api.hubHas("POST", "/projects/{slug}/attachments").catch(() => true).then((yes) => {
+        offer(yes && !hubWithout);
+        if (yes) loadEarlier();
+      });
+    }
     return {
       el,
       ids: () => pending.filter((p) => p.att).map((p) => p.att.id),

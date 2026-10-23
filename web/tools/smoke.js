@@ -164,12 +164,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(document.title.startsWith("(7) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
   expect(allChip.getAttribute("aria-label") === "5 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
-  expect(main.querySelectorAll(".project-label").length === 4, "every entry labelled with its project");
+  expect(main.querySelectorAll(".project-label").length === 5, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
     && /^#\/p\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
     "inbox: each entry's project badge is a link to the project, before the entry");
-  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
+  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
     "inbox: the project's name starts each entry's accessible name");
   // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
   const markOf = (label) => chip(label).querySelector(".project-mark");
@@ -193,7 +193,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(chipCount("All projects") === "6" && chipCount("Maity") === "4", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
-  expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Maity"), "sort by project");
+  expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Personal") && main.querySelectorAll(".project-label")[1].textContent.startsWith("Maity"), "sort by project");
   // A project filter and grouping by project.
   const pf = byId("inbox-project");
   expect(pf.querySelectorAll("option").map((o) => o.textContent).join("|") === "every project|Maity|Sample shop", "inbox: the project options carry no counts that could go stale");
@@ -208,11 +208,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 3
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 4
     && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
     "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
   // The entry expanded is the first on screen, not the first of the ungrouped order.
-  // (By priority, Sample shop's urgent one leads the ungrouped order; grouped, Maity comes first.)
+  // (By priority, Sample shop's urgent one leads the ungrouped order; grouped, the personal one comes first.)
   byId("inbox-sort").value = "priority"; byId("inbox-sort").dispatch("change"); await tick();
   expect(main.querySelectorAll("li.entry")[0].className.includes("current") && !main.querySelectorAll("section.entry-group")[1].querySelector("li.current"),
     "inbox: grouped, the expanded entry is the first on screen");
@@ -2091,6 +2091,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/all", "no project: the empty hash lands on #/all");
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
+  // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
+  expect(main.querySelectorAll(".project-label.personal").length === 1
+    && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
+    "no project: a personal request is still shown, before the empty state");
+  // A truly empty account: the empty state alone.
+  const npGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/requests" ? Promise.resolve({ items: [], next_cursor: null }) : npGetAll(p));
+  await go("#/new"); await go("#/all"); await tick();
+  expect(text(main).includes("No projects yet") && !main.querySelector("li.entry") && !text(main).includes("Nothing waits for you"),
+    "no project and nothing personal: only the empty state");
+  win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
   expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
@@ -2427,6 +2438,83 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = gcMe;
   await go("#/p/maity/inbox");
 
+  // Per hub, from its machine form (GET /openapi.json): what it does not serve is not offered.
+  const hgGet = win.Maity.api.get;
+  const hgPaths = (paths) => {
+    win.Maity.api.forgetRoutes();
+    win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths }) : hgGet(p));
+  };
+  const hgSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
+  hgPaths({ "/api/v1/projects/{slug}/conversations": { get: {} } });
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat"); await hgSettle();
+  expect(!main.querySelector("a.new-group") && text(main).includes("This hub has no group chats yet."),
+    "hub without group chats: no New group chat, and that is said instead of an empty-looking list");
+  await go("#/p/maity/chat/new"); await hgSettle();
+  expect(!main.querySelector("form.group-form") && text(main).includes("there is none to create"), "hub without group chats: nor the form");
+  await go("#/p/maity/inbox"); await projectSettings(); await hgSettle();
+  expect(header.querySelector(".attach-admin") && !header.querySelector("form.remove-reported"), "hub without group chats: no removal of a closed group chat's message");
+  await projectSettings();
+  await go("#/all"); await hgSettle();
+  expect(!main.querySelector(".observe-note"), "hub without group chats: nothing to read along in is named");
+  await go("#/observe/guestlab"); await hgSettle();
+  expect(text(main).includes("there is nothing to read along in") && !main.querySelector(".chat-list"), "hub without group chats: the read-along view says so");
+  await go("#/p/maity/chat/agt-b"); await hgSettle();
+  // The whole attachments part is hidden, so no file field is left without its label.
+  const hgChooser = () => main.querySelector(".attach");
+  expect(hgChooser() && hgChooser().hidden && byId("chat-files").disabled, "hub without attachments: no Attach files");
+  expect(/\.attach\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "hub without attachments: the part's own display does not beat its hidden attribute");
+  // With both: offered (the route's parameter name and prefix do not matter).
+  hgPaths({ "/projects/{slug}/conversations": { get: {}, post: {} }, "/api/v1/projects/{project}/attachments": { post: {} } });
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat"); await hgSettle();
+  expect(main.querySelector("a.new-group") && !text(main).includes("This hub has no group chats yet."), "hub with group chats: New group chat is offered");
+  await go("#/p/maity/inbox"); await projectSettings(); await hgSettle();
+  expect(header.querySelector("form.remove-reported"), "hub with group chats: the removal of a closed group chat's message is offered");
+  await projectSettings();
+  await go("#/p/maity/chat/agt-b"); await hgSettle();
+  expect(hgChooser() && !hgChooser().hidden, "hub with attachments: Attach files is offered");
+  // A machine form that cannot be read keeps the controls.
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hgGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat"); await hgSettle();
+  expect(main.querySelector("a.new-group"), "an unreadable machine form keeps New group chat");
+  win.Maity.api.get = hgGet;
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox");
+
+  // Personal requests (§7): in the cross-project inbox only, answered and withdrawn on /requests/{id}.
+  const psCalls = [];
+  const psPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { psCalls.push([p, b]); return psPost(p, b); };
+  await go("#/p/maity/inbox"); await hgSettle();
+  expect(!text(main).includes("proposes a change to its soul"), "personal request: never in a project's inbox");
+  await go("#/all"); await hgSettle();
+  const psHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("proposes a change to its soul"));
+  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 1
+    && !main.querySelectorAll("a.project-label").some((a) => a.getAttribute("href").includes("elsewhere")),
+    "personal request: listed as Personal, with no link into its project");
+  if (psHead().attrs["aria-expanded"] !== "true") { psHead().click(); await tick(); }
+  const psEntry = () => main.querySelector(".current");
+  expect(!psEntry().querySelectorAll("a").some((a) => (a.getAttribute("href") || "").includes("elsewhere")) && btn(psEntry(), "Withdraw"),
+    "personal request: no links into a project one may not be in, and Withdraw is offered");
+  // Withdraw: confirmed, then sent on /requests/{id}/withdraw with the free text as its reason (here refused, so it stays open).
+  const psConfirm = win.confirm;
+  win.confirm = () => true;
+  win.Maity.api.post = (p, b) => { psCalls.push([p, b]); return p.endsWith("/withdraw") ? Promise.reject(new win.Maity.api.ApiError("no", 409, p, "request_not_open", {})) : psPost(p, b); };
+  const psText = psEntry().querySelector(".free-text textarea");
+  psText.value = "not needed any more";
+  btn(psEntry(), "Withdraw").click(); await hgSettle();
+  win.confirm = psConfirm;
+  expect(psCalls.length === 1 && psCalls[0][0] === "/requests/req-p001/withdraw" && psCalls[0][1].reason === "not needed any more"
+    && text(psEntry()).includes("Not sent"), "personal request: withdrawn through /requests/{id}/withdraw, its reason from the free text");
+  psCalls.length = 0;
+  psText.value = "";
+  win.Maity.api.post = (p, b) => { psCalls.push([p, b]); return psPost(p, b); };
+  btn(psEntry(), "Go").click(); await hgSettle();
+  expect(psCalls.length === 1 && psCalls[0][0] === "/requests/req-p001/answer" && psCalls[0][1].reply_id === "go",
+    "personal request: answered through /requests/{id}/answer");
+  win.Maity.api.post = psPost;
+
   // Attachments (docs/api.md §8.7): upload when chosen, name when sent, images inline, files as downloads.
   const atCalls = [];
   const atRaw = win.Maity.api.postRaw, atPost = win.Maity.api.post, atDel = win.Maity.api.del, atUrl = win.Maity.api.attachmentUrl;
@@ -2559,6 +2647,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
+  await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
   await go("#/p/maity/inbox");
 
   // Messages (§8.4): the project's messages, newest first, by type, with mentions, files and removal.
@@ -2916,9 +3006,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (p.startsWith("/projects/maity/ticker?")) { tkAsked += 1; return Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {})); }
     return tkGet(p);
   };
+  win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(tkAsked === 1 && text(main).includes("This hub has no ticker yet."), "ticker: a hub without it in its machine form is asked once, and that is said");
   win.Maity.api.get = tkGet;
+  win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
 
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.

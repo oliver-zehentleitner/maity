@@ -277,6 +277,7 @@ window.Maity = window.Maity || {};
     if (!all[slug + "/ticker.json"]) all[slug + "/ticker.json"] = { subscription: { follow: { areas: [], types: [] }, mute: { areas: [], types: [] }, updated_at: null }, items: [] };
     return all[slug + "/ticker.json"];
   }
+  const personalRequests = () => (fixtures()["personal-requests.json"] || { items: [] }).items;
   // A decision only to who may read its request (§17.5): here, its audience.
   const tickerReadable = (e) => e.payload.type !== "decision" || (e.audience || []).includes("member:" + me().member.id);
   // detail is added at read time from the request (§17.5): its title and
@@ -774,11 +775,25 @@ window.Maity = window.Maity || {};
     }],
     // The cross-project inbox: every open request waiting for this human,
     // each with its project.
+    // Personal requests (§7) are the human's own, listed here only.
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
-        { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r))),
+        { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r)))
+        .concat(personalRequests().filter((r) => r.status === "open")),
       next_cursor: null,
     })],
+    ["POST", /^\/requests\/([^/]+)\/(answer|withdraw)$/, (m, body, path) => {
+      const req = personalRequests().find((r) => r.id === m[1]);
+      if (!req) fail(404, "not_found", "Not found", path);
+      if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      const at = nowIso();
+      req.status = m[2] === "answer" ? "answered" : "withdrawn";
+      req.answered_at = at;
+      req.answer = m[2] === "answer"
+        ? { reply_id: body.reply_id || null, text: body.text || null, talk: !!body.talk, by: me().member.id, on_behalf_of: null, at, conversation_id: null }
+        : null;
+      return req;
+    }],
     // The forge rule as the hub applies it, with github.com as the one
     // configured forge.
     ["POST", /^\/projects$/, (m, body, path) => {
@@ -934,7 +949,14 @@ window.Maity = window.Maity || {};
       return { items: page.map(clean), next_cursor: next };
     }],
     // The hub's machine form (§4): here only what the views ask of it.
-    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: { "/api/v1/projects/{slug}/ticker": { get: {}, post: {} }, "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} } } })],
+    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
+      "/api/v1/projects/{slug}/ticker": { get: {}, post: {} },
+      "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} },
+      "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
+      "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
+      "/api/v1/requests/{request_id}/answer": { post: {} },
+      "/api/v1/requests/{request_id}/withdraw": { post: {} },
+    } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
@@ -1860,7 +1882,33 @@ window.Maity = window.Maity || {};
     return { items, next_cursor: null };
   }
 
+  // What the hub serves, from its machine form (GET /openapi.json), read
+  // once per page: a view offers a control only for a route the hub lists.
+  // The hub lists its paths under its prefix (/api/v1/…); either form
+  // counts, as in the CLI, and parameter names are not compared. A failed
+  // read is not kept: the next ask reads again.
+  let hubPaths = null;
+  const routeKey = (method, path) => method.toUpperCase() + " "
+    + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
+  function hubRoutes() {
+    if (!hubPaths) {
+      hubPaths = M.api.get("/openapi.json").then((doc) => {
+        const found = new Set();
+        Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
+          Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
+        return found;
+      });
+      hubPaths.catch(() => { hubPaths = null; });
+    }
+    return hubPaths;
+  }
+
   M.api = {
+    // Whether the hub serves `method path` (path as in docs/api.md, without
+    // the prefix); rejects when its machine form cannot be read.
+    hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
+    // Reads the machine form again at the next ask (the smoke test's hubs).
+    forgetRoutes: () => { hubPaths = null; },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

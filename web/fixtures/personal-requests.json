@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "id": "req-p001",
+      "class": "consent",
+      "title": "Agent Q proposes a change to its soul",
+      "summary": "Agent Q, your agent in elsewhere, would add a line to its soul: \"Ask before touching the deploy scripts.\"",
+      "tried": null,
+      "options": [],
+      "replies": [
+        { "id": "go", "label": "Go" }
+      ],
+      "priority": "normal",
+      "to": "profile_owner:agt-q",
+      "asked_by": {
+        "member_id": "agt-q",
+        "display_name": "Agent Q",
+        "role": "member",
+        "session_id": null
+      },
+      "on_behalf_of": null,
+      "task_id": null,
+      "task": null,
+      "while_open": "proceed_provisionally",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "personal": true,
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-23T05:40:00Z",
+      "answered_at": null,
+      "project": { "slug": "elsewhere", "name": "Elsewhere", "state": "build" }
+    }
+  ],
+  "next_cursor": null
+}

@@ -281,7 +281,12 @@ window.Maity = window.Maity || {};
       h("button", { type: "submit" }, "Change state")));
     }
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
-    if (ctx.canAdmin) append(panel, blindRemoveForm(ctx));
+    // Only on a hub with group chats: without them there is no closed one.
+    if (ctx.canAdmin && M.groupChat) {
+      const slot = h("div", { class: "remove-reported-slot" });
+      append(panel, slot);
+      M.groupChat.served().then((yes) => { if (yes) append(slot, blindRemoveForm(ctx)); });
+    }
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).
@@ -966,7 +971,14 @@ window.Maity = window.Maity || {};
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
-        M.views.noProjects(ctx, root);
+        // A personal request (§7) reaches its human without a membership:
+        // what waits comes first, the way to a project of one's own after it.
+        const waiting = (await M.api.getAll("/requests")).items;
+        if (seq !== renderSeq) return;
+        if (waiting.length) await M.views.inbox(ctx, root, []);
+        const start = h("div", { class: "no-projects" });
+        M.views.noProjects(ctx, start);
+        append(root, start);
         // Without a project of one's own, one's agents may still be in others'.
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);

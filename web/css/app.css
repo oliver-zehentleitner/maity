@@ -759,6 +759,8 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 /* Attachments (js/attachments.js). */
 .attach { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+/* Its display would beat the hidden attribute: a hub without attachments shows none of it. */
+.attach[hidden] { display: none; }
 .attach-button { cursor: pointer; }
 /* The file input is hidden; its label is the button, and shows the input's focus. */
 .attach:has(input[type="file"]:focus-visible) .attach-button { outline: 2px solid var(--accent); outline-offset: 2px; }

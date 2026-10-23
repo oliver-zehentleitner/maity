@@ -571,3 +571,62 @@ only: the next `<nav>` would inherit them again. Cutting the shared
 prefix off the names: the card asked for the name to stay readable as
 it is, and a prefix shared by today's agents need not be shared
 tomorrow. Presence as a line of its own: the dot already says it.
+
+## A control for a route a hub may lack is offered only when the hub's machine form lists it; an unreadable one keeps the control
+
+**Id:** 51dab38e-abd9-4848-91ed-a066eea39e9f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's web-vs-live audit and its card (tsk-x995qwddkrk2), 2026-10-23: on maity.team "New group chat" and "Attach files" were offered while the hub served neither; the dashboard's implementation, 2026-10-23
+**Revisit when:** every hub the dashboard serves has group chats and attachments, or the hub answers a capability list of its own
+
+`M.api.hubHas(method, path)` reads `GET /openapi.json` once per page and
+says whether the hub serves a route, the `/api/v1` prefix and the
+parameters' names not compared. New group chat, the form at
+`#/p/<slug>/chat/new`, the blind removal in Project settings and reading
+along from outside a project need `POST /projects/{slug}/conversations`;
+without it the chat list says "This hub has no group chats yet." instead
+of looking empty. Attach files needs `POST /projects/{slug}/attachments`
+and is hidden, too, once the hub answered 404 to the pending list. The
+Ticker asks the same way. A machine form that cannot be read counts as
+"served": the controls stay, and a failure says itself where it happens.
+
+**Reason:** the hub has no capability list, and its machine form is the
+one place that says which routes it serves; the routes in question could
+not be probed without side effects (a POST would create) or tell apart
+(`GET …/conversations` exists on hubs without group chats, and a 404
+may be a mistyped project). Offering a control whose every use fails
+tells the human nothing until they have typed a message or picked a
+file.
+
+**Rejected alternative:** hiding the controls when the machine form
+cannot be read: a passing network failure would silently take working
+features off the page for the rest of its life. Each view reading
+`openapi.json` on its own, as the Ticker did: the same read and the same
+two key forms in several places.
+
+## A personal request in the cross-project inbox is labelled Personal and links into no project
+
+**Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the dashboard gets a personal inbox of its own, apart from `#/all`
+
+A personal request (`personal: true`, listed only by `GET /requests`) is
+answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
+badge says "Personal" and its project's name without a link, its card and
+its mentions are text, its free text has no @ picker, and it offers
+Withdraw, which only its human may do. Grouped by project, the personal
+ones come first under "Personal".
+
+**Reason:** the project's routes answer `not_found` for a personal
+request, its project's inbox never lists it, and its human need not be a
+member of that project: every link or member read into the project would
+lead nowhere.
+
+**Rejected alternative:** the project's badge and links as for every
+other entry: they lead to an inbox without the request, or to a project
+the human cannot open.
