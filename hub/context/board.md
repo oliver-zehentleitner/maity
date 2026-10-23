@@ -58,3 +58,24 @@ holds everything about what it had.
   `history`: a scan of the project's events, for every redaction.
 - A soft-deleted link (`removed_at`): every read of a card would filter
   it, for data the history keeps anyway.
+
+## A mirrored ships_with edge is history on the edited card only
+
+**Id:** 2404ac29-1a96-45c7-b3d5-819512ea0efc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the edit history)
+**Revisit when:** members ask why a partner card's history does not show the edge, or ships_with stops being mirrored
+
+When a member sets `ships_with` on one card, the hub mirrors the edge on
+the partner card. The member's card gets the history entry; the
+partner's `task_updated` names `fields: ["ships_with"]` with
+`history: []`.
+
+**Reason:** the history records what a member changed; the mirror is the
+hub keeping both cards consistent, like a rank or a request's block,
+which the contract lists as events, not history.
+
+**Rejected alternative:** an entry on both cards: two entries for one
+decision, and the partner's would name an actor who never edited it.
