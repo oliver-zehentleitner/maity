@@ -7393,7 +7393,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_PORT` | `port` | default 587 for `starttls`, 465 for `implicit`, 25 for `none` |
 | `MAITY_SMTP_TLS` | `tls` | `starttls` (default), `implicit`, or `none` — `none` only for a host that is a loopback address or the name `localhost` (a relay on the same machine or in the same pod); for any other host it is `invalid` and stops the hub at startup when set in the environment. Under `starttls`, **STARTTLS is required**: a server that does not offer it (or a path that strips it) fails the send at stage `tls`, loudly — logged, counted in `failed_last_hour`, and the test send says so — and nothing is sent in clear; there is no fallback. Certificates are always verified against the system store, or against `MAITY_SMTP_CA_FILE` when set; there is no switch to skip verification |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
-| `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS |
+| `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
 | `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
@@ -7489,7 +7489,7 @@ the configured `host` and `port` — the body takes no host, port or TLS
 mode, and a field other than `to` is `invalid` — so the test send is
 no tool to reach another address from inside the hub's network. `to` is optional and
 defaults to the admin's own verified address (§18.4); without either it
-is `invalid` (`details.fields.to: "required"`). It runs whether
+is `invalid` (`details.fields.to: "no_verified_address"`). It runs whether
 `enabled` is `true` or not, and is `mail_not_configured` when `complete`
 is `false`. Five per hour per instance admin (`rate_limited`).
 
