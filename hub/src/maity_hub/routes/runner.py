@@ -20,7 +20,7 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, longpoll
+from maity_hub import clock, events, idempotency, instances, longpoll
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
@@ -444,7 +444,7 @@ def pick_up(
             )
             .values(revoked_at=now)
         )
-        values, binds = _join_fields(conn, placement)
+        values, binds = _join_fields(conn, placement)  # the instance rules refuse here
         token, code = new_token(), new_code()
         via = "join" if settings.join_url else "public"
         join_id = new_id("join")
@@ -490,18 +490,33 @@ def pick_up(
 
 
 def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]:
-    """The join's agent and assignment: the membership's as it is, or the stored fields
-    of a profile the exchange creates (§3.1); and what the credential will bind."""
+    """The join's agent, assignment and instance: for a member, a new instance within
+    the team's `max_instances`, or for a rejoin one that replaces the instance of the
+    revoked credential (§6.17, §15.9); for a profile the exchange creates, its stored
+    fields (§3.1). Also what the credential will bind."""
     if placement.membership_id is not None:
         member = conn.execute(
             select(t.membership).where(t.membership.c.id == placement.membership_id)
         ).one()
+        replaces = None
+        if placement.rejoin and placement.credential_id is not None:
+            old = conn.execute(
+                select(t.credential).where(t.credential.c.id == placement.credential_id)
+            ).one()
+            if old.revoked_at is None:  # a live instance is never taken over
+                raise _pickup_refused("credential_issued")
+            replaces = instances.require_replaceable(
+                conn, member, old.instance, "replaces", revoked=True
+            ).instance
+        instances.refuse_over_quota(conn, member)  # either way one more active instance
         return {
             "agent_id": member.agent_id,
             "role": member.role,
             "reports_to": member.reports_to,
             "areas": member.areas,
             "capabilities": member.capabilities,
+            "new_instance": replaces is None,
+            "replaces": replaces,
         }, str(member.agent_id)
     profile = placement.new_profile or {}
     return {

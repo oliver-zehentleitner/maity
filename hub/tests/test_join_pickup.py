@@ -27,7 +27,18 @@ def setup(make_client: ClientFactory, migrated: Engine) -> Setup:
     attach(owner, runner)
     client = make_client()
     assert hello(client, runner).status_code == 200
-    return Setup(owner, runner, client, flow.agent(make_client, owner, role="member"), migrated)
+    agent = flow.agent(make_client, owner, role="member")
+    _allow_instances(migrated, agent.id, 2)  # the joined clone plus the placement's
+    return Setup(owner, runner, client, agent, migrated)
+
+
+def _allow_instances(engine: Engine, agent_id: str, count: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id)
+            .values(max_instances=count)
+        )
 
 
 def pick_up(s: Setup, placement: dict[str, Any], generation: int | None = None) -> Any:
@@ -113,18 +124,54 @@ def test_what_a_pickup_needs(setup: Setup) -> None:
     assert stopped.json()["error"]["details"] == {"why": "not_running"}
 
 
-def test_a_rejoin_picks_up_again(setup: Setup, make_client: ClientFactory) -> None:
+def test_a_rejoin_replaces_the_revoked_instance(setup: Setup, make_client: ClientFactory) -> None:
+    placement = placed(setup)
+    first = exchange(make_client(), pick_up(setup, placement).json())
+    old_instance = first.headers["Maity-Instance"]
+    revoked = setup.owner.post(
+        f"/projects/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
+    )
+    assert revoked.status_code == 200, revoked.text
+    restarted = setup.owner.post(
+        f"/projects/maity/placements/{placement['id']}/restart", {"rejoin": True}
+    )
+    assert restarted.status_code == 200, restarted.text
+    again = pick_up(setup, restarted.json())
+    assert again.status_code == 201, again.text
+    joined = exchange(make_client(), again.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Instance"] != old_instance  # ids are never reused (§6.17)
+    with setup.engine.connect() as conn:
+        credential = conn.execute(
+            select(t.credential).where(t.credential.c.id == joined.headers["Maity-Credential-Id"])
+        ).one()
+        revocations = conn.execute(
+            select(t.event).where(t.event.c.kind == "credential_revoked")
+        ).all()
+    assert credential.replaces == old_instance
+    assert len(revocations) == 1  # the owner's; the rejoin revokes nothing again
+    row = placement_row(setup, placement["id"])
+    assert row.credential_id == credential.id and row.rejoin is False
+
+
+def test_a_pickup_never_takes_over_a_live_instance(
+    setup: Setup, make_client: ClientFactory
+) -> None:
     placement = placed(setup)
     exchange(make_client(), pick_up(setup, placement).json())
-    with setup.engine.begin() as conn:
+    with setup.engine.begin() as conn:  # rejoin set while the credential still lives
         conn.execute(
             update(t.placement).where(t.placement.c.id == placement["id"]).values(rejoin=True)
         )
-    again = pick_up(setup, placement)
-    assert again.status_code == 201, again.text
-    joined = exchange(make_client(), again.json())
-    row = placement_row(setup, placement["id"])
-    assert row.credential_id == joined.headers["Maity-Credential-Id"] and row.rejoin is False
+    refused = pick_up(setup, placement)
+    assert refused.json()["error"]["details"] == {"why": "credential_issued"}
+
+
+def test_a_pickup_respects_the_teams_instances(setup: Setup) -> None:
+    _allow_instances(setup.engine, setup.agent.id, 1)  # the joined clone has the one
+    placement = placed(setup)
+    refused = pick_up(setup, placement)
+    assert (refused.status_code, error(refused)) == (409, "instance_quota")
 
 
 def test_the_event_names_the_pickup_and_never_the_code(setup: Setup) -> None:
