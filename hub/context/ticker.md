@@ -71,8 +71,12 @@ switch-on), since a merge updates its pull request and nothing older can
 follow. A round reads at most 20 pages; when that cuts it, the next round
 goes on from the next page (`resume_page`), and once an interval has been
 read to its end `scanned_until` moves to the moment that scan began, so
-later rounds stop there. It keeps those merged after `merges_since` that have no
-`merge:<n>` key yet, reads each one's files (at most 300; a rename counts
+later rounds stop there. It keeps those updated after that bound and
+merged after `merges_since` that have no `merge:<n>` key yet: a pull
+request merged before the bound but updated after it (a comment while a
+cut scan was under way moves it to page 1, past the pages still to be
+read) is read again rather than lost, and the key keeps it to one item. It
+reads each one's files (at most 300; a rename counts
 for its old and its new path, and a renamed contract file is a contract
 change), and for a contract file that file at the merge commit and at the
 base. The sections come from the unified diff: added lines are looked up
@@ -97,6 +101,8 @@ the scan's own start: merges come back in the forge's "updated" order,
 not in merge order, so the last one announced says nothing about what is
 still behind. Reading the whole backlog in one round: unbounded on a busy
 repository. Stopping at a page bound and only logging the cut: the
-merges behind it would never be announced.
+merges behind it would never be announced. Admitting by the merge time
+after the bound: a merge that moved up the list while a cut scan read
+on would fall between its pages and the next interval for good.
 Reading only the files' names and taking every section of a touched
 contract file: it would wake every implementer for a one-line change.
