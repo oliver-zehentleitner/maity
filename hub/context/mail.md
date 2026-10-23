@@ -15,8 +15,9 @@
 as JSON; `null` in a `PATCH` deletes the row, and a missing row means
 the environment's value or the default. The answer's `source` is read
 off that: environment first, then a row, then the default. The SMTP
-password's row holds only `{nonce, ciphertext}` (`maity_hub.mail.secret`),
-and `last_test` lives in the same table under its own key. The counters
+password's row holds only the sealed value (`maity_hub.secretbox`,
+field `mail.smtp_password`), and `last_test` lives in the same table
+under its own key. The counters
 of §16.2 count rows of `mail_delivery` (budget kind, outcome, time; no
 address and no content) over the last hour; `security_queued` counts
 the security rows still `queued`, however old. The SMTP conversation is
