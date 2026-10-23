@@ -55,6 +55,35 @@ other-project refusal does.
 Each route would have to be right on its own, and a route added later
 without the case would serve a runner as an agent or a human.
 
+## An admin agent's members:admin is a path of its own, not the scope
+
+**Id:** 1a2db596-5fb3-48b0-baa9-2cac8372cc3d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract #139 (`docs/api.md` §2.3 ᵃ) and the plan agreed with the contract owner, 2026-10-23
+
+`members:admin` stays human-only in the scope table (`scopes.HUMAN_ONLY`),
+so every `require("members:admin")` and `may("members:admin")` in the hub
+still refuses an agent. `PATCH` and `DELETE …/members/<built-in function id>` take an
+explicit path for an agent with the `admin` role (`maity_hub.admin_agents`).
+It decides per target and field, and files a `member_change` proposal where
+the owner's go is needed. Only the scope list in the resume packet shows
+the limited scope (`scopes.listed_scopes`). The human-only refusals answer
+`details.reason: humans_only` and are checked before the scope, so the
+answer is the same for an agent of any role.
+
+**Reason:** `members:admin` guards joins, runners, attachments,
+placements, the member details and `spawn_consent_by`, more than twenty
+checks. Granting the scope and narrowing it everywhere would open each
+check that is missed; keeping it closed and opening two endpoints fails
+closed.
+
+**Rejected alternative:** granting `members:admin` to admin agents in the
+scope table and adding a `kind == "agent"` refusal at every other use. The
+table would then say more than the hub allows, and each new use of the
+scope would have to remember the exception.
+
 ## A session shows a public id, named browser and system, and keeps no address once it ends
 
 **Id:** 3a06ee98-93d4-470d-a749-4ec0d5cf5039

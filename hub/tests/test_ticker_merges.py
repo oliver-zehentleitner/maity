@@ -552,3 +552,26 @@ def test_a_page_in_the_bound_s_second_does_not_stop_the_scan(
     )
     github.answers["/repos/acme/maity/pulls/14/files?per_page=100&page=1"] = []
     assert probe.announce_merges(migrated, READER, pid) == 1, "page 2 is read, its merge announced"
+
+
+@pytest.mark.parametrize(("offset", "announced"), [(timedelta(0), 1), (timedelta(seconds=-1), 0)])
+def test_the_switch_on_second_counts(
+    owner: flow.Human,
+    github: FakeGitHub,
+    migrated: Engine,
+    offset: timedelta,
+    announced: int,
+) -> None:
+    # Switched on at hh:mm:ss.4, merged at hh:mm:ss.8: the forge says hh:mm:ss. That
+    # second counts (A's ruling on #231); the second before it is older than the switch.
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.begin() as conn:
+        epoch = ticker.merges_since(conn, pid).replace(microsecond=400_000)
+        conn.execute(
+            update(t.ticker_source)
+            .where(t.ticker_source.c.project_id == pid)
+            .values(merges_since=epoch)
+        )
+    merged(github, 15, [], at=clock.rfc3339(epoch + offset))
+    assert probe.announce_merges(migrated, READER, pid) == announced

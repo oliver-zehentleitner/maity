@@ -24,7 +24,9 @@ manual post, dedupe, the listing, the shaping per reader on every read
 path, the resume packet's `ticker`, `settings.ticker`, and the hub's own
 decision and release items are in, and merges through the probe (every
 2 minutes: the changed paths' area owners, the linked cards, the contract
-sections from the diff); the forge webhook with deploys follows. The
+sections from the diff), and the forge webhook: its secret sealed with
+`MAITY_SECRET_KEY`, signed deliveries as triggers for the probe, and
+automatic deploys. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
 §16.3) are in; the notifications and sign-in mails that use them follow.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
