@@ -2108,14 +2108,15 @@ without `check_in_with` (`{"onboarding": {}}`, or a briefing alone).
   the project is `invalid` on the `PATCH`
   (`details.fields["settings.onboarding.check_in_with"]: "not_a_member"`);
 - `role:<role>` is the first active member holding that role, by
-  `handle`, humans included — a check-in only routes a message, it
+  `handle` and then member id (handles are unique per owner only),
+  humans included — a check-in only routes a message, it
   hands no work over, so the agents-only rule of `substitutes` (§6.12)
   does not apply; with none, it falls back as `coordinator` does;
 - `coordinator` is the member who holds the coordinator role now
   (§6.12): the member `policy.coordinator` names, or under `role:admin`
   the first of the project's agent members with the role `admin` whose
-  availability is `available`, by `handle`, and the first by `handle`
-  when none is. While that member is out (§6.12; under `role:admin`
+  availability is `available`, by `handle` and then member id, and the
+  first in that order when none is. While that member is out (§6.12; under `role:admin`
   when every agent admin is), the first `available` of: its
   `policy.coordinator_substitute`, then the substitute of its active
   cover (`covered_by`, §6.12) — the same stand-ins §6.12 makes the
@@ -4494,7 +4495,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, check_in_with}`, §6.1); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
