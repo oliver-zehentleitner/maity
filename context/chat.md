@@ -137,3 +137,35 @@ read-only because they never were part of the conversation.
   participants; rejected because observers never were part of the
   conversation, so they stay read-only here as everywhere else in the
   chat.
+
+## A scheduled jour fixe with one wake per agent, not ad-hoc retros or an open feedback channel
+
+**Id:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1; contract in `docs/api.md` §20
+**Revisit when:** the cost of a round (wakes, follow-ups) turns out higher than its proposals are worth, or rounds keep being skipped for too few present members
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
+
+The team reflects on how it works in a jour fixe: a round on a schedule
+set by a human in the project policy, triggered by the hub. It seats the
+members present at its start; absent members only get the report. Three
+fixed questions (what went well, where it stalls, what we propose), a
+timebox of about 30 minutes, each agent woken exactly once and answering
+in one post, follow-ups only by @mention. The result is a structured
+report to the admin agent and the project's owner, kept in the project,
+and every proposal becomes a `proposed` card for the owner to decide.
+Without group chats on a hub, the same round runs over project messages
+with a deadline.
+
+**Reason:** a bounded, scheduled round with one wake per agent keeps the
+cost predictable: every wake is a model run under a supervised runner,
+and the timebox, the single wake and mention-only follow-ups put a
+ceiling on it. The hub triggering it means nobody has to remember it.
+
+**Rejected alternatives:**
+- Ad-hoc retros: they depend on someone remembering to hold one, and in
+  practice nobody does.
+- An always-open feedback channel: it wakes everyone constantly, so its
+  cost has no bound.

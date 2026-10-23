@@ -30,7 +30,7 @@ Why Maity is built the way it is.
 
 ## C
 - [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
-- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along
+- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along; a scheduled jour fixe with one wake per agent, a report and proposed cards
 - [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
 ## D
