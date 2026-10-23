@@ -9,6 +9,8 @@ nobody revokes a credential with its public id and a guessed secret.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, environment, placements
@@ -164,19 +166,28 @@ def _revoke_leaked_runners(
 
 
 def revoke_runner_credential(
-    conn: Connection, credential_id: str, reason: str | None, by: str | None
+    conn: Connection,
+    credential_id: str,
+    reason: str | None,
+    by: str | None,
+    applied: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Revoke a runner credential and end its live session; False when it was revoked
     already. Every project the runner is attached to learns it from its own
-    `runner_credential_revoked` (§15.10); the runner's long-poll ends on its next pass."""
+    `runner_credential_revoked` (§15.10), with the rule `runner_revoke.apply` applied
+    there (`keep` where nothing was applied: a leak's revocation keeps, §15.3) and the
+    placements it stopped, which the runner is also told on its next call."""
     now = clock.now()
+    by_project = {a["project_id"]: a for a in applied or []}
     revoked = conn.execute(
         update(t.runner_credential)
         .where(
             t.runner_credential.c.id == credential_id,
             t.runner_credential.c.revoked_at.is_(None),
         )
-        .values(revoked_at=now, revoked_by=by, revoked_reason=reason, live=None)
+        .values(
+            revoked_at=now, revoked_by=by, revoked_reason=reason, live=None, stopped=applied or []
+        )
     ).rowcount
     if revoked != 1:
         return False
@@ -197,7 +208,13 @@ def revoke_runner_credential(
             project_id,
             "runner_credential_revoked",
             ["role:owner"],
-            {"runner_id": runner_id, "credential_id": credential_id, "reason": reason},
+            {
+                "runner_id": runner_id,
+                "credential_id": credential_id,
+                "reason": reason,
+                "on_runner_revoke": by_project.get(project_id, {}).get("rule", "keep"),
+                "stopped": by_project.get(project_id, {}).get("stopped", []),
+            },
             actor=human_actor(conn, project_id, by),
             subject=("runner", runner_id),
         )

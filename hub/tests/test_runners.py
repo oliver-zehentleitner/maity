@@ -447,7 +447,8 @@ def test_a_credential_of_a_removed_runner_is_refused(
         )
     refused = call(make_client(), runner, "GET", "/api/v1/me")
     assert (refused.status_code, error(refused)) == (401, "credential_revoked")
-    assert refused.json()["error"]["details"] == {"reason": "runner_removed"}
+    # The runner learns what a stop closed; under keep that is nothing (§15.3).
+    assert refused.json()["error"]["details"] == {"reason": "runner_removed", "stop": []}
 
 
 def test_removing_a_runner_while_it_re_pairs_leaves_no_live_credential(

@@ -8,11 +8,12 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
+from maity_hub import runner_revoke
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.forge import Forge
 from maity_hub.net import Origin
 
@@ -59,13 +60,24 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
     path = request.url.path
 
     def run() -> Caller:
-        with engine.begin() as conn:
-            caller = authenticate(conn, facts, renew_leases=renew_leases)
-            if caller.kind == "runner":
-                _confine_runner(path)
-            if caller.kind == "agent" and slug is not None:
-                _refuse_other_project(conn, caller, slug)
-            return caller
+        try:
+            with engine.begin() as conn:
+                caller = authenticate(conn, facts, renew_leases=renew_leases)
+                if caller.kind == "runner":
+                    _confine_runner(path)
+                if caller.kind == "agent" and slug is not None:
+                    _refuse_other_project(conn, caller, slug)
+                return caller
+        except runner_revoke.RevocationDue as due:
+            # Written in its own transaction: the refusal rolls the call's back (§15.3).
+            with engine.begin() as conn:
+                runner_revoke.revoke_due(conn, due.credential_id, due.by)
+            raise ApiError(
+                401,
+                "credential_revoked",
+                "this credential was revoked",
+                {"reason": runner_revoke.REASON},
+            ) from None
 
     caller = await run_in_threadpool(retrying, run)
     request.state.caller = caller
