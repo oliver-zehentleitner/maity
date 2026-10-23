@@ -458,8 +458,16 @@ ignored and logged, never served. Whether the environment wins is
 decided in one place, `instance_settings.effective`. A secret the admin
 may set (today only the SMTP password, §16.2) is never a setting: it has
 its own registry and lives sealed with `maity_hub.secretbox` in
-`instance_secret`, so nothing that reads settings can serve it. The
-signing key and the instance key stay environment-only.
+`instance_secret`, so nothing that reads settings can serve it: no
+route or view returns the sealed value or the plaintext, and only the
+mail sender opens it, in memory, per send. The signing key and the
+instance key stay environment-only. A sealed value the current
+`MAITY_SECRET_KEY` cannot open (the key changed or is missing) is loud:
+logged at startup and `smtp_password_unreadable` in the admin view,
+counted as not set, never replaced by another source silently. The
+re-key path is to set the password again (or remove it) after the key
+changed. A downgrade past the migration drops the tables, and the admin
+sets the values again.
 
 **Reason:** the hub owner wanted one table with a fixed registry rather
 than one per section, so a new section needs no migration and every
