@@ -164,20 +164,29 @@ SEE_ALL_ROLES = ("owner", "admin")
 HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
 
 
-def hidden_redactions(conn: Connection, rows: Sequence[Any]) -> frozenset[str]:
+def hidden_redactions(
+    conn: Connection, rows: Sequence[Any], membership: Any = None
+) -> frozenset[str]:
     """The `subject_id`s among `rows`' `event_redacted` that name an event of a
     humans-only kind: such a tombstone is as unreadable to agents as the event it
-    redacts (§8.5). One query per batch, nothing when the batch has no tombstone."""
+    redacts (§8.5). With `membership`, also `ticker:<seq>` for each decision item
+    whose request it may not read now (§17.5). One query per batch at most."""
+    from maity_hub import ticker  # ticker writes through this module
+
+    hidden = {f"ticker:{seq}" for seq in ticker.withheld(conn, rows, membership)}
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
-        return frozenset()
+        return frozenset(hidden)
     return frozenset(
-        str(seq)
-        for seq in conn.execute(
-            select(t.event.c.seq).where(
-                t.event.c.seq.in_(seqs), t.event.c.kind.in_(HUMANS_ONLY_KINDS)
-            )
-        ).scalars()
+        hidden
+        | {
+            str(seq)
+            for seq in conn.execute(
+                select(t.event.c.seq).where(
+                    t.event.c.seq.in_(seqs), t.event.c.kind.in_(HUMANS_ONLY_KINDS)
+                )
+            ).scalars()
+        }
     )
 
 
@@ -192,6 +201,13 @@ def readable_by(
     )
     if humans_only and membership.agent_id is not None:
         return False
+    if row.kind == "ticker" and f"ticker:{row.seq}" in hidden:
+        return False  # a decision whose request it may not read: no item at all (§17.5)
+    if row.kind == "ticker_subscription_changed":
+        # The member's own business, and the human owners' and admins' (§17.12).
+        return (row.payload or {}).get("member_id") == principal or (
+            membership.agent_id is None and membership.role in SEE_ALL_ROLES
+        )
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
@@ -216,6 +232,7 @@ def read(
         lambda row, hidden: readable_by(row, membership, principal, hidden),
         after,
         limit,
+        membership,
     )
 
 
@@ -225,6 +242,7 @@ def _scan(
     readable: Callable[[Any, frozenset[str]], bool],
     after: int,
     limit: int,
+    membership: Any = None,
 ) -> tuple[list[Any], int, bool]:
     found: list[Any] = []
     examined = after
@@ -235,7 +253,7 @@ def _scan(
             .order_by(t.event.c.seq)
             .limit(500)
         ).all()
-        hidden = hidden_redactions(conn, batch)
+        hidden = hidden_redactions(conn, batch, membership)
         for row in batch:
             if readable(row, hidden):
                 if len(found) == limit:
@@ -279,6 +297,10 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
     admin never wakes, and neither does a kind in NON_WAKING."""
     if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
+    if row.kind == "ticker":
+        from maity_hub import ticker
+
+        return ticker.wakes(row, principal)
     audience = row.audience or []
     return (
         "all" in audience
@@ -305,6 +327,7 @@ def highest_readable(conn: Connection, project_id: str, membership: Any, princip
         conn,
         t.event.c.project_id == project_id,
         lambda row, hidden: readable_by(row, membership, principal, hidden),
+        membership,
     )
 
 
@@ -320,7 +343,10 @@ def highest_for_runner(conn: Connection, project_ids: Sequence[str], runner_id: 
 
 
 def _highest(
-    conn: Connection, scope: ColumnElement[bool], readable: Callable[[Any, frozenset[str]], bool]
+    conn: Connection,
+    scope: ColumnElement[bool],
+    readable: Callable[[Any, frozenset[str]], bool],
+    membership: Any = None,
 ) -> int:
     query = select(t.event).where(scope).order_by(t.event.c.seq.desc()).limit(500)
     before = None
@@ -328,7 +354,7 @@ def _highest(
         batch = conn.execute(
             query.where(t.event.c.seq < before) if before is not None else query
         ).all()
-        hidden = hidden_redactions(conn, batch)
+        hidden = hidden_redactions(conn, batch, membership)
         for row in batch:
             if readable(row, hidden):
                 seq: int = row.seq

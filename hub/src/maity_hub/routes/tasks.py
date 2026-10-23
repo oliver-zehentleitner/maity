@@ -15,7 +15,7 @@ from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import cards, clock, idempotency, mentions, paging, ranks, releases
+from maity_hub import cards, clock, idempotency, mentions, paging, ranks, releases, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -724,6 +724,10 @@ def patch_task(
             _ping(conn, mine, caller, card, found, "body", before=previous_mentions)
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
             releases.close(conn, card.id, fg)  # after the write's own event: release_ready last
+        if card.kind == "release" and changed.get("status") == "done":
+            ticker.on_release_done(
+                conn, mine.project, card, caller.actor(mine.id), mine.principal_id
+            )
         releases.recheck(conn, mine.project.id, fg)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
@@ -1188,6 +1192,9 @@ def report(
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
         if body.done and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
+            ticker.on_release_done(
+                conn, mine.project, card, caller.actor(mine.id), mine.principal_id
+            )
         releases.recheck(conn, mine.project.id, fg)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 

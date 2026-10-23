@@ -583,6 +583,9 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if runner_ids
         else {}
     )
+    from maity_hub import ticker  # ticker reads views for its listing
+
+    decided = ticker.details(conn, rows)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -603,6 +606,10 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "session_id": row.actor_session_id,
                 "via": row.actor_via,
             }
+        payload, audience = _without_reason(row, reader), row.audience
+        if row.kind == "ticker" and not row.redacted:
+            # Shaped per reader on every path that returns it (§17.5).
+            payload, audience = ticker.shaped(payload, audience, reader, decided.get(row.seq))
         views.append(
             {
                 "seq": row.seq,
@@ -612,8 +619,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "subject": (
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
-                "audience": row.audience,
-                "payload": _without_reason(row, reader),
+                "audience": audience,
+                "payload": payload,
                 "redacted": row.redacted,
             }
         )

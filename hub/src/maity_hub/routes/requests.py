@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements
+from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -683,6 +683,7 @@ def answer(
             actor=caller.actor(mine.id),
             subject=("request", row.id),
         )
+        ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -801,6 +802,9 @@ def close_request(
         actor=actor,
         subject=("request", row.id),
     )
+    if kind == "request_answered":
+        project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+        ticker.on_request_answered(conn, project, _row(conn, row.id), actor)
 
 
 def file_consent(

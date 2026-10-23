@@ -19,6 +19,7 @@ TABLE = {
     "requests:answer": "✓✓✓  ",
     "events:post": "✓✓✓✓✓",
     "events:admin": "✓h   ",
+    "ticker:post": "✓✓   ",
     "credentials:admin": "✓h   ",
     "agents:propose": "✓✓   ",
 }

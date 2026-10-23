@@ -359,7 +359,7 @@ def redact(
         # What the caller cannot read does not exist for it; no later refusal may say
         # otherwise (§8.5).
         if not events.readable_by(
-            row, mine.row, mine.principal_id, events.hidden_redactions(conn, [row])
+            row, mine.row, mine.principal_id, events.hidden_redactions(conn, [row], mine.row)
         ):
             raise not_found()
         # The tombstone's event reaches whoever could read the event, never more (§8.5).

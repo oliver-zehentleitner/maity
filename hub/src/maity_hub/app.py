@@ -46,6 +46,7 @@ from maity_hub.routes import (
     runner,
     runners,
     tasks,
+    ticker,
 )
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
@@ -116,6 +117,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(runners.router, prefix=prefix)
     app.include_router(runner.router, prefix=prefix)
     app.include_router(placements.router, prefix=prefix)
+    app.include_router(ticker.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     _mount_web(app, settings)

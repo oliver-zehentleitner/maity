@@ -24,6 +24,7 @@ PACKET = {
     "claims",
     "assigned",
     "requests",
+    "ticker",
     "events",
     "peers",
     "operations",
