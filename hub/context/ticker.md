@@ -21,10 +21,12 @@ owners and admins. A decision the reader may not read now is dropped in
 `events.readable_by`, from a set computed once per batch beside the
 humans-only tombstones (`hidden_redactions`); a decision is found by its
 subject, which its tombstone keeps, so a redacted one is withheld too.
-The tombstone of an item is shaped like the item, and its `event_redacted`
-goes to nobody (read by the human owners and admins), so neither leaks
-the audience nor wakes anyone. Waking for `ticker` goes by the reader's
-`reasons` entry, never by `all`; humans get `wake: false`. The read side
+The tombstone of an item is shaped like the item. Its `event_redacted`
+keeps the item's audience (§8.5), is shaped like it, is withheld with a
+withheld decision, and never wakes: the long-poll skips a notice whose
+subject is a ticker item. Waking for `ticker` goes by the reader's
+`reasons` entry, never by `all`; humans get `wake: false` but keep their
+`member:` token, which names them for their notifications (§18.1). The read side
 lives in `ticker_read`, which imports neither `events` nor `views`, so
 both use it without a cycle. The listing and the packet read the same
 events through the same functions; their filters work on the stored row
@@ -38,9 +40,9 @@ shaping on every path. Putting it where the event view is built covers
 second implementation that could drift. The dedupe key needs a unique
 constraint (§17.7) that a JSON field in the event row cannot carry. The
 decision check needs the request as it is now, so it is read per batch,
-the way the redaction check already works. An `event_redacted` that
-copied a ticker item's audience would have carried its `all` into a kind
-that wakes on it.
+the way the redaction check already works. The notice keeps §8.5's
+audience so that whoever received the item is told it is gone; its `all`
+would wake every session, so waking is decided by the subject's kind.
 
 **Rejected alternative:** a table of ticker items beside the event log:
 it would hold the same facts twice and need its own read paths for the
