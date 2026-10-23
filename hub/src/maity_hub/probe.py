@@ -29,7 +29,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, releases
+from maity_hub import clock, forge, releases, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.views import principal_id
@@ -38,6 +38,7 @@ log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
 INTERVAL = 300  # seconds between the worker's sweeps
+MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
 
 
@@ -326,6 +327,107 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
             return
 
 
+def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
+    """§17.4: the pull requests merged into the default branch since the ticker was
+    switched on and not announced yet, each with its files and, for a contract file
+    among them, that file at the merge commit and at the base; one item each. The
+    forge is read with no connection held. Returns how many were announced."""
+    with engine.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        since = ticker.merges_since(conn, project_id)
+    conf = ticker.settings(project)
+    if not conf["enabled"] or since is None or not fg.configured_for(project.repository_url):
+        return 0
+    repository = forge.repository_of(project.repository_url)
+    base = project.repository_default_branch or "main"
+    pulls = [
+        p
+        for p in fg.merged_pulls(repository, base)
+        if p["base"] == base
+        and datetime.fromisoformat(p["merged_at"].replace("Z", "+00:00")) > since
+    ]
+    pulls.sort(key=lambda p: (p["merged_at"], p["number"]))
+    written = 0
+    for pr in pulls:
+        with engine.connect() as conn:
+            if ticker.existing(conn, project_id, f"merge:{pr['number']}") is not None:
+                continue
+        files, truncated = fg.pull_files(repository, pr["number"])
+        contract: dict[str, set[str] | None] = {}
+        for f in files:
+            if f["path"] not in conf["contract_files"]:
+                continue
+            contract[f["path"]] = _contract_sections(fg, repository, pr, f)
+        merge = ticker.Merge(
+            number=pr["number"],
+            title=pr["title"],
+            url=pr["url"],
+            merge_sha=pr["merge_sha"],
+            base=base,
+            merged_at=pr["merged_at"],
+            author=pr["author"],
+            head=pr["head"],
+            paths=[f["path"] for f in files],
+            paths_truncated=truncated,
+            contract=contract,
+        )
+        with transaction(engine) as conn:
+            lock_project(conn, project_id)
+            # Switched off, or announced by another reader while the forge was asked.
+            current = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+            if ticker.settings(current)["enabled"] and ticker.write_merge(conn, current, merge):
+                written += 1
+    return written
+
+
+def _contract_sections(
+    fg: forge.Forge, repository: str, pr: dict[str, Any], changed: dict[str, Any]
+) -> set[str] | None:
+    """The touched sections of one contract file, or None when the hub cannot tell (a file
+    over 1 MiB, a diff without its patch, §17.3)."""
+    if changed["patch"] is None or not pr["merge_sha"]:
+        return None
+    try:
+        after = fg.file_at(repository, changed["path"], pr["merge_sha"], ticker.CONTRACT_CAP)
+        before = (
+            fg.file_at(
+                repository,
+                changed["previous"] or changed["path"],
+                pr["base_sha"],
+                ticker.CONTRACT_CAP,
+            )
+            if pr["base_sha"]
+            else None
+        )
+    except ValueError:
+        return None
+    if after is None:
+        return None
+    try:
+        return ticker.sections(
+            after.decode("utf-8"), before.decode("utf-8") if before else None, changed["patch"]
+        )
+    except UnicodeDecodeError:
+        return None
+
+
+def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
+    """Every project with the ticker on and an observable repository (§17.4)."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.project.c.id, t.project.c.repository_url).where(
+                t.project.c.id.in_(select(t.ticker_source.c.project_id))
+            )
+        ).all()
+    for row in rows:
+        if stop is not None and stop.is_set():
+            return
+        if fg.configured_for(row.repository_url) and not _guarded(
+            announce_merges, engine, fg, row.id
+        ):
+            return
+
+
 def _guarded(work: Callable[..., Any], *args: Any) -> bool:
     """Run one piece of work; False when the forge did not answer."""
     try:
@@ -362,13 +464,19 @@ class Worker:
 
     def _run(self) -> None:
         next_sweep = clock.now()
+        next_merges = clock.now()
         while True:
-            wait = max(0.0, (next_sweep - clock.now()).total_seconds())
+            due = min(next_sweep, next_merges)
+            wait = max(0.0, (due - clock.now()).total_seconds())
             try:
                 job = self.jobs.get(timeout=wait)
             except queue.Empty:
-                _guarded(sweep, self.engine, self.fg, self.stopping)
-                next_sweep = clock.now() + timedelta(seconds=self.interval)
+                if clock.now() >= next_merges:
+                    _guarded(merge_sweep, self.engine, self.fg, self.stopping)
+                    next_merges = clock.now() + timedelta(seconds=MERGE_INTERVAL)
+                if clock.now() >= next_sweep:
+                    _guarded(sweep, self.engine, self.fg, self.stopping)
+                    next_sweep = clock.now() + timedelta(seconds=self.interval)
                 continue
             if job is None:
                 return

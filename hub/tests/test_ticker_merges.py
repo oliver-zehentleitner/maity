@@ -1,0 +1,266 @@
+"""docs/api.md §17.2–§17.4: merges announced from what the probe observes — the
+changed paths, the linked cards, the contract's sections, dedupe and the start."""
+
+from __future__ import annotations
+
+import base64
+from dataclasses import replace
+from typing import Any
+
+import pytest
+from sqlalchemy import Engine, select, update
+
+from maity_hub import clock, forge, probe, ticker
+from maity_hub import tables as t
+from maity_hub.config import Settings
+from tests import flow
+from tests.conftest import ClientFactory
+from tests.test_probe import READER, REPO, TOKEN, FakeGitHub
+
+BASE_SHA = "b" * 40
+MERGE_SHA = "c" * 40
+CONTRACT_BEFORE = (
+    "# API\n\n## 6. Projects\n\nold six\n\n### 6.5 Claims\n\nold claim\n\n## 13. CLI\n\nold cli\n"
+)
+CONTRACT_AFTER = (
+    "# API\n\n## 6. Projects\n\nold six\n\n### 6.5 Claims\n\nnew claim\n\n"
+    "## 13. CLI\n\nold cli\nnew cli line\n"
+)
+# Line 9 changes in 6.5, line 14 is added in 13.
+PATCH = "@@ -9,1 +9,1 @@\n-old claim\n+new claim\n@@ -13,1 +13,2 @@\n old cli\n+new cli line\n"
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    return replace(settings, forge_github_token=TOKEN)
+
+
+@pytest.fixture
+def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
+    fake = FakeGitHub()
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
+    monkeypatch.setattr(probe.Worker, "start", lambda self: None)
+    return fake
+
+
+@pytest.fixture
+def owner(make_client: ClientFactory, migrated: Engine, github: FakeGitHub) -> flow.Human:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "maity", repository=REPO)
+    return owner
+
+
+@pytest.fixture
+def team(make_client: ClientFactory, owner: flow.Human) -> dict[str, flow.Agent]:
+    return {
+        "admin": flow.agent(make_client, owner, role="admin", areas=["context/"]),
+        "hub": flow.agent(make_client, owner, areas=["hub/"]),
+        "docs": flow.agent(make_client, owner, areas=["docs/"]),
+        "cli": flow.agent(make_client, owner, areas=["cli/"]),
+    }
+
+
+def enable(owner: flow.Human, **extra: Any) -> None:
+    body = {
+        "enabled": True,
+        "contract_files": ["docs/api.md"],
+        "contract_implementers": {"6": ["area:hub/"], "13": ["area:cli/"]},
+    }
+    response = owner.patch("/projects/maity", {"settings": {"ticker": {**body, **extra}}})
+    assert response.status_code == 200, response.text
+
+
+def project_id(engine: Engine) -> str:
+    with engine.connect() as conn:
+        pid: str = conn.execute(select(t.project.c.id)).scalar_one()
+    return pid
+
+
+def merged(
+    github: FakeGitHub,
+    number: int,
+    files: list[dict[str, Any]],
+    *,
+    at: str = "2099-01-01T10:00:00Z",
+    head: str = "agent-b/x",
+    title: str | None = None,
+) -> None:
+    pulls = github.answers.setdefault(
+        "/repos/acme/maity/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50&page=1",
+        [],
+    )
+    pulls.append(
+        {
+            "number": number,
+            "title": title or f"PR {number}",
+            "html_url": f"https://github.com/acme/maity/pull/{number}",
+            "merged_at": at,
+            "merge_commit_sha": MERGE_SHA,
+            "base": {"ref": "main", "sha": BASE_SHA},
+            "head": {"ref": head},
+            "user": {"login": "agent-b"},
+        }
+    )
+    github.answers[f"/repos/acme/maity/pulls/{number}/files?per_page=100&page=1"] = files
+
+
+def content(github: FakeGitHub, path: str, sha: str, text: str) -> None:
+    data = text.encode()
+    github.answers[f"/repos/acme/maity/contents/{path}?ref={sha}"] = {
+        "type": "file",
+        "size": len(data),
+        "encoding": "base64",
+        "content": base64.b64encode(data).decode(),
+    }
+
+
+def items(owner: flow.Human) -> list[dict[str, Any]]:
+    events = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    return [e for e in events if e["kind"] == "ticker"]
+
+
+def reasons(event: dict[str, Any]) -> dict[str, list[str]]:
+    return {r["member_id"]: r["why"] for r in event["payload"]["reasons"]}
+
+
+# --- the sections of a contract file -----------------------------------------------------
+
+
+def test_headings_name_sections_by_their_number() -> None:
+    assert ticker.headings(
+        "# t\n## 8. Events\ntext\n### 8.2 Kinds, audience\n#### 8.2.1 deep\n## Notes\n"
+    ) == [
+        (2, "8"),
+        (4, "8.2"),
+    ]
+
+
+def test_changed_lines_by_the_new_and_the_old_file() -> None:
+    assert ticker.changed_lines(PATCH) == ([9, 14], [9])
+
+
+def test_sections_from_the_new_file_and_deleted_lines_from_the_base() -> None:
+    assert ticker.sections(CONTRACT_AFTER, CONTRACT_BEFORE, PATCH) == {"6.5", "13"}
+    # A changed heading belongs to its own section.
+    assert ticker.sections(
+        "## 1. A\n## 2. B\n", "## 1. A\n## 2. Bee\n", "@@ -2 +2 @@\n-## 2. Bee\n+## 2. B\n"
+    ) == {"2"}
+
+
+def test_the_longest_key_wins_and_star_takes_the_rest() -> None:
+    mapping = {"8": ["area:hub/"], "8.2": ["area:web/"], "*": ["role:admin"]}
+    assert ticker.implementers(mapping, "8.2.1") == ["area:web/"]
+    assert ticker.implementers(mapping, "8.3") == ["area:hub/"]
+    assert ticker.implementers(mapping, "13") == ["role:admin"]
+
+
+# --- announcing --------------------------------------------------------------------------
+
+
+def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    card = team["hub"].post("/projects/maity/tasks", {"title": "Claims"}).json()
+    team["hub"].post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == card["id"]).values(report={"pr": {"number": 212}})
+        )
+    merged(
+        github,
+        212,
+        [
+            {"filename": "hub/maity_hub/claims.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"},
+            {"filename": "docs/api.md", "patch": PATCH},
+        ],
+        title="hub: the claim lease survives a restart",
+    )
+    content(github, "docs/api.md", MERGE_SHA, CONTRACT_AFTER)
+    content(github, "docs/api.md", BASE_SHA, CONTRACT_BEFORE)
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    p = item["payload"]
+    assert (
+        p["text"] == "#212 hub: the claim lease survives a restart — merged into main;"
+        " touches hub/, docs/, docs/api.md (§6.5, §13)"
+    )
+    assert p["contract"] == {"sections": ["6.5", "13"], "sections_unknown": False}
+    assert p["areas"] == ["hub/", "docs/"] and p["tasks"] == [card["id"]]
+    assert p["merge"]["pr"] == 212 and p["merge"]["merge_sha"] == MERGE_SHA
+    assert (p["origin"], item["subject"], item["actor"]) == (
+        {"via": "probe", "delivery": None},
+        {"type": "pull_request", "id": "212"},
+        None,
+    )
+    assert reasons(item) == {
+        team["hub"].id: [
+            "area_owner:hub/",
+            f"card_holder:{card['id']}",
+            "contract_implementer:6.5",
+        ],
+        team["docs"].id: ["area_owner:docs/"],
+        team["cli"].id: ["contract_implementer:13"],
+        team["admin"].id: ["role:admin"],
+    }
+    assert (
+        probe.announce_merges(migrated, READER, project_id(migrated)) == 0
+    ), "one item per pull request"
+
+
+def test_nothing_merged_before_the_ticker_was_switched_on(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    merged(github, 5, [{"filename": "hub/a.py", "patch": ""}], at="2001-01-01T00:00:00Z")
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 0
+    assert items(owner) == []
+
+
+def test_nothing_while_the_ticker_is_off(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
+    merged(github, 6, [{"filename": "hub/a.py", "patch": ""}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 0
+
+
+def test_a_merge_the_hub_cannot_see_in_full_reaches_every_area_owner(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    merged(github, 7, [{"filename": f"hub/f{n}.py", "patch": ""} for n in range(100)])
+    github.answers["/repos/acme/maity/pulls/7/files?per_page=100&page=2"] = None
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert item["payload"]["paths_truncated"] is True
+    # The owner owns "/" (§6.2); every member with an area is reached.
+    assert {m for m, why in reasons(item).items() if "area_owner:*" in why} == {
+        owner.id,
+        *(a.id for a in team.values()),
+    }
+
+
+def test_without_a_patch_the_sections_are_unknown_and_every_implementer_applies(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    merged(github, 8, [{"filename": "docs/api.md"}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert item["payload"]["contract"] == {"sections": [], "sections_unknown": True}
+    assert "sections unknown" in item["payload"]["text"]
+    assert reasons(item)[team["cli"].id] == ["contract_implementer:13"]
+    assert reasons(item)[team["hub"].id] == ["contract_implementer:6"]
+
+
+def test_switching_on_again_starts_again_from_then(owner: flow.Human, migrated: Engine) -> None:
+    enable(owner)
+    with migrated.connect() as conn:
+        first = ticker.merges_since(conn, project_id(migrated))
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
+    enable(owner)
+    with migrated.connect() as conn:
+        assert ticker.merges_since(conn, project_id(migrated)) >= first
+    assert first <= clock.now()

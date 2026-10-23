@@ -328,6 +328,16 @@ ticker_dedupe = Table(
     **MYSQL_TABLE,
 )
 
+# Where the probe's merge announcements start (§17.4): the moment the ticker was
+# switched on; nothing merged before it is announced.
+ticker_source = Table(
+    "ticker_source",
+    metadata,
+    _ref("project_id", "project.id", primary_key=True),
+    Column("merges_since", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
 ticker_subscription = Table(
     "ticker_subscription",
     metadata,

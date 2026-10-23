@@ -237,6 +237,78 @@ class Forge:
             sha = annotated["object"]["sha"] if annotated else sha
         return {"name": name, "sha": sha, "found": True}
 
+    # --- merges for the change ticker (docs/api.md §17.4) ------------------------------------
+
+    def merged_pulls(self, repository: str, base: str, pages: int = 3) -> list[dict[str, Any]]:
+        """The pull requests closed against `base` and merged, most recently updated first,
+        at most `pages` pages of 50: what the ticker may not have announced yet."""
+        found: list[dict[str, Any]] = []
+        for page in range(1, pages + 1):
+            batch = self._get(
+                f"/repos/{repository}/pulls?state=closed&base={urllib.parse.quote(base)}"
+                f"&sort=updated&direction=desc&per_page=50&page={page}"
+            )
+            if batch is None:
+                self._missing(repository)
+                return found
+            if not isinstance(batch, list):
+                raise ForgeUnavailableError("the forge answered a list with no list")
+            for pr in batch:
+                if not isinstance(pr, dict) or pr.get("merged_at") is None:
+                    continue
+                found.append(
+                    {
+                        "number": pr["number"],
+                        "title": pr.get("title") or "",
+                        "url": pr.get("html_url"),
+                        "merge_sha": pr.get("merge_commit_sha"),
+                        "base": (pr.get("base") or {}).get("ref"),
+                        "base_sha": (pr.get("base") or {}).get("sha"),
+                        "head": (pr.get("head") or {}).get("ref"),
+                        "merged_at": pr["merged_at"],
+                        "author": (pr.get("user") or {}).get("login"),
+                    }
+                )
+            if len(batch) < 50:
+                return found
+        return found
+
+    def pull_files(
+        self, repository: str, number: int, cap: int = 300
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """The changed files of a pull request in the forge's order, at most `cap`: each
+        `{path, previous, patch}` (`patch` null when the forge sent none). The second value
+        is whether the list is incomplete (over the cap, or cut short by the forge)."""
+        files: list[dict[str, Any]] = []
+        page = 1
+        while len(files) < cap:
+            batch = self._get(f"/repos/{repository}/pulls/{number}/files?per_page=100&page={page}")
+            if batch is None:
+                return files, True
+            if not isinstance(batch, list):
+                raise ForgeUnavailableError("the forge answered a list with no list")
+            for f in batch:
+                if isinstance(f, dict) and isinstance(f.get("filename"), str):
+                    files.append(
+                        {
+                            "path": f["filename"],
+                            "previous": f.get("previous_filename"),
+                            "patch": f.get("patch") if isinstance(f.get("patch"), str) else None,
+                        }
+                    )
+            if len(batch) < 100:
+                return files[:cap], len(files) > cap
+            page += 1
+        return files[:cap], True
+
+    def file_at(self, repository: str, path: str, ref: str, cap: int) -> bytes | None:
+        """A file at a commit through the contents API; None when it is not there. Over
+        `cap` bytes, or an answer that is not a file, is `ValueError`."""
+        found = self._get(
+            f"/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}"
+        )
+        return _decoded(found, cap)
+
     # --- the repository's images (docs/api.md §11.2) ------------------------------------------
 
     def owner_avatar(self, repository: str) -> str | None:
@@ -281,16 +353,22 @@ class Forge:
         hub holds one and without it for a public repository; None when it is not there.
         A file over `cap` bytes, or an answer that is not a file, is `ValueError`."""
         found = self._call(f"/repos/{repository}/contents/{urllib.parse.quote(path)}")
-        if found is None:
-            return None
-        if not isinstance(found, dict) or found.get("type") != "file":
-            raise ValueError("not a file")
-        size = found.get("size")
-        if not isinstance(size, int) or size > cap:
-            raise ValueError("too large")
-        if found.get("encoding") != "base64" or not isinstance(found.get("content"), str):
-            raise ValueError("no content")
-        data = base64.b64decode(found["content"], validate=False)
-        if len(data) > cap:
-            raise ValueError("too large")
-        return data
+        return _decoded(found, cap)
+
+
+def _decoded(found: Any, cap: int) -> bytes | None:
+    """A contents-API answer as bytes; None for a 404, `ValueError` for anything that is
+    not a file of at most `cap` bytes."""
+    if found is None:
+        return None
+    if not isinstance(found, dict) or found.get("type") != "file":
+        raise ValueError("not a file")
+    size = found.get("size")
+    if not isinstance(size, int) or size > cap:
+        raise ValueError("too large")
+    if found.get("encoding") != "base64" or not isinstance(found.get("content"), str):
+        raise ValueError("no content")
+    data = base64.b64decode(found["content"], validate=False)
+    if len(data) > cap:
+        raise ValueError("too large")
+    return data
