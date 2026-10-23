@@ -2,10 +2,10 @@
 // may see (docs/api.md §8.4, every type but chat), newest first, by type:
 // who wrote to whom, about which card, the text as Markdown, the members
 // it mentions as links, and its files (§8.7). The uploader or an admin
-// deletes a file; an admin removes a message (§8.5). There is no message
-// listing in the contract: the view reads the project's events from the
-// start with wait=0, page by page, and keeps the messages; new ones and
-// removals arrive with the project's feed.
+// deletes a file; an admin removes a message (§8.5). The hub has no
+// message listing yet (§8.8 is in the contract): the view reads the
+// project's events from the start with wait=0, page by page, and keeps
+// the messages; new ones and removals arrive with the project's feed.
 "use strict";
 
 window.Maity = window.Maity || {};

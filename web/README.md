@@ -370,9 +370,9 @@ Inside a project, in the order of their importance; see
       file.
     - An owner or admin removes a message with a reason (§8.5); a removed
       one says by whom and why, and shows only without a type filter.
-    - The contract has no message listing: the view reads the project's
-      events from the start with `wait=0`, page by page, and keeps the
-      messages. New messages, removals and deleted files arrive with the
+    - The hub has no message listing yet (§8.8 is in the contract): the
+      view reads the project's events from the start with `wait=0`, page
+      by page, and keeps the messages. New messages, removals and deleted files arrive with the
       project's feed.
 
 **For a first-time human**, the empty inbox and the empty board say where
