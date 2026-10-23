@@ -153,3 +153,27 @@ order of checks, now or in a later version.
 only control for GHSA-5xm2. It closes the reachable flaw, but leaves the
 others one code change away.
 
+
+## `cryptography` for the SMTP password encrypted at rest
+
+**Id:** 91998b69-f71f-410d-b5fc-1938a26ef4ee
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.2 (AES-256-GCM with `MAITY_SECRET_KEY`); the implementation of tsk-gwft8fzazd6w, 2026-10-23
+**Revisit when:** the hub stops storing any secret itself, or the standard library gains an AEAD cipher
+
+`cryptography>=46` is a runtime dependency; `maity_hub.mail.secret` uses
+its `AESGCM` for the one secret the hub stores today, the SMTP password
+an instance admin sets in the dashboard.
+
+**Reason:** §16.2 fixes AES-256-GCM, and the standard library has no
+AEAD cipher. `cryptography` is the maintained binding to OpenSSL that
+ships wheels for every platform the image and the CI build on; the
+tests' fake SMTP server uses it for its certificate too.
+
+**Rejected alternatives:**
+- PyCryptodome: a second, self-contained crypto implementation for
+  the same cipher, less widely deployed.
+- No admin-set password, so no cipher: the maintainer decided for the
+  admin-set password (root `context/notifications.md`).
