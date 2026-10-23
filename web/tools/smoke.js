@@ -1898,6 +1898,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".view-agents, .view-join") && !jpPanel().hidden && main.querySelector(".profiles"), "join: #/join opens Agents with the panel open");
   await go("#/p/maity/inbox"); await go("#/p/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(!jpPanel().hidden, "join: so does #/agents/join");
+  // A failed read of the joins stays in the panel, with a retry; the agents' cards are drawn all the same.
+  const jfAll = win.Maity.api.getAll;
+  let jfFail = true;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/joins" && jfFail ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : jfAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll(".profile").filter((x) => !x.classList.contains("seat")).length === 5 && !main.querySelector("article.seat"),
+    "join: the joins failing to load leave every agent card on screen");
+  main.querySelector("button.join-open").click(); await tick();
+  const jfRetry = btn(main.querySelector(".join-panel"), "Try again");
+  expect(jfRetry && text(main.querySelector(".join-panel")).includes("The joins could not be read: down"), "join: the panel says so, with Try again");
+  jfFail = false;
+  jfRetry.click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("join-agent") && main.querySelector("article.seat"), "join: Try again reads them and draws the form and the seats");
+  win.Maity.api.getAll = jfAll;
   // A join that expires while the view is open moves to the others without a reload.
   const jAll = win.Maity.api.getAll;
   const soon = { id: "join-soon", agent_id: "agt-b", role: "member", created_by: "hum-maintainer", created_at: new Date().toISOString(),

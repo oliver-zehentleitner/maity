@@ -33,13 +33,11 @@ window.Maity = window.Maity || {};
     return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
   }
 
-  // hooks.changed(): the seats and the earlier joins changed (a join made,
-  // revoked, expired); the Agents view draws them again where they stand.
-  async function mount(ctx, hooks) {
-    let [profiles, joins] = await Promise.all([
-      M.api.getAll("/agents"),
-      M.api.getAll(ctx.base + "/joins"),
-    ]);
+  // The panel, the seats and the record, from the profiles and joins read;
+  // drawn into the panel the Agents view already holds.
+  function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
+    let profiles = profilesRead;
+    let joins = joinsRead;
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
       return p ? p.display_name : id;
@@ -100,8 +98,6 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     // The panel's body: the form, or once a join is made the line in its place.
     const body = h("div", { class: "join-body", "aria-live": "polite" });
-    const panel = h("section", { class: "join-panel", "aria-labelledby": "join-title", hidden: true });
-    panel.hidden = true;
 
     function showLine(j) {
       const line = h("code", { class: "paste-line" }, j.paste_line);
@@ -219,19 +215,14 @@ window.Maity = window.Maity || {};
 
     function showForm() { append(clear(body), form); }
     showForm();
-    const closeButton = h("button", { type: "button", class: "icon-button join-close", "aria-label": "Close", title: "Close", onclick: () => close(true) }, "×");
-    append(panel,
-      h("div", { class: "join-head" },
-        h("h3", { id: "join-title" }, "Join an agent"), closeButton),
-      h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
-      body);
+    append(clear(panel), panelHead(() => close(true)), body);
 
     let opener = null;
     function open(from) {
       opener = from || null;
       panel.hidden = false;
       if (hooks.opened) hooks.opened(true);
-      agentSelect.focus();
+      focusSoon(agentSelect);
     }
     function close(refocus) {
       panel.hidden = true;
@@ -241,7 +232,6 @@ window.Maity = window.Maity || {};
     }
 
     // Seats and earlier joins, drawn by the Agents view where they stand.
-    const listStatus = M.statusLine();
     let shownKey = "";
     const revocable = (j, state, now) => state.key === "open"
       || (state.key === "expired" && now - Date.parse(j.expires_at) < GRACE_MS);
@@ -321,7 +311,81 @@ window.Maity = window.Maity || {};
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { panel, open, close, seats, earlier, openCount, listStatus };
+    return { open, close, seats, earlier, openCount };
+  }
+
+  // On a page the router has not attached yet (a direct #/agents/join), the
+  // focus waits until it is in the document.
+  function focusSoon(el) {
+    if (el.isConnected === false) window.setTimeout(() => { if (el.isConnected !== false) el.focus(); }, 0);
+    else el.focus();
+  }
+
+  function panelHead(onClose) {
+    return [
+      h("div", { class: "join-head" },
+        h("h3", { id: "join-title" }, "Join an agent"),
+        h("button", { type: "button", class: "icon-button join-close", "aria-label": "Close", title: "Close", onclick: onClose }, "×")),
+      h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
+    ];
+  }
+
+  // hooks.changed(): the seats and the earlier joins changed (a join made,
+  // revoked, expired, or read at last); the Agents view draws them again.
+  // A failed read of the profiles or the joins stays in the panel and the
+  // seats, with a retry: the agents' cards never depend on it.
+  async function mount(ctx, hooks) {
+    const panel = h("section", { class: "join-panel", "aria-labelledby": "join-title" });
+    panel.hidden = true;
+    const listStatus = M.statusLine();
+    let impl = null;
+    let opener = null;
+    const failedClose = () => {
+      panel.hidden = true;
+      if (hooks.opened) hooks.opened(false);
+      if (opener && opener.focus) opener.focus();
+    };
+    async function load() {
+      try {
+        const [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        impl = build(ctx, hooks, panel, listStatus, profiles, joins);
+        listStatus.done();
+        return true;
+      } catch (err) {
+        impl = null;
+        const retry = h("button", {
+          type: "button",
+          onclick: async () => {
+            retry.disabled = true;
+            if (await load()) {
+              hooks.changed();
+              if (!panel.hidden) impl.open(opener);
+            } else retry.disabled = false;
+          },
+        }, "Try again");
+        append(clear(panel), panelHead(failedClose),
+          h("p", { class: "error", role: "alert" }, "The joins could not be read: " + (err.message || err.code || "an error")), retry);
+        listStatus.fail("The joins could not be read: ", err);
+        return false;
+      }
+    }
+    await load();
+    return {
+      panel,
+      listStatus,
+      open: (from) => {
+        opener = from || null;
+        if (impl) { impl.open(from); return; }
+        panel.hidden = false;
+        if (hooks.opened) hooks.opened(true);
+        const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Try again") : null;
+        if (retry) focusSoon(retry);
+      },
+      close: (refocus) => (impl ? impl.close(refocus) : failedClose()),
+      seats: () => (impl ? impl.seats() : []),
+      earlier: () => (impl ? impl.earlier() : null),
+      openCount: () => (impl ? impl.openCount() : 0),
+    };
   }
 
   M.join = { mount };

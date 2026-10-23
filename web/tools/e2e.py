@@ -1918,6 +1918,9 @@ def join_expiry_step(run: Run, page: Page) -> None:
     watch_page(run, second)
     second.clock.install()
     second.goto(f"{run.base}/#/p/e2e-alpha/join")
+    # A direct navigation: the old route lands on Agents with the panel open, the focus in its first field.
+    expect(second).to_have_url(re.compile(r"#/p/e2e-alpha/agents/join$"))
+    expect(second.locator("#join-agent")).to_be_focused()
     # A new profile: the existing one is a member here already.
     second.locator("#join-agent").select_option("")
     second.locator("#join-handle").fill("e2e-expiring")
