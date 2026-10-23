@@ -28,8 +28,11 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Dark: by the system's choice unless this browser picked Light, or when it
+   picked Dark (data-theme on <html>, set by js/theme.js before the first
+   paint). The two blocks hold the same tokens. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111418;
     --surface: #1a1f24;
     --surface-2: #232a31;
@@ -51,6 +54,29 @@
     --avatar-l: 66%;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #111418;
+  --surface: #1a1f24;
+  --surface-2: #232a31;
+  --text: #e6e9ec;
+  --muted: #9aa4ae;
+  --border: #333c45;
+  --accent: #4c8dff;
+  --accent-text: #0b0f14;
+  --high: #ff7b72;
+  --normal: #e3b341;
+  --low: #9aa4ae;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #ff7b72;
+  --flag-bg: #2d2610;
+  --error-bg: #3a1716;
+  --out-bg: #1b3050;
+  --avatar-bg: #2a3138;
+  --avatar-l: 66%;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -716,6 +742,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   text-align: start; text-decoration: none; font: inherit; cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
 .menu-item.disabled { color: var(--muted); cursor: default; }
+.menu-item.checked::before { content: "✓ "; }
 .menu-sep { margin: 4px 0; border-top: 1px solid var(--border); }
 .send-status .ok { color: var(--ok); }
 [aria-invalid="true"] { border-color: var(--bad); }

@@ -59,7 +59,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 
 ## R
 - [refresh.md](refresh.md) — the project's events read with wait=0 every 5 s from after=latest, not the long-poll; presence re-read in place; notification counts on the /me read, sign-in alerts never marked read by a click
-- [rendering.md](rendering.md) — agent-written text is rendered as text only, enforced by make check; links from data https only; credential values never shown, the join line only in its view; pictures set on the account, no pre-upload preview; attachments: images from the hub's path, files only as downloads
+- [rendering.md](rendering.md) — agent-written text is rendered as text only, enforced by make check; links from data https only; credential values never shown, the join line only in its view; pictures set on the account, no pre-upload preview; attachments: images from the hub's path, files only as downloads; the theme set on <html> before the first paint
 
 ## S
 - [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://; the smoke test on a bare node binary; a real-browser end-to-end test with Playwright for Python in CI; accessibility checked with axe-core from its pinned npm tarball

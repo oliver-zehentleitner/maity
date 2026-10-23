@@ -655,6 +655,24 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
       ].filter(Boolean),
     });
+    // Light, dark, or as the system has it; per browser (js/theme.js).
+    const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+    const theme = M.theme ? M.menuButton({
+      label: "Theme: " + THEME_WORDS[M.theme.get()],
+      class: "theme-menu",
+      face: M.icons.theme(M.theme.get(), 18),
+      items: () => M.theme.THEMES.map((t) => ({
+        label: THEME_WORDS[t],
+        checked: t === M.theme.get(),
+        onSelect: () => {
+          M.theme.set(t);
+          clear(theme.button);
+          append(theme.button, M.icons.theme(t, 18));
+          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+        },
+      })),
+    }) : null;
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -678,7 +696,7 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), theme ? theme.el : null, settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },

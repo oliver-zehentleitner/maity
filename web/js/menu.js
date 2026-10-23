@@ -44,7 +44,24 @@ window.Maity = window.Maity || {};
     svg.appendChild(body);
     return svg;
   }
-  M.icons = { gear, bell };
+  // The theme: a circle half filled (the system's), a sun, a moon.
+  function themeIcon(theme, size) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 24 24"], ["width", String(size)], ["height", String(size)], ["aria-hidden", "true"], ["focusable", "false"], ["class", "icon"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const path = document.createElementNS(SVG, "path");
+    const d = theme === "light"
+      ? "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zM16.3 17.7l1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z"
+      : theme === "dark"
+      ? "M14.5 2.5a9.5 9.5 0 1 0 7 15.9A8 8 0 0 1 14.5 2.5z"
+      : "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2v16a8 8 0 0 1 0-16z";
+    path.setAttribute("d", d);
+    path.setAttribute("class", "icon-fill");
+    path.setAttribute("fill-rule", "evenodd");
+    svg.appendChild(path);
+    return svg;
+  }
+  M.icons = { gear, bell, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...] }
   M.menuButton = function (spec) {
@@ -79,7 +96,10 @@ window.Maity = window.Maity || {};
       items = [];
       spec.items().forEach((it) => {
         if (it.separator) { append(list, h("li", { role: "separator", class: "menu-sep" })); return; }
-        const attrs = { role: "menuitem", tabindex: "-1", class: "menu-item", title: it.title || null };
+        // An item of a choice (checked given) says whether it is the current one.
+        const choice = typeof it.checked === "boolean";
+        const attrs = { role: choice ? "menuitemradio" : "menuitem", "aria-checked": choice ? String(it.checked) : null,
+          tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null };
         let el;
         if (it.disabled) {
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,

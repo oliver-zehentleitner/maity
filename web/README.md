@@ -52,6 +52,14 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
+**Theme.** Beside the settings gear a menu picks **System** (the
+default: the browser's light or dark), **Light** or **Dark**, kept per
+browser (`localStorage`, `maity.theme`; without storage the pick holds for
+the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
+`<head>` without `defer`, so the page is painted in that theme from the
+start; the CSS gives the dark tokens to the system's choice unless Light
+is picked, and to an explicit Dark.
+
 A **bell** left of the menus has the unread count of every kind but the
 open requests. It reads the latest 20 items when it opens, unread ones
 marked, each a link to where it happened. The link is
@@ -971,6 +979,7 @@ the screenshots and `hub.log` as the workflow artifact
 web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
+├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
