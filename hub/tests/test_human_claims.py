@@ -33,11 +33,12 @@ def holder(engine: Engine, card_id: str) -> Any:
         return conn.execute(select(t.card.c.claim_holder).where(t.card.c.id == card_id)).scalar()
 
 
+@pytest.mark.parametrize("role", ["member", "admin"])
 @pytest.mark.parametrize("expired", [False, True])
 def test_no_agent_moves_a_humans_claim(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, expired: bool
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, expired: bool, role: str
 ) -> None:
-    admin = flow.agent(make_client, owner, role="admin")
+    admin = flow.agent(make_client, owner, role=role)  # whatever its role (§2.3)
     member = flow.agent(make_client, owner)
     card = task(owner)
     assert _claim(owner, card).status_code == 200
@@ -49,10 +50,14 @@ def test_no_agent_moves_a_humans_claim(
         admin.post(f"{url}/assign", {"assignee": member.id}),
         admin.post(f"{url}/release", {}),
         admin.patch(url, {"assigned_to": member.id}),
+        admin.patch(url, {"status": "cancelled"}),  # dropping it (§2.3)
+        admin.patch(url, {"status": "open"}),
     ]
     for attempt in attempts:
         assert (attempt.status_code, reason(attempt)) == (403, "humans_only"), attempt.text
+        assert "scope" not in attempt.json()["error"]["details"]
     assert holder(migrated, card["id"]) == held
+    assert owner.get(url).json()["status"] == "in_progress"
 
 
 def test_assigning_a_humans_card_to_that_human_is_no_move(
@@ -91,3 +96,18 @@ def test_an_admin_agent_still_releases_an_agents_expired_claim(
     _later(LEASE + 1)
     released = admin.post(f"/projects/maity/tasks/{card['id']}/release", {})
     assert released.status_code == 200, released.text
+
+
+def test_done_stays_done_authoritys_on_a_humans_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3 refuses an agent cancelling or reopening a human's card; done is done
+    authority's (§6.4): a reviewer agent approves a human's card in review."""
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    _claim(owner, card)
+    url = f"/projects/maity/tasks/{card['id']}"
+    with migrated.begin() as conn:  # reported: in review, still the human's (§6.6)
+        conn.execute(t.card.update().where(t.card.c.id == card["id"]).values(status="review"))
+    approved = reviewer.patch(url, {"status": "done"})
+    assert approved.status_code == 200, approved.text
