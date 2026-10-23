@@ -35,13 +35,19 @@ class PausedIn(Strict):
     reason: str = markdown(min_length=1)
 
 
+class MemberPausedIn(PausedIn):
+    instance: str | None = Field(default=None, max_length=5)  # one agent instance (§5.3)
+
+
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
-    paused: PausedIn | None = None
+    paused: MemberPausedIn | None = None
+    # Lifting one instance's pause: `{"paused": null, "instance": "<id>"}` (§5.3).
+    instance: str | None = Field(default=None, max_length=5)
     briefing: str | None = markdown(default=None)
 
 
@@ -270,38 +276,64 @@ def patch_member(
                     actor=caller.actor(mine.id),
                     subject=("member", member_id),
                 )
+        if "instance" in given and ("paused" not in given or body.paused is not None):
+            raise invalid({"instance": "paused_only"}, "instance goes with paused: null")
         if "paused" in given:
             if target.agent_id is None:
                 # A human's absence is the project's `absence` (§6.1, §5.3).
                 raise invalid({"paused": "agents_only"}, "paused is for agent members")
-            set_paused(conn, mine, target, body.paused.reason if body.paused else None, caller)
+            instance = body.paused.instance if body.paused else body.instance
+            if instance is not None:
+                instances.require_active(conn, target, instance, "instance")
+            set_paused(
+                conn,
+                mine,
+                target,
+                body.paused.reason if body.paused else None,
+                caller,
+                instance=instance,
+            )
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
 def set_paused(
-    conn: Connection, mine: Membership, target: Any, reason: str | None, caller: Caller
+    conn: Connection,
+    mine: Membership,
+    target: Any,
+    reason: str | None,
+    caller: Caller,
+    *,
+    instance: str | None = None,
 ) -> None:
-    """Set or clear `paused` (§5.3). Setting it tells the member itself (its long-poll
-    wakes), `reports_to` and the admins; lifting a pause someone else set tells them
-    the same way, with `paused: null`."""
+    """Set or clear `paused` (§5.3): the membership's, or with `instance` that agent
+    instance's alone. Setting it tells the member itself (its long-poll wakes; for an
+    instance only that instance), `reports_to` and the admins; lifting a pause someone
+    else set tells them the same way, with `paused: null`."""
     now = clock.now()
-    lifts_a_human_pause = reason is None and human_paused(target)
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.id == target.id)
-        .values(
-            paused_reason=reason,
-            paused_since=now if reason else None,
-            paused_by=caller.principal_id if reason else None,
-        )
-    )
+    values = {
+        "paused_reason": reason,
+        "paused_since": now if reason else None,
+        "paused_by": caller.principal_id if reason else None,
+    }
+    if instance is None:
+        lifts_a_human_pause = reason is None and human_paused(target)
+        conn.execute(update(t.membership).where(t.membership.c.id == target.id).values(**values))
+    else:
+        held = instances.require_active(conn, target, instance, "instance")
+        lifts_a_human_pause = reason is None and instances.human_paused(target, held)
+        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
     if reason is None and not lifts_a_human_pause:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, row)
+    payload = {"session": view.get("session"), "paused": view["paused"]}
     audience = [f"member:{view['id']}", "role:admin"]
+    if instance is not None:
+        shown = next(i for i in view["instances"] if i["id"] == instance)
+        payload = {"session": shown["session"], "paused": shown["paused"], "instance": instance}
+        audience[0] = instances.token(view["id"], instance)
     if view["reports_to"]:
         audience.insert(1, f"member:{view['reports_to']}")
     emit(
@@ -309,7 +341,7 @@ def set_paused(
         mine.project.id,
         "session_paused",
         audience,
-        {"session": view.get("session"), "paused": view["paused"]},
+        payload,
         actor=caller.actor(mine.id),
         subject=("member", view["id"]),
     )

@@ -160,6 +160,9 @@ project = Table(
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
+    # does writing an event look for the instances it wakes.
+    Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
@@ -191,6 +194,7 @@ membership = Table(
     Column("distribution", String(16), nullable=False, server_default="free"),
     Column("lead_instance", String(INSTANCE)),
     Column("wake", String(16), nullable=False, server_default="all"),
+    Column("round_robin_last", String(INSTANCE)),  # the instance `round_robin` chose last
     Column("review_within_team", Boolean, nullable=False, server_default=false()),
     Column("team_updated_by", String(ID)),
     Column("team_updated_at", UtcDateTime),
@@ -262,6 +266,10 @@ credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # The instance's own pause (§5.3), as the membership's is stored.
+    Column("paused_reason", MARKDOWN_TEXT),
+    Column("paused_since", UtcDateTime),
+    Column("paused_by", String(ID)),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -660,6 +668,10 @@ event = Table(
     Column("conversation_id", String(ID)),
     Column("payload", JSON_VALUE, nullable=False),
     Column("redacted", Boolean, nullable=False),
+    # The instances a team's `wake` rule chose (§8.2): `{member id: [instance ids]}` for
+    # each team it narrowed, an empty list when none of that team listened; null when
+    # no team was narrowed, which is most events.
+    Column("wakes", JSON_VALUE),
     Index("ix_event_project_seq", "project_id", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),
     # A placement's reports, newest first (§15.6).

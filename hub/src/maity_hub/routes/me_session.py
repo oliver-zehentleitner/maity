@@ -162,6 +162,15 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 resumed_at=func.coalesce(t.credential.c.resumed_at, now),
             )
         )
+        # The instance's own pause ends with its next session too (§5.3).
+        conn.execute(
+            update(t.credential)
+            .where(
+                t.credential.c.id == caller.credential_id,
+                t.credential.c.paused_by == caller.agent_id,
+            )
+            .values(paused_reason=None, paused_since=None, paused_by=None)
+        )
         if mine.row.paused_since is not None and mine.row.paused_by == caller.agent_id:
             # The agent's own pause ends with its next session; a human's stays.
             conn.execute(
@@ -343,7 +352,8 @@ def _packet(
             "areas": mine.row.areas,
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
-            "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
+            # Its own pause, the team's or this instance's, so the agent knows to rest.
+            "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
             "team": instances.team(conn, mine.row),
         },
@@ -432,11 +442,16 @@ def operations(project: Any, role: str) -> list[str]:
     return allowed
 
 
+def _credential(conn: Connection, caller: Caller) -> Any:
+    return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
+
+
 @router.patch("/me")
 def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _own_membership(conn, caller)
-        if mine.row.paused_since is not None and mine.row.paused_by != caller.agent_id:
+        human_set = mine.row.paused_since is not None and mine.row.paused_by != caller.agent_id
+        if human_set or instances.human_paused(mine.row, _credential(conn, caller)):
             # A human's pause is lifted or replaced by members:admin only (§5.3).
             raise ApiError(
                 403,
@@ -444,7 +459,15 @@ def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONRespon
                 "a human paused you; only they or an admin can change it",
                 {"reason": "paused_by_human"},
             )
-        set_paused(conn, mine, mine.row, body.paused.reason if body.paused else None, caller)
+        # The calling instance's own pause; its siblings carry on (§5.3).
+        set_paused(
+            conn,
+            mine,
+            mine.row,
+            body.paused.reason if body.paused else None,
+            caller,
+            instance=caller.instance,
+        )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
