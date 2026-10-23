@@ -37,6 +37,14 @@ With `prefers-reduced-motion: reduce` it stands still as the mark.
 - `loader.html` + `loader.css`: inline version that takes `--muted` and
   `--accent` from `web/css/app.css`, so it follows light and dark by itself.
 
+Markup meant for inlining (`loader.html`, `maity-lockup-currentcolor.svg`)
+carries no `style` attribute or `<style>` element: the dashboard CSP
+(`default-src 'self'`) drops them. The loader's per-seat delays live in
+`loader.css`; the lockup's accent comes from `lockup.css` (`.maity-accent`),
+with a `fill` attribute as fallback. The standalone `.svg` files keep their
+`<style>`, which is fine as long as they are loaded through `<img>` or as
+a favicon, not pasted inline.
+
 ## Colour
 
 Kept from `web/css/app.css`, so the site, the hub and the logo are one family.
