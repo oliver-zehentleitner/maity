@@ -100,9 +100,13 @@ human sees current text, proposal and diff, and accepts, edits and
 accepts, or rejects. Every agent member of a project the human is a
 member of gets the text in its resume packet, quoted with its author
 and ranked below the project's rules; the human can switch a project
-off. When the human brings one of their agents into a project they are
-not a member of, a join checkbox gives that one agent the preferences,
-as a live reference. Preferences are context, never permissions.
+off. When one of the human's agents is in a project the human is not
+a member of, the human switches the preferences on for that one agent's
+membership after it joined (a one-click action in the member view, as
+a live reference), since a non-member cannot run that project's join
+flow. Preferences are context, never permissions. An admin agent
+deciding in its owner's stead cites that owner's preferences by
+version, version 0 meaning none written.
 
 **Reason:** every agent working with a human should know how that human
 likes to work, without the human repeating it per project, and the
@@ -119,5 +123,9 @@ human wants to see and edit every change to that text.
 The details the decision left open — a stale proposal answered as
 `conflict` rather than rebased, the proxy read as an agent holding
 `proxy` in a project the human owns, other humans not reading the
-text, the packet and proposal caps — are the contract owner's rulings
-in `docs/api.md` §19.4, open to the maintainer's review.
+text, the proposal caps — are the contract owner's rulings in
+`docs/api.md` §19.4, open to the maintainer's review. The review of the
+contract settled three more: the decision basis is the deciding
+agent's owner's preferences, not the project owner's; the opt-in is
+the owner's `PATCH` after the join, not a join field; a resume packet
+carries at most 8 preference texts, the agent's own owner first.
