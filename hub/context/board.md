@@ -45,9 +45,10 @@ Each history entry stores the `seq` of the `task_created` or
 tombstone into its own `redaction` column, clears `before`, `after` and
 `diff`, and replaces the same field's value in that one event. A removed
 link's row is deleted; its history entries keep the link whole and name
-it in their own `link_id` column, so that a replayed add and a repeated
-`DELETE` find it, and answer with the tombstone once the entry is
-redacted.
+it and the change (`link_id`, `link_change`: added or removed) in columns
+of their own, so that a replayed add and a repeated `DELETE` find the
+right entry — a link the card was created with has no add entry, only
+the `created` one — and answer with the tombstone once it is redacted.
 
 **Reason:** the contract redacts a value in the history and in the event
 of the same write together. Storing the event's `seq` makes that one
