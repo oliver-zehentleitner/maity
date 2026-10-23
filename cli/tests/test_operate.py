@@ -219,7 +219,8 @@ def test_a_clone_with_configuration_that_runs_code_is_not_inspected(
             fh.write(f"[log]\n\tshowSignature = true\n[gpg]\n\tprogram = touch {marker}\n")
         elif plant in ("commondir", "config.worktree"):
             other = tmp_path / "elsewhere"
-            shutil.copytree(place.path / ".git", other)
+            # Lock files come and go with git's background maintenance: never copied.
+            shutil.copytree(place.path / ".git", other, ignore=shutil.ignore_patterns("*.lock"))
             (other / "info" / "attributes").write_text("* filter=x\n")
             with (other / "config").open("a") as other_fh:
                 other_fh.write(f'[filter "x"]\n\tclean = touch {marker}\n')
