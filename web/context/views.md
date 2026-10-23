@@ -149,7 +149,8 @@ window, so filtering there is instant and needs no new contract.
 
 **Id:** 3785a685-e976-400f-b088-9321804d29fc
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 6f06c1b3-656b-4631-aa2f-c9dff1f86556
 **Evidence:** inferred
 **Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
@@ -649,7 +650,9 @@ card's place allows no such move. The assignee moved into the header as a
 picture and @handle (the full name as tooltip and accessible name, a link
 to the member). Picking a menu item acts at once; after a move or place
 the focus returns to the same control, or to an arrow of the card that
-still works.
+still works. As before, dragging a card over another of its column places
+it above or below that card, and the order changes only once the hub
+answered (the Place menu's entry, which this one replaces).
 
 **Reason:** three forms made a card about twice as tall as its content and
 repeated the same three labels on every card; one compact row keeps the
