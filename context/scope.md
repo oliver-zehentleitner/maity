@@ -215,7 +215,7 @@ the code:
   (a subscription provider or a payment link), off by default.
 
 Every person sees only the projects they belong to, as before; the open
-instance adds limits per account, and no ordinary member can list other
+instance adds plan limits, and no ordinary member can list other
 accounts or projects. The instance admin keeps what §16.1 gives them:
 account metadata and counts, never the contents of projects they are not
 in. The core stays free software without billing; selling
