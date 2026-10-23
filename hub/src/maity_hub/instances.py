@@ -123,6 +123,27 @@ def require_active(conn: Connection, member: Any, instance: str, field: str) -> 
     return row
 
 
+def require_replaceable(
+    conn: Connection, member: Any, instance: str, field: str, *, revoked: bool = False
+) -> Any:
+    """The credential of the instance a join replaces. A human's join replaces an active
+    instance (`require_active`, §3.1). Only the hub's placement pickup passes `revoked`:
+    a rejoin replaces the instance whose credential was revoked (§15.9), and never a live
+    sibling, so with `revoked` the instance's credential must be revoked."""
+    if not revoked:
+        return require_active(conn, member, instance, field)
+    row = conn.execute(
+        select(t.credential).where(
+            t.credential.c.membership_id == member.id,
+            t.credential.c.instance == instance,
+            t.credential.c.revoked_at.is_not(None),
+        )
+    ).first()
+    if row is None:
+        raise invalid({field: "not_an_instance"})
+    return row
+
+
 def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> str | None:
     """The one instance a member id or an address comes down to (§6.5, §6.19): the
     named one; else the team's only active instance, or its lead under `distribution:

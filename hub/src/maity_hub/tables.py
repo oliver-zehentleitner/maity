@@ -238,6 +238,11 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # A runner's pickup for a placement (§15.9): the placement, the runner and the
+    # generation it was picked up for; null on a human's join.
+    _ref("placement_id", "placement.id", index=True),
+    _ref("runner_id", "runner.id"),
+    Column("generation", Integer),
     CheckConstraint("agent_id IS NOT NULL OR new_agent_handle IS NOT NULL", name="names_an_agent"),
     **MYSQL_TABLE,
 )
@@ -290,6 +295,9 @@ agent_session = Table(
     # derived by the client per hub. Only ever compared, never shown or logged.
     Column("env_home", String(16)),
     Column("env_workspace", String(16)),
+    # `maity-runner/<version>` when a runner supervises the session (§15.11): its
+    # long-poll wakes on a narrower set, and its rules say so.
+    Column("supervisor", String(80)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,

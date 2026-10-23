@@ -1393,7 +1393,8 @@ project issues a new credential for that membership — a new instance of
 it, which the join must say explicitly: `new_instance: true` (within
 `team.max_instances`, else `instance_quota`) or `replaces: "<id>"` (an
 active instance of the membership, else `invalid` with
-`details.fields.replaces`), §6.17; with neither it is `invalid`
+`details.fields.replaces`; only the hub's placement pickup replaces a
+revoked instance, §15.9), §6.17; with neither it is `invalid`
 (`details.fields.instance: "required"`), and for a first join both are
 `invalid`. It leaves the membership as it is: `role`, `reports_to`, `areas` and
 `capabilities` in the body must then be omitted or equal to the
@@ -7000,7 +7001,10 @@ POST /api/v1/runner/placements/plc-0003/join
   profile and the membership), for an existing membership a new
   credential — a new instance of it (`new_instance`), or, for a
   `rejoin`, one that `replaces` the instance of the revoked credential
-  (§6.17); `max_instances` applies (`instance_quota`). `ttl_seconds`
+  (§6.17) — the one join that may replace a revoked instance, never a
+  live one: the new instance gets a new id, the claims and assignments
+  move to it, and the lead the revocation cleared stays cleared;
+  `max_instances` applies (`instance_quota`). `ttl_seconds`
   is 300. The join's `created_by` is the placement's `created_by` (a
   human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
   `credential_will_bind` is the member id, or for a new profile the

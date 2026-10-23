@@ -109,18 +109,27 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     limit = parse_limit(request)
     engine = engine_of(request)
 
-    def start() -> tuple[Membership, int]:
+    def start() -> tuple[Membership, int, bool]:
         with engine.begin() as conn:
             mine = membership(conn, caller, slug)
             mine.require("project:read")
+            supervised = (
+                caller.kind == "agent"
+                and conn.execute(
+                    select(t.agent_session.c.supervisor).where(
+                        t.agent_session.c.id == caller.session_id
+                    )
+                ).scalar()
+                is not None
+            )
             if after_param == "latest":
                 after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
             else:
                 after = after_param
                 _acknowledge(conn, caller, after)
-            return mine, after
+            return mine, after, supervised
 
-    mine, after = await run_in_threadpool(start)
+    mine, after, supervised = await run_in_threadpool(start)
     if after_param == "latest" and wait == 0:
         # From now on, without the history; acknowledges nothing (§8.3).
         return answer([], after, superseded=False)
@@ -129,7 +138,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn, mine.project.id, mine.row, mine.principal_id, since, limit, supervised
                 )
             else:
                 rows, examined, _ = events.read(
