@@ -421,14 +421,14 @@ one's own. They would promise inbox, board and members, none of which
 the hub answers. A removal form inside the closed chat: the admin cannot
 open that chat.
 
-## The project's messages are read from the project's events, since the contract has no message listing
+## The project's messages are read from the project's events until the hub has the message listing
 
 **Id:** 8e483bb1-53be-4ce2-a139-561989db21af
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5 and §8.7; the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
-**Revisit when:** the hub offers a listing of a project's messages, or a project's event log grows so long that reading it from the start is slow
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or a project's event log grows so long that reading it from the start is slow
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
 
 The Messages tab reads the project's events from the start
@@ -438,12 +438,14 @@ by type in the page. New messages, removals and deleted files arrive
 through the project's feed, the same one the other views read. A removed
 message has no type left, so it shows only when no filter is set.
 
-**Reason:** §8.3 is the only read that returns project messages, and the
-audience filter on it already decides what this reader may see. Reading
+**Reason:** §8.3 is the only read the hub answers that returns project
+messages, and the audience filter on it already decides what this reader
+may see. The contract's listing (§8.8) has the same readable set, so the
+view switches to it once the hub serves it. Reading
 it from the start is one sequential read per opening, which is fine for
 projects of the size V1 expects, and it needs nothing new from the hub.
 
-**Rejected alternative:** waiting for a message listing endpoint before
+**Rejected alternative:** waiting for the hub's message listing before
 building the view: it would leave project messages unreadable in the
 dashboard, the gap noted on the attachments change. Reading only the
 latest window of events: older messages would silently not be there.
