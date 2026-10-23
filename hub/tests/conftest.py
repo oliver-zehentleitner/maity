@@ -111,6 +111,9 @@ def _fresh_process_state() -> Iterator[None]:
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
     # slow test would write to its database unasked.
     availability.INTERVAL = 24 * 3600.0
+    from maity_hub.jourfixe import worker as jour_fixe_worker
+
+    jour_fixe_worker.INTERVAL = 24 * 3600.0
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()
