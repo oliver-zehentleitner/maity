@@ -34,7 +34,8 @@ window.Maity = window.Maity || {};
     { route: "ticker", label: "Ticker" },
     // No tab: opened from the inbox and from a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
-    { route: "join", label: "Join an agent", admin: true },
+    // Joining is in Agents now; the old route opens it there (js/join.js).
+    { route: "join", label: "Join an agent", admin: true, tab: false },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).

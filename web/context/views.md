@@ -720,3 +720,31 @@ the answer of the call itself already says it, and these reads happen
 whether or not a control is drawn. Caching every 404 by its full path: a
 card or a request that is gone answers 404 too, and must not be taken for
 a missing feature.
+
+## Joining an agent happens in Agents: a panel under the title, open joins as seats in the grid
+
+**Id:** d80f865d-5b59-4ad1-8cc2-c1079d13869c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish that Join an agent be part of Agents, not a page of its own (tsk-rf6qynscm6px), 2026-10-23; the designer's layout for it, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** joins get a lifecycle of their own beyond open, used, expired, burned and revoked, or the Agents view is split
+
+Join an agent is no longer a tab. Agents' title row has **+ Join an agent**
+(owner and admin), which opens an inline panel under it, closed by
+default and open at once in a project without agents or at
+`#/p/<slug>/agents/join`; the old `#/p/<slug>/join` opens the same. The
+form keeps its logic (js/join.js) in two columns; a made join's line
+takes the form's place, with Join another and Done. An open join is a
+dashed **open seat** at the front of the agents' grid; the rest of the
+joins are folded at the view's end as Earlier joins.
+
+**Reason:** joining is how an agent gets into that view, so the action
+sits where its result appears; an open join is a member that has not
+arrived yet, so it stands among the members, not in a list of its own.
+The record of old joins is rarely needed.
+
+**Rejected alternative:** a modal dialog for the form: it hides the grid
+the seat appears in, and the panel works the same at 390 px. Open joins in
+a section of their own below the cards, the first idea: it kept them
+apart from the team they join.

@@ -5,6 +5,7 @@
   --bg: #f7f7f5;
   --surface: #ffffff;
   --surface-2: #eef0f2;
+  --seat: #9aa4ae;
   --text: #1d2125;
   --muted: #5e6670;
   --border: #d5d9de;
@@ -36,6 +37,7 @@
     --bg: #111418;
     --surface: #1a1f24;
     --surface-2: #232a31;
+    --seat: #5e6670;
     --text: #e6e9ec;
     --muted: #9aa4ae;
     --border: #333c45;
@@ -58,6 +60,7 @@
   --bg: #111418;
   --surface: #1a1f24;
   --surface-2: #232a31;
+  --seat: #5e6670;
   --text: #e6e9ec;
   --muted: #9aa4ae;
   --border: #333c45;
@@ -696,13 +699,13 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--radius); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
-.inline-form, .login, .join-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
+.inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 /* The settings panel sits under the page's h1: its sections are h2, styled small. */
 .panel-title { margin: 0; font-size: 1rem; }
 .panel-sub { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .inline-form label, .login label, .join-form label, .new-agent label { font-size: 0.85rem; color: var(--muted); }
-.inline-form button, .login button, .join-form button { justify-self: end; }
+.inline-form button, .login button { justify-self: end; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
@@ -870,3 +873,37 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .ticker-chips { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .ticker-chips li { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
 .ticker-sub, .ticker-post-box { margin-top: 16px; }
+
+/* Joining in Agents (js/join.js): the panel under the title, open joins as seats in the grid. */
+.agents-head .join-open { margin-inline-start: auto; min-height: 40px; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.agents-count { margin: -6px 0 12px; }
+.join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.join-panel[hidden] { display: none; }
+.join-head { display: flex; align-items: center; gap: 8px; }
+.join-head h3 { margin: 0; }
+.join-head .join-close { margin-inline-start: auto; font-size: 1.2rem; }
+.join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
+.join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
+.join-fields .field { display: grid; gap: 4px; min-width: 0; }
+.join-fields .wide, .join-fields .new-agent { grid-column: 1 / -1; }
+.join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
+.join-briefing { flex: 1 1 320px; min-width: 0; display: grid; gap: 4px; align-content: start; }
+.join-briefing textarea { min-height: 10rem; }
+.join-form label { font-size: 0.85rem; color: var(--muted); }
+.join-form .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.join-result { background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px; margin: 0; }
+.paste-row { display: flex; gap: 8px; align-items: center; }
+.paste-row .paste-line { flex: 1 1 auto; min-width: 0; background: var(--surface-2); font-family: var(--mono); }
+.join-result .actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* A seat: shaped like a profile card, empty — a member that has not arrived yet. */
+.profile.seat { background: transparent; border: 1.5px dashed var(--seat); }
+.seat-mark { width: 28px; height: 28px; border: 1.5px dashed var(--accent); border-radius: 6px; flex: none; }
+.seat-label { margin-inline-start: auto; color: var(--accent); font-size: 0.8rem; }
+.seat-actions { display: flex; justify-content: flex-end; }
+.earlier-joins { margin-top: 16px; }
+.earlier-joins summary { cursor: pointer; }
+@media (max-width: 700px) {
+  .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+}

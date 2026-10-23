@@ -457,12 +457,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realGetAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p.includes("/members/agt-c/credentials")
     ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : realGetAll(p));
-  await go("#/p/maity/agents");
-  expect(main.querySelectorAll(".profile").length === 5 && main.querySelectorAll(".error").length === 1, "one failing credentials call costs one card section");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll(".profile").filter((x) => !x.classList.contains("seat")).length === 5 && main.querySelectorAll(".error").length === 1, "one failing credentials call costs one card section");
   win.Maity.api.getAll = realGetAll;
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error"), "agents render");
-  expect(main.querySelectorAll(".profile").length === 5, "5 agent profiles");
+  expect(main.querySelectorAll(".profile").filter((x) => !x.classList.contains("seat")).length === 5, "5 agent profiles");
   expect(text(main).includes("never resumed") && text(main).includes("revoked") && text(main).includes("replaced by a new clone"), "never resumed and revoked credentials");
   expect(text(main).includes("Areas") && text(main).includes("capabilities".slice(0, 0) + "tag"), "areas and capabilities");
   expect(text(byId("pause-agt-b").parentNode).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),
@@ -499,18 +499,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(patches[1][1]) === JSON.stringify({ briefing: null }) && text(main).includes("No briefing yet."), "an empty briefing clears it");
   win.Maity.api.patch = realPatch;
   // A hub without briefings (the sample fixtures carry no such key): nothing offered.
-  await go("#/p/sample/agents");
-  expect(main.querySelectorAll(".profile").length && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
-  await go("#/p/sample/join");
+  await go("#/p/sample/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll(".profile").filter((x) => !x.classList.contains("seat")).length && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
+  await go("#/p/sample/join"); for (let k = 0; k < 4; k++) await tick();
   expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   const pauseInput = byId("pause-agt-b"); pauseInput.value = "quota";
   pauseInput.parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(main).includes("Paused") && text(main).includes("by Maintainer: quota"), "pause by the human");
   expect(text(main).includes("The agent was told at once and gets no new work"), "a human's pause says what it does");
   expect(!text(main.querySelectorAll(".profile").find((p) => text(p).includes("Waiting for the API contract"))).includes("The agent was told at once"),
     "an agent's own pause is a declaration, without that line");
-  btn(main, "Revoke").click(); await tick(); await tick();
+  btn(main.querySelectorAll(".credentials").find((c) => btn(c, "Revoke")), "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
   // The theme (System, Light, Dark): a menu beside the gear; the pick on <html> as data-theme, per browser.
@@ -731,7 +731,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/runners"); await tick();
   expect(!prTab() && text(main).includes("No such view."), "project runners: no tab and no view for a member");
   win.Maity.api.get = prGet;
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
   // Runners (docs/api.md §15): the instance-level view.
   const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
@@ -917,7 +917,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical"), "org tree by areas, policy preset");
 
   // Presence is re-read in place; nothing else on the page is replaced.
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   const realGet3 = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maity/members"
     ? realGet3(p).then((r) => { r.items.forEach((m) => { m.presence = "away"; }); return r; })
@@ -941,7 +941,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && pic.querySelectorAll("rect").length === 16, "avatars: an SVG of nodes, decorative, its hue as a custom property");
   expect(AV({ id: "agt-a", avatar_url: "https://evil.example/x.png" }).tagName === "SVG", "avatars: a picture the page may not load falls back to the generated one");
   expect(AV({ id: "agt-a", avatar_url: "/api/v1/projects/maity/logo?v=1" }).tagName === "IMG", "avatars: a picture the page may load wins");
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   const profA = main.querySelectorAll("article.profile").find((a) => a.getAttribute("aria-label") === "Agent A");
   expect(profA.querySelector("header").querySelector("svg") && profA.querySelector("header").querySelector("svg").style["--avatar-h"] === "340", "avatars: on the agent's card");
   await go("#/p/maity/org");
@@ -1768,7 +1768,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/agents"
     ? hcAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-old", handle: "old-one", display_name: "Old one", owner_id: "hum-maintainer", memberships: [], deleted_at: "2026-10-01T00:00:00Z" }]), next_cursor: null }))
     : hcAll(p));
-  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   const hcType = (v) => { byId("join-handle").value = v; byId("join-handle").dispatch("input"); };
   const hcState = () => byId("join-handle-state");
@@ -1813,18 +1813,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   hcType("agent-new1"); byId("join-display").value = "Agent New";
   expect(text(hcState()) === "@agent-new1 is free.", "handle check: free before the create");
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  // The line takes the form's place; Join another brings the form back, its hint worked out again.
+  btn(main.querySelector(".join-result"), "Join another").click(); await tick();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); hcType("agent-new1");
   expect(text(hcState()).startsWith("Taken: your agent Agent New has @agent-new1"), "handle check: after the create it is taken, by the new profile " + JSON.stringify(text(hcState())));
   win.Maity.api.post = hcPost; win.Maity.api.getAll = hcAll;
   await go("#/p/maity/inbox");
-  await go("#/p/maity/join");
+  await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
-  // Each join's state from its fields; only an open one can be revoked, and it comes first.
-  const joinRow = (id) => main.querySelectorAll(".joins li").find((li) => li.textContent.includes(id));
-  const openRows = main.querySelector(".open-joins").querySelectorAll("li");
-  expect(openRows.length === 1 && joinRow("join-0010").classList.contains("join-open") && text(joinRow("join-0010")).startsWith("open join-0010")
-    && text(joinRow("join-0010")).includes("open until") && btn(joinRow("join-0010"), "Revoke"), "joins: an open join is listed first, with Revoke");
+  // Each join's state from its fields; an open one is a seat at the front of the grid, with Revoke;
+  // the others are the folded record at the view's end.
+  // A join where it stands: its seat while it is open (or just expired), else its line in the record.
+  const joinRow = (id) => main.querySelectorAll("article.seat").find((a) => a.attrs["data-join"] === id)
+    || main.querySelectorAll(".closed-joins li").find((li) => li.textContent.includes(id));
+  const seatsNow = () => main.querySelectorAll("article.seat");
+  const seat = seatsNow()[0];
+  expect(seatsNow().length === 1 && seat.attrs["data-join"] === "join-0010" && main.querySelector(".profiles").childNodes[0] === seat
+    && text(seat).includes("open seat") && text(seat).includes("open until") && text(seat).includes("Waiting for the agent to run its line.") && btn(seat, "Revoke"),
+    "joins: an open join is a seat at the front of the agents' grid, with Revoke");
+  const earlierJ = main.querySelector("details.earlier-joins");
   const closedRows = main.querySelector(".closed-joins").querySelectorAll("li");
-  expect(closedRows.length === 4 && closedRows.every((li) => !btn(li, "Revoke")), "joins: used, expired, burned and revoked joins have no Revoke");
+  expect(earlierJ && text(earlierJ.querySelector("summary")) === "Earlier joins (4): used, expired or revoked" && closedRows.length === 4 && closedRows.every((li) => !btn(li, "Revoke")),
+    "joins: used, expired, burned and revoked joins are folded at the end, without Revoke");
+  expect(text(main.querySelector(".agents-count")).includes("1 open join"), "joins: the title's count line says how many joins are open");
   expect(text(joinRow("join-0009")).startsWith("expired join-0009") && text(joinRow("join-0009")).includes("· expired ")
     && joinRow("join-0009").classList.contains("join-expired"), "joins: an expired join says expired, not open");
   expect(text(joinRow("join-0008")).startsWith("burned") && text(joinRow("join-0008")).includes("refused after three wrong codes"), "joins: a burned join");
@@ -1836,57 +1847,118 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realPost2 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { joinPosts.push([p, b]); return realPost2(p, b); };
   byId("join-briefing").value = "x".repeat(16 * 1024 + 1);
-  main.querySelector("form").dispatch("submit"); await tick();
+  main.querySelector("form.join-form").dispatch("submit"); await tick();
   expect(!joinPosts.length && text(main).includes("the briefing is longer than 16,384 characters"), "a join briefing over 16 KiB is refused before sending");
   byId("join-briefing").value = "  You review hub/.  ";
-  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
-  btn(main, "Revoke").click(); await tick(); await tick();
-  expect(text(main).includes("revoked"), "open join revoked");
-  // A join for a new profile: the list names it and the select offers it, without a reload.
+  expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
+  btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("details.earlier-joins")).includes("revoked"), "open join revoked, now in the record");
+  // A join for a new profile: Join another brings the form back; the new join is a seat, the select offers it.
+  btn(main.querySelector(".join-result"), "Join another").click(); await tick();
   const agentSel = byId("join-agent"); agentSel.value = ""; agentSel.dispatch("change");
   expect(text(main).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("join-handle").getAttribute("aria-describedby").split(" ").includes("join-handle-rule"),
     "the handle's rule is said up front, tied to its field");
-  const joinsBefore = main.querySelectorAll(".joins li").length;
+  const joinsBefore = main.querySelectorAll("article.seat").length + main.querySelectorAll(".closed-joins li").length;
   byId("join-handle").value = "Agent_New";
-  main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(main.querySelectorAll(".joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
+  main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
+  expect(main.querySelectorAll("article.seat").length + main.querySelectorAll(".closed-joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
     "a handle against the rule is refused before sending, with the rule");
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
-  main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
+  btn(main.querySelector(".join-result"), "Join another").click(); await tick();
   const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
-  expect(main.querySelectorAll(".joins li")[0].textContent.includes("Agent New as member"), "the joins list names the new profile");
+  expect(main.querySelectorAll("article.seat").some((a) => text(a).includes("Agent New")), "the new profile's join is a seat in the grid");
+  // Joining lives in Agents: no tab of its own; the old route opens the panel there.
+  expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("Join an agent")), "join: no tab of its own any more");
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  const jpPanel = () => main.querySelector(".join-panel");
+  const jpButton = () => main.querySelector("button.join-open");
+  expect(jpPanel() && jpPanel().hidden && jpButton() && !jpButton().hidden && text(jpButton()) === "+ Join an agent",
+    "join: Agents has + Join an agent in its title row, the panel closed");
+  const jpProto = Object.getPrototypeOf(main);
+  const jpFocus = jpProto.focus;
+  jpProto.focus = function () { document.activeElement = this; };
+  jpButton().click(); await tick();
+  expect(!jpPanel().hidden && jpButton().hidden && document.activeElement === byId("join-agent"), "join: the button opens the panel, the focus on its first field");
+  btn(jpPanel(), "Cancel").click(); await tick();
+  expect(jpPanel().hidden && !jpButton().hidden && document.activeElement === jpButton(), "join: Cancel closes it, the focus back on the button");
+  jpButton().click(); await tick();
+  jpPanel().querySelector("button.join-close").click(); await tick();
+  expect(jpPanel().hidden && document.activeElement === jpButton() && jpPanel().querySelector("button.join-close").getAttribute("aria-label") === "Close",
+    "join: the panel's own Close does the same");
+  jpProto.focus = jpFocus; document.activeElement = undefined;
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".view-agents, .view-join") && !jpPanel().hidden && main.querySelector(".profiles"), "join: #/join opens Agents with the panel open");
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(!jpPanel().hidden, "join: so does #/agents/join");
+  // A failed read of the joins stays in the panel, with a retry; the agents' cards are drawn all the same.
+  const jfAll = win.Maity.api.getAll;
+  let jfFail = true;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/joins" && jfFail ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : jfAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll(".profile").filter((x) => !x.classList.contains("seat")).length === 5 && !main.querySelector("article.seat"),
+    "join: the joins failing to load leave every agent card on screen");
+  main.querySelector("button.join-open").click(); await tick();
+  const jfRetry = btn(main.querySelector(".join-panel"), "Try again");
+  expect(jfRetry && text(main.querySelector(".join-panel")).includes("The joins could not be read: down"), "join: the panel says so, with Try again");
+  jfFail = false;
+  jfRetry.click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("join-agent") && main.querySelector("article.seat"), "join: Try again reads them and draws the form and the seats");
+  win.Maity.api.getAll = jfAll;
+  // An agent running its line: with the panel closed the view redraws with
+  // its card; with the panel open only the joins are read again.
+  const mjGet = win.Maity.api.get;
+  let mjFeed = [];
+  win.Maity.api.get = (p) => (p.includes("/events?")
+    ? Promise.resolve({ items: mjFeed.splice(0), cursor: 10100, superseded: false }) : mjGet(p));
+  let mjReads = 0;
+  win.Maity.api.getAll = (p) => { if (p === "/projects/maity/joins") mjReads++; return jfAll(p); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  const mjBefore = jpPanel();
+  mjFeed = [{ seq: 10100, kind: "member_joined", actor: { member_id: "agt-x" }, payload: {} }];
+  await fireIntervals(); for (let k = 0; k < 12; k++) await tick();
+  expect(jpPanel() && jpPanel() !== mjBefore, "join: an agent joining redraws Agents while the panel is closed");
+  main.querySelector("button.join-open").click(); await tick();
+  const mjOpen = jpPanel();
+  mjReads = 0;
+  mjFeed = [{ seq: 10101, kind: "member_joined", actor: { member_id: "agt-x" }, payload: {} }];
+  await fireIntervals(); for (let k = 0; k < 12; k++) await tick();
+  expect(jpPanel() === mjOpen && !mjOpen.hidden && mjReads === 1, "join: with the panel open only the joins are read again (" + mjReads + ")");
+  win.Maity.api.get = mjGet; win.Maity.api.getAll = jfAll;
   // A join that expires while the view is open moves to the others without a reload.
   const jAll = win.Maity.api.getAll;
   const soon = { id: "join-soon", agent_id: "agt-b", role: "member", created_by: "hum-maintainer", created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 60).toISOString(), used_at: null, burned: false, revoked_at: null };
   win.Maity.api.getAll = (p) => (p === "/projects/maity/joins" ? Promise.resolve({ items: [soon], next_cursor: null }) : jAll(p));
-  await go("#/p/maity/inbox"); await go("#/p/maity/join");
-  expect(btn(joinRow("join-soon"), "Revoke") && main.querySelector(".open-joins"), "joins: open while it lasts");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(joinRow("join-soon") && joinRow("join-soon").tagName === "ARTICLE" && btn(joinRow("join-soon"), "Revoke"), "joins: open while it lasts, as a seat");
   await new Promise((r) => setTimeout(r, 80)); await fireIntervals(); await tick();
-  expect(!main.querySelector(".open-joins") && text(main).includes("No open join.") && text(joinRow("join-soon")).startsWith("expired"),
+  expect(text(joinRow("join-soon").querySelector(".seat-label")) === "expired" && text(main.querySelector(".agents-count")).includes("0 open joins"),
     "joins: expired while the view is open, without a reload");
   expect(btn(joinRow("join-soon"), "Revoke"), "joins: just expired, it keeps Revoke for a minute: the hub decides");
   const jNow = win.Maity.api.now;
   win.Maity.api.now = () => Date.now() + 61000;
   await fireIntervals(); await tick();
-  expect(!btn(joinRow("join-soon"), "Revoke"), "joins: a minute after it expired, no Revoke");
+  expect(joinRow("join-soon").tagName === "LI" && text(joinRow("join-soon")).startsWith("expired") && !btn(joinRow("join-soon"), "Revoke"),
+    "joins: a minute after it expired, no Revoke: it moved to the record");
   // Expiry is judged by the hub's clock (M.api.now; its skew is tested in API mode).
   soon.expires_at = new Date(Date.now() - 5 * 60000).toISOString();
   win.Maity.api.now = () => Date.now() - 10 * 60000;
-  await go("#/p/maity/inbox"); await go("#/p/maity/join");
-  expect(main.querySelector(".open-joins") && btn(joinRow("join-soon"), "Revoke"), "joins: a browser ahead of the hub still sees an open join open");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(joinRow("join-soon").tagName === "ARTICLE" && btn(joinRow("join-soon"), "Revoke"), "joins: a browser ahead of the hub still sees an open join open");
   // A Revoke the hub refuses (expired by its clock): said, kept on screen, the list re-read.
   win.Maity.api.getAll = jAll;
   win.Maity.api.now = () => Date.parse("2026-10-21T08:10:00Z");
-  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
   const jReads = [];
   const jAll2 = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => { jReads.push(p); return jAll2(p); };
@@ -1953,7 +2025,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await projectSettings(); await tick();
   expect(byId("state-select") && !byId("signing-select"), "signing: no switch where the hub has no signing policy");
   await projectSettings(); await tick();
-  await go("#/p/maity/agents");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("(signed)") && text(main).includes("(bearer token)"), "credentials: how each was last used");
   await go("#/p/maity/inbox");
   // Logo in the header, the tab's icon, the banner on the project's inbox.
@@ -2218,8 +2290,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.onhashchange(); await tick(); await tick();
   expect(win.location.hash === "#/p/dogfood/agents" && text(header).includes("Dogfood Hub") && text(header).includes("Build"),
     "on 201 the page switches into the new project's Agents view");
-  expect(text(main).includes("No agents in this project yet") && main.querySelectorAll("a").some((a) => a.textContent === "Join an agent."),
-    "the new project offers to join an agent");
+  for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No agents in this project yet") && main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent"),
+    "the new project opens Join an agent at once");
   expect(chip("Dogfood Hub") && chip("Dogfood Hub").getAttribute("aria-current") === "page", "the new project is in the switcher");
   // A first-time human: the empty board and inbox say where their content comes from.
   await go("#/p/dogfood/board");
@@ -3608,13 +3681,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "New card").click(); await tick();
   byId("new-card-title").value = "From the keyboard";
   await ceCase("new card", byId("new-card-body"), "Body text", "/projects/maity/tasks", ceSubmitOf(byId("new-card-body")));
-  await go("#/p/maity/agents"); await tick();
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick(); await tick();
   const ceBox = main.querySelectorAll(".briefing")[0];
   (btn(ceBox, "Edit briefing") || btn(ceBox, "Write a briefing")).click(); await tick();
   const ceBrief = main.querySelector("form.briefing-form textarea");
   expect(text(ceLabel(ceBrief.id)).includes("Ctrl+Enter saves"), "Ctrl+Enter: the briefing says so");
   await ceCase("briefing", ceBrief, "Review first.", "/projects/maity/members/" + ceBrief.id.slice("briefing-".length), ceSubmitOf(ceBrief));
-  await go("#/p/maity/join"); await tick();
+  await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick(); await tick();
   byId("join-agent").value = byId("join-agent").querySelectorAll("option").map((o) => o.attrs.value).filter(Boolean)[0] || "";
   await ceCase("join", byId("join-briefing"), "Start with the open PRs.", "/projects/maity/joins", ceSubmitOf(byId("join-briefing")));
   win.Maity.api.post = cePost; win.Maity.api.patch = cePatch;
