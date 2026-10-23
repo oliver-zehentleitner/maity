@@ -584,3 +584,21 @@ def test_a_pause_on_top_of_a_limit_keeps_its_cap_and_a_pause_alone_holds_nothing
     agent.post("/me/limit", {"until": None})
     assert agent.get("/me").status_code == 200
     assert _lease(migrated, card["id"]) == now[0] + timedelta(seconds=7200)
+
+
+def test_an_admin_agent_sets_a_members_policy_and_asks_for_a_reviewers(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    lead = flow.agent(make_client, owner, role="admin")
+    worker = flow.agent(make_client, owner)
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    body = {"availability_policy": {"on_unavailable": "substitute", "substitutes": [lead.id]}}
+    direct = lead.patch(f"/projects/maity/members/{worker.id}", body)
+    assert direct.status_code == 200, direct.text
+    assert direct.json()["availability_policy"]["substitutes"] == [lead.id]
+    asked = lead.patch(f"/projects/maity/members/{reviewer.id}", body)
+    assert asked.status_code == 202, asked.text
+    assert asked.json()["title"] == f"Change cover for {asked.json()['title'].split()[-1]}"
+    assert asked.json()["class"] == "consent"
+    # Its own policy is not an admin agent's to set.
+    assert lead.patch(f"/projects/maity/members/{lead.id}", body).status_code == 403

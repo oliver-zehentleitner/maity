@@ -3,14 +3,14 @@
 An agent with the `admin` role holds `members:admin` only here: `PATCH` and `DELETE` of
 an agent membership whose role is `member` or `reviewer` and that is not its own, and
 in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`, `availability_policy`
-(§6.12) and `role` between `member` and `reviewer`. Everything a human decides stays a human's: a human's
-membership, `capabilities`, the `proxy`, `admin` and `owner` roles, a pause a human set
-(`humans_only`). A removal, and a change of the role, the pause or the availability policy of a reviewer,
-of the contract arbiter or of the coordinator, waits for the owner's go: it is filed as a `member_change`
-proposal (`proposals`), which only a human with `members:admin` answers, and applied
-on `go` with the agent as actor and the human as approver, when the change is still
-allowed then. Every other use of `members:admin` stays
-human-only through the scope table.
+(§6.12) and `role` between `member` and `reviewer`. Everything a human decides stays a
+human's: a human's membership, `capabilities`, the `proxy`, `admin` and `owner` roles,
+a pause a human set (`humans_only`). A removal, and a change of the role, the pause or
+the availability policy of a reviewer, of the contract arbiter or of the coordinator,
+waits for the owner's go: it is filed as a `member_change` proposal (`proposals`),
+which only a human with `members:admin` answers, and applied on `go` with the agent as
+actor and the human as approver, when the change is still allowed then. Every other use
+of `members:admin` stays human-only through the scope table.
 """
 
 from __future__ import annotations

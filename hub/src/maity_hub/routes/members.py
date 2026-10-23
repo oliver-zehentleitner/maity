@@ -320,15 +320,17 @@ def patch_member(
         target = member_row(conn, mine.project.id, member_id)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never changes a human's membership")
-        new_policy = None
         if "availability_policy" in given:
-            new_policy = _availability_policy(conn, mine, caller, target, body.availability_policy)
+            _policy_humans_only(conn, mine, caller, target, body.availability_policy)
         own_policy = given == {"availability_policy"} and target.id == mine.id
         if not agent_admin and not (own_policy and mine.kind == "human"):
             # A human sets their own policy without members:admin (§6.12).
             mine.require("members:admin")
         if agent_admin:
             admin_agents.check_patch(mine, target, body, given)
+        new_policy = None
+        if "availability_policy" in given:
+            new_policy = _availability_policy(conn, mine, target, body.availability_policy)
         kind = "agent" if target.agent_id else "human"
         if body.reports_to is not None:
             # Two PATCHes naming each other must not both pass the cycle check.
@@ -368,13 +370,32 @@ def patch_member(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def _availability_policy(
+def _policy_humans_only(
     conn: Connection, mine: Membership, caller: Caller, target: Any, change: Any
-) -> dict[str, Any]:
-    """The policy as it will be stored, `invalid` naming every bad field (§6.12). An agent
-    never decides that a human takes over work, nor what happens to a human's."""
-    if caller.kind != "human" and target.agent_id is None:
+) -> None:
+    """Before anything else (§2.3): an agent never decides what happens to a human's
+    work, nor that a human takes over work."""
+    if caller.kind == "human":
+        return
+    if target.agent_id is None:
         raise humans_only("a human's availability_policy is set by humans only")
+    for entry in (change.substitutes or []) if change is not None else []:
+        if entry.startswith("hum-") and _is_member(conn, mine.project.id, entry):
+            raise humans_only("only a human names a human as a substitute")
+
+
+def _is_member(conn: Connection, project_id: str, member_id: str) -> bool:
+    try:
+        member_row(conn, project_id, member_id)
+    except ApiError:
+        return False
+    return True
+
+
+def _availability_policy(
+    conn: Connection, mine: Membership, target: Any, change: Any
+) -> dict[str, Any]:
+    """The policy as it will be stored, `invalid` naming every bad field (§6.12)."""
     if change is None:
         return dict(availability.DEFAULT_POLICY)
     policy = availability.policy_of(target)
@@ -397,13 +418,8 @@ def _availability_policy(
             if entry == (target.agent_id or target.human_id):
                 errors["availability_policy.substitutes"] = "self"
                 continue
-            try:
-                named = member_row(conn, mine.project.id, entry)
-            except ApiError:
+            if not _is_member(conn, mine.project.id, entry):
                 errors["availability_policy.substitutes"] = "not_a_member"
-                continue
-            if named.agent_id is None and caller.kind != "human":
-                raise humans_only("only a human names a human as a substitute")
         policy["substitutes"] = entries
     if policy["on_unavailable"] == "substitute" and not policy["substitutes"]:
         errors.setdefault("availability_policy.substitutes", "required")
