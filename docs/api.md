@@ -561,7 +561,7 @@ include the scope. No call made with an agent credential may:
   (refused, as the one exception to the reason below, with
   `details.reason: objection_open`, §6.19); the requester's `escalate`
   stays open;
-- withdraw a personal request (§7) (on `/requests/{id}`; the project route answers `not_found`, §7);
+- read, answer or withdraw a personal request on `/requests/{id}` (the project route answers `not_found`, §7);
 - set a team's rulebook (`team`, §6.18), which belongs to the human who
   owns the team's agent.
 
