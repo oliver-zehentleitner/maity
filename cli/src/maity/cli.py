@@ -53,7 +53,7 @@ state:
   One state per clone, shared by its worktrees. MAITY_STATE_DIR overrides it.
 
 exit codes:
-  0 success, 1 error, 2 usage, 3 wait timed out, 4 report refused,
+  0 success, 1 error, 2 usage, 3 wait timed out, 4 refused locally, nothing sent,
   6 wait superseded by another wait of this credential (do not start a second one),
   130 interrupted (Ctrl-C)
 
@@ -161,6 +161,11 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     owner_id = field(packet, "me", "owner", "id")
     if isinstance(owner_id, str):
         session.data["owner_id"] = owner_id
+    instance = field(packet, "me", "instance")  # §5.2; absent until the hub has instances
+    if isinstance(instance, str):
+        session.data["instance"] = instance
+    else:
+        session.data.pop("instance", None)
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
@@ -1316,8 +1321,8 @@ def _takeover_call(session: Session, method: str, path: str, body: Any = None) -
             and not _field(exc.details, "reason")
         ):
             raise CommandError(
-                f"{exc}\nonly the holding instance answers for the card (§6.19); another "
-                "instance of your team cannot accept or object for it"
+                f"{exc}\nmost likely another instance of your team holds the card: only the "
+                "holding instance accepts or objects (§6.19)"
             ) from None
         if exc.code == "forbidden" and _field(exc.details, "reason") == "objection_open":
             raise CommandError(
@@ -1365,13 +1370,16 @@ def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
     if not isinstance(me, str):
         raise state.StateError("this agent's member id is not known yet; run `maity resume`")
     holder = _obj(takeover.get("from"))
-    if holder.get("member_id") != me:
+    mine = session.data.get("instance")
+    other_instance = isinstance(mine, str) and holder.get("instance") not in (None, mine)
+    if holder.get("member_id") != me or other_instance:
         raise LocalRefusal(
             f"{tid}: only the holder ({_instance(holder)}) or its owner accepts or objects; "
             "the requester may withdraw or escalate"
         )
     by = _obj(_obj(takeover.get("objection")).get("by"))
-    if by.get("kind") == "human":
+    # A retracted objection reopens the takeover: the holder answers again (§6.19).
+    if by.get("kind") == "human" and takeover.get("status") in ("objected", "escalated"):
         who = onboarding.inline(by.get("member_id") or by.get("id"))
         raise LocalRefusal(
             f"{tid}: a human ({who}) objected; after a human's objection only that human moves "

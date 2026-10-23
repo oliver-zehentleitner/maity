@@ -123,7 +123,7 @@ def test_another_instance_of_the_team_is_told_why(
     fake.routes[("POST", f"{P}/takeovers/tko-0003/respond")] = lambda s: (
         403, {"error": {"code": "forbidden", "message": "f", "details": {}}})  # fmt: skip
     assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_ERROR
-    assert "only the holding instance answers" in capsys.readouterr().err
+    assert "most likely another instance of your team holds" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -386,3 +386,62 @@ def test_messages_escapes_every_header_field(
     out = capsys.readouterr().out
     assert not any(ch in out for ch in ("\x1b", "\x9b", "\u202e", "\x07"))
     assert "role:\\x1b[31madmin" in out and "tsk\\x9b1" in out
+
+
+def _set_instance(instance: str | None) -> None:
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    data = state.load_state(directory)
+    if instance is None:
+        data.pop("instance", None)
+    else:
+        data["instance"] = instance
+    state.save_state(directory, data)
+
+
+def test_another_instance_of_the_team_is_refused_once_the_instance_is_known(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, TAKEOVER)
+    _set_instance("zz9q")
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_REFUSED
+    assert "only the holder (agt-b#wle2)" in capsys.readouterr().err
+    _set_instance("wle2")
+    fake.routes[("POST", f"{P}/takeovers/tko-0003/respond")] = lambda s: (200, TAKEOVER)
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_OK
+
+
+def test_after_a_retracted_objection_the_holder_answers_again(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    reopened = {**TAKEOVER, "status": "open", "objection": HUMAN_OBJECTION}
+    fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, reopened)
+    fake.routes[("POST", f"{P}/takeovers/tko-0003/respond")] = lambda s: (200, reopened)
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"accept": True}
+
+
+def test_resume_stores_the_instance_and_forgets_a_stale_one(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    from maity import state
+
+    packet = {"session": {"id": "ses-b-0005"}, "events": {"after": 0, "items": [], "cursor": 1},
+              "me": {"member_id": "agt-b", "instance": "wle2"}}  # fmt: skip
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda s: (200, packet)
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert state.load_state(state.resolve_state_dir())["instance"] == "wle2"
+    packet["me"] = {"member_id": "agt-b"}
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert "instance" not in state.load_state(state.resolve_state_dir())
+
+
+def test_memory_add_json_is_ascii_escaped(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", f"{P}/memory")] = lambda s: (
+        201, {**ENTRY, "by": {**ENTRY["by"], "handle": "b‮x\u009b"}})  # fmt: skip
+    assert cli.main(["memory", "add", "x", "--json"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "‮" not in out and "\u009b" not in out and "\\u202e" in out
