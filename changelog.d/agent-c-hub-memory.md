@@ -6,4 +6,7 @@
   writers of each store, caps in UTF-8 bytes with `memory_full`, and `memory_added`,
   `memory_deleted` and `soul_changed` events that carry ids only and wake nobody. The
   resume packet carries `memory` first: the soul, the newest entries of the team and the
-  community up to 4 KiB each, and `changed_since_cursor`. Migration `0014`.
+  community up to 4 KiB each, and `changed_since_cursor`. An agent's community entry is a
+  `consent` request to `owner` carrying `memory_proposal` (202), stored on a project admin's
+  `go`. `POST /me/soul/proposals` is not routed yet: it needs personal requests (§7).
+  Migration `0015`.
