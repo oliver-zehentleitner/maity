@@ -12,6 +12,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from maity_hub import secretbox
+from maity_hub.mail import environment as mail_environment
+from maity_hub.mail.environment import MailEnvironment
 
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
@@ -55,6 +57,9 @@ class Settings:
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
+    # password and the signing key never appear in a repr.
+    mail: MailEnvironment = field(default_factory=MailEnvironment)
 
     @property
     def join_host(self) -> str | None:
@@ -95,6 +100,7 @@ class Settings:
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
+            mail=parse_mail(env),
         )
 
 
@@ -103,6 +109,13 @@ def parse_secret_key(value: str) -> bytes | None:
     try:
         return secretbox.parse_key(value)
     except ValueError as error:
+        raise ConfigError(str(error)) from None
+
+
+def parse_mail(env: dict[str, str]) -> MailEnvironment:
+    try:
+        return mail_environment.parse(env)
+    except mail_environment.MailConfigError as error:
         raise ConfigError(str(error)) from None
 
 

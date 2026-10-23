@@ -843,3 +843,46 @@ memory_entry = Table(
     Index("ix_memory_entry_team", "team_membership", "created_at"),
     **MYSQL_TABLE,
 )
+
+# --- instance settings (docs/api.md §2.6.6, §16.2) ---------------------------------
+#
+# What the instance admin set, one row per name from the registry in
+# `maity_hub.instance_settings`; no row means the environment's value or the default.
+# Never a secret: an admin-set secret (the SMTP password) lives sealed in
+# `instance_secret`, base64 of what `maity_hub.secretbox` sealed.
+instance_setting = Table(
+    "instance_setting",
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("value", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    **MYSQL_TABLE,
+)
+
+instance_secret = Table(
+    "instance_secret",
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("sealed", Text, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    **MYSQL_TABLE,
+)
+
+# --- mail (docs/api.md §16.2) ---------------------------------------------------------
+#
+# One row per mail the hub handed to SMTP or held back, by budget kind (notification,
+# security, sign_in) and outcome (sent, queued, dropped, failed): what the counters of
+# §16.2 count over the last hour. No address and no content.
+mail_delivery = Table(
+    "mail_delivery",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    Column("outcome", String(16), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_mail_delivery_at", "at"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)

@@ -7566,10 +7566,10 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_PORT` | `port` | default 587 for `starttls`, 465 for `implicit`, 25 for `none` |
 | `MAITY_SMTP_TLS` | `tls` | `starttls` (default), `implicit`, or `none` — `none` only for a host that is a loopback address or the name `localhost` (a relay on the same machine or in the same pod); for any other host it is `invalid` and stops the hub at startup when set in the environment. Under `starttls`, **STARTTLS is required**: a server that does not offer it (or a path that strips it) fails the send at stage `tls`, loudly — logged, counted in `failed_last_hour`, and the test send says so — and nothing is sent in clear; there is no fallback. Certificates are always verified against the system store, or against `MAITY_SMTP_CA_FILE` when set; there is no switch to skip verification |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
-| `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS |
+| `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
 | `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
-| `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:` |
+| `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
 | `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
@@ -7623,8 +7623,10 @@ signing key are there and, with a username, a password; `missing` names
 what is not. `password`, `signing_key` and `secret_key` never carry a
 value, a length, a hash or a hint — only whether one is set.
 `warnings` lists `smtp_password_in_database` under the Kubernetes rule
-above and `smtp_plaintext_allowed` while `MAITY_SMTP_ALLOW_PLAINTEXT`
-is set, else nothing. `from.address` and `reply_to` follow the address
+above, `smtp_plaintext_allowed` while `MAITY_SMTP_ALLOW_PLAINTEXT`
+is set, and `smtp_password_unreadable` while a stored password does not
+open with the current instance key (it then counts as not set; the hub
+also logs it at startup), else nothing. `from.address` and `reply_to` follow the address
 syntax of §18.4 (`invalid` otherwise); `from.name` follows the header
 rules of §18.5.
 
@@ -7638,7 +7640,11 @@ Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
-`secret_key` in the body is `invalid` with `environment_only`. A value
+`secret_key` in the body is `invalid` with `environment_only`, any
+other field with `extra_forbidden`. A `tls` of `none` with a `host` that
+is not a loopback address or `localhost` — whichever of the two the body
+changes — is `invalid` with `loopback_host_only` on the field the body
+changed. The body is applied whole or not at all. A value
 in the body is never echoed and never logged. Answers the `GET` shape. A change
 of `host`, `port`, `tls`, `username`, `password` or `from` clears
 `last_test`. The
@@ -7658,7 +7664,7 @@ the configured `host` and `port` — the body takes no host, port or TLS
 mode, and a field other than `to` is `invalid` — so the test send is
 no tool to reach another address from inside the hub's network. `to` is optional and
 defaults to the admin's own verified address (§18.4); without either it
-is `invalid` (`details.fields.to: "required"`). It runs whether
+is `invalid` (`details.fields.to: "no_verified_address"`). It runs whether
 `enabled` is `true` or not, and is `mail_not_configured` when `complete`
 is `false`. Five per hour per instance admin (`rate_limited`).
 
