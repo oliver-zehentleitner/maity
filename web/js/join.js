@@ -49,10 +49,25 @@ window.Maity = window.Maity || {};
     profileOptions();
     const HANDLE = M.dom.NAME_RULES.handle;
     const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: HANDLE.pattern,
-      maxlength: "31", autocomplete: "off", spellcheck: "false", "aria-describedby": "join-handle-rule" });
+      maxlength: "31", autocomplete: "off", spellcheck: "false", "aria-describedby": "join-handle-rule join-handle-state" });
     const display = h("input", { id: "join-display", placeholder: "display name" });
+    // Free or taken while it is typed (docs/api.md §6.3: unique among one's
+    // profiles that are not deleted, and GET /agents lists exactly those).
+    // A hint only: the hub's answer to the join is the final word.
+    const handleState = h("p", { class: "hint handle-state", id: "join-handle-state", role: "status" });
+    const checkHandle = () => {
+      const v = handle.value.trim();
+      const taken = v && profiles.items.find((p) => !p.deleted_at && p.handle === v);
+      handleState.className = "hint handle-state" + (!v ? "" : !HANDLE.test.test(v) || taken ? " field-error" : " ok");
+      handleState.textContent = !v ? ""
+        : !HANDLE.test.test(v) ? "Not a handle yet: " + HANDLE.text
+        : taken ? "Taken: your agent " + taken.display_name + " has @" + v + ". Choose it above, or another handle."
+        : "@" + v + " is free.";
+    };
+    handle.addEventListener("input", checkHandle);
     const newFields = h("div", { class: "new-agent", hidden: true },
       h("label", { for: "join-handle" }, "Handle"), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
+      handleState,
       h("label", { for: "join-display" }, "Display name"), display);
     agentSelect.addEventListener("change", () => { newFields.hidden = agentSelect.value !== ""; });
     if (!profiles.items.length) newFields.hidden = false;
@@ -138,7 +153,16 @@ window.Maity = window.Maity || {};
         try {
           j = await M.api.post(ctx.base + "/joins", body);
         } catch (err) {
-          status.fail("No join created: ", err);
+          const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.handle;
+          status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle } : err);
+          if (why) {
+            // The hub knows better than the list on screen: read it again, and say so at the field.
+            try { profiles = await M.api.getAll("/agents"); } catch (ignored) { /* the refusal above says enough */ }
+            profileOptions();
+            agentSelect.value = "";
+            checkHandle();
+            handle.focus();
+          }
           return;
         } finally {
           create.disabled = false;

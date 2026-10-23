@@ -339,7 +339,11 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
      file; the ones there stay readable.
 7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
    for an existing agent profile or a new one (its handle's rule said under
-   the field and checked before sending), optionally with a briefing
+   the field and checked before sending; while it is typed, a status line
+   says whether it is free or taken by one of your profiles, from
+   `GET /agents`, where a deleted profile is not listed; the hub's
+   `taken` on sending is the final word, said in words, and the profiles
+   are read again), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
    once, with a copy button. The joins below are open ones first (each

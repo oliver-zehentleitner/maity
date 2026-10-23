@@ -1657,6 +1657,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat/nobody");
   expect(text(main).includes("No conversation of yours"), "unknown conversation id reported");
 
+  // A new profile's handle, free or taken while it is typed (§6.3); a deleted profile frees its handle.
+  const hcAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/agents"
+    ? hcAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-old", handle: "old-one", display_name: "Old one", owner_id: "hum-maintainer", memberships: [], deleted_at: "2026-10-01T00:00:00Z" }]), next_cursor: null }))
+    : hcAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/join");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  const hcType = (v) => { byId("join-handle").value = v; byId("join-handle").dispatch("input"); };
+  const hcState = () => byId("join-handle-state");
+  expect(hcState() && hcState().getAttribute("role") === "status" && byId("join-handle").getAttribute("aria-describedby").includes("join-handle-state")
+    && text(hcState()) === "", "handle check: a status line beside the field, empty until something is typed");
+  hcType("agent-b");
+  expect(text(hcState()).includes("Taken: your agent Agent B has @agent-b") && hcState().className.includes("field-error"), "handle check: one's own profile's handle is taken");
+  hcType("agent-zz");
+  expect(text(hcState()) === "@agent-zz is free." && hcState().className.includes("ok"), "handle check: an unused handle is free");
+  hcType("old-one");
+  expect(text(hcState()) === "@old-one is free.", "handle check: a deleted profile does not block its handle");
+  hcType("A");
+  expect(text(hcState()).startsWith("Not a handle yet: Lowercase letters") && hcState().className.includes("field-error"), "handle check: the pattern is said too");
+  // The hub's answer is the final word: its taken is said in words and the list read again.
+  const hcPost = win.Maity.api.post;
+  let hcReads = 0;
+  win.Maity.api.getAll = (p) => (p === "/agents" ? (hcReads++, hcAll(p)) : hcAll(p));
+  win.Maity.api.post = (p, b) => (p === "/projects/maity/joins"
+    ? Promise.reject(new win.Maity.api.ApiError("taken", 400, p, "invalid", { fields: { handle: "taken" } }))
+    : hcPost(p, b));
+  hcType("agent-zz"); byId("join-display").value = "Agent ZZ";
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("No join created: you already have an agent with the handle @agent-zz") && hcReads === 1,
+    "handle check: the hub's taken is said, and the profiles are read again");
+  win.Maity.api.post = hcPost; win.Maity.api.getAll = hcAll;
+  await go("#/p/maity/inbox");
   await go("#/p/maity/join");
   expect(!main.querySelector(".error") && text(main).includes("join-0006"), "join view with existing joins");
   // Each join's state from its fields; only an open one can be revoked, and it comes first.
@@ -1691,7 +1723,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("revoked"), "open join revoked");
   // A join for a new profile: the list names it and the select offers it, without a reload.
   const agentSel = byId("join-agent"); agentSel.value = ""; agentSel.dispatch("change");
-  expect(text(main).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("join-handle").getAttribute("aria-describedby") === "join-handle-rule",
+  expect(text(main).includes("Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.") && byId("join-handle").getAttribute("aria-describedby").split(" ").includes("join-handle-rule"),
     "the handle's rule is said up front, tied to its field");
   const joinsBefore = main.querySelectorAll(".joins li").length;
   byId("join-handle").value = "Agent_New";
