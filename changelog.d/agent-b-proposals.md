@@ -8,4 +8,4 @@
   answer, for every answer, and may add its own fields to `GET …/requests/{id}`, never to
   its events, lists or resume packets; a kind the hub does not know is never filed and fails
   only its own request's answer (`proposal_kind_unknown`); a close the hub makes itself,
-  such as the proposer's removal, withdraws it unsettled (migration `0017_request_proposal`)
+  such as the proposer's removal, withdraws it unsettled (migration `0018_request_proposal`)
