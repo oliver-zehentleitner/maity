@@ -36,10 +36,15 @@ window.Maity = window.Maity || {};
     undecodable: "the image could not be read",
     required: "the file has no name",
   };
-  function said(err) {
+  // `size`: the file's, said beside a refusal for size, since the hub's limit
+  // in force (its 10 MiB for files, or a smaller body cap where it has no
+  // upload route yet) is the hub's to name, not this page's.
+  function said(err, size) {
     const why = err.code === "invalid" && err.details && err.details.fields && (err.details.fields.body || err.details.fields.name);
     if (why) return { message: REFUSED[why] || why };
-    if (err.code === "payload_too_large") return { message: "larger than 10 MiB" };
+    if (err.code === "payload_too_large") {
+      return { message: "the hub refused it as too large (the file is " + sizeOf(size) + ")" + (err.message ? ": " + err.message : "") };
+    }
     if (err.code === "attachment_quota") return { message: err.details && err.details.scope === "pending"
       ? "you have 20 files, or 100 MiB, waiting to be sent; send or remove some first" : "the project's storage for files is full" };
     if (err.code === "rate_limited") return { message: "too many uploads in a short time; try again in a few minutes" };
@@ -153,7 +158,7 @@ window.Maity = window.Maity || {};
           status.done();
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
-          status.fail("Not attached: " + p.name + ": ", said(err));
+          status.fail("Not attached: " + p.name + ": ", said(err, file.size));
           // Over the pending cap: show what waits, so it can be sent or removed.
           if (err.code === "attachment_quota") await loadEarlier();
         }

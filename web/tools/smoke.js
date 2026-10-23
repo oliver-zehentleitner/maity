@@ -2563,6 +2563,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
   await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
   expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
+  // A 300 KB picture refused by a hub's 64 KiB body cap (no upload route yet): its own words and the real size, no 10 MiB.
+  win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("the body is over 64 KiB", 413, "/x", "payload_too_large", {}));
+  await atPick("chat-files", [atFile("shot300.png", PNG, 300 * 1024, "image/png")]);
+  expect(text(main).includes("Not attached: shot300.png: the hub refused it as too large (the file is 300 KB): the body is over 64 KiB")
+    && !text(main.querySelector(".attach")).includes("10 MiB"), "attachments: a size refusal says the hub's limit and the file's size, not a fixed one");
   win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
   // A group chat: the participant attaches; a project message too.
   await go("#/p/maity/chat/cnv-0007");
