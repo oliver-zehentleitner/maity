@@ -334,7 +334,7 @@ window.Maity = window.Maity || {};
     }
     if (!agent) {
       // A group chat's link on a hub without group chats is no error of the reader's.
-      if (args[0] && !groupsServed) append(layout, M.dom.notOnHub("This hub has no group chats yet, so this link cannot open here."));
+      if (args[0] && !groupsServed && /^cnv-/.test(args[0])) append(layout, M.dom.notOnHub("This hub has no group chats yet, so this link cannot open here."));
       else if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
       else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
       await list.refresh(false);

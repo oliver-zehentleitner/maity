@@ -3527,7 +3527,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? (sesAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : sesGet(p));
   await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(sesAsked === 1 && text(main.querySelector("section.sessions")).includes("This hub lists no sessions yet."), "sessions: a hub without them is asked once, and that is said");
+  expect(sesAsked === 2 && text(main.querySelector("section.sessions")).includes("This hub lists no sessions yet."), "sessions: a hub without them is asked once per view, and that is said");
   win.Maity.api.get = sesGet;
 
   // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
@@ -3643,8 +3643,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = nhAbsent("/auth/sessions", 405);
   await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".not-on-hub") && text(main).includes("This hub lists no sessions yet.") && !main.querySelector(".sessions .send-status.failed") && (nhAsked["/auth/sessions"] || 0) <= 1,
-    "not on this hub: a 405 on sessions is said quietly and asked once");
+  expect(main.querySelector(".not-on-hub") && text(main).includes("This hub lists no sessions yet.") && !main.querySelector(".sessions .send-status.failed") && (nhAsked["/auth/sessions"] || 0) <= 2,
+    "not on this hub: a 405 on sessions is said quietly and asked once per view");
   // Notifications absent: the counts' timer stops asking.
   win.Maity.api.forgetRoutes();
   win.Maity.api.get = nhAbsent("/me/notifications", 404);
@@ -3668,6 +3668,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-9999"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector(".not-on-hub") && text(main).includes("This hub has no group chats yet, so this link cannot open here.") && !main.querySelector(".chat-layout .error"),
     "not on this hub: a group chat link without group chats is said quietly");
+  // A 404 on a route the hub lists is the resource's (a project left): an error, never cached as absent.
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: { "/api/v1/projects/{slug}/overview": { get: {} } } })
+    : p.startsWith("/projects/maity/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nhGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".send-status.failed") && !main.querySelector(".overview-missing") && !win.Maity.api.absent.has("GET", "/projects/maity/overview"),
+    "not on this hub: a 404 on a listed route stays an error and is not cached");
+  // A direct chat's link (agt-…) is never explained away by missing group chats.
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : nhGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-gone"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".not-on-hub") && text(main).includes("No conversation of yours with the id agt-gone."), "not on this hub: an unknown direct chat stays an error");
   win.Maity.api.get = nhGet;
   win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");

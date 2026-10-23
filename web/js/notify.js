@@ -60,7 +60,7 @@ window.Maity = window.Maity || {};
       state.byProject = answer.by_project || {};
     } catch (err) {
       if (!M.api.notOnHub(err)) throw err;
-      M.api.absent.note("GET", "/me/notifications");
+      if (await M.api.missingRoute(err, "GET", "/me/notifications")) M.api.absent.note("GET", "/me/notifications");
       state.available = false;
     }
     return state;
@@ -201,8 +201,13 @@ window.Maity = window.Maity || {};
           if (after === null) after = (await M.api.get("/me/notifications?limit=0")).next_after;
           answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50");
         } catch (err) {
-          // Not on this hub: the loop ends instead of retrying for ever.
-          if (M.api.notOnHub(err)) { M.api.absent.note("GET", "/me/notifications"); return; }
+          // Not on this hub: the loop ends instead of retrying for ever, and
+          // says so, so a later start (after a deploy) is not taken for running.
+          if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
+            M.api.absent.note("GET", "/me/notifications");
+            if (browserLoop === loop) browserLoop = null;
+            return;
+          }
           await pause(PAUSE_MS);
           continue;
         }

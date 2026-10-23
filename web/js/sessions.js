@@ -20,9 +20,9 @@ window.Maity = window.Maity || {};
   const MAIL = ["email_link", "email_code"];
   // Unread security items are few (the mail limits); read at most this many pages.
   const ALERT_PAGES = 10;
-  // A hub that answered 404 to the session list has none: not asked again
-  // until the page is loaded anew.
-  let hubWithout = false;
+  // A hub without the session list is not asked again until the next
+  // navigation (M.api.absent, cleared by js/app.js).
+  const hubWithout = () => M.api.absent.has("GET", "/auth/sessions");
 
   // The hub's refusals, in words (§2.6.5, §2.6.3).
   function said(err) {
@@ -49,19 +49,19 @@ window.Maity = window.Maity || {};
   // What the hub has: the sessions (ended ones too) and the unread security
   // items; a hub without notifications has no items, not an error.
   async function load() {
-    if (hubWithout || M.api.absent.has("GET", "/auth/sessions")) throw new M.api.ApiError("no sessions", 404, "/auth/sessions", "not_found");
+    if (hubWithout()) throw Object.assign(new M.api.ApiError("no sessions", 404, "/auth/sessions", "not_found"), { notOnHub: true });
     let sessions;
     try {
       sessions = (await M.api.get("/auth/sessions?ended=true")).items;
     } catch (err) {
-      if (M.api.notOnHub(err)) { hubWithout = true; M.api.absent.note("GET", "/auth/sessions"); }
+      if (await M.api.missingRoute(err, "GET", "/auth/sessions")) { M.api.absent.note("GET", "/auth/sessions"); err.notOnHub = true; }
       throw err;
     }
     let alerts = [];
     try {
       alerts = M.api.absent.has("GET", "/me/notifications") ? [] : await unreadAlerts();
     } catch (err) {
-      if (!M.api.notOnHub(err)) throw err;
+      if (!(await M.api.missingRoute(err, "GET", "/me/notifications"))) throw err;
     }
     return { sessions, alerts, current: sessions.find((s) => s.current) || null };
   }
@@ -150,7 +150,7 @@ window.Maity = window.Maity || {};
       try {
         data = await load();
       } catch (err) {
-        append(clear(body), M.api.notOnHub(err) ? M.dom.notOnHub("This hub lists no sessions yet.")
+        append(clear(body), err.notOnHub ? M.dom.notOnHub("This hub lists no sessions yet.")
           : h("p", { class: "send-status failed" }, "Could not read your sessions: " + err.message));
         return null;
       }

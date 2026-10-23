@@ -44,7 +44,7 @@ window.Maity = window.Maity || {};
     try {
       settings = await M.api.get("/me/notification-settings");
     } catch (err) {
-      append(box, M.api.notOnHub(err) ? M.dom.notOnHub("This hub has no notification settings yet.")
+      append(box, await M.api.missingRoute(err, "GET", "/me/notification-settings") ? M.dom.notOnHub("This hub has no notification settings yet.")
         : h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
       return { el: box, heading };
     }
