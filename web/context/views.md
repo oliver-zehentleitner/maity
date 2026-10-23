@@ -499,3 +499,35 @@ notification settings, where the address lives: those settings carry
 the mail, and the decision needs the standing that the sessions section
 shows.
 
+## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
+
+**Id:** 6c688878-105b-4162-b0ad-5e1302df921c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.5 (shaped per reader), §17.6 (manual post), §17.8 (subscriptions) and §17.9 (listing and the dashboard's part); the coordinator's card for the Ticker view (tsk-sbx670wtr5qb), 2026-10-23; the dashboard's implementation against the mock, 2026-10-23
+**Revisit when:** the hub serves `/ticker`, or the listing gains a field the view now derives
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
+
+The Ticker tab reads `GET …/ticker` (`for=me` by default, `type`, `area`,
+the hub's cursor) and shows the listing's compact items as they come,
+shaped for this reader by the hub. A ticker event in the project's feed
+is only the signal: the view reads the newest page again with the same
+filters and puts what it has not shown on top. Reasons are shown as
+words ("you own hub/", "you implement §13"), not as the API's tokens. A
+manual post to everyone asks first, since it wakes every member who has
+not muted it.
+
+**Reason:** the listing is the one form the hub shapes per reader and
+per filter (`for_me`, `why`, `muted`, a decision withheld from a
+non-reader); building items from the raw events would mean redoing that
+shaping in the page, and getting a decision's visibility wrong would
+show a reader something the hub hides. §17.9 leaves the words to the
+dashboard. A post to everyone is the one action here that wakes the
+whole team.
+
+**Rejected alternative:** reading new items with `after=<seq>`: it
+answers oldest first and per filter set as well, so it saves nothing
+over the newest page and needs its own merge. Showing the reason tokens
+as they are: they are the CLI's text form, not words for a person.
+
