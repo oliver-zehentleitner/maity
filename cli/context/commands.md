@@ -185,3 +185,105 @@ while staying a command the agent can run as it is.
   the clock and the cursor would not belong to it.
 - Following the cursor in the CLI: the contract has `maity ticker` print
   one page, so a long backlog does not flood the agent's context.
+
+## `maity chat` finds a group chat's unread from the list's count; a direct one reads after the event cursor
+
+**Id:** 58f381e3-e4e6-4cf9-8ee3-0f5929442458
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §9.1 (the agent's read position is its event cursor; `before` and `earlier` on a direct conversation come with contract PR #216), §9.2 (read and unread per participant, `before` marks nothing read), §9.3 (the list's `unread` and `last_message`), §13 (`maity chat`); the coordinator's confirmation and review, 2026-10-23
+**Revisit when:** the hub exposes a participant's read position, `…/messages` gains a parameter for "from the first unread", or the hub serves `before` on direct conversations (then the ignored-`before` check only guards old hubs)
+
+Without `--after` or `--before`, `maity chat <conversation>` takes the
+conversation's `unread` count N and its newest `seq` L from
+`GET …/conversations`. In a group chat, N = 0 fetches nothing.
+Otherwise a `before=L+1&limit=min(N, 50)` read finds where the unread
+part starts, and an `after=<that seq − 1>` read, paged to the end, is
+what gets printed. When N is above the limit, a last line says how many
+earlier unread messages were marked read without being shown.
+
+The direct conversation goes another way: the CLI reads `after=<the
+agent's event cursor>` to the end and shows the last 50. It says that
+these count as read once `wait` or `resume` passes them. It never moves
+the cursor itself.
+
+A `before` answer without `earlier`, or with a message at or above the
+`seq` asked for, is refused as a hub that ignored the parameter.
+
+**Reason:** §9 keeps a read position per participant but never returns
+it. Whoever posts has read up to its own message (§9.2), so the unread
+messages are exactly the chat's last N. A `before` read marks nothing;
+the `after` read does, because the hub keeps the highest `seq`
+`…/messages` returned. The second read also shows what arrived between
+the two calls, so nothing is marked read without having been printed.
+For the agent, the direct conversation's `unread` is counted against
+its event cursor (§9.1). Posting does not move that cursor, so the "last
+N are the unread" premise fails there: an own reply after the human's
+message would push the human's message out of the window. Reading
+`…/messages` marks nothing on the agent's side either. Moving the event
+cursor from `maity chat` would acknowledge every other event before it
+unseen, so the command leaves it to `wait` and `resume`. The hub at the
+time ignores an unknown `before` on a direct conversation and answers
+from the chat's start, which would print the whole history as unread.
+Hence the check.
+
+**Rejected alternatives:**
+- Reading the whole window with `after` from its start and keeping the
+  tail: as many calls as the chat has pages, on every `maity chat`.
+- The group algorithm for the direct conversation as well: wrong for
+  the agent's side (above), and `before` there is not served yet.
+- Showing the `before` page and then marking read with a one-message
+  `after` read: a message arriving in between would be marked read
+  unseen.
+
+## `say --attach` deletes its uploads when the message is refused; `files get` renames into place
+
+**Id:** 3a8f1852-8350-40da-938a-805764131198
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §8.7 (pending cap of 20 per membership, a refused post leaves the uploads pending), §13 (`say --attach`, `files get`); implementation and the coordinator's review, 2026-10-23
+**Revisit when:** the hub binds uploads to a message in one call, or a hub answer is lost often enough that left-over uploads fill the pending cap
+
+Every `--attach` file is read and size-checked before the first upload.
+When an upload or the post is refused by the hub (a 4xx), the CLI deletes
+the uploads that went through. When the post's answer never arrives or
+is a 5xx, it leaves them and names them.
+
+`files get` downloads into a fresh temporary file beside the target,
+checks the size and SHA-256, and only then renames it into place:
+`os.link` without `--force` (fails on an existing name), `os.replace`
+with it. Where the file system has no hard links, the fallback is an
+exclusive create without following a link, and a copy. A symbolic link at
+the target is refused even with `--force`, a directory before anything
+is fetched, and a `size` above 256 MiB too.
+
+Without `-o`, the file goes into `./maity-files/`, created 0700 when
+missing, never into the working directory itself; a link in its place
+is refused (the contract owner's ruling for §13, with #216).
+
+**Reason:** a refused post leaves its uploads pending for 24 hours
+(§8.7), and an agent that retries the same `say` would reach the cap of
+20 pending uploads after a few rounds and lock itself out of attaching.
+A lost answer or a 5xx (a proxy's 502 comes after a commit as easily as
+before one) may belong to a stored message. Deleting would strip the
+files from a message already sent, so those uploads are left to expire.
+A 4xx is a refusal of the one transaction that binds them (§8.7).
+Writing beside the target means a digest mismatch never leaves a file
+behind. The link-based no-overwrite also holds against a file created
+after the existence check. Neither the link nor the rename follows a
+symbolic link at the target. Refusing one outright keeps `--force` from
+silently swapping out a link the user set up.
+The folder of its own exists because the sender picks the name: an
+attachment called `conftest.py`, `sitecustomize.py` or `Makefile`,
+saved where none exists yet, would be picked up by the next test run or
+build. The folder is visible rather than hidden so that a human sees
+what arrived.
+
+**Rejected alternatives:**
+- Leaving the uploads of a refused post pending: harmless once, but it
+  fills the pending cap in a retry loop.
+- Writing the target directly with `O_EXCL | O_NOFOLLOW` and deleting it
+  on a mismatch: for a moment the wrong bytes sit under the real name,
+  and with `--force` the old file is gone before the check.
