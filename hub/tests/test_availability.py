@@ -499,3 +499,68 @@ def test_a_runners_rate_limit_is_the_agents_limit_until_the_next_report(
     clock.set_source(lambda: retry_at + timedelta(seconds=1))
     availability.sweep(migrated)
     assert events(migrated, "member_limit_ended") == []
+
+
+# --- review of #262 -------------------------------------------------------------------------
+
+
+def _lease(engine: Engine, card_id: str) -> datetime:
+    with engine.connect() as conn:
+        found: datetime = conn.execute(
+            select(t.card.c.lease_until).where(t.card.c.id == card_id)
+        ).scalar_one()
+        return found
+
+
+def test_an_ordinary_call_never_shortens_a_limits_hold(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    until = now[0] + timedelta(hours=5)
+    agent.post("/me/limit", {"until": z(until)})
+    held = until + timedelta(minutes=15)
+    assert _lease(migrated, card["id"]) == held
+    assert agent.get("/me").status_code == 200  # a call that renews leases
+    assert _lease(migrated, card["id"]) == held
+
+
+def test_renewals_and_new_limits_never_pass_the_outages_24_hours(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    start = now[0]
+    agent.post("/me/limit", {"until": z(start + timedelta(days=6))})
+    cap = start + availability.LEASE_HOLD
+    assert _lease(migrated, card["id"]) == cap
+    now[0] = start + timedelta(hours=23)
+    agent.post("/me/limit", {"until": z(now[0] + timedelta(days=6))})  # renews, then holds
+    assert _lease(migrated, card["id"]) == cap
+
+
+def test_a_limit_renewed_after_the_expiry_read_it_is_not_cleared(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    agent.post("/me/limit", {"until": z(now[0] + timedelta(hours=1))})
+    now[0] += timedelta(hours=1, seconds=1)
+    later = now[0] + timedelta(hours=2)
+    with migrated.begin() as conn:
+        project = conn.execute(select(t.project)).one()
+        [due] = availability.due_limits(conn, project.id)
+        # A renewal lands between the read and the clearing.
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == due.id).values(limit_until=later)
+        )
+        assert availability.end_limit(conn, project, due) is False
+        stored = conn.execute(
+            select(t.membership.c.limit_until).where(t.membership.c.id == due.id)
+        ).scalar_one()
+    assert stored == later
+    assert events(migrated, "member_limit_ended") == []
