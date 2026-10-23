@@ -28,6 +28,7 @@ PREFIXES = {
     "runner_attachment": "ratt",
     "runner_session": "rses",
     "placement": "plc",
+    "memory": "mem",
 }
 
 

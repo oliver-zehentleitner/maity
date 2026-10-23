@@ -33,6 +33,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.routes import memory
 from maity_hub.routes.members import PausedIn, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import has_scope, scopes_for
@@ -322,6 +323,8 @@ def _packet(
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
         "hub_version": __version__,
+        # First of the contents: the soul is what an agent loads before anything (§19.3).
+        "memory": memory.packet_block(conn, mine, agent.id, cursor),
         "session": session,
         "hints": {"wait_timeout": wait_timeout(body.harness)},
         "me": {

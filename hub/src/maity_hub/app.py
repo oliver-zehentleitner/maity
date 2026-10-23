@@ -39,6 +39,7 @@ from maity_hub.routes import (
     keep_the_why,
     me_session,
     members,
+    memory,
     placements,
     project_images,
     projects,
@@ -118,6 +119,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(runner.router, prefix=prefix)
     app.include_router(placements.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
+    app.include_router(memory.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     _mount_web(app, settings)

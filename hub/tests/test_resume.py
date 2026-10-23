@@ -13,6 +13,7 @@ PACKET = {
     "server_time",
     "api_version",
     "hub_version",
+    "memory",
     "session",
     "hints",
     "me",

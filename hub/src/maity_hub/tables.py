@@ -742,3 +742,73 @@ forge_observation = Table(
     PrimaryKeyConstraint("project_id", "kind", "ref"),
     **MYSQL_TABLE,
 )
+
+# --- memory (docs/api.md §19) -------------------------------------------------------------
+
+# The soul of an agent profile: one Markdown text across projects, written by its owner or
+# confirmed by the owner from the agent's proposal. A profile without a row has none
+# (`version` 0 in the API). `by_id` is the writer's `hum-…` or `agt-…` id.
+soul = Table(
+    "soul",
+    metadata,
+    _ref("agent_id", "agent_profile.id", primary_key=True),
+    Column("markdown", MARKDOWN_TEXT, nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("by_kind", String(16), nullable=False),  # human, agent
+    Column("by_id", String(ID), nullable=False),
+    _ref("confirmed_by", "human.id"),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Every version of a soul, the current one included: `GET /agents/{id}/soul/versions`.
+soul_version = Table(
+    "soul_version",
+    metadata,
+    _ref("agent_id", "agent_profile.id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("markdown", MARKDOWN_TEXT, nullable=False),
+    Column("by_kind", String(16), nullable=False),
+    Column("by_id", String(ID), nullable=False),
+    _ref("confirmed_by", "human.id"),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("agent_id", "version"),
+    **MYSQL_TABLE,
+)
+
+# Team and community memory entries. A team's entries belong to its membership (the
+# handle in this project); community entries have none. A deletion keeps the row as a
+# tombstone with `text` null, so the history says that something was there.
+memory_entry = Table(
+    "memory_entry",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    Column("store", String(16), nullable=False),  # team, community
+    _membership_ref("team_membership"),
+    Column("text", MARKDOWN_TEXT),
+    Column("tags", JSON_VALUE, nullable=False),
+    Column("by_kind", String(16), nullable=False),  # human, agent
+    _membership_ref("by_membership"),
+    Column("by_session_id", String(ID)),
+    Column("by_instance", String(ID)),  # null until agent instances exist (§6.17)
+    _ref("confirmed_by", "human.id"),
+    _ref("request_id", "request.id"),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("deleted_at", UtcDateTime),
+    Column("deleted_by_kind", String(16)),
+    _membership_ref("deleted_by_membership"),
+    Column("deleted_reason", MARKDOWN_TEXT),
+    CheckConstraint(
+        "(store = 'team' AND team_membership IS NOT NULL)"
+        " OR (store = 'community' AND team_membership IS NULL)",
+        name="store_shape",
+    ),
+    CheckConstraint(
+        "(deleted_at IS NULL AND text IS NOT NULL) OR (deleted_at IS NOT NULL AND text IS NULL)",
+        name="tombstone_shape",
+    ),
+    Index("ix_memory_entry_project_store", "project_id", "store", "created_at"),
+    Index("ix_memory_entry_team", "team_membership", "created_at"),
+    **MYSQL_TABLE,
+)

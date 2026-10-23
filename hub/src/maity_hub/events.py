@@ -265,8 +265,10 @@ def _scan(
 
 
 # Readable by everyone they name, but never a reason to wake (§8.2): what a project
-# shows changed, nothing anybody has to act on.
-NON_WAKING = frozenset({"project_updated", "avatar_changed"})
+# shows changed, nothing anybody has to act on. Memory is read on the next resume (§19.3).
+NON_WAKING = frozenset(
+    {"project_updated", "avatar_changed", "memory_added", "memory_deleted", "soul_changed"}
+)
 
 
 def runner_reads(row: Any, runner_id: str) -> bool:
