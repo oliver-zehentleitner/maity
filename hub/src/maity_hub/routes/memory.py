@@ -17,9 +17,10 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AgentCaller, AnyCaller, HumanCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
+from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, markdown
 from maity_hub.routes.agents import owned
+from maity_hub.routes.requests import file_consent, load_request
 
 router = APIRouter()
 
@@ -154,7 +155,15 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
             return _propose_community(conn, mine, caller, body)
         else:
             mine.require("project:admin")
-        entry_id = memory.add_entry(conn, mine, caller, body.store, body.text, body.tags)
+        entry_id = memory.add_entry(
+            conn,
+            mine.project.id,
+            memory.Writer.of(mine, caller),
+            caller.actor(mine.id),
+            body.store,
+            body.text,
+            body.tags,
+        )
         return idempotency.Outcome(201, "memory", entry_id, memory.load_entry(conn, entry_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -163,8 +172,20 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
 def _propose_community(
     conn: Connection, mine: Membership, caller: Caller, body: EntryIn
 ) -> idempotency.Outcome:
-    """An agent's community entry is a proposal a human with `project:admin` confirms."""
-    raise ApiError(501, "not_implemented", "community proposals arrive with the proposal module")
+    """An agent's community entry is a `consent` request to `owner` carrying the entry
+    (§19.2); a human with `project:admin` confirms it and the go stores it."""
+    if memory.size(body.text) > memory.ENTRY_MAX:  # refused now, not at the go
+        raise invalid({"text": "too_long"}, "an entry is at most 2 KiB")
+    request_id = file_consent(
+        conn,
+        mine,
+        caller,
+        "Add an entry to the community memory",
+        "An agent proposes the entry in `memory_proposal` for the community memory. "
+        "A project admin's go stores it with the agent as its author.",
+        proposal=memory.proposal(body.text, body.tags),
+    )
+    return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
 
 
 @router.delete("/projects/{slug}/memory/{entry_id}")

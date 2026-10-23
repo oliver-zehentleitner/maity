@@ -11,17 +11,20 @@ a notice that it is quoted, not an instruction (§19.3).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
 from sqlalchemy import Connection, and_, func, insert, select, update
 
-from maity_hub import clock, events, idempotency
+from maity_hub import clock, events, idempotency, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.events import Actor
 from maity_hub.ids import new_id
+from maity_hub.scopes import has_scope
 from maity_hub.views import ts
 
 # §1.7: in bytes of UTF-8, so that a cap means the same in every script.
@@ -293,7 +296,10 @@ def _audience(conn: Connection, row: Any) -> list[str]:
     return audience
 
 
-def announce(conn: Connection, kind: str, row: Any, mine: Membership, caller: Caller) -> None:
+def announce(
+    conn: Connection, kind: str, row: Any, by: tuple[str, str], actor: Actor | None
+) -> None:
+    """`memory_added` / `memory_deleted` with ids only (§19.3); `by` is (kind, member id)."""
     team = member(conn, row.team_membership)
     events.emit(
         conn,
@@ -302,52 +308,125 @@ def announce(conn: Connection, kind: str, row: Any, mine: Membership, caller: Ca
         _audience(conn, row),
         {"id": row.id, "store": row.store,
          "member_id": team.agent_id if team is not None else None,
-         "by": {"kind": mine.kind, "member_id": mine.principal_id}},  # fmt: skip
-        actor=caller.actor(mine.id),
+         "by": {"kind": by[0], "member_id": by[1]}},  # fmt: skip
+        actor=actor,
         subject=("memory", row.id),
     )
 
 
+@dataclass(frozen=True)
+class Writer:
+    """Who an entry is by: their membership, and the agent's session where it wrote."""
+
+    membership: Any  # the membership row
+    kind: str  # human, agent
+    session_id: str | None
+
+    @property
+    def principal(self) -> str:
+        principal: str = self.membership.agent_id or self.membership.human_id
+        return principal
+
+    @classmethod
+    def of(cls, mine: Membership, caller: Caller) -> Writer:
+        return cls(mine.row, mine.kind, caller.session_id if mine.kind == "agent" else None)
+
+
 def add_entry(
     conn: Connection,
-    mine: Membership,
-    caller: Caller,
+    project_id: str,
+    writer: Writer,
+    actor: Actor | None,
     store: str,
     text: str,
     tags: list[str],
     confirmed_by: str | None = None,
     request_id: str | None = None,
-    by: Membership | None = None,
 ) -> str:
     """Store one entry, within the caps (§19.2); `memory_full` rather than evicting."""
     if size(text) > ENTRY_MAX:
         raise invalid({"text": "too_long"}, "an entry is at most 2 KiB")
-    writer = by or mine
-    team = writer.id if store == "team" else None
-    events.lock_project(conn, mine.project.id)  # the cap is checked and kept in one step
-    if _live_size(conn, mine.project.id, team) + size(text) > STORE_MAX:
+    team = writer.membership.id if store == "team" else None
+    events.lock_project(conn, project_id)  # the cap is checked and kept in one step
+    if _live_size(conn, project_id, team) + size(text) > STORE_MAX:
         raise ApiError(409, "memory_full", f"the {store} memory is full; delete entries first",
                        {"store": store, "cap": STORE_MAX})  # fmt: skip
     entry_id = new_id("memory")
     conn.execute(
         insert(t.memory_entry).values(
             id=entry_id,
-            project_id=mine.project.id,
+            project_id=project_id,
             store=store,
             team_membership=team,
             text=text,
             tags=list(dict.fromkeys(tags)),
             by_kind=writer.kind,
-            by_membership=writer.id,
-            by_session_id=caller.session_id if writer.kind == "agent" else None,
+            by_membership=writer.membership.id,
+            by_session_id=writer.session_id,
             by_instance=None,  # agent instances (§6.17) are not built yet
             confirmed_by=confirmed_by,
             request_id=request_id,
             created_at=clock.now(),
         )
     )
-    announce(conn, "memory_added", entry_row(conn, entry_id), mine, caller)
+    announce(
+        conn, "memory_added", entry_row(conn, entry_id), (writer.kind, writer.principal), actor
+    )
     return entry_id
+
+
+# --- proposals (§19.2): an agent's community entry waits for a human's go -------------------------
+
+PROPOSAL = "memory"
+
+
+def proposal(text: str, tags: list[str]) -> dict[str, Any]:
+    return {"kind": PROPOSAL, "store": "community", "text": text, "tags": list(dict.fromkeys(tags))}
+
+
+def proposal_view(conn: Connection, request: Any, proposed: dict[str, Any]) -> dict[str, Any]:
+    """`memory_proposal` on the request: the proposed entry, so the inbox shows the text."""
+    return {"store": proposed["store"], "text": proposed["text"], "tags": proposed["tags"]}
+
+
+def settle(
+    conn: Connection,
+    request: Any,
+    proposed: dict[str, Any],
+    outcome: str,
+    actor: Actor | None,
+    by: str | None,
+) -> None:
+    """On `go`, store the entry with the agent as `by` and the human as `confirmed_by`.
+    Only a human with `project:admin` gives it (§19.2): anyone else's `go` fails here, in
+    the answer's transaction, so nothing of the answer is kept."""
+    if outcome != "go":
+        return
+    answerer = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == request.project_id,
+            t.membership.c.human_id == by,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if answerer is None or not has_scope(answerer.role, "human", "project:admin"):
+        raise forbidden("project:admin", "a community entry is confirmed by a project admin")
+    asker = member(conn, request.asked_by)
+    writer = Writer(asker, "agent", request.asked_session_id)
+    add_entry(
+        conn,
+        request.project_id,
+        writer,
+        actor,
+        "community",
+        proposed["text"],
+        proposed["tags"],
+        confirmed_by=by,
+        request_id=request.id,
+    )
+
+
+proposals.register(PROPOSAL, settle, humans_only=True, view=proposal_view)
 
 
 def delete_entry(
@@ -368,7 +447,7 @@ def delete_entry(
         )
     )
     row = entry_row(conn, row.id)
-    announce(conn, "memory_deleted", row, mine, caller)
+    announce(conn, "memory_deleted", row, (mine.kind, mine.principal_id), caller.actor(mine.id))
     return row
 
 

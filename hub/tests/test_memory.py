@@ -409,3 +409,52 @@ def _insert_entry(engine: Engine, project_id: str, team: int) -> str:
             )
         )  # fmt: skip
     return "mem-direct00001"
+
+
+def test_an_agents_community_entry_is_a_proposal_a_project_admin_confirms(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    proposed = agent.post(
+        M, {"store": "community", "text": "Never on a Friday.", "tags": ["release"]}
+    )
+    assert proposed.status_code == 202, proposed.text
+    request = proposed.json()
+    assert request["class"] == "consent" and request["status"] == "open"
+    assert request["memory_proposal"] == {"store": "community", "text": "Never on a Friday.",
+                                          "tags": ["release"]}  # fmt: skip
+    assert agent.get(M).json()["items"] == []  # nothing is stored before the go
+    other = flow.agent(make_client, owner, role="admin")
+    refused = other.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    assert refused.json()["error"]["details"] == {"reason": "humans_only"}
+    go = owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    (entry,) = agent.get(M).json()["items"]
+    assert entry["store"] == "community" and entry["text"] == "Never on a Friday."
+    assert entry["by"]["member_id"] == agent.id and entry["by"]["session_id"].startswith("ses-")
+    assert entry["confirmed_by"]["id"] == owner.id and entry["request_id"] == request["id"]
+    assert _events(migrated, "memory_added")[-1].audience == ["all"]
+
+
+def test_a_refused_or_withdrawn_proposal_stores_nothing(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    first = agent.post(M, {"store": "community", "text": "one"}).json()
+    owner.post(f"/projects/maity/requests/{first['id']}/answer", {"reply_id": "no"})
+    second = agent.post(M, {"store": "community", "text": "two"}).json()
+    agent.post(f"/projects/maity/requests/{second['id']}/withdraw", {"reason": "rethought"})
+    assert agent.get(M).json()["items"] == []
+
+
+def test_only_a_project_admin_gives_the_go(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    proxy = _second_human(make_client, migrated, "proxy")
+    answered = proxy.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    assert answered.status_code == 403, answered.text
+    assert agent.get(M).json()["items"] == []
+    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
