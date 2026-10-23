@@ -24,7 +24,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## A
 - [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope
-- [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
+- [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account; a cover run named by its start, its items lose cover on return; only a substitute that took something hears cover_started
 
 ## B
 - [board.md](board.md) — card links read in one GraphQL query per repository by the probe's worker only; a history entry names its write's event, a removed link lives on in the history; a mirrored ships_with edge is history on the edited card only; the import is a create through the same path
