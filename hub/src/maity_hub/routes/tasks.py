@@ -710,7 +710,8 @@ def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -
         )
     ).all()
     for row in rows:
-        if row.imported_from.get("forge_url") == forge_url:
+        # GitHub's owner and repository names ignore case: one issue, one URL.
+        if str(row.imported_from.get("forge_url", "")).lower() == forge_url.lower():
             raise ApiError(
                 409, "already_linked", "a card was imported from this issue", {"task": row.id}
             )
