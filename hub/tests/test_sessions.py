@@ -328,10 +328,10 @@ def test_the_browser_and_system_names(agent: str | None, expected: tuple[Any, An
 
 
 def test_the_migration_gives_existing_sessions_an_id(engine: Engine) -> None:
-    migrate(engine, "0020")
+    migrate(engine, "0026")
     human_id = factory.human(engine, "maintainer")
     now = clock.now()
-    # The table as revision 0020 had it: no column of the session list yet.
+    # The table as revision 0026 had it: no column of the session list yet.
     before = sa.table(
         "human_session",
         *(sa.column(c, sa.String) for c in ("id_hash", "human_id", "csrf_token", "source")),
@@ -358,3 +358,99 @@ def test_the_migration_gives_existing_sessions_an_id(engine: Engine) -> None:
     assert all(r.public_id.startswith("hss-") and r.method == "password" for r in rows)
     assert rows[0].public_id != rows[1].public_id
     assert [(r.ip, r.ended_by) for r in rows] == [("192.0.2.1", None), ("192.0.2.1", "logout")]
+
+
+def test_an_ended_session_keeps_no_address(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    gone = sign_in(make_client)
+    gone_id = gone.get("/auth/session").json()["session_id"]
+    expired = sign_in(make_client)
+    expired_id = expired.get("/auth/session").json()["session_id"]
+    gone.post("/auth/logout")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.public_id == expired_id)
+            .values(last_seen_at=clock.now() - timedelta(days=15))
+        )
+    me = sign_in(make_client)
+    listed = {i["id"]: i for i in me.get("/auth/sessions?ended=true").json()["items"]}
+    assert listed[gone_id]["ip"] is None and listed[expired_id]["ip"] is None
+    with migrated.begin() as conn:
+        rows = {
+            r.public_id: r
+            for r in conn.execute(select(t.human_session)).all()
+            if r.public_id in (gone_id, expired_id)
+        }
+    assert all(r.ip is None and r.source is None for r in rows.values())
+
+
+# --- the instance's sign-in methods (§2.6.6) ----------------------------------------
+
+SIGN_IN = "/admin/settings/sign-in"
+
+
+def test_sign_in_settings_defaults_and_who_reads_them(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    got = owner.get(SIGN_IN).json()
+    assert got == {
+        "password": {"value": True, "source": "fixed"},
+        "device_code": {"value": True, "source": "default"},
+        "email_link": {"value": True, "source": "default"},
+        "email_link_available": False,
+        "missing": ["mail", "not_implemented"],
+    }
+    other = flow.human(make_client, migrated, "someone")
+    assert other.get(SIGN_IN).json()["error"]["details"] == {"scope": "instance:admin"}
+    assert other.patch(SIGN_IN, {"device_code": False}).status_code == 403
+    agent = agent_named(make_client, owner, "agent-a")
+    assert agent.get(SIGN_IN).status_code == 403
+    assert agent.patch(SIGN_IN, {"device_code": False}).status_code == 403
+
+
+def test_the_admin_switches_a_method_and_the_environment_wins(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    flow.human(make_client, migrated)
+    client = make_client(sign_in_device_code=False)
+    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    owner = flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], "")
+    assert owner.get(SIGN_IN).json()["device_code"] == {"value": False, "source": "env"}
+    refused = owner.patch(SIGN_IN, {"device_code": True})
+    assert refused.json()["error"]["details"]["fields"] == {"device_code": "set_by_environment"}
+    changed = owner.patch(SIGN_IN, {"email_link": False}).json()
+    assert changed["email_link"] == {"value": False, "source": "admin"}
+    assert changed["missing"][0] == "switched_off"
+    back = owner.patch(SIGN_IN, {"email_link": None}).json()
+    assert back["email_link"] == {"value": True, "source": "default"}
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({"password": False}, {"password": "fixed"}),
+        ({"sms": True}, {"sms": "extra_forbidden"}),
+        ({"device_code": "no"}, {"device_code": "invalid"}),
+    ],
+)
+def test_a_refused_sign_in_patch_changes_nothing(
+    make_client: ClientFactory, migrated: Engine, body: dict[str, Any], fields: dict[str, str]
+) -> None:
+    owner = flow.human(make_client, migrated)
+    response = owner.patch(SIGN_IN, {**body, "email_link": False})
+    assert response.json()["error"]["details"]["fields"] == fields
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.instance_setting)).all() == []
+
+
+def test_a_switch_in_the_environment_must_be_a_flag() -> None:
+    from maity_hub.config import ConfigError, Settings
+
+    with pytest.raises(ConfigError):
+        Settings.from_env({"MAITY_SIGN_IN_EMAIL_LINK": "maybe"})
+    assert Settings.from_env({"MAITY_SIGN_IN_EMAIL_LINK": "0"}).sign_in_email_link is False
+    assert Settings.from_env({}).sign_in_email_link is None

@@ -114,13 +114,8 @@ async def login(body: Login, request: Request) -> JSONResponse:
             if presented:
                 # A browser that holds a session, of any human, has it ended first; the
                 # new one never takes over a presented id (§2.6.5, session fixation).
-                conn.execute(
-                    update(t.human_session)
-                    .where(
-                        t.human_session.c.id_hash == session_id_hash(presented),
-                        t.human_session.c.ended_at.is_(None),
-                    )
-                    .values(ended_at=now, ended_by="logout")
+                sessions.end_where(
+                    conn, t.human_session.c.id_hash == session_id_hash(presented), "logout"
                 )
             session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
             conn.execute(
@@ -160,14 +155,7 @@ async def login(body: Login, request: Request) -> JSONResponse:
 def logout(request: Request, caller: HumanCaller) -> JSONResponse:
     _require_cookie(caller)
     with engine_of(request).begin() as conn:
-        conn.execute(
-            update(t.human_session)
-            .where(
-                t.human_session.c.id_hash == caller.human_session,
-                t.human_session.c.ended_at.is_(None),
-            )
-            .values(ended_at=clock.now(), ended_by="logout")
-        )
+        sessions.end_where(conn, t.human_session.c.id_hash == caller.human_session, "logout")
         member = _member(conn, caller.principal_id)
     response = JSONResponse({"member": member})
     _clear_cookies(response, request)
@@ -197,14 +185,11 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             .where(t.human.c.id == row.id)
             .values(password_hash=passwords.hash_password(body.new))
         )
-        conn.execute(
-            update(t.human_session)
-            .where(
-                t.human_session.c.human_id == row.id,
-                t.human_session.c.id_hash != caller.human_session,
-                t.human_session.c.ended_at.is_(None),
-            )
-            .values(ended_at=clock.now(), ended_by="password_change")
+        sessions.end_where(
+            conn,
+            (t.human_session.c.human_id == row.id)
+            & (t.human_session.c.id_hash != caller.human_session),
+            "password_change",
         )
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})

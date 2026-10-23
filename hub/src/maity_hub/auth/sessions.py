@@ -81,7 +81,7 @@ def view(row: Any, current: str | None, now: datetime) -> dict[str, Any]:
         "expires_at": ts(session_expires_at(row)),
         "browser": row.browser,
         "os": row.os,
-        "ip": row.ip,
+        "ip": None if finished else row.ip,
         "approved_by": row.approved_by,
         "good_standing": good_standing(row),
         # The account record of the sign-in (§2.6.5) arrives with account records.
@@ -100,6 +100,7 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
         .where(t.human_session.c.human_id == human_id)
         .order_by(t.human_session.c.created_at.desc(), t.human_session.c.public_id.desc())
     ).all()
+    forget_expired_addresses(conn, rows, now)
     shown = []
     for row in rows:
         finished = ended(row, now)
@@ -125,12 +126,31 @@ def forbidden_to_end(reason: str) -> ApiError:
 
 def end(conn: Connection, rows: Iterable[Any], by: str) -> None:
     """End each live session among `rows`; an ended one keeps its end."""
-    hashes = [row.id_hash for row in rows]
-    if hashes:
+    end_where(conn, t.human_session.c.id_hash.in_([row.id_hash for row in rows]), by)
+
+
+def end_where(conn: Connection, which: Any, by: str) -> None:
+    """End the live sessions `which` selects. The addresses go with the end: the table
+    keeps no address history of an ended session (personal data)."""
+    conn.execute(
+        update(t.human_session)
+        .where(which, t.human_session.c.ended_at.is_(None))
+        .values(ended_at=clock.now(), ended_by=by, ip=None, source=None)
+    )
+
+
+def forget_expired_addresses(conn: Connection, rows: Iterable[Any], now: datetime) -> None:
+    """An expired session ended without a write; its addresses go when it is next seen."""
+    stale = [
+        row.id_hash
+        for row in rows
+        if row.ended_at is None and not session_alive(row, now) and (row.ip or row.source)
+    ]
+    if stale:
         conn.execute(
             update(t.human_session)
-            .where(t.human_session.c.id_hash.in_(hashes), t.human_session.c.ended_at.is_(None))
-            .values(ended_at=clock.now(), ended_by=by)
+            .where(t.human_session.c.id_hash.in_(stale))
+            .values(ip=None, source=None)
         )
 
 

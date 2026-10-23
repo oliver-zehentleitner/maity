@@ -49,6 +49,7 @@ from maity_hub.routes import (
     requests,
     runner,
     runners,
+    sign_in_settings,
     tasks,
     ticker,
 )
@@ -111,6 +112,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
+    app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
