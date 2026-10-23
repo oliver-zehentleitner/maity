@@ -1387,6 +1387,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     no_problems(run, "board cards")
     board_order_step(run, page)
     overview_step(run, page)
+    ticker_step(run, page)
     notifications_step(run, page)
 
 
@@ -1434,6 +1435,45 @@ def board_order_step(run: Run, page: Page) -> None:
     expect(titles).to_have_text([upper, lower])
     run.a11y(page, "board, order")
     no_problems(run, "board order")
+
+
+def ticker_step(run: Run, page: Page) -> None:
+    """The change ticker (docs/api.md §17): whether the hub has it comes from its machine form, not from a 404."""
+    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
+    # FastAPI lists the paths under the router prefix; either form counts, as in the CLI.
+    has_ticker = "/projects/{slug}/ticker" in paths or "/api/v1/projects/{slug}/ticker" in paths
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.locator("nav.views").get_by_role("link", name="Ticker", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/ticker$"))
+    main = page.locator("main section.view-ticker")
+    expect(main.locator("h2")).to_have_text("Ticker")
+    if not has_ticker:
+        # Only a hub whose openapi.json lacks the path is skipped, the view says so, and its one read is the only 404.
+        run.step("ticker: the hub's openapi.json has no ticker; the view says so")
+        expect(main).to_contain_text("This hub has no ticker yet.")
+        listing = [p for p in run.problems if re.match(r"GET /api/v1/projects/e2e-alpha/ticker\?\S* answered 404$", p)]
+        assert len(listing) == 1, listing
+        run.problems = [p for p in run.problems if p not in listing]
+        no_problems(run, "ticker")
+        return
+    run.step("ticker: the owner posts a note, finds it under Everything, mutes notes and stops again")
+    form = main.locator("form.ticker-post")
+    form.locator("#ticker-post-text").fill("e2e: staging is down for an hour")
+    form.locator("#ticker-post-areas").fill("/")
+    form.get_by_role("button", name="Post", exact=True).click()
+    expect(form).to_contain_text("Posted.")
+    main.locator(".ticker-tabs").get_by_role("button", name="Everything", exact=True).click()
+    expect(main.locator("li.ticker-item").first).to_contain_text("e2e: staging is down for an hour")
+    sub = main.locator("section.ticker-sub")
+    sub.locator("#ticker-sub-list").select_option("mute")
+    sub.locator("#ticker-sub-kind").select_option("types")
+    sub.locator("#ticker-sub-value").fill("note")
+    sub.get_by_role("button", name="Add", exact=True).click()
+    expect(sub).to_contain_text("Muting note.")
+    sub.get_by_role("button", name="Stop muting note", exact=True).click()
+    expect(sub).to_contain_text("No longer muting note.")
+    run.a11y(page, "ticker")
+    no_problems(run, "ticker")
 
 
 def overview_step(run: Run, page: Page) -> None:

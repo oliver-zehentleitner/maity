@@ -795,3 +795,15 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .sessions-ended { margin-top: 8px; }
 .address-change { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius); }
 .signin-banner { margin: 0 0 12px; }
+
+/* The change ticker (js/ticker.js). */
+.ticker-tabs { display: flex; gap: 6px; margin: 8px 0; }
+.ticker-tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.ticker-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.ticker-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; overflow-wrap: anywhere; }
+.ticker-item.for-me { border-color: var(--accent); }
+.ticker-item p { margin: 4px 0; }
+.ticker-why { font-size: 0.88rem; }
+.ticker-chips { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ticker-chips li { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
+.ticker-sub, .ticker-post-box { margin-top: 16px; }

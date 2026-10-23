@@ -428,6 +428,43 @@ Inside a project, in the order of their importance; see
       ones are not read. A cursor that does not move stops the read with
       an error. New messages, removals and deleted files arrive with the
       project's feed and change the list in place.
+12. **Ticker** (`#/p/<slug>/ticker`, `docs/api.md` §17): the project's
+    change feed (merges, decisions, deploys, releases, notes), newest
+    first, from `GET …/ticker`.
+    - **For me** (`for=me`, the default) and **Everything** as two tabs,
+      a filter by type (`contract` meaning a merge that touched the
+      contract) and by area, and **Older** following the hub's cursor
+      (off while it reads). A read belongs to one filter set: an answer
+      that comes after the filters changed is dropped, and every item is
+      shown once.
+    - Each item: its type, time and poster, its text as plain text, its
+      link when it is `https`, a decision's reply and request title
+      (`detail`; "answered in writing" when it has no reply label), and for
+      the viewer why it is theirs in words ("you own hub/", "you hold
+      tsk-0031", "you implement §13", "you follow web/"); a muted one says
+      it woke no one, a removed one that it was removed.
+    - **Follow and mute** (`…/ticker/subscription`): the viewer's own
+      lists, each value with **Remove**, and a form to add an area or a
+      type; each change is a `PATCH` of what it adds or removes, never a
+      replace. The hub's refusals (`too_many`, …) are said in words.
+    - **Post to the ticker** for an owner or admin (`ticker:post`): a note
+      (areas for whom it concerns), a deploy (environment, version or
+      sha, log URL) or a release (its done card), to whom it concerns,
+      to everyone (asked first: it wakes every member) or to listed
+      members, roles and areas. Merges and decisions are the hub's. The
+      text's 280 characters are counted as the hub counts them; a sha
+      (hex with a letter) is told from a version; a duplicate, a missing
+      field, a card not done and the hourly limit are said in words.
+    - New items arrive with the project's feed: the view reads its own
+      listing after the newest item shown (`after=`, oldest first, page by
+      page), in its filters, and puts what is new on top, the rest left in
+      place. A failed read is said.
+    - A hub without the ticker says so: a 404 on the listing counts as
+      that only when the hub's `openapi.json` lacks the ticker's path
+      (§17.6); otherwise it is an error. Such a hub is asked once per page
+      load.
+    - Not here yet: the project settings' `settings.ticker` (sources,
+      contract files, implementers).
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -909,6 +946,7 @@ web/
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/overview.js    (10) overview: the project at a glance
 ├── js/messages.js    (11) the project's messages, by type
+├── js/ticker.js      (12) the change ticker, follow and mute, a manual post
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
