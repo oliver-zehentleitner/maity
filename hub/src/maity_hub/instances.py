@@ -320,7 +320,7 @@ def team_target(
         target = member_row(conn, project.id, member_id)
     except ApiError:
         target = None
-    if target is not None and _owns_agent(conn, caller, target):
+    if target is not None and owns_agent(conn, caller, target):
         try:
             return target, membership(conn, caller, slug)
         except ApiError:
@@ -332,7 +332,7 @@ def team_target(
     return target, mine
 
 
-def _owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
+def owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
     if caller.kind != "human" or target.agent_id is None:
         return False
     owner = conn.execute(
@@ -348,7 +348,7 @@ def _require_profile_owner(conn: Connection, caller: Caller, target: Any) -> Non
         raise humans_only()
     if target.agent_id is None:
         raise invalid({"team": "agents_only"}, "a team is an agent membership's")
-    if not _owns_agent(conn, caller, target):
+    if not owns_agent(conn, caller, target):
         raise humans_only()
 
 

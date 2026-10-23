@@ -13,6 +13,7 @@ from maity_hub import (
     API_VERSION,
     __version__,
     avatars,
+    briefings,
     clock,
     environment,
     events,
@@ -327,6 +328,7 @@ def _packet(
     scopes = listed_scopes(mine.role, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
+    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -357,7 +359,7 @@ def _packet(
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
-            **onboarding.briefing(project, mine.row),
+            **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
         },
@@ -395,6 +397,17 @@ def _packet(
         "peers": peers,
         "operations": operations(project, mine.role),
     }
+
+
+def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[str, Any]:
+    """`membership.briefing` and whose it is (§5.2): the membership's own, with who wrote
+    it and its version (§6.2), else the project default with the setting's author and
+    version, else none."""
+    block = onboarding.briefing(project, membership)
+    if block["briefing_source"] == "membership":
+        block["briefing_by"] = written.get(membership.briefing_by) if membership.briefing_by else None
+        block["briefing_version"] = membership.briefing_version
+    return block
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
