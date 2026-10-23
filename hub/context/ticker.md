@@ -78,7 +78,9 @@ cut scan was under way moves it to page 1, past the pages still to be
 read) is read again rather than lost, and the key keeps it to one item.
 The bound is floored to its second for both the admission and the
 early stop, since the forge's `updated_at` has whole seconds: an update
-in the bound's own second is read again, never lost. It
+in the bound's own second is read again, never lost. The switch-on is
+floored the same way for `merged_at`: a merge in the switch-on second
+counts. It
 reads each one's files (at most 300; a rename counts
 for its old and its new path, and a renamed contract file is a contract
 change), and for a contract file that file at the merge commit and at the
@@ -116,26 +118,23 @@ contract file: it would wake every implementer for a one-line change.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's ruling on the buckets and, in the second round, on the held-back body, 2026-10-23
+**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's rulings on the buckets, on the held-back body (second round) and on treating every slug alike before the body (third round), 2026-10-23
 **Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
 **See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
 
 `POST /api/v1/projects/{slug}/forge/webhook` never reaches the API's
 routes: `maity_hub.forge_webhook.handle` answers it from the middleware,
-before the middleware would read the body. A missing, repeated or
-over-1-MiB `Content-Length` is `payload_too_large` for every slug. Then
-it looks up the project, its webhook and the opened secret; without one
-of them (or without `MAITY_SECRET_KEY`, or with a secret the key does
-not open) it takes a place in the per-address bucket, reads the declared
-body all the same and answers `webhook_signature`, so a body held back
-hangs for every slug alike. For a known slug it takes a place in the
-per-project-and-address bucket before reading at most 1 MiB, so at most 60 bodies per project and address are
-read at once, and gives the place back when the HMAC-SHA256 (exactly
-one signature header, compared in constant time) verifies; then it
-charges the project's bucket of verified deliveries. Every request that
-does not verify, known slug or not, also counts against one bucket per
-source address and is answered `rate_limited` once that is full. A
-verified delivery is never checked against that bucket.
+before the middleware would read the body. Every slug is treated the
+same until a signature verifies. Every request first takes a place in
+the bucket of its source address and in the bucket of its slug and
+address, and is answered `rate_limited` at once when either is full. A
+missing, repeated or over-1-MiB `Content-Length` is
+`payload_too_large`. Then the declared body is read, at most 1 MiB, for
+every slug, and only then is the request refused (no project, no
+secret, a secret the key does not open, no or a wrong signature, more
+than one signature header) or verified with HMAC-SHA256 in constant
+time. Only a verified delivery gives both places back; then it charges
+the project's bucket of verified deliveries.
 
 A verified delivery only queues work on the probe worker: a closed pull
 request makes it look for merges now, a deployment status makes it read
@@ -149,13 +148,11 @@ an error, and the hub logs at startup how many stored secrets it cannot
 open.
 
 What remains apart, accepted: a known slug's request also opens the
-secret and computes the HMAC, a few microseconds; a known slug's request
-past the per-address limit is answered `rate_limited` only after its
-body; and with 60 of its own requests held open at once against one
-known slug, the 61st is refused before its body while an unknown slug's
-is still read. None of these tells one request from another; the held
-body did, as a one-request answer, and is read for every slug now. There
-is no replay protection, since GitHub signs no timestamp; a replayed
+secret and computes the HMAC, a few microseconds. The cost of treating
+every slug alike: failing requests from one forge address can delay a
+verified delivery from the same address, since it takes its places
+before it verifies; the probe catches that delivery up on its interval.
+There is no replay protection, since GitHub signs no timestamp; a replayed
 delivery only makes the probe read again, and the probe announces only
 what it observes.
 
@@ -163,19 +160,23 @@ what it observes.
 body is read, but the middleware reads every body first to scan it for
 credentials, so the route layer comes too late. A trigger that only
 queues a read keeps the forge's claims out of the item: the hub
-announces what its own read observed. Answering every refusal the same
-way, before the body, is what keeps the path from telling whether a
-project exists.
+announces what its own read observed. Answering every slug the same way,
+with the same limits and the same body read, is what keeps the path from
+telling whether a project exists.
 
 **Rejected alternative:** a FastAPI route with a dependency for the
 limits: the body would already have been read by then. Writing the item
 from the delivery's body: a forged or replayed body could announce a
-merge that never happened, which §17.4 rules out. Taking a place in
-the per-address bucket for every request before its body: forges
-deliver from shared address pools, so one project's failing deliveries
-would refuse another project's verified ones from the same address,
-which §17.4 rules out; counting the failures there after verification
-keeps the answers alike without that.
+merge that never happened, which §17.4 rules out. Charging the buckets
+differently by slug — the per-address bucket only after a failed
+verification for a known slug, before the body for an unknown one, so
+that a forge's shared address pool never delays a verified delivery:
+it told a known slug from an unknown one, a held-back request hanging
+for one and answered at once for the other once the address had sixty
+refusals, and the 61st request after sixty held ones answered
+differently depending on the held slug (the second security review of
+#235). Treating every slug the same before the body closes both, at the
+accepted cost above.
 
 **Condition:** the credential scan of the middleware does not run on this
 path. That holds only while the delivery body is never stored, echoed or
