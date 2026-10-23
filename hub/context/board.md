@@ -44,8 +44,10 @@ Each history entry stores the `seq` of the `task_created` or
 `task_updated` event its write emitted. Redacting the entry writes the
 tombstone into its own `redaction` column, clears `before`, `after` and
 `diff`, and replaces the same field's value in that one event. A removed
-link's row is deleted; its history entry keeps the link whole, and a
-repeated `DELETE` answers from that entry.
+link's row is deleted; its history entries keep the link whole and name
+it in their own `link_id` column, so that a replayed add and a repeated
+`DELETE` find it, and answer with the tombstone once the entry is
+redacted.
 
 **Reason:** the contract redacts a value in the history and in the event
 of the same write together. Storing the event's `seq` makes that one
