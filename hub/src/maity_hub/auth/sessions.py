@@ -10,6 +10,7 @@ mail link add the others; the rules below are written for both already.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,7 +19,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth.caller import session_alive, session_expires_at
+from maity_hub.auth.caller import SESSION_IDLE, session_alive, session_expires_at
 from maity_hub.errors import ApiError
 from maity_hub.views import ts
 
@@ -100,7 +101,7 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
         .where(t.human_session.c.human_id == human_id)
         .order_by(t.human_session.c.created_at.desc(), t.human_session.c.public_id.desc())
     ).all()
-    forget_expired_addresses(conn, rows, now)
+    forget_expired_addresses(conn)
     shown = []
     for row in rows:
         finished = ended(row, now)
@@ -139,19 +140,20 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
     )
 
 
-def forget_expired_addresses(conn: Connection, rows: Iterable[Any], now: datetime) -> None:
-    """An expired session ended without a write; its addresses go when it is next seen."""
-    stale = [
-        row.id_hash
-        for row in rows
-        if row.ended_at is None and not session_alive(row, now) and (row.ip or row.source)
-    ]
-    if stale:
-        conn.execute(
-            update(t.human_session)
-            .where(t.human_session.c.id_hash.in_(stale))
-            .values(ip=None, source=None)
+def forget_expired_addresses(conn: Connection) -> None:
+    """An expired session ended without a write; its addresses go the next time anyone
+    signs in or reads a session list, for every human's sessions at once."""
+    now = clock.now()
+    conn.execute(
+        update(t.human_session)
+        .where(
+            t.human_session.c.ended_at.is_(None),
+            (t.human_session.c.expires_at <= now)
+            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE),
+            (t.human_session.c.ip.is_not(None)) | (t.human_session.c.source.is_not(None)),
         )
+        .values(ip=None, source=None)
+    )
 
 
 def approved_by_chain(conn: Connection, human_id: str, public_id: str) -> list[Any]:
@@ -178,14 +180,16 @@ _NEXT_BAD = re.compile(r"[\\\s\x00-\x1f\x7f]|//")
 
 def safe_next(value: str | None) -> str:
     """A login's `next` (§2.6.5): `/` or a dashboard route `/#/…` on the public host,
-    at most 512 characters, without a backslash, whitespace, a control character, a
-    second `#` or `//`. Anything else becomes `/`, silently."""
+    at most 512 characters, without a backslash, whitespace, a control or format
+    character, a second `#` or `//`. Anything else becomes `/`, silently."""
     if (
         not value
         or len(value) > NEXT_MAX
         or not (value == "/" or value.startswith("/#/"))
         or value.count("#") > 1
         or _NEXT_BAD.search(value)
+        # C1 controls, bidi overrides, zero-width and other format characters.
+        or any(unicodedata.category(c) in ("Cc", "Cf") for c in value)
     ):
         return "/"
     return value

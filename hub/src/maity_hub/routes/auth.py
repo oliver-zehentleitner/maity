@@ -50,8 +50,9 @@ class Strict(BaseModel):
 class Login(Strict):
     handle: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=1024)
-    # Where the dashboard goes afterwards; an unsafe value becomes `/` (§2.6.5).
-    next: str | None = Field(default=None, max_length=4096)
+    # Where the dashboard goes afterwards; an unsafe value, of any length, becomes `/`
+    # silently (§2.6.5).
+    next: str | None = None
 
 
 class PasswordChange(Strict):
@@ -110,6 +111,7 @@ async def login(body: Login, request: Request) -> JSONResponse:
             stored = row.password_hash if row is not None else passwords.DUMMY_HASH
             if not passwords.verify_password(body.password, stored) or row is None:
                 raise unauthenticated("handle or password is wrong")
+            sessions.forget_expired_addresses(conn)
             now = clock.now()
             if presented:
                 # A browser that holds a session, of any human, has it ended first; the
@@ -239,16 +241,22 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
         ).first()
         if target is None:
             raise not_found()  # another human's session is not found either
+        skipped: list[str] = []
         if sessions.ended(target, now) is None:
             reason = sessions.refusal(mine, target, now)
             if reason is not None:
                 raise sessions.forbidden_to_end(reason)
             by = "logout" if target.id_hash == current else "revoked"
             chain = sessions.approved_by_chain(conn, caller.principal_id, target.public_id)
+            live = [s for s in chain if sessions.ended(s, now) is None]
+            # The same refusal per session of the chain: what the caller may not end is
+            # skipped and named, never ended (§2.6.5).
+            allowed = [s for s in live if sessions.refusal(mine, s, now) is None]
+            skipped = [s.public_id for s in live if s not in allowed]
             sessions.end(conn, [target], by)
-            sessions.end(conn, chain, "revoked")
+            sessions.end(conn, allowed, "revoked")
         row = _session(conn, target.id_hash)
-        answer = sessions.view(row, current, clock.now())
+        answer = {**sessions.view(row, current, clock.now()), "skipped": skipped}
     response = JSONResponse(answer)
     if target.id_hash == current:
         _clear_cookies(response, request)

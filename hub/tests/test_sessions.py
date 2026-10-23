@@ -13,7 +13,7 @@ from sqlalchemy import Engine, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import sessions
-from maity_hub.auth.caller import SESSION_COOKIE
+from maity_hub.auth.caller import SESSION_COOKIE, session_id_hash
 from maity_hub.db import migrate
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -233,6 +233,10 @@ def test_a_login_ends_the_session_the_browser_holds(
         ("/admin", "/"),
         ("/#/" + "x" * 510, "/"),
         ("/#/" + "x" * 509, "/#/" + "x" * 509),
+        ("/#/" + "x" * 5000, "/"),
+        ("/#/a\x9bb", "/"),
+        ("/#/a\u202eb", "/"),
+        ("/#/a\ufeffb", "/"),
     ],
 )
 def test_login_answers_a_safe_next(
@@ -357,7 +361,10 @@ def test_the_migration_gives_existing_sessions_an_id(engine: Engine) -> None:
         rows = conn.execute(select(t.human_session).order_by(t.human_session.c.id_hash)).all()
     assert all(r.public_id.startswith("hss-") and r.method == "password" for r in rows)
     assert rows[0].public_id != rows[1].public_id
-    assert [(r.ip, r.ended_by) for r in rows] == [("192.0.2.1", None), ("192.0.2.1", "logout")]
+    assert [(r.ip, r.source, r.ended_by) for r in rows] == [
+        ("192.0.2.1", "192.0.2.1", None),
+        (None, None, "logout"),
+    ]
 
 
 def test_an_ended_session_keeps_no_address(
@@ -454,3 +461,101 @@ def test_a_switch_in_the_environment_must_be_a_flag() -> None:
         Settings.from_env({"MAITY_SIGN_IN_EMAIL_LINK": "maybe"})
     assert Settings.from_env({"MAITY_SIGN_IN_EMAIL_LINK": "0"}).sign_in_email_link is False
     assert Settings.from_env({}).sign_in_email_link is None
+
+
+def test_an_expired_session_loses_its_address_when_anyone_signs_in(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    old = sign_in(make_client)
+    old_id = old.get("/auth/session").json()["session_id"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.public_id == old_id)
+            .values(last_seen_at=clock.now() - timedelta(days=15))
+        )
+    factory.human(migrated, "someone")
+    sign_in(make_client, "someone")
+    with migrated.begin() as conn:
+        row = conn.execute(
+            select(t.human_session).where(t.human_session.c.public_id == old_id)
+        ).one()
+    assert (row.ip, row.source) == (None, None)
+
+
+# --- the refusals at the routes, with sessions not in good standing -------------------
+
+
+def plant(
+    make_client: ClientFactory,
+    engine: Engine,
+    human_id: str,
+    method: str,
+    minutes_old: float,
+    approved_by: str | None = None,
+) -> tuple[flow.Human, str]:
+    """A live session made by `method`, with a cookie this test holds."""
+    value, csrf = f"planted-{method}-{minutes_old}", "c" * 64
+    public_id = f"hss-{abs(hash(value)) % 10**12:012d}"
+    created = clock.now() - timedelta(minutes=minutes_old)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human_session).values(
+                id_hash=session_id_hash(value),
+                human_id=human_id,
+                csrf_token=csrf,
+                created_at=created,
+                last_seen_at=clock.now(),
+                expires_at=clock.now() + timedelta(days=30),
+                public_id=public_id,
+                method=method,
+                approved_by=approved_by,
+            )
+        )
+    client = make_client()
+    client.cookies.set(SESSION_COOKIE, value)
+    return flow.Human(client, csrf, human_id), public_id
+
+
+def test_a_session_not_in_good_standing_never_ends_one_that_is(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    strong = sign_in(make_client)
+    strong_id = strong.get("/auth/session").json()["session_id"]
+    weak, _ = plant(make_client, migrated, human, "device_code", 300)
+    refused = weak.delete(f"/auth/sessions/{strong_id}")
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"] == {"reason": "not_in_good_standing"}
+    assert strong.get("/auth/session").status_code == 200
+
+
+def test_a_young_weak_session_ends_no_older_one(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    _, older_id = plant(make_client, migrated, human, "email_link", 120)
+    young, _ = plant(make_client, migrated, human, "device_code", 10)
+    refused = young.delete(f"/auth/sessions/{older_id}")
+    assert refused.json()["error"]["details"] == {"reason": "session_too_new"}
+
+
+def test_end_others_from_a_weak_session_spares_the_strong_ones(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    strong = sign_in(make_client)
+    _, other_weak = plant(make_client, migrated, human, "email_code", 5)
+    weak, _ = plant(make_client, migrated, human, "device_code", 300)
+    live = {i["id"] for i in weak.post("/auth/sessions/end-others", {}).json()["items"]}
+    assert strong.get("/auth/session").json()["session_id"] in live
+    assert other_weak not in live
+
+
+def test_the_approval_chain_skips_what_the_caller_may_not_end(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    caller, caller_id = plant(make_client, migrated, human, "device_code", 30)
+    _, target = plant(make_client, migrated, human, "device_code", 5)
+    _, older = plant(make_client, migrated, human, "device_code", 200, approved_by=target)
+    answer = caller.delete(f"/auth/sessions/{target}").json()
+    assert answer["ended_by"] == "revoked" and answer["skipped"] == [older]
+    live = {i["id"] for i in caller.get("/auth/sessions").json()["items"]}
+    assert older in live and target not in live and caller_id in live

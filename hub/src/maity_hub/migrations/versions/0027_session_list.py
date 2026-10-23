@@ -53,7 +53,9 @@ def upgrade() -> None:
             .values(
                 public_id=public_id,
                 method="password",
-                ip=row.source,
+                # An ended session keeps no address (§2.6.5).
+                ip=row.source if row.ended_at is None else None,
+                source=row.source if row.ended_at is None else None,
                 # Before the list, only a logout or a password change ended a session.
                 ended_by="logout" if row.ended_at is not None else None,
             )
