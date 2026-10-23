@@ -2462,6 +2462,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The whole attachments part is hidden, so no file field is left without its label.
   const hgChooser = () => main.querySelector(".attach");
   expect(hgChooser() && hgChooser().hidden && byId("chat-files").disabled, "hub without attachments: no Attach files");
+  expect(/\.attach\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "hub without attachments: the part's own display does not beat its hidden attribute");
   // With both: offered (the route's parameter name and prefix do not matter).
   hgPaths({ "/projects/{slug}/conversations": { get: {}, post: {} }, "/api/v1/projects/{project}/attachments": { post: {} } });
   await go("#/p/maity/inbox"); await go("#/p/maity/chat"); await hgSettle();
