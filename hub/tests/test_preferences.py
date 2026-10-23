@@ -280,3 +280,13 @@ def test_the_basis_names_the_deciding_agents_owner_and_a_version_that_exists(
         assert errors({"human_id": "hum-other", "preferences_version": 1}) == {
             "basis": "not_owner_preferences"
         }
+
+
+def test_the_humans_proxy_proposes_for_the_owner_only(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    other = second_human(make_client, migrated)
+    assert propose(proxy, owner.id, "Be brief.").status_code == 202
+    refused = propose(proxy, other.id, "Be brief.")  # not the project's owner
+    assert refused.json()["error"]["details"]["reason"] == "may_not_propose"
