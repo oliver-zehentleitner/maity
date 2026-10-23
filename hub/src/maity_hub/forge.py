@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 HOSTS = {"github.com": "github"}  # host -> forge kind
@@ -237,6 +238,106 @@ class Forge:
             sha = annotated["object"]["sha"] if annotated else sha
         return {"name": name, "sha": sha, "found": True}
 
+    # --- merges for the change ticker (docs/api.md §17.4) ------------------------------------
+
+    def merged_pulls(
+        self,
+        repository: str,
+        base: str,
+        since: datetime,
+        start: int = 1,
+        pages: int = 20,
+        merged_after: datetime | None = None,
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        """The pull requests closed against `base`, updated after `since` and merged after
+        `merged_after` (default `since`), read most recently updated first from page
+        `start` until a page reaches back before `since` (a merge also updates its pull
+        request, so nothing older can follow), at most `pages` pages of 50. The second
+        value is the page to go on from when that bound cut the scan, else None.
+
+        Admitting by the update, not the merge: a pull request merged before `since` but
+        updated after it may have moved past a scan's pages while that scan was cut, and
+        would otherwise never be read again. The caller's dedupe keeps it to one item.
+
+        The forge's `updated_at` has whole seconds and `since` has microseconds: the bound
+        is floored to its second and only what is older is left out, so an update in the
+        bound's own second is read again rather than lost."""
+        floor = merged_after if merged_after is not None else since
+        bound = since.replace(microsecond=0)
+        found: list[dict[str, Any]] = []
+        for page in range(start, start + pages):
+            batch = self._get(
+                f"/repos/{repository}/pulls?state=closed&base={urllib.parse.quote(base)}"
+                f"&sort=updated&direction=desc&per_page=50&page={page}"
+            )
+            if batch is None:
+                self._missing(repository)
+                return found, None
+            if not isinstance(batch, list):
+                raise ForgeUnavailableError("the forge answered a list with no list")
+            reached = False
+            for pr in batch:
+                if not isinstance(pr, dict):
+                    continue
+                updated = _moment(pr.get("updated_at"))
+                if updated is not None and updated < bound:
+                    reached = True
+                merged = _moment(pr.get("merged_at"))
+                if merged is None or merged <= floor or (updated is not None and updated < bound):
+                    continue
+                found.append(
+                    {
+                        "number": pr["number"],
+                        "title": pr.get("title") or "",
+                        "url": pr.get("html_url"),
+                        "merge_sha": pr.get("merge_commit_sha"),
+                        "base": (pr.get("base") or {}).get("ref"),
+                        "base_sha": (pr.get("base") or {}).get("sha"),
+                        "head": (pr.get("head") or {}).get("ref"),
+                        "merged_at": pr["merged_at"],
+                        "author": (pr.get("user") or {}).get("login"),
+                    }
+                )
+            if len(batch) < 50 or reached:
+                return found, None
+        return found, start + pages
+
+    def pull_files(
+        self, repository: str, number: int, cap: int = 300
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """The changed files of a pull request in the forge's order, at most `cap`: each
+        `{path, previous, patch}` (`patch` null when the forge sent none). The second value
+        is whether the list is incomplete (over the cap, or cut short by the forge)."""
+        files: list[dict[str, Any]] = []
+        page = 1
+        while len(files) < cap:
+            batch = self._get(f"/repos/{repository}/pulls/{number}/files?per_page=100&page={page}")
+            if batch is None:
+                return files, True
+            if not isinstance(batch, list):
+                raise ForgeUnavailableError("the forge answered a list with no list")
+            for f in batch:
+                if isinstance(f, dict) and isinstance(f.get("filename"), str):
+                    files.append(
+                        {
+                            "path": f["filename"],
+                            "previous": f.get("previous_filename"),
+                            "patch": f.get("patch") if isinstance(f.get("patch"), str) else None,
+                        }
+                    )
+            if len(batch) < 100:
+                return files[:cap], len(files) > cap
+            page += 1
+        return files[:cap], True
+
+    def file_at(self, repository: str, path: str, ref: str, cap: int) -> bytes | None:
+        """A file at a commit through the contents API; None when it is not there. Over
+        `cap` bytes, or an answer that is not a file, is `ValueError`."""
+        found = self._get(
+            f"/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}"
+        )
+        return _decoded(found, cap)
+
     # --- the repository's images (docs/api.md §11.2) ------------------------------------------
 
     def owner_avatar(self, repository: str) -> str | None:
@@ -285,16 +386,32 @@ class Forge:
         hub holds one and without it for a public repository; None when it is not there.
         A file over `cap` bytes, or an answer that is not a file, is `ValueError`."""
         found = self._call(f"/repos/{repository}/contents/{urllib.parse.quote(path)}")
-        if found is None:
-            return None
-        if not isinstance(found, dict) or found.get("type") != "file":
-            raise ValueError("not a file")
-        size = found.get("size")
-        if not isinstance(size, int) or size > cap:
-            raise ValueError("too large")
-        if found.get("encoding") != "base64" or not isinstance(found.get("content"), str):
-            raise ValueError("no content")
-        data = base64.b64decode(found["content"], validate=False)
-        if len(data) > cap:
-            raise ValueError("too large")
-        return data
+        return _decoded(found, cap)
+
+
+def _moment(value: Any) -> datetime | None:
+    """A forge timestamp (`2026-10-22T15:02:11Z`) as an aware datetime, or None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _decoded(found: Any, cap: int) -> bytes | None:
+    """A contents-API answer as bytes; None for a 404, `ValueError` for anything that is
+    not a file of at most `cap` bytes."""
+    if found is None:
+        return None
+    if not isinstance(found, dict) or found.get("type") != "file":
+        raise ValueError("not a file")
+    size = found.get("size")
+    if not isinstance(size, int) or size > cap:
+        raise ValueError("too large")
+    if found.get("encoding") != "base64" or not isinstance(found.get("content"), str):
+        raise ValueError("no content")
+    data = base64.b64decode(found["content"], validate=False)
+    if len(data) > cap:
+        raise ValueError("too large")
+    return data

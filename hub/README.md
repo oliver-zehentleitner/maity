@@ -22,8 +22,9 @@ admin's user list (§16) are in. The change ticker (`docs/api.md` §17):
 items with their computed audience and the members' follow and mute, the
 manual post, dedupe, the listing, the shaping per reader on every read
 path, the resume packet's `ticker`, `settings.ticker`, and the hub's own
-decision and release items are in; merges through the probe and the
-forge webhook with deploys follow.
+decision and release items are in, and merges through the probe (every
+2 minutes: the changed paths' area owners, the linked cards, the contract
+sections from the diff); the forge webhook with deploys follows.
 
 ## Run it locally with plain Python
 

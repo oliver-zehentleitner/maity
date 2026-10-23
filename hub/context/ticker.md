@@ -50,3 +50,62 @@ shaping. Filtering decisions after reading, in each route: easy to miss on
 one path, which would show a decision to a member who may not read its
 request. Storing `detail` with the item: §17.5 adds it at read time, so a
 renamed request title shows as it is now.
+
+## Merges are read by the probe from the moment the ticker is switched on, and contract sections come from the diff against the file at the merge
+
+**Id:** 66053e8f-9e9b-447b-896d-be37f8007724
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.3 (contract sections, linked cards, the 300-file cap) and §17.4 (the probe, every 2 minutes, nothing older than the switch); the agreed second part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23
+**Revisit when:** the webhook (part 3) makes the probe look sooner, or a forge other than GitHub is observed
+**See:** ticker.md#a-ticker-item-is-an-event-its-dedupe-key-a-row-of-its-own-and-it-is-shaped-per-reader-where-every-event-view-is-made — 746b5971-1a29-458f-90da-a8243a4f2848 — as of 2026-10-23
+
+`ticker_source.merges_since` holds the moment `settings.ticker.enabled`
+was switched on. The probe worker runs a merge round every 2 minutes,
+beside its 5-minute sweep: for each project with a source row and an
+observable repository, it reads the pull requests closed against the
+default branch, most recently updated first, page by page until a page
+reaches back before what has been read already (`scanned_until`, or the
+switch-on), since a merge updates its pull request and nothing older can
+follow. A round reads at most 20 pages; when that cuts it, the next round
+goes on from the next page (`resume_page`), and once an interval has been
+read to its end `scanned_until` moves to the moment that scan began, so
+later rounds stop there. It keeps those updated after that bound and
+merged after `merges_since` that have no `merge:<n>` key yet: a pull
+request merged before the bound but updated after it (a comment while a
+cut scan was under way moves it to page 1, past the pages still to be
+read) is read again rather than lost, and the key keeps it to one item.
+The bound is floored to its second for both the admission and the
+early stop, since the forge's `updated_at` has whole seconds: an update
+in the bound's own second is read again, never lost. It
+reads each one's files (at most 300; a rename counts
+for its old and its new path, and a renamed contract file is a contract
+change), and for a contract file that file at the merge commit and at the
+base. The sections come from the unified diff: added lines are looked up
+in the file at the merge commit, deleted lines in the file at the base.
+Each item is written in a short transaction of its own, under the
+project lock, only if the ticker is still on, `merges_since` is the one
+the round started from, and the repository and branch are the same;
+otherwise the round ends. Without a patch, or for a file over 1 MiB, the
+sections are unknown and every implementer applies. A project that had
+the ticker on before this part arrived gets the upgrade's moment, from
+the migration and again from the next PATCH that switches it on.
+
+**Reason:** §17.4 announces nothing older than the switch, so the moment
+has to be stored; the dedupe key alone would announce the whole history
+the first time. Reading the forge with no connection held is the probe's
+rule (§11). The diff names exactly the changed lines, and the two files
+give the heading above each of them, as §17.3 defines a section. A
+separate cadence keeps the reports' and releases' sweep at its interval.
+
+**Rejected alternative:** a cursor of the last announced merge instead of
+the scan's own start: merges come back in the forge's "updated" order,
+not in merge order, so the last one announced says nothing about what is
+still behind. Reading the whole backlog in one round: unbounded on a busy
+repository. Stopping at a page bound and only logging the cut: the
+merges behind it would never be announced. Admitting by the merge time
+after the bound: a merge that moved up the list while a cut scan read
+on would fall between its pages and the next interval for good.
+Reading only the files' names and taking every section of a touched
+contract file: it would wake every implementer for a one-line change.

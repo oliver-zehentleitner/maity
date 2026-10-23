@@ -328,6 +328,21 @@ ticker_dedupe = Table(
     **MYSQL_TABLE,
 )
 
+# Where the probe's merge announcements stand (§17.4): the moment the ticker was
+# switched on (nothing merged before it is announced), the moment up to which every
+# merge has been read, and, while a round is cut by its page bound, the page the next
+# round goes on from and when the cut round began.
+ticker_source = Table(
+    "ticker_source",
+    metadata,
+    _ref("project_id", "project.id", primary_key=True),
+    Column("merges_since", UtcDateTime, nullable=False),
+    Column("scanned_until", UtcDateTime),
+    Column("resume_page", Integer),
+    Column("round_started", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
 ticker_subscription = Table(
     "ticker_subscription",
     metadata,

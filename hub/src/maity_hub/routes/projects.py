@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules
+from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -310,6 +310,12 @@ def patch_project(
                     merged[key] = dumped[key]
             if merged != (project.settings or {}):
                 values["settings"] = merged
+            was_on = ticker.settings(project)["enabled"]
+            now_on = bool((merged.get("ticker") or {}).get("enabled"))
+            # Switched on now, or on from before the merges were announced (an install
+            # upgraded with the ticker on has no start yet): merges count from now.
+            if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
+                ticker.switched_on(conn, project.id)
         new_policy = None
         if "policy" in given and body.policy is not None:
             new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)

@@ -9,6 +9,7 @@ listing (§17.9) is the compact form of the same events.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import events
+from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.ticker_read import may_read_request, reason_of
 from maity_hub.views import event_views
@@ -598,3 +599,257 @@ def store_subscription(conn: Connection, membership_id: int, lists: dict[str, An
     ).rowcount
     if not done:
         conn.execute(insert(t.ticker_subscription).values(membership_id=membership_id, **values))
+
+
+# --- merges (§17.2–§17.4): written from what the probe observed --------------------------
+
+
+def switched_on(conn: Connection, project_id: str) -> None:
+    """The ticker was switched on: the probe announces merges from this moment (§17.4)."""
+    now = clock.now()
+    found = conn.execute(
+        select(t.ticker_source.c.project_id).where(t.ticker_source.c.project_id == project_id)
+    ).first()
+    fresh = {"merges_since": now, "scanned_until": None, "resume_page": None, "round_started": None}
+    if found:
+        conn.execute(
+            update(t.ticker_source)
+            .where(t.ticker_source.c.project_id == project_id)
+            .values(**fresh)
+        )
+    else:
+        conn.execute(insert(t.ticker_source).values(project_id=project_id, **fresh))
+
+
+def merge_scan(conn: Connection, project_id: str) -> Any:
+    """The project's `ticker_source` row, or None before the ticker was ever switched on."""
+    return conn.execute(
+        select(t.ticker_source).where(t.ticker_source.c.project_id == project_id)
+    ).first()
+
+
+def scan_done(
+    conn: Connection, project_id: str, next_page: int | None, round_started: datetime
+) -> None:
+    """After a round: go on from `next_page` in the next one, or, the interval read to its
+    end, move `scanned_until` to the moment this scan began, so later rounds stop there."""
+    if next_page is not None:
+        values: dict[str, Any] = {"resume_page": next_page, "round_started": round_started}
+    else:
+        values = {"scanned_until": round_started, "resume_page": None, "round_started": None}
+    conn.execute(
+        update(t.ticker_source).where(t.ticker_source.c.project_id == project_id).values(**values)
+    )
+
+
+def merges_since(conn: Connection, project_id: str) -> Any:
+    return conn.execute(
+        select(t.ticker_source.c.merges_since).where(t.ticker_source.c.project_id == project_id)
+    ).scalar()
+
+
+CONTRACT_CAP = 1024 * 1024  # a contract file over 1 MiB: sections unknown (§17.3)
+LINKED_MAX = 20
+HEADING = re.compile(r"^#{2,3} (\d+(?:\.\d+)*)\b")
+HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def headings(text: str) -> list[tuple[int, str]]:
+    """The numbered level-two and level-three ATX headings of a contract file:
+    (1-based line, section) — `## 8. Events` → `8`, `### 8.2 Kinds` → `8.2`."""
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = HEADING.match(line)
+        if match:
+            found.append((number, match.group(1)))
+    return found
+
+
+def section_at(marks: Sequence[tuple[int, str]], line: int) -> str | None:
+    """The section of the nearest numbered heading at or above `line`."""
+    current = None
+    for number, section in marks:
+        if number > line:
+            break
+        current = section
+    return current
+
+
+def changed_lines(patch: str) -> tuple[list[int], list[int]]:
+    """The lines a unified diff adds (in the new file) and deletes (in the old file)."""
+    added: list[int] = []
+    deleted: list[int] = []
+    old = new = 0
+    for line in patch.splitlines():
+        hunk = HUNK.match(line)
+        if hunk:
+            old, new = int(hunk.group(1)), int(hunk.group(2))
+            continue
+        if line.startswith("+"):
+            added.append(new)
+            new += 1
+        elif line.startswith("-"):
+            deleted.append(old)
+            old += 1
+        elif line.startswith("\\"):
+            continue  # "\ No newline at end of file"
+        else:
+            old += 1
+            new += 1
+    return added, deleted
+
+
+def sections(after: str, before: str | None, patch: str) -> set[str]:
+    """§17.3: a changed line belongs to the nearest numbered heading above it in the file
+    at the merge commit, a deleted line to the one above it at the base; a changed
+    heading line to its own section."""
+    added, deleted = changed_lines(patch)
+    found = {s for s in (section_at(headings(after), n) for n in added) if s}
+    if before is not None:
+        found |= {s for s in (section_at(headings(before), n) for n in deleted) if s}
+    return found
+
+
+def section_key(section: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in section.split("."))
+
+
+def implementers(mapping: dict[str, list[str]], section: str) -> list[str]:
+    """The tokens for a section: the longest matching key (`8.2` before `8`), `*` when no
+    key matches (§17.3)."""
+    matching = [k for k in mapping if k != "*" and (section == k or section.startswith(k + "."))]
+    if matching:
+        return list(mapping[max(matching, key=len)])
+    return list(mapping.get("*", []))
+
+
+def linked_cards(conn: Connection, project_id: str, number: int, head: str | None) -> list[Any]:
+    """§17.3: cards whose latest report names the pull request, cards whose latest
+    checkpoint names its head branch, and release cards that list it typed; at most 20,
+    oldest first."""
+    rows = conn.execute(
+        select(t.card)
+        .where(t.card.c.project_id == project_id)
+        .order_by(t.card.c.created_at, t.card.c.id)
+    ).all()
+    found = []
+    for card in rows:
+        report_pr = ((card.report or {}).get("pr") or {}).get("number")
+        branch = (card.checkpoint or {}).get("branch")
+        typed = [p.get("number") for p in (card.release_data or {}).get("pull_requests_typed", [])]
+        if report_pr == number or (head is not None and branch == head) or number in typed:
+            found.append(card)
+        if len(found) == LINKED_MAX:
+            break
+    return found
+
+
+@dataclass
+class Merge:
+    """A merged pull request as the probe read it, with what it changed."""
+
+    number: int
+    title: str
+    url: str | None
+    merge_sha: str | None
+    base: str
+    merged_at: str
+    author: str | None
+    head: str | None
+    paths: list[str]
+    paths_truncated: bool
+    # contract file → its sections, or None when they could not be told
+    contract: dict[str, set[str] | None] = field(default_factory=dict)
+
+
+def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
+    """The item of one merge (§17.2), its audience per §17.3; None when it was announced."""
+    conf = settings(project)
+    people = members(conn, project.id)
+    audience = Audience()
+    areas: list[str] = []
+    for path in merge.paths:
+        owner = area_owner(people, path)
+        if owner is None:
+            continue
+        if owner[1] not in areas:
+            areas.append(owner[1])
+        if not merge.paths_truncated:
+            audience.add(owner[0].principal, f"area_owner:{owner[1]}")
+    if merge.paths_truncated:  # more reach, never less: every area's owner (§17.3)
+        for m in people:
+            if m.areas:
+                audience.add(m.principal, "area_owner:*")
+    cards = linked_cards(conn, project.id, merge.number, merge.head)
+    for card in cards:
+        holder = _principal_of(conn, card.claim_holder)
+        assignee = _principal_of(conn, card.assigned_to)
+        if holder:
+            audience.add(holder, f"card_holder:{card.id}")
+        elif assignee:
+            audience.add(assignee, f"card_assignee:{card.id}")
+    contract = None
+    touched = [f for f in conf["contract_files"] if f in merge.contract]
+    if touched:
+        unknown = any(merge.contract[f] is None for f in touched)
+        found: set[str] = set()
+        for f in touched:
+            found |= merge.contract[f] or set()
+        ordered = sorted(found, key=section_key)
+        contract = {"sections": ordered, "sections_unknown": unknown}
+        mapping = conf["contract_implementers"]
+        if unknown:
+            for key, tokens in mapping.items():
+                for token in tokens:
+                    for m in resolve(people, token):
+                        audience.add(m.principal, f"contract_implementer:{key}")
+        for section in ordered:
+            for token in implementers(mapping, section):
+                for m in resolve(people, token):
+                    audience.add(m.principal, f"contract_implementer:{section}")
+        for m in people:
+            if m.role == "admin":
+                audience.add(m.principal, "role:admin")
+    apply_subscriptions(
+        conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
+    )
+    touches = ", ".join(areas) or "no area"
+    text = f"#{merge.number} {merge.title} — merged into {merge.base}; touches {touches}"
+    for f in touched:
+        secs = merge.contract[f]
+        text += (
+            f", {f} ("
+            + (
+                ", ".join(f"§{s}" for s in sorted(secs, key=section_key))
+                if secs
+                else "sections unknown"
+            )
+            + ")"
+        )
+    return write(
+        conn,
+        project.id,
+        kind="merge",
+        text=text,
+        url=merge.url,
+        audience=audience,
+        origin="probe",
+        subject=("pull_request", str(merge.number)),
+        dedupe_key=f"merge:{merge.number}",
+        facts={
+            "merge": {
+                "pr": merge.number,
+                "title": merge.title,
+                "merge_sha": merge.merge_sha,
+                "base": merge.base,
+                "merged_at": merge.merged_at,
+                "author": merge.author,
+            },
+            "paths": merge.paths[:50],
+            "paths_total": len(merge.paths),
+            "paths_truncated": merge.paths_truncated,
+            "areas": areas,
+            "contract": contract,
+            "tasks": [c.id for c in cards],
+        },
+    )
