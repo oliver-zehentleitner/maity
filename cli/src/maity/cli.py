@@ -72,6 +72,10 @@ class CommandError(Exception):
     """The hub answered, but not with what the command can act on."""
 
 
+class LocalRefusal(Exception):
+    """The command refused on its own, before sending anything: exit 4."""
+
+
 def _err(message: str) -> None:
     print(f"maity: {message}", file=sys.stderr)
 
@@ -413,10 +417,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
 
 
-def _done(args: argparse.Namespace, result: Any, line: str) -> int:
-    """Print the hub's answer with --json, otherwise one status line."""
+def _done(args: argparse.Namespace, result: Any, line: str, ascii_json: bool = False) -> int:
+    """Print the hub's answer with --json, otherwise one status line. `ascii_json` escapes
+    every non-ASCII character, for answers that carry other members' text."""
     if getattr(args, "json", False):
-        _print_json(result)
+        (_print_ascii_json if ascii_json else _print_json)(result)
     else:
         print(line)
     return EXIT_OK
@@ -1171,24 +1176,36 @@ def _print_memory(items: list[dict[str, Any]], empty: str) -> None:
 def cmd_memory(args: argparse.Namespace) -> int:
     """`GET …/memory` or `GET /me/soul`: each text quoted with its author, as `resume` (§19)."""
     session = Session()
-    if args.soul:
+    if args.list_soul:
         soul = session.client.call("GET", "/me/soul")
-        if args.json:
+        if args.list_json:
             _print_ascii_json(soul)
         else:
             print(f"Memory. {onboarding.MEMORY_NOTICE}")
             print("\n".join(onboarding.soul_lines(soul)))
         return EXIT_OK
-    store = "team" if args.team else "community" if args.community else None
+    store = "team" if args.list_team else "community" if args.list_community else None
     items = _memory_entries(session, [("store", store)] if store else [])
-    if args.json:
+    if args.list_json:
         _print_ascii_json(items)
     else:
         _print_memory(items, f"no {store or 'team or community'} memory")
     return EXIT_OK
 
 
+def _memory_flags_after_action(args: argparse.Namespace) -> None:
+    """Flags given before `add` or `search` belong to the listing; refused, never dropped."""
+    given = [f for f, on in (("--team", args.list_team), ("--community", args.list_community),
+             ("--soul", args.list_soul), ("--json", args.list_json)) if on]  # fmt: skip
+    if given:
+        raise UsageError(
+            f"{', '.join(given)} before `{args.memory_command}` belongs to the listing; "
+            f"put it after: maity memory {args.memory_command} … {given[0]}"
+        )
+
+
 def cmd_memory_search(args: argparse.Namespace) -> int:
+    _memory_flags_after_action(args)
     text = _text(args.text, "the search text")
     if len(text) > 200:
         raise UsageError("the search text is 1 to 200 characters")
@@ -1202,6 +1219,7 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
 
 def cmd_memory_add(args: argparse.Namespace) -> int:
     """`POST …/memory` (team, or a community proposal), or `POST /me/soul/proposals`."""
+    _memory_flags_after_action(args)
     session = Session()
     if args.soul is not None:
         if args.text is not None or args.tag or args.community:
@@ -1220,7 +1238,8 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
         }
         request = session.client.call("POST", "/me/soul/proposals", body=proposal)
         rid = onboarding.inline(_field(request, "id"))
-        return _done(args, request, f"proposed your soul; request {rid} waits for your owner")
+        line = f"proposed your soul; request {rid} waits for your owner"
+        return _done(args, request, line, ascii_json=True)
     if args.reason is not None:
         raise UsageError("--reason goes with --soul")
     text = _text(args.text or "", "the entry")
@@ -1236,10 +1255,10 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
     answer = session.client.call("POST", session.project_path("memory"), body=body)
     if store == "community":  # an agent proposes; a human with project:admin confirms (§19.2)
         rid = onboarding.inline(_field(answer, "id"))
-        return _done(args, answer, f"proposed for the community memory; request {rid}")
-    return _done(
-        args, answer, f"added {onboarding.inline(_field(answer, 'id'))} to your team's memory"
-    )
+        line = f"proposed for the community memory; request {rid}"
+        return _done(args, answer, line, ascii_json=True)
+    added = onboarding.inline(_field(answer, "id"))
+    return _done(args, answer, f"added {added} to your team's memory", ascii_json=True)
 
 
 # --- takeover (§6.19) ---------------------------------------------------------------------------
@@ -1291,6 +1310,15 @@ def _takeover_call(session: Session, method: str, path: str, body: Any = None) -
     try:
         return session.client.call(method, path, body=body)
     except hub.HubError as exc:
+        if (
+            exc.code == "forbidden"
+            and path.endswith("/respond")
+            and not _field(exc.details, "reason")
+        ):
+            raise CommandError(
+                f"{exc}\nonly the holding instance answers for the card (§6.19); another "
+                "instance of your team cannot accept or object for it"
+            ) from None
         if exc.code == "forbidden" and _field(exc.details, "reason") == "objection_open":
             raise CommandError(
                 f"{exc}\nthe card is under a human's objection hold: no agent moves it, whatever "
@@ -1313,7 +1341,7 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     card = session.client.call("GET", session.project_path("tasks", card_id))
     holder = _objection_hold(card)
     if holder is not None:
-        raise CommandError(
+        raise LocalRefusal(
             f"{card_id} is held by {holder}'s objection: no agent opens a takeover on it; "
             "only a human lifts the hold (§6.19)"
         )
@@ -1327,6 +1355,28 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     else:
         print("\n".join(_takeover_lines(_obj(takeover))))
     return EXIT_OK
+
+
+def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
+    """Only the holding instance answers for the card, and after a human's objection only
+    that human (§6.19). Checked before sending, so an agent learns the rule, not a bare
+    `forbidden`. The instance is the hub's to check: this clone does not know its own."""
+    me = session.data.get("member_id")
+    if not isinstance(me, str):
+        raise state.StateError("this agent's member id is not known yet; run `maity resume`")
+    holder = _obj(takeover.get("from"))
+    if holder.get("member_id") != me:
+        raise LocalRefusal(
+            f"{tid}: only the holder ({_instance(holder)}) or its owner accepts or objects; "
+            "the requester may withdraw or escalate"
+        )
+    by = _obj(_obj(takeover.get("objection")).get("by"))
+    if by.get("kind") == "human":
+        who = onboarding.inline(by.get("member_id") or by.get("id"))
+        raise LocalRefusal(
+            f"{tid}: a human ({who}) objected; after a human's objection only that human moves "
+            "the takeover on, and no agent's accept or objection counts. Keep working (§6.19)"
+        )
 
 
 def _id_or_usage(value: str) -> str:
@@ -1375,21 +1425,13 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
     if action in ("accept", "object"):
         if args.reason:
             raise UsageError(f"`takeover {action}` takes --reasons, not --reason")
-        # Only the holding instance answers for the card (§6.19); asked before sending, so an
-        # agent that is not the holder learns why instead of only being refused.
-        takeover = _obj(session.client.call("GET", path))
-        holder = _field(takeover, "from", "member_id")
-        if holder != session.data.get("member_id"):
-            raise CommandError(
-                f"{tid}: only the holder ({onboarding.inline(holder)}) or its owner accepts or "
-                "objects; the requester may withdraw or escalate"
-            )
         if action == "accept":
             if args.reasons is not None:
                 raise UsageError("accept takes no --reasons")
             body: dict[str, Any] = {"accept": True}
         else:
             body = {"object": {"reasons": _text(args.reasons or "", "--reasons")}}
+        _check_holder(session, tid, _obj(session.client.call("GET", path)))
         answer = _takeover_call(session, "POST", f"{path}/respond", body)
     else:
         if args.reasons is not None:
@@ -2386,11 +2428,17 @@ def build_parser() -> argparse.ArgumentParser:
         "a new soul for a human to confirm; `search` finds entries by text or tag. Why the "
         "code is the way it is belongs in the repository's context/, not here.",
     )
+    # Own names: a sub-action's defaults would overwrite the parent's under the same one, and
+    # `memory --community add` would quietly become a team write.
     which = p.add_mutually_exclusive_group()
-    which.add_argument("--team", action="store_true", help="your team's memory only")
-    which.add_argument("--community", action="store_true", help="the community memory only")
-    which.add_argument("--soul", action="store_true", help="your soul (GET /me/soul)")
-    _json_flag(p)
+    which.add_argument("--team", dest="list_team", action="store_true",
+                       help="your team's memory only")  # fmt: skip
+    which.add_argument("--community", dest="list_community", action="store_true",
+                       help="the community memory only")  # fmt: skip
+    which.add_argument("--soul", dest="list_soul", action="store_true",
+                       help="your soul (GET /me/soul)")  # fmt: skip
+    p.add_argument("--json", dest="list_json", action="store_true",
+                   help="print the hub's answer as JSON")  # fmt: skip
     p.set_defaults(handler=cmd_memory)
     msub = p.add_subparsers(dest="memory_command", metavar="<action>")
     r = msub.add_parser("add", help="add a team entry, or propose a community entry or soul",
@@ -2786,5 +2834,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (UsageError, runner_commands.Refused) as exc:
         _err(str(exc))
         return EXIT_USAGE
+    except LocalRefusal as exc:
+        _err(f"refused: {exc}")
+        return EXIT_REFUSED
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED

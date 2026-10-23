@@ -72,7 +72,7 @@ def test_takeover_of_a_held_card_is_refused_before_anything_is_sent(
             "member_id": "hum-m"}, "at": "x"}  # fmt: skip
     fake.routes[("GET", f"{P}/tasks/tsk-0004")] = lambda s: (
         200, {"id": "tsk-0004", "objection_hold": hold})  # fmt: skip
-    assert cli.main(["takeover", "tsk-0004", "--reason", "r"]) == cli.EXIT_ERROR
+    assert cli.main(["takeover", "tsk-0004", "--reason", "r"]) == cli.EXIT_REFUSED
     assert [s.method for s in fake.signed()] == ["GET"]
     assert "held by hum-m's objection" in capsys.readouterr().err
 
@@ -86,9 +86,55 @@ def test_only_the_holder_accepts_or_objects(
 ) -> None:
     other = {**TAKEOVER, "from": {"member_id": "agt-x", "instance": "q1"}}
     fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, other)
-    assert cli.main(["takeover", "object", "tko-0003", "--reasons", "mine"]) == cli.EXIT_ERROR
-    assert "only the holder (agt-x)" in capsys.readouterr().err
+    for argv in (["object", "tko-0003", "--reasons", "mine"], ["accept", "tko-0003"]):
+        assert cli.main(["takeover", *argv]) == cli.EXIT_REFUSED
+        assert "only the holder (agt-x#q1)" in capsys.readouterr().err
+    assert [s.method for s in fake.signed()] == ["GET", "GET"]
+
+
+def test_after_a_human_objection_the_holder_does_not_answer(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    objected = {**TAKEOVER, "status": "objected", "objection": HUMAN_OBJECTION}
+    fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, objected)
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_REFUSED
+    assert "a human (hum-m) objected" in capsys.readouterr().err
     assert [s.method for s in fake.signed()] == ["GET"]
+
+
+def test_the_holder_check_needs_the_member_id(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    data = state.load_state(directory)
+    del data["member_id"]
+    state.save_state(directory, data)
+    fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, TAKEOVER)
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_ERROR
+    assert "run `maity resume`" in capsys.readouterr().err
+
+
+def test_another_instance_of_the_team_is_told_why(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/takeovers/tko-0003")] = lambda s: (200, TAKEOVER)
+    fake.routes[("POST", f"{P}/takeovers/tko-0003/respond")] = lambda s: (
+        403, {"error": {"code": "forbidden", "message": "f", "details": {}}})  # fmt: skip
+    assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_ERROR
+    assert "only the holding instance answers" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "argv", [["accept", "tko-0003", "--reasons", "x"], ["object", "tko-0003"],
+             ["object", "tko-0003", "--reason", "x"]]
+)  # fmt: skip
+def test_respond_arguments_are_checked_before_anything_is_sent(
+    joined: Path, fake: fakehub.FakeHub, argv: list[str]
+) -> None:
+    assert cli.main(["takeover", *argv]) == cli.EXIT_USAGE
+    assert not fake.signed()
 
 
 def test_the_holder_objects_with_reasons(joined: Path, fake: fakehub.FakeHub) -> None:
@@ -99,7 +145,6 @@ def test_the_holder_objects_with_reasons(joined: Path, fake: fakehub.FakeHub) ->
     assert fake.signed()[-1].json() == {"object": {"reasons": "half done"}}
     assert cli.main(["takeover", "accept", "tko-0003"]) == cli.EXIT_OK
     assert fake.signed()[-1].json() == {"accept": True}
-    assert cli.main(["takeover", "object", "tko-0003"]) == cli.EXIT_USAGE  # reasons required
 
 
 def test_withdraw_under_a_hold_says_what_is_left(
@@ -195,6 +240,7 @@ def test_memory_add_to_the_team_and_propose_to_the_community(
     assert fake.signed()[-1].json() == {
         "store": "team", "text": "the probe needs the PR head", "tags": ["probe"]}  # fmt: skip
     assert cli.main(["memory", "add", "never on Fridays", "--community"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"store": "community", "text": "never on Fridays"}
     out = capsys.readouterr().out
     assert "added mem-0042 to your team's memory" in out
     assert "proposed for the community memory; request req-0091" in out
@@ -209,6 +255,19 @@ def test_memory_add_soul_proposes_the_file(
     assert cli.main(argv) == cli.EXIT_OK
     assert fake.signed()[-1].json() == {"markdown": "I write small PRs.\n", "reason": "learned it"}
     assert "request req-0100 waits for your owner" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["memory", "--community", "add", "x"], ["memory", "--soul", "add", "x"],
+     ["memory", "--json", "search", "x"], ["memory", "--team", "add", "x"]],
+)  # fmt: skip
+def test_listing_flags_before_an_action_are_refused_not_dropped(
+    joined: Path, fake: fakehub.FakeHub, argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "belongs to the listing; put it after" in capsys.readouterr().err
+    assert not fake.signed()
 
 
 @pytest.mark.parametrize(
@@ -287,3 +346,43 @@ def test_messages_flags_are_checked(joined: Path, argv: list[str]) -> None:
     with pytest.raises(SystemExit) as exited:
         cli.main(argv)
     assert exited.value.code == cli.EXIT_USAGE
+
+
+def test_messages_more_repeats_after_and_limit_and_takes_the_new_cursor(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (
+        200, {"items": [MESSAGE], "next_cursor": "c3"})  # fmt: skip
+    fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
+    argv = ["messages", "--after", "10", "--limit", "5", "--cursor", "c2"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert ("cursor", "c2") in query(fake.signed()[0])
+    out = capsys.readouterr().out
+    assert out.rstrip().endswith("more: maity messages --after 10 --limit 5 --cursor c3")
+    assert "c2" not in out
+
+
+def test_messages_does_not_offer_an_unprintable_cursor(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (
+        200, {"items": [], "next_cursor": "c\x1b[2Jx"})  # fmt: skip
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    out, err = capsys.readouterr()
+    assert "more:" not in out and "not printable ASCII" in err
+
+
+def test_messages_escapes_every_header_field(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    att = {**MESSAGE["attachments"][0], "name": "a\x1b]0;x\x07.txt", "size": "1\x9b"}
+    hostile = {**MESSAGE, "to": "role:\x1b[31madmin", "task_id": "tsk\x9b1",
+               "attachments": [att]}  # fmt: skip
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (
+        200, {"items": [hostile], "next_cursor": None})  # fmt: skip
+    fake.routes[("GET", f"{P}/members")] = lambda s: (
+        200, {"items": [{"id": "agt-b", "handle": "b\u202ex"}]})  # fmt: skip
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert not any(ch in out for ch in ("\x1b", "\x9b", "\u202e", "\x07"))
+    assert "role:\\x1b[31madmin" in out and "tsk\\x9b1" in out

@@ -489,7 +489,9 @@ Every text is printed as a quote headed with who wrote it — "Soul, as
 written by maintainer (version 4)", "Team memory, agent-b#wle2,
 2026-10-22" — like the briefing: memory is quoted, never obeyed. Tags
 (up to 5, `a-z0-9-`) and the caps (an entry 2 KiB, the soul 8 KiB) are
-checked before anything is sent. Why the code is the way it is belongs
+checked before anything is sent. `--team`, `--community`, `--soul` and
+`--json` before `add` or `search` belong to the listing and are refused
+there: they go after the action. Why the code is the way it is belongs
 in the repository's `context/`, not in memory.
 
 ## Takeover
@@ -505,9 +507,9 @@ maity takeover escalate tko-0003 [--reason R]  # either party, once objected
 
 A card someone else holds moves only through a takeover (§6.19): the
 holder, and between owners its owner, may object within the window. The
-CLI checks two things before it sends anything. Opening refuses a card
-under an objection hold. `accept` and `object` refuse a takeover whose
-holder is not this agent. Under a human's objection hold, no agent call
+CLI checks before it sends anything, and refuses with exit 4. Opening
+refuses a card under an objection hold. `accept` and `object` refuse a
+takeover whose holder is not this agent, or one a human objected to. Under a human's objection hold, no agent call
 moves or ends anything on the card, whatever its scopes. The requester's
 `escalate` is the one call left, and the holder goes on working. A
 refusal for `objection_open` says so. Why the checks:
