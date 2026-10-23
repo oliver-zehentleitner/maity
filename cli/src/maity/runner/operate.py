@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import config, serve, supervisor, workspace
+from . import config, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
+from .tmux import Session, Tmux, TmuxError
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
@@ -90,14 +91,35 @@ def _as_user(cfg: config.Config) -> AsUser:
     return AsUser(local.agent_user if local and local.layout == "agent_user" else None)
 
 
+def _targets(cfg: config.Config) -> list[targets.Target]:
+    if cfg.local is not None:
+        return [targets.local(cfg, {}, supervisor.local_backend(cfg))]
+    return targets.build(cfg, {})
+
+
+def _target_of(cfg: config.Config, pid: str) -> targets.Target:
+    """Where the placement last ran, as the service recorded it."""
+    record = state.load_state(cfg.state_dir, name=supervisor.ACTUAL_FILE).get(pid)
+    name = record.get("target") if isinstance(record, dict) else None
+    found = _targets(cfg)
+    target = next((t for t in found if t.name == name), found[0] if len(found) == 1 else None)
+    if target is None:
+        raise Refused(f"the service has no target recorded for {pid}")
+    try:
+        target.connect({})
+    except OSError as exc:
+        raise Refused(f"target {target.name}: {exc}") from None
+    return target
+
+
 def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
     """The log is written by the tmux server, which is the agents' user's in the agent_user
-    layout, so it is read as that user."""
-    if cfg.local is None:
-        raise Refused("logs are the local backend's")
+    layout (and the remote user's on an ssh host), so it is read as that user."""
     pid = _placement_id(cfg, args.which)
-    path = cfg.local.agent_files / supervisor.LOGS / f"{pid}.log"
-    as_user = _as_user(cfg)
+    target = _target_of(cfg, pid)
+    assert target.agent_files is not None  # noqa: S101 - set by connect
+    path = target.agent_files / supervisor.LOGS / f"{pid}.log"
+    as_user = target.as_user
     if not as_user.exists(path, "-f"):
         raise Refused(f"no log for {pid} in {path.parent}")
     # A terminal acts on escape sequences the agent printed (an OSC 52 writes the operator's
@@ -142,8 +164,6 @@ def cmd_approve(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
     """Ends every agent session of this runner without the hub. The service must be stopped
     first: it would start every placement whose desired state is still `running` again."""
-    if cfg.local is None:
-        raise Refused("stop-all is for the local backend")
     try:
         lock = serve.hold_lock(cfg.state_dir)  # held to the end: no restart in between
     except serve.Fatal:
@@ -158,23 +178,42 @@ def cmd_stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
 
 
 def _stop_all(cfg: config.Config, args: argparse.Namespace) -> int:
-    backend = supervisor.local_backend(cfg)
-    sessions = {n: s for n, s in backend.sessions().items() if s.placement and not s.dead}
-    if not sessions:
-        print("no agent sessions are running")
-        return 0
-    for session in sessions.values():
-        backend.terminate(session)
+    """Every target that answers; a host that does not is named, and the exit code says
+    its agents may still run."""
+    found: list[tuple[Tmux, dict[str, Session]]] = []
+    missed: list[str] = []
+    for target in _targets(cfg):
+        try:
+            target.connect({})
+            assert target.backend is not None  # noqa: S101 - set by connect
+            sessions = target.backend.sessions()
+        except (OSError, TmuxError) as exc:
+            print(f"could not reach {target.name}: {onboarding.inline(str(exc))[:200]}")
+            missed.append(target.name)
+            continue
+        live = {n: s for n, s in sessions.items() if s.placement and not s.dead}
+        if live:
+            found.append((target.backend, live))
+    if not found:
+        print("no agent sessions are running" + (" on the targets reached" if missed else ""))
+        return 1 if missed else 0
+    for backend, sessions in found:
+        for session in sessions.values():
+            backend.terminate(session)
     deadline = time.monotonic() + args.grace
     while time.monotonic() < deadline:
-        alive = {n for n, s in backend.sessions().items() if n in sessions and not s.dead}
-        if not alive:
+        if not any(
+            n in sessions and not s.dead
+            for backend, sessions in found
+            for n, s in backend.sessions().items()
+        ):
             break
         time.sleep(1.0)
-    for name in sessions:
-        backend.kill(name)
-        print(f"ended {name}")
-    return 0
+    for backend, sessions in found:
+        for name in sessions:
+            backend.kill(name)
+            print(f"ended {name}")
+    return 1 if missed else 0
 
 
 # --- gc --revoked ----------------------------------------------------------------------------
@@ -188,7 +227,7 @@ def credential_revoked(place: workspace.Workspace, as_user: AsUser = RUNNER) -> 
         return False
     command = [sys.executable, "-I", "-m", "maity", "api", "GET", "/me"]
     try:
-        if as_user.user:
+        if not as_user.direct:
             done = as_user.run(command, env={state.STATE_DIR_ENV: str(place.credential.parent)})
         else:
             env = {k: v for k, v in os.environ.items() if k != state.STATE_DIR_ENV}
@@ -311,7 +350,7 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
     if not args.revoked:
         raise Refused("gc removes only workspaces whose credential is revoked: pass --revoked")
     if cfg.local is None:
-        raise Refused("gc is for the local backend")
+        raise Refused("gc is for the local backend in this version")
     # Removing holds the service's lock: nothing starts in a clone while it goes.
     try:
         lock = serve.hold_lock(cfg.state_dir) if args.yes else None
@@ -397,7 +436,7 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
     """Record an existing clone for an agent: after a lost state directory, or a clone made
     by hand. The record is the runner's; nothing in the clone is touched."""
     if cfg.local is None:
-        raise Refused("workspaces are the local backend's")
+        raise Refused("workspace claim is for the local backend in this version")
     project, _, clone = args.where.partition("/")
     try:
         place = workspace.locate(cfg.local.workspaces, project, clone)

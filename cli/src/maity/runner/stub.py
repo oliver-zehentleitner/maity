@@ -14,11 +14,13 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from .asuser import RUNNER, AsUser
 
-def argv(exit_code: int, run_seconds: int) -> list[str]:
-    """The adapter's command: this interpreter, this module, two numbers."""
+
+def argv(exit_code: int, run_seconds: int, as_user: AsUser = RUNNER) -> list[str]:
+    """The adapter's command: this module where the agents run, two numbers."""
     return [
-        sys.executable, "-I", "-m", "maity.runner.stub",
+        *as_user.runner_module("stub"),
         "--exit-code", str(exit_code), "--run-seconds", str(run_seconds),
     ]  # fmt: skip
 

@@ -733,6 +733,78 @@ files and credentials; separating them needs one user per agent (ssh
   tmux 3.3 and later only, and the sessions' processes would still be
   the runner's.
 
+## On the ssh backend each host is a target that runs its own `maity`
+
+**Id:** 256e800f-3ddc-482e-b4ac-e6b09d69fe72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.4; implementation of runner slice R7b, 2026-10-22; the independent review of #172 (an sshd test found that ssh cannot create its ControlPath directory), 2026-10-22; tested against a fake `ssh` and against a real sshd on localhost, not yet against a remote host
+**Revisit when:** a live run on a real host shows a step that does not work over ssh, or `gc` and `workspace claim` are extended to ssh hosts
+
+The supervisor works on targets: `local`, or one per configured ssh host.
+Each target has its own command runner, workspaces root, tmux server,
+agent limit and harness probes. Every command for a host is a fixed
+template sent as one command line with every word quoted, over a shared
+connection with strict host keys and no forwarding. The agents' files
+(tmux socket, logs, harness settings) live in the remote user's
+`~/.maity-runner/`. That home is learned on the first connection. What the
+agents run, the supervised loop and the `stub` included, starts through
+the host's own `maity`, on internal subcommands (`maity runner loop`,
+`maity runner stub`). The join runs the host's `maity` too, so the
+agent's credential is written on the host and never passes through the
+runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
+denies are the host's: the remote user's home secrets, its
+`~/.maity-runner` and the other clones' credentials listed on the host,
+never paths of the runner's machine. `gc` and `workspace claim` stay
+local-only in this slice.
+
+**Reason:** the runner's interpreter path means nothing on another
+machine, and the operator's install there (pipx, a virtual environment)
+is reached reliably only through its `maity` on the configured
+`agent_path`. Keying records by host keeps the same path on two hosts
+from being one workspace. `gc` reads an agent's git state with a layout
+check written against local files; doing that over ssh needs the same
+care again, so it waits rather than being half done.
+
+**Rejected alternatives:**
+- `python3 -I -m maity.runner.loop` on the host: the system `python3`
+  usually does not have the operator's `maity` installed.
+- Copying the runner's interpreter path to the host: different machines
+  rarely share it.
+
+## A placement without a target stays on the host it was first given
+
+**Id:** 0448a690-171f-4f75-8f33-a896dd3f7e0a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** runner design v2 §5.2, §5.4 and §15.7 of the API contract; the contract owner's choice of `target_unknown`, 2026-10-22; implementation of runner slice R7b, 2026-10-22
+**Revisit when:** the runner gains a way to move a clone and its credential between hosts, or operators ask for load-based placement
+
+A placement that names a target runs there. One with `target: null`
+goes to the first reachable host, in configuration order, with a free
+slot. It is recorded there and stays there across ticks and runner
+restarts. A target the configuration no longer has is reported as
+`failed`/`harness_refused` with the detail `target_unknown`. While a host
+does not answer, its placements keep their last reported state, and the
+runner advertises the host with `reachable: false` and
+`unreachable_since` at once instead of reporting a reason.
+
+**Reason:** a clone and its credential exist on one host. Moving a
+placement to another host would start it without its work and its
+identity. The first free host in configuration order is predictable for
+the operator, who orders the list. Reachability is a property of the
+host, not of a placement (§15.7), and an agent on a host that lost its
+network is still running.
+
+**Rejected alternatives:**
+- Choosing the least loaded host on every start: a restart could land on
+  another host and lose the clone.
+- Reporting an unreachable host's placements as failed: the agents keep
+  running there, and the report would be wrong once the host answers.
+
+
 ## A provider limit reaches the runner as the loop's exit 22, and no harness signals one yet
 
 **Id:** 924bb731-5f0d-4532-b785-e651d0949988

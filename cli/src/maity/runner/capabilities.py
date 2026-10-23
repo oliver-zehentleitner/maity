@@ -113,8 +113,14 @@ def agent_path(cfg: config.Config, environ_path: str) -> str:
 
 
 def harness_entry(
-    harness: config.Harness, found: Probe, path: str | None = None, as_user: AsUser = RUNNER
+    harness: config.Harness,
+    found: Probe,
+    path: str | None = None,
+    targets: list[str] | None = None,
+    sandbox: bool | None = None,
+    as_user: AsUser = RUNNER,
 ) -> dict[str, Any]:
+    on = sandbox_available(harness, path, as_user) if sandbox is None else sandbox
     return {
         "id": harness.id,
         "version": found.version,
@@ -123,20 +129,34 @@ def harness_entry(
         "modes": list(harness.modes),
         "default_mode": harness.default_mode,
         "models": [ascii_text(m) for m in harness.models],
-        "targets": ["local"],
+        "targets": targets if targets is not None else ["local"],
         # Codex has no per-command allowlist of its own: its sandbox is the boundary.
         "confinement": {"stub": "none", "codex": "sandbox"}.get(harness.id, "allowlist"),
-        "sandbox": (
-            "n/a"
-            if harness.id == "stub"
-            else "on" if sandbox_available(harness, path, as_user) else "off"
-        ),
+        "sandbox": "n/a" if harness.id == "stub" else "on" if on else "off",
     }
 
 
-def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dict[str, Any]:
-    """The `capabilities` object of `hello` and `PATCH /runner`."""
+def build(
+    cfg: config.Config,
+    probes: dict[str, Probe],
+    running: int = 0,
+    targets: list[Any] | None = None,
+) -> dict[str, Any]:
+    """The `capabilities` object of `hello` and `PATCH /runner`. With `targets` (the ssh
+    backend's hosts), one entry per host: a harness is offered on the hosts where it was
+    found, and a host not reached yet is advertised unreachable, its harnesses unknown."""
     limits = cfg.limits
+    if targets is not None and cfg.ssh is not None:
+        return {
+            "backend": cfg.backend,
+            "max_agents": limits.max_agents,
+            "running": running,
+            "targets": [_ssh_target(t) for t in targets],
+            "harnesses": [_ssh_harness(h, targets) for h in cfg.harnesses.values()],
+            "projects": list(limits.projects),
+            "repositories": list(limits.repositories),
+            "require_local_approval": limits.require_local_approval,
+        }
     local = cfg.local
     agents_user = local.agent_user if local and local.layout == "agent_user" else None
     return {
@@ -159,10 +179,35 @@ def build(cfg: config.Config, probes: dict[str, Probe], running: int = 0) -> dic
         ],
         "harnesses": [
             harness_entry(h, probes[h.id], agent_path(cfg, os.environ.get("PATH", "")),
-                          AsUser(agents_user))  # fmt: skip
+                          as_user=AsUser(agents_user))  # fmt: skip
             for h in cfg.harnesses.values()
         ],
         "projects": list(limits.projects),
         "repositories": list(limits.repositories),
         "require_local_approval": limits.require_local_approval,
     }
+
+
+def _ssh_target(target: Any) -> dict[str, Any]:
+    return {
+        "name": target.name,
+        "max_agents": target.max_agents,
+        "running": 0,
+        "reachable": target.reachable,
+        "unreachable_since": None,
+        # One remote user per host; the runner is on another machine altogether.
+        "isolation": {"kind": "shared_user", "user": ascii_text(target.as_user.login),
+                      "runner_separate": True},  # fmt: skip
+    }
+
+
+def _ssh_harness(harness: config.Harness, targets: list[Any]) -> dict[str, Any]:
+    reached = [t for t in targets if t.probes]
+    where = [t.name for t in reached if t.probes[harness.id].available]
+    found = next((t.probes[harness.id] for t in reached if t.name in where), None)
+    if found is None:  # nowhere yet: the reason of the first host reached, if any
+        found = reached[0].probes[harness.id] if reached else Probe(None, None, None)
+    sandbox = bool(where) and all(
+        t.sandbox.get(harness.id, False) for t in reached if t.name in where
+    )
+    return harness_entry(harness, found, targets=where, sandbox=sandbox)
