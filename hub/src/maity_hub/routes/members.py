@@ -52,6 +52,7 @@ class PausedIn(Strict):
 
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
+    owner_preferences: bool | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -312,6 +313,8 @@ def patch_member(
                 return idempotency.Outcome(204, None, None, {})
             view = member_view(conn, target, briefing=reader.may("members:admin"))
             return idempotency.Outcome(200, "member_team", str(target.id), view)
+        if "owner_preferences" in given:
+            return _owner_preferences(conn, caller, slug, member_id, body, given)
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and mine.role == "admin"
         target = member_row(conn, mine.project.id, member_id)
@@ -356,6 +359,29 @@ def patch_member(
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _owner_preferences(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """Give an agent its owner's preferences, or take them back (§19.4): the profile's
+    owner and nobody else, member of the project or not, as `team` is (§6.18). A live
+    reference: the flag, never a copy of the text."""
+    if caller.kind != "human":
+        raise instances.humans_only()
+    if given != {"owner_preferences"} or body.owner_preferences is None:
+        raise invalid({"owner_preferences": "alone"}, "set owner_preferences on its own")
+    target, reader = instances.team_target(conn, caller, slug, member_id)
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.id == target.id)
+        .values(owner_preferences=body.owner_preferences)
+    )
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})
+    view = member_view(conn, row, briefing=reader.may("members:admin"))
+    return idempotency.Outcome(200, "member_team", str(row.id), view)
 
 
 def set_paused(conn: Connection, change: Change, target: Any, reason: str | None) -> None:
