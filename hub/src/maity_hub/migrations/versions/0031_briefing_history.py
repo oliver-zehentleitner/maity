@@ -5,8 +5,8 @@ written; every version is kept in `member_briefing`. An agent membership that ex
 already starts at version 1 with its current text, by an unknown writer at its
 `joined_at`; a human membership has no briefing and stays at version 0.
 
-Revision ID: 0019
-Revises: 0018
+Revision ID: 0031
+Revises: 0020
 Create Date: 2026-10-23
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0019"
-down_revision: str | None = "0018"
+revision: str = "0031"
+down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

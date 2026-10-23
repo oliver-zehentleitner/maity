@@ -7,4 +7,4 @@
   `changed: ["briefing"]` with the new `briefing_version`, never the text;
   `GET …/members/{id}/briefings` lists the versions newest first for the agent's owner,
   a member of the project or not, and for humans with `members:admin` (migration
-  `0019_briefing_history`)
+  `0031_briefing_history`)
