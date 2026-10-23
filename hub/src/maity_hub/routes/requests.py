@@ -104,14 +104,21 @@ def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, An
     return {**needs, "avatar_url": avatars.urls(conn, [member_id])[member_id]}
 
 
+def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
+    if task_id is None:
+        return None
+    card = conn.execute(
+        select(t.card.c.id, t.card.c.title, t.card.c.status).where(t.card.c.id == task_id)
+    ).one()
+    return {"id": card.id, "title": card.title, "status": card.status}
+
+
 def request_view(conn: Connection, row: Any) -> dict[str, Any]:
-    """A request as §7 shows it; also the payload of its events."""
-    task = None
-    if row.task_id is not None:
-        card = conn.execute(
-            select(t.card.c.id, t.card.c.title, t.card.c.status).where(t.card.c.id == row.task_id)
-        ).one()
-        task = {"id": card.id, "title": card.title, "status": card.status}
+    """A request as §7 shows it; also the payload of its events (a personal request's
+    events excepted: `_payload`)."""
+    task = _task(conn, row.task_id)
+    if row.personal and row.status != "open" and row.task_snapshot is not None:
+        task = row.task_snapshot  # the card as it was when the request closed (§7)
     return {
         "id": row.id,
         "class": klass(row),
@@ -135,6 +142,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "created_at": ts(row.created_at),
         "answered_at": ts(row.answered_at),
         "placement": placements.request_summary(conn, row.placement_id),
+        "personal": bool(row.personal),
     }
 
 
@@ -193,6 +201,8 @@ def _resolve_to(
 
 
 def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
+    if to.startswith("profile_owner:"):  # the hub's own addressing of a personal request
+        raise invalid({"to": "hub_only"}, "personal requests are filed by the hub")
     if to == "owner":
         return inbox.Addressee("owner")
     if to.startswith("role:"):
@@ -380,7 +390,36 @@ def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee)
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
     members = [principal_id(conn, row.asked_by), principal_id(conn, row.on_behalf_of)]
-    return list(dict.fromkeys(f"member:{m}" for m in members if m))
+    audience = list(dict.fromkeys(f"member:{m}" for m in members if m))
+    if row.personal and _member_of(conn, row.project_id, row.to_human) is not None:
+        audience.append(f"member:{row.to_human}")  # the owner, when a member (§7)
+    return audience
+
+
+def _member_of(conn: Connection, project_id: str, human_id: str | None) -> Any:
+    if human_id is None:
+        return None
+    return conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.human_id == human_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+
+
+def _payload(row: Any, view: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    """An event's payload: the request as `GET` shows it, or for a personal request its
+    id and status only — owners and admins read every event and must not learn what it
+    says (§7, §8.2)."""
+    if row.personal:
+        return {"id": view["id"], "personal": True, "status": view["status"]}
+    return {**view, **extra}
+
+
+def _snapshot(conn: Connection, row: Any) -> dict[str, Any]:
+    """What a personal request keeps when it closes: its card as it was (§7)."""
+    return {"task_snapshot": _task(conn, row.task_id)} if row.personal else {}
 
 
 # --- reading -------------------------------------------------------------------------
@@ -395,7 +434,9 @@ def _filtered(
     asked_by: str | None,
     to: str,
 ) -> list[Any]:
-    query = select(t.request).where(t.request.c.project_id == mine.project.id)
+    query = select(t.request).where(
+        t.request.c.project_id == mine.project.id, t.request.c.personal.is_(False)
+    )
     if status != "all":
         wanted = [s for s in status.split(",") if s]
         if any(s not in inbox.STATUSES for s in wanted):
@@ -552,6 +593,11 @@ def list_all_requests(
             views += [
                 {**_with_handle(conn, r, request_view(conn, r)), "project": inline} for r in rows
             ]
+        # Personal requests, member of their project or not (§7). The project listings
+        # above never contain them.
+        views += _personal_inbox(
+            conn, caller, status=status, class_=class_, asked_by=asked_by, to=to
+        )
         return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
 
 
@@ -560,6 +606,8 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
+        if row.personal and not inbox.is_asker(row, mine):
+            raise not_found()  # the project route never tells anyone else it exists (§7)
         if not inbox.may_read(conn, row, mine):
             raise forbidden(
                 "requests:answer", "only the asker, the addressee or an answerer reads this"
@@ -604,6 +652,22 @@ def _unblock(conn: Connection, row: Any) -> None:
     )
 
 
+def _self_answer() -> ApiError:
+    return ApiError(
+        409, "self_answer", "nobody answers a request it asked or that was filed for it"
+    )
+
+
+def _check_answer(row: Any, body: AnswerIn) -> None:
+    """Exactly one of reply_id, text, talk (text may go with reply_id); a reply it offers."""
+    given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
+    if not given or ("talk" in given and len(given) > 1):
+        raise invalid({"answer": "reply_id_or_text_or_talk"})
+    reply_ids = {r["id"] for r in replies(klass(row), row.options)}
+    if body.reply_id is not None and body.reply_id not in reply_ids:
+        raise invalid({"reply_id": "not_a_reply"})
+
+
 def _refuse_unless_open(row: Any) -> None:
     if row.status != "open":
         raise ApiError(
@@ -618,21 +682,18 @@ def answer(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
+        if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
+            if inbox.is_asker(row, mine):
+                raise _self_answer()
+            raise not_found()
         _refuse_unless_open(row)
         if inbox.needs_a_human(row, mine):
             raise humans_only("under spawn_consent_by: human only a human answers this")
         if not inbox.may_answer(conn, row, mine):
             raise forbidden("requests:answer")
         if inbox.is_asker(row, mine):
-            raise ApiError(
-                409, "self_answer", "nobody answers a request it asked or that was filed for it"
-            )
-        given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
-        if not given or ("talk" in given and len(given) > 1):
-            raise invalid({"answer": "reply_id_or_text_or_talk"})
-        reply_ids = {r["id"] for r in replies(klass(row), row.options)}
-        if body.reply_id is not None and body.reply_id not in reply_ids:
-            raise invalid({"reply_id": "not_a_reply"})
+            raise _self_answer()
+        _check_answer(row, body)
         conversation_id = None
         if body.talk:
             conversation_id = _talk_allowed(conn, row, caller)
@@ -710,6 +771,8 @@ def withdraw(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
+        if row.personal:  # only its human, or the hub, withdraws it (§7)
+            raise not_found()
         if not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
         _refuse_unless_open(row)
@@ -766,7 +829,13 @@ def close_request(
         conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id)
-            .values(status="withdrawn", withdrawn_at=now, withdraw_reason=reason, **audit)
+            .values(
+                status="withdrawn",
+                withdrawn_at=now,
+                withdraw_reason=reason,
+                **_snapshot(conn, row),
+                **audit,
+            )
         )
         kind, extra = "request_withdrawn", {"reason": reason}
     else:
@@ -788,6 +857,7 @@ def close_request(
                 answer=stored,
                 answered_by=actor.membership_id if actor else None,
                 answered_at=now,
+                **_snapshot(conn, row),
                 **audit,
             )
         )
@@ -799,7 +869,7 @@ def close_request(
         row.project_id,
         kind,
         _asker_audience(conn, row),
-        {**view, **extra},
+        _payload(row, view, **extra),
         actor=actor,
         subject=("request", row.id),
     )
@@ -852,3 +922,212 @@ def file_consent(
         subject=("request", request_id),
     )
     return request_id
+
+
+# --- personal requests (§7) ---------------------------------------------------------------
+
+
+def file_personal(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    agent_id: str,
+    class_: str,
+    title_text: str,
+    summary: str,
+    *,
+    options: list[dict[str, Any]] | None = None,
+    task_id: str | None = None,
+) -> str:
+    """A request the hub files to the human who owns the agent profile `agent_id`, member
+    of the project or not (`to: profile_owner:<agent id>`); returns its id. Nothing else
+    creates one, and nobody but the asker sees it through the project.
+
+    It keeps the asker's project in `project_id`, so the project's paths find it for the
+    asker and its events have a log. `to_human` is the owner at filing time: a profile
+    that later changes hands leaves its open personal requests with the human asked."""
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar_one()
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": mine.project.id,
+                "class": class_,
+                "title": title_text,
+                "summary": summary,
+                "options": options or [],
+                "priority": "normal",
+                "to_kind": "profile_owner",
+                "to_profile": agent_id,
+                "to_human": owner,
+                "personal": True,
+                "asked_by": mine.id,
+                "asked_session_id": caller.session_id,
+                "task_id": task_id,
+                "while_open": "wait",
+                "status": "open",
+                "changed_by_credential": caller.credential_id,
+                "changed_via": caller.via,
+                "created_at": clock.now(),
+            }
+        )
+    )
+    row = _row(conn, request_id)
+    emit(
+        conn,
+        mine.project.id,
+        "request_created",
+        _asker_audience(conn, row),
+        _payload(row, request_view(conn, row)),
+        actor=caller.actor(mine.id),
+        subject=("request", request_id),
+    )
+    return request_id
+
+
+def _personal(conn: Connection, caller: Caller, request_id: str) -> Any:
+    """A personal request addressed to the calling human; any other id is `not_found`."""
+    row = conn.execute(
+        select(t.request).where(
+            t.request.c.id == request_id,
+            t.request.c.personal.is_(True),
+            t.request.c.to_human == caller.human_id,
+        )
+    ).first()
+    if row is None:
+        raise not_found()
+    return row
+
+
+def _project_inline(conn: Connection, project_id: str) -> dict[str, Any]:
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    return {"slug": project.slug, "name": project.name, "state": project.state}
+
+
+@router.get("/requests/{request_id}")
+def get_personal(request_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    with engine_of(request).begin() as conn:
+        row = _personal(conn, caller, request_id)
+        view = request_view(conn, row)
+        return JSONResponse({**view, "project": _project_inline(conn, row.project_id)})
+
+
+@router.post("/requests/{request_id}/answer")
+def answer_personal(
+    request_id: str, body: AnswerIn, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _personal(conn, caller, request_id)
+        lock_project(conn, row.project_id)
+        _refuse_unless_open(row)
+        _check_answer(row, body)
+        conversation_id = _talk_allowed(conn, row, caller) if body.talk else None
+        member = _member_of(conn, row.project_id, caller.human_id)
+        now = clock.now()
+        stored = {
+            "reply_id": body.reply_id,
+            "text": body.text,
+            "talk": bool(body.talk),
+            "by": caller.human_id,
+            "on_behalf_of": None,
+            "at": clock.rfc3339(now),
+            "conversation_id": conversation_id,
+            "mentions": mentions.resolve(conn, row.project_id, body.text, "text"),
+        }
+        done = conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
+            .values(
+                status="answered",
+                answer=stored,
+                answered_by=member.id if member is not None else None,
+                answered_at=now,
+                changed_by_credential=None,
+                changed_via=caller.via,
+                **_snapshot(conn, row),
+            )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
+        _unblock(conn, row)
+        view = request_view(conn, _row(conn, row.id))
+        emit(
+            conn,
+            row.project_id,
+            "request_answered",
+            _asker_audience(conn, row),
+            _payload(row, view),
+            actor=caller.actor(member.id) if member is not None else None,
+            subject=("request", row.id),
+        )
+        return idempotency.Outcome(200, "request", row.id, view)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/requests/{request_id}/withdraw")
+def withdraw_personal(
+    request_id: str, body: WithdrawIn, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _personal(conn, caller, request_id)
+        lock_project(conn, row.project_id)
+        _refuse_unless_open(row)
+        member = _member_of(conn, row.project_id, caller.human_id)
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id)
+            .values(
+                status="withdrawn",
+                withdrawn_at=clock.now(),
+                withdraw_reason=body.reason,
+                changed_by_credential=None,
+                changed_via=caller.via,
+                **_snapshot(conn, row),
+            )
+        )
+        _unblock(conn, row)
+        view = request_view(conn, _row(conn, row.id))
+        emit(
+            conn,
+            row.project_id,
+            "request_withdrawn",
+            _asker_audience(conn, row),
+            _payload(row, view),
+            actor=caller.actor(member.id) if member is not None else None,
+            subject=("request", row.id),
+        )
+        return idempotency.Outcome(200, "request", row.id, view)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _personal_inbox(
+    conn: Connection,
+    caller: Caller,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+) -> list[dict[str, Any]]:
+    """The personal requests addressed to the caller, for `GET /requests` (§7)."""
+    if to not in ("me", "all"):
+        return []  # addressed to the caller, never to a member, role or the owner
+    query = select(t.request).where(
+        t.request.c.personal.is_(True), t.request.c.to_human == caller.human_id
+    )
+    if status != "all":
+        query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
+    if class_ is not None:
+        query = query.where(t.request.c["class"] == class_)
+    views = []
+    for row in conn.execute(query).all():
+        if asked_by is not None and principal_id(conn, row.asked_by) != asked_by:
+            continue  # `me`: a human never asks a personal request
+        inline = _project_inline(conn, row.project_id)
+        views.append({**_with_handle(conn, row, request_view(conn, row)), "project": inline})
+    return views
