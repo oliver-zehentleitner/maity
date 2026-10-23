@@ -32,7 +32,7 @@ POSTS_TO_ALL = Limiter(5, 3600)
 URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
-ENVIRONMENT_MAX = 64
+ENVIRONMENT_MAX = ticker.ENVIRONMENT_MAX
 TOKEN = re.compile(r"^(member|role|area):\S{1,255}$")
 
 

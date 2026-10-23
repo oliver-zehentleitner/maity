@@ -7740,7 +7740,7 @@ POST /api/v1/projects/{slug}/forge/webhook
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
+| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A stored secret the instance key cannot open (the key unset, changed or lost) counts as not set, as §16.2 has it for the SMTP password: `configured: false`, and deliveries are refused until the secret is rotated. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
 | `POST /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | creates or rotates the secret and answers it once, as `{secret, url}`; the previous secret stops working at once. Emits `forge_webhook_changed` |
 | `DELETE /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | removes it; deliveries answer `webhook_signature` from then on. Emits `forge_webhook_changed` |
 

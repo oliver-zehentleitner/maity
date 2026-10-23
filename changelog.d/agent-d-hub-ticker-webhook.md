@@ -7,3 +7,8 @@
   automatic deploys from a successful `deployment_status`, listed for everyone, waking no one
 - hub: `MAITY_SECRET_KEY`, the instance key for secrets stored at rest (AES-256-GCM,
   `maity_hub.secretbox`); the new dependency `cryptography` 50
+
+### Changed
+
+- hub: `event.subject_id` holds up to 255 characters (migration 0017): an automatic deploy's
+  subject is `<environment>@<sha>`, longer than an id

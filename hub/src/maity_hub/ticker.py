@@ -9,6 +9,7 @@ listing (§17.9) is the compact form of the same events.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -22,10 +23,14 @@ from maity_hub import tables as t
 from maity_hub.ticker_read import may_read_request, reason_of
 from maity_hub.views import event_views
 
+log = logging.getLogger(__name__)
+
 TYPES = ("merge", "decision", "deploy", "release", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
 FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
 TEXT_MAX = 280
+ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
+SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
 DECISION_CLASSES = ("decision", "consent", "contract")
 
 
@@ -874,13 +879,18 @@ def write_deploy(
     deployment, read through the probe. Listed for every member, waking no one: the
     audience is `all` alone, no reasons, subscriptions included (§17.3)."""
     environment = str(deployment["environment"])
-    sha = str(deployment["sha"])
+    sha = str(deployment["sha"]).lower()
+    if not 1 <= len(environment) <= ENVIRONMENT_MAX or not SHA.fullmatch(sha):
+        # The forge's word, bounded like a manual post's (§17.6): nothing else is announced.
+        log.warning("ticker: a deployment of %s with an unusable environment or sha", project.slug)
+        return None
+    log_url = _https_or_none(deployment.get("log_url"))
     return write(
         conn,
         project.id,
         kind="deploy",
         text=f"Deployed {sha[:7]} to {environment}",
-        url=_https_or_none(deployment.get("log_url")),
+        url=log_url,
         audience=Audience(),
         origin="webhook",
         delivery=delivery,
@@ -891,7 +901,7 @@ def write_deploy(
                 "environment": environment,
                 "sha": sha,
                 "version": None,
-                "log_url": deployment.get("log_url"),
+                "log_url": log_url,
             }
         },
     )

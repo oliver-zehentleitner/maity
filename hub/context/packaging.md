@@ -164,7 +164,7 @@ others one code change away.
 **Revisit when:** cryptography 51 has been out for some weeks, or a security release reaches only a newer major release
 
 `cryptography>=50.0.2,<51`, with `cffi` and `pycparser` that it pulls in,
-in all four locks. `maity_hub.secretbox` is the only module that uses it:
+in the runtime and dev locks. `maity_hub.secretbox` is the only module that uses it:
 `AESGCM` with a random 96-bit nonce per value and the field name as
 associated data. The forge webhook's secret uses it first; the mail
 settings' SMTP password reuses it. 50.0.2 is the newest release; the 50

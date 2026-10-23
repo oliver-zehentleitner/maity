@@ -4,11 +4,14 @@ exists, the limits before the body, and automatic deploys."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,6 +23,7 @@ from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_probe import READER, REPO, TOKEN, FakeGitHub
+from tests.test_ticker_merges import merged, project_id
 
 KEY = os.urandom(32)
 HOOK = "/api/v1/projects/maity/forge/webhook"
@@ -58,20 +62,30 @@ def secret(owner: flow.Human) -> str:
     return value
 
 
+def signature(key: str, raw: bytes) -> str:
+    return "sha256=" + hmac.new(key.encode(), raw, hashlib.sha256).hexdigest()
+
+
 def deliver(
-    client: Any, body: dict[str, Any], key: str | None, event: str = "ping", path: str = HOOK
+    client: Any,
+    body: Any,
+    key: str | None,
+    event: str = "ping",
+    path: str = HOOK,
+    delivery: str = "d-1",
 ) -> Any:
     raw = json.dumps(body).encode()
     headers = {
         "X-GitHub-Event": event,
-        "X-GitHub-Delivery": "d-1",
+        "X-GitHub-Delivery": delivery,
         "Content-Type": "application/json",
     }
     if key is not None:
-        headers["X-Hub-Signature-256"] = (
-            "sha256=" + hmac.new(key.encode(), raw, hashlib.sha256).hexdigest()
-        )
+        headers["X-Hub-Signature-256"] = signature(key, raw)
     return client.post(path, content=raw, headers=headers)
+
+
+UNKNOWN = "/api/v1/projects/nope/forge/webhook"
 
 
 def jobs(owner: flow.Human) -> list[Any]:
@@ -100,7 +114,7 @@ def test_the_secret_is_answered_once_and_sealed_at_rest(
         ).one()
     assert body["secret"].encode() not in row.secret_sealed
     assert (
-        secretbox.open_sealed(KEY, forge_webhook.FIELD, row.secret_sealed)
+        secretbox.open_sealed(KEY, forge_webhook.field(row.project_id), row.secret_sealed)
         == body["secret"].encode()
     )
     assert changed.audience == ["role:owner", "role:admin"]
@@ -240,16 +254,239 @@ def test_a_body_over_one_mebibyte_is_refused(owner: flow.Human) -> None:
     assert (response.status_code, response.json()["error"]["code"]) == (413, "payload_too_large")
 
 
-def test_sixty_bad_requests_a_minute_then_rate_limited_alike(owner: flow.Human) -> None:
+def test_bad_requests_to_unknown_slugs_rate_limit_a_known_one_alike(owner: flow.Human) -> None:
     secret(owner)
     for _ in range(60):
-        deliver(owner.client, {}, "wrong")
-        deliver(owner.client, {}, "x", path="/api/v1/projects/nope/forge/webhook")
+        assert deliver(owner.client, {}, "x", path=UNKNOWN).status_code == 401
     known = deliver(owner.client, {}, "wrong")
-    unknown = deliver(owner.client, {}, "x", path="/api/v1/projects/nope/forge/webhook")
+    unknown = deliver(owner.client, {}, "x", path=UNKNOWN)
     for response in (known, unknown):
         assert response.status_code == 429 and response.json()["error"]["code"] == "rate_limited"
         assert response.headers["Retry-After"]
+
+
+def test_bad_requests_to_a_known_slug_rate_limit_unknown_ones_alike(owner: flow.Human) -> None:
+    secret(owner)
+    for _ in range(60):
+        assert deliver(owner.client, {}, "wrong").status_code == 401
+    known = deliver(owner.client, {}, "wrong")
+    unknown = deliver(owner.client, {}, "x", path=UNKNOWN)
+    for response in (known, unknown):
+        assert response.status_code == 429 and response.json()["error"]["code"] == "rate_limited"
+
+
+def test_a_verified_delivery_is_never_refused_for_what_others_sent_from_its_address(
+    owner: flow.Human,
+) -> None:
+    key = secret(owner)
+    for _ in range(60):
+        deliver(owner.client, {}, "x", path=UNKNOWN)
+    assert deliver(owner.client, {}, "x", path=UNKNOWN).status_code == 429
+    assert deliver(owner.client, {}, key).status_code == 202
+
+
+def test_sixty_verified_deliveries_a_minute_per_project(owner: flow.Human) -> None:
+    key = secret(owner)
+    for _ in range(60):
+        assert deliver(owner.client, {}, key).status_code == 202
+    over = deliver(owner.client, {}, key)
+    assert (over.status_code, over.json()["error"]["code"]) == (429, "rate_limited")
+    assert owner.get("/projects/maity/forge/webhook").json()["last_result"] == "rate_limited"
+
+
+def test_a_body_declared_too_large_or_of_no_length_is_refused_alike(owner: flow.Human) -> None:
+    key = secret(owner)
+    big = deliver(owner.client, {"padding": "x" * (1024 * 1024)}, key)
+    big_unknown = deliver(owner.client, {"padding": "x" * (1024 * 1024)}, "x", path=UNKNOWN)
+
+    def chunked() -> Any:
+        yield b"{}"
+
+    headers = {"X-GitHub-Event": "ping", "X-Hub-Signature-256": signature(key, b"{}")}
+    unsized = owner.client.post(HOOK, content=chunked(), headers=headers)
+    unsized_unknown = owner.client.post(UNKNOWN, content=chunked(), headers=headers)
+    for response in (big, big_unknown, unsized, unsized_unknown):
+        assert (response.status_code, response.json()["error"]["code"]) == (
+            413,
+            "payload_too_large",
+        )
+
+
+def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    secret(owner)
+    read = 0
+
+    async def run() -> list[int]:
+        release = asyncio.Event()
+
+        async def receive() -> dict[str, Any]:
+            nonlocal read
+            read += 1
+            await release.wait()
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        async def send(_message: Any) -> None:
+            return None
+
+        def scope() -> dict[str, Any]:
+            return {
+                "type": "http",
+                "method": "POST",
+                "path": HOOK,
+                "headers": [(b"content-length", b"2"), (b"x-hub-signature-256", b"sha256=0")],
+                "state": {"origin": SimpleNamespace(address="192.0.2.7")},
+            }
+
+        tasks = [
+            asyncio.create_task(forge_webhook.handle(scope(), receive, send, migrated, KEY))
+            for _ in range(61)
+        ]
+        for _ in range(500):  # every task at its body or answered, at most five seconds
+            if read + sum(task.done() for task in tasks) >= 61:
+                break
+            await asyncio.sleep(0.01)
+        early = [task.result() for task in tasks if task.done()]
+        release.set()
+        await asyncio.gather(*tasks)
+        return early
+
+    assert asyncio.run(run()) == [429], "the 61st is refused before its body"
+    assert read == 60
+
+
+def test_an_unrelated_event_is_ignored(owner: flow.Human) -> None:
+    key = secret(owner)
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    body = {"action": "closed", "pull_request": {"number": 7}, "deployment": {"id": 4}}
+    for event in ("push", "pull_request_review", "deployment"):
+        assert deliver(owner.client, body, key, event).status_code == 202
+    assert deliver(owner.client, {"action": "opened"}, key, "pull_request").status_code == 202
+    assert deliver(owner.client, {"deployment": {"id": "4"}}, key, "deployment_status")
+    assert jobs(owner) == []
+    assert owner.get("/projects/maity/forge/webhook").json()["last_result"] == "ignored"
+
+
+def test_a_signed_body_that_is_not_an_object_is_invalid_in_the_envelope(
+    owner: flow.Human,
+) -> None:
+    key = secret(owner)
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    for body in ([1], "text", 7):
+        response = deliver(owner.client, body, key, "pull_request")
+        assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid")
+    response = deliver(owner.client, {"pull_request": [1], "action": "closed"}, key, "pull_request")
+    assert response.status_code == 202
+    [job] = jobs(owner)
+    assert job[3] is None
+
+
+def test_two_signature_headers_are_refused(owner: flow.Human) -> None:
+    key = secret(owner)
+    raw = b"{}"
+    headers = [
+        ("X-GitHub-Event", "ping"),
+        ("X-Hub-Signature-256", signature(key, raw)),
+        ("X-Hub-Signature-256", "sha256=" + "0" * 64),
+    ]
+    assert owner.client.post(HOOK, content=raw, headers=headers).status_code == 401
+    assert owner.client.post(HOOK, content=raw, headers=headers[:2]).status_code == 202
+
+
+def test_a_delivery_id_is_kept_only_in_its_shape(owner: flow.Human) -> None:
+    key = secret(owner)
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    body = {"action": "closed", "pull_request": {"number": 7}}
+    for given, kept in (
+        ("72d3162e-cc78-11e3-81ab-4c9367dc0958", "72d3162e-cc78-11e3-81ab-4c9367dc0958"),
+        ("x" * 20_000, None),
+        ("x" * 65, None),
+        ("a b", None),
+    ):
+        assert deliver(owner.client, body, key, "pull_request", delivery=given).status_code == 202
+        assert [job[2] for job in jobs(owner)] == [kept]
+
+
+def test_the_secret_appears_in_no_log(owner: flow.Human, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    key = secret(owner)
+    deliver(owner.client, {}, key)
+    deliver(owner.client, {}, "wrong")
+    owner.get("/projects/maity/forge/webhook")
+    assert caplog.records
+    assert not [r for r in caplog.records if key in r.getMessage()]
+
+
+def test_only_the_named_merge_carries_the_delivery(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    merged(github, 7, [])
+    merged(github, 8, [])
+    assert probe.announce_merges(migrated, READER, project_id(migrated), "d-1", 7) == 2
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.event).where(t.event.c.kind == "ticker")).all()
+    origins = {row.payload["merge"]["pr"]: row.payload["origin"] for row in rows}
+    assert origins == {
+        7: {"via": "webhook", "delivery": "d-1"},
+        8: {"via": "probe", "delivery": None},
+    }
+
+
+def test_a_deployment_out_of_bounds_writes_nothing(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    ok = [{"state": "success"}]
+    cases = {
+        50: {"environment": "e" * 65, "sha": "a" * 40},
+        51: {"environment": "production", "sha": "not a sha"},
+        52: {"environment": "production", "sha": "a" * 39},
+    }
+    for number, found in cases.items():
+        github.answers[f"/repos/acme/maity/deployments/{number}"] = found
+        github.answers[f"/repos/acme/maity/deployments/{number}/statuses?per_page=1"] = ok
+        assert probe.announce_deploy(migrated, READER, project_id(migrated), number, None) is False
+    github.answers["/repos/acme/maity/deployments/53"] = {"environment": "e" * 64, "sha": "b" * 64}
+    github.answers["/repos/acme/maity/deployments/53/statuses?per_page=1"] = [
+        {"state": "success", "log_url": "javascript:alert(1)"}
+    ]
+    assert probe.announce_deploy(migrated, READER, project_id(migrated), 53, None) is True
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.event).where(t.event.c.kind == "ticker")).one()
+    assert row.subject_id == "e" * 64 + "@" + "b" * 64
+    assert row.payload["url"] is None and row.payload["deploy"]["log_url"] is None
+
+
+def test_a_secret_the_key_does_not_open_counts_as_not_set(
+    owner: flow.Human, migrated: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    secret(owner)
+    assert owner.get("/projects/maity/forge/webhook").json()["configured"] is True
+    assert forge_webhook.check_secrets(migrated, KEY) == 0
+    assert forge_webhook.check_secrets(migrated, os.urandom(32)) == 1
+    assert forge_webhook.check_secrets(migrated, None) == 1
+    assert any("cannot be opened (maity)" in r.getMessage() for r in caplog.records)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.forge_webhook).values(
+                secret_sealed=secretbox.seal(KEY, forge_webhook.field("prj-other"), b"x")
+            )
+        )
+    view = owner.get("/projects/maity/forge/webhook").json()
+    assert view["configured"] is False, "a secret copied from another project's row"
+
+
+def test_a_sealed_value_opens_only_with_its_key_and_field() -> None:
+    sealed = secretbox.seal(KEY, "a", b"secret")
+    again = secretbox.seal(KEY, "a", b"secret")
+    assert sealed[: secretbox.NONCE_BYTES] != again[: secretbox.NONCE_BYTES]
+    assert sealed != again
+    assert secretbox.open_sealed(KEY, "a", sealed) == b"secret"
+    for key, name in ((KEY, "b"), (os.urandom(32), "a")):
+        with pytest.raises(secretbox.SealedError):
+            secretbox.open_sealed(key, name, sealed)
 
 
 def test_a_secret_the_key_cannot_open_fails_loud(

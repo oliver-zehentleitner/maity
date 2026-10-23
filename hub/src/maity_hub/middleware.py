@@ -63,10 +63,17 @@ class HubMiddleware:
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
-            status = await forge_webhook.handle(
-                scope, receive, send, self.engine, self.settings.secret_key
-            )
-            access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+            status = 500
+            try:
+                status = await forge_webhook.handle(
+                    scope, receive, send, self.engine, self.settings.secret_key
+                )
+            except Exception:
+                # In the envelope like any other route (§1.3); the body is not logged.
+                log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
+                await error_response(500, "internal", "an unexpected failure")(scope, receive, send)
+            finally:
+                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
             return
 
         if not on_join_host and _unrouted(scope):

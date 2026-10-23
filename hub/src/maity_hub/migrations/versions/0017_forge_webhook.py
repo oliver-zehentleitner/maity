@@ -4,6 +4,9 @@
 `MAITY_SECRET_KEY` (AES-256-GCM, `maity_hub.secretbox`), when it was created and
 rotated, and the time and result of the last verified delivery.
 
+`event.subject_id` widens from 40 to 255 characters: an automatic deploy's subject is
+`<environment>@<sha>` (§17.1), up to 64 + 1 + 64 characters, more than an id.
+
 Revision ID: 0017
 Revises: 0016
 Create Date: 2026-10-23
@@ -45,7 +48,23 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("project_id", name=op.f("pk_forge_webhook")),
         **TABLE_OPTIONS,
     )
+    with op.batch_alter_table("event", schema=None) as batch_op:
+        batch_op.alter_column(
+            "subject_id",
+            existing_type=sa.String(length=40),
+            type_=sa.String(length=255),
+            existing_nullable=True,
+        )
 
 
 def downgrade() -> None:
+    # A deploy subject longer than an id does not fit back: those items lose it.
+    op.execute(sa.text("UPDATE event SET subject_id = NULL WHERE subject_type = 'deploy'"))
+    with op.batch_alter_table("event", schema=None) as batch_op:
+        batch_op.alter_column(
+            "subject_id",
+            existing_type=sa.String(length=255),
+            type_=sa.String(length=40),
+            existing_nullable=True,
+        )
     op.drop_table("forge_webhook")

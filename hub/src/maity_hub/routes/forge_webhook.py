@@ -20,7 +20,11 @@ def get_webhook(slug: str, request: Request, caller: HumanCaller) -> JSONRespons
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:admin")
-        return JSONResponse(forge_webhook.view(conn, mine.project, settings_of(request).public_url))
+        return JSONResponse(
+            forge_webhook.view(
+                conn, mine.project, settings_of(request).public_url, settings_of(request).secret_key
+            )
+        )
 
 
 @router.post("/projects/{slug}/forge/webhook/secret")
@@ -46,7 +50,9 @@ def remove_secret(slug: str, request: Request, caller: HumanCaller) -> JSONRespo
         mine = membership(conn, caller, slug)
         mine.require("project:admin")
         forge_webhook.remove(conn, mine.project, caller.actor(mine.id), mine.principal_id)
-        view = forge_webhook.view(conn, mine.project, settings_of(request).public_url)
+        view = forge_webhook.view(
+            conn, mine.project, settings_of(request).public_url, settings_of(request).secret_key
+        )
         return idempotency.Outcome(200, "forge_webhook", mine.project.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -55,7 +61,9 @@ def remove_secret(slug: str, request: Request, caller: HumanCaller) -> JSONRespo
 def _replayed(conn: Connection, project_id: str, request: Request) -> dict[str, object]:
     """A replay answers the webhook's view, never the secret again."""
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    return forge_webhook.view(conn, project, settings_of(request).public_url)
+    return forge_webhook.view(
+        conn, project, settings_of(request).public_url, settings_of(request).secret_key
+    )
 
 
 idempotency.LOADERS["forge_webhook"] = _replayed
