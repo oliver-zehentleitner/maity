@@ -4,7 +4,7 @@ The key is unique per caller (an agent's credential, or a human) and kept
 for 24 hours. A repeat with the same body answers with the first call's
 status and the resource as it is now, marked `Idempotent-Replayed: true`;
 the hub stores a reference to the resource, not the response. A repeat
-with a different body is `idempotency_mismatch`.
+with a different body, or on another method or path, is `idempotency_mismatch`.
 """
 
 from __future__ import annotations
@@ -68,6 +68,15 @@ def key_for(request: Request, caller: Caller) -> str | None:
     return key
 
 
+def fingerprint(request: Request) -> str:
+    """What a repeat must match: the method, the path and the body. A key used again on
+    another path, another project's included, is a mismatch, never the replay of what
+    the first call made there."""
+    body: bytes = request.scope["state"].get("body", b"")
+    head = f"{request.method} {request.url.path}\n".encode()
+    return hashlib.sha256(head + body).hexdigest()
+
+
 def run(
     engine: Engine,
     request: Request,
@@ -80,7 +89,7 @@ def run(
     the events it emits are announced once the transaction committed.
     """
     key = key_for(request, caller)
-    body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
+    body_hash = fingerprint(request)
     who = caller.idempotency_caller
 
     def attempt() -> JSONResponse | None:
@@ -122,7 +131,7 @@ def replay_first(engine: Engine, request: Request, caller: Caller) -> JSONRespon
     key = key_for(request, caller)
     if key is None:
         return None
-    body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
+    body_hash = fingerprint(request)
     with engine.begin() as conn:
         return _replay(conn, caller.idempotency_caller, key, body_hash, request)
 

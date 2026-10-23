@@ -321,3 +321,19 @@ def test_a_removed_human_cannot_replay_an_import(
     assert owner.delete(f"/projects/maity/members/{second.id}").status_code == 200
     again = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
     assert again.status_code == 404, again.text  # never the card as it is now
+
+
+def test_a_key_used_again_in_another_project_is_a_mismatch_not_a_replay(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, forged: list[IssueForge]
+) -> None:
+    flow.project(owner, slug="other", repository={"url": REPOSITORY})
+    keyed = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "one-key-two-projects-1"}
+    first = owner.client.post(
+        "/api/v1/projects/maity/tasks/import", json={"issue_url": ISSUE}, headers=keyed
+    )
+    assert first.status_code == 201, first.text
+    other = owner.client.post(
+        "/api/v1/projects/other/tasks/import", json={"issue_url": ISSUE}, headers=keyed
+    )
+    assert other.status_code == 409, other.text
+    assert other.json()["error"]["code"] == "idempotency_mismatch"
