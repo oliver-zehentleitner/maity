@@ -30,7 +30,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
@@ -696,6 +696,8 @@ def patch_task(
             )
             if values["assigned_to"] != card.assigned_to:
                 values["assigned_instance"] = None  # an instance of the old assignee no more
+            if values["assigned_to"] not in (card.assigned_to, card.claim_holder):
+                _refuse_against_a_human(conn, mine, card)  # assigning it away (§2.3)
         if body.release is not None:
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
@@ -916,6 +918,19 @@ def _lease_active(card: Any) -> ApiError:
     )
 
 
+def _refuse_against_a_human(conn: Connection, mine: Membership, card: Any) -> None:
+    """No agent, whatever its role, takes over, assigns away or releases a card a human
+    holds, lease or no lease (§2.3 "What no agent may do"); checked before the scope
+    and before the lease, so that nothing says more to it."""
+    if mine.kind != "agent" or card.claim_holder is None:
+        return
+    holder = conn.execute(
+        select(t.membership.c.human_id).where(t.membership.c.id == card.claim_holder)
+    ).scalar()
+    if holder is not None:
+        raise humans_only("an agent never takes, assigns away or releases a human's card")
+
+
 def _lease_expired(card: Any) -> bool:
     return card.lease_until is not None and card.lease_until <= clock.now()
 
@@ -931,6 +946,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
         if card.claim_holder is None:
             raise ApiError(409, "not_holder", "the card is not claimed")
         if not cards.holds(mine, card):
+            _refuse_against_a_human(conn, mine, card)
             if cards.sibling_holds(mine, card) and not mine.may("tasks:admin"):
                 raise _not_holder(card)
             mine.require("tasks:admin")
@@ -1071,6 +1087,7 @@ def assign(
         values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": body.instance}
         old_holder = card.claim_holder
         if card.claim_holder is not None and card.claim_holder != assignee:
+            _refuse_against_a_human(conn, mine, card)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
