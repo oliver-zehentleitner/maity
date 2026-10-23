@@ -8297,12 +8297,25 @@ covers. An event lies behind the position when its `seq` is at or
 below its own project's component, a record when its number is at or
 below the account component; an item is past the position otherwise.
 
-**Sealed and bound.** The hub seals every position with the
-authenticated encryption of §16.2 (AES-256-GCM, a random 96-bit nonce
-per seal stored with the ciphertext) under the instance key
-`MAITY_SECRET_KEY`, with associated data the human's account id and
-the purpose string `notifications.position`, and a version inside, so
-the hub can tell a form it no longer issues apart. The holder of a
+**Sealed and bound.** The hub seals every position with AES-256-GCM,
+as §16.2 does (a random 96-bit nonce per seal stored with the
+ciphertext), under the **position key**, with associated data the
+human's account id and the purpose string `notifications.position`,
+and a version inside, so the hub can tell a form it no longer issues
+apart. Positions never depend on `MAITY_SECRET_KEY` being set:
+
+- With `MAITY_SECRET_KEY` set, the position key is derived from it
+  (HKDF, info `notifications.position`).
+- Without it, the hub creates a random 32-byte position key at first
+  use and stores it in its own database. That is enough for what the
+  seal protects against — a client forging or altering a position, or
+  using another human's — since whoever can read the database can read
+  every notification anyway.
+- Setting, changing or removing `MAITY_SECRET_KEY` changes the
+  position key and so invalidates every position; clients recover as
+  below.
+
+The holder of a
 position learns nothing from it — no project, no number — and a
 position opens only for the human it was issued to. The hub opens and
 checks `after` or `up_to` before any work that depends on the human's
@@ -8373,7 +8386,7 @@ rules that make a position safe to resume from:
   component needs no such rule.
 - **Positions the hub cannot read.** An `after` or `up_to` that does
   not open for this human — forged, altered, issued to another human,
-  sealed under a key the instance no longer has, of a version the hub
+  sealed under a position key the hub no longer has, of a version the hub
   no longer accepts, a handle whose stored vector has expired, or the
   two-part form `<seq>.<record>` the hub issued before this rule — is
   `invalid` with `details.fields.after` (or `details.fields.up_to`)
