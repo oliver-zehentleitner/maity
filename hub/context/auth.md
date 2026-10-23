@@ -73,8 +73,10 @@ against the `User-Agent` at the sign-in and capped at 64 characters
 address of the latest call as the trusted-proxy resolution gives it,
 and it and `source` (the start address) are set to NULL when the
 session ends: by a write for a logout, a revocation, `end-others`, a
-password change or a new login in the same browser, and on the next
-read of the list for one that expired. The list shows no `ip` for an
+password change or a new login in the same browser; for sessions that
+expired, one statement clears them all whenever anyone signs in or
+reads a session list. The backfill keeps no address for a session that
+had already ended. The list shows no `ip` for an
 ended session. Existing sessions were backfilled with method `password`
 and a fresh public id.
 
