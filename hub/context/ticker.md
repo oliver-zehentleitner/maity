@@ -66,9 +66,12 @@ was switched on. The probe worker runs a merge round every 2 minutes,
 beside its 5-minute sweep: for each project with a source row and an
 observable repository, it reads the pull requests closed against the
 default branch, most recently updated first, page by page until a page
-reaches back before `merges_since` (a merge updates its pull request, so
-nothing older can follow), at most 20 pages; a cut backlog is logged as a
-warning. It keeps those merged after `merges_since` that have no
+reaches back before what has been read already (`scanned_until`, or the
+switch-on), since a merge updates its pull request and nothing older can
+follow. A round reads at most 20 pages; when that cuts it, the next round
+goes on from the next page (`resume_page`), and once an interval has been
+read to its end `scanned_until` moves to the moment that scan began, so
+later rounds stop there. It keeps those merged after `merges_since` that have no
 `merge:<n>` key yet, reads each one's files (at most 300; a rename counts
 for its old and its new path, and a renamed contract file is a contract
 change), and for a contract file that file at the merge commit and at the
@@ -90,7 +93,10 @@ give the heading above each of them, as §17.3 defines a section. A
 separate cadence keeps the reports' and releases' sweep at its interval.
 
 **Rejected alternative:** a cursor of the last announced merge instead of
-the switch time: merges can be reported out of order by the forge's
-"updated" sort, and the dedupe key already makes a second look harmless.
+the scan's own start: merges come back in the forge's "updated" order,
+not in merge order, so the last one announced says nothing about what is
+still behind. Reading the whole backlog in one round: unbounded on a busy
+repository. Stopping at a page bound and only logging the cut: the
+merges behind it would never be announced.
 Reading only the files' names and taking every section of a touched
 contract file: it would wake every implementer for a one-line change.
