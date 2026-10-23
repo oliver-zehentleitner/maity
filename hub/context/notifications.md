@@ -24,7 +24,9 @@ watcher, …) is the card's as it is when the bell is read: an item from
 a watch drops out once the watch ends. The only stored state is the
 read marks (`notification_read`, the chats' own marks, `read_at` on
 records). The long-poll answers again every 0.5 seconds until an item
-lies past `after`, one per session.
+lies past `after`, one per session, and checks the session again
+at every look; which long-poll is current is kept in the process, so a
+second replica would need it shared.
 
 **Reason:** §18.1 asks that an item never shows more than the human may
 read at the moment it is read or mailed. A view computed when read
