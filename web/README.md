@@ -105,6 +105,13 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 Inside a project, in the order of their importance; see
 `context/views.md` for why.
 
+In every form with a multi-line field (an inbox answer in words, a chat
+message, a project message, a ticker post, a new card, a briefing, a
+join's briefing) **Ctrl+Enter**, or **⌘+Enter** on a Mac, sends what
+the form's button would, and the field's label says so; plain Enter is a
+new line. Nothing is sent while that button is disabled, so a message on
+its way is not sent twice (`M.dom.sendOnCtrlEnter`).
+
 1. **Inbox** (`#/p/<slug>/inbox`, the first screen): the requests waiting
    for the human, sortable by priority (urgent first), date and agent.
    The first open entry is expanded with what the request carries: class,

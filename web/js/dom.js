@@ -161,5 +161,28 @@ window.Maity = window.Maity || {};
     return null;
   }
 
-  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX };
+  // Ctrl+Enter, or Cmd+Enter on a Mac, sends what a multi-line field is
+  // for, as its submit button would; plain Enter stays a new line. The
+  // field's form is submitted, or for a field outside one `act` is called;
+  // never while `button` (the form's submit button by default) is
+  // disabled, so a send on its way is not sent twice.
+  const SEND_KEYS = /Mac|iPhone|iPad/.test((window.navigator && window.navigator.platform) || "") ? "⌘+Enter" : "Ctrl+Enter";
+  function formOf(el) {
+    for (let x = el.parentNode; x; x = x.parentNode) if (x.tagName === "FORM") return x;
+    return null;
+  }
+  function sendOnCtrlEnter(field, act, button) {
+    field.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.isComposing) return;
+      e.preventDefault();
+      const form = act ? null : formOf(field);
+      const submit = button || (form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit"));
+      if (submit && submit.disabled) return;
+      if (act) act(e);
+      else if (form) form.requestSubmit();
+    });
+    return field;
+  }
+
+  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);

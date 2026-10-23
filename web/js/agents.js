@@ -95,7 +95,7 @@ window.Maity = window.Maity || {};
     };
     const edit = () => {
       const id = "briefing-" + m.id;
-      const text = h("textarea", { id, rows: "6" });
+      const text = M.dom.sendOnCtrlEnter(h("textarea", { id, rows: "6" }));
       text.value = m.briefing || "";
       const save = async (e) => {
         e.preventDefault();
@@ -119,7 +119,7 @@ window.Maity = window.Maity || {};
       };
       M.dom.clear(box);
       append(box, h("form", { class: "briefing-form", onsubmit: save },
-        h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters)"), text,
+        h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters; " + M.dom.SEND_KEYS + " saves)"), text,
         h("p", { class: "hint" }, "The agent reads it at its next resume."),
         h("div", { class: "row" },
           h("button", { type: "button", onclick: show }, "Cancel"),

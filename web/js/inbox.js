@@ -163,6 +163,13 @@ window.Maity = window.Maity || {};
 
     const textId = "reply-" + req.slug + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
+    const sendWords = () => {
+      const value = text.value.trim();
+      if (!value) { text.focus(); return; }
+      send({ text: value });
+    };
+    const sendText = h("button", { type: "button", onclick: sendWords }, "Send");
+    M.dom.sendOnCtrlEnter(text, sendWords, sendText);
     append(body,
       // Right-aligned, the secondary ones first: Later, talk, then the replies.
       h("div", { class: "replies" },
@@ -178,18 +185,11 @@ window.Maity = window.Maity || {};
           ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
       h("div", { class: "free-text" },
-        h("label", { for: textId }, "Free text"),
+        h("label", { for: textId }, "Free text (" + M.dom.SEND_KEYS + " sends)"),
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
         M.mentionPicker(text, () => M.api.getAll("/projects/" + encodeURIComponent(req.slug) + "/members").then((r) => r.items), ctx.me.id),
-        h("button", {
-          type: "button",
-          onclick: () => {
-            const value = text.value.trim();
-            if (!value) { text.focus(); return; }
-            send({ text: value });
-          },
-        }, "Send")),
+        sendText),
       status.el);
 
     // Ownership is known inside a project only; across projects the link to

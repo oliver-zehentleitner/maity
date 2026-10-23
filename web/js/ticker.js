@@ -295,7 +295,7 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const type = h("select", { id: "ticker-post-type" }, h("option", { value: "note" }, "Note"), h("option", { value: "deploy" }, "Deploy"), h("option", { value: "release" }, "Release"));
     // 280 code points as the hub counts them, checked before sending.
-    const text = h("textarea", { id: "ticker-post-text", rows: "2", required: true });
+    const text = M.dom.sendOnCtrlEnter(h("textarea", { id: "ticker-post-text", rows: "2", required: true }));
     const url = h("input", { id: "ticker-post-url", type: "url", placeholder: "https://…" });
     const to = h("select", { id: "ticker-post-to" }, h("option", { value: "computed" }, "whom it concerns"), h("option", { value: "all" }, "everyone (wakes all)"), h("option", { value: "list" }, "these members, roles, areas"));
     const tokens = h("input", { id: "ticker-post-tokens", placeholder: "member:agt-b role:admin area:web/" });
@@ -352,7 +352,7 @@ window.Maity = window.Maity || {};
       append(status.el, h("span", { class: "ok" }, "Posted."));
       onPosted();
     } },
-    field("ticker-post-type", "Type", type), field("ticker-post-text", "Text (at most 280 characters, plain)", text), field("ticker-post-url", "Link (https, optional)", url),
+    field("ticker-post-type", "Type", type), field("ticker-post-text", "Text (at most 280 characters, plain; " + M.dom.SEND_KEYS + " posts)", text), field("ticker-post-url", "Link (https, optional)", url),
     field("ticker-post-to", "To", to), forList, forNote, forRelease, forDeploy, send, status.el);
     show();
     return h("section", { class: "ticker-post-box", "aria-labelledby": "ticker-post-title" },

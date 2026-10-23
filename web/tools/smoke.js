@@ -56,6 +56,7 @@ class El extends Node_ {
   addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
   dispatch(t, extra) { const e = Object.assign({ target: this, preventDefault() {}, key: "" }, extra || {}); (this.listeners[t] || []).forEach((f) => f(e)); }
   click() { this.dispatch("click"); }
+  requestSubmit() { this.dispatch("submit"); }
   focus() {}
   contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
   matches(sel) {
@@ -2621,6 +2622,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = tkPatch;
   // A manual post (§17.6), owners and admins: never a merge or a decision.
   const tkPost = () => main.querySelector("form.ticker-post");
+  // Ctrl+Enter posts, as everywhere a multi-line field is (the other forms: further down).
+  const tkCe = [];
+  const tkCePost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { tkCe.push(p); return new Promise(() => {}); };
+  byId("ticker-post-text").value = "from the keyboard";
+  byId("ticker-post-text").dispatch("keydown", { key: "Enter" }); await tick();
+  const tkCeSend = tkPost().querySelectorAll("button").find((b) => b.getAttribute("type") === "submit");
+  tkCeSend.disabled = true; byId("ticker-post-text").dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick();
+  tkCeSend.disabled = false;
+  expect(!tkCe.length, "Ctrl+Enter: the ticker post: plain Enter and a disabled Post send nothing");
+  byId("ticker-post-text").dispatch("keydown", { key: "Enter", ctrlKey: true }); for (let k = 0; k < 3; k++) await tick();
+  expect(JSON.stringify(tkCe) === JSON.stringify(["/projects/maity/ticker"])
+    && main.querySelectorAll("label").find((l) => l.getAttribute("for") === "ticker-post-text").textContent.includes("Ctrl+Enter posts"),
+    "Ctrl+Enter: the ticker post is posted, and its label says so");
+  win.Maity.api.post = tkCePost;
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(tkPost() && Array.from(byId("ticker-post-type").childNodes).map((o) => o.attrs.value).join() === "note,deploy,release", "ticker: an admin posts a note, a deploy or a release");
   byId("ticker-post-text").value = "Staging is down for an hour.";
   tkPost().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -3243,6 +3260,62 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(sesAsked === 1 && text(main.querySelector("section.sessions")).includes("This hub lists no sessions yet."), "sessions: a hub without them is asked once, and that is said");
   win.Maity.api.get = sesGet;
+
+  // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
+  const ceCalls = [];
+  const cePost = win.Maity.api.post, cePatch = win.Maity.api.patch;
+  // Writes recorded and left hanging: what was sent is all a case looks at, and a view stays as it was.
+  win.Maity.api.post = (p, b) => { ceCalls.push(["POST", p, b]); return new Promise(() => {}); };
+  win.Maity.api.patch = (p, b) => { ceCalls.push(["PATCH", p, b]); return new Promise(() => {}); };
+  const ceKey = async (field, extra) => { field.dispatch("keydown", Object.assign({ key: "Enter" }, extra || {})); for (let k = 0; k < 3; k++) await tick(); };
+  const ceCase = async (name, field, value, path, submit) => {
+    ceCalls.length = 0;
+    field.value = value;
+    await ceKey(field);
+    await ceKey(field, { shiftKey: true });
+    expect(!ceCalls.length, "Ctrl+Enter: " + name + ": plain and Shift+Enter send nothing");
+    if (submit) {
+      submit.disabled = true;
+      await ceKey(field, { ctrlKey: true });
+      expect(!ceCalls.length, "Ctrl+Enter: " + name + ": not while its submit button is disabled");
+      submit.disabled = false;
+    }
+    await ceKey(field, { metaKey: true });
+    expect(ceCalls.length === 1 && ceCalls[0][1] === path, "Ctrl+Enter: " + name + ": Cmd+Enter sends it " + JSON.stringify(ceCalls));
+    ceCalls.length = 0;
+  };
+  const ceLabel = (id) => main.querySelectorAll("label").concat(header.querySelectorAll("label")).find((l) => l.getAttribute("for") === id);
+  const ceSubmitOf = (field) => { let f = field.parentNode; while (f && f.tagName !== "FORM") f = f.parentNode; return f.querySelectorAll("button").find((b) => b.getAttribute("type") === "submit"); };
+  // The inbox's free text.
+  await go("#/p/maity/inbox"); await tick();
+  const ceFree = main.querySelector(".current .free-text textarea");
+  expect(text(ceLabel(ceFree.id)).includes("Ctrl+Enter sends"), "Ctrl+Enter: the inbox's free text says so");
+  await ceCase("inbox answer", ceFree, "In my own words", "/projects/maity/requests/" + main.querySelector(".current .free-text textarea").id.split("-").slice(2).join("-") + "/answer", btn(main.querySelector(".current .free-text"), "Send"));
+  // The chat, the group chat, the project message.
+  await go("#/p/maity/chat/agt-b"); await tick();
+  expect(text(ceLabel("chat-text")).includes("Ctrl+Enter sends"), "Ctrl+Enter: the chat says so");
+  await ceCase("chat", byId("chat-text"), "hello", "/projects/maity/conversations/agt-b/messages", ceSubmitOf(byId("chat-text")));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007"); for (let k = 0; k < 4; k++) await tick();
+  await ceCase("group chat", byId("chat-text"), "hello all", "/projects/maity/conversations/cnv-0007/messages", ceSubmitOf(byId("chat-text")));
+  await go("#/p/maity/message"); await tick();
+  expect(text(ceLabel("message-body")).includes("Ctrl+Enter sends"), "Ctrl+Enter: the project message says so");
+  await ceCase("project message", byId("message-body"), "A note to all", "/projects/maity/events", ceSubmitOf(byId("message-body")));
+  // A new card, a briefing, a join's briefing (the ticker post: in the Ticker's own part).
+  await go("#/p/maity/board"); await tick();
+  btn(main, "New card").click(); await tick();
+  byId("new-card-title").value = "From the keyboard";
+  await ceCase("new card", byId("new-card-body"), "Body text", "/projects/maity/tasks", ceSubmitOf(byId("new-card-body")));
+  await go("#/p/maity/agents"); await tick();
+  const ceBox = main.querySelectorAll(".briefing")[0];
+  (btn(ceBox, "Edit briefing") || btn(ceBox, "Write a briefing")).click(); await tick();
+  const ceBrief = main.querySelector("form.briefing-form textarea");
+  expect(text(ceLabel(ceBrief.id)).includes("Ctrl+Enter saves"), "Ctrl+Enter: the briefing says so");
+  await ceCase("briefing", ceBrief, "Review first.", "/projects/maity/members/" + ceBrief.id.slice("briefing-".length), ceSubmitOf(ceBrief));
+  await go("#/p/maity/join"); await tick();
+  byId("join-agent").value = byId("join-agent").querySelectorAll("option").map((o) => o.attrs.value).filter(Boolean)[0] || "";
+  await ceCase("join", byId("join-briefing"), "Start with the open PRs.", "/projects/maity/joins", ceSubmitOf(byId("join-briefing")));
+  win.Maity.api.post = cePost; win.Maity.api.patch = cePatch;
+  await go("#/p/maity/inbox");
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

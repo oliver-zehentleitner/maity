@@ -145,7 +145,7 @@ window.Maity = window.Maity || {};
   function newCardForm(ctx, cards, create, onCancel) {
     const id = (f) => "new-card-" + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
-    const body = h("textarea", { id: id("body"), rows: "4", placeholder: "What, acceptance, pointers (Markdown)" });
+    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: "What, acceptance, pointers (Markdown)" }));
     const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l)));
     label.value = "";
     const kind = h("select", { id: id("kind") }, KINDS.map(([v, l]) => h("option", { value: v }, l)));
@@ -206,7 +206,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", null, "New card"),
     h("label", { for: id("title") }, "Title"), title,
-    h("label", { for: id("body") }, "Body"), body,
+    h("label", { for: id("body") }, "Body (" + M.dom.SEND_KEYS + " creates the card)"), body,
     h("label", { for: id("kind") }, "Kind"), kind,
     h("label", { for: id("label") }, "Label"), label,
     h("label", { for: id("area") }, "Area"), area, areaList,
