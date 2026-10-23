@@ -116,23 +116,44 @@ contract file: it would wake every implementer for a one-line change.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23
+**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's ruling on the buckets, 2026-10-23
 **Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
 **See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
 
 `POST /api/v1/projects/{slug}/forge/webhook` never reaches the API's
 routes: `maity_hub.forge_webhook.handle` answers it from the middleware,
-before the middleware would read the body. It looks up the project and
-its webhook first; without either (or without `MAITY_SECRET_KEY`) it
-answers `webhook_signature` from a bucket per source address. Otherwise
-it checks the per-project-and-address bucket of unverified requests,
-reads at most 1 MiB, opens the sealed secret, compares the HMAC-SHA256
-in constant time, and charges the project's bucket of verified
-deliveries. A verified delivery only queues work on the probe worker: a
-closed pull request makes it look for merges now, a deployment status
-makes it read that deployment. The delivery id is kept as
-`origin.delivery`. A sealed secret that the key cannot open is logged as
-an error and refused; it never reads as empty.
+before the middleware would read the body. A missing, repeated or
+over-1-MiB `Content-Length` is `payload_too_large` for every slug. Then
+it looks up the project, its webhook and the opened secret; without one
+of them (or without `MAITY_SECRET_KEY`, or with a secret the key does
+not open) it answers `webhook_signature` before the body. For a known
+slug it takes a place in the per-project-and-address bucket before
+reading at most 1 MiB, so at most 60 bodies per project and address are
+read at once, and gives the place back when the HMAC-SHA256 (exactly
+one signature header, compared in constant time) verifies; then it
+charges the project's bucket of verified deliveries. Every request that
+does not verify, known slug or not, also counts against one bucket per
+source address and is answered `rate_limited` once that is full. A
+verified delivery is never checked against that bucket.
+
+A verified delivery only queues work on the probe worker: a closed pull
+request makes it look for merges now, a deployment status makes it read
+that deployment. A body that is not a JSON object is `invalid`. The
+delivery id is kept as `origin.delivery` only in the shape
+`[A-Za-z0-9-]{1,64}`, and only on the merge the delivery named; the
+other merges the same scan finds are the probe's own. A sealed secret
+is bound to its field and project and never reads as empty when the key
+cannot open it: the view shows `configured: false`, each delivery logs
+an error, and the hub logs at startup how many stored secrets it cannot
+open.
+
+Two differences remain, both accepted: a known slug's request reads its
+body and computes the HMAC before it is refused, so it takes longer
+than an unknown slug's, and a known slug's request past the
+per-address limit is answered `rate_limited` only after its body. There
+is no replay protection, since GitHub signs no timestamp; a replayed
+delivery only makes the probe read again, and the probe announces only
+what it observes.
 
 **Reason:** §17.4 wants the limits and the existence check before any
 body is read, but the middleware reads every body first to scan it for
@@ -145,7 +166,12 @@ project exists.
 **Rejected alternative:** a FastAPI route with a dependency for the
 limits: the body would already have been read by then. Writing the item
 from the delivery's body: a forged or replayed body could announce a
-merge that never happened, which §17.4 rules out.
+merge that never happened, which §17.4 rules out. Taking a place in
+the per-address bucket for every request before its body: forges
+deliver from shared address pools, so one project's failing deliveries
+would refuse another project's verified ones from the same address,
+which §17.4 rules out; counting the failures there after verification
+keeps the answers alike without that.
 
 **Condition:** the credential scan of the middleware does not run on this
 path. That holds only while the delivery body is never stored, echoed or
