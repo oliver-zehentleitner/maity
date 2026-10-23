@@ -41,7 +41,7 @@ def _row(conn: Connection, agent_id: str) -> Any:
     return conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == agent_id)).one()
 
 
-def _owned(conn: Connection, agent_id: str, owner_id: str) -> Any:
+def owned(conn: Connection, agent_id: str, owner_id: str) -> Any:
     row = conn.execute(
         select(t.agent_profile).where(
             t.agent_profile.c.id == agent_id, t.agent_profile.c.owner_id == owner_id
@@ -105,7 +105,7 @@ def create_agent(body: AgentCreate, request: Request, caller: HumanCaller) -> JS
 @router.get("/agents/{agent_id}")
 def get_agent(agent_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(agent_view(conn, _owned(conn, agent_id, caller.principal_id)))
+        return JSONResponse(agent_view(conn, owned(conn, agent_id, caller.principal_id)))
 
 
 @router.patch("/agents/{agent_id}")
@@ -115,7 +115,7 @@ def patch_agent(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
-        _owned(conn, agent_id, caller.principal_id)
+        owned(conn, agent_id, caller.principal_id)
         values: dict[str, Any] = {}
         if "display_name" in given and body.display_name is not None:
             values["display_name"] = body.display_name

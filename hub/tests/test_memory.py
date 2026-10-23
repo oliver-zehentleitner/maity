@@ -7,9 +7,8 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import events
+from maity_hub import events, memory
 from maity_hub import tables as t
-from maity_hub.routes import memory
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -218,9 +217,9 @@ def test_the_owner_deletes_a_team_entry_and_no_other_agent_does(
     agent = flow.agent(make_client, owner)
     admin_agent = flow.agent(make_client, owner, role="admin")
     entry = added(agent)
-    refused = remove(admin_agent, entry["id"])
-    assert refused.status_code == 403
-    assert refused.json()["error"]["details"]["reason"] == "humans_only"
+    # Another team's agent, an admin one included, cannot read the entry: `not_found`, so
+    # the refusal does not tell it that the entry exists (§1.3).
+    assert remove(admin_agent, entry["id"]).status_code == 404
     member = _second_human(make_client, migrated, "member")
     assert remove(member, entry["id"]).status_code == 404  # it cannot read the team either
     assert remove(owner, entry["id"]).status_code == 200
@@ -265,3 +264,15 @@ def test_resume_carries_memory_first_and_says_when_it_changed(
     assert block["changed_since_cursor"] is True
     again = agent.resume(cursor=packet["events"]["cursor"]).json()["memory"]
     assert again["changed_since_cursor"] is False
+
+
+def test_the_packet_reads_many_tiny_entries_in_batches(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    for n in range(memory.PACKET_BATCH + 10):  # past one batch, far under 4 KiB
+        added(agent, f"e{n}")
+    team = agent.resume().json()["memory"]["team"]
+    assert team["total"] == memory.PACKET_BATCH + 10 and team["truncated"] is False
+    assert len(team["items"]) == team["total"] and team["items"][0]["text"] == "e59"

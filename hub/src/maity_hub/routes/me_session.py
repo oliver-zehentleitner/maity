@@ -18,6 +18,7 @@ from maity_hub import (
     events,
     idempotency,
     instances,
+    memory,
     ranks,
     rules,
     ticker,
@@ -33,7 +34,6 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
-from maity_hub.routes import memory
 from maity_hub.routes.members import PausedIn, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import has_scope, scopes_for
