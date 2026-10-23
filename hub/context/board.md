@@ -29,3 +29,32 @@ board.
   link per round, and two endpoints to tell an issue from a pull request.
 - Reading a link when the card is read: every board load would wait on
   the forge and could fail with it.
+
+## A history entry names the event of its write, and a removed link lives on in the history
+
+**Id:** 4f668fb7-2d60-48c8-b94b-03d537230015
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the edit history)
+**See:** https://github.com/oliver-zehentleitner/maity — b780ee68-6e79-4b1f-b26a-67e7bb190989 — as of 2026-10-23
+**Revisit when:** events are compacted or moved out of the database, or links need their own lifecycle beyond add and remove
+
+Each history entry stores the `seq` of the `task_created` or
+`task_updated` event its write emitted. Redacting the entry writes the
+tombstone into its own `redaction` column, clears `before`, `after` and
+`diff`, and replaces the same field's value in that one event. A removed
+link's row is deleted; its history entry keeps the link whole, and a
+repeated `DELETE` answers from that entry.
+
+**Reason:** the contract redacts a value in the history and in the event
+of the same write together. Storing the event's `seq` makes that one
+lookup; the value never has to be searched for in the log. A deleted row
+keeps the links table to what a card has now, and the history already
+holds everything about what it had.
+
+**Rejected alternatives:**
+- Finding the event at redaction time by the entry id in its payload's
+  `history`: a scan of the project's events, for every redaction.
+- A soft-deleted link (`removed_at`): every read of a card would filter
+  it, for data the history keeps anyway.
