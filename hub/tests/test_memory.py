@@ -405,15 +405,20 @@ def test_blank_text_is_refused(owner: flow.Human, make_client: ClientFactory, te
 
 
 def test_two_concurrent_adds_at_the_cap_leave_one_out(
-    owner: flow.Human, make_client: ClientFactory
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """Meaningful on a server database: without the project lock both adds pass the cap."""
-    agent = flow.agent(make_client, owner)
-    second = flow.Agent(make_client(), agent.credential, agent.credential_id, agent.id)
+    """Meaningful on a server database: without the project lock both adds pass the cap.
+    Two humans with their own sessions, so that nothing else (one credential's row, one
+    session) puts the two writes in a line before the cap check."""
+    admin = _second_human(make_client, migrated, "admin")
     for n in range(memory.STORE_MAX // memory.ENTRY_MAX - 1):
-        added(agent, f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4))
-    full = "y" * memory.ENTRY_MAX
-    answers = _together([lambda: add(agent, full), lambda: add(second, full)])
+        added_by = owner.post(M, {"store": "community",
+                                  "text": f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4)})  # fmt: skip
+        assert added_by.status_code == 201, added_by.text
+    for who in (owner, admin):  # both clients started, so neither lags at the barrier
+        assert who.get(M).status_code == 200
+    full = {"store": "community", "text": "y" * memory.ENTRY_MAX}
+    answers = _together([lambda: owner.post(M, full), lambda: admin.post(M, full)])
     assert sorted(a.status_code for a in answers) == [201, 409]
 
 
