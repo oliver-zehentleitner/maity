@@ -812,12 +812,12 @@ one as **B** (the phone):
 |---|---|---|
 | `POST /auth/device-codes` | human (cookie session) | a new code bound to this session and its human; voids an earlier open code of the same session. 201 `{id, code, url, expires_at}` |
 | `GET /auth/device-codes/{id}` `?wait=0–55` | the session that created it | `{id, status, expires_at, device?, choices?}`; with `wait`, held until `status` changes, as §8.3. Any other caller, another session of the same human included, gets `not_found` here and on the three calls below |
-| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed`; the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
+| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed` (else `conflict`); the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
 | `POST /auth/device-codes/{id}/deny` | the session that created it | in `waiting` or `redeemed`; 200 with `status: denied`; the code is dead |
 | `DELETE /auth/device-codes/{id}` | the session that created it | cancels; the same as `deny` |
 | `POST /auth/device-login` `{code, next?}` | anyone (the new device) | redeems the code; sets the pending cookie (below); 200 `{status: "redeemed", expires_at, match_number}` — no account |
 | `GET /auth/device-login` `?wait=0–55` | the browser holding the pending cookie | `{status, expires_at, match_number, account?}`; `account` `{handle, display_name, avatar_url}` only once `status` is `approved` |
-| `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved`; sets the session cookies; 200 `{member, next}` (as `POST /auth/login`) |
+| `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved` (else `conflict`); sets the session cookies; 200 `{member, next}` (as `POST /auth/login`). Without a pending cookie bound to a code, this and `GET /auth/device-login` are `not_found` |
 
 ```json
 { "id": "dvc-3f9a", "status": "redeemed", "expires_at": "2026-10-22T14:05:00Z",

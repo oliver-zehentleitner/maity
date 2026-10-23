@@ -28,8 +28,8 @@ sections from the diff); the forge webhook with deploys follows. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
 §16.3) are in; the notifications and sign-in mails that use them follow.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
-(§2.6.6) and the login's `next` are in; device codes and the sign-in link
-follow.
+(§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
+and `GET /auth/methods` are in; the sign-in link follows.
 
 ## Run it locally with plain Python
 
