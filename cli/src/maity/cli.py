@@ -140,7 +140,11 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     supervisor = os.environ.get("MAITY_SUPERVISOR")
     if supervisor is not None:  # set by the runner that started this session (§15.11)
         if not SUPERVISOR.fullmatch(supervisor):
-            raise UsageError(f"MAITY_SUPERVISOR is not maity-runner/<version>: {supervisor!r}")
+            # Only its length: whatever the variable holds goes to stderr, which a runner logs.
+            raise UsageError(
+                f"MAITY_SUPERVISOR is not maity-runner/<version> ({len(supervisor)} characters);"
+                " resume refused, nothing sent"
+            )
         body["supervisor"] = supervisor
     try:
         packet = session.client.call("POST", "/me/resume", body=body)

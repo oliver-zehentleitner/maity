@@ -611,11 +611,14 @@ def test_resume_sends_the_runners_supervisor(
 
 
 def test_a_supervisor_that_is_no_runner_is_refused(
-    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("MAITY_SUPERVISOR", "anything")
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setenv("MAITY_SUPERVISOR", "secret-ish value " * 700)
     assert cli.main(["resume"]) == cli.EXIT_USAGE
     assert not fake.signed()
+    err = capsys.readouterr().err
+    assert "secret-ish" not in err and "(11900 characters)" in err
 
 
 def test_a_hub_without_supervised_sessions_resumes_without(
