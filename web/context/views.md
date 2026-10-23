@@ -606,3 +606,27 @@ features off the page for the rest of its life. Each view reading
 `openapi.json` on its own, as the Ticker did: the same read and the same
 two key forms in several places.
 
+## A personal request in the cross-project inbox is labelled Personal and links into no project
+
+**Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the dashboard gets a personal inbox of its own, apart from `#/all`
+
+A personal request (`personal: true`, listed only by `GET /requests`) is
+answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
+badge says "Personal" and its project's name without a link, its card and
+its mentions are text, its free text has no @ picker, and it offers
+Withdraw, which only its human may do. Grouped by project, the personal
+ones come first under "Personal".
+
+**Reason:** the project's routes answer `not_found` for a personal
+request, its project's inbox never lists it, and its human need not be a
+member of that project: every link or member read into the project would
+lead nowhere.
+
+**Rejected alternative:** the project's badge and links as for every
+other entry: they lead to an inbox without the request, or to a project
+the human cannot open.

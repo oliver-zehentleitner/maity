@@ -69,7 +69,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## U
 
 ## V
-- [views.md](views.md) — the inbox is the first screen, then board, agents, organisation, chat; a project switcher everywhere and the cross-project inbox as landing page; the org tree is computed, never stored; project messages read from the events until the hub has §8.8; sessions say what may not be done before it is tried; the Ticker reads the listing, reasons in words; the chat list is no header row, names wrap whole, a line says who it is; controls only for routes the hub's machine form lists
+- [views.md](views.md) — the inbox is the first screen, then board, agents, organisation, chat; a project switcher everywhere and the cross-project inbox as landing page; the org tree is computed, never stored; project messages read from the events until the hub has §8.8; sessions say what may not be done before it is tried; the Ticker reads the listing, reasons in words; the chat list is no header row, names wrap whole, a line says who it is; controls only for routes the hub's machine form lists; a personal request links into no project
 
 ## W
 
