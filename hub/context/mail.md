@@ -87,8 +87,12 @@ the mail's budget kind. A security mail over `security_max_per_hour`
 gets a later `not_before` and waits, never dropped. `enabled: false`
 holds every row. A failure at `resolve`, `connect`, `tls`, `auth` or
 `timeout` is the instance's and is retried with backoff for 24 hours. A
-permanent `5xx` at `RCPT TO` or `DATA` fails the row (counting it as a
-human's hard failure comes with notification mail).
+permanent `5xx` at `RCPT TO` or `DATA` fails the row and, when the mail
+went to the human's verified address, counts a hard failure; the third
+in a row disables the address and writes `mail_disabled` (§18.7), and a
+delivery resets the count. Sign-in mail over its budget is dropped, not
+delayed. A row that left the queue is deleted after seven days, so the
+outbox keeps no lasting record of who got what.
 
 **Reason:** a mail decided in a transaction that rolls back must not
 leave, and a request must not wait up to 20 seconds for an SMTP server.
