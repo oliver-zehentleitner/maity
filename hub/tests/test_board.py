@@ -602,3 +602,18 @@ def test_a_repeated_removal_shows_the_tombstone_once_its_entry_is_redacted(
     again = owner.delete(path)
     assert again.status_code == 200 and again.json()["redacted"] is True
     assert "url" not in again.json()
+
+
+def test_a_link_the_card_was_created_with_is_removed_twice_like_any_other(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner, links=[{"kind": "url", "url": "https://example.com/initial"}])
+    [initial] = card["links"]
+    path = f"/api/v1/projects/maity/tasks/{card['id']}/links/{initial['id']}"
+    first = agent.client.delete(path, headers=agent.auth)
+    assert first.status_code == 403  # not its link, card or admin
+    removed = owner.delete(path.removeprefix("/api/v1"))
+    assert (removed.status_code, removed.json()) == (200, initial)
+    again = owner.delete(path.removeprefix("/api/v1"))
+    assert (again.status_code, again.json()) == (200, initial)

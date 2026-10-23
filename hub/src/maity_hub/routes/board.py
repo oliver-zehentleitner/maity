@@ -140,9 +140,9 @@ def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
     if row is not None:
         return links.link_view(conn, row)
     entry = conn.execute(
-        select(t.card_history)
-        .where(t.card_history.c.link_id == link_id, t.card_history.c.field == "links")
-        .order_by(t.card_history.c.at, t.card_history.c.id)
+        select(t.card_history).where(
+            t.card_history.c.link_id == link_id, t.card_history.c.link_change == "added"
+        )
     ).first()
     if entry is None:
         raise not_found()

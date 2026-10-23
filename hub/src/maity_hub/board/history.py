@@ -43,6 +43,7 @@ def _entry(
 ) -> str:
     entry_id = new_id("history")
     link = (after or before) if field == "links" else None
+    change = ("added" if after else "removed") if link else None
     conn.execute(
         insert(t.card_history).values(
             id=entry_id,
@@ -52,6 +53,7 @@ def _entry(
             actor_session_id=actor.session_id,
             field=field,
             link_id=link["id"] if link else None,
+            link_change=change,
             before=before,
             after=after,
             diff=diff(before, after) if field in DIFFED else None,
@@ -197,17 +199,20 @@ def redact(conn: Connection, row: Any, mark: dict[str, Any]) -> bool:
 
 
 def link_entry(conn: Connection, card_id: str, link_id: str, removed: bool) -> Any | None:
-    """The entry that added a link of the card, or with `removed` the one that removed
-    it. A link is added once and removed at most once, so the first entry is the add and
-    the second the removal, redacted or not."""
+    """The entry that added a link of the card through `POST …/links`, or with `removed`
+    the one that removed it; a link the card was created with has no add entry of its
+    own (it is in the `created` entry). Found by the stored change, redacted or not."""
     c = t.card_history.c
-    rows = conn.execute(
+    return conn.execute(
         select(t.card_history)
-        .where(c.card_id == card_id, c.field == "links", c.link_id == link_id)
-        .order_by(c.at, c.id)
-    ).all()
-    wanted = 1 if removed else 0
-    return rows[wanted] if len(rows) > wanted else None
+        .where(
+            c.card_id == card_id,
+            c.field == "links",
+            c.link_id == link_id,
+            c.link_change == ("removed" if removed else "added"),
+        )
+        .order_by(c.at.desc(), c.id.desc())
+    ).first()
 
 
 def link_shown(row: Any) -> dict[str, Any]:

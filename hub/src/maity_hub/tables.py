@@ -695,6 +695,7 @@ card_history = Table(
     # The link a `links` entry adds or removes: what a replayed add or a repeated
     # removal finds it by, even once the entry is redacted.
     Column("link_id", String(ID)),
+    Column("link_change", String(8)),  # `added` or `removed`, for a `links` entry
     Column("before", JSON_VALUE),
     Column("after", JSON_VALUE),
     Column("diff", MARKDOWN_TEXT),
