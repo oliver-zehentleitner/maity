@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, or_, select, update
+from sqlalchemy import Connection, Engine, case, or_, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -337,6 +337,36 @@ def hold_leases(conn: Connection, membership_ids: Sequence[int], until: datetime
         )
 
 
+def hold_cap(conn: Connection, membership_id: int, now: datetime) -> datetime | None:
+    """While a limit (or the owner's absence) holds the member's leases, the latest a
+    lease may reach: 24 hours after the outage began. None when nothing holds them."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).first()
+    if row is None:
+        return None
+    human = None
+    if row.human_id is not None:
+        human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    # Presence decides nothing here: only a pause comes before a limit, and a pause
+    # holds no lease.
+    if computed(row, "online", human, project, now)["state"] != "limited":
+        return None
+    start: datetime = row.outage_since or now
+    return start + LEASE_HOLD
+
+
+def renewed_lease(conn: Connection, membership_id: int, now: datetime, lease_seconds: int) -> Any:
+    """The `lease_until` an ordinary call renews a member's leases to (§6.5): `now` plus
+    the lease, and while a limit holds them never shorter than the hold and never past
+    its 24-hour cap (§6.12). A value or an SQL expression on the card row."""
+    target = now + timedelta(seconds=lease_seconds)
+    cap = hold_cap(conn, membership_id, now)
+    if cap is None:
+        return target
+    target = min(target, cap)
+    return case((t.card.c.lease_until > target, t.card.c.lease_until), else_=target)
+
+
 def set_agent_limit(
     conn: Connection,
     row: Any,
@@ -351,6 +381,7 @@ def set_agent_limit(
     """Store, replace or (`until` None) clear an agent membership's limit, announce what it
     changes and, when stored, hold its leases."""
     now = clock.now()
+    lock_project(conn, row.project_id)  # the lock the expiry reads under
     values: dict[str, Any] = (
         {
             "limit_until": until,
@@ -496,61 +527,83 @@ def _has_active_placement(conn: Connection, membership_id: int) -> bool:
     )
 
 
-def expire_limits(conn: Connection, project_id: str) -> None:
-    """At `until` the hub clears the limit and tells the coordinator and the agent's human
-    (`member_limit_ended`), for an agent without an active placement (§6.12)."""
-    now = clock.now()
-    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    due = conn.execute(
-        select(t.membership)
-        .where(
-            t.membership.c.project_id == project_id,
-            t.membership.c.active.is_(True),
-            t.membership.c.limit_until.isnot(None),
-            t.membership.c.limit_until <= now,
-        )
-        .order_by(t.membership.c.id)
-    ).all()
-    for row in due:
-        conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(**NO_LIMIT))
-        if not _has_active_placement(conn, row.id):
-            audience = [coordinator_token(project)]
-            owner = _owner_member(conn, row)
-            if owner is not None:
-                audience.append(f"member:{owner}")
-            emit(
-                conn,
-                project_id,
-                "member_limit_ended",
-                audience,
-                {
-                    "member_id": row.agent_id,
-                    "until": clock.rfc3339(row.limit_until),
-                    "harness": row.limit_harness,
-                },
-                subject=("member", row.agent_id),
+def due_limits(conn: Connection, project_id: str) -> list[Any]:
+    """The agent memberships whose limit's `until` has passed."""
+    return list(
+        conn.execute(
+            select(t.membership)
+            .where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.limit_until.isnot(None),
+                t.membership.c.limit_until <= clock.now(),
             )
+            .order_by(t.membership.c.id)
+        ).all()
+    )
+
+
+def end_limit(conn: Connection, project: Any, row: Any) -> bool:
+    """Clear one passed limit as it was read, and tell the coordinator and the agent's
+    human (`member_limit_ended`) when no placement restarts the agent. A limit renewed,
+    cleared or replaced since the read is not this one's: nothing happens, False."""
+    cleared = conn.execute(
+        update(t.membership)
+        .where(t.membership.c.id == row.id, t.membership.c.limit_until == row.limit_until)
+        .values(**NO_LIMIT)
+    ).rowcount
+    if cleared != 1:
+        return False
+    if not _has_active_placement(conn, row.id):
+        audience = [coordinator_token(project)]
+        owner = _owner_member(conn, row)
+        if owner is not None:
+            audience.append(f"member:{owner}")
+        emit(
+            conn,
+            project.id,
+            "member_limit_ended",
+            audience,
+            {
+                "member_id": row.agent_id,
+                "until": clock.rfc3339(row.limit_until),
+                "harness": row.limit_harness,
+            },
+            subject=("member", row.agent_id),
+        )
+    return True
+
+
+def expire_limits(conn: Connection, project_id: str) -> None:
+    """At `until` the hub clears the limit (§6.12). Read under the lock every limit
+    write takes; the clearing compares `until` all the same, so that a second replica
+    or a write that slipped in clears and announces nothing."""
+    project = lock_project(conn, project_id)
+    for row in due_limits(conn, project_id):
+        end_limit(conn, project, row)
 
 
 def expire_human_limits(conn: Connection) -> list[str]:
     """Clear the humans' limits whose `until` has passed; returns whose."""
     now = clock.now()
-    ids = list(
-        conn.execute(
-            select(t.human.c.id).where(
-                t.human.c.limit_until.isnot(None), t.human.c.limit_until <= now
-            )
-        ).scalars()
-    )
-    if ids:
-        conn.execute(
+    due = conn.execute(
+        select(t.human.c.id, t.human.c.limit_until).where(
+            t.human.c.limit_until.isnot(None), t.human.c.limit_until <= now
+        )
+    ).all()
+    cleared = []
+    for human_id, until in due:
+        # Compared with the `until` read: a limit declared again since stays.
+        won = conn.execute(
             update(t.human)
-            .where(t.human.c.id.in_(ids))
+            .where(t.human.c.id == human_id, t.human.c.limit_until == until)
             .values(
                 limit_until=None, limit_since=None, limit_reason=None, limit_show_reason_in=None
             )
-        )
-    return ids
+        ).rowcount
+        if won == 1:
+            cleared.append(human_id)
+    return cleared
 
 
 def sweep(engine: Engine) -> None:
