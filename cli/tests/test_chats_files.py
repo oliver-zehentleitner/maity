@@ -3,6 +3,7 @@ against the fake hub."""
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -107,13 +108,20 @@ def test_chat_reads_the_unread_from_the_first_one_and_shows_what_arrived(
     assert out.rstrip().endswith("before these: maity chat cnv-0007 --before 5010")
 
 
-def test_chat_caps_the_unread_at_fifty(joined: Path, fake: fakehub.FakeHub) -> None:
+def test_chat_caps_the_unread_at_fifty_and_says_what_it_left_out(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
     fake.routes[("GET", f"{P}/conversations")] = listing({**GROUP, "unread": 120})
     fake.routes[("GET", f"{P}/conversations/cnv-0007/messages")] = lambda s: (
-        200, {"items": [message(4000)] if "before" in s.query else []})  # fmt: skip
+        200, {"items": [message(4000 + i) for i in range(50)], "earlier": 3990}
+        if "before" in s.query else {"items": []})  # fmt: skip
     assert cli.main(["chat", "cnv-0007"]) == cli.EXIT_OK
     reads = [query(s) for s in fake.signed() if s.path.endswith("/messages")]
     assert reads == [{"before": "5021", "limit": "50"}, {"after": "3999", "limit": "200"}]
+    out = capsys.readouterr().out
+    assert (
+        "70 earlier unread messages, marked read unshown: maity chat cnv-0007 --before 4000" in out
+    )
 
 
 def test_chat_pages_on_until_a_short_page(joined: Path, fake: fakehub.FakeHub) -> None:
@@ -122,7 +130,7 @@ def test_chat_pages_on_until_a_short_page(joined: Path, fake: fakehub.FakeHub) -
     def messages(seen: fakehub.Seen) -> tuple[Any, ...]:
         q = query(seen)
         if "before" in q:
-            return 200, {"items": [message(5020)]}
+            return 200, {"items": [message(5020)], "earlier": 5001}
         start = int(q["after"]) + 1
         count = 200 if start < 6000 else 3
         return 200, {"items": [message(start + i) for i in range(count)]}
@@ -143,15 +151,60 @@ def test_chat_with_nothing_unread_fetches_nothing(
     assert "no unread messages; earlier: maity chat cnv-0007 --before 5021" in out
 
 
-def test_chat_as_an_observer_shows_the_last_ones_and_marks_nothing(
-    joined: Path, fake: fakehub.FakeHub
+DIRECT_TODAY = {"agent_id": "agt-b", "last_message_at": "x", "unread": 2,
+                "last_message": {"seq": 4300, "from": "hum-1", "body": "?", "sent_at": "x",
+                                 "redacted": False}}  # fmt: skip
+
+
+def test_chat_refuses_a_before_the_hub_ignored(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("GET", f"{P}/conversations")] = listing({**GROUP, "unread": None})
-    fake.routes[("GET", f"{P}/conversations/cnv-0007/messages")] = lambda s: (
-        200, {"items": [message(5020)]})  # fmt: skip
-    assert cli.main(["chat", "cnv-0007"]) == cli.EXIT_OK
+    # Today's hub answers a direct conversation from its start, without `earlier`.
+    fake.routes[("GET", f"{P}/conversations")] = listing(DIRECT_TODAY)
+    fake.routes[("GET", f"{P}/conversations/agt-b/messages")] = lambda s: (
+        200, {"items": [message(3), message(9000)], "cursor": 9000})  # fmt: skip
+    assert cli.main(["chat", "agt-b", "--before", "4000"]) == cli.EXIT_ERROR
+    assert "does not page back" in capsys.readouterr().err
+
+
+def test_chats_lists_a_direct_item_of_the_hub_as_it_is_today(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/conversations")] = listing(DIRECT_TODAY)
+    assert cli.main(["chats"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "agt-b  direct  -  -  unread 2, mentions 0\n"
+
+
+def test_chat_direct_reads_after_the_event_cursor_and_marks_nothing(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    state.save_state(directory, {**state.load_state(directory), "cursor": 4231})
+    fake.routes[("GET", f"{P}/conversations")] = listing(DIRECT_TODAY)
+    fake.routes[("GET", f"{P}/conversations/agt-b/messages")] = lambda s: (
+        200, {"items": [message(4290 + i) for i in range(11)], "cursor": 4300})  # fmt: skip
+    assert cli.main(["chat", "agt-b", "--limit", "4"]) == cli.EXIT_OK
     reads = [query(s) for s in fake.signed() if s.path.endswith("/messages")]
-    assert reads == [{"before": "5021", "limit": "50"}]
+    assert reads == [{"after": "4231", "limit": "200"}]  # never `before` on a direct chat
+    out = capsys.readouterr().out
+    assert "4296  hum-m" not in out and "4297  hum-m" in out and "4300  hum-m" in out
+    assert (
+        "7 earlier messages after your event cursor not shown: maity chat agt-b --after 4231" in out
+    )
+    assert "count as read when `maity wait` or `maity resume`" in out
+
+
+def test_chat_json_escapes_what_a_terminal_would_act_on(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/conversations")] = listing(GROUP)
+    fake.routes[("GET", f"{P}/conversations/cnv-0007/messages")] = lambda s: (
+        200, {"items": [message(5, "\u009b31m\u202eboo")]})  # fmt: skip
+    assert cli.main(["chat", "cnv-0007", "--after", "1", "--json"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "\u009b" not in out and "\u202e" not in out and "\\u009b31m" in out
 
 
 def test_chat_before_pages_back_and_names_the_next_page(
@@ -388,7 +441,63 @@ def test_files_get_a_deleted_attachment(joined: Path, fake: fakehub.FakeHub) -> 
     [("a/b\\c.txt", "a_b_c.txt"), ("  ..hidden ", "hidden"), ("..", "attachment"),
      ("", "attachment"), (None, "attachment"), ("x\x00​⁦y", "xy"),
      ("é", "é"), ("a" * 300 + ".png", "a" * 196 + ".png"),
-     ("ä" * 200 + ".txt", "ä" * 125 + ".txt")],
+     ("ä" * 200 + ".txt", "ä" * 125 + ".txt"), ("\ud800.txt", "txt")],
 )  # fmt: skip
 def test_file_name(raw: Any, safe: str) -> None:
     assert cli.file_name(raw) == safe
+
+
+def test_a_5xx_on_the_post_keeps_the_uploads_and_names_them(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a.txt").write_bytes(b"x")
+    fake.routes[("POST", f"{P}/attachments")] = lambda s: (201, attachment())
+    fake.routes[("POST", f"{P}/events")] = lambda s: (
+        504, {"error": {"code": "gateway", "message": "g", "details": {}}})  # fmt: skip
+    argv = ["say", "all", "x", "--type", "notice", "--attach", str(tmp_path / "a.txt")]
+    assert cli.main(argv) == cli.EXIT_ERROR
+    assert not [s for s in fake.signed() if s.method == "DELETE"]  # it may be stored
+    assert "may have been sent; its attachments: att-0042" in capsys.readouterr().err
+
+
+def test_a_lost_upload_answer_is_named(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a.txt").write_bytes(b"x")
+    fake.routes[("POST", f"{P}/attachments")] = lambda s: (
+        502, {"error": {"code": "bad_gateway", "message": "b", "details": {}}})  # fmt: skip
+    assert cli.main(["say", "human", "x", "--attach", str(tmp_path / "a.txt")]) == 1
+    assert "an upload's answer was lost; it may be pending" in capsys.readouterr().err
+
+
+def test_files_get_refuses_a_directory_and_a_missing_parent_before_fetching(
+    joined: Path, served: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for extra in ([], ["--force"]):
+        assert cli.main(["files", "get", "att-0042", "-o", str(tmp_path), *extra]) == 1
+        assert "is a directory" in capsys.readouterr().err
+    assert cli.main(["files", "get", "att-0042", "-o", str(tmp_path / "no" / "x")]) == 1
+    assert "is not a directory" in capsys.readouterr().err
+    assert not [s for s in served.signed() if s.path.endswith("/content")]
+
+
+def test_files_get_without_hard_links_still_never_overwrites(
+    joined: Path, served: fakehub.FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_links(src: Any, dst: Any) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_links)  # vfat, some SMB and FUSE mounts
+    target = tmp_path / "out.txt"
+    assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_OK
+    assert target.read_bytes() == b"hello"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_ERROR
+    assert not [p for p in tmp_path.iterdir() if p.name.endswith(".part")]
+
+
+def test_files_get_refuses_a_size_beyond_the_ceiling(joined: Path, fake: fakehub.FakeHub) -> None:
+    fake.routes[("GET", f"{P}/attachments/att-0042")] = lambda s: (
+        200, attachment(size=10**12))  # fmt: skip
+    assert cli.main(["files", "get", "att-0042", "-o", "-"]) == cli.EXIT_ERROR
+    assert not [s for s in fake.signed() if s.path.endswith("/content")]
