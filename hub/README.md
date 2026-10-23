@@ -57,6 +57,10 @@ body, tied to the write's event and redacted with it; notes with their
 caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
 (§6.14) follows.
+The jour fixe (`docs/api.md` §20): the series in the policy, the
+moderator order, rounds opened on schedule or by hand, skipped and missed
+slots, and the answers, named or anonymous, are in; the statement, the
+exchange and the report follow.
 
 Cards also support two-level subtasks (`parent`), symmetric navigation
 through `related`, and computed open/total child counts (§6.4). The done
