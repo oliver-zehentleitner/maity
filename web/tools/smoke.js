@@ -2602,6 +2602,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await atPick("chat-files", [atFile("shot300.png", PNG, 300 * 1024, "image/png")]);
   expect(text(main).includes("Not attached: shot300.png: the hub refused it as too large (the file is 300 KB): the body is over 64 KiB")
     && !text(main.querySelector(".attach")).includes("10 MiB"), "attachments: a size refusal says the hub's limit and the file's size, not a fixed one");
+  // A message that is no string (a hub answering an object) is left out, never "[object Object]".
+  win.Maity.api.postRaw = () => Promise.reject(Object.assign(new win.Maity.api.ApiError("x", 413, "/x", "payload_too_large", {}), { message: { too: "big" } }));
+  await atPick("chat-files", [atFile("odd.png", PNG, 2048, "image/png")]);
+  expect(text(main).includes("Not attached: odd.png: the hub refused it as too large (the file is 2.0 KB)") && !text(main).includes("[object Object]"),
+    "attachments: a non-string message is left out of the refusal");
   win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
   // A group chat: the participant attaches; a project message too.
   await go("#/p/maity/chat/cnv-0007");
