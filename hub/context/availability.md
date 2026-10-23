@@ -112,3 +112,32 @@ and a runner's limit belongs to one placement of it.
 **Rejected alternative:** copy the human's limit onto each membership:
 a membership created during the limit would miss it, and clearing it
 would have to find every copy.
+
+## A cover run is named by its start; on return every item of it loses `cover`
+
+**Id:** 8e2ac695-1298-42a5-9c00-fb3fc7f5e20a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (availability stage 2, cover)
+**See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
+**Revisit when:** a moved item needs to show after the return who once covered it
+
+The membership stores its cover state (`wait`, `covered` by whom since
+when, `none_available`). Each card and request a cover moves, and each
+card area routing sends to the substitute meanwhile, carries
+`cover: {for, by, since}` with that run's start. On return only the items
+of that run are settled: what the substitute touched stays with it,
+everything else goes back, and `cover` is cleared on both.
+
+**Reason:** a kept card that kept its `cover` would look covered forever:
+the next cover of its new holder would skip it, and a later return of
+the first member would list it again. The run's start tells one cover
+from the next without a table of its own.
+
+**Rejected alternatives:**
+- Keep `cover` on kept items as a record of where they came from: the
+  two problems above; the events `cover_started` and `cover_ended`
+  already record it.
+- A table of cover runs with their items: a second place to keep in step
+  with the cards and requests, for what one timestamp already names.
