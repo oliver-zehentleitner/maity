@@ -133,6 +133,49 @@ human_session = Table(
     **MYSQL_TABLE,
 )
 
+# A device code (docs/api.md §2.6.2): made by one session of a human, redeemed by one
+# new browser (bound by the pending cookie), approved by number matching on the session
+# that made it, completed into one new session. The code and the pending cookie are kept
+# only as `sha256`; `user_agent` is what the new browser claimed, shown in the dialog
+# while the code lives.
+device_code = Table(
+    "device_code",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False, index=True),
+    Column("code_hash", String(HEX_SHA256), nullable=False, unique=True),
+    Column("status", String(16), nullable=False),  # waiting redeemed approved used denied
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("pending_hash", String(HEX_SHA256), unique=True),
+    Column("redeemed_at", UtcDateTime),
+    Column("ip", String(64)),
+    Column("user_agent", String(300)),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("new_device", Boolean),
+    Column("match_number", Integer),
+    Column("choices", JSON_VALUE),
+    Column("next", String(512)),
+    Column("approved_at", UtcDateTime),
+    Column("session_public_id", String(ID)),  # the session it was completed into
+    **MYSQL_TABLE,
+)
+
+# The device cookie (docs/api.md §2.6.5): one random value per human and browser, kept as
+# `sha256`; it authenticates nothing and only tells the approval dialog whether this
+# browser signed in to the human's account before.
+human_device = Table(
+    "human_device",
+    metadata,
+    Column("value_hash", String(HEX_SHA256), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("value_hash", "human_id"),
+    **MYSQL_TABLE,
+)
+
 # --- projects and memberships -------------------------------------------------
 
 project = Table(

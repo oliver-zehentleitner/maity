@@ -37,6 +37,7 @@ from maity_hub.routes import (
     agents,
     avatars,
     conversations,
+    device_codes,
     joins,
     keep_the_why,
     mail_settings,
@@ -109,6 +110,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
+    app.include_router(device_codes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)

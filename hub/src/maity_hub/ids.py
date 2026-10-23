@@ -30,6 +30,7 @@ PREFIXES = {
     "placement": "plc",
     "memory": "mem",
     "human_session": "hss",
+    "device_code": "dvc",
 }
 
 
