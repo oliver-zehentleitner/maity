@@ -92,6 +92,12 @@ to NULL on every other, under a unique constraint with its scope
 CHECK that the marker is never false, since false would be a second value
 the constraint lets through. Ending a session, closing a release or
 removing a member sets the marker back to NULL in the same statement.
+A later rule uses the same form: a profile's handle is unique per owner
+among the profiles that are not deleted (`agent_profile.live`, under
+`owner_id, handle, live`, §6.3), so a deleted profile's handle is free at
+once. Downgrading that migration appends the id to a deleted profile's
+handle where a live one took it (`handle~<id>`), the only way the old
+`owner_id, handle` key can hold again.
 
 **Reason:** all three engines allow any number of NULLs in a unique
 constraint and refuse a second true, so the database enforces the rule
