@@ -122,7 +122,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -130,7 +130,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -302,6 +302,14 @@ the hub records it on the session.
 | Preferences | 8 KiB per human (§19.4) |
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
 | Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
+| Registration allowlist | 200 domains and 2000 addresses, each at most 254 characters (§16.4) |
+| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
+| Pending registrations | 5 per address, each 24 hours; 5 wrong passwords at completion (§2.7.1) |
+| New accounts | `max_new_accounts_per_hour`, default 20 (§16.4) |
+| Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
+| Terms | `url` 2048 characters, `version` 1–64 (§16.4) |
+| A rejection `reason` | 1024 characters (§16.4) |
+| Accounts waiting for approval | deleted after 30 days undecided; a rejected or expired address blocked 30 days (§2.7.5) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -312,7 +320,7 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated` |
+| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
@@ -563,7 +571,9 @@ include the scope. No call made with an agent credential may:
 - obtain a human session with its credential, or take part in one with
   it: create, redeem, approve or complete a device code, request or use
   a sign-in link or code, list a human's sessions (§2.6);
-- change instance-admin status (§16);
+- change instance-admin status (§16), the registration settings, or
+  approve or reject a registration (§16.4); or register an account or
+  complete a registration with its credential (§2.7);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
 - delete an agent profile (§6.3);
@@ -730,7 +740,11 @@ Additional rules that are not scopes:
   belongs to the human account that is the instance admin (§16), is
   checked on `/admin/*` only, and opens no project, inbox or chat. An
   agent or runner credential on `/admin/*` is `forbidden`, whatever its
-  scopes.
+  scopes. It covers the registration settings and the approval or
+  rejection of pending accounts (§16.4); no agent ever holds it.
+- An account that waits for approval (`account_status: pending`,
+  §2.7.5) holds no scope: it is a member of nothing and reaches only its
+  own account.
 - Cards are readable by every member, so an agent may post a note
   (§6.16) and add a link (§6.13) on any card of its project, whatever
   its role. It edits a card's fields only as its holder or creator, or
@@ -814,8 +828,11 @@ Unauthenticated, on the public host only. Answers what the login page
 may show; it says nothing about any account:
 
 ```json
-{ "password": true, "device_code": true, "email_link": true }
+{ "password": true, "device_code": true, "email_link": true,
+  "registration": false, "terms": null }
 ```
+
+`registration` and `terms` are §2.7.
 
 `password` is always `true`. `device_code` is the instance setting
 (§2.6.6). `email_link` is `true` only when the instance setting allows
@@ -1208,7 +1225,8 @@ every other session, since it needs the password.
 ```
 
 `id` is a public id, never the cookie's value. `method` is `password`,
-`device_code`, `email_link` or `email_code`. `approved_by` names the
+`device_code`, `email_link`, `email_code` or `register` (the session a
+completed registration starts, §2.7.1). `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
@@ -1369,6 +1387,281 @@ event; the accounts design's instance audit log records it (pending).
   1 hour, "End" on an
   older session and "End all other sessions" are disabled, with "This
   session is too new to end older ones" (§2.6.5).
+
+### 2.7 Human: registration
+
+The maintainer's direction of 2026-10-23 (`context/scope.md`, "One
+codebase, three ways to run it"): an instance runs alone at home, as a
+team's own instance, or as an open hosted one, and the three differ
+only in settings. This section is how a person gets an account on their
+own; the settings that decide whether they may are the instance admin's
+(§16.4). Plans and their limits are part two of this contract, a
+separate change: until it exists, a registered account has exactly the
+limits every account has today, and the account's plan is the
+operator's default plan once part two defines one.
+
+**Modes.** The instance setting `registration` (§16.4):
+
+| Mode | Who may register |
+|---|---|
+| `closed` (default) | nobody. Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§6.2, reserved) and joins (§3, agents). Every registration endpoint answers `forbidden` with `details.reason: registration_closed`, before it reads the body |
+| `allowlist` | a person whose address matches a listed domain or a listed exact address (below) |
+| `open` | anyone with an address that can be verified |
+
+A fresh instance is `closed`; no migration, chart value or command
+opens it, only the instance admin's setting or the operator's
+environment. `allowlist` and `open` need mail: without complete and
+enabled mail settings (§16.2) the switch is refused (`mail_required`,
+§16.4), and when mail stops being complete or enabled later, the
+instance registers nobody until it is again (below). A mode never
+narrows invitations or joins: they are the project's way in, and
+registration is the instance's.
+
+**The allowlist.** Two lists, `domains` and `addresses` (§16.4). A
+domain entry is written `@example.com` and matches an address whose
+domain is exactly that domain, compared case-insensitively — not its
+subdomains: `@sub.example.com` is its own entry. An address entry
+matches that exact address, compared as §2.6.3 compares (trimmed, case
+ignored). Both follow the address syntax of §18.4. An address matches
+when either list matches.
+
+**What the login page learns.** `GET /auth/methods` (§2.6.1) gains
+`registration`: `true` while the mode is `allowlist` or `open` and mail
+is complete and enabled, else `false`; and `terms`: `{url, version}` or
+`null` (§16.4). It says nothing about the lists or any account. The
+login page shows "Create an account" only with `registration: true`.
+
+#### 2.7.1 The flow: the address is verified before an account exists
+
+```
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/#/"}
+```
+
+Unauthenticated, on the public host only, with the rules of §2.6.5 for
+transport, `Sec-Fetch-Site` and `next`.
+
+1. **Synchronous checks, none of which looks at an account.** The mode
+   is `closed`, or mail is incomplete or disabled: `forbidden` with
+   `details.reason: registration_closed` (the same reason for both: the
+   page needs no more). The body: `address` follows §18.4, `password`
+   §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `details.fields`. Then the per-source limit (§2.7.3).
+2. **The answer.** `202 {"expires_in": 86400}`, always, from here on. The
+   hub hashes the password (scrypt, §2.1) for every request before it
+   answers, so every accepted request costs the same; the lookup, the
+   allowlist check and the send run in the background, as in §2.6.3.
+   Neither the body, the status nor the timing tells an address that
+   has an account from one that has none, nor a listed address from an
+   unlisted one.
+3. **In the background**, at the time of the lookup:
+   - The address is not allowed by the mode (an `allowlist` miss): no
+     mail, and the request is dropped.
+   - The address is the verified address of an account (§18.4), or of a
+     rejected registration that is still blocked (§16.4): one mail,
+     "Someone asked to create a Maity account with this address on
+     <public URL>. You have one already: sign in at <login page>. If
+     this was not you, ignore this mail." No link that creates or signs
+     in anything, no handle. A blocked address gets no mail.
+   - Otherwise: a **pending registration** — the address, the password
+     hash, the source address, the terms version shown (§2.7.2), the
+     stored `next`, created and expiry time (24 hours) — and one mail
+     with a signed link.
+   Both mails count against the registration budget (§16.2); over it,
+   nothing is sent, as for sign-in mails. Only the mail differs.
+4. **The mail.** Plain text in the language the request's
+   `Accept-Language` names, where the hub has it, else English; rules of
+   §18.5 for headers, no unsubscribe part (a reply to a request).
+   Subject `[Maity] Confirm your address`. The link
+   `<MAITY_PUBLIC_URL>/mail/register/{token}`, valid 24 hours; when and
+   from which browser, operating system and address the request came;
+   "If you did not ask for this, ignore this mail; no account is
+   created without the link and the password chosen with it." Nothing
+   else: no handle, no project, no other link.
+5. **The link page.** `/mail/register/{token}` follows §2.6.3's link page
+   and §18.6: outside the API, public host only, token masked in the
+   request log, a `GET` that changes nothing and sets only the form
+   cookie (`maity_form`, `Path=/mail/register`), a `POST` that needs the
+   form field and refuses a `Sec-Fetch-Site` other than `same-origin`.
+   The `GET` shows "Create your Maity account for <address>" with four
+   fields: the **password chosen at registration**, the **handle**, the
+   **display name**, and — when the instance has terms — "I accept the
+   terms (<url>, version <version>)", unchecked, for the instance's
+   current version. The form carries that version in a hidden field the
+   hub signs together with the registration token (HMAC under
+   `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
+   `POST` says exactly which version the person saw (§2.7.2).
+6. **Completion** (`POST` of that page). In this order: the mode is
+   checked again (now `closed`, or the address no longer allowed: the
+   page says registration is closed, nothing is created and the pending
+   registration is void); the password must match the stored hash (a
+   wrong one is the page's error; the fifth voids the pending
+   registration); the handle and the display name follow §2.7.4; the
+   terms box must be checked when terms are set, and the signed version
+   in the form must be the instance's current one — if the terms changed
+   since the page was shown, nothing is created and no acceptance is
+   recorded, and the page comes back with the current terms, unchecked,
+   asking to confirm them anew (§2.7.2). The hub then claims the
+   address (below) and, in the same transaction, creates the human
+   account with the address as its verified address (`address_status:
+   verified`, §18.4), the terms acceptance (§2.7.2) and `account_status`
+   `active` or `pending` (approval, §2.7.5); voids every other pending
+   registration of the address; signs this browser in with a fresh
+   session (§2.1, §2.6.5; `method: "register"` in the session list); and
+   answers `303` to the stored `next`, or, for a pending account, to the
+   pending page.
+
+**One address, one account: the claim at completion.** A verified
+address belongs to at most one account (the uniqueness rule of §18.4).
+The hub enforces it with a unique constraint on the accounts'
+normalized verified address — trimmed and lower-cased, the comparison
+§2.6.3 uses — and takes the claim under a per-address lock that the
+address verification and the address change of §18.4 take as well.
+So of any number of completions and verifications racing for one
+address, exactly one wins: it writes the address, and in the same
+transaction every other pending registration of that address becomes
+unusable. A loser — a completion whose address is now verified on an
+account, its own pending registration voided, or the constraint
+refusing its insert — creates nothing, authenticates nobody, never
+signs in to the winning account or any existing one, and sees the same
+page as an expired link: "This link can no longer be used"
+(`not_found`), never why. The lookup in step 3 is a filter that spares
+a mail, not the guard; the claim is the guard.
+
+The token follows §18.6: the base64url of `{pending registration id,
+purpose: "register", nonce, expiry}` with an HMAC-SHA-256 over it under
+`MAITY_MAIL_SIGNING_KEY`, a forged token refused before any lookup;
+single use, by `sha256(nonce)` stored with the pending registration. An
+invalid, expired, used or voided token is the page that says the link
+no longer works (`not_found`, never which). A new request for the same
+address from the same source address voids the earlier unused one; one
+from another source address leaves it alone (as §2.6.3). At most 5
+pending registrations exist per address; a sixth voids the oldest.
+Pending registrations are deleted at expiry: an unverified address and
+its password hash are kept at most 24 hours.
+
+**Why the password is asked again.** The link proves the mailbox, the
+password proves the person who asked. Someone who registers another
+person's address cannot complete without that mailbox, and the owner of
+the mailbox who follows a link they did not ask for cannot complete
+into a password someone else chose. The link works on any device, so
+reading the mail on a phone is enough.
+
+**Agents.** An agent or runner credential on `/auth/register` or
+`/mail/register/*` is `forbidden` with `details.reason: humans_only`
+(§2.3). Called without a credential, the endpoint cannot tell an agent
+from a browser — the limit §2.3 states for the sign-in link: an agent
+that controls a mailbox can register an account for that address on an
+`open` or matching `allowlist` instance. That is a new account, never
+access to an existing human's, and `approval: operator` (§2.7.5) is the
+operator's answer where it matters.
+
+**OAuth** (registering with a forge or another identity provider) is a
+later change of its own; it will keep the modes, the allowlist on the
+provider's verified address, approval and terms of this section.
+
+#### 2.7.2 Terms
+
+When the instance sets terms (`terms: {url, version}`, §16.4), the
+completion page requires their acceptance, and the account records
+`terms: {version, accepted_at}`, the hub's time. What is accepted is the
+version the person saw: the link page shows the instance's current
+version and the form carries it, signed by the hub with the
+registration token (§2.7.1). When the instance's version changed between
+the page and its `POST`, the `POST` creates no account and records no
+acceptance; the page shows the current terms again, unchecked, and asks
+for a fresh confirmation. The version stored with the pending
+registration is only what the request saw and is never recorded as
+accepted. Accounts made otherwise — the operator's, invitations — record nothing.
+What a change of version does to existing accounts — whether they
+must accept again — is a separate question and not part of this
+contract. `GET /me` carries `member.terms` (§5.1) for a human.
+
+#### 2.7.3 Rate limits and abuse
+
+| What | Limit |
+|---|---|
+| `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
+| per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
+| per address, all sources | 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
+| instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
+| registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
+| completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
+| new accounts | `max_new_accounts_per_hour` (§16.4, default 20) across the instance; over it the completion page says to try again later and keeps the pending registration |
+
+The breaker is the same accepted denial as the device-code breaker
+(§2.6.4): a few source addresses can stop registration for everyone for
+a minute at a time, and that is preferred to a per-source limit alone,
+which a distributed flood would pass. It never touches sign-in, mail
+of any other kind, or existing accounts. Someone who knows an address
+can spend its per-address day (20 requests) and delay that person's
+registration to the next day; nothing more.
+
+#### 2.7.4 Handle and display name
+
+A human's handle follows the agent profiles' syntax
+(`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts,
+since the login takes it (§2.1); compared as written, it is lower case
+by the syntax. `display_name` is 1–64 characters, no control
+character. A taken handle is the completion page's error "This handle is
+taken" — shown only to someone who proved the mailbox and the
+password, and counted in the completion limit (§2.7.3). The handle can
+be changed later only as every human's can (pending the accounts
+design).
+
+#### 2.7.5 Approval
+
+With `approval: operator` (§16.4), a completed registration makes an
+account with `account_status: pending`. Its sessions are **restricted
+pending sessions**: real sessions that hold no scope and see only their
+own pending status.
+
+- **Getting one.** The session the completion starts (§2.7.1); later,
+  `POST /auth/login` with the handle and the password (§2.1); and, where
+  the instance offers it, a sign-in link by mail (§2.6.3). Each gives
+  the same restricted session. Device codes cannot be used: creating or
+  approving one needs a session in good standing, and a pending session
+  is never in good standing, however it was made (an exception to
+  §2.6.5's password rule) — `POST /auth/device-codes` and its approval
+  are `forbidden` with `details.reason: account_pending`.
+- **What it may do.** `GET /me` answers `member` with `account_status:
+  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
+  /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
+  rules §2.6.5 sets for sessions not in good standing); `POST
+  /auth/password`. `GET /auth/methods` stays what it is for everyone:
+  it never depends on an account.
+- **Everything else** is `forbidden` with `details.reason:
+  account_pending`, before any side effect: no project, no agent
+  profile, no notification, no address change, no search. The dashboard
+  shows one page: "Your account waits for the operator's approval."
+- A pending account is a member of nothing and nobody can make it one
+  until it is approved. On approval its sessions stay and gain what
+  every human session has, good standing included by §2.6.5's rules
+  from then on.
+
+The instance admin approves or rejects it (§16.4). On approval it is
+`active`, the person gets a mail "Your Maity account is approved" with
+the login page's link (security budget, §16.2) and the account record
+`registration_approved` (a `system` notification, §18.1). On rejection
+the account is deleted with its sessions, the person gets a mail with
+the reason (security budget), and the address is blocked from
+registering for 30 days (§16.4). A pending account that nobody decides
+on is deleted after 30 days, with the same block and a mail without
+reason ("was not approved in time"). With `approval: automatic` the
+account is `active` at once.
+
+#### 2.7.6 Privacy
+
+A registered person sees their own account and the projects they are a
+member of, and nothing else of the instance: `GET /projects` lists the
+caller's memberships only (§6.1), `GET /agents` the caller's own
+profiles (§6.3), the `@` list and the member view are a project's
+(§6.2, §8.6), and no endpoint searches, lists or resolves accounts
+outside a shared project. The one list of accounts is the instance
+admin's (§16.1, §16.4). Registration adds no read: an open instance is
+as private between its accounts as a team's own. Avatars keep the read
+rule of §6.10: an account that shares no project with their owner does
+not read them, the instance admin aside.
 
 ## 3. Join
 
@@ -1716,7 +2009,10 @@ each project's image without reading every project.
 For an agent exactly one project, with `owner_id` and `instance` (its
 instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
-admin; an agent's `member` has no such field. `member` carries
+admin; an agent's `member` has no such field. A human's `member` also
+carries `account_status` (`active`, or `pending` while it waits for
+approval, §2.7.5; a pending account's `projects` is empty) and `terms`
+(`{version, accepted_at}` or `null`, §2.7.2). `member` carries
 `avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -6217,7 +6513,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
-| GET | `/auth/methods` | — | 2.6.1 |
+| GET | `/auth/methods` | — | 2.6.1, 2.7 |
+| POST | `/auth/register` | — (refused in mode `closed`) | 2.7.1 |
+| GET, POST | `/mail/register/{token}` (outside the API) | — (the token, then the chosen password) | 2.7.1 |
 | POST | `/auth/device-codes` | human | 2.6.2 |
 | GET, DELETE | `/auth/device-codes/{id}` | the creating session | 2.6.2 |
 | POST | `/auth/device-codes/{id}/approve`, `/auth/device-codes/{id}/deny` | the creating session | 2.6.2 |
@@ -6333,6 +6631,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/forge/webhook` | `project:admin`, human only | 17.4 |
 | POST, DELETE | `/projects/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
+| GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
+| POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
+| DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/settings/mail/test` | `instance:admin`, human only | 16.3 |
 | GET | `/me/notifications` | human | 18.2 |
 | POST | `/me/notifications/read` | human | 18.3 |
@@ -7448,6 +7750,12 @@ attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLI
 switched by the instance admin or the environment (`MAITY_SIGN_IN_*`,
 §2.6.6); the password cannot be switched off.
 
+**Registration** — `closed` (the default), `allowlist` or `open`, with
+approval by the operator or automatic, and optional terms — is set by
+the instance admin or the environment (`MAITY_REGISTRATION*`,
+`MAITY_TERMS_*`), the environment winning; opening needs mail (§2.7,
+§16.4).
+
 ### 16.1 `GET /admin/users`
 
 Scope `instance:admin`, human only — a cookie session (§2.1); an agent or
@@ -7458,6 +7766,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 |---|---|
 | `q` | 1–64 characters; case-insensitive substring of `handle` or `display_name`; otherwise `invalid` |
 | `disabled` | `true` or `false`; omitted: both |
+| `account_status` | `active` or `pending` (§2.7.5); omitted: both |
 | `limit`, `cursor` | §1.4 |
 
 ```json
@@ -7465,7 +7774,7 @@ runner credential is `forbidden`. The humans of the instance, paged
   "items": [
     { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
       "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7",
-      "instance_admin": true, "disabled": false,
+      "instance_admin": true, "disabled": false, "account_status": "active",
       "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
       "last_seen_at": "2026-10-22T11:40:00Z",
       "memberships": 2, "agents": 7 }
@@ -7503,10 +7812,11 @@ The hub sends mail for three things only: the notifications of §18,
 the verification of a human's address (§18.4), and security mails —
 the `security` notifications of §18.1, the notice to an old address
 (§18.4) and, with the sign-in contract (#169, §2.6.3), sign-in links
-and codes. It speaks SMTP to one server the operator provides; there
-is no other transport.
+and codes; with registration (§2.7) also the registration mails. It
+speaks SMTP to one server the operator provides; there is no other
+transport.
 
-**Three budgets.** Each kind of mail is counted on its own, and none
+**Four budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
@@ -7521,10 +7831,15 @@ can use up another:
   addition, the per-source-address limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `registration_max_per_hour` — the mails of `POST /auth/register`
+  (§2.7.1), the other kind an unauthenticated caller can trigger, with
+  the limits of §2.7.3. Over it, nothing is sent and
+  `registration_dropped_last_hour` counts it. The mails to a person
+  after an approval decision (§2.7.5) are security mail.
 
 So event churn by any member, an agent included, can delay
-notifications only, and anonymous sign-in requests can stop sign-in
-mails only; neither delays an alert, a verification or the notice to
+notifications only, and anonymous sign-in or registration requests can
+stop only their own kind of mail; neither delays an alert, a verification or the notice to
 an old address.
 
 **Where each value lives.** Every value may come from the environment
@@ -7574,6 +7889,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
 | `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -7604,6 +7920,7 @@ Scope `instance:admin`, human only (§16.1):
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "registration_max_per_hour": { "value": 30, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
@@ -7613,6 +7930,8 @@ Scope `instance:admin`, human only (§16.1):
   "security_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "registration_sent_last_hour": 0,
+  "registration_dropped_last_hour": 0,
   "failed_last_hour": 0
 }
 ```
@@ -7636,7 +7955,8 @@ PATCH /admin/settings/mail
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
-`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`; `null` returns a field to its default (for `password`:
+`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
+`registration_max_per_hour`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -7681,6 +8001,94 @@ every occurrence of the username or the password, and of their base64
 forms, is replaced by `…`; never a stack trace. `to` follows the
 address syntax of §18.4. The result is stored as `last_test`. A failed
 test is a `200` with `ok: false`: the call itself worked.
+
+### 16.4 Registration
+
+The admin area's section "Registration": the mode, the two lists,
+approval, terms, and the accounts that wait for approval. The flow
+itself is §2.7.
+
+```
+GET, PATCH /admin/settings/registration
+```
+
+Scope `instance:admin`, human only (§16.1). Each value may come from the
+environment or from the instance admin, with the source rules of §16.2:
+the environment wins, is shown with `source: "env"`, and a `PATCH` of a
+value it sets is `invalid` with `details.fields.<field>:
+"set_by_environment"`.
+
+| Environment | Field | Default | Meaning |
+|---|---|---|---|
+| `MAITY_REGISTRATION` | `mode` | `closed` | `closed`, `allowlist` or `open` (§2.7) |
+| `MAITY_REGISTRATION_DOMAINS` | `domains` | `[]` | domain entries, `@example.com`; in the environment comma-separated |
+| `MAITY_REGISTRATION_ADDRESSES` | `addresses` | `[]` | exact addresses; in the environment comma-separated |
+| `MAITY_REGISTRATION_APPROVAL` | `approval` | `operator` | `automatic` (usable at once) or `operator` (waits as `pending`, §2.7.5) |
+| `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | `terms` | `null` | `{url, version}`: an `https` URL (2048 characters) and a version (1–64 characters, no whitespace); both or neither |
+| `MAITY_REGISTRATION_MAX_NEW_PER_HOUR` | `max_new_accounts_per_hour` | 20 | accounts completed per hour across the instance (§2.7.3) |
+| `MAITY_REGISTRATION_BREAKER` | — | 120 | environment only: requests per minute across the instance before the breaker (§2.7.3) |
+
+```json
+{ "mode": { "value": "allowlist", "source": "admin" },
+  "effective_mode": "allowlist",
+  "domains": { "value": ["@example.com"], "source": "admin" },
+  "addresses": { "value": ["guest@example.net"], "source": "admin" },
+  "approval": { "value": "operator", "source": "default" },
+  "terms": { "value": { "url": "https://example.com/terms", "version": "2026-10" }, "source": "env" },
+  "max_new_accounts_per_hour": { "value": 20, "source": "default" },
+  "missing": [],
+  "pending": 2,
+  "registered_last_hour": 1, "requests_dropped_last_hour": 0 }
+```
+
+- **Mail is required.** A `PATCH` that sets `mode` to `allowlist` or
+  `open` while the mail settings are not `complete` and `enabled`
+  (§16.2) is `invalid` with `details.fields.mode: "mail_required"`, and
+  nothing is stored. A mode from the environment cannot be refused that
+  way: then, and whenever mail stops being complete or enabled later,
+  `effective_mode` is `closed` and `missing` is `["mail"]`, the hub logs
+  a warning at startup and at each change, and registration answers
+  `registration_closed` (§2.7.1). `effective_mode` is what the hub does
+  now; `mode` what is set.
+- **An empty allowlist** under `allowlist` registers nobody; it is
+  valid, and `missing` says `["allowlist"]`.
+- **Lists.** Each entry follows §2.7 (a domain as `@` plus a host name
+  of §18.4, an address as §18.4), stored lower case and without
+  duplicates; a bad entry is `invalid` with `details.fields.domains` or
+  `addresses` naming its index. A `PATCH` replaces a whole list.
+- **Changing the mode or a list** never touches existing accounts or
+  pending approvals; a pending registration (§2.7.1) is checked again
+  at completion.
+- **Changing `approval`** from `operator` to `automatic` leaves accounts
+  already `pending` pending: each is still decided.
+
+**Accounts that wait.**
+
+| Endpoint | Effect |
+|---|---|
+| `GET /admin/registrations` | the pending accounts, oldest first, paged (§1.4): `{id, handle, display_name, address, created_at, expires_at, source_ip, terms}` |
+| `POST /admin/registrations/{id}/approve` | `pending` → `active`; 200 with the item and `account_status: "active"` |
+| `POST /admin/registrations/{id}/reject` `{reason}` | deletes the pending account and its sessions; `reason` 1–1024 characters, required, mailed to the person; the address is blocked for 30 days; 200 `{id, status: "rejected"}` |
+| `DELETE /admin/registrations/blocks/{address}` | lifts a block early; idempotent |
+
+Scope `instance:admin`, human only, for all four. An `id` that is not a
+pending account is `not_found`; one decided meanwhile by another
+instance admin is `invalid_transition` (`details.from`: `active` or
+`rejected`). The address is shown here — to the instance admin, for
+pending accounts only — because deciding needs it; §16.1 still carries
+none. `reason` follows the rules of a mail body (§18.5): plain text, no
+link is made from it.
+
+**Records.** Registration belongs to no project, so none of this is an
+event of §8. The hub writes instance records for the accounts design's
+instance audit log (pending): `account_registered` `{human, handle,
+approval, terms_version}`, `registration_approved` `{human, by}`,
+`registration_rejected` `{human, by, reason}`,
+`registration_expired` `{human}` and `registration_settings_changed`
+`{fields, by}` (names only, no list contents in the record). Two
+account records (§18.1) reach people: `registration_pending` `{human,
+handle}` for every instance admin, which is the `registration`
+notification (§18.1), and `registration_approved` for the person.
 
 ## 17. The change ticker
 
@@ -8360,7 +8768,9 @@ when it is read or sent, from two sources, plus a read flag per human:
   §2.6.5) also `session_created` and `session_ended`, shown in the
   account's session list; `session_ended` is no notification; and with
   the instances contract (#162, §7) `personal_request_created`,
-  `personal_request_answered` and `personal_request_withdrawn`.
+  `personal_request_answered` and `personal_request_withdrawn`; and with
+registration (§2.7.5, §16.4) `registration_pending`, written for every
+instance admin, and `registration_approved`, written for the person.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -8389,7 +8799,8 @@ member and in their audience, so each personal request is one item.
 | `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed` |
-| `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) — the only source of this kind | the human | `Mail to <address> disabled after 3 failures` |
+| `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); the account record `registration_approved` (§2.7.5) | the human | `Mail to <address> disabled after 3 failures`; `Your account is approved` |
+| `registration` | the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; it is marked read on its own once the account is decided | every instance admin, and nobody else | `<handle> waits for approval`, linking to Admin → Registration |
 
 **Which cards are the human's — default pending the maintainer.** A
 card counts for the `card` kind when the human
@@ -8730,7 +9141,8 @@ device; the browser's own permission is per browser and is not stored.
 
 - **`browser`.** `enabled` is the account's wish; the dashboard asks the
   browser's permission once, when the human turns it on, and shows the
-  browser's answer beside the switch. `kinds` per kind on or off.
+  browser's answer beside the switch. `kinds` per kind on or off; an
+  instance admin's lists also carry `registration` (§18.1, §16.4).
   `content` (`chat`, `mention`; default `false`) makes the hub fill the
   items' `content` field (§18.2, plain text, at most 120 characters),
   which the dashboard puts into the browser notification and the
@@ -8757,6 +9169,18 @@ device; the browser's own permission is per browser and is not stored.
   "invalid"}` (or the field's own name). The hub hands the checked
   address to SMTP as the single recipient; it never parses a list out of
   it.
+- **One account per address.** A verified address belongs to at most one
+  account, across registration (§2.7) and this section alike: a unique
+  constraint on the accounts' normalized verified address (trimmed,
+  lower-cased, as §2.6.3 compares), written under a per-address lock that
+  the verification here, an address change and the completion of a
+  registration (§2.7.1) all take. Exactly one of them wins an address.
+  A verification link for an address that another account verified
+  meanwhile is the page that says the link no longer works (§18.6,
+  never why), and it changes nothing; a pending address that another
+  account claims first stays unverified. Setting a `pending_address`
+  is not a claim and is never refused for this reason, so the call
+  says nothing about other accounts.
 - **Changing a verified address.** Once a verified address exists,
   setting another one or removing it (`null`) needs the human's own
   confirmation; how young a session is or how it was made does not
