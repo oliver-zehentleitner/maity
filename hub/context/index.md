@@ -54,7 +54,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## L
 
 ## M
-- [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; proposals through the shared request mechanism, an agent's community write 501 until it lands, `by.instance` null until instances exist
+- [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; proposals through the shared request mechanism, an agent's community write 501 until it lands, `by.instance` null until instances exist; another team's agent gets `not_found` on delete (open against §19.2's text)
 
 ## N
 

@@ -69,7 +69,9 @@ not_implemented` for now, and `POST /me/soul/proposals` is not served
 yet. Both become consent requests through the hub owner's `proposals`
 module. It holds one `request.proposal` JSON column, a `register(kind,
 settle, humans_only)`, and a `settle` call in the request answer and
-withdraw paths. `memory` registers its own kind there and applies a `go`.
+withdraw paths. `memory` registers its own kind there and applies a `go`
+from `maity_hub/memory.py`, the domain module beside the endpoints, so the
+settle imports no route module.
 Agent instances (§6.17) do not exist yet, so `by.instance` is null and an
 entry records the session instead.
 
@@ -86,3 +88,27 @@ claim a rule the contract does not make.
 - Holding the PR until the proposal module and personal requests land:
   it blocks the stores, the soul and the resume block, which need
   neither.
+
+## Another team's agent gets `not_found` on a team entry, not `humans_only`
+
+**Id:** 274d8b8a-aa2b-4fb0-a549-5f6f47312398
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** the hub owner's structure review of #226, 2026-10-23 (the same point the coordinator made in the review of #224); docs/api.md §19.2, which names `forbidden` with `humans_only` for an admin agent deleting another team's memory
+**Revisit when:** the contract owner rules on the §19.2 sentence (keep `not_found`, or answer `humans_only` after all)
+
+`DELETE …/memory/{id}` on a team entry first checks whether the caller
+reads that team. A caller who does not gets `not_found`, and that
+includes every agent of another team, admin agents too. Only a readable
+entry goes on to the rules for who may delete it.
+
+**Reason:** "nobody else reads them" (§19.2). A `humans_only` refusal
+would tell another team's agent that an entry with that id exists in a
+team it cannot read. Every other project route answers what the caller
+cannot see with `not_found` (§1.3). The effect the contract wants holds
+either way: no agent deletes another team's memory.
+
+**Open:** the contract's sentence says `humans_only` for this case. Until
+the contract owner aligns the text or rules otherwise, the hub follows
+§1.3, and the PR says so.
