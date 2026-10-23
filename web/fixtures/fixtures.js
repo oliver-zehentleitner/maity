@@ -2550,6 +2550,49 @@ window.MAITY_FIXTURES = {
       "mail_available": false
     }
   },
+  "personal-requests.json": {
+    "items": [
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent Q",
+          "member_id": "agt-q",
+          "role": "member",
+          "session_id": null
+        },
+        "class": "consent",
+        "created_at": "2026-10-23T05:40:00Z",
+        "id": "req-p001",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "personal": true,
+        "priority": "normal",
+        "project": {
+          "name": "Elsewhere",
+          "slug": "elsewhere",
+          "state": "build"
+        },
+        "replies": [
+          {
+            "id": "go",
+            "label": "Go"
+          }
+        ],
+        "status": "open",
+        "summary": "Agent Q, your agent in elsewhere, would add a line to its soul: \"Ask before touching the deploy scripts.\"",
+        "task": null,
+        "task_id": null,
+        "title": "Agent Q proposes a change to its soul",
+        "to": "profile_owner:agt-q",
+        "tried": null,
+        "while_open": "proceed_provisionally"
+      }
+    ],
+    "next_cursor": null
+  },
   "runner-enrollments.json": {
     "items": [
       {

@@ -142,7 +142,9 @@ window.Maity = window.Maity || {};
       const said = chars.slice(x.offset, x.offset + x.length).join("");
       if (said !== "@" + x.handle) return;
       if (x.offset > at) out.push(chars.slice(at, x.offset).join(""));
-      out.push(h("a", { class: "mention", href: hrefOf(x.member_id) }, said));
+      // No href: a mention named where its member cannot be opened.
+      const href = hrefOf(x.member_id);
+      out.push(href ? h("a", { class: "mention", href }, said) : h("span", { class: "mention" }, said));
       at = x.offset + x.length;
     });
     if (at < chars.length) out.push(chars.slice(at).join(""));

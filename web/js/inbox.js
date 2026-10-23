@@ -69,6 +69,11 @@ window.Maity = window.Maity || {};
   // and state, a link to the project, before the entry it belongs to.
   function projectBadge(ctx, req, names) {
     const p = req.project || { slug: req.slug, name: names.project(req) };
+    // A personal request (§7) is the human's, not the project's: no link to
+    // a project inbox that never lists it, and maybe one is not a member of.
+    if (req.personal) {
+      return h("span", { class: "project-label personal" }, "Personal", h("span", { class: "muted" }, " · " + p.name));
+    }
     return h("a", { class: "project-label", href: ctx.projectLink(p.slug, "inbox") },
       M.projectMark(p.slug, p.name, (ctx.projectViews || {})[p.slug], "small"),
       p.name,
@@ -84,7 +89,7 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, names.project(req) + ": ") : null,
+    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + names.project(req) + ": ") : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     h("span", { class: "title" }, req.title),
@@ -108,7 +113,10 @@ window.Maity = window.Maity || {};
     const body = h("div", { class: "entry-body" });
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all"
+      ctx.scope === "all" && req.personal
+        ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]
+        : null,
+      ctx.scope === "all" && !req.personal
         ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
       h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(req.asked_by) : "—"),
@@ -116,8 +124,10 @@ window.Maity = window.Maity || {};
       req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req.to))] : null,
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
       req.task
-        ? [h("dt", null, "Card"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "board") },
-          req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
+        ? [h("dt", null, "Card"), h("dd", null, req.personal
+          ? req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
+          : h("a", { href: ctx.projectLink(req.slug, "board") },
+            req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
         : null,
       h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
         ? "the agent proceeds provisionally"
@@ -125,7 +135,8 @@ window.Maity = window.Maity || {};
       req.ktw_ref ? [h("dt", null, "Reasoning"), h("dd", null, h("code", null, req.ktw_ref))] : null));
 
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
-    const memberHref = (id) => ctx.projectLink(req.slug, "members", id);
+    // A personal request's project may be one the human is not in: no links there.
+    const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
     const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref);
     if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
     if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
@@ -152,10 +163,10 @@ window.Maity = window.Maity || {};
     }
 
     const status = M.statusLine();
-    const send = (payload) => {
+    const send = (payload, verb) => {
       body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
       status.busy("Sending…");
-      onAnswer(req, payload).catch((err) => {
+      onAnswer(req, payload, verb).catch((err) => {
         body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
         status.fail("Not sent: ", err);
       });
@@ -180,6 +191,16 @@ window.Maity = window.Maity || {};
           onclick: () => onLater(req),
         }, "Later"),
         h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
+        // Its human may withdraw a personal request, as nobody else can (§7).
+        req.personal ? h("button", {
+          type: "button",
+          class: "reply withdraw",
+          onclick: () => {
+            if (!window.confirm("Withdraw this request? It is closed without an answer.")) return;
+            const reason = text.value.trim();
+            send(reason ? { reason } : {}, "withdraw");
+          },
+        }, "Withdraw") : null,
         // The primary reply last, the others in the hub's order before it.
         [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
           ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
@@ -188,7 +209,8 @@ window.Maity = window.Maity || {};
         h("label", { for: textId }, "Free text (" + M.dom.SEND_KEYS + " sends)"),
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
-        M.mentionPicker(text, () => M.api.getAll("/projects/" + encodeURIComponent(req.slug) + "/members").then((r) => r.items), ctx.me.id),
+        // Not for a personal request: its project may be one the human is not in.
+        req.personal ? null : M.mentionPicker(text, () => M.api.getAll("/projects/" + encodeURIComponent(req.slug) + "/members").then((r) => r.items), ctx.me.id),
         sendText),
       status.el);
 
@@ -246,8 +268,9 @@ window.Maity = window.Maity || {};
         .filter((r) => !projectFilter() || r.slug === projectFilter())
         .sort(comparator(names));
       if (!grouped()) return sorted;
-      const at = (slug) => { const i = ctx.projects.findIndex((p) => p.slug === slug); return i < 0 ? ctx.projects.length : i; };
-      return sorted.map((r, i) => [r, i]).sort((a, b) => at(a[0].slug) - at(b[0].slug) || a[1] - b[1]).map(([r]) => r);
+      // Personal requests first, in a group of their own; then by project.
+      const at = (r) => { if (r.personal) return -1; const i = ctx.projects.findIndex((p) => p.slug === r.slug); return i < 0 ? ctx.projects.length : i; };
+      return sorted.map((r, i) => [r, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([r]) => r);
     }
 
     function draw() {
@@ -280,12 +303,13 @@ window.Maity = window.Maity || {};
       if (grouped()) {
         // One section per project, its heading and its own list, so that a
         // list's items are its entries only.
-        const slugs = [...new Set(shown.map((r) => r.slug))];
+        const groupOf = (r) => (r.personal ? "" : r.slug);
+        const slugs = [...new Set(shown.map(groupOf))];
         slugs.forEach((slug) => {
-          const own = shown.filter((r) => r.slug === slug);
-          const id = "inbox-group-" + slug;
+          const own = shown.filter((r) => groupOf(r) === slug);
+          const id = "inbox-group-" + (slug || "personal");
           append(list, h("section", { class: "entry-group", "aria-labelledby": id },
-            h("h3", { id }, names.project(own[0]), h("span", { class: "count" }, String(own.length))),
+            h("h3", { id }, slug ? names.project(own[0]) : "Personal", h("span", { class: "count" }, String(own.length))),
             h("ol", { class: "entries" }, own.map(entry))));
         });
       } else {
@@ -309,10 +333,13 @@ window.Maity = window.Maity || {};
       draw();
     }
 
-    async function answer(req, payload) {
+    // A personal request is answered and withdrawn on /requests/{id} (§7):
+    // the project's routes answer not_found for it.
+    async function answer(req, payload, verb) {
       const order = ordered();
-      const updated = await M.api.post("/projects/" + encodeURIComponent(req.slug)
-        + "/requests/" + encodeURIComponent(req.id) + "/answer", payload);
+      const path = (req.personal ? "" : "/projects/" + encodeURIComponent(req.slug))
+        + "/requests/" + encodeURIComponent(req.id) + "/" + (verb || "answer");
+      const updated = await M.api.post(path, payload);
       updated.slug = req.slug;
       if (req.project) updated.project = req.project;
       items[items.indexOf(req)] = updated;

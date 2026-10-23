@@ -73,10 +73,7 @@ window.Maity = window.Maity || {};
   // the listing alone may be a mistyped project).
   async function hubHasTicker() {
     if (hubHas === false) return false;
-    const doc = await M.api.get("/openapi.json");
-    // The hub lists its paths under its prefix (/api/v1/…); either form counts, as in the CLI.
-    const paths = (doc && doc.paths) || {};
-    hubHas = !!(paths["/projects/{slug}/ticker"] || paths["/api/v1/projects/{slug}/ticker"]);
+    hubHas = await M.api.hubHas("GET", "/projects/{slug}/ticker");
     return hubHas;
   }
 

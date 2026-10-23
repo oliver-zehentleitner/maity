@@ -114,13 +114,15 @@ window.Maity = window.Maity || {};
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
-  function conversations(ctx, currentId) {
+  function conversations(ctx, currentId, groupsServed) {
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
     let groups = [];
-    const none = h("p", { class: "muted" }, "You own no agents in this project, and are in no group chat.");
+    const none = h("p", { class: "muted" }, groupsServed
+      ? "You own no agents in this project, and are in no group chat."
+      : "You own no agents in this project.");
     const draw = () => {
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
@@ -170,8 +172,11 @@ window.Maity = window.Maity || {};
     const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
-        closedProject ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat")),
-      none, ul, status.el);
+        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat")),
+      none, ul,
+      // Not an empty-looking list: a hub before group chats lists none.
+      groupsServed ? null : h("p", { class: "muted no-groups" }, "This hub has no group chats yet."),
+      status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
   }
@@ -307,14 +312,20 @@ window.Maity = window.Maity || {};
   M.views.chat = async function (ctx, root, args) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
-    const list = conversations(ctx, args[0] || null);
+    const groupsServed = await M.groupChat.served();
+    const list = conversations(ctx, args[0] || null, groupsServed);
     const layout = h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
     append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
     ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
     ctx.every(LIST_MS, () => list.refresh(true));
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
-    if (args[0] === "new") { M.groupChat.create(ctx, layout, list); await list.refresh(false); return; }
+    if (args[0] === "new") {
+      if (groupsServed) M.groupChat.create(ctx, layout, list);
+      else append(layout, h("p", { class: "chat-none muted" }, "This hub has no group chats yet: there is none to create."));
+      await list.refresh(false);
+      return;
+    }
     if (!agent && args[0]) {
       await list.refresh(false);
       const group = list.groups().find((g) => g.id === args[0]);

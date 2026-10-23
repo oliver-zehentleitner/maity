@@ -281,7 +281,12 @@ window.Maity = window.Maity || {};
       h("button", { type: "submit" }, "Change state")));
     }
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
-    if (ctx.canAdmin) append(panel, blindRemoveForm(ctx));
+    // Only on a hub with group chats: without them there is no closed one.
+    if (ctx.canAdmin && M.groupChat) {
+      const slot = h("div", { class: "remove-reported-slot" });
+      append(panel, slot);
+      M.groupChat.served().then((yes) => { if (yes) append(slot, blindRemoveForm(ctx)); });
+    }
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).

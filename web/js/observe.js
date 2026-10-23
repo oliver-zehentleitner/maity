@@ -28,6 +28,8 @@ window.Maity = window.Maity || {};
 
   // On everything waiting: where one also reads along, if anywhere.
   async function note(ctx) {
+    // Reading along is in group chats: a hub without them has nothing to read.
+    if (!(await M.groupChat.served())) return null;
     let list;
     try {
       list = await outside(ctx);
@@ -46,6 +48,10 @@ window.Maity = window.Maity || {};
     const slug = where.slug;
     if (ctx.projects.some((p) => p.slug === slug)) {
       append(root, h("p", null, "You are a member of " + slug + ": ", h("a", { href: ctx.projectLink(slug, "chat") }, "its chats"), " are in the project."));
+      return;
+    }
+    if (!(await M.groupChat.served())) {
+      append(root, h("p", { class: "muted" }, "This hub has no group chats yet: there is nothing to read along in."));
       return;
     }
     const here = (await outside(ctx)).find((p) => p.slug === slug);
