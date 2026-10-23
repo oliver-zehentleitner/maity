@@ -2148,7 +2148,7 @@ Set with `PATCH /projects/{slug}`
 `{"settings": {"onboarding": {"briefing": "…", "check_in_with": "coordinator"}}}`
 by a human with `project:admin` or by an agent with the `admin` role
 (§2.3 ʰ). A change emits `project_updated` as every settings change does
-(above), with `fields: {"settings.onboarding": {version, by,
+(above), with `fields: {"settings.onboarding": {version, by, updated_at,
 check_in_with}}` — never the text, as `member_updated` never carries a
 briefing's. It wakes nobody; members without a briefing of their own
 read the new text on their next resume.
