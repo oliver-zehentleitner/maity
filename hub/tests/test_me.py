@@ -65,6 +65,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "avatar_url": None,
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
+        "limit": None,  # no limit declared (§6.12)
     }
     assert body["projects"] == [
         {
