@@ -433,7 +433,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me" ? realGet5(p).then((m) => { m.projects.find((x) => x.slug === "maity").role = "member"; return m; }) : realGet5(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/board");
   expect(!byId("chk-rel-0001-chk-1") && !btn(rel(), "Edit checklist"), "release: no editing without releases:write");
-  expect(!main.querySelector("form.card-order"), "board: without tasks:admin no card offers Place");
+  expect(!main.querySelector(".card-order"), "board: without tasks:admin no card offers Place");
   win.Maity.api.get = realGet5;
   await go("#/p/sample/board");
   const closedRel = main.querySelectorAll("article.card").find((a) => a.getAttribute("aria-label").startsWith("0.3.0"));
@@ -929,15 +929,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/board");
   const bCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
   const colOf = (id) => main.querySelectorAll("section.column").find((col) => col.querySelectorAll("article.card").some((a) => a.attrs["data-card"] === id));
-  expect(bCard("tsk-0008").attrs.draggable === "true" && !bCard("tsk-0003").attrs.draggable && !bCard("tsk-0003").querySelector("form.card-move"),
-    "board: a card that may move is draggable and has a Move menu; a closed one has neither");
+  // The card's controls: the column and the assignee as menus, Place as four arrows (docs/api.md §6.4).
+  const bMenu = (id, cls) => bCard(id).querySelector("." + cls + " .menu-button");
+  const bPick = async (id, cls, label) => {
+    bMenu(id, cls).click(); await tick();
+    const item = bCard(id).querySelectorAll("." + cls + " .menu-item").find((b) => text(b).trim() === label);
+    if (!item) throw new Error("no menu item " + label + " in " + id + ": " + bCard(id).querySelectorAll("." + cls + " .menu-item").map((b) => text(b)).join("|"));
+    item.click(); for (let k = 0; k < 4; k++) await tick();
+  };
+  const bArrow = (id, way) => bCard(id).querySelector(".card-order .place-" + way);
+  expect(bCard("tsk-0008").attrs.draggable === "true" && !bCard("tsk-0003").attrs.draggable && !bCard("tsk-0003").querySelector(".card-move"),
+    "board: a card that may move is draggable and has a status menu; a closed one has neither");
+  expect(!main.querySelector("article.card select") && main.querySelectorAll("article.card .card-actions").every((row) => row.querySelectorAll("form").length === 0),
+    "board: no card carries a select-and-button form any more");
+  // The header names whose card it is; the claim line leads with its state as a dot; a checkpoint is two lines.
+  const bWho = bCard("tsk-0006").querySelector("header .card-assignee");
+  expect(bWho && text(bWho).includes("@agent-c") && bWho.getAttribute("href") === "#/p/maity/members/agt-c" && bWho.getAttribute("title") === "Agent C" && bWho.getAttribute("aria-label") === "Assigned to Agent C"
+    && bWho.classList.contains("kind-agent") && !bCard("tsk-0008").querySelector(".card-assignee"),
+    "board: the assignee sits in the card's header as @handle, the full name as tooltip and name; none when unassigned");
+  const bClaim = (id) => bCard(id).querySelector("p.claim");
+  expect(bClaim("tsk-0001").classList.contains("live") && bClaim("tsk-0001").querySelector(".claim-dot.live") && text(bClaim("tsk-0001")).includes("Claimed by @agent-a")
+    && bClaim("tsk-0007").classList.contains("expired") && text(bClaim("tsk-0007")).includes("lease expired")
+    && bClaim("tsk-0006").querySelector(".claim-dot.none") && text(bClaim("tsk-0006")).includes("Assigned, not claimed"),
+    "board: the claim line: live, expired, or not claimed, each led by its dot");
+  const bCp = bCard("tsk-0004").querySelector(".checkpoint .clamp");
+  expect(bCp && bCp.getAttribute("title").replace(/\s+/g, " ") === text(bCp).trim() && text(bCp).startsWith("Done: "), "board: a checkpoint is clamped, its whole text the tooltip");
   const bProto = Object.getPrototypeOf(main);
   const bFocus = bProto.focus;
   bProto.focus = function () { document.activeElement = this; };
-  const moveSel = bCard("tsk-0008").querySelector("form.card-move select");
-  expect(JSON.stringify(moveSel.querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Open it", "Cancel it"]), "board: the Move menu offers the allowed moves in words");
-  moveSel.value = "open";
-  bCard("tsk-0008").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(bMenu("tsk-0008", "card-move")).startsWith("Proposed") && bMenu("tsk-0008", "card-move").getAttribute("aria-haspopup") === "menu",
+    "board: the status menu shows the card's column");
+  bMenu("tsk-0008", "card-move").click(); await tick();
+  expect(JSON.stringify(bCard("tsk-0008").querySelectorAll(".card-move .menu-item").map((b) => text(b).trim())) === JSON.stringify(["Move to Open", "Move to Cancelled"]),
+    "board: it offers the allowed columns");
+  bMenu("tsk-0008", "card-move").click(); await tick();
+  await bPick("tsk-0008", "card-move", "Move to Open");
   expect(JSON.stringify(bWrites[0]) === JSON.stringify(["PATCH", "/projects/maity/tasks/tsk-0008", { status: "open" }])
     && colOf("tsk-0008").attrs["data-status"] === "open" && text(main).includes("tsk-0008 is now open."), "board: moved with the menu");
   expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "move:tsk-0008", "board: the focus stays on the moved card's menu");
@@ -956,36 +982,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: dropped on an allowed column, moved");
   // The hub's refusal, in words.
   win.Maity.api.patch = (p) => Promise.reject(new win.Maity.api.ApiError("no", 409, p, "dependencies_open", { open: ["tsk-0001"] }));
-  bCard("tsk-0005").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  bProto.focus = function () { document.activeElement = this; };
+  await bPick("tsk-0005", "card-move", "Move to Done");
   expect(text(main).includes("Moving failed: Not done yet: a card it depends on is still open."), "board: the hub's refusal is said in words");
+  expect(document.activeElement && document.activeElement === bMenu("tsk-0005", "card-move") && bCard("tsk-0005").querySelector(".card-move .menu").hidden,
+    "board: after a refused move the focus is back on the card's status menu button, the menu closed");
+  bProto.focus = bFocus; document.activeElement = undefined;
   win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };
   // Assign, and the live lease refused.
-  const asg = bCard("tsk-0006").querySelector("form.card-assign select"); asg.value = "agt-d";
-  bCard("tsk-0006").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  await bPick("tsk-0006", "card-assign", "@agent-d");
   expect(JSON.stringify(bWrites[bWrites.length - 1]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0006/assign", { assignee: "agt-d" }])
     && text(main).includes("tsk-0006 is assigned to Agent D."), "board: assigned");
-  const asg1 = bCard("tsk-0001").querySelector("form.card-assign select"); asg1.value = "agt-b";
-  bCard("tsk-0001").querySelector("form.card-assign").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  await bPick("tsk-0001", "card-assign", "@agent-b");
   expect(text(main).includes("Assigning failed: It is claimed with a live lease"), "board: a live lease is not taken over, said in words");
   // Order within a column (docs/api.md §6.4): by rank, then created_at, then id.
   const colIds = (st) => colEl(st).querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
   expect(JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0009", "tsk-0001", "tsk-0007"]), "board: a column in the hub's order, a ranked card first " + JSON.stringify(colIds("in_progress")));
-  const ordSel = (id) => bCard(id).querySelector("form.card-order select");
-  expect(JSON.stringify(ordSel("tsk-0009").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move down", "To the bottom"])
-    && JSON.stringify(ordSel("tsk-0001").querySelectorAll("option").map((o) => o.textContent)) === JSON.stringify(["Move up", "Move down"])
-    , "board: Place offers the moves the card's place allows");
-  expect(!main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === "done").querySelector("form.card-order"), "board: closed cards keep their order");
+  const enabled = (id) => ["top", "up", "down", "bottom"].filter((w) => bArrow(id, w).attrs.disabled === undefined);
+  expect(JSON.stringify(enabled("tsk-0009")) === JSON.stringify(["down", "bottom"]) && JSON.stringify(enabled("tsk-0001")) === JSON.stringify(["top", "up", "down", "bottom"])
+    && JSON.stringify(enabled("tsk-0007")) === JSON.stringify(["top", "up"]),
+    "board: Place offers the moves the card's place allows; the others are disabled");
+  expect(bCard("tsk-0009").querySelector(".card-order").getAttribute("role") === "group" && bCard("tsk-0009").querySelector(".card-order").getAttribute("aria-label") === "Place in column"
+    && JSON.stringify(["top", "up", "down", "bottom"].map((w) => bArrow("tsk-0009", w).getAttribute("aria-label"))) === JSON.stringify(["Move to top", "Move up", "Move down", "Move to bottom"]),
+    "board: the arrows are a named group, each with its own name");
+  expect(!main.querySelectorAll("section.column").find((col) => col.attrs["data-status"] === "done").querySelector(".card-order"), "board: closed cards keep their order");
   bProto.focus = function () { document.activeElement = this; };
   const ordBefore = bWrites.length;
-  bCard("tsk-0009").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  bArrow("tsk-0009", "down").click(); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(bWrites[ordBefore]) === JSON.stringify(["POST", "/projects/maity/tasks/tsk-0009/move", { after: "tsk-0001" }])
     && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0001", "tsk-0009", "tsk-0007"]) && text(main).includes("tsk-0009 is now below tsk-0001."),
     "board: Move down places the card below its neighbour, once the hub answered");
-  expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "order:tsk-0009", "board: the focus stays on the placed card's Place");
-  ordSel("tsk-0007").value = "top";
-  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(document.activeElement && document.activeElement.getAttribute("data-focus") === "order:tsk-0009:down", "board: the focus stays on the placed card's arrow");
+  bArrow("tsk-0007", "top").click(); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(bWrites[bWrites.length - 1][2]) === JSON.stringify({ to: "top" }) && JSON.stringify(colIds("in_progress")) === JSON.stringify(["tsk-0007", "tsk-0001", "tsk-0009"]),
-    "board: To the top");
+    "board: Move to top");
+  expect(document.activeElement && /^order:tsk-0007:(down|bottom)$/.test(document.activeElement.getAttribute("data-focus") || ""),
+    "board: at the top its Move to top is disabled, so the focus goes to an arrow that still works " + (document.activeElement && document.activeElement.getAttribute("data-focus")));
   bProto.focus = bFocus; document.activeElement = undefined;
   // Dragging within the column: above or below the card it is let go over.
   bCard("tsk-0009").dispatch("dragstart", { dataTransfer: null });
@@ -1005,12 +1037,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: dropped over a card's lower half, placed below it");
   // A neighbour that moved meanwhile: the board is read again and says so.
   win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("gone", 400, p, "invalid", {}));
-  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  bArrow("tsk-0007", "down").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Reordering failed: the card next to it moved or changed meanwhile; the board shows the order as it is now."),
     "board: a stale neighbour re-reads the board and says so");
   // A not_found while card and neighbour are still in place: a hub without the endpoint.
   win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {}));
-  bCard("tsk-0007").querySelector("form.card-order").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  bArrow("tsk-0007", "down").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Reordering failed: this hub does not order cards yet."), "board: a hub without the move endpoint is said as such");
   win.Maity.api.post = (p, b) => { bWrites.push(["POST", p, b]); return bPost(p, b); };
   // The mock as the hub: a neighbour in another column is invalid; a member may not order.
@@ -1052,9 +1084,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bProto2 = Object.getPrototypeOf(main);
   const bFocus2 = bProto2.focus;
   bProto2.focus = function () { document.activeElement = this; };
-  const nSel = bCard("tsk-f001").querySelector("form.card-move select"); nSel.value = "cancelled";
-  bCard("tsk-f001").querySelector("form.card-move").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(colOf("tsk-f001").attrs["data-status"] === "cancelled" && !bCard("tsk-f001").querySelector("form.card-move")
+  await bPick("tsk-f001", "card-move", "Move to Cancelled");
+  expect(colOf("tsk-f001").attrs["data-status"] === "cancelled" && !bCard("tsk-f001").querySelector(".card-move")
     && document.activeElement && document.activeElement.className.includes("send-status") && text(document.activeElement).includes("tsk-f001 is now cancelled."),
     "board: cancelled with the menu; the focus goes to the status line");
   bProto2.focus = bFocus2; document.activeElement = undefined;

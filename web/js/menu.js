@@ -79,7 +79,7 @@ window.Maity = window.Maity || {};
       items = [];
       spec.items().forEach((it) => {
         if (it.separator) { append(list, h("li", { role: "separator", class: "menu-sep" })); return; }
-        const attrs = { role: "menuitem", tabindex: "-1", class: "menu-item" };
+        const attrs = { role: "menuitem", tabindex: "-1", class: "menu-item", title: it.title || null };
         let el;
         if (it.disabled) {
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,
@@ -87,7 +87,9 @@ window.Maity = window.Maity || {};
         } else if (it.href) {
           el = h("a", Object.assign(attrs, { href: it.href, onclick: () => close(false) }), it.label);
         } else {
-          el = h("button", Object.assign(attrs, { type: "button", onclick: () => { close(false); it.onSelect(); } }), it.label);
+          // Back on the button before the action runs: whatever it does next
+          // (moves the focus itself, fails, redraws) starts from a visible control.
+          el = h("button", Object.assign(attrs, { type: "button", onclick: () => { close(true); it.onSelect(); } }), it.label);
         }
         items.push(el);
         append(list, h("li", { role: "none" }, el));

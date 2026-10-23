@@ -149,7 +149,8 @@ window, so filtering there is instant and needs no new contract.
 
 **Id:** 3785a685-e976-400f-b088-9321804d29fc
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 6f06c1b3-656b-4631-aa2f-c9dff1f86556
 **Evidence:** inferred
 **Source:** the coordinator's card for card order (tsk-9cxxnmr3srx1) and docs/api.md §6.4, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub answers a move with the column's new order, or closed cards get a reason to be ordered
@@ -630,3 +631,36 @@ lead nowhere.
 **Rejected alternative:** the project's badge and links as for every
 other entry: they lead to an inbox without the request, or to a project
 the human cannot open.
+
+## A board card ends in one row of controls: a status menu, an assign menu and four Place arrows
+
+**Id:** 6f06c1b3-656b-4631-aa2f-c9dff1f86556
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's board screenshot and his ask for Place as arrow buttons (tsk-jxexcfadmh54), 2026-10-23; the designer's layout for it, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** a card gets an action that fits none of the three, or the board gets a card view of its own
+
+Move, Place and Reassign were each a select with a button: three forms per
+card. They are now one row at the card's foot: the status as a menu
+button showing the card's column ("Move to <column>" items, only the
+moves the hub allows), Assign as a menu of members by @handle, and Place as
+four arrow buttons in a group ("Place in column"), disabled where the
+card's place allows no such move. The assignee moved into the header as a
+picture and @handle (the full name as tooltip and accessible name, a link
+to the member). Picking a menu item acts at once; after a move or place
+the focus returns to the same control, or to an arrow of the card that
+still works. As before, dragging a card over another of its column places
+it above or below that card, and the order changes only once the hub
+answered (the Place menu's entry, which this one replaces).
+
+**Reason:** three forms made a card about twice as tall as its content and
+repeated the same three labels on every card; one compact row keeps the
+board scannable. Arrows say the four places at a glance, where a select
+hid them behind a second click. The header is where the eye looks for
+whose card it is.
+
+**Rejected alternative:** keeping the selects, only tighter: still two
+steps per action and still three labels per card. A single overflow menu
+for all actions: Place is used repeatedly while ordering a column, and a
+menu per press would make that slow.

@@ -315,6 +315,7 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 }
 
 .card header, .profile header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.card header { font-size: 0.8rem; }
 .card-id, .handle { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
@@ -330,8 +331,19 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .checklist .met { color: var(--ok); }
 .checklist .unmet { color: var(--warn); }
 
-.claim { margin: 4px 0; font-size: 0.9rem; }
+.claim { margin: 4px 0; font-size: 0.82rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
 .claim.unclaimed { color: var(--muted); }
+.claim.expired { color: var(--bad); }
+.claim-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; margin-inline-end: 2px; background: var(--border); }
+.claim-dot.live { background: var(--ok); }
+.claim-dot.expired { background: var(--bad); }
+/* Whose card it is, at the header's right: a round picture for a human, a rounded square for an agent. */
+.card-assignee { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+.card-assignee.kind-human .avatar-svg, .card-assignee.kind-human .avatar-img { clip-path: circle(50%); }
+.card-assignee.kind-agent .avatar-svg, .card-assignee.kind-agent .avatar-img { clip-path: inset(0 round 4px); }
+.card h3 { font-size: 1rem; line-height: 1.3; margin: 6px 0 2px; }
+/* A checkpoint is two lines on the card; its title holds the rest. */
+.checkpoint .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .lease { color: var(--muted); }
 
 .deps .label { font-size: 0.8rem; color: var(--muted); }
@@ -351,10 +363,22 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .groups .unknown { color: var(--muted); }
 .release-edit { margin-top: 6px; }
 /* Managing cards: the actions at the card's foot, the drop targets while dragging. */
-.card-actions { display: grid; gap: 6px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
-.card-move, .card-order, .card-assign { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
-.card-move label, .card-order label, .card-assign label { font-size: 0.8rem; color: var(--muted); margin-inline-end: auto; }
-.card-move select, .card-order select, .card-assign select { flex: 1 1 8rem; min-width: 0; }
+/* One row: the column and the assignee as menus, the place as four arrows at the right. */
+.card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.card-actions .menu-box { flex: none; }
+.card-actions .card-move .menu-button { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+.card-actions .card-assign .menu-button { background: none; border: 1px solid transparent; color: var(--muted); font-size: 0.85rem; }
+.card-actions .menu { inset-inline-end: auto; inset-inline-start: 0; border-radius: 8px; }
+.card-actions .menu-item .avatar-svg, .card-actions .menu-item .avatar-img { margin-inline-end: 4px; }
+.card-order { display: flex; gap: 2px; margin-inline-start: auto; }
+.icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; }
+.icon-button .icon .icon-fill { fill: currentColor; }
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+/* A phone's thumb: bigger targets; the arrows wrap onto their own line. */
+@media (max-width: 600px) {
+  .icon-button, .card-actions .menu-button { min-width: 40px; min-height: 40px; }
+  .card-order { flex-basis: 100%; justify-content: flex-end; }
+}
 .card.movable { cursor: grab; }
 .column.drop-ok { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .column.drop-over { background: var(--surface-2); }
