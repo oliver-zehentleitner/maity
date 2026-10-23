@@ -12,7 +12,6 @@
   `MAITY_SMTP_ALLOW_PLAINTEXT`), `AUTH` only over TLS, certificates always
   verified (`MAITY_SMTP_CA_FILE`), the stage where it stopped and the
   server's reply without the username or password; five per hour.
-- hub: `cryptography` as a dependency, for the encrypted SMTP password.
 
 ### Changed
 
