@@ -90,6 +90,7 @@ const document = {
   createElementNS: (ns, t) => new El(t),
   createTextNode: (t) => new Text_(t),
   head,
+  documentElement: new El("html"),
   getElementById: (id) => ({ header, main })[id],
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
   addEventListener: (t, f) => { docListeners[t] = f; },
@@ -512,9 +513,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
+  // The theme (System, Light, Dark): a menu beside the gear; the pick on <html> as data-theme, per browser.
+  const thButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Theme: "));
+  const thHtml = document.documentElement;
+  const thStore = {};
+  win.localStorage = { getItem: (k) => (k in thStore ? thStore[k] : null), setItem: (k, v) => { thStore[k] = String(v); }, removeItem: (k) => { delete thStore[k]; } };
+  expect(thButton() && thButton().getAttribute("aria-label") === "Theme: System" && thHtml.attrs["data-theme"] === undefined,
+    "theme: System by default, no data-theme on <html>");
+  const thPick = async (label) => {
+    thButton().click(); await tick();
+    header.querySelectorAll(".menu-item").find((el) => el.textContent === label && el.getAttribute("role") === "menuitemradio").click(); await tick();
+  };
+  thButton().click(); await tick();
+  expect(JSON.stringify(header.querySelectorAll(".menu-item").filter((el) => el.getAttribute("role") === "menuitemradio").map((el) => el.textContent + ":" + el.getAttribute("aria-checked")))
+    === JSON.stringify(["System:true", "Light:false", "Dark:false"]), "theme: three choices, the current one checked");
+  thButton().click(); await tick();
+  await thPick("Dark");
+  expect(thHtml.attrs["data-theme"] === "dark" && thStore["maity.theme"] === "dark" && thButton().getAttribute("aria-label") === "Theme: Dark", "theme: Dark sets data-theme=dark and is kept");
+  await thPick("Light");
+  expect(thHtml.attrs["data-theme"] === "light" && thStore["maity.theme"] === "light", "theme: Light sets data-theme=light");
+  await thPick("System");
+  expect(thHtml.attrs["data-theme"] === undefined && !("maity.theme" in thStore), "theme: System removes both");
+  // Storage that refuses: the pick still applies, nothing throws.
+  win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  await thPick("Dark");
+  expect(thHtml.attrs["data-theme"] === "dark", "theme: without storage the pick applies to this page");
+  await thPick("System");
+  delete win.localStorage;
+  // Both ways to dark hold the same tokens: the system's (unless Light was picked) and an explicit Dark.
+  const thCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  const thDark = (sel) => { const m = thCss.split(sel + " {")[1]; return m ? m.split("}")[0].replace(/\s+/g, " ").trim() : ""; };
+  expect(thCss.includes('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {') && thDark(':root[data-theme="dark"]').includes("--bg: #111418;")
+    && thDark(':root:not([data-theme="light"])') === thDark(':root[data-theme="dark"]'),
+    "theme: the dark tokens apply by the system unless Light is picked, and when Dark is picked, the same in both");
+  expect(/<script src="js\/theme.js"><\/script>/.test(html) && html.indexOf("js/theme.js") < html.indexOf("js/dom.js"),
+    "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(header.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Users of this hub"])
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Users of this hub"])
     && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has this project's settings, the runners and, for the instance admin, the users");
   const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Users of this hub");
   expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: in the settings menu for the instance admin");
