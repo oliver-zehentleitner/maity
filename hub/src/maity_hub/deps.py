@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import runner_revoke
+from maity_hub import events, runner_revoke
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
@@ -69,8 +69,9 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
                     _refuse_other_project(conn, caller, slug)
                 return caller
         except runner_revoke.RevocationDue as due:
-            # Written in its own transaction: the refusal rolls the call's back (§15.3).
-            with engine.begin() as conn:
+            # Written in its own transaction: the refusal rolls the call's back (§15.3);
+            # an event one, since a revocation announces.
+            with events.transaction(engine) as conn:
                 runner_revoke.revoke_due(conn, due.credential_id, due.by)
             raise ApiError(
                 401,

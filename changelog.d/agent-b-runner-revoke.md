@@ -9,5 +9,6 @@
   under `DELETE` `runner_removed`), tells each agent, and revokes their credentials
   `stop_grace_seconds` later (at once under the override); the answer carries
   `on_runner_revoke: [{project, rule, stopped}]`, `runner_credential_revoked` the rule and
-  the stopped placements, and the revoked runner's next call `details.stop` (migration
-  `0030_on_runner_revoke`)
+  the stopped placements, and the revoked runner's next call `details.stop`; an owner's
+  `stop` on a key revoked already still stops its agents; each agent revocation emits
+  `credential_revoked` (migration `0030_on_runner_revoke`)

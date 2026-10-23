@@ -81,14 +81,16 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     return revoked
 
 
-def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) -> None:
-    """Revoke a credential and end its live session."""
+def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) -> bool:
+    """Revoke a credential and end its live session; True when this call revoked it
+    (a conditional UPDATE decides between two at once), False when it was revoked
+    already."""
     now = clock.now()
-    conn.execute(
+    won = conn.execute(
         update(t.credential)
         .where(t.credential.c.id == credential_id, t.credential.c.revoked_at.is_(None))
         .values(revoked_at=now, revoked_by=by, revoked_reason=reason)
-    )
+    ).rowcount
     ended = conn.execute(
         update(t.agent_session)
         .where(t.agent_session.c.credential_id == credential_id, t.agent_session.c.live.is_(True))
@@ -105,6 +107,7 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
     placements.credential_revoked(conn, credential_id, by)
+    return won == 1
 
 
 def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> None:

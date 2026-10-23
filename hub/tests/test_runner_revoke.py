@@ -216,3 +216,50 @@ def test_a_due_credential_shows_as_revoked_before_it_is_used(setup: Setup) -> No
     assert (after["revoked_reason"], after["revoked_by"]) == ("runner_revoked", setup.owner.id)
     view = setup.owner.get(f"/projects/maity/members/{setup.agent.id}").json()
     assert view["credentials"]["active"] == 0
+
+
+def test_a_stop_after_a_keep_still_stops_the_agents(setup: Setup) -> None:
+    """The reviewer's first probe: the key is revoked already, the owner's stop is not."""
+    first = running(setup)
+    assert revoke(setup).json()["on_runner_revoke"][0]["rule"] == "keep"
+    headers = {"X-CSRF-Token": setup.owner.csrf, "Idempotency-Key": "revoke-stop-later-01"}
+    url = f"/api/v1/runners/{setup.runner.id}/revoke"
+    stopped = setup.owner.client.post(url, json={"agents": "stop"}, headers=headers)
+    assert stopped.status_code == 200, stopped.text
+    expected = [{"project": "maity", "rule": "stop", "stopped": [first["id"]]}]
+    assert stopped.json()["on_runner_revoke"] == expected
+    again = setup.owner.client.post(url, json={"agents": "stop"}, headers=headers)
+    assert again.json()["on_runner_revoke"] == expected  # the replay agrees
+    assert placement(setup, first["id"])["active"] is False
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    refused = call(setup.client, setup.runner, "GET", "/api/v1/runner/placements")
+    assert refused.json()["error"]["details"]["stop"] == [first["id"]]
+
+
+def _announced(s: Setup) -> list[Any]:
+    with s.engine.connect() as conn:
+        return list(
+            conn.execute(
+                select(t.event.c.payload, t.event.c.audience).where(
+                    t.event.c.kind == "credential_revoked"
+                )
+            ).all()
+        )
+
+
+@pytest.mark.parametrize("due", [False, True])
+def test_a_runner_revocation_is_announced_once(setup: Setup, due: bool) -> None:
+    """The reviewer's second and third probes: immediate and due revocations both say
+    `credential_revoked` (§15.10), once, the due one from its own event transaction."""
+    if due:
+        assert set_policy(setup, "stop").status_code == 200
+    first = running(setup)
+    revoke(setup, **({} if due else {"agents": "stop"}))
+    if due:
+        assert _announced(setup) == []  # within its grace nothing is revoked yet
+        later(first["stop_grace_seconds"] + 1)
+    for _ in range(2):  # the second use finds it revoked: no second announcement
+        assert error(setup.agent.get("/me")) == "credential_revoked"
+    [(payload, audience)] = _announced(setup)
+    assert payload == {"credential_id": setup.agent.credential_id, "reason": "runner_revoked"}
+    assert set(audience) >= {f"member:{setup.agent.id}", "role:owner"}
