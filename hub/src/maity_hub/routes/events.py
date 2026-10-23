@@ -47,8 +47,9 @@ class MessageIn(Written):
 
 class RedactIn(Strict):
     reason: str = markdown(min_length=1)
-    # What the caller means to redact (§8.5); the hub redacts nothing else.
-    expect: Literal["closed_chat_message"] | None = None
+    # What the caller means to redact (§8.5); the hub redacts nothing else. Checked by
+    # hand, so that any other value, `null` included, is `unknown` and not a type error.
+    expect: Any = None
 
 
 def _closed_group_chat_message(row: Any) -> bool:
@@ -344,6 +345,9 @@ def redact(
     request: Request,
     caller: AnyCaller,
 ) -> JSONResponse:
+    if "expect" in body.model_fields_set and body.expect != "closed_chat_message":
+        raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("events:admin")
@@ -368,12 +372,14 @@ def redact(
             if mine.id != human.id:
                 raise not_found()
             audience = [f"member:{row.conversation_id}", f"member:{human.human_id}"]
-        if body.expect == "closed_chat_message" and not _closed_group_chat_message(row):
-            raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
         if row.kind == "event_redacted":  # a tombstone's record is not itself redacted
             raise ApiError(
                 400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
             )
+        # Compared only for an event the caller could redact without it (§8.5): `expect`
+        # never tells anyone else what a `seq` is.
+        if "expect" in body.model_fields_set and not _closed_group_chat_message(row):
+            raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
         if not row.redacted:
             # The one mutation the log allows, itself on record (§8.5).
             tombstone = {

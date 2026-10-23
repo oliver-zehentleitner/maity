@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
 from tests import flow
@@ -190,10 +190,75 @@ def test_expect_closed_chat_message_redacts_nothing_else(
         assert answer.json()["error"]["details"]["fields"] == {"expect": "mismatch"}
     with migrated.connect() as conn:
         assert conn.execute(select(t.event).where(t.event.c.redacted.is_(True))).all() == []
-    unknown = owner.post(
-        "/projects/maity/events/1/redact", {"reason": "x", "expect": "something_else"}
+    for value in ("something_else", None):  # any other value, null included (§8.5)
+        unknown = owner.post("/projects/maity/events/1/redact", {"reason": "x", "expect": value})
+        assert unknown.json()["error"]["details"]["fields"] == {"expect": "unknown"}
+
+
+def test_expect_answers_nothing_that_the_caller_could_not_redact(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    agent = flow.agent(make_client, owner)
+    message = chat(agent, agent.id, "my token").json()
+    expect = {"reason": "x", "expect": "closed_chat_message"}
+    # An events:admin human who is not a party to the chat: as if the seq did not exist.
+    second = flow.human(make_client, migrated, "second-admin")
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=second.id)
+    outsider = second.post(f"/projects/maity/events/{message['seq']}/redact", expect)
+    assert (outsider.status_code, outsider.headers["Maity-Error"]) == (404, "not_found")
+    # An event the caller cannot read at all: another project's.
+    other = flow.human(make_client, migrated, "elsewhere")
+    flow.project(other, "elsewhere")
+    theirs = other.post(
+        "/projects/elsewhere/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "x"},
     )
-    assert unknown.status_code == 400
+    assert theirs.status_code == 201, theirs.text
+    unreadable = owner.post(f"/projects/maity/events/{theirs.json()['seq']}/redact", expect)
+    assert (unreadable.status_code, unreadable.headers["Maity-Error"]) == (404, "not_found")
+    # A tombstone answers already_redacted, expect or not.
+    project_message = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{project_message['seq']}/redact", {"reason": "x"})
+    with migrated.connect() as conn:
+        tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    on_tomb = owner.post(f"/projects/maity/events/{tomb.seq}/redact", expect)
+    assert on_tomb.json()["error"]["details"] == {"reason": "already_redacted"}
+
+
+def test_a_chats_human_party_reads_the_reason_whatever_its_role(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # Through the API a direct chat's redactor is always an events:admin human, so the
+    # case of a party without that role is written into the log directly.
+    from tests import factory
+
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    member = flow.human(make_client, migrated, "plain-member")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    agent = factory.agent(migrated, project_id, member.id)  # the member's own agent
+    sent = member.post(f"/projects/maity/conversations/{agent.agent_id}/messages", {"body": "x"})
+    assert sent.status_code == 201, sent.text
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.event)
+            .where(t.event.c.seq == sent.json()["seq"])
+            .values(
+                redacted=True,
+                payload={
+                    "redacted": True,
+                    "reason": "a key",
+                    "by": owner.id,
+                    "at": "2026-10-23T00:00:00Z",
+                },
+            )
+        )
+    items = member.get(f"/projects/maity/conversations/{agent.agent_id}/messages").json()["items"]
+    assert items[0]["redaction"]["reason"] == "a key"  # the human party, not an admin
 
 
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
@@ -257,6 +322,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "mentions",
         "redacted",
         "redaction",
+        "attachments",
     }
     assert (message["from"], message["to"], message["conversation_id"]) == (
         owner.id,

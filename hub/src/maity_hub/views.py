@@ -543,13 +543,22 @@ def sees_reasons(reader: Any) -> bool:
     return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
 
 
+def sees_chat_reasons(reader: Any) -> bool:
+    """A chat message's redaction reason (§8.5): a direct chat's human party sees it, an
+    agent never does. Only a chat's parties read its events at all."""
+    return reader is not None and reader.kind == "human"
+
+
 def _without_reason(row: Any, reader: Any) -> Any:
     """`row.payload` as `reader` sees it: the reason of a redaction (the `event_redacted`
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
     redaction = row.kind == "event_redacted" or row.redacted
-    if not redaction or not isinstance(payload, dict) or sees_reasons(reader):
+    if not redaction or not isinstance(payload, dict):
+        return payload
+    chat = row.conversation_id is not None
+    if sees_chat_reasons(reader) if chat else sees_reasons(reader):
         return payload
     if reader is not None and row.kind == "event_redacted" and row.actor_membership == reader.id:
         return payload  # the redactor's own notice
