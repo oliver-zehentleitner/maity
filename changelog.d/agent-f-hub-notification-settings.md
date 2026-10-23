@@ -7,7 +7,7 @@
   password or, for a human without one, approved from a session at least
   24 hours old (held changes, approve and reject); the old address told
   once and `email_address_changed` recorded. `POST …/email/verify`.
-  Migration `0035`.
+  Migration `0036`.
 - hub: `/mail/verify/{token}` and `/mail/unsubscribe/{token}` (§18.6),
   signed with `MAITY_MAIL_SIGNING_KEY`, English or German, a `GET` never
   changing anything, the RFC 8058 one-click `POST`, tokens masked in the

@@ -3,7 +3,7 @@
 `notification_settings` holds a human's browser and mail preferences, the address and
 its verification. `mail_outbox` holds mail waiting for the mail worker.
 
-Revision ID: 0035
+Revision ID: 0036
 Revises: 0034
 Create Date: 2026-10-23
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0035"
+revision: str = "0036"
 down_revision: str | None = "0034"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
