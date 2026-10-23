@@ -141,3 +141,29 @@ from the next without a table of its own.
   already record it.
 - A table of cover runs with their items: a second place to keep in step
   with the cards and requests, for what one timestamp already names.
+
+## Only a substitute that took something hears cover_started; what nobody could take is named once
+
+**Id:** 045e13cf-6d97-4940-8a4a-4ab5e8dcc499
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (availability stage 2, cover)
+**Revisit when:** a substitute needs to know it was skipped, or `left` has to reach every listed entry
+
+A cover sends `cover_started` to each substitute that took at least one
+item, and `left` (what no entry could take) only on the first of those
+events. When nothing moved at all, the first available entry is told,
+becomes `covered_by`, and receives area-routed cards meanwhile. When
+the policy acts at once (a grace of 0), `member_availability_changed`
+goes out before the cover.
+
+**Reason:** the event wakes its audience; waking an entry that holds
+nothing for the member only adds noise, and repeating `left` on every
+event would make each substitute think it should do something about it.
+The covered member, its boss and the admins are on every one of these
+events and see `left` once.
+
+**Rejected alternative:** one `cover_started` per listed entry, taken or
+not: wakes members with nothing to do, and the contract names the event
+by the substitute that covers.
