@@ -1941,10 +1941,11 @@ window.MAITY_FIXTURES = {
           },
           "dedupe_key": "merge:212",
           "deploy": null,
-          "detail": null,
           "merge": {
             "author": "agent-b",
             "base": "main",
+            "merge_sha": "9c1e000000000000000000000000000000000000",
+            "merged_at": "2026-10-22T15:02:40Z",
             "pr": 212,
             "title": "hub: the claim lease survives a restart"
           },
@@ -1995,6 +1996,41 @@ window.MAITY_FIXTURES = {
         }
       },
       {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-a"
+        },
+        "at": "2026-10-22T15:30:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [],
+          "contract": null,
+          "dedupe_key": null,
+          "deploy": null,
+          "merge": null,
+          "origin": {
+            "delivery": null,
+            "via": "manual"
+          },
+          "paths": [],
+          "paths_total": 0,
+          "paths_truncated": false,
+          "reasons": [],
+          "release": null,
+          "request": null,
+          "tasks": [],
+          "text": "The old wiki moved.",
+          "type": "note",
+          "url": "http://wiki.example.org/maity"
+        },
+        "redacted": false,
+        "seq": 4305,
+        "subject": null
+      },
+      {
         "actor": null,
         "at": "2026-10-22T16:10:00Z",
         "audience": [
@@ -2016,10 +2052,11 @@ window.MAITY_FIXTURES = {
           },
           "dedupe_key": "merge:214",
           "deploy": null,
-          "detail": null,
           "merge": {
             "author": "agent-d",
             "base": "main",
+            "merge_sha": "4f3a000000000000000000000000000000000000",
+            "merged_at": "2026-10-22T16:10:00Z",
             "pr": 214,
             "title": "web: Messages tab"
           },
@@ -2082,10 +2119,6 @@ window.MAITY_FIXTURES = {
           "contract": null,
           "dedupe_key": "decision:req-0009",
           "deploy": null,
-          "detail": {
-            "reply_label": "Yes, in that order",
-            "request_title": "Dashboard view order: inbox, board, agents, organisation, chat?"
-          },
           "merge": null,
           "origin": {
             "delivery": null,
@@ -2142,7 +2175,6 @@ window.MAITY_FIXTURES = {
             "sha": "1cddc4d",
             "version": null
           },
-          "detail": null,
           "merge": null,
           "origin": {
             "delivery": "d-77",
@@ -2171,6 +2203,41 @@ window.MAITY_FIXTURES = {
           "kind": "member",
           "member_id": "agt-a"
         },
+        "at": "2026-10-22T17:10:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [],
+          "contract": null,
+          "dedupe_key": null,
+          "deploy": null,
+          "merge": null,
+          "origin": {
+            "delivery": null,
+            "via": "manual"
+          },
+          "paths": [],
+          "paths_total": 0,
+          "paths_truncated": false,
+          "reasons": [],
+          "release": null,
+          "request": null,
+          "tasks": [],
+          "text": "",
+          "type": "note",
+          "url": null
+        },
+        "redacted": true,
+        "seq": 4325,
+        "subject": null
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-a"
+        },
         "at": "2026-10-22T17:20:00Z",
         "audience": [
           "all",
@@ -2184,7 +2251,6 @@ window.MAITY_FIXTURES = {
           "contract": null,
           "dedupe_key": null,
           "deploy": null,
-          "detail": null,
           "merge": null,
           "origin": {
             "delivery": null,
