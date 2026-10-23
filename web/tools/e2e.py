@@ -591,7 +591,8 @@ def scenario(run: Run, page: Page) -> None:
     reload.click()
     card = board_card(page, "E2E card")
     expect(card).to_contain_text("Claimed by")
-    expect(card).to_contain_text("E2E Agent")
+    # The holder by handle; the full name is its tooltip.
+    expect(card.locator("p.claim strong")).to_have_attribute("title", "E2E Agent")
     run.shot(page, "card-claimed")
     run.a11y(page, "board")
     no_problems(run, "board")
