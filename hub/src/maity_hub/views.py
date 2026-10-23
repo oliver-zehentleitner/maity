@@ -515,10 +515,13 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
+    from maity_hub.board import links, notes  # board reads views for member ids
     from maity_hub.instances import address
     from maity_hub.releases import tags  # releases reads views; imported here, not at the top
 
     release_tags = tags(conn, [r for r in rows if r.kind == "release"])
+    linked = links.views_of(conn, (r.id for r in rows))
+    noted = notes.counts_of(conn, (r.id for r in rows))
     now = clock.now()
     views = []
     for row in rows:
@@ -557,6 +560,8 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
+                "links": linked[row.id],
+                "notes": noted[row.id],
                 "created_at": ts(row.created_at),
                 "updated_at": ts(row.updated_at),
                 "closed_at": ts(row.closed_at),

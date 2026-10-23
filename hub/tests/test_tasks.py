@@ -32,6 +32,8 @@ TASK_KEYS = {
     "report",
     "release",
     "contract",
+    "links",  # §6.13
+    "notes",  # §6.16: the counts
     "created_at",
     "updated_at",
     "closed_at",

@@ -29,6 +29,9 @@ PREFIXES = {
     "runner_session": "rses",
     "placement": "plc",
     "memory": "mem",
+    "link": "lnk",
+    "history": "hst",
+    "note": "nte",
 }
 
 
