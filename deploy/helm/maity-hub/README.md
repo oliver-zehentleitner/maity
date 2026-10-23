@@ -108,8 +108,9 @@ example; any cluster with the same pieces works.
    kubectl -n maity create secret generic maity-secret-key --from-file=MAITY_SECRET_KEY=./secret-key
    ```
 
-   Keep a copy outside the cluster: a lost or changed key makes every
-   stored secret unusable (the hub logs it at startup, and each webhook
+   A value that is not exactly 32 bytes of base64 stops the hub and the
+   migrate Job from starting, so a typo shows at once. Keep a copy outside
+   the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
    needs a new secret). The chart has no value of its own for it; it goes
    in through `extraEnv` (below).
 

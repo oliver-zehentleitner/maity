@@ -120,6 +120,28 @@ def _too_large() -> Any:
     )
 
 
+class _TooLarge:
+    """What `_read` answers for a body past BODY_CAP."""
+
+
+TOO_LARGE = _TooLarge()
+
+
+async def _read(receive: Receive) -> bytes | _TooLarge | None:
+    """The body, at most BODY_CAP bytes: TOO_LARGE past it, None when the client left."""
+    body = b""
+    more = True
+    while more:
+        message = await receive()
+        if message["type"] == "http.disconnect":
+            return None
+        body += message.get("body", b"")
+        more = message.get("more_body", False)
+        if len(body) > BODY_CAP:
+            return TOO_LARGE
+    return body
+
+
 async def _answer(response: Any, scope: Scope, receive: Receive, send: Send) -> int:
     await response(scope, receive, send)
     return int(response.status_code)
@@ -132,11 +154,13 @@ async def handle(
 
     Every request that does not verify counts against its source address (`NOBODY`),
     whether the slug exists or not, and is answered `rate_limited` past that limit, so
-    neither the answer nor the limit tells a known slug from an unknown one. Only a
-    known slug's request reads its body, and only after taking a place in the bucket of
-    its project and address (`UNVERIFIED`), given back once the signature verifies: at
-    most 60 bodies per project and address are ever read at once, and a verified
-    delivery is never refused for what others sent from the same forge address."""
+    neither the answer nor the limit tells a known slug from an unknown one. Every
+    request reads its declared body (at most 1 MiB) before it is answered, so a body
+    held back hangs alike for every slug: an unknown slug's after taking its place in
+    `NOBODY`, a known slug's after taking one in the bucket of its project and address
+    (`UNVERIFIED`), given back once the signature verifies. Either way the bodies read
+    at once are bounded per address, and a verified delivery is never refused for what
+    others sent from the same forge address."""
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
     source = scope["state"]["origin"].address
 
@@ -149,23 +173,27 @@ async def handle(
         return await refuse(_too_large())
     found = await run_in_threadpool(_lookup, engine, slug, key) if key is not None else None
     if found is None:
-        # Nothing to check against: refused before the body.
-        return await refuse(_refused())
+        # Nothing to check against, yet the body is read as for a known slug, so a
+        # body held back does not tell the two apart; counted before, not again after.
+        wait = NOBODY.hit(source)
+        if wait:
+            return await _answer(_limited(wait), scope, receive, send)
+        read = await _read(receive)
+        if read is None:
+            return 499
+        response = _too_large() if isinstance(read, _TooLarge) else _refused()
+        return await _answer(response, scope, receive, send)
     project, secret = found
     bucket = f"{project.id}|{source}"
     wait = UNVERIFIED.hit(bucket)
     if wait:
         return await refuse(_limited(wait))
-    body = b""
-    more = True
-    while more:
-        message = await receive()
-        if message["type"] == "http.disconnect":
-            return 499
-        body += message.get("body", b"")
-        more = message.get("more_body", False)
-        if len(body) > BODY_CAP:
-            return await refuse(_too_large())
+    read = await _read(receive)
+    if read is None:
+        return 499
+    if isinstance(read, _TooLarge):
+        return await refuse(_too_large())
+    body = read
     given = _headers(scope, b"x-hub-signature-256")
     expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
     # One signature or none: with two, which one the forge meant is anyone's guess.
@@ -209,7 +237,7 @@ def _dispatch(scope: Scope, project: Any, body: bytes) -> str:
         return "ok"
     try:
         payload = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):  # nested too deep for the parser: no object either
         return "invalid"
     if not isinstance(payload, dict):
         return "invalid"

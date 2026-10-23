@@ -312,10 +312,9 @@ def test_a_body_declared_too_large_or_of_no_length_is_refused_alike(owner: flow.
         )
 
 
-def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
-    owner: flow.Human, migrated: Engine
-) -> None:
-    secret(owner)
+def held(migrated: Engine, path: str, n: int) -> tuple[list[int], int]:
+    """`n` requests to `path` from one address whose bodies are held back: which were
+    answered before any body came, and how many began to read theirs."""
     read = 0
 
     async def run() -> list[int]:
@@ -334,17 +333,17 @@ def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
             return {
                 "type": "http",
                 "method": "POST",
-                "path": HOOK,
+                "path": path,
                 "headers": [(b"content-length", b"2"), (b"x-hub-signature-256", b"sha256=0")],
                 "state": {"origin": SimpleNamespace(address="192.0.2.7")},
             }
 
         tasks = [
             asyncio.create_task(forge_webhook.handle(scope(), receive, send, migrated, KEY))
-            for _ in range(61)
+            for _ in range(n)
         ]
         for _ in range(500):  # every task at its body or answered, at most five seconds
-            if read + sum(task.done() for task in tasks) >= 61:
+            if read + sum(task.done() for task in tasks) >= n:
                 break
             await asyncio.sleep(0.01)
         early = [task.result() for task in tasks if task.done()]
@@ -352,8 +351,38 @@ def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
         await asyncio.gather(*tasks)
         return early
 
-    assert asyncio.run(run()) == [429], "the 61st is refused before its body"
-    assert read == 60
+    return asyncio.run(run()), read
+
+
+def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    secret(owner)
+    assert held(migrated, HOOK, 61) == ([429], 60), "the 61st is refused before its body"
+
+
+def test_a_held_back_body_hangs_alike_for_every_slug(owner: flow.Human, migrated: Engine) -> None:
+    # One request each: neither is answered before its body comes (A's ruling on #235).
+    secret(owner)
+    assert held(migrated, HOOK, 1) == ([], 1)
+    forge_webhook.NOBODY.reset()
+    forge_webhook.UNVERIFIED.reset()
+    assert held(migrated, UNKNOWN, 1) == ([], 1)
+
+
+def test_parallel_requests_to_unknown_slugs_read_at_most_sixty_bodies_per_address(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    assert held(migrated, UNKNOWN, 61) == ([429], 60)
+
+
+def test_a_body_nested_too_deep_is_invalid(owner: flow.Human) -> None:
+    key = secret(owner)
+    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    raw = b"[" * 100_000 + b"]" * 100_000
+    headers = {"X-GitHub-Event": "pull_request", "X-Hub-Signature-256": signature(key, raw)}
+    response = owner.client.post(HOOK, content=raw, headers=headers)
+    assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid")
 
 
 def test_an_unrelated_event_is_ignored(owner: flow.Human) -> None:

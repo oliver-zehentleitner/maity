@@ -25,6 +25,9 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 TIMESTAMP = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
+# SQLite rebuilds `event` for the alter from what it reflects, which has no
+# AUTOINCREMENT: kept, or a deleted event's seq could be handed out again (0002).
+EVENT_TABLE: dict[str, Any] = {"sqlite_autoincrement": True}
 TABLE_OPTIONS: dict[str, Any] = {
     "mariadb_charset": "utf8mb4",
     "mariadb_collate": "utf8mb4_bin",
@@ -48,7 +51,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("project_id", name=op.f("pk_forge_webhook")),
         **TABLE_OPTIONS,
     )
-    with op.batch_alter_table("event", schema=None) as batch_op:
+    with op.batch_alter_table("event", schema=None, table_kwargs=EVENT_TABLE) as batch_op:
         batch_op.alter_column(
             "subject_id",
             existing_type=sa.String(length=40),
@@ -60,7 +63,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # A deploy subject longer than an id does not fit back: those items lose it.
     op.execute(sa.text("UPDATE event SET subject_id = NULL WHERE subject_type = 'deploy'"))
-    with op.batch_alter_table("event", schema=None) as batch_op:
+    with op.batch_alter_table("event", schema=None, table_kwargs=EVENT_TABLE) as batch_op:
         batch_op.alter_column(
             "subject_id",
             existing_type=sa.String(length=255),
