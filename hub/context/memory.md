@@ -55,39 +55,66 @@ stores are capped at 64 KiB each, so reading them whole costs little.
 - A separate tag table: a join and a migration for a list of at most
   five words per entry.
 
-## Proposals go through the shared request mechanism; until it lands an agent's community write answers 501
+## An agent's community entry is a proposal through the shared mechanism; the go checks `project:admin`
 
 **Id:** 387e5443-ec34-4e96-9aa3-96faf8fcffb8
-**Type:** workaround
+**Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the hub owner's structure answer, 2026-10-23 (one `request.proposal` JSON column and a `proposals` module shared with the admin agent's member change, #139); the coordinator's order of work, 2026-10-23 (soul proposals after personal requests)
-**Revisit when:** the `proposals` module is on main (wire the community proposal in), personal requests exist (wire `POST /me/soul/proposals` in), or agent instances exist (fill `by.instance`)
+**Source:** the hub owner's structure answer and the proposals PR (#230), 2026-10-23 (one `request.proposal` JSON column and a `proposals` module shared with the admin agent's member change); the coordinator's ruling in the review of #226, 2026-10-23 (the 202 in this PR; soul proposals after personal requests)
+**Revisit when:** personal requests exist (route `POST /me/soul/proposals` through the same mechanism), agent instances exist (fill `by.instance`), or the request answer rules gain a scope check of their own
 
-An agent's `POST …/memory` with `store: "community"` answers `501
-not_implemented` for now, and `POST /me/soul/proposals` is not served
-yet. Both become consent requests through the hub owner's `proposals`
-module. It holds one `request.proposal` JSON column, a `register(kind,
-settle, humans_only)`, and a `settle` call in the request answer and
-withdraw paths. `memory` registers its own kind there and applies a `go`
-from `maity_hub/memory.py`, the domain module beside the endpoints, so the
-settle imports no route module.
-Agent instances (§6.17) do not exist yet, so `by.instance` is null and an
-entry records the session instead.
+An agent's `POST …/memory` with `store: "community"` answers `202` with
+a `consent` request to `owner`. Its `proposal` is `{kind: "memory",
+store, text, tags}`. `memory` registers that kind with `humans_only`
+and a `view`, so the request shows `memory_proposal`. Its `settle`, in
+`maity_hub/memory.py` beside the domain rather than in a route module,
+stores the entry on `go`: the agent as `by`, its session as when it
+asked, and the answering human as `confirmed_by`. Before that, the settle
+checks that the answering human holds `project:admin` and refuses
+otherwise. The refusal runs inside the answer's transaction, so a
+proxy's `go` changes nothing. `POST /me/soul/proposals` is not routed
+yet: a soul proposal is a personal request (§7), which the hub does not
+have. Agent instances (§6.17) do not exist yet, so `by.instance` is null
+and an entry records the session instead.
 
 **Reason:** a column and a settle hook per proposal kind would grow
-apart with every feature that needs a human's go. A soul proposal is a
-personal request (§7), which the hub does not have yet. A 501 says
-plainly that the call is not built. Refusing it as `humans_only` would
-claim a rule the contract does not make.
+apart with every feature that needs a human's go. The answer route lets
+anyone with `requests:answer` answer a consent to `owner`, a proxy
+included, but §19.2 gives the go to `project:admin` alone. The check
+belongs to the kind, which knows its rule.
 
 **Rejected alternatives:**
 - A `memory_proposal` column and a `memory.settle` call beside
   `placements.settle`: the second such pair, next to the admin agent's
   member change.
-- Holding the PR until the proposal module and personal requests land:
-  it blocks the stores, the soul and the resume block, which need
-  neither.
+- `501 not_implemented` until the mechanism landed: not a code of the
+  contract (§1.3), and the mechanism already existed as a consent to
+  `owner`.
+
+## `changed_since_cursor` reads the memory events after the cursor
+
+**Id:** 7e85719f-7bff-43ba-83dc-feaa01528730
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §19.3 (`changed_since_cursor`); the coordinator's review of #226, 2026-10-23 (the cost noted)
+**Revisit when:** agents resume after long absences in projects with a busy memory, or a resume's memory block shows up in slow-query logs
+
+The packet's `changed_since_cursor` reads the project's `memory_added`,
+`memory_deleted` and `soul_changed` events with a `seq` after the
+resume's cursor. It is true when one of them is the community's, names
+the agent's team, or is the agent's soul. The cost grows with the
+memory history since the cursor, not with the project's events: the
+`kind` filter runs on the indexed `(project_id, seq)` range.
+
+**Reason:** no other record says when a store last changed. A stored
+"changed at" per store would be one more value to keep in step with the
+entries, and memory events are rare next to the rest of the log.
+
+**Rejected alternatives:**
+- A per-store `changed_seq` column, updated with every write: cheaper to
+  read, but one more value that can drift from the rows it describes.
 
 ## Another team's agent gets `not_found` on a team entry, not `humans_only`
 
