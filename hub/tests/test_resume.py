@@ -76,6 +76,8 @@ def test_the_packet_has_every_part_of_the_contract(
             "updated_by": None,
             "updated_at": None,
         },
+        "availability_policy": {"on_unavailable": "wait", "substitutes": [], "grace_minutes": 15},
+        "covering": [],
     }
     assert packet["me"]["instance"] == agent.instance
     assert packet["me"]["address"] == f"{agent.id}#{agent.instance}"
@@ -93,6 +95,8 @@ def test_the_packet_has_every_part_of_the_contract(
         "to_answer": [],
         "truncated": False,
     }
+    availability = packet["peers"][0].pop("availability")
+    assert availability["state"] == "available" and set(availability) == {"state", "since"}
     assert packet["peers"] == [
         {
             "member_id": owner.id,
@@ -102,6 +106,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "areas": ["/"],
             "presence": "online",
             "paused": None,
+            "covered_by": None,
         }
     ]
     assert "GET /projects/maity/members" in packet["operations"]

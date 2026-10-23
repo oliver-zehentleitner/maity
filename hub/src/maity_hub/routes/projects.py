@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -11,7 +11,18 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules, ticker
+from maity_hub import (
+    availability,
+    clock,
+    idempotency,
+    images,
+    ktw,
+    placements,
+    policy,
+    releases,
+    rules,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -24,6 +35,7 @@ from maity_hub.views import forge_of, member_view, principal_id, project_view
 router = APIRouter()
 
 BROADCAST = ["all"]
+ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover open (§6.1)
 
 
 class RepositoryIn(Strict):
@@ -43,6 +55,8 @@ class PolicyIn(Strict):
     spawn_requests: str | None = None
     spawn_consent_by: str | None = None
     max_placements: int | None = None
+    coordinator: str | None = None
+    coordinator_substitute: str | None = None
 
 
 class AbsenceIn(Strict):
@@ -152,9 +166,33 @@ def _apply_policy(
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
             errors["policy.contract_arbiter"] = "not_a_member"
         proposed["contract_arbiter"] = arbiter
+    if change.coordinator is not None:
+        if (
+            change.coordinator != "role:admin"
+            and _agent_role(conn, project_id, change.coordinator) is None
+        ):
+            errors["policy.coordinator"] = "not_an_agent_member"
+        proposed["coordinator"] = change.coordinator
+    if "coordinator_substitute" in change.model_fields_set:
+        stand_in = change.coordinator_substitute
+        if stand_in is not None and _agent_role(conn, project_id, stand_in) != "admin":
+            errors["policy.coordinator_substitute"] = "not_an_agent_admin"
+        proposed["coordinator_substitute"] = stand_in
     if errors:
         raise invalid(errors)
     return proposed
+
+
+def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None:
+    """The role of an active agent member, or None when the id names no such member."""
+    role: str | None = conn.execute(
+        select(t.membership.c.role).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.agent_id == member_id,
+            t.membership.c.active.is_(True),
+        )
+    ).scalar()
+    return role
 
 
 def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
@@ -382,6 +420,8 @@ def patch_project(
                 actor=actor,
             )
         if "absence" in given:
+            if body.absence is not None and body.absence.until > clock.now() + ABSENCE_AHEAD:
+                raise invalid({"absence": "too_far"}, "an absence ends within 90 days")
             new_absence = (
                 {"until": clock.rfc3339(body.absence.until), "scope": body.absence.scope}
                 if body.absence
@@ -405,6 +445,12 @@ def patch_project(
                     {"old": old, "new": new_absence, "reason": body.reason},
                     actor=actor,
                     subject=("project", project.slug),
+                )
+                availability.absence_changed(
+                    conn,
+                    _load(conn, project.id),
+                    body.absence.until if body.absence else None,
+                    actor,
                 )
         for name in ("rules_markdown", "keep_the_why"):
             new_value = getattr(body, name)
