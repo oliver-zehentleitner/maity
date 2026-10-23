@@ -33,3 +33,27 @@ migration.
 - `humans_only` as a single flag per kind. It cannot express §19.2,
   where only a human with `project:admin` answers, so a human proxy would
   pass.
+
+## Placements keep their own settle path, beside the registry
+
+**Id:** 0e868bf1-1026-4161-bd25-fd6f56d2532f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the proposals scaffold (#230), 2026-10-23
+**Revisit when:** the placement code is next reworked, or a kind needs a state row of its own as placements do
+
+A placement's consent is still linked by `request.placement_id` and
+settled by `placements.settle`. The routes call both settle functions,
+and each ignores requests that are not its own. A request carries one or
+the other, never both.
+
+**Reason:** a placement has its own row with a pending change, its own
+refusal rule (`spawn_consent_by`) and re-checks on `go`. All of it is
+tested, and it was in place before the registry. Moving it in the
+scaffold would have rewritten working code in a pull request meant to
+add a mechanism.
+
+**Rejected alternative:** register placements as a kind right away. The
+end state is cleaner, but a rework of the placement flow does not belong
+in this pull request.
