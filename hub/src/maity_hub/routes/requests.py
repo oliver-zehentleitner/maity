@@ -1156,7 +1156,8 @@ def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONRe
     _human(caller)
     with engine_of(request).begin() as conn:
         row = _personal(conn, caller, request_id)
-        view = request_view(conn, row)
+        # The reading human reviews what a proposal would apply (§19.4).
+        view = request_view(conn, row, with_proposal=True)
         return JSONResponse({**view, "project": _project_inline(conn, row.project_id)})
 
 
