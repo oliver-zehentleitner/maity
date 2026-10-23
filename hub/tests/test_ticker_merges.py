@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -425,3 +426,59 @@ def test_a_cut_round_goes_on_from_where_it_stopped_and_then_moves_the_bound(
     assert any("page=1" in c for c in github.calls) and not any(
         "page=21" in c for c in github.calls
     )
+
+
+def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.connect() as conn:
+        epoch = ticker.merges_since(conn, pid)
+    old = {
+        "number": 13,
+        "title": "merged before the round began",
+        "merged_at": clock.rfc3339(epoch + timedelta(minutes=1)),
+        "updated_at": clock.rfc3339(epoch + timedelta(minutes=1)),
+        "merge_commit_sha": MERGE_SHA,
+        "base": {"ref": "main", "sha": BASE_SHA},
+        "head": {"ref": "x"},
+    }
+    unmerged = [
+        {
+            "number": 2000 + n,
+            "merged_at": None,
+            "updated_at": "2099-01-02T00:00:00Z",
+            "base": {"ref": "main"},
+        }
+        for n in range(50)
+    ]
+    for page in range(1, 21):
+        closed(github, page, unmerged)
+    closed(github, 21, [old])
+    github.answers["/repos/acme/maity/pulls/13/files?per_page=100&page=1"] = [
+        {"filename": "hub/a.py", "patch": ""}
+    ]
+    assert probe.announce_merges(migrated, READER, pid) == 0, "cut at 20 pages, before page 21"
+    with migrated.begin() as conn:
+        # The round began an hour after the merge.
+        conn.execute(
+            update(t.ticker_source)
+            .where(t.ticker_source.c.project_id == pid)
+            .values(round_started=epoch + timedelta(hours=1))
+        )
+    # A comment between the rounds: the pull request moves to page 1, page 21 is empty.
+    closed(
+        github,
+        1,
+        [{**old, "updated_at": clock.rfc3339(epoch + timedelta(hours=2))}] + unmerged[:49],
+    )
+    closed(github, 21, [])
+    assert (
+        probe.announce_merges(migrated, READER, pid) == 0
+    ), "the continuation reads page 21, now empty"
+    assert (
+        probe.announce_merges(migrated, READER, pid) == 1
+    ), "the next interval admits it by its update"
+    assert probe.announce_merges(migrated, READER, pid) == 0, "and only once"
+    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [13]

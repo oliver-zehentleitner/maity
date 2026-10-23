@@ -351,7 +351,10 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     started = scan.round_started if going_on else clock.now()
     repository = forge.repository_of(project.repository_url)
     base = project.repository_default_branch or "main"
-    found, next_page = fg.merged_pulls(repository, base, lower, start=scan.resume_page or 1)
+    # Admitted by their update after `lower`, merged after the switch-on (forge.merged_pulls).
+    found, next_page = fg.merged_pulls(
+        repository, base, lower, start=scan.resume_page or 1, merged_after=since
+    )
     if next_page is not None:
         log.info(
             "ticker: %s has more closed pull requests to read; the next round goes on from page %s",

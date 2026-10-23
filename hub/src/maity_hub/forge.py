@@ -241,13 +241,24 @@ class Forge:
     # --- merges for the change ticker (docs/api.md §17.4) ------------------------------------
 
     def merged_pulls(
-        self, repository: str, base: str, since: datetime, start: int = 1, pages: int = 20
+        self,
+        repository: str,
+        base: str,
+        since: datetime,
+        start: int = 1,
+        pages: int = 20,
+        merged_after: datetime | None = None,
     ) -> tuple[list[dict[str, Any]], int | None]:
-        """The pull requests closed against `base` and merged after `since`, read most
-        recently updated first from page `start` until a page reaches back before `since`
-        (a merge also updates its pull request, so nothing older can follow), at most
-        `pages` pages of 50. The second value is the page to go on from when that bound
-        cut the scan, else None."""
+        """The pull requests closed against `base`, updated after `since` and merged after
+        `merged_after` (default `since`), read most recently updated first from page
+        `start` until a page reaches back before `since` (a merge also updates its pull
+        request, so nothing older can follow), at most `pages` pages of 50. The second
+        value is the page to go on from when that bound cut the scan, else None.
+
+        Admitting by the update, not the merge: a pull request merged before `since` but
+        updated after it may have moved past a scan's pages while that scan was cut, and
+        would otherwise never be read again. The caller's dedupe keeps it to one item."""
+        floor = merged_after if merged_after is not None else since
         found: list[dict[str, Any]] = []
         for page in range(start, start + pages):
             batch = self._get(
@@ -267,7 +278,7 @@ class Forge:
                 if updated is not None and updated < since:
                     reached = True
                 merged = _moment(pr.get("merged_at"))
-                if merged is None or merged <= since:
+                if merged is None or merged <= floor or (updated is not None and updated <= since):
                     continue
                 found.append(
                     {
