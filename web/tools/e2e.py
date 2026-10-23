@@ -828,7 +828,10 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
         files=[{"name": "e2e-shot.png", "mimeType": "image/png", "buffer": tiny_png(32, 32, (40, 160, 90))}]
     )
     pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
-    expect(page.locator(".attach").get_by_text(re.compile(r"e2e-shot\.png|Not attached"))).to_be_visible()
+    # Settled: uploaded (its Remove is there once the hub answered) or refused.
+    # While it uploads, the chip and "Uploading …" both show the name.
+    uploaded = pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)
+    expect(uploaded.or_(page.locator(".attach .send-status", has_text="Not attached")).first).to_be_visible()
     if pending.count() == 0:
         # Only a hub without attachments is skipped, and the composer has to say so.
         run.step("attachments: this hub keeps no files yet; the composer says the upload failed")
