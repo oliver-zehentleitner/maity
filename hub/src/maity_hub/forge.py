@@ -262,7 +262,9 @@ class Forge:
         The forge's `updated_at` has whole seconds and `since` has microseconds: the bound
         is floored to its second and only what is older is left out, so an update in the
         bound's own second is read again rather than lost."""
-        floor = merged_after if merged_after is not None else since
+        # Both to the forge's whole second: the switch-on second counts, and so does
+        # the bound's.
+        floor = (merged_after if merged_after is not None else since).replace(microsecond=0)
         bound = since.replace(microsecond=0)
         found: list[dict[str, Any]] = []
         for page in range(start, start + pages):
@@ -283,7 +285,7 @@ class Forge:
                 if updated is not None and updated < bound:
                     reached = True
                 merged = _moment(pr.get("merged_at"))
-                if merged is None or merged <= floor or (updated is not None and updated < bound):
+                if merged is None or merged < floor or (updated is not None and updated < bound):
                     continue
                 found.append(
                     {
@@ -337,6 +339,23 @@ class Forge:
             f"/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}"
         )
         return _decoded(found, cap)
+
+    def deployment(self, repository: str, deployment_id: int) -> dict[str, Any] | None:
+        """A deployment and its latest status, as the forge has them (§17.4): None when it
+        is not there. The webhook's body only says where to look."""
+        found = self._get(f"/repos/{repository}/deployments/{deployment_id}")
+        if found is None:
+            return None
+        statuses = self._get(f"/repos/{repository}/deployments/{deployment_id}/statuses?per_page=1")
+        latest = statuses[0] if isinstance(statuses, list) and statuses else {}
+        return {
+            "id": deployment_id,
+            "environment": found.get("environment"),
+            "sha": found.get("sha"),
+            "ref": found.get("ref"),
+            "state": latest.get("state"),
+            "log_url": latest.get("log_url") or latest.get("target_url"),
+        }
 
     # --- the repository's images (docs/api.md §11.2) ------------------------------------------
 

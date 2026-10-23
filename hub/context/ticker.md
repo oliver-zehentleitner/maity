@@ -78,7 +78,9 @@ cut scan was under way moves it to page 1, past the pages still to be
 read) is read again rather than lost, and the key keeps it to one item.
 The bound is floored to its second for both the admission and the
 early stop, since the forge's `updated_at` has whole seconds: an update
-in the bound's own second is read again, never lost. It
+in the bound's own second is read again, never lost. The switch-on is
+floored the same way for `merged_at`: a merge in the switch-on second
+counts. It
 reads each one's files (at most 300; a rename counts
 for its old and its new path, and a renamed contract file is a contract
 change), and for a contract file that file at the merge commit and at the
@@ -109,3 +111,77 @@ after the bound: a merge that moved up the list while a cut scan read
 on would fall between its pages and the next interval for good.
 Reading only the files' names and taking every section of a touched
 contract file: it would wake every implementer for a one-line change.
+
+## The forge webhook is answered in the middleware, limited and checked before its body is read, and only ever triggers the probe
+
+**Id:** e0fc2208-24e8-40f9-9042-293637043187
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's rulings on the buckets, on the held-back body (second round) and on treating every slug alike before the body (third round), 2026-10-23
+**Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
+**See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
+
+`POST /api/v1/projects/{slug}/forge/webhook` never reaches the API's
+routes: `maity_hub.forge_webhook.handle` answers it from the middleware,
+before the middleware would read the body. Every slug is treated the
+same until a signature verifies. Every request first takes a place in
+the bucket of its source address and in the bucket of its slug and
+address, and is answered `rate_limited` at once when either is full. A
+missing, repeated or over-1-MiB `Content-Length` is
+`payload_too_large`. Then the declared body is read, at most 1 MiB, for
+every slug, and only then is the request refused (no project, no
+secret, a secret the key does not open, no or a wrong signature, more
+than one signature header) or verified with HMAC-SHA256 in constant
+time. Only a verified delivery gives both places back; then it charges
+the project's bucket of verified deliveries.
+
+A verified delivery only queues work on the probe worker: a closed pull
+request makes it look for merges now, a deployment status makes it read
+that deployment. A body that is not a JSON object is `invalid`. The
+delivery id is kept as `origin.delivery` only in the shape
+`[A-Za-z0-9-]{1,64}`, and only on the merge the delivery named; the
+other merges the same scan finds are the probe's own. A sealed secret
+is bound to its field and project and never reads as empty when the key
+cannot open it: the view shows `configured: false`, each delivery logs
+an error, and the hub logs at startup how many stored secrets it cannot
+open.
+
+What remains apart, accepted: a known slug's request also opens the
+secret and computes the HMAC, a few microseconds. The cost of treating
+every slug alike: failing requests from one forge address can delay a
+verified delivery from the same address, since it takes its places
+before it verifies; the probe catches that delivery up on its interval.
+There is no replay protection, since GitHub signs no timestamp; a replayed
+delivery only makes the probe read again, and the probe announces only
+what it observes.
+
+**Reason:** §17.4 wants the limits and the existence check before any
+body is read, but the middleware reads every body first to scan it for
+credentials, so the route layer comes too late. A trigger that only
+queues a read keeps the forge's claims out of the item: the hub
+announces what its own read observed. Answering every slug the same way,
+with the same limits and the same body read, is what keeps the path from
+telling whether a project exists.
+
+**Rejected alternative:** a FastAPI route with a dependency for the
+limits: the body would already have been read by then. Writing the item
+from the delivery's body: a forged or replayed body could announce a
+merge that never happened, which §17.4 rules out. Charging the buckets
+differently by slug — the per-address bucket only after a failed
+verification for a known slug, before the body for an unknown one, so
+that a forge's shared address pool never delays a verified delivery:
+it told a known slug from an unknown one, a held-back request hanging
+for one and answered at once for the other once the address had sixty
+refusals, and the 61st request after sixty held ones answered
+differently depending on the held slug (the second security review of
+#235). Treating every slug the same before the body closes both, at the
+accepted cost above.
+
+**Condition:** the credential scan of the middleware does not run on this
+path. That holds only while the delivery body is never stored, echoed or
+logged: it is parsed for the deployment id and dropped, and only the
+forge's delivery id from the header is kept (`origin.delivery`). Should
+any part of the body ever be stored (in an event, a log line, an
+idempotency record), the scan has to run on it first, or that part is
+not stored.

@@ -30,7 +30,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
@@ -647,6 +647,18 @@ def patch_task(
         mine.require("tasks:write")
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
+        new_assignee: int | None = None
+        if "assigned_to" in given and body.assigned_to:
+            new_assignee = _member_id(conn, mine, body.assigned_to, "assigned_to")
+        # No agent assigns away, cancels or sets back to open a card a human holds
+        # (§2.3): before any gate. `done` stays done authority's (§6.4).
+        assigns_away = "assigned_to" in given and new_assignee not in (
+            card.assigned_to,
+            card.claim_holder,
+        )
+        drops = "status" in given and body.status in ("cancelled", "open")
+        if assigns_away or (drops and body.status != card.status):
+            _refuse_against_a_human(conn, mine, card)
         # A status-only move out of review is done authority's, whoever holds it (§6.4).
         review_move = (
             given == {"status"}
@@ -689,11 +701,7 @@ def patch_task(
             values["area"] = body.area
         if "assigned_to" in given:
             mine.require("tasks:admin")
-            values["assigned_to"] = (
-                _member_id(conn, mine, body.assigned_to, "assigned_to")
-                if body.assigned_to
-                else None
-            )
+            values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
                 values["assigned_instance"] = None  # an instance of the old assignee no more
         if body.release is not None:
@@ -916,6 +924,19 @@ def _lease_active(card: Any) -> ApiError:
     )
 
 
+def _refuse_against_a_human(conn: Connection, mine: Membership, card: Any) -> None:
+    """No agent, whatever its role, takes over, assigns away, releases, cancels or sets
+    back to open a card a human holds, lease or no lease (§2.3 "What no agent may do");
+    checked before the scope and before the lease, so that nothing says more to it."""
+    if mine.kind != "agent" or card.claim_holder is None:
+        return
+    holder = conn.execute(
+        select(t.membership.c.human_id).where(t.membership.c.id == card.claim_holder)
+    ).scalar()
+    if holder is not None:
+        raise humans_only("an agent never takes, assigns away, releases or drops a human's card")
+
+
 def _lease_expired(card: Any) -> bool:
     return card.lease_until is not None and card.lease_until <= clock.now()
 
@@ -931,6 +952,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
         if card.claim_holder is None:
             raise ApiError(409, "not_holder", "the card is not claimed")
         if not cards.holds(mine, card):
+            _refuse_against_a_human(conn, mine, card)
             if cards.sibling_holds(mine, card) and not mine.may("tasks:admin"):
                 raise _not_holder(card)
             mine.require("tasks:admin")
@@ -1060,10 +1082,13 @@ def assign(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:admin")
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
         assignee = _member_id(conn, mine, body.assignee, "assignee")
+        if card.claim_holder not in (None, assignee):
+            # Before the scope: no agent, whatever its role, assigns it away (§2.3).
+            _refuse_against_a_human(conn, mine, card)
+        mine.require("tasks:admin")
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")

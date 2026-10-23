@@ -29,6 +29,7 @@ from maity_hub import (
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
+from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
@@ -37,6 +38,7 @@ from maity_hub.routes import (
     agents,
     avatars,
     conversations,
+    forge_webhook,
     joins,
     keep_the_why,
     mail_settings,
@@ -77,6 +79,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+        check_secrets(engine, settings.secret_key)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
@@ -129,6 +132,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(placements.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
+    app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     _mount_web(app, settings)

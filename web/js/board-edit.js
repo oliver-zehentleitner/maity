@@ -17,10 +17,6 @@ window.Maity = window.Maity || {};
   const TASKS_REVIEW = new Set(["owner", "admin", "reviewer"]);
   const LABELS = [["", "no label"], ["feature", "feature"], ["fix", "fix"], ["chore", "chore"]];
   const KINDS = [["task", "Task"], ["maintenance_round", "Context round"]];
-  const MOVE_WORDS = {
-    open: "Open it", proposed: "Back to proposed", cancelled: "Cancel it",
-    done: "Done", in_progress: "Back to work",
-  };
 
   // The hub's refusals, in words; anything else is shown as it comes.
   const REFUSALS = {
@@ -80,64 +76,108 @@ window.Maity = window.Maity || {};
     return cmp(a.created_at || "", b.created_at || "") || cmp(a.id, b.id);
   }
 
-  // The keyboard's and the phone's way to place a card within its column:
-  // the moves its place allows, each as the hub's move body. column: the
-  // cards of its column as shown, in order.
-  // Closed cards keep the order they had: nothing to plan there.
+  // The board's columns, in order (docs/api.md §6.4), with their names.
+  const COLUMNS = [
+    ["proposed", "Proposed"],
+    ["open", "Open"],
+    ["in_progress", "In progress"],
+    ["blocked", "Blocked"],
+    ["review", "Review"],
+    ["done", "Done"],
+    ["cancelled", "Cancelled"],
+  ];
+  const columnName = (s) => (COLUMNS.find(([v]) => v === s) || [s, s.replace("_", " ")])[1];
+
+  // Icons for Place, in the text colour: an arrow up or down, with a bar
+  // for "to the top" or "to the bottom".
+  const SVG = "http://www.w3.org/2000/svg";
+  function arrow(way) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 24 24"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "icon"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const up = way === "up" || way === "top";
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", up ? "M12 7l-6 6h4v6h4v-6h4z" : "M12 17l6-6h-4V5h-4v6H6z");
+    path.setAttribute("class", "icon-fill");
+    svg.appendChild(path);
+    if (way === "top" || way === "bottom") {
+      const bar = document.createElementNS(SVG, "rect");
+      [["x", "5"], ["y", way === "top" ? "3" : "19"], ["width", "14"], ["height", "2"], ["class", "icon-fill"]].forEach(([k, v]) => bar.setAttribute(k, v));
+      svg.appendChild(bar);
+    }
+    return svg;
+  }
+
+  // Card order within its column (§6.4), for the keyboard and a phone as
+  // much as for a pointer: four buttons, each the hub's move body; the ones
+  // the card's place does not allow are disabled (and out of the Tab
+  // order). column: the cards of its column as shown, in order. Closed
+  // cards keep the order they had: nothing to plan there.
   const orderable = (ctx, c) => isAdmin(ctx) && !CLOSED.has(c.status);
+  const PLACES = [
+    ["top", "Move to top"],
+    ["up", "Move up"],
+    ["down", "Move down"],
+    ["bottom", "Move to bottom"],
+  ];
   function orderControl(ctx, c, column, place) {
     if (!orderable(ctx, c) || column.length < 2) return null;
     const at = column.findIndex((x) => x.id === c.id);
     if (at < 0) return null;
-    const ways = [];
-    if (at > 0) ways.push(["up", "Move up", { before: column[at - 1].id }]);
-    if (at < column.length - 1) ways.push(["down", "Move down", { after: column[at + 1].id }]);
-    if (at > 1) ways.push(["top", "To the top", { to: "top" }]);
-    if (at < column.length - 2) ways.push(["bottom", "To the bottom", { to: "bottom" }]);
-    const id = "order-" + c.id;
-    const select = h("select", { id, "data-focus": "order:" + c.id }, ways.map(([v, l]) => h("option", { value: v }, l)));
-    select.value = ways[0][0];
-    return h("form", {
-      class: "card-order",
-      onsubmit: (e) => {
-        e.preventDefault();
-        const way = ways.find(([v]) => v === select.value);
-        place(c, way[2], "order:" + c.id);
-      },
-    }, h("label", { for: id }, "Place"), select, h("button", { type: "submit", class: "small" }, "Place"));
+    const last = column.length - 1;
+    const bodies = {
+      top: at > 0 ? { to: "top" } : null,
+      up: at > 0 ? { before: column[at - 1].id } : null,
+      down: at < last ? { after: column[at + 1].id } : null,
+      bottom: at < last ? { to: "bottom" } : null,
+    };
+    return h("div", { class: "card-order", role: "group", "aria-label": "Place in column" },
+      PLACES.map(([way, label]) => {
+        const key = "order:" + c.id + ":" + way;
+        return h("button", {
+          type: "button",
+          class: "icon-button place-" + way,
+          "aria-label": label,
+          title: label,
+          "data-focus": key,
+          disabled: bodies[way] ? null : true,
+          onclick: bodies[way] ? () => place(c, bodies[way], key) : null,
+        }, arrow(way));
+      }));
   }
 
-  // The status menu: the keyboard's and the phone's way to move a card.
+  // The status menu: the card's column, and the columns this human may move
+  // it to; picking one moves it at once.
   function moveControl(ctx, c, move) {
     const allowed = targets(ctx, c);
     if (!allowed.length) return null;
-    const id = "move-" + c.id;
-    const select = h("select", { id, "data-focus": "move:" + c.id },
-      allowed.map((s) => h("option", { value: s }, MOVE_WORDS[s] || s)));
-    select.value = allowed[0];
-    return h("form", {
-      class: "card-move",
-      onsubmit: (e) => {
-        e.preventDefault();
-        move(c, select.value, "move:" + c.id);
-      },
-    }, h("label", { for: id }, "Move"), select, h("button", { type: "submit", class: "small" }, "Move"));
+    const menu = M.menuButton({
+      label: c.id + ": " + columnName(c.status) + ", move to another column",
+      face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
+      items: () => allowed.map((s) => ({ label: "Move to " + columnName(s), onSelect: () => move(c, s, "move:" + c.id) })),
+    });
+    menu.button.setAttribute("data-focus", "move:" + c.id);
+    menu.el.className = "menu-box card-move";
+    return menu.el;
   }
 
+  // Assign or reassign: a menu of the project's members, by handle, the
+  // full name as the tooltip; picking one assigns at once.
   function assignControl(ctx, c, assign) {
     if (!isAdmin(ctx) || CLOSED.has(c.status)) return null;
-    const id = "assign-" + c.id;
-    const select = h("select", { id, "data-focus": "assign:" + c.id }, h("option", { value: "" }, "choose a member"),
-      ctx.members.filter((m) => m.id !== c.assigned_to).map((m) => h("option", { value: m.id }, m.display_name)));
-    select.value = "";
-    return h("form", {
-      class: "card-assign",
-      onsubmit: (e) => {
-        e.preventDefault();
-        if (!select.value) { select.focus(); return; }
-        assign(c, select.value, "assign:" + c.id);
-      },
-    }, h("label", { for: id }, c.assigned_to ? "Reassign" : "Assign"), select, h("button", { type: "submit", class: "small" }, c.assigned_to ? "Reassign" : "Assign"));
+    const word = c.assigned_to ? "Reassign" : "Assign";
+    const menu = M.menuButton({
+      label: word + " " + c.id,
+      face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
+      items: () => ctx.members.filter((m) => m.id !== c.assigned_to).map((m) => ({
+        label: [M.avatar(m, 16), " @" + m.handle],
+        title: m.display_name,
+        onSelect: () => assign(c, m.id, "assign:" + c.id),
+      })),
+    });
+    menu.button.setAttribute("data-focus", "assign:" + c.id);
+    menu.el.className = "menu-box card-assign";
+    return menu.el;
   }
 
   // The new card (POST /tasks). assigned_to needs tasks:admin; a frozen or
@@ -220,5 +260,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, MOVE_WORDS };
+  M.boardEdit = { targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, COLUMNS, columnName };
 })(window.Maity);
