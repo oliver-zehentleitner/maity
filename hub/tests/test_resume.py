@@ -56,7 +56,7 @@ def test_the_packet_has_every_part_of_the_contract(
     assert set(packet) == PACKET
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
-    assert packet["hints"] == {"wait_timeout": 540}  # Claude Code
+    assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
     assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer"}
     assert packet["membership"] == {
         "role": "member",
@@ -75,6 +75,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "updated_by": None,
             "updated_at": None,
         },
+        "placement": None,
     }
     assert packet["me"]["instance"] == agent.instance
     assert packet["me"]["address"] == f"{agent.id}#{agent.instance}"

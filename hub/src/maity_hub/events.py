@@ -291,15 +291,23 @@ def read_for_runner(
     return rows, examined
 
 
-def wakes(row: Any, membership: Any, principal: str) -> bool:
+# What still wakes a supervised session though addressed only to `all` (§15.11).
+SUPERVISED_ALL_WAKES = frozenset({"state_changed", "policy_changed", "rules_changed"})
+
+
+def wakes(row: Any, membership: Any, principal: str, supervised: bool = False) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
-    admin never wakes, and neither does a kind in NON_WAKING."""
+    admin never wakes, and neither does a kind in NON_WAKING. A session a runner
+    supervises is not woken by what only `all` names, but for SUPERVISED_ALL_WAKES: each
+    wake is a model run there (§15.11)."""
     if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     audience = row.audience or []
+    if supervised and set(audience) <= {"all"} and row.kind not in SUPERVISED_ALL_WAKES:
+        return bool(row.conversation_id == principal)
     return (
         "all" in audience
         or f"member:{principal}" in audience
@@ -309,7 +317,13 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
 
 
 def read_waking(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    supervised: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
@@ -318,7 +332,7 @@ def read_waking(
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal)
+        if wakes(r, membership, principal, supervised)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

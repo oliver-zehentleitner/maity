@@ -346,7 +346,11 @@ def render_page(
     hub = settings.public_url
     link = join_link(settings, "join" if on_join_host else "public", token)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    agent = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == row.agent_id)).one()
+    handle = row.new_agent_handle  # a profile the exchange creates (a runner's pickup)
+    if row.agent_id is not None:
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == row.agent_id)
+        ).scalar_one()
     reports_to = principal_id(conn, row.reports_to)
     if reports_to is not None:
         boss = (
@@ -361,7 +365,7 @@ def render_page(
     values = {
         "project_name": _md(project.name),
         "project": project.slug,
-        "handle": agent.handle,
+        "handle": handle,
         "role": row.role,
         "areas": ", ".join(f"`{a}`" for a in row.areas) or "none",
         "reports_to": reports_to_text,
@@ -566,10 +570,11 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     if consumed != 1:  # a concurrent exchange won
         raise not_found()
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == row.project_id,
-            t.membership.c.agent_id == row.agent_id,
+            t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
         )
     ).first()
@@ -577,7 +582,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         result = conn.execute(
             insert(t.membership).values(
                 project_id=row.project_id,
-                agent_id=row.agent_id,
+                agent_id=agent_id,
                 role=row.role,
                 reports_to=_boss_still_here(conn, row.reports_to),
                 areas=row.areas,
@@ -613,16 +618,32 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         assert member is not None
         # Moved before the revocation, so that the lead passes on and is never null.
         _move_to_replacement(conn, member, row.replaces, instance, credential_id)
-        old = instances.require_active(conn, member, row.replaces, "replaces")
-        revoke(conn, old.id, "replaced", by=row.created_by)
-        emit(
-            conn,
-            row.project_id,
-            "credential_revoked",
-            [f"member:{row.agent_id}", "role:owner"],
-            {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
-            actor=Actor(membership_id=membership_id, credential_id=credential_id),
-            subject=("credential", old.id),
+        if row.placement_id is not None:
+            # A placement's rejoin replaces an instance whose credential is revoked already
+            # (§15.9): nothing to revoke, and no second credential_revoked.
+            instances.require_replaceable(conn, member, row.replaces, "replaces", revoked=True)
+        else:
+            old = instances.require_active(conn, member, row.replaces, "replaces")
+            revoke(conn, old.id, "replaced", by=row.created_by)
+            emit(
+                conn,
+                row.project_id,
+                "credential_revoked",
+                [f"member:{row.agent_id}", "role:owner"],
+                {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
+                actor=Actor(membership_id=membership_id, credential_id=credential_id),
+                subject=("credential", old.id),
+            )
+    if row.placement_id is not None:  # a runner's pickup: the placement now runs on it
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == row.placement_id)
+            .values(
+                credential_id=credential_id,
+                rejoin=False,
+                membership_id=membership_id,
+                updated_at=now,
+            )
         )
     if joined:
         new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
@@ -633,16 +654,20 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             ["all"],
             member_view(conn, new),
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
-            subject=("member", row.agent_id),
+            subject=("member", agent_id),
         )
-    return value, credential_id, row.agent_id, project.slug, project.signing, instance
+    return value, credential_id, agent_id, project.slug, project.signing, instance
 
 
 def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:
     """The join's instance rules again under the project lock (§3.3): another
     exchange may have used the slot or revoked the instance to replace since. The
     code is then not consumed: the transaction rolls back."""
-    if row.replaces is not None:
+    if row.replaces is not None and row.placement_id is not None:
+        # A placement's rejoin: a revoked instance, and one more active instance (§15.9).
+        instances.require_replaceable(conn, member, row.replaces, "replaces", revoked=True)
+        instances.refuse_over_quota(conn, member)
+    elif row.replaces is not None:
         instances.require_active(conn, member, row.replaces, "replaces")
     elif row.new_instance:
         instances.refuse_over_quota(conn, member)
@@ -698,3 +723,21 @@ def _move_to_replacement(
             actor=actor,
             subject=("task", card.id),
         )
+
+
+def _create_for_join(conn: Connection, row: Any) -> str:
+    """The profile a pickup's join names by handle (§15.9): created at the exchange,
+    owned by the human who created the placement. A handle that human has meanwhile given
+    another agent ends the join here, answered as every join that no longer works (§1.1):
+    the placement cannot become that agent, and the runner's next pickup reports it."""
+    taken = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == row.created_by,
+            t.agent_profile.c.handle == row.new_agent_handle,
+        )
+    ).first()
+    if taken is not None:
+        raise not_found()
+    return create_profile(
+        conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
+    )
