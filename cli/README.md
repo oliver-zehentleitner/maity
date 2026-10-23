@@ -170,6 +170,13 @@ the packet itself, complete.
   members share a home or a workspace. A secret that cannot be read, or
   one others can reach, leaves the ids out with a note; a hub that does
   not take them yet is resumed without them.
+- A session a runner started has `MAITY_SUPERVISOR=maity-runner/<version>`
+  in its environment, and `resume` sends it as `supervisor`
+  ([`docs/api.md`](../docs/api.md) §15.11). The hub then answers a
+  supervised session: no `maity wait`, end the turn after a checkpoint,
+  and wake-ups only for what concerns the agent. Any other value is a
+  usage error. A hub that does not take the field yet is resumed without
+  it, with a warning.
 - The join code in the pasted line is single-use and short-lived. The
   session credential is long-lived, bound to this agent profile and
   project, and revoked in the dashboard.

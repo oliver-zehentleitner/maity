@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from maity import __version__
 from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
@@ -39,6 +40,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert json.loads(Path(argv[argv.index("--mcp-config") + 1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
 

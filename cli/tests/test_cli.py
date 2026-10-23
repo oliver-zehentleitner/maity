@@ -597,3 +597,46 @@ def test_a_join_file_with_the_wrong_shape_is_refused(
 ) -> None:
     (tmp_path / "line").write_text("https://h/j/x\n")
     assert cli.main(["join", "--join-file", str(tmp_path / "line")]) == cli.EXIT_USAGE
+
+
+def test_resume_sends_the_runners_supervisor(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MAITY_SUPERVISOR", "maity-runner/0.1.0")
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["supervisor"] == "maity-runner/0.1.0"
+    monkeypatch.delenv("MAITY_SUPERVISOR")
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert "supervisor" not in fake.signed()[-1].json()
+
+
+def test_a_supervisor_that_is_no_runner_is_refused(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MAITY_SUPERVISOR", "anything")
+    assert cli.main(["resume"]) == cli.EXIT_USAGE
+    assert not fake.signed()
+
+
+def test_a_hub_without_supervised_sessions_resumes_without(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setenv("MAITY_SUPERVISOR", "maity-runner/0.1.0")
+    packet = {"session": {"id": "ses-b-0004"}, "events": {"after": 0, "items": [], "cursor": 1},
+              "me": {"member_id": "agt-b"}}  # fmt: skip
+
+    def resume(seen: fakehub.Seen) -> tuple[Any, ...]:
+        if "supervisor" in seen.json():
+            return 400, {
+                "error": {
+                    "code": "invalid",
+                    "message": "x",
+                    "details": {"fields": {"supervisor": "extra_forbidden"}},
+                }
+            }
+        return 200, packet
+
+    fake.routes[("POST", "/api/v1/me/resume")] = resume
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert "does not take the session's supervisor yet" in capsys.readouterr().err
