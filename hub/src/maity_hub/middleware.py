@@ -198,10 +198,15 @@ def _unrouted(scope: Scope) -> bool:
     router = getattr(scope.get("app"), "router", None)
     if not path.startswith("/api/") or router is None:
         return False
-    return all(
-        getattr(route, "name", None) == "web" or route.matches(scope)[0] == Match.NONE
-        for route in router.routes
-    )
+    # The router redirects a path that differs by its trailing slash (307): that path
+    # is routed too.
+    other = path[:-1] if path.endswith("/") else path + "/"
+    for candidate in (path, other):
+        probe = {**scope, "path": candidate}
+        for route in router.routes:
+            if getattr(route, "name", None) != "web" and route.matches(probe)[0] != Match.NONE:
+                return False
+    return True
 
 
 async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
