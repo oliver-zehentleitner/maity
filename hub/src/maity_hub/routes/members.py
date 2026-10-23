@@ -119,7 +119,7 @@ def validate_assignment(
         except ApiError:
             errors["reports_to"] = "not_a_member"
         else:
-            if member is not None and member in _chain(conn, values["reports_to"]):
+            if member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
@@ -134,7 +134,7 @@ def validate_assignment(
     return values
 
 
-def _chain(conn: Connection, membership_id: int) -> set[int]:
+def chain(conn: Connection, membership_id: int) -> set[int]:
     """The member and everyone it reports up to (§6.2)."""
     seen: set[int] = set()
     current: int | None = membership_id
@@ -473,13 +473,14 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             raise humans_only("an agent never removes a human's membership")
         if not agent_admin:
             mine.require("members:admin")
+        if agent_admin:  # before the idempotent answer: it carries the briefing
+            admin_agents.check_target(mine, target)
         if target.active is None:  # removed already: DELETE is idempotent (§6.2)
             return idempotency.Outcome(
                 200, "member", str(target.id), load_member(conn, str(target.id))
             )
         if agent_admin:
             # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
-            admin_agents.check_target(mine, target)
             request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         if target.role == "owner" and _owners(conn, mine.project.id) <= 1:

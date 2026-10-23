@@ -23,7 +23,7 @@ from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, forbidden, humans_only
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit
 from maity_hub.views import principal_id
 
@@ -44,14 +44,35 @@ def _paused_by_a_human(target: Any) -> bool:
     return target.paused_since is not None and by is not None and by.startswith("hum-")
 
 
+def _pause_of_another_agent(target: Any, agent_id: str) -> bool:
+    by: str | None = target.paused_by
+    return (
+        target.paused_since is not None
+        and by is not None
+        and by != agent_id
+        and (by.startswith("agt-"))
+    )
+
+
 def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> None:
     check_target(mine, target)
     if "capabilities" in given:
         raise humans_only("capabilities are a human's to set")
     if body.role is not None and body.role not in AGENT_ROLES:
         raise humans_only("an admin agent moves a role between member and reviewer only")
-    if "paused" in given and _paused_by_a_human(target):
+    if "paused" in given:
+        _check_pause(target, mine.principal_id)
+
+
+def _check_pause(target: Any, agent_id: str) -> None:
+    """Who lifts or replaces a pause: a human's only a human, another agent's only that
+    agent or a human (§2.3 ᵃ)."""
+    if _paused_by_a_human(target):
         raise humans_only("a pause a human set is a human's to lift or replace")
+    if _pause_of_another_agent(target, agent_id):
+        raise forbidden(
+            "members:admin", "a pause another agent set is that agent's or a human's to lift"
+        )
 
 
 def _is_arbiter(project: Any, target: Any) -> bool:
@@ -129,16 +150,32 @@ def announce(
     )
 
 
-def _still_allowed(conn: Connection, proposer: Any, target: Any) -> None:
-    """A `go` applies what an admin agent may do now (`hub/context/proposals.md`): the
-    proposer still an active admin agent, the target still a member or reviewer agent.
-    Otherwise the answer is refused and the request stays open."""
+def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[str, Any]) -> None:
+    """A `go` applies what the admin agent may do now, every rule of its call again
+    (`hub/context/proposals.md`): the proposer still an active admin agent, the target
+    still a member or reviewer agent, a pause still not a human's or another agent's, no
+    `reports_to` cycle the time in between made. Otherwise the answer is refused and the
+    request stays open."""
+    from maity_hub.routes import members
+
     if proposer is None or proposer.active is not True or proposer.role != "admin":
         raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")
     if target.role not in AGENT_ROLES:
         raise ApiError(
             409, "target_role_changed", f"the member is {target.role} now, not member or reviewer"
         )
+    if proposal["action"] != "patch":
+        return
+    if proposal["pause"][0]:
+        try:
+            _check_pause(target, proposer.agent_id)
+        except ApiError:
+            raise ApiError(
+                409, "pause_changed", "the pause is someone else's now; the go cannot touch it"
+            ) from None
+    boss = proposal["values"].get("reports_to")
+    if boss is not None and target.id in members.chain(conn, boss):
+        raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
 
 
 def settle(conn: Connection, s: proposals.Settlement) -> None:
@@ -158,7 +195,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     proposer = conn.execute(
         select(t.membership).where(t.membership.c.id == request.asked_by)
     ).first()
-    _still_allowed(conn, proposer, target)
+    _still_allowed(conn, proposer, target, proposal)
     project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
     agent = principal_id(conn, request.asked_by)
     assert agent is not None

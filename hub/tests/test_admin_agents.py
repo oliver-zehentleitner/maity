@@ -254,3 +254,65 @@ def test_only_a_human_with_members_admin_gives_the_go(
         403,
         {"scope": "members:admin"},
     )
+
+
+@pytest.mark.parametrize("pause", [{"reason": "quota"}, None])
+def test_a_go_never_touches_a_pause_a_human_set_meanwhile(
+    owner: flow.Human, make_client: ClientFactory, pause: Any
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    waiting = patch(admin, reviewer.id, {"paused": pause})
+    assert waiting.status_code == 202, waiting.text
+    owner.patch(f"/projects/maity/members/{reviewer.id}", {"paused": {"reason": "mine"}})
+    go = owner.post(f"/projects/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    assert (go.status_code, go.headers["Maity-Error"]) == (409, "pause_changed")
+    paused = owner.get(f"/projects/maity/members/{reviewer.id}").json()["paused"]
+    assert (paused["by"], paused["reason"]) == (owner.id, "mine")
+
+
+def test_a_go_refuses_a_cycle_made_meanwhile(owner: flow.Human, make_client: ClientFactory) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    other = flow.agent(make_client, owner)
+    waiting = patch(admin, reviewer.id, {"role": "member", "reports_to": other.id})
+    assert waiting.status_code == 202, waiting.text
+    owner.patch(f"/projects/maity/members/{other.id}", {"reports_to": reviewer.id})
+    go = owner.post(f"/projects/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    assert go.json()["error"]["details"]["fields"] == {"reports_to": "cycle"}
+    assert owner.get(f"/projects/maity/members/{reviewer.id}").json()["reports_to"] is None
+
+
+def test_an_admin_agent_lifts_no_other_agents_pause(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first = flow.agent(make_client, owner, role="admin")
+    second = flow.agent(make_client, owner, role="admin")
+    member = flow.agent(make_client, owner)
+    assert patch(first, member.id, {"paused": {"reason": "too many cards"}}).status_code == 200
+    for body in ({"paused": None}, {"paused": {"reason": "mine now"}}):
+        refused = patch(second, member.id, body)
+        assert refused.status_code == 403, body
+    assert patch(first, member.id, {"paused": None}).status_code == 200  # its setter may
+
+
+@pytest.mark.parametrize("target", ["self", "peer_admin", "proxy", "removed_peer_admin"])
+def test_an_admin_agent_removes_no_one_but_member_and_reviewer_agents(
+    owner: flow.Human, make_client: ClientFactory, target: str
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    other = {
+        "self": admin,
+        "peer_admin": flow.agent(make_client, owner, role="admin"),
+        "removed_peer_admin": flow.agent(make_client, owner, role="admin", briefing="secret"),
+        "proxy": flow.agent(make_client, owner, role="proxy"),
+    }[target]
+    if target == "removed_peer_admin":
+        owner.client.delete(
+            f"/api/v1/projects/maity/members/{other.id}", headers={"X-CSRF-Token": owner.csrf}
+        )
+    refused = admin.client.delete(
+        f"/api/v1/projects/maity/members/{other.id}", headers=admin.auth | admin.key()
+    )
+    assert refused.status_code == 403, refused.text
+    assert "secret" not in refused.text

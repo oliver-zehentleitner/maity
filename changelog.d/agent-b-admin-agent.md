@@ -6,8 +6,10 @@
   `admin`/`proxy` agents; a removal, and a role change or pause of a reviewer or the
   contract arbiter, is a `member_change` proposal (`202`, a consent request to the owner
   that only a human with `members:admin` answers) applied on `go` with the agent as actor,
-  refused (`409`) when the proposer is no longer an admin agent or the target no longer a
-  member or reviewer; role changes and
+  refused (`409`) when the proposer is no longer an admin agent, the target no longer a
+  member or reviewer, the pause is now a human's or another agent's (`pause_changed`), or
+  `reports_to` would close a cycle; an admin agent lifts or replaces no pause another agent
+  set; role changes and
   removals emit `member_changed_by_agent` to `role:owner`; its pause names it as `by`, is
   not cleared by the paused agent's resume, and it never lifts or replaces a human's;
   `members:admin` is listed in its scopes, with the two operations
