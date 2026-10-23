@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, case, select, update
 
-from maity_hub import admin_agents, clock, idempotency, instances, placements, rules
+from maity_hub import admin_agents, clock, idempotency, instances, placements, rules, seats
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
@@ -461,6 +461,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         .values(reports_to=None)
     )
     placements.forget_boss(conn, change.project.id, target.id)
+    seats.reset(conn, change.project.id, removed, change.actor)
 
 
 @router.delete("/projects/{slug}/members/{member_id}")

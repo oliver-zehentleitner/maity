@@ -186,7 +186,10 @@ def _owner_actor(conn: Connection, caller: Any, project_id: str) -> Actor:
             t.membership.c.active.is_(True),
         )
     ).scalar()
-    return caller.actor(own) if own is not None else Actor(None, via=caller.via)
+    if own is not None:
+        member: Actor = caller.actor(own)
+        return member
+    return Actor(None, credential_id=caller.credential_id, via=caller.via, human_id=caller.human_id)
 
 
 @router.delete("/agents/{agent_id}")

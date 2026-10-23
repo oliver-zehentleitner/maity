@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 
@@ -129,3 +129,90 @@ def test_only_its_owning_human_deletes_it(
     )
     assert refused.status_code in (401, 403)
     assert owner.get(f"/agents/{agent_id}").json()["deleted_at"] is None
+
+
+def _events(engine: Engine, kind: str) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(select(t.event).where(t.event.c.kind == kind).order_by(t.event.c.seq))
+        )
+
+
+def test_an_owner_who_is_no_member_acts_as_the_human(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.3, §8.1: the cascade's events name the deleting owner, member or not."""
+    agent = flow.agent(make_client, owner)
+    other = flow.human(make_client, migrated, "co-owner")
+    with migrated.begin() as conn:  # the owner left the project; a co-owner holds it
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            t.membership.update()
+            .where(t.membership.c.human_id == owner.id)
+            .values(active=None, removed_at=t.membership.c.joined_at)
+        )
+    factory.membership(migrated, project_id, "owner", human_id=other.id)
+    assert delete(owner, agent.id, cascade=True).status_code == 200
+    [removed] = [
+        e for e in _events(migrated, "member_updated") if e.payload.get("removed_at") is not None
+    ]
+    seen = other.get(f"/projects/maity/events?after={removed.seq - 1}").json()["items"][0]
+    assert seen["actor"] == {
+        "kind": "human",
+        "id": owner.id,
+        "handle": "maintainer",
+        "via": "cookie",
+    }
+
+
+@pytest.mark.parametrize("with_admin", [False, True])
+def test_the_cascade_resets_the_seats_the_profile_held(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, with_admin: bool
+) -> None:
+    """§6.2: the arbiter seats fall back, never to another member chosen in passing."""
+    agent = flow.agent(make_client, owner)
+    if with_admin:
+        flow.agent(make_client, owner, role="admin")
+    changed = owner.patch(
+        "/projects/maity", {"policy": {"contract_arbiter": agent.id}, "reason": "the arbiter"}
+    )
+    assert changed.status_code == 200, changed.text
+    created = owner.post(
+        "/projects/maity/tasks",
+        {"title": "A contract", "kind": "contract", "contract": {"arbiter": agent.id}},
+    )
+    assert created.status_code == 201, created.text
+    card_id = created.json()["id"]
+    assert delete(owner, agent.id, cascade=True).status_code == 200
+    fallback = "role:admin" if with_admin else owner.id
+    assert owner.get("/projects/maity").json()["policy"]["contract_arbiter"] == fallback
+    assert owner.get(f"/projects/maity/tasks/{card_id}").json()["contract"]["arbiter"] == fallback
+    policy_event = _events(migrated, "policy_changed")[-1]
+    assert policy_event.payload["reason"] == "member_removed"
+    assert policy_event.payload["new"]["contract_arbiter"] == fallback
+    assert f"member:{owner.id}" in policy_event.audience
+    [card_event] = [
+        e for e in _events(migrated, "task_updated") if e.payload.get("fields") == ["contract"]
+    ]
+    assert f"member:{owner.id}" in card_event.audience
+
+
+def test_an_exchange_rechecks_the_profile_under_its_lock(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.3: a deletion that commits between the join's check and its exchange leaves
+    no membership behind."""
+    agent_id = new_profile(owner, "racing")
+    pending = flow.join(owner, "maity", agent={"id": agent_id})
+    with migrated.begin() as conn:  # as if the deletion committed just now, join unrevoked
+        conn.execute(
+            t.agent_profile.update()
+            .where(t.agent_profile.c.id == agent_id)
+            .values(deleted_at=t.agent_profile.c.created_at, live=None)
+        )
+    assert flow.exchange(make_client(), pending).status_code == 404
+    with migrated.connect() as conn:
+        members = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+        ).all()
+    assert members == []

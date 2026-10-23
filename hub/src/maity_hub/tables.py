@@ -674,6 +674,9 @@ event = Table(
     # The runner that caused the event (§15.10), with `actor_membership` null; like the
     # session and credential columns, no foreign key: the log outlives what it names.
     Column("actor_runner_id", String(ID)),
+    # A human who is no member of the project (§8.1: the owner deleting a profile with
+    # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
+    Column("actor_human_id", String(ID)),
     Column("subject_type", String(32)),
     Column("subject_id", String(ID)),
     Column("audience", JSON_VALUE, nullable=False),

@@ -2499,7 +2499,10 @@ do"), and `members:admin` in a project gives no right to it.
   that is not used, burned, expired or revoked gets `revoked_at`, with
   or without `cascade` (§3.1); its exchange then answers `not_found`
   like any revoked join (§3.3), so no membership is ever created for a
-  deleted profile. A live join alone does not make the profile in use.
+  deleted profile. Join creation, the exchange and the deletion lock the
+  profile first, and the exchange checks `deleted_at` again under that
+  lock, so a deletion cannot commit between the check and the new
+  membership. A live join alone does not make the profile in use.
 - **In use.** A profile with an active membership or an active
   placement is in use. Without `?cascade=true` the call is refused with
   `profile_in_use` (409; `details.memberships`: `[{project, member_id,
