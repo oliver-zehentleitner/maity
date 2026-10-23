@@ -102,8 +102,8 @@ prompt nobody asked for is what people learn to deny.
 In the bell, opening an item marks it read, except an item of kind
 `security`: a new sign-in or an address change. It stays unread and
 links to the account. **Mark all read** leaves it too, as the hub does
-for `up_to`, and is not offered when such alerts are all that is unread;
-the panel says where they are confirmed.
+for `up_to`, and is not offered when such alerts are all that is unread.
+Until the page has a sessions view, the panel says they stay unread.
 
 **Reason:** marking a sign-in alert read from an allowed session is what
 gives the reported session good standing (§2.6.5): it may then end the
