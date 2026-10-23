@@ -68,3 +68,36 @@ every save would otherwise wipe the last test with an unchanged value.
   the settings check with real deliveries.
 - Clearing `last_test` whenever a connection field is in the body:
   simpler, but every full-form save would drop a still valid result.
+
+## Mail goes through an outbox written in the deciding transaction and sent by a worker thread
+
+**Id:** c77fd991-dc7d-4c37-9971-8f500a91ccf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.2, §18.4, §18.5, §18.7; the implementation of tsk-32jx98jzne6z, part N2, 2026-10-23
+**Revisit when:** the hub runs more than one replica (two workers would send the same row), or mail volume needs more than one mail at a time
+
+A verification mail, the notice to an old address and, later,
+notification and sign-in mail are rows in `mail_outbox`, written in the
+same transaction as the change that causes them. `maity_hub.mail.outbox.Worker`
+looks every five seconds, sends what is due one mail at a time with the
+settings in effect, and records each outcome in `mail_delivery` under
+the mail's budget kind. A security mail over `security_max_per_hour`
+gets a later `not_before` and waits, never dropped. `enabled: false`
+holds every row. A failure at `resolve`, `connect`, `tls`, `auth` or
+`timeout` is the instance's and is retried with backoff for 24 hours. A
+permanent `5xx` at `RCPT TO` or `DATA` fails the row (counting it as a
+human's hard failure comes with notification mail).
+
+**Reason:** a mail decided in a transaction that rolls back must not
+leave, and a request must not wait up to 20 seconds for an SMTP server.
+The budgets need the order and the waiting that a queue gives. A thread
+like the images worker needs no new process for one replica.
+
+**Rejected alternatives:**
+- Sending inside the request: a slow or failing server would hold the
+  admin's or human's request, and a mail could leave for a change that
+  then fails to commit.
+- An in-memory queue: a restart would lose queued security mail, which
+  §16.2 says is never dropped.
