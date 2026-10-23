@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
@@ -297,6 +299,46 @@ def test_of_two_concurrent_redactions_the_first_stands(
     with migrated.connect() as conn:
         notices = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).all()
     assert notices == []  # the loser announces nothing
+
+
+def test_two_admins_redacting_at_once_leave_one_tombstone_and_one_notice(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite takes the write lock at BEGIN: a second writer cannot interleave")
+    from tests import factory
+
+    second = flow.human(make_client, migrated, "second-admin")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=second.id)
+    leaked = say(flow.agent(make_client, owner), to="all", body="a secret").json()
+    both_read = threading.Barrier(2, timeout=20)
+
+    def after_both_reads(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        # Each redaction has read the event as not redacted before either writes.
+        if statement.lstrip().upper().startswith("UPDATE EVENT"):
+            both_read.wait()
+
+    def redact(who: flow.Human) -> Any:
+        return who.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": who.id})
+
+    sqlalchemy.event.listen(migrated, "before_cursor_execute", after_both_reads)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            answers = list(pool.map(redact, (owner, second)))
+    finally:
+        sqlalchemy.event.remove(migrated, "before_cursor_execute", after_both_reads)
+    assert [a.status_code for a in answers] == [200, 200], [a.text for a in answers]
+    tombstones = [a.json()["payload"] for a in answers]
+    assert tombstones[0] == tombstones[1]  # both answer with the one that stands
+    assert tombstones[0]["by"] in (owner.id, second.id)
+    assert tombstones[0]["reason"] == tombstones[0]["by"]  # the winner's reason with its by
+    with migrated.connect() as conn:
+        notices = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).all()
+        stored = conn.execute(select(t.event.c.payload).where(t.event.c.seq == leaked["seq"]))
+        assert stored.scalar_one() == tombstones[0]
+    assert len(notices) == 1
 
 
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
