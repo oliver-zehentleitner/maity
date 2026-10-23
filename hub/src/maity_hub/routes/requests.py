@@ -11,16 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import (
-    avatars,
-    clock,
-    idempotency,
-    inbox,
-    mentions,
-    placements,
-    proposals,
-    ticker,
-)
+from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller

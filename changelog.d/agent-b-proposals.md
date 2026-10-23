@@ -8,4 +8,4 @@
   to answer, for every answer, and may add its own fields to `GET …/requests/{id}`, never
   to its events, lists or resume packets; a kind the hub does not
   know is never filed and fails only its own request (`proposal_kind_unknown`) (migration
-  `0014_request_proposal`)
+  `0017_request_proposal`)

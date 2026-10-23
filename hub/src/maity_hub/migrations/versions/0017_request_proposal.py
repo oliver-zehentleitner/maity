@@ -3,8 +3,8 @@
 `request.proposal` is `{"kind": …}` for a request filed by a registered proposal kind
 (`maity_hub.proposals`), null for every other request.
 
-Revision ID: 0014
-Revises: 0013
+Revision ID: 0017
+Revises: 0016
 Create Date: 2026-10-23
 """
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0014"
-down_revision: str | None = "0013"
+revision: str = "0017"
+down_revision: str | None = "0016"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
