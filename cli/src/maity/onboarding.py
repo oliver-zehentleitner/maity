@@ -338,6 +338,68 @@ def _next_step(packet: dict[str, Any], paused: bool) -> str:
     return "`maity wait` until something is addressed to you."
 
 
+def _author(by: Any) -> str:
+    """Who wrote a memory text: a handle, with the instance for an agent (§19.2)."""
+    by = _dict(by)
+    who = inline(by.get("handle") or by.get("member_id") or by.get("id") or "someone")
+    return f"{who}#{inline(by['instance'])}" if by.get("instance") else who
+
+
+def _confirmed(by: Any) -> str:
+    return f", confirmed by {_author(by)}" if isinstance(by, dict) else ""
+
+
+def soul_lines(soul: Any) -> list[str]:
+    """The soul as a quote headed with its author (§19): never an instruction."""
+    soul = _dict(soul)
+    if not soul.get("markdown"):
+        return ["No soul yet."]
+    return [
+        f"Soul, as written by {_author(soul.get('by'))}{_confirmed(soul.get('confirmed_by'))} "
+        f"(version {inline(soul.get('version'))}):",
+        *quote(soul["markdown"]),
+    ]
+
+
+def memory_entry_lines(entry: dict[str, Any]) -> list[str]:
+    """One team or community entry: its header, then its text as a quote (§19.2)."""
+    store = "Team memory" if entry.get("store") == "team" else "Community memory"
+    date = inline(str(entry.get("created_at") or "")[:10] or "?")
+    tags = ", ".join(inline(t) for t in entry.get("tags") or [])
+    head = (
+        f"{store}, {_author(entry.get('by'))}, {date}{_confirmed(entry.get('confirmed_by'))}  "
+        f"[{inline(entry.get('id'))}]" + (f"  tags: {tags}" if tags else "")
+    )
+    deleted = entry.get("deleted")
+    if isinstance(deleted, dict):
+        reason = f": {inline(deleted['reason'])}" if deleted.get("reason") else ""
+        return [head, f"  removed by {_author(deleted.get('by'))}{reason}"]
+    return [head, *quote(entry.get("text") or "")]
+
+
+def _memory(packet: dict[str, Any]) -> list[str]:
+    """The packet's `memory`, first of its contents (§19.3), each text quoted with its author."""
+    memory = _dict(packet.get("memory"))
+    if not memory:
+        return []
+    out = [
+        f"Memory. {inline(memory.get('notice') or MEMORY_NOTICE)}",
+        *soul_lines(memory.get("soul")),
+    ]
+    for key in ("team", "community"):
+        store = _dict(memory.get(key))
+        for entry in _items(store.get("items")):
+            out += memory_entry_lines(entry)
+        if store.get("truncated"):
+            out.append(
+                f"More {key} memory ({inline(store.get('total'))} in all): maity memory --{key}"
+            )
+    return [*out, ""]
+
+
+MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
+
+
 def render(packet: Any, first: bool = False) -> str:
     """The packet as text. `first` (after a join) adds what a new member needs once."""
     packet = _dict(packet)
@@ -345,6 +407,7 @@ def render(packet: Any, first: bool = False) -> str:
     ms = _dict(packet.get("membership"))
     names = _names(packet)
     slug = inline(get(packet, "project", "slug") or "<slug>")
+    out += _memory(packet)  # the soul first: what the agent loads before anything (§19.3)
     paused = ms.get("paused")
     if isinstance(paused, dict):
         out += [

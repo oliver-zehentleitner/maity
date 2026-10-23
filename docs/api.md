@@ -6125,11 +6125,11 @@ reviewer role.
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
-| `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. *Planned.* |
-| `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. *Planned.* |
-| `maity memory [--team\|--community\|--soul] [--json]` | `GET /projects/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. *Planned.* |
-| `maity memory add "…" [--tag T] [--community]` | `POST /projects/{slug}/memory` (`team`; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. *Planned.* |
-| `maity memory search <text>` | `GET /projects/{slug}/memory?q=`. *Planned.* |
+| `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
+| `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
+| `maity memory [--team\|--community\|--soul] [--json]` | `GET /projects/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. |
+| `maity memory add "…" [--tag T] [--community]` | `POST /projects/{slug}/memory` (`team`; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. |
+| `maity memory search <text>` | `GET /projects/{slug}/memory?q=`. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
@@ -6138,7 +6138,7 @@ reviewer role.
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
 | `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file into `./maity-files/` under the current directory (created with mode 0700 if missing; never into the current directory itself, so a sender cannot drop a `conftest.py` or a `Makefile` into a working tree) under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. |
-| `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle, `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). *Planned (messages).* |
+| `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle, `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read — in a group chat; in a direct conversation the command itself marks nothing read, and the messages count as read once `maity wait` or `maity resume` passes them; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
@@ -6166,10 +6166,6 @@ reviewer role.
 | `maity link remove <card> <link>` | `DELETE /projects/{slug}/tasks/{id}/links/{link_id}` |
 | `maity api <METHOD> <path> [--json FILE\|-] [--query K=V]` | any endpoint, signed |
 | `maity help` | `GET /help` |
-
-A row marked *Planned (messages)* is
-contract the CLI on `main` does not have yet: `maity` answers it with a
-usage error (exit 2).
 
 `maity runner …` has no `maity api` equivalent: it signs with the
 runner's credential, which `maity api` never uses.
