@@ -40,6 +40,8 @@ REDEEM_BY_ADDRESS = Limiter(10, 60)
 # minute. A known denial of service, accepted so that a distributed guess cannot run;
 # not to be "fixed" into a per-source limit (§2.6.4).
 WRONG_CODES = Limiter(60, 60)
+BREAKER_SECONDS = 60
+_breaker = {"until": 0.0}  # monotonic time until which every redemption is refused
 
 # The one long-poll per session or pending cookie; a newer one supersedes it.
 _holding: dict[str, object] = {}
@@ -55,7 +57,7 @@ class Pick(Strict):
 
 class Redeem(Strict):
     code: str = Field(min_length=1, max_length=32)
-    next: str | None = Field(default=None, max_length=4096)
+    next: str | None = None  # an unsafe value, of any length, becomes `/` (§2.6.5)
 
 
 def _creator(caller: Caller) -> str:
@@ -136,6 +138,7 @@ def create_code(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.get("/device-codes/{code_id}")
 async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     session_hash = _creator(caller)
+    _require_enabled(request)
     wait = wait_of(request)
     engine = engine_of(request)
 
@@ -152,6 +155,7 @@ async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONRes
 @router.post("/device-codes/{code_id}/approve")
 def approve_code(code_id: str, body: Pick, request: Request, caller: AnyCaller) -> JSONResponse:
     session_hash = _creator(caller)
+    _require_enabled(request)
     with engine_of(request).begin() as conn:
         row = device_codes.of_creator(conn, code_id, session_hash, lock=True)
         if row is None:
@@ -176,6 +180,7 @@ def cancel_code(code_id: str, request: Request, caller: AnyCaller) -> JSONRespon
 
 def _deny(request: Request, caller: Caller, code_id: str) -> JSONResponse:
     session_hash = _creator(caller)
+    _require_enabled(request)
     with engine_of(request).begin() as conn:
         row = device_codes.of_creator(conn, code_id, session_hash, lock=True)
         if row is None:
@@ -199,10 +204,12 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
     _anonymous(request)
     _require_enabled(request)
     origin = origin_of(request)
-    for limiter, key in ((WRONG_CODES, "instance"), (REDEEM_BY_ADDRESS, origin.address)):
-        wait = limiter.blocked(key) if limiter is WRONG_CODES else limiter.hit(key)
-        if wait:
-            raise rate_limited(wait)
+    tripped = _breaker["until"] - time.monotonic()
+    if tripped > 0:
+        raise rate_limited(max(1, int(tripped + 0.999)))
+    wait = REDEEM_BY_ADDRESS.hit(origin.address)
+    if wait:
+        raise rate_limited(wait)
     with engine_of(request).begin() as conn:
         redeemed = device_codes.redeem(
             conn,
@@ -214,6 +221,9 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
         )
     if redeemed is None:
         WRONG_CODES.hit("instance")
+        if WRONG_CODES.blocked("instance"):
+            # 60 wrong codes within a minute: every redemption is refused for a minute.
+            _breaker["until"] = time.monotonic() + BREAKER_SECONDS
         raise device_codes.code_invalid()
     row, pending = redeemed
     response = JSONResponse(
@@ -238,6 +248,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
 @router.get("/device-login")
 async def watch_redemption(request: Request) -> JSONResponse:
     _anonymous(request)
+    _require_enabled(request)
     wait = wait_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
     engine = engine_of(request)

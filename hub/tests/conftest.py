@@ -113,6 +113,7 @@ def _fresh_process_state() -> Iterator[None]:
     ):
         limiter.reset()
     device_codes._holding.clear()
+    device_codes._breaker["until"] = 0.0
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()

@@ -26,6 +26,8 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
 )
+from maity_hub.auth import device_codes as codes
+from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
@@ -79,6 +81,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+        with engine.begin() as conn:
+            # A method the environment switched off voids its open codes at once (§2.6.5).
+            if not sign_in.device_code_enabled(conn, settings):
+                codes.void_open(conn)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker

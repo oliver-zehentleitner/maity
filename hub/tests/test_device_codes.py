@@ -303,3 +303,83 @@ def test_a_second_long_poll_supersedes_the_first(
     first.join(timeout=15)
     assert answers[0].get("superseded") is True
     assert second["status"] == "waiting"
+
+
+def signed_in_by_code(make_client: ClientFactory, desk: flow.Human) -> flow.Human:
+    """B, a browser signed in by a code that A approved."""
+    code = started(desk)
+    new = phone(make_client)
+    match = redeem(new, code["code"]).json()["match_number"]
+    desk.post(f"/auth/device-codes/{code['id']}/approve", {"number": match})
+    assert new.post("/api/v1/auth/device-login/complete").status_code == 200
+    return flow.Human(new, new.get("/api/v1/auth/session").json()["csrf_token"], desk.id)
+
+
+def test_a_device_code_session_cannot_end_the_one_that_approved_it(
+    make_client: ClientFactory, desk: flow.Human
+) -> None:
+    b = signed_in_by_code(make_client, desk)
+    a_id = desk.get("/auth/session").json()["session_id"]
+    refused = b.delete(f"/auth/sessions/{a_id}")
+    assert refused.json()["error"]["details"] == {"reason": "not_in_good_standing"}
+    live = {i["id"] for i in b.post("/auth/sessions/end-others", {}).json()["items"]}
+    assert a_id in live
+    assert desk.get("/auth/session").status_code == 200
+
+
+def test_completing_ends_the_session_the_browser_held(
+    make_client: ClientFactory, migrated: Engine, desk: flow.Human
+) -> None:
+    factory.human(migrated, "someone")
+    new = phone(make_client)
+    new.post("/api/v1/auth/login", json={"handle": "someone", "password": factory.PASSWORD})
+    held = new.cookies[SESSION_COOKIE]
+    code = started(desk)
+    match = redeem(new, code["code"]).json()["match_number"]
+    desk.post(f"/auth/device-codes/{code['id']}/approve", {"number": match})
+    assert new.post("/api/v1/auth/device-login/complete").status_code == 200
+    assert new.cookies[SESSION_COOKIE] != held
+    with migrated.begin() as conn:
+        rows = conn.execute(select(t.human_session).order_by(t.human_session.c.created_at)).all()
+    someone = [r for r in rows if r.human_id != desk.id]
+    assert someone and someone[0].ended_by == "logout"
+
+
+def test_switched_off_in_the_environment_stops_every_step(
+    make_client: ClientFactory, migrated: Engine, desk: flow.Human
+) -> None:
+    code = started(desk)
+    new = phone(make_client)
+    match = redeem(new, code["code"]).json()["match_number"]
+    off = make_client(sign_in_device_code=False)  # a restart with the method off
+    off.cookies.update(desk.client.cookies)
+    a = flow.Human(off, desk.csrf, desk.id)
+    for response in (
+        a.get(f"/auth/device-codes/{code['id']}"),
+        a.post(f"/auth/device-codes/{code['id']}/approve", {"number": match}),
+        a.post(f"/auth/device-codes/{code['id']}/deny"),
+    ):
+        assert response.json()["error"]["details"] == {"reason": "method_disabled"}
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.device_code.c.status)).scalar() == "denied"
+    b = make_client(sign_in_device_code=False, peer="198.51.100.24")
+    b.cookies.update(new.cookies)
+    for response in (
+        b.get("/api/v1/auth/device-login"),
+        b.post("/api/v1/auth/device-login/complete"),
+    ):
+        assert response.json()["error"]["details"] == {"reason": "method_disabled"}
+
+
+def test_the_breaker_holds_for_a_minute(make_client: ClientFactory, desk: flow.Human) -> None:
+    from maity_hub.routes import device_codes as routes
+
+    for n in range(60):
+        redeem(make_client(peer=f"192.0.2.{n + 1}"), "ZZZZ-ZZZZ")
+    code = started(desk)["code"]
+    tripped = routes._breaker["until"]
+    assert redeem(make_client(peer="198.51.100.1"), code).status_code == 429
+    routes.WRONG_CODES.reset()  # the window has emptied, the breaker still holds
+    assert redeem(make_client(peer="198.51.100.2"), code).status_code == 429
+    routes._breaker["until"] = tripped - routes.BREAKER_SECONDS - 1  # the minute is over
+    assert redeem(make_client(peer="198.51.100.3"), code).status_code == 200
