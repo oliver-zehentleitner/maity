@@ -49,19 +49,19 @@ window.Maity = window.Maity || {};
   // What the hub has: the sessions (ended ones too) and the unread security
   // items; a hub without notifications has no items, not an error.
   async function load() {
-    if (hubWithout) throw new M.api.ApiError("no sessions", 404, "/auth/sessions", "not_found");
+    if (hubWithout || M.api.absent.has("GET", "/auth/sessions")) throw new M.api.ApiError("no sessions", 404, "/auth/sessions", "not_found");
     let sessions;
     try {
       sessions = (await M.api.get("/auth/sessions?ended=true")).items;
     } catch (err) {
-      if (err.status === 404) hubWithout = true;
+      if (M.api.notOnHub(err)) { hubWithout = true; M.api.absent.note("GET", "/auth/sessions"); }
       throw err;
     }
     let alerts = [];
     try {
-      alerts = await unreadAlerts();
+      alerts = M.api.absent.has("GET", "/me/notifications") ? [] : await unreadAlerts();
     } catch (err) {
-      if (err.status !== 404) throw err;
+      if (!M.api.notOnHub(err)) throw err;
     }
     return { sessions, alerts, current: sessions.find((s) => s.current) || null };
   }
@@ -150,7 +150,8 @@ window.Maity = window.Maity || {};
       try {
         data = await load();
       } catch (err) {
-        append(clear(body), h("p", { class: "send-status failed" }, err.status === 404 ? "This hub lists no sessions yet." : "Could not read your sessions: " + err.message));
+        append(clear(body), M.api.notOnHub(err) ? M.dom.notOnHub("This hub lists no sessions yet.")
+          : h("p", { class: "send-status failed" }, "Could not read your sessions: " + err.message));
         return null;
       }
       const { sessions, alerts, current: cur } = data;

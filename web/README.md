@@ -121,6 +121,16 @@ in Members, with the full name as tooltip (`M.dom.memberRef`). A member
 the project does not list, a personal request's people and anyone in a
 read-along view are plain text.
 
+A feature of a newer hub is no error on an older one. A route the hub does
+not serve answers 404 or 405 (`M.api.notOnHub`); where a view needs one it
+says so in a muted line (`M.dom.notOnHub`), never in red, and the page
+does not ask that route again (`M.api.absent`), so no timer keeps
+knocking: the sessions list, the notifications and their settings, the
+overview's counts, a group chat's link on a hub without group chats.
+Actions that would only fail there are not offered (a file's Delete on a
+hub without attachments). A 5xx, a network failure, 401 or 403 stays an
+error.
+
 In every form with a multi-line field (an inbox answer in words, a chat
 message, a project message, a ticker post, a new card, a briefing, a
 join's briefing) **Ctrl+Enter**, or **⌘+Enter** on a Mac, sends what

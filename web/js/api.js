@@ -1903,12 +1903,25 @@ window.Maity = window.Maity || {};
     return hubPaths;
   }
 
+  // A route this hub does not serve answers 404 or 405. Where a view's
+  // feature needs one, that is a fact of this hub, said quietly in its place
+  // (M.dom.notOnHub), never as an error; once seen it is not asked again
+  // for the rest of the page's life, so no timer keeps knocking. Any other
+  // failure (5xx, network, 401, 403) stays an error.
+  const absentRoutes = new Set();
+  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
+
   M.api = {
+    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
+    absent: {
+      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
+      has: (method, path) => absentRoutes.has(routeOf(method, path)),
+    },
     // Whether the hub serves `method path` (path as in docs/api.md, without
     // the prefix); rejects when its machine form cannot be read.
     hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
     // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubPaths = null; },
+    forgetRoutes: () => { hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

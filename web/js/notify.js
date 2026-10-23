@@ -49,14 +49,18 @@ window.Maity = window.Maity || {};
 
   // The counts, per project too (by_project, computed by the hub over
   // every unread item, §18.2), and the head for the long-poll; no items.
+  // A hub without them (404 or 405) is asked once: the counts' timer then
+  // stops knocking for the rest of the page's life.
   async function read() {
+    if (M.api.absent.has("GET", "/me/notifications")) { state.available = false; return state; }
     try {
       const answer = await M.api.get("/me/notifications?limit=0");
       state.available = true;
       state.counts = answer.counts;
       state.byProject = answer.by_project || {};
     } catch (err) {
-      if (err.status !== 404) throw err;
+      if (!M.api.notOnHub(err)) throw err;
+      M.api.absent.note("GET", "/me/notifications");
       state.available = false;
     }
     return state;
@@ -178,6 +182,7 @@ window.Maity = window.Maity || {};
     stopBrowser();
     const b = settings && settings.browser;
     if (!b || !b.enabled || !("Notification" in window) || window.Notification.permission !== "granted") return;
+    if (M.api.absent.has("GET", "/me/notifications")) return;
     // A pause ends early when the loop is stopped, so nothing is left waiting.
     const loop = { stopped: false, timer: null, wake: null };
     browserLoop = loop;
@@ -196,6 +201,8 @@ window.Maity = window.Maity || {};
           if (after === null) after = (await M.api.get("/me/notifications?limit=0")).next_after;
           answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50");
         } catch (err) {
+          // Not on this hub: the loop ends instead of retrying for ever.
+          if (M.api.notOnHub(err)) { M.api.absent.note("GET", "/me/notifications"); return; }
           await pause(PAUSE_MS);
           continue;
         }

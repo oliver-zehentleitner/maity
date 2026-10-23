@@ -238,7 +238,8 @@ window.Maity = window.Maity || {};
         h("span", { class: "attach-meta" },
           dl ? h("a", { href: dl, download: a.name, class: "attach-link" }, a.name) : h("span", null, a.name),
           h("span", { class: "muted" }, " · " + sizeOf(a.size) + (a.kind === "image" ? "" : " · " + a.type))),
-        canDelete && canDelete(a) ? h("button", {
+        // A hub known to have no attachments offers no delete that would fail.
+        canDelete && !hubWithout && canDelete(a) ? h("button", {
           type: "button", class: "small", "aria-label": "Delete the file " + a.name + " for everyone",
           onclick: async () => {
             if (!window.confirm("Delete " + a.name + " for everyone who can read this message? The message stays.")) return;
@@ -308,5 +309,7 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.attachments = { picker, render, markDeleted, pendingPanel, sizeOf, said };
+  M.attachments = {
+    // The hub is asked again whether it keeps files (the smoke test's hubs).
+    forget: () => { hubWithout = false; }, picker, render, markDeleted, pendingPanel, sizeOf, said };
 })(window.Maity);
