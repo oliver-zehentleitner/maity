@@ -519,7 +519,7 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
 def _sees_reasons(reader: Any) -> bool:
     """A redaction's reason reaches the human owners and admins (§8.5); the redactor
     reads its own reason in any case."""
-    return reader is None or (reader.kind == "human" and reader.role in ("owner", "admin"))
+    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
 
 
 def _without_reason(row: Any, reader: Any) -> Any:
@@ -530,16 +530,17 @@ def _without_reason(row: Any, reader: Any) -> Any:
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict) or _sees_reasons(reader):
         return payload
-    if row.kind == "event_redacted" and row.actor_membership == reader.id:
+    if reader is not None and row.kind == "event_redacted" and row.actor_membership == reader.id:
         return payload  # the redactor's own notice
-    if row.redacted and payload.get("by") == reader.principal_id:
+    if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
         return payload  # the redactor's own tombstone
-    return {**payload, "reason": None}
+    return {**payload, "reason": None}  # no reader known: hidden, never shown by default
 
 
 def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> list[dict[str, Any]]:
     """`event_view` for several events, with one query for the actors. `reader` (a
-    `Membership`) is the member the views are for; None for the event's own writer."""
+    `Membership`) is the member the views are for; without one a redaction's reason is
+    hidden, so a caller that forgets to pass it shows less, never more."""
     actors = principal_ids(conn, (r.actor_membership for r in rows))
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (

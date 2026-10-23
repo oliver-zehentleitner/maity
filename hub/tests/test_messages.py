@@ -128,6 +128,53 @@ def test_only_human_admins_and_the_redactor_read_the_reason(
     assert notice["payload"] == {"seq": leaked["seq"], "reason": None}
 
 
+def test_a_chats_redaction_notice_stays_in_the_chat(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    agent = flow.agent(make_client, owner)
+    message = chat(agent, agent.id, "the key abc").json()
+    second = flow.human(make_client, migrated, "second-admin")
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=second.id)
+    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "the key abc"})
+    with migrated.connect() as conn:
+        notice = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    assert notice.conversation_id == agent.id  # the chat's, as the message was
+
+    def kinds(who: Any, **headers: Any) -> list[Any]:
+        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        return [e for e in items if e["kind"] == "event_redacted"]
+
+    assert kinds(second) == []  # a second human admin does not read it (§8.5)
+    [seen] = kinds(owner)
+    assert seen["payload"]["reason"] == "the key abc"  # the redactor
+    [theirs] = kinds(agent)
+    assert theirs["payload"]["reason"] is None  # the agent party
+    # An event the caller cannot read stays not_found, before already_redacted.
+    again = second.post(f"/projects/maity/events/{notice.seq}/redact", {"reason": "x"})
+    assert again.status_code == 404
+
+
+def test_without_a_reader_the_reason_is_hidden(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.views import event_views
+
+    agent = flow.agent(make_client, owner)
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+    with migrated.connect() as conn:
+        rows = [
+            *conn.execute(select(t.event).where(t.event.c.redacted.is_(True))),
+            *conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")),
+        ]
+        views = event_views(conn, rows)  # no reader: a runner's or a placement's list
+    assert [v["payload"]["reason"] for v in views] == [None, None]
+
+
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

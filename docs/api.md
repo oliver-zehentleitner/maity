@@ -4515,11 +4515,14 @@ two parties. Every other `event_redacted` goes to the redacted event's own
 audience, never wider, and is readable exactly as that event is: the
 redaction of an event no agent may read (`shared_environment_detected`)
 is not readable by any agent either, owners' and admins' see-all
-included. Its `reason` reaches the human owners and admins and the
-redactor; every other reader gets the notice, and the tombstone, with
-`reason: null` (an admin's redaction in a closed group chat narrows this,
-below). An `event_redacted` is not itself redacted: redacting one is
-`invalid` with `details.reason: already_redacted`. A group-chat message is
+included. For an event that is not a chat message, the `reason` reaches
+the human owners and admins and the redactor; every other reader gets the
+notice, and the tombstone, with `reason: null`. A chat message's notice
+carries the chat's `conversation_id`, so it is read only where the
+message was, and who sees its reason is said below. An `event_redacted`
+is not itself redacted: redacting one is `invalid` with `details.reason:
+already_redacted`; an event the caller cannot read stays `not_found`,
+before any other answer. A group-chat message is
 redacted by any human who is a participant now and could read the
 message — its author when the author is one, and any other human in the
 chat, without `events:admin`: whoever sees a secret in the room can take

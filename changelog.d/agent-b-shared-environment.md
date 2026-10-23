@@ -16,5 +16,7 @@
   (`docs/api.md` §8.5), and is readable exactly as that event is: no agent reads the
   redaction of a `shared_environment_detected`; a redaction's `reason` is null for every
   reader but the human owners and admins and the redactor, in the notice and in the
-  tombstone; redacting an `event_redacted` is `invalid` (`details.reason:
-  already_redacted`)
+  tombstone (hidden where no reader is known); a direct chat's notice carries the chat's
+  `conversation_id`, so it stays with the two parties; redacting an `event_redacted` is
+  `invalid` (`details.reason: already_redacted`), an event the caller cannot read stays
+  `not_found`
