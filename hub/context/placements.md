@@ -107,15 +107,27 @@ class of answerer, not one person.
 **Id:** cf956bec-8b32-4ae3-8ba6-73e3afe33e89
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** docs/api.md §15.9 (the exchange creates the profile and the membership; the URL and code in the answer only, never in a stored idempotency outcome; a lost answer recovered by picking up again); implementation session, 2026-10-23
-**Revisit when:** agent instances (§6.17) land (a pickup then mints a new instance or replaces the revoked one, under `max_instances`), or a runner needs a pickup that is idempotent by key
+**Evidence:** confirmed
+**Source:** docs/api.md §15.9 (the exchange creates the profile and the membership; the URL and code in the answer only, never in a stored idempotency outcome; a lost answer recovered by picking up again); the instance owner's and the coordinator's ruling on the rejoin, 2026-10-23; implementation session, 2026-10-23
+**Revisit when:** a runner needs a pickup that is idempotent by key, or the contract lets a human's join replace a revoked instance too
 
 `POST /runner/placements/{id}/join` writes a `join_link` that names the
 placement, the runner and the generation. It is not run through
 `idempotency.run`: an answer it stored would hold the URL and the code. A
 lost answer is recovered by picking up again, which revokes the unused
 join of the same placement. Three pickups per generation are allowed.
+
+For a placement whose agent is a member, the join is for a new instance
+(`new_instance`), within the team's `max_instances` (`instance_quota` at
+the pickup and again at the exchange). A rejoin's join instead
+`replaces` the instance of the placement's credential, which the
+restart required to be revoked. That instance gets a new id; ids are
+never reused (§6.17). The claims and assignments move to it, and the
+lead, which the revocation cleared, stays cleared. Nothing is revoked a
+second time. Only this path may replace a revoked instance
+(`instances.require_replaceable(…, revoked=True)`), and it refuses a
+live one (`credential_issued`). A human's join still requires an active
+instance.
 
 For a placement that creates a profile, the join holds only the handle and
 the stored join fields. The exchange creates the profile, owned by the
@@ -135,6 +147,11 @@ keep a live join code in the database.
 - Creating the profile at the pickup, as a human's join does when it names
   a new agent: a profile without a member for every pickup that is never
   exchanged.
+- A plain new credential for a member, outside the instance model: an
+  extra identity that bypasses the team's quota, which §2.3 ᵃ makes a
+  human's decision.
+- Reusing the revoked instance's id for the rejoin: §6.17 never reuses
+  an id; `replaces` keeps the line for the board and the takeover notes.
 - A dedicated error for the taken handle: it would tell whoever holds the
   link that the human has an agent of that name.
 
@@ -144,7 +161,7 @@ keep a live join code in the database.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §15.11 (resume accepts `supervisor`; the supervised wake set: the usual set minus events whose audience is only `all`, except `state_changed`, `policy_changed`, `rules_changed`); implementation session, 2026-10-23
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`; the supervised wake set: the usual set minus events whose audience is only `all`, except `state_changed`, `policy_changed`, `rules_changed`); the coordinator's note that `supervisor` is a hint only, 2026-10-23; implementation session, 2026-10-23
 **Revisit when:** another kind addressed to `all` turns out to need a supervised agent's attention, or the runner reads the stream itself instead of the agent's long-poll
 
 The session stores `supervisor` from its resume. `GET …/events?wait=` reads
@@ -158,3 +175,8 @@ a "Supervised" section: no `maity wait`, end the turn after a checkpoint.
 **Reason:** under a runner every wake is a model run. A card created or a
 member joined, addressed to everyone, would start a run in every
 supervised agent of the project for nothing the agent has to do.
+
+`supervisor` is a hint and nothing more. The agent's own environment
+sets it (`MAITY_SUPERVISOR`, §15.11), so it proves nothing about who
+started the session. It shapes the wake set, `hints.duty` and the rules
+text. It never grants a right, changes a scope or skips a check.
