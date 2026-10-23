@@ -76,7 +76,7 @@ Why Maity is built the way it is.
 - [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe
 
 ## S
-- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core
+- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 - [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible); registration verifies the address before an account exists
 
