@@ -78,12 +78,22 @@ before the route sees the body, so it lives where the 64 KiB cap does.
 **Evidence:** inferred
 **Source:** implementation of avatars (`docs/api.md` §6.10, contract #136), 2026-10-22
 
-The upload is handed to `python -m maity_hub.avatar_decode` on stdin; the
-child imports Pillow, sets its own `RLIMIT_AS` to the operator's memory
-budget before it reads the image, and answers the PNG on stdout or a
-refusal reason with exit code 3. The parent waits at most the time budget
-and kills it past that; a crash or a kill past the memory limit is a
-refusal (`over_budget`). A semaphore sized `MAITY_AVATAR_DECODES` admits
+The upload is handed on stdin to `avatar_decode.py`, run by its path under
+`python -I` with an empty environment, so neither the hub's settings (the
+database URL, the forge token) nor its `sys.path` reach it. The child
+imports Pillow, then sets its own limits before it reads the image:
+`RLIMIT_AS` to the operator's memory budget, `RLIMIT_CPU` to the time
+budget, no file to write, 16 descriptors. It reads width and height from
+the image's own header (PNG's IHDR, JPEG's SOF, WebP's VP8/VP8L/VP8X) and
+refuses past 4096 before Pillow opens the bytes, because Pillow's size
+check comes after `Image.open` and an APNG allocates its claimed canvas
+inside it. It answers the PNG on stdout, or one of §6.10's reasons with
+exit code 3 and a detail on stderr. The parent waits at most the time
+budget and kills it past that; a timeout, a kill past a limit or a crash is
+`undecodable` to the client, and logged with its exit code, signal and the
+last line of stderr, so an operator can tell a crash from a plain refusal.
+It keeps the hub's user, so this narrows what an exploited decoder holds;
+it is not a sandbox. A semaphore sized `MAITY_AVATAR_DECODES` admits
 the decodes; with every slot taken the call is `rate_limited`. The decode
 runs before the transaction, so no lock is held while it runs. The
 answer is rebuilt with `Image.frombytes` before it is saved, because
@@ -99,6 +109,9 @@ needed between 256 and 384 MiB of address space when measured, so the
 default budget is 512.
 
 **Rejected alternatives:**
+- Running the child as `python -m maity_hub.avatar_decode` with the
+  hub's environment: it would inherit the database URL and the forge
+  token, and `-m` reads the package from wherever `sys.path` finds it.
 - A `multiprocessing` forkserver, whose children are forked from one
   clean process. It is quicker per decode, but it re-imports the hub's
   `__main__` in its server. That depends on how the hub was started, and
@@ -113,15 +126,18 @@ default budget is 512.
 **Id:** b293dec9-60d0-4e36-b0e9-1c136e04377f
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** implementation of avatars (`docs/api.md` §6.10, contract #136), 2026-10-22
+**Evidence:** confirmed
+**Source:** implementation of avatars (`docs/api.md` §6.10, contract #136), 2026-10-22; confirmed by the contract owner in the review of PR #218
 
-The 10 changes an hour per avatar are read (without counting) before an
-upload is decoded, so a member over its limit costs no decode. A stored
-upload or a removal counts inside the transaction, and an image the
-decoder refused counts as well. A replay with the same
-`Idempotency-Key` never reaches the counting step and is free, as the
-contract says.
+A request repeating a stored `Idempotency-Key` gets the stored answer
+first, before the limit and before any decode, so a replay is free, as
+the contract says. Otherwise the 10 changes an hour per avatar are read
+(without counting) before an upload is decoded, so a member over its
+limit costs no decode. A stored upload or a removal counts inside the
+transaction and is given back if the transaction rolls back or is
+retried; an image the decoder refused counts as well. Up to
+`MAITY_AVATAR_DECODES` uploads running at once can pass the read before
+any of them counts, which bounds the overshoot.
 
 **Reason:** the limit is what keeps one credential from feeding the most
 exposed parser of the hub an image a minute. If refused images did not
