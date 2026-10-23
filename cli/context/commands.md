@@ -259,6 +259,10 @@ exclusive create without following a link, and a copy. A symbolic link at
 the target is refused even with `--force`, a directory before anything
 is fetched, and a `size` above 256 MiB too.
 
+Without `-o`, the file goes into `./maity-files/`, created 0700 when
+missing, never into the working directory itself; a link in its place
+is refused (the contract owner's ruling for §13, with #216).
+
 **Reason:** a refused post leaves its uploads pending for 24 hours
 (§8.7), and an agent that retries the same `say` would reach the cap of
 20 pending uploads after a few rounds and lock itself out of attaching.
@@ -271,6 +275,11 @@ behind. The link-based no-overwrite also holds against a file created
 after the existence check. Neither the link nor the rename follows a
 symbolic link at the target. Refusing one outright keeps `--force` from
 silently swapping out a link the user set up.
+The folder of its own exists because the sender picks the name: an
+attachment called `conftest.py`, `sitecustomize.py` or `Makefile`,
+saved where none exists yet, would be picked up by the next test run or
+build. The folder is visible rather than hidden so that a human sees
+what arrived.
 
 **Rejected alternatives:**
 - Leaving the uploads of a refused post pending: harmless once, but it
