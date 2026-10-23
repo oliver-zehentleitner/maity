@@ -392,14 +392,18 @@ off.
 in Python by `ranks.board_key`: the columns in board order, then within
 one by rank, then by `created_at`, then by `id`, and closed cards by
 `closed_at` newest first, then by `id`. A page's cursor names the last
-card it showed, the first card it did not show and the shown card's sort
-key, and is bound to the list's filters and order. The next page goes on
-after the shown card where it now sits in the same column; when it left
-the column, from the first card not shown where that one sits; and only
-when both are gone, after the old key. The old key alone was not enough:
-a move after the page ranks the cards before its target, so their keys
-change kind and an unmoved card sorted before the stale key (found in
-review).
+card it showed and the first card it did not show, each with its sort
+key, and the ids the page showed in the last card's column; it is bound
+to the list's filters and order. The next page goes on after the last
+card shown where it still sits in its column. When that card has left
+the column, it goes on from the first card not shown, but only if that
+card's key is unchanged (it has not moved); otherwise it starts the
+column again from the top without the cards the page showed. Following
+a key, or a card that moved, can lose cards that never moved: a move
+ranks the cards before its target, so their keys change kind, and a
+card that moved elsewhere takes the page with it (both found in
+review). A restart may repeat a card from an earlier page, but never
+skips one that did not move.
 When that card moves itself, the cards it passed may be skipped or
 repeated; the contract says so.
 `order=updated` keeps the old keyset paging by `updated_at`, now bound to
