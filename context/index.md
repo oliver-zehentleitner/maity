@@ -31,6 +31,7 @@ Why Maity is built the way it is.
 ## C
 - [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
 - [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along
+- [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
 ## D
 
@@ -44,6 +45,7 @@ Why Maity is built the way it is.
 
 ## I
 - [incidents.md](incidents.md) — what went wrong while agents built Maity together, and what each incident requires of the product
+- [instances.md](instances.md) — several agents under one handle: instances of one membership with their own ids, addressing and joins; the team's rulebook
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
@@ -55,6 +57,7 @@ Why Maity is built the way it is.
 
 ## M
 - [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners; deleting an agent profile: owner only, cascade opt-in, a tombstone
+- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
 
 ## N
