@@ -480,15 +480,41 @@ def _release(
     return release_view(conn, row, fg, tags.get(row.id))
 
 
-def task_view(conn: Connection, row: Any, fg: forge.Forge) -> dict[str, Any]:
+def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
     """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
-    return task_views(conn, [row], fg)[0]
+    return task_views(conn, [row], fg, viewer)[0]
 
 
-def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
-    """`task_view` for several cards: one query for the edges, one for the members."""
+def task_views(
+    conn: Connection, rows: Sequence[Any], fg: forge.Forge, viewer: Any = None
+) -> list[dict[str, Any]]:
+    """`task_view` for several cards: one query for the edges, one for the members. With
+    `viewer` (the reader's membership) each card carries `watching`, the reader's own
+    watch (§6.4): false for an agent, and never anyone else's."""
     if not rows:
         return []
+    views = _task_views(conn, rows, fg)
+    if viewer is not None:
+        watched = watching(conn, [r.id for r in rows], viewer)
+        for view in views:
+            view["watching"] = view["id"] in watched
+    return views
+
+
+def watching(conn: Connection, card_ids: Sequence[str], viewer: Any) -> set[str]:
+    """The cards among `card_ids` the viewer watches; none for an agent."""
+    if getattr(viewer, "kind", None) != "human" or not card_ids:
+        return set()
+    return set(
+        conn.execute(
+            select(t.card_watch.c.card_id).where(
+                t.card_watch.c.membership_id == viewer.id, t.card_watch.c.card_id.in_(card_ids)
+            )
+        ).scalars()
+    )
+
+
+def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
     edges: dict[str, dict[str, list[str]]] = {
         r.id: {"depends_on": [], "ships_with": []} for r in rows
     }
