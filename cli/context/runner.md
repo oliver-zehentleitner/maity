@@ -310,7 +310,8 @@ network domains start empty, so the hub and the forge have to be named, or
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
 **Type:** constraint
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** b2cbf1a7-e25c-4803-8bc4-845c488512fc
 **Evidence:** confirmed
 **Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
@@ -849,3 +850,68 @@ sessions that simply work a while before each limit.
 - A new tmux option to pass the limit to the runner: the runner already
   reads the agent's directory, and an option would outlive the session's
   exit only by accident.
+
+## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
+
+**Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23
+**Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
+
+`adapters.launch` puts `MAITY_SUPERVISOR=maity-runner/<version>` into every
+session's environment, beside `MAITY_PLACEMENT` and `GIT_COMMON_DIR`.
+`maity resume` sends it as `supervisor` when it is set. A value that is
+not a runner's name is a usage error. A hub that refuses the field is
+resumed without it, with a warning, as for `environment`.
+
+**Reason:** the agent runs its own `maity resume`, so the runner cannot
+put the field into that call itself. The environment reaches every
+command of the session without the agent having to do anything. A flag
+would be one more thing the agent has to type correctly in every
+session, and an agent that forgot it would be treated as unsupervised:
+it would be told to `maity wait` under a runner that already wakes it.
+
+**Rejected alternatives:**
+- A `--supervisor` flag on `maity resume`, carried by the start prompt:
+  it depends on the agent typing it, and a compaction loses it.
+
+## The allowlists are no boundary in `single`; in `agent_user` the OS user separates the runner from the agents, not the agents from each other
+
+**Id:** b2cbf1a7-e25c-4803-8bc4-845c488512fc
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** runner.md 2bdc5809 (the allowlists as an accident guard, not a boundary), whose Revisit-when fired with the `agent_user` layout (R7a); runner.md 3edc329a (everything on the agents' side belongs to one agents' user); the review of the open needs-review entry, 2026-10-23
+**See:** runner.md — 3edc329a-6a10-427d-a0a3-733127f14b20 — as of 2026-10-23
+**Revisit when:** a run with a real second OS user confirms or refutes the separation (3edc329a: not yet done), one OS user per agent is introduced, or the Kubernetes backend makes the pod the boundary
+
+The named `git` subcommands and the denied options and paths of
+2bdc5809 stay what they were: they stop accidents and naive prompt
+injection, and nothing more. Whether a boundary exists behind them
+depends on the layout.
+
+- `single`: none. The agents run as the operator's user. Any repository
+  code an allowed build or test command runs can read what that user
+  reads, the clone's credential and the runner's state included. An
+  agent with a shell is as trusted as the operator's account.
+- `agent_user`: the OS user is the boundary between the runner and the
+  agents. The runner's state directory, its credential and its records
+  belong to the runner's user and are out of the agents' reach. Between
+  the agents it is not a boundary: they share one user, so one agent's
+  repository code can read another agent's clone, socket and log. Only
+  the sandbox read denies (3edc329a) keep the other clones' credentials
+  out of a sandboxed command, and only where the harness sandbox is on.
+
+**Reason:** the old entry stated "no boundary until agents run as their
+own user". With `agent_user` that is half true: there is now a user
+between the runner and the agents, but not between the agents. Leaving
+it at "needs-review" left both halves unsaid. Evidence stays inferred:
+the separation follows from file ownership and sudo, but no run with a
+real second user has shown it yet.
+
+**Rejected alternative:** marking 2bdc5809 active again as it stands.
+It would claim that `agent_user` gives no boundary, which the runner's
+own state contradicts, and it would say nothing about the agents among
+themselves.

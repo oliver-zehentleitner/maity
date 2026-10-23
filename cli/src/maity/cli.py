@@ -118,6 +118,11 @@ class Session:
         state.save_state(self.dir, self.data)
 
 
+# What a hub that predates them refuses: resumed without, never failed on (§5.3, §15.11).
+OPTIONAL_RESUME_FIELDS = ("environment", "supervisor")
+SUPERVISOR = re.compile(r"maity-runner/[A-Za-z0-9.+_-]{1,64}", re.ASCII)
+
+
 def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> int:
     for key in ("harness", "harness_version", "model"):
         value = getattr(args, key, None)
@@ -132,16 +137,30 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     declared = environment.ids(session.client.base, session.dir)
     if declared is not None:
         body["environment"] = declared
+    supervisor = os.environ.get("MAITY_SUPERVISOR")
+    if supervisor is not None:  # set by the runner that started this session (§15.11)
+        if not SUPERVISOR.fullmatch(supervisor):
+            # Only its length: whatever the variable holds goes to stderr, which a runner logs.
+            raise UsageError(
+                f"MAITY_SUPERVISOR is not maity-runner/<version> ({len(supervisor)} characters);"
+                " resume refused, nothing sent"
+            )
+        body["supervisor"] = supervisor
     try:
         packet = session.client.call("POST", "/me/resume", body=body)
     except hub.HubError as exc:
-        # A hub from before §5.3 refuses the field: resume without it, saying so.
+        # A hub from before §5.3 or §15.11 refuses the field: resume without it, saying so.
         fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
-        if "environment" not in body or exc.code != "invalid" or not isinstance(fields, dict) \
-                or not any(str(k).startswith("environment") for k in fields):  # fmt: skip
+        refused = [
+            key for key in OPTIONAL_RESUME_FIELDS
+            if key in body and isinstance(fields, dict)
+            and any(str(k).startswith(key) for k in fields)
+        ]  # fmt: skip
+        if exc.code != "invalid" or not refused:
             raise
-        _err("this hub does not take the session's environment yet; resuming without it")
-        del body["environment"]
+        for key in refused:
+            _err(f"this hub does not take the session's {key} yet; resuming without it")
+            del body[key]
         packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")

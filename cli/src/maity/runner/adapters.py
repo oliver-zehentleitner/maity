@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .. import __version__
 from . import config, stub
 from .asuser import AsUser
 
@@ -95,6 +96,9 @@ def launch(ctx: Context) -> Launch:
     # nothing. The agent can unset it for its own commands, which stay in the sandbox.
     env = {
         "MAITY_PLACEMENT": ctx.placement["id"],
+        # The agent's `maity resume` sends it, and the hub answers a supervised session
+        # (§15.11): no `maity wait`, a narrower wake set.
+        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         # A nested repository the agent registers as a submodule keeps its own configuration,
         # which the pin does not reach; git passes these settings on to it.
