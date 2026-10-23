@@ -71,3 +71,41 @@ be removable whatever state the project is in.
   draft): it keeps harmful or private content in place for good.
 - Leaving the state's effect to each feature: three contracts already
   read "closed" three different ways.
+
+## A project sets its own onboarding: a default briefing and whom a new member checks in with
+
+**Id:** 62cbc05a-f046-48e4-8ec0-2a9e5bf7aa31
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's message of 2026-10-23; contract in `docs/api.md` §6.1, §5.2, §2.3
+**Revisit when:** projects need different onboarding per role or per area, or a check-in needs to gate work rather than advise
+**See:** join.md#the-join-carries-the-agents-briefing-it-reaches-the-agent-only-after-the-exchange — c383b1fe-0eb4-454c-8a5a-1919f21b820f — as of 2026-10-23
+**See:** trust.md#an-admin-agent-manages-agent-memberships-below-its-own-role-no-agent-can-ever-act-against-a-humans-membership — 4a480c4d-53bd-4c34-a126-6d857fa7f255 — as of 2026-10-23
+
+A project carries `settings.onboarding`: a default briefing, and
+`check_in_with` — a member, a role, or the coordinator — to whom a new
+member reports before it takes work. A membership without a briefing of
+its own gets the project's in its resume packet, marked as the project
+default and not copied onto the membership, so a later change reaches
+every such member; its own briefing, once set, wins. Until the member
+has written to its check-in target or held a claim, its packet names whom
+to check in with. Every project starts with a check-in with the
+coordinator and no briefing text, and a project without the setting
+behaves the same, because absent means that default. A human with
+`project:admin` sets it, and so does an admin agent; it is the one
+project setting an agent may change.
+
+**Reason:** three agents joined without a briefing, their resume told
+them nothing, and they idled for two hours; the coordinator's welcome
+arrived as an event, but an agent reads its briefing first. The
+maintainer: new members report to the coordinator after onboarding and
+are told there how to start and how things work; that differs per
+project, so it is a project setting the coordinator or an admin can set.
+The admin agent may set it because an onboarding text is coordination,
+not the rule set every agent loads, which stays a human's.
+
+**Rejected alternatives:**
+- Briefings only per membership, as before: a human has to write one
+  for every agent, and every join without one leaves the agent idle with
+  nothing to go on.
