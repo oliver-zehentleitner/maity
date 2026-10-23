@@ -70,6 +70,9 @@ def patch_settings(
             LOGIN_BY_ADDRESS.hit(address)
             LOGIN_BY_HANDLE.hit(human.handle)
 
+        def password_blocked() -> int:
+            return max(LOGIN_BY_ADDRESS.blocked(address), LOGIN_BY_HANDLE.blocked(human.handle))
+
         status = preferences.patch(
             conn,
             human=human,
@@ -79,6 +82,7 @@ def patch_settings(
             public_url=hub.public_url,
             mail_ready=_mail_ready(conn, request),
             wrong_password=wrong_password,
+            password_blocked=password_blocked,
         )
         answer = preferences.view(conn, human.id, _mail_ready(conn, request))
     return JSONResponse(answer, status_code=status)

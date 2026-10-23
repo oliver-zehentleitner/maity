@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import base64
 import re
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import instance_settings as store
@@ -17,7 +18,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import outbox
-from maity_hub.notifications import preferences
+from maity_hub.notifications import preferences, tokens
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
@@ -259,6 +260,7 @@ def test_a_human_without_a_password_needs_an_old_session(
             public_url="https://hub.example",
             mail_ready=True,
             wrong_password=lambda: None,
+            password_blocked=lambda: 0,
         )
         assert status == 202
         change = preferences.view(conn, owner.id, True)["email"]["address_change"]
@@ -339,8 +341,162 @@ def test_security_mail_over_its_budget_waits(migrated: Engine) -> None:
 
 
 def test_disabled_mail_holds_the_outbox(migrated: Engine) -> None:
+    server = FakeSmtp(Script())
+    try:
+        hub = mail_env(server.port)
+        with migrated.begin() as conn:
+            store.put(conn, "mail.enabled", False, None)
+            outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b\n")
+        assert outbox.send_due(migrated, hub.mail, None) == 0
+        assert server.record.commands == []  # nothing even connected
+    finally:
+        server.close()
+
+
+def test_sign_in_mail_over_its_budget_is_dropped(migrated: Engine) -> None:
     hub = mail_env(1)
     with migrated.begin() as conn:
-        store.put(conn, "mail.enabled", False, None)
-        outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b\n")
+        store.put(conn, "mail.sign_in_max_per_hour", 1, None)
+        conn.execute(
+            t.mail_delivery.insert().values(kind="sign_in", outcome="sent", at=clock.now())
+        )
+        outbox.enqueue(conn, kind="sign_in", to="me@example.org", subject="s", body="b\n")
     assert outbox.send_due(migrated, hub.mail, None) == 0
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.mail_outbox.c.status)).scalar() == "dropped"
+
+
+def test_the_password_limit_holds_for_an_address_change(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "old@example.org")
+    wrong = {"email": {"address": "new@example.org"}, "current_password": "not it at all"}
+    codes = [owner.patch(S, wrong).status_code for _ in range(12)]
+    # The successful login counted too; past the limit every try is refused.
+    first = codes.index(429)
+    assert first >= 8 and set(codes[:first]) == {400} and set(codes[first:]) == {429}
+    right = {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD}
+    assert owner.patch(S, right).status_code == 429
+
+
+def test_three_hard_failures_disable_the_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "me@example.org")
+    with migrated.begin() as conn:  # the verification mail is out of the way
+        conn.execute(update(t.mail_outbox).values(status="sent"))
+    server = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+    try:
+        hub = mail_env(server.port)
+        for _ in range(3):
+            with migrated.begin() as conn:
+                outbox.enqueue(
+                    conn, kind="security", human_id=owner.id, to="me@example.org",
+                    subject="s", body="b\n",
+                )  # fmt: skip
+            server.close()
+            server = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+            hub = mail_env(server.port)
+            outbox.send_due(migrated, hub.mail, None)
+    finally:
+        server.close()
+    got = owner.get(S).json()["email"]
+    assert (got["address_status"], got["hard_failures"]) == ("disabled", 3)
+    assert got["disabled_at"] is not None
+    system = [i for i in owner.get("/me/notifications").json()["items"] if i["kind"] == "system"]
+    assert system and system[0]["title"] == "Mail to me@example.org disabled after 3 failures"
+
+
+def test_a_delivery_resets_the_failures(make_client: ClientFactory, migrated: Engine) -> None:
+    owner = verified(make_client, migrated, "me@example.org")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(hard_failures=2)
+        )
+        outbox.enqueue(
+            conn, kind="security", human_id=owner.id, to="me@example.org", subject="s", body="b\n"
+        )
+    server = FakeSmtp(Script())
+    try:
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    assert owner.get(S).json()["email"]["hard_failures"] == 0
+
+
+def test_a_verify_link_expires(make_client: ClientFactory, migrated: Engine) -> None:
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "me@example.org"}})
+    token = link(outbox_rows(migrated)[-1], "verify")
+    now = clock.now()
+    clock.set_source(lambda: now + timedelta(hours=24, seconds=1))
+    assert owner.client.post(f"/mail/verify/{token}").status_code == 404
+
+
+def test_a_verify_token_binds_the_pending_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "me@example.org"}})
+    with migrated.begin() as conn:
+        row = preferences.row_of(conn, owner.id)
+    other = tokens.make(
+        b"s" * 32,
+        {"h": owner.id, "p": "verify", "a": "attacker@example.org", "n": row.pending_nonce,
+         "x": int((clock.now() + timedelta(hours=1)).timestamp())},
+    )  # fmt: skip
+    assert owner.client.post(f"/mail/verify/{other}").status_code == 404
+    assert owner.get(S).json()["email"]["address"] is None
+
+
+def test_unsubscribe_switches_off_only_its_kind(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "me@example.org")
+    with migrated.begin() as conn:
+        epoch = preferences.row_of(conn, owner.id).epoch
+    owner.client.post(
+        f"/mail/unsubscribe/{preferences.unsubscribe_token(b's' * 32, owner.id, 'card', epoch)}"
+    )
+    kinds = owner.get(S).json()["email"]["kinds"]
+    assert kinds["card"]["mode"] == "off"
+    assert {k: v["mode"] for k, v in kinds.items() if k != "card"} == {
+        "inbox": "immediate", "chat": "hourly", "mention": "immediate", "agent": "immediate",
+        "ticker": "daily", "jour_fixe": "daily", "security": "immediate",
+    }  # fmt: skip
+
+
+def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "old@example.org")
+    hub = mail_env()
+    human = SimpleNamespace(id=owner.id, handle="maintainer", password_hash=None)
+    weak = SimpleNamespace(
+        public_id="hss-weak", method="device_code", created_at=clock.now() - timedelta(days=3)
+    )
+    with migrated.begin() as conn:
+        strong = conn.execute(select(t.human_session)).first()
+        kwargs: dict[str, Any] = dict(
+            signing_key=hub.mail.signing_key, public_url="https://hub.example", mail_ready=True,
+            wrong_password=lambda: None, password_blocked=lambda: 0,
+        )  # fmt: skip
+        assert preferences.patch(
+            conn, human=human, session=strong, body={"email": {"address": "a@example.org"}},
+            **kwargs,
+        ) == 202  # fmt: skip
+        change = preferences.view(conn, owner.id, True)["email"]["address_change"]
+        with pytest.raises(ApiError) as replaced:
+            preferences.patch(
+                conn, human=human, session=weak, body={"email": {"address": "b@example.org"}},
+                **kwargs,
+            )  # fmt: skip
+        assert replaced.value.details == {"reason": "not_in_good_standing"}
+        with pytest.raises(ApiError) as decided:
+            preferences.decide_held(
+                conn, human=human, session=weak, change_id=change["id"],
+                address=change["address"], approve=True, signing_key=None, public_url="",
+            )  # fmt: skip
+        assert decided.value.details == {"reason": "not_in_good_standing"}

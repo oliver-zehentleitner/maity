@@ -21,7 +21,7 @@ from sqlalchemy import Connection, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
@@ -276,9 +276,11 @@ def patch(
     public_url: str,
     mail_ready: bool,
     wrong_password: Any,
+    password_blocked: Any,
 ) -> int:
     """Apply a `PATCH`; returns 200, or 202 when an address change is held for approval.
-    `wrong_password` counts a mismatched `current_password` against the login limit."""
+    `wrong_password` counts a mismatched `current_password` against the login limits,
+    and `password_blocked` gives the seconds to wait while they are exhausted."""
     errors: dict[str, str] = {}
     for key in body:
         if key in ("kinds",) or key in READ_ONLY:
@@ -303,6 +305,7 @@ def patch(
             public_url=public_url,
             mail_ready=mail_ready,
             wrong_password=wrong_password,
+            password_blocked=password_blocked,
         )
         row = row_of(conn, human.id, lock=True)
     stored = dict(row.preferences or {})
@@ -341,6 +344,7 @@ def _change_address(
     public_url: str,
     mail_ready: bool,
     wrong_password: Any,
+    password_blocked: Any,
 ) -> int:
     if wanted is not None and not mail_ready:
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
@@ -350,6 +354,10 @@ def _change_address(
         if human.password_hash is not None:
             if not isinstance(given_password, str) or not given_password:
                 raise invalid({"current_password": "required"})
+            # The login limits hold here as at the login: no guessing past them (§2.1).
+            wait = password_blocked()
+            if wait:
+                raise rate_limited(wait)
             if not passwords.verify_password(given_password, human.password_hash):
                 wrong_password()
                 raise invalid({"current_password": "mismatch"})

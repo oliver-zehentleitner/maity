@@ -92,6 +92,15 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app's mail worker would send the outbox behind a test's back; tests drive
+    `outbox.send_due` themselves."""
+    from maity_hub.mail import outbox
+
+    monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""

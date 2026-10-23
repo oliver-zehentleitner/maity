@@ -14,7 +14,14 @@
   request log.
 - hub: the mail outbox and its worker — mail written in the deciding
   transaction, sent in the background, counted per budget kind; security
-  mail over its budget waits, `enabled: false` holds everything, failures
-  of the instance's setting retried for 24 hours.
+  mail over its budget waits, sign-in mail over its budget is dropped,
+  `enabled: false` holds everything, failures of the instance's setting
+  retried for 24 hours; three hard failures in a row disable the address
+  and write `mail_disabled` (§18.7); rows leave the outbox after a week.
+
+### Security
+
+- hub: a wrong `current_password` on an address change is refused with
+  `rate_limited` once the login limits are spent, like the login itself.
 - hub: notification items carry `content` (chat, mention) when the
   human's `browser.content` asks for it (§18.2).
