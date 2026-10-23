@@ -25,6 +25,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## A
 
 ## B
+- [brand.md](brand.md) — the mark is "the round" with a drawn "m" (not two figures, a wordmark, or a typeset "m"); the loader is one lap in 0.9 s; a circle is a human, a rounded square an agent
 
 ## C
 
