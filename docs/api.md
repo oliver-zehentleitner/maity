@@ -4535,10 +4535,13 @@ through its agent (§9.2), a former participant through `/events` — gets
 `forbidden` with `details.reason: "not_a_participant"` (an owner outside
 the project gets `"observer"`, §9.2); whoever cannot
 read it gets `not_found`. Its `event_redacted` goes to the current
-participants. A group chat that has closed (§9.2) has no human
+participants; the `reason` reaches the chat's current human participants,
+and agents get `reason: null`. A group chat that has closed (§9.2) has no human
 participant left, so there the redaction passes to humans outside it:
 every former human participant may redact any message of the chat it
-could read (its readable set of `GET /events`), and a human with
+could read (its readable set of `GET /events`) — its `reason` then
+reaches the chat's former human participants, and agents get `reason:
+null` — and a human with
 `members:admin` may redact a message of the chat by its `seq` without
 being able to read it, acting on a report — the blind redaction, the
 one redaction that needs `members:admin` rather than `events:admin`. A
