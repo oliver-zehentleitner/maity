@@ -333,24 +333,30 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     among them, that file at the merge commit and at the base; one item each. The
     forge is read with no connection held, and each item is written only if the
     ticker, its switch-on moment and the repository are still what was read. Returns
-    how many were announced."""
+    how many were announced.
+
+    A round reads at most 20 pages. When that cuts it, the next round goes on from the
+    next page, until the interval since `scanned_until` (or the switch-on) has been read
+    to its end; then `scanned_until` moves to the moment that scan began, so later
+    rounds stop there. Nothing behind the bound is lost, and rounds stay short."""
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-        since = ticker.merges_since(conn, project_id)
+        scan = ticker.merge_scan(conn, project_id)
     conf = ticker.settings(project)
-    if not conf["enabled"] or since is None or not fg.configured_for(project.repository_url):
+    if not conf["enabled"] or scan is None or not fg.configured_for(project.repository_url):
         return 0
+    since = scan.merges_since
+    lower = max(since, scan.scanned_until) if scan.scanned_until else since
+    going_on = scan.resume_page is not None
+    started = scan.round_started if going_on else clock.now()
     repository = forge.repository_of(project.repository_url)
     base = project.repository_default_branch or "main"
-    found, cut = fg.merged_pulls(repository, base, since)
-    if cut:
-        # Never dropped quietly: more closed pull requests since the switch-on than one
-        # round reads; the oldest merges among them are not announced.
-        log.warning(
-            "ticker: %s has more closed pull requests since %s than one round reads;"
-            " older merges among them are not announced",
+    found, next_page = fg.merged_pulls(repository, base, lower, start=scan.resume_page or 1)
+    if next_page is not None:
+        log.info(
+            "ticker: %s has more closed pull requests to read; the next round goes on from page %s",
             project.slug,
-            since.isoformat(),
+            next_page,
         )
     pulls = sorted(
         (p for p in found if p["base"] == base), key=lambda p: (p["merged_at"], p["number"])
@@ -396,6 +402,11 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                 return written
             if ticker.write_merge(conn, current, merge):
                 written += 1
+    with transaction(engine) as conn:
+        lock_project(conn, project_id)
+        # Only the round's own interval: a switch-off-and-on meanwhile starts anew.
+        if ticker.merges_since(conn, project_id) == since:
+            ticker.scan_done(conn, project_id, next_page, started)
     return written
 
 

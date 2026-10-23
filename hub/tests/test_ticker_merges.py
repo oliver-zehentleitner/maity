@@ -376,3 +376,52 @@ def test_switching_on_again_starts_a_project_without_a_start(
     enable(owner)
     with migrated.connect() as conn:
         assert ticker.merges_since(conn, project_id(migrated)) is not None
+
+
+def test_a_cut_round_goes_on_from_where_it_stopped_and_then_moves_the_bound(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    unmerged = [
+        {
+            "number": 2000 + n,
+            "merged_at": None,
+            "updated_at": "2099-01-02T00:00:00Z",
+            "base": {"ref": "main"},
+        }
+        for n in range(50)
+    ]
+    for page in range(1, 21):
+        closed(github, page, unmerged)
+    closed(
+        github,
+        21,
+        [
+            {
+                "number": 13,
+                "title": "behind a thousand",
+                "merged_at": "2099-01-01T10:00:00Z",
+                "updated_at": "2099-01-01T10:00:00Z",
+                "merge_commit_sha": MERGE_SHA,
+                "base": {"ref": "main", "sha": BASE_SHA},
+                "head": {"ref": "x"},
+            }
+        ],
+    )
+    github.answers["/repos/acme/maity/pulls/13/files?per_page=100&page=1"] = [
+        {"filename": "hub/a.py", "patch": ""}
+    ]
+    pid = project_id(migrated)
+    assert probe.announce_merges(migrated, READER, pid) == 0, "the first round is cut at 20 pages"
+    with migrated.connect() as conn:
+        scan = ticker.merge_scan(conn, pid)
+    assert scan.resume_page == 21 and scan.round_started is not None and scan.scanned_until is None
+    assert probe.announce_merges(migrated, READER, pid) == 1, "the next round goes on from page 21"
+    with migrated.connect() as conn:
+        done = ticker.merge_scan(conn, pid)
+    assert done.resume_page is None and done.scanned_until == scan.round_started
+    github.calls.clear()
+    probe.announce_merges(migrated, READER, pid)
+    assert any("page=1" in c for c in github.calls) and not any(
+        "page=21" in c for c in github.calls
+    )

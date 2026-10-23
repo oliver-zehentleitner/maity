@@ -1,7 +1,10 @@
 """Where the ticker's merge announcements start (docs/api.md §17.4).
 
 `ticker_source.merges_since` is the moment `settings.ticker.enabled` was switched on:
-the probe announces the merges after it and nothing older. A project that has the
+the probe announces the merges after it and nothing older. `scanned_until` is the
+moment up to which every merge has been read; a round cut by its page bound leaves
+`resume_page` and `round_started`, and the next round goes on from there. A project
+that has the
 ticker on already gets the moment of this upgrade: merges from before it are not
 announced, as for a project switched on today.
 
@@ -41,6 +44,9 @@ def upgrade() -> None:
         "ticker_source",
         sa.Column("project_id", sa.String(length=40), nullable=False),
         sa.Column("merges_since", TIMESTAMP, nullable=False),
+        sa.Column("scanned_until", TIMESTAMP, nullable=True),
+        sa.Column("resume_page", sa.Integer(), nullable=True),
+        sa.Column("round_started", TIMESTAMP, nullable=True),
         sa.ForeignKeyConstraint(
             ["project_id"], ["project.id"], name=op.f("fk_ticker_source_project_id_project")
         ),

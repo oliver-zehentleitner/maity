@@ -610,14 +610,36 @@ def switched_on(conn: Connection, project_id: str) -> None:
     found = conn.execute(
         select(t.ticker_source.c.project_id).where(t.ticker_source.c.project_id == project_id)
     ).first()
+    fresh = {"merges_since": now, "scanned_until": None, "resume_page": None, "round_started": None}
     if found:
         conn.execute(
             update(t.ticker_source)
             .where(t.ticker_source.c.project_id == project_id)
-            .values(merges_since=now)
+            .values(**fresh)
         )
     else:
-        conn.execute(insert(t.ticker_source).values(project_id=project_id, merges_since=now))
+        conn.execute(insert(t.ticker_source).values(project_id=project_id, **fresh))
+
+
+def merge_scan(conn: Connection, project_id: str) -> Any:
+    """The project's `ticker_source` row, or None before the ticker was ever switched on."""
+    return conn.execute(
+        select(t.ticker_source).where(t.ticker_source.c.project_id == project_id)
+    ).first()
+
+
+def scan_done(
+    conn: Connection, project_id: str, next_page: int | None, round_started: datetime
+) -> None:
+    """After a round: go on from `next_page` in the next one, or, the interval read to its
+    end, move `scanned_until` to the moment this scan began, so later rounds stop there."""
+    if next_page is not None:
+        values: dict[str, Any] = {"resume_page": next_page, "round_started": round_started}
+    else:
+        values = {"scanned_until": round_started, "resume_page": None, "round_started": None}
+    conn.execute(
+        update(t.ticker_source).where(t.ticker_source.c.project_id == project_id).values(**values)
+    )
 
 
 def merges_since(conn: Connection, project_id: str) -> Any:

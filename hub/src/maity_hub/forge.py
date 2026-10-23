@@ -241,21 +241,22 @@ class Forge:
     # --- merges for the change ticker (docs/api.md §17.4) ------------------------------------
 
     def merged_pulls(
-        self, repository: str, base: str, since: datetime, pages: int = 20
-    ) -> tuple[list[dict[str, Any]], bool]:
+        self, repository: str, base: str, since: datetime, start: int = 1, pages: int = 20
+    ) -> tuple[list[dict[str, Any]], int | None]:
         """The pull requests closed against `base` and merged after `since`, read most
-        recently updated first page by page until a page reaches back before `since` (a
-        merge also updates its pull request, so nothing older can follow), at most `pages`
-        pages of 50. The second value says whether that bound cut the backlog short."""
+        recently updated first from page `start` until a page reaches back before `since`
+        (a merge also updates its pull request, so nothing older can follow), at most
+        `pages` pages of 50. The second value is the page to go on from when that bound
+        cut the scan, else None."""
         found: list[dict[str, Any]] = []
-        for page in range(1, pages + 1):
+        for page in range(start, start + pages):
             batch = self._get(
                 f"/repos/{repository}/pulls?state=closed&base={urllib.parse.quote(base)}"
                 f"&sort=updated&direction=desc&per_page=50&page={page}"
             )
             if batch is None:
                 self._missing(repository)
-                return found, False
+                return found, None
             if not isinstance(batch, list):
                 raise ForgeUnavailableError("the forge answered a list with no list")
             reached = False
@@ -282,8 +283,8 @@ class Forge:
                     }
                 )
             if len(batch) < 50 or reached:
-                return found, False
-        return found, True
+                return found, None
+        return found, start + pages
 
     def pull_files(
         self, repository: str, number: int, cap: int = 300
