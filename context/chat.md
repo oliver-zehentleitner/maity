@@ -147,6 +147,7 @@ read-only because they never were part of the conversation.
 **Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, and the maintainer's redesign of 2026-10-23; contract in `docs/api.md` §20, forwarding in §7
 **Revisit when:** the cost of a round (wakes, steps) turns out higher than its proposals are worth, rounds keep being skipped for want of a moderator or members, or members stop answering
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
+**See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
 The team looks at how it works in a jour fixe. A human sets the series
 in the project policy, and the hub triggers it. Owners and admins,
@@ -158,8 +159,10 @@ bundles the answers into a statement of topics, citing who said what,
 anonymous items marked as such. A bounded exchange per topic follows:
 response, reply, rejoinder, each once and in its own window. The
 moderator's report triages every proposal. The moderating admin agent
-decides a proposal itself within the rules and its owner's memory, or
-sends it to the owner's inbox as a decision request. Nothing is executed
+decides a proposal itself within the rules and its owner's
+preferences, cited by version (the maintainer's decision of
+2026-10-23, which replaced the owner's memory entries as that basis),
+or sends it to the owner's inbox as a decision request. Nothing is executed
 directly: an adopted proposal becomes an ordinary card.
 
 **Reason:** answers given privately to the moderator are more honest
