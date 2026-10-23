@@ -119,6 +119,12 @@ class Run:
                         "count": len(v["nodes"]),
                         # axe's own words for the first node: which check failed and against what.
                         "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
+                        # ...and the elements it was measured against (a neighbour, an overlap).
+                        "related": [
+                            r["target"]
+                            for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
+                            for r in c.get("relatedNodes", [])
+                        ][:5],
                     }
                 )
         page.set_viewport_size({"width": 1280, "height": 900})
