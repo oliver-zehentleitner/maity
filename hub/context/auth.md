@@ -84,3 +84,105 @@ scope table and adding a `kind == "agent"` refusal at every other use. The
 table would then say more than the hub allows, and each new use of the
 scope would have to remember the exception.
 
+## A session shows a public id, named browser and system, and keeps no address once it ends
+
+**Id:** 3a06ee98-93d4-470d-a749-4ec0d5cf5039
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5; the hub owner's notes on the session list (`maity say`, card tsk-bjmkt2akq5dn), 2026-10-23; the implementation, 2026-10-23
+**Revisit when:** the hub needs a sign-in history beyond the 90-day account records, or a reverse proxy setup where `net.resolve` cannot tell the client address
+
+`human_session` carries a public id from `ids.new_id` (`hss-…`), never
+derived from the cookie's value, which is stored only as its hash. The
+browser and the operating system are names from a fixed list, matched
+against the `User-Agent` at the sign-in and capped at 64 characters
+(`auth.sessions.describe`); the header itself is not stored. `ip` is the
+address of the latest call as the trusted-proxy resolution gives it,
+and it and `source` (the start address) are set to NULL when the
+session ends: by a write for a logout, a revocation, `end-others`, a
+password change or a new login in the same browser; for sessions that
+expired, one statement clears them all whenever anyone signs in or
+reads a session list. The backfill keeps no address for a session that
+had already ended. The list shows no `ip` for an
+ended session. Existing sessions were backfilled with method `password`
+and a fresh public id.
+
+**Reason:** the hub owner asked for the public id, the parsed names and
+the end of the addresses (confirmed); the reasons below are this
+entry's reading of that. An address is personal data, and a table that kept the
+address of every session ever made would be an address history of each
+human that nothing needs. While a session is live the address helps its
+human tell sessions apart. A name from a list cannot carry a header's
+text into the dashboard.
+
+**Rejected alternatives:**
+- Keeping the raw `User-Agent`: more detail, but unbounded text from
+  the client, and personal data beyond what the list shows.
+- Keeping the addresses of ended sessions for the 30 days the list shows
+  them: the sign-in record of §2.6.5 keeps where a session started, so
+  a second copy is not needed.
+
+## Until the other sign-in methods exist, every session is in good standing and the mail link reports `not_implemented`
+
+**Id:** a6967e81-d77f-45dd-b5ab-dbd5628d7c8a
+**Type:** workaround
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5, §2.6.6; the implementation of tsk-bjmkt2akq5dn, 2026-10-23
+**Revisit when:** the device code (§2.6.2) or the sign-in link (§2.6.3) lands, or account records (§18.1) exist
+
+`auth.sessions.good_standing` is true for a session made by password and
+false for every other method; with only the password built, every
+session is in good standing. The rules for sessions that are not
+(`not_in_good_standing`, `session_too_new`, `end-others` ending only the
+others that are not either, the approval chain on `DELETE`) are written
+and tested on rows of the other methods already. The marking of a
+`session_created` item that grants good standing to those, and the
+`created` record in the list (null for now), come with account records.
+`GET /admin/settings/sign-in` lists `not_implemented` in `missing`, so
+`email_link_available` stays false until the hub serves the link.
+
+**Reason:** the web's session view calls these routes now, so the list
+had to come before the methods that make sessions out of good standing.
+Saying `not_implemented` is the honest answer while the switch is on and
+the mail settings are complete but nothing would send the link.
+
+**Rejected alternatives:**
+- Answering `email_link_available` from the setting and the mail
+  settings alone, as §2.6.6 reads: it would report a method the hub
+  cannot perform.
+
+## A device code's long-poll looks at its row every quarter second, and the device cookie holds one value per human
+
+**Id:** c84e1ec4-84b4-4f1b-a72f-ce33c7939014
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.2, §2.6.4, §2.6.5; the implementation of tsk-03ak6rjn2mfd, 2026-10-23
+**Revisit when:** device codes get many concurrent waiters, or the hub runs more than one replica
+
+`GET /auth/device-codes/{id}?wait` and `GET /auth/device-login?wait`
+read the code's row again every 0.25 seconds until its status changes
+or the wait ends. A second long-poll of the same session or pending
+cookie takes the key over and the first answers with `superseded:
+true`, as §8.3 does for events. The device cookie `maity_device` holds
+up to four dot-separated random values, one per human who signed in on
+that browser, each stored as `sha256` with its human. A new sign-in adds
+a value only when none of them belongs to that human. Codes that die
+with their session or with the method switched off become `denied`.
+
+**Reason:** a code lives five minutes, has at most two waiters, and
+changes state three times. Reading one row by primary key a few times a
+second costs less than a wake path from the committing thread into each
+waiter's loop, the way events have one, and a status written by any
+thread or a second replica is seen without it. One cookie with a value
+per human is what §2.6.5 asks of a shared browser. A single value would
+make every second human's browser look new.
+
+**Rejected alternatives:**
+- Waking device-code waiters through the events notifier: the codes are
+  no events and belong to no project.
+- One cookie per human (`maity_device_<id>`): it would put the human's
+  id in a cookie name that every request to the hub carries.

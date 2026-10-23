@@ -438,3 +438,48 @@ board is a few hundred cards; the board asks for 200 at a time.
 - Integer positions renumbered on every move. They are simple to compare,
   but a move rewrites every card after it, and each of those is an event.
 
+
+## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
+
+**Id:** e689f915-bca1-41c1-97d5-bdc125cbd9b3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub owner's ruling on the mail and sign-in settings (`maity say`, card tsk-bjmkt2akq5dn), 2026-10-23; docs/api.md §2.6.6, §16.2; the implementation in PR #255, 2026-10-23
+**Revisit when:** a section needs a setting per project or per human, or a second kind of admin-set secret appears
+
+`instance_setting(name, value, updated_at, updated_by)` holds what the
+instance admin set, one row per name (`mail.host`, `sign_in.device_code`);
+no row means the environment's value or the default. Every name has an
+entry in the registry of `maity_hub.instance_settings`, which its section
+fills with a validator and a default; a write checks against it, and a
+stored row without an entry (left over after a downgrade or a rename) is
+ignored and logged, never served. Whether the environment wins is
+decided in one place, `instance_settings.effective`. A secret the admin
+may set (today only the SMTP password, §16.2) is never a setting: it has
+its own registry and lives sealed with `maity_hub.secretbox` in
+`instance_secret`, so nothing that reads settings can serve it: no
+route or view returns the sealed value or the plaintext, and only the
+mail sender opens it, in memory, per send. The signing key and the
+instance key stay environment-only. A sealed value the current
+`MAITY_SECRET_KEY` cannot open (the key changed or is missing) is loud:
+logged at startup and `smtp_password_unreadable` in the admin view,
+counted as not set, never replaced by another source silently. The
+re-key path is to set the password again (or remove it) after the key
+changed. A downgrade past the migration drops the tables, and the admin
+sets the values again.
+
+**Reason:** the hub owner wanted one table with a fixed registry rather
+than one per section, so a new section needs no migration and every
+name is checked in one place. The admin-set SMTP password is allowed by
+the contract and the maintainer's decision. Its own table keeps "no
+secret in the settings" a property of the schema rather than of each
+reader.
+
+**Rejected alternatives:**
+- One table per section (`mail_setting`, `sign_in_setting`): the same
+  shape twice, a migration for every section.
+- The sealed password as one more row of `instance_setting`: a reader
+  of settings could serve it by mistake.
+- The SMTP password from the environment or a file only: contradicts
+  §16.2, which lets the admin of a single local install set it.

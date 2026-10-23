@@ -26,28 +26,38 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
 )
+from maity_hub.auth import device_codes as codes
+from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
 from maity_hub.forge_webhook import check_secrets
+from maity_hub.mail import outbox
+from maity_hub.mail import settings as mail
+from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
 from maity_hub.routes import (
     admin,
     agents,
     avatars,
     conversations,
+    device_codes,
     forge_webhook,
     joins,
     keep_the_why,
+    mail_settings,
     me_session,
     members,
     memory,
+    notification_settings,
+    notifications,
     placements,
     project_images,
     projects,
     requests,
     runner,
     runners,
+    sign_in_settings,
     tasks,
     ticker,
 )
@@ -71,7 +81,16 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
+        with engine.connect() as conn:
+            try:
+                mail.check_at_startup(conn, settings.mail, settings.secret_key)
+            except MailConfigError as error:
+                raise ConfigError(str(error)) from None
         check_secrets(engine, settings.secret_key)
+        with engine.begin() as conn:
+            # A method the environment switched off voids its open codes at once (§2.6.5).
+            if not sign_in.device_code_enabled(conn, settings):
+                codes.void_open(conn)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
@@ -81,7 +100,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # runs whether or not the hub holds a token (docs/api.md §11.2).
         image_worker = images.Worker(engine, reader)
         image_worker.start()
+        mail_worker = outbox.Worker(engine, settings.mail, settings.secret_key)
+        mail_worker.start()
         yield
+        mail_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -103,8 +125,13 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
+    app.include_router(device_codes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
+    app.include_router(notifications.router, prefix=prefix)
+    app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(mail_settings.router, prefix=prefix)
+    app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
@@ -125,6 +152,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(memory.router, prefix=prefix)
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
+    app.include_router(notification_settings.page_router)  # /mail/*, likewise
     app.include_router(runners.page_router)  # /r/{token}, likewise
     _mount_web(app, settings)
     if settings.public_url_guessed:

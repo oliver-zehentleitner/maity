@@ -7,6 +7,7 @@ from __future__ import annotations
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
+from maity_hub.errors import forbidden
 
 
 def instance_admin_id(conn: Connection) -> str | None:
@@ -19,3 +20,9 @@ def instance_admin_id(conn: Connection) -> str | None:
 
 def is_instance_admin(conn: Connection, human_id: str) -> bool:
     return instance_admin_id(conn) == human_id
+
+
+def require_instance_admin(conn: Connection, human_id: str) -> None:
+    """`forbidden` (`instance:admin`) for every caller but the instance admin (§16.1)."""
+    if not is_instance_admin(conn, human_id):
+        raise forbidden("instance:admin")
