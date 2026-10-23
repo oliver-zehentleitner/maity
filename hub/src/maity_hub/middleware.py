@@ -198,10 +198,12 @@ def _unrouted(scope: Scope) -> bool:
     router = getattr(scope.get("app"), "router", None)
     if not path.startswith("/api/") or router is None:
         return False
-    # The router redirects a path that differs by its trailing slash (307): that path
-    # is routed too.
-    other = path[:-1] if path.endswith("/") else path + "/"
-    for candidate in (path, other):
+    # Where the router redirects a path that differs by its trailing slashes (307), as
+    # Starlette does it (all of them stripped, or one added), that path is routed too.
+    candidates = [path]
+    if getattr(router, "redirect_slashes", False) and path != "/":
+        candidates.append(path.rstrip("/") if path.endswith("/") else path + "/")
+    for candidate in candidates:
         probe = {**scope, "path": candidate}
         for route in router.routes:
             if getattr(route, "name", None) != "web" and route.matches(probe)[0] != Match.NONE:

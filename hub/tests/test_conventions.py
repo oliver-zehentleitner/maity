@@ -83,8 +83,9 @@ def test_a_body_to_an_api_path_nothing_serves_is_404_unread(make_client: ClientF
     )
     assert wrong_method.status_code == 413
     # A path that differs by its trailing slash is routed: the router redirects it.
-    slash = client.get("/api/v1/health/", follow_redirects=False)
-    assert slash.status_code == 307
+    for slashed in ("/api/v1/health/", "/api/v1/health//"):
+        slash = client.get(slashed, follow_redirects=False)
+        assert slash.status_code == 307, slashed
 
     async def never_read() -> dict[str, object]:
         raise AssertionError("the body of an unrouted path was read")
