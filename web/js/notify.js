@@ -121,7 +121,7 @@ window.Maity = window.Maity || {};
             },
           }, "Mark all read") : null),
         h("p", { class: "muted bell-counts" }, Object.keys(KIND_WORDS).filter((k) => counts[k]).map((k) => KIND_WORDS[k] + " " + counts[k]).join(" · ") || "Nothing new."),
-        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays until you confirm it in your account; opening it here does not confirm it, and Mark all read leaves it.") : null,
+        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays unread: opening it here does not confirm it, and Mark all read leaves it. It can be confirmed once the page has a sessions view.") : null,
         items.length
           ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
             h("a", {

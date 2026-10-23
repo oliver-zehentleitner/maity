@@ -61,7 +61,8 @@ confirmed only explicitly, so opening it to look never gives the
 reported session good standing (§2.6.5, §18.3). **Mark all read** marks
 everything up to that answer's position (`next_after`, passed back
 unchanged) and leaves those alerts; it is not offered when they are all
-that is unread, and the panel says so. A sign-in or an address change
+that is unread. The panel says they stay unread until the page has a
+sessions view to confirm them in. A sign-in or an address change
 leads to the account for now (there is no session list in the page yet),
 a personal request of a project one is not in to everything waiting (the
 personal inbox, `#/requests/<id>`, is not in the page yet). Escape closes

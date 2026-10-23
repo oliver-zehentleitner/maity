@@ -2662,7 +2662,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
   // A sign-in alert is never confirmed by opening it (§2.6.5, §18.3).
   bellBtn().click(); await tick(); await tick();
-  expect(text(bellPanel()).includes("opening it here does not confirm it"), "notifications: the panel says a sign-in alert is confirmed in the account");
+  expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("once the page has a sessions view"),
+    "notifications: the panel says a sign-in alert stays unread until the sessions view exists");
   bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
   expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread", "notifications: opening a sign-in alert marks nothing");
   bellBtn().click(); await tick(); await tick();
