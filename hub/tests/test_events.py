@@ -81,3 +81,29 @@ def test_actor_and_subject_are_recorded(migrated: Engine) -> None:
     )
     assert (row.actor_via, row.actor_harness, row.actor_model) == ("signed", "Claude Code", "opus")
     assert (row.subject_type, row.subject_id, row.redacted) == ("task", "tsk-1", False)
+
+
+def test_at_never_runs_backwards_within_a_project(migrated: Engine) -> None:
+    """A clock step back (or a replica whose clock is behind) gives a later event the
+    earlier one's `at`, never an earlier one; another project keeps its own (§18.2)."""
+    from datetime import UTC, datetime, timedelta
+
+    from maity_hub import clock
+
+    project_id, other = factory.project(migrated), factory.project(migrated, "other")
+    start = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
+    for minutes, target in ((10, project_id), (0, project_id), (5, other), (12, project_id)):
+
+        def now(at: datetime = start + timedelta(minutes=minutes)) -> datetime:
+            return at
+
+        clock.set_source(now)
+        with events.transaction(migrated) as conn:
+            events.emit(conn, target, "state_changed", ["all"], {})
+    with migrated.connect() as conn:
+        rows = conn.execute(
+            select(t.event.c.project_id, t.event.c.at).order_by(t.event.c.seq)
+        ).all()
+    ats = [r.at for r in rows if r.project_id == project_id]
+    assert ats == [start + timedelta(minutes=m) for m in (10, 10, 12)]
+    assert [r.at for r in rows if r.project_id == other] == [start + timedelta(minutes=5)]
