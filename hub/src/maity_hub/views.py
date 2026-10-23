@@ -584,6 +584,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         else {}
     )
     decided = ticker_read.details(conn, rows)
+    notices = ticker_read.ticker_subjects(conn, rows)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -605,6 +606,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "via": row.actor_via,
             }
         payload, audience = _without_reason(row, reader), row.audience
+        if row.kind == "event_redacted" and row.subject_id in notices:
+            audience = ticker_read.shaped_audience(audience, reader)  # like the item it removed
         if row.kind == "ticker":
             # Shaped per reader on every path that returns it (§17.5), its tombstone too.
             if row.redacted:

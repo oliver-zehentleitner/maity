@@ -131,3 +131,16 @@ def wakes(row: Any, principal: str) -> bool:
         return False
     entry = reason_of(row.payload or {}, principal)
     return bool(entry and entry.get("wake"))
+
+
+def ticker_subjects(conn: Connection, rows: Sequence[Any]) -> set[str]:
+    """The `subject_id`s of the `event_redacted` among `rows` that removed a ticker item."""
+    seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
+    if not seqs:
+        return set()
+    return {
+        str(seq)
+        for seq in conn.execute(
+            select(t.event.c.seq).where(t.event.c.seq.in_(seqs), t.event.c.kind == "ticker")
+        ).scalars()
+    }

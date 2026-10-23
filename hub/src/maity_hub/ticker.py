@@ -255,7 +255,9 @@ def write(
             entry.wake = False
     tokens = ["all"] if broadcast else []
     for principal, entry in audience.entries.items():
-        if entry.wake or not broadcast:
+        # Every unmuted entry is a token, woken or not: it is what names a human for
+        # its notification (§18.1); a followed-and-muted member gets none (§17.8).
+        if not entry.muted or not broadcast:
             tokens.append(f"member:{principal}")
     for principal in readers:
         if f"member:{principal}" not in tokens:

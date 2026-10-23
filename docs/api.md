@@ -2028,8 +2028,9 @@ it does not ask its agents to maintain.
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
-`contract_files`); `null` for a key removes it, so it reads as its
-default afterwards; `{"settings": {}}` changes nothing.
+`contract_files`); `null` for a key removes it from `settings`, and the
+hub applies its default for it from then on; `{"settings": {}}` changes
+nothing.
 
 **Attachments**: the bytes of stored attachments and the instance's
 quota (§8.7); shown to `project:admin`, `null` for everyone else.

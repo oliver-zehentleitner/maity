@@ -574,32 +574,90 @@ def test_humans_are_never_woken_by_an_item(
     full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
     by = {r["member_id"]: r for r in full["payload"]["reasons"]}
     assert by[owner.id]["wake"] is False, "for me, never a wake (§17.10)"
-    assert f"member:{owner.id}" not in full["audience"]
+    assert f"member:{owner.id}" in full["audience"], "listed by its token, never woken"
     assert listed(owner, "?for=me")[0]["seq"] == item["seq"]
 
 
-def test_a_redacted_item_leaks_no_audience_and_wakes_no_one(
+def test_a_redacted_item_is_noticed_by_its_audience_shaped_and_wakes_no_one(
     owner: flow.Human, team: dict[str, flow.Agent], migrated: Engine
 ) -> None:
     item = note(owner, areas=["web/"])
-    assert (
-        owner.post(
-            f"/projects/maity/events/{item['seq']}/redact", {"reason": "wrong project"}
-        ).status_code
-        == 200
+    redacted = owner.post(
+        f"/projects/maity/events/{item['seq']}/redact", {"reason": "wrong project"}
     )
+    assert redacted.status_code == 200
     as_hub = team["hub"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
     tomb = next(e for e in as_hub if e["seq"] == item["seq"])
     assert tomb["redacted"] and tomb["audience"] == ["all"], "the tombstone is shaped like the item"
-    assert not any(e["kind"] == "event_redacted" for e in as_hub), "the notice goes to nobody"
+    as_web = team["web"].get(f"/projects/maity/events?after={item['seq']}").json()["items"]
+    [notice] = [e for e in as_web if e["kind"] == "event_redacted"]
+    assert notice["audience"] == [
+        "all",
+        f"member:{team['web'].id}",
+    ], "the item's audience, shaped (§8.5)"
     with migrated.connect() as conn:
-        rows = conn.execute(select(t.event).where(t.event.c.seq >= item["seq"])).all()
         web = conn.execute(
             select(t.membership).where(t.membership.c.agent_id == team["web"].id)
         ).one()
-    assert not any(events.wakes(r, web, team["web"].id) for r in rows)
+        woken, _ = events.read_waking(conn, web.project_id, web, team["web"].id, item["seq"], 50)
+    assert woken == [], "noticed, never woken by it"
     [listed_item] = listed(team["web"])
     assert listed_item["redacted"] is True
+
+
+def test_the_notice_of_a_withheld_decision_is_withheld_too(
+    owner: flow.Human, team: dict[str, flow.Agent]
+) -> None:
+    enable(owner)
+    request = asked(team["hub"], to="owner")
+    answer(owner, request, text="Yes.")
+    [item] = listed(team["hub"])
+    owner.post(f"/projects/maity/events/{item['seq']}/redact", {"reason": "x"})
+    seen = team["web"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    assert not any(
+        e["kind"] == "event_redacted" and e["subject"]["id"] == str(item["seq"]) for e in seen
+    )
+    asker = team["hub"].get(f"/projects/maity/events?after={item['seq']}").json()["items"]
+    assert any(e["kind"] == "event_redacted" for e in asker)
+
+
+def test_humans_keep_their_token_without_a_wake(
+    owner: flow.Human, team: dict[str, flow.Agent]
+) -> None:
+    owner.patch("/projects/maity/ticker/subscription", {"add": {"follow": {"areas": ["web/"]}}})
+    item = note(team["admin"], areas=["web/"])
+    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    assert f"member:{owner.id}" in full["audience"], "the token that names a human for §18"
+    assert {r["member_id"]: r["wake"] for r in full["payload"]["reasons"]}[owner.id] is False
+
+
+def test_an_agents_own_post_does_not_wake_it(
+    owner: flow.Human, team: dict[str, flow.Agent]
+) -> None:
+    item = note(team["admin"], to="all", areas=None)
+    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    by = {r["member_id"]: r for r in full["payload"]["reasons"]}
+    assert by[team["admin"].id]["wake"] is False and by[team["hub"].id]["wake"] is True
+
+
+def test_a_release_item_names_the_version_of_its_card(owner: flow.Human, migrated: Engine) -> None:
+    enable(owner)
+    card = task(owner, kind="release", release={"version": "0.4.0"}, title="Second")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.card.update().where(t.card.c.id == card["id"]).values(release_version="0.0.9")
+        )
+        project = conn.execute(select(t.project)).one()
+        row = conn.execute(select(t.card).where(t.card.c.id == card["id"])).one()
+    with events.transaction(migrated) as conn:
+        ticker.on_release_done(conn, project, row, None, None)
+    [item] = listed(owner)
+    assert item["text"] == "Released 0.4.0: Second", "release_data's version first"
+
+
+def test_hub_and_hub_slash_name_one_area() -> None:
+    assert ticker.contains("hub/", "hub") and ticker.contains("hub", "hub/x.py")
+    assert not ticker.contains("hub/", "hubs/x.py") and not ticker.contains("hub", "hubx")
 
 
 def test_a_redacted_decision_is_withheld_like_a_live_one(

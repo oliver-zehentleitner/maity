@@ -167,25 +167,25 @@ HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
 def hidden_redactions(
     conn: Connection, rows: Sequence[Any], membership: Any = None
 ) -> frozenset[str]:
-    """The `subject_id`s among `rows`' `event_redacted` that name an event of a
-    humans-only kind: such a tombstone is as unreadable to agents as the event it
-    redacts (§8.5). With `membership`, also `ticker:<seq>` for each decision item
-    whose request it may not read now (§17.5). One query per batch at most."""
+    """What a batch needs read once to judge its rows (§8.5, §17.5):
+    - the `subject_id`s of `event_redacted` that name an event of a humans-only kind,
+      as unreadable to agents as the event they redact;
+    - `notice:<seq>` for each `event_redacted` whose subject is a ticker item: it is
+      shaped like the item and never wakes;
+    - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
+      one, whose request it may not read now: no item, no placeholder, no notice."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
         return frozenset(hidden)
-    return frozenset(
-        hidden
-        | {
-            str(seq)
-            for seq in conn.execute(
-                select(t.event.c.seq).where(
-                    t.event.c.seq.in_(seqs), t.event.c.kind.in_(HUMANS_ONLY_KINDS)
-                )
-            ).scalars()
-        }
-    )
+    subjects = conn.execute(select(t.event).where(t.event.c.seq.in_(seqs))).all()
+    for subject in subjects:
+        if subject.kind in HUMANS_ONLY_KINDS:
+            hidden.add(str(subject.seq))
+        if subject.kind == "ticker":
+            hidden.add(f"notice:{subject.seq}")
+    hidden |= {f"ticker:{seq}" for seq in ticker_read.withheld(conn, subjects, membership)}
+    return frozenset(hidden)
 
 
 def readable_by(
@@ -201,6 +201,8 @@ def readable_by(
         return False
     if row.kind == "ticker" and f"ticker:{row.seq}" in hidden:
         return False  # a decision whose request it may not read: no item at all (§17.5)
+    if row.kind == "event_redacted" and f"ticker:{row.subject_id}" in hidden:
+        return False  # nor the notice of its removal
     if row.kind == "ticker_subscription_changed":
         # The member's own business, and the human owners' and admins' (§17.12).
         return (row.payload or {}).get("member_id") == principal or (
@@ -311,7 +313,14 @@ def read_waking(
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
-    found = [r for r in rows if wakes(r, membership, principal)][:limit]
+    # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
+    notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
+    found = [
+        r
+        for r in rows
+        if wakes(r, membership, principal)
+        and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
+    ][:limit]
     if found and (len(found) == limit or truncated):
         return found, found[-1].seq
     return found, examined
