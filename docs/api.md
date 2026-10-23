@@ -3070,8 +3070,14 @@ not `done` or `cancelled`, for every kind and every caller.
 | `DELETE /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
 
 **Searching cards.** `q` (1–200 characters, else `invalid`) narrows
-`GET …/tasks` to the cards whose text contains it, case-insensitively,
-as a plain substring (no wildcards; `%` and `_` match themselves): the
+`GET …/tasks` to the cards whose text contains it as a plain substring
+(no wildcards; `%` and `_` match themselves), case-insensitively in one
+defined form: both `q` and the text are Unicode-normalized to NFKC and
+then lowercased by the Unicode default mapping, independent of locale
+and database collation (Python `unicodedata.normalize("NFKC", s).lower()`,
+JavaScript `s.normalize("NFKC").toLowerCase()`), so `är` finds `Ärger`
+on SQLite, PostgreSQL and MariaDB alike, and the dashboard's own filter
+matches the same cards. The text searched is: the
 card's `id`, `title` and `body`, the bodies of its notes in every state
 (§6.16), and the `summary` of its latest report (§6.6). A redacted note
 is not searched, and neither are links, the edit
