@@ -7450,8 +7450,10 @@ signing key are there and, with a username, a password; `missing` names
 what is not. `password`, `signing_key` and `secret_key` never carry a
 value, a length, a hash or a hint — only whether one is set.
 `warnings` lists `smtp_password_in_database` under the Kubernetes rule
-above and `smtp_plaintext_allowed` while `MAITY_SMTP_ALLOW_PLAINTEXT`
-is set, else nothing. `from.address` and `reply_to` follow the address
+above, `smtp_plaintext_allowed` while `MAITY_SMTP_ALLOW_PLAINTEXT`
+is set, and `smtp_password_unreadable` while a stored password does not
+open with the current instance key (it then counts as not set; the hub
+also logs it at startup), else nothing. `from.address` and `reply_to` follow the address
 syntax of §18.4 (`invalid` otherwise); `from.name` follows the header
 rules of §18.5.
 

@@ -8,7 +8,8 @@
   remote host stops the hub, from whichever sources the two come;
   `complete`, `missing`, `warnings` and the hourly counters. Admin-set values live in a new
   `instance_setting` table (names from a registry in code), the sealed
-  password in `instance_secret`. Migration `0026`.
+  password in `instance_secret`; a stored password the instance key cannot
+  open is `smtp_password_unreadable`. Migration `0026`.
 - hub: the test send (`docs/api.md` §16.3) — `POST
   /admin/settings/mail/test`, one fixed mail to the configured server
   only, STARTTLS required (plaintext only with the insecure
