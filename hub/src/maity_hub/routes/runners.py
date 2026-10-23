@@ -11,7 +11,7 @@ the credential is the response body and nothing else.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -20,7 +20,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, paging, placements
+from maity_hub import clock, events, idempotency, paging, placements, runner_revoke
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -74,6 +74,12 @@ class RunnerUpdate(Strict):
 
 class RunnerRevoke(Strict):
     reason: str | None = markdown(default=None)
+    # The owner's override (§15.3): each project's rule, or stop everywhere.
+    agents: Literal["policy", "stop"] = "policy"
+
+
+class RunnerRemove(Strict):
+    agents: Literal["policy", "stop"] = "policy"
 
 
 class AttachIn(Strict):
@@ -112,7 +118,36 @@ def _load_removal(conn: Connection, runner_id: str, request: Request) -> dict[st
         .order_by(t.placement.c.id)
     ).all()
     still = [r.id for r in closed if (r.reported or {}).get("state") in placements.RUNNING_STATES]
-    return {**load_runner(conn, runner_id, _viewer(request)), "still_running": still}
+    viewer = _viewer(request)
+    return {
+        **load_runner(conn, runner_id, viewer),
+        "still_running": still,
+        "on_runner_revoke": runner_revoke.answer(conn, _applied(conn, runner_id), viewer),
+    }
+
+
+def _applied(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
+    """What the runner's latest revocation applied (§15.3), as stored with it."""
+    applied: list[dict[str, Any]] | None = conn.execute(
+        select(t.runner_credential.c.stopped)
+        .where(
+            t.runner_credential.c.runner_id == runner_id,
+            t.runner_credential.c.revoked_at.is_not(None),
+        )
+        .order_by(t.runner_credential.c.revoked_at.desc())
+        .limit(1)
+    ).scalar()
+    return applied or []
+
+
+def _load_revoked(conn: Connection, runner_id: str, request: Request) -> dict[str, Any]:
+    """The runner after a revoke, with what it did to the agents (§15.3)."""
+    viewer = _viewer(request)
+    view = load_runner(conn, runner_id, viewer)
+    return {
+        **view,
+        "on_runner_revoke": runner_revoke.answer(conn, _applied(conn, runner_id), viewer),
+    }
 
 
 idempotency.LOADERS["runner_enrollment"] = idempotency.plain(load_enrollment)
@@ -120,6 +155,9 @@ idempotency.LOADERS["runner"] = lambda conn, runner_id, request: load_runner(
     conn, runner_id, _viewer(request)
 )
 idempotency.LOADERS["runner_removal"] = _load_removal
+idempotency.LOADERS["runner_revoked"] = lambda conn, runner_id, request: _load_revoked(
+    conn, runner_id, request
+)
 idempotency.LOADERS["runner_attachment"] = load_attachment
 
 
@@ -541,30 +579,58 @@ def revoke_runner(
     runner_id: str, request: Request, caller: HumanCaller, body: RunnerRevoke | None = None
 ) -> JSONResponse:
     reason = body.reason if body and body.reason else "revoked"  # as for an agent's
+    agents = body.agents if body else "policy"
+    instance_rule = settings_of(request).on_runner_revoke
 
     def action(conn: Connection) -> idempotency.Outcome:
         _own_runner(conn, caller, runner_id, lock=True)
         live = live_credential_id(conn, runner_id)
+        applied: list[dict[str, Any]] = []
         if live is not None:  # none live: answered as it is
-            revoke_runner_credential(conn, live, reason, by=caller.principal_id)
+            applied = runner_revoke.apply(
+                conn,
+                runner_id,
+                agents=agents,
+                instance_rule=instance_rule,
+                removing=False,
+                by=caller.principal_id,
+            )
+            revoke_runner_credential(conn, live, reason, by=caller.principal_id, applied=applied)
             placements.runner_credential_gone(conn, runner_id, caller.principal_id)
-        return idempotency.Outcome(
-            200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
-        )
+        view = load_runner(conn, runner_id, caller.principal_id)
+        view["on_runner_revoke"] = runner_revoke.answer(conn, applied, caller.principal_id)
+        return idempotency.Outcome(200, "runner_revoked", runner_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
 @router.delete("/runners/{runner_id}")
-def remove_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+def remove_runner(
+    runner_id: str, request: Request, caller: HumanCaller, body: RunnerRemove | None = None
+) -> JSONResponse:
+    agents = body.agents if body else "policy"
+    instance_rule = settings_of(request).on_runner_revoke
+
     def action(conn: Connection) -> idempotency.Outcome:
         row = _own_runner(conn, caller, runner_id, lock=True)
         if row.removed_at is None:
             now = clock.now()
+            # Each project's rule first, while the runner is still attached: under stop
+            # its agents' credentials go too (§15.3); every placement closes either way.
+            applied = runner_revoke.apply(
+                conn,
+                runner_id,
+                agents=agents,
+                instance_rule=instance_rule,
+                removing=True,
+                by=caller.principal_id,
+            )
             placements.runner_removed(conn, runner_id, caller.principal_id)
             live = live_credential_id(conn, runner_id)
             if live is not None:
-                revoke_runner_credential(conn, live, "runner_removed", by=caller.principal_id)
+                revoke_runner_credential(
+                    conn, live, "runner_removed", by=caller.principal_id, applied=applied
+                )
             for project_id in attached_project_ids(conn, runner_id):
                 detach(conn, project_id, runner_id, caller.principal_id)
             # An open re-pair would bring the removed runner back.

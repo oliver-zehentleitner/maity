@@ -36,13 +36,20 @@ CHOICES = {
     "signing": ("optional", "required"),
     "spawn_requests": ("off", "consent", "direct"),
     "spawn_consent_by": ("human", "role"),
+    "on_runner_revoke": ("keep", "stop", "inherit"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
 FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds", "max_placements")
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, nor reset the placement limit; only the field itself changes them (§6.1).
-KEPT_ON_PRESET = ("signing", "spawn_requests", "spawn_consent_by", "max_placements")
+KEPT_ON_PRESET = (
+    "signing",
+    "spawn_requests",
+    "spawn_consent_by",
+    "max_placements",
+    "on_runner_revoke",
+)
 
 
 def filled(preset: str, owner_id: str) -> dict[str, Any]:
@@ -51,6 +58,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         **_FILLINGS[preset],
         "lease_seconds": LEASE_DEFAULT,
         "max_placements": MAX_PLACEMENTS_DEFAULT,
+        "on_runner_revoke": "inherit",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -71,6 +79,7 @@ def of(project: Any) -> dict[str, Any]:
         "spawn_requests": project.spawn_requests,
         "spawn_consent_by": project.spawn_consent_by,
         "max_placements": project.max_placements,
+        "on_runner_revoke": project.on_runner_revoke,
     }
 
 
@@ -88,4 +97,20 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "spawn_requests": policy["spawn_requests"],
         "spawn_consent_by": policy["spawn_consent_by"],
         "max_placements": policy["max_placements"],
+        "on_runner_revoke": policy["on_runner_revoke"],
     }
+
+
+INSTANCE_RULES = ("keep", "stop", "stop_floor")
+
+
+def runner_revoke_rule(project: Any, instance_rule: str) -> str:
+    """`keep` or `stop`: the project's `on_runner_revoke` within the instance setting
+    (§15.3). `inherit` takes the setting; `stop_floor` means stop whatever the project
+    says, as a project's `keep` is refused under it."""
+    if instance_rule == "stop_floor":
+        return "stop"
+    if project.on_runner_revoke == "inherit":
+        return instance_rule
+    rule: str = project.on_runner_revoke
+    return rule
