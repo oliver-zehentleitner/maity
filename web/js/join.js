@@ -55,13 +55,18 @@ window.Maity = window.Maity || {};
     // profiles that are not deleted, and GET /agents lists exactly those).
     // A hint only: the hub's answer to the join is the final word.
     const handleState = h("p", { class: "hint handle-state", id: "join-handle-state", role: "status" });
+    // Handles the hub refused as taken: its word stands even when the list
+    // on screen could not be read again and does not show the profile.
+    const refused = new Set();
     const checkHandle = () => {
       const v = handle.value.trim();
       const taken = v && profiles.items.find((p) => !p.deleted_at && p.handle === v);
-      handleState.className = "hint handle-state" + (!v ? "" : !HANDLE.test.test(v) || taken ? " field-error" : " ok");
+      const bad = !HANDLE.test.test(v);
+      handleState.className = "hint handle-state" + (!v ? "" : bad || taken || refused.has(v) ? " field-error" : " ok");
       handleState.textContent = !v ? ""
-        : !HANDLE.test.test(v) ? "Not a handle yet: " + HANDLE.text
+        : bad ? "Not a handle yet: " + HANDLE.text
         : taken ? "Taken: your agent " + taken.display_name + " has @" + v + ". Choose it above, or another handle."
+        : refused.has(v) ? "Taken: the hub says you already have an agent with @" + v + "."
         : "@" + v + " is free.";
     };
     handle.addEventListener("input", checkHandle);
@@ -157,6 +162,7 @@ window.Maity = window.Maity || {};
           status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle } : err);
           if (why) {
             // The hub knows better than the list on screen: read it again, and say so at the field.
+            if (why === "taken") refused.add(agent.handle);
             try { profiles = await M.api.getAll("/agents"); } catch (ignored) { /* the refusal above says enough */ }
             profileOptions();
             agentSelect.value = "";
@@ -179,6 +185,8 @@ window.Maity = window.Maity || {};
         profileOptions();
         agentSelect.value = j.agent_id;
         newFields.hidden = agentSelect.value !== "";
+        // The handle just created is one's own now: the hint says so.
+        checkHandle();
         drawJoins(joins);
       },
     },

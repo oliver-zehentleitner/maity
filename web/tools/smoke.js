@@ -1687,6 +1687,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("No join created: you already have an agent with the handle @agent-zz") && hcReads === 1,
     "handle check: the hub's taken is said, and the profiles are read again");
+  // The hub's taken stands even when the profiles cannot be read again.
+  win.Maity.api.getAll = (p) => (p === "/agents" && hcReads++ ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hcAll(p));
+  hcType("agent-yy");
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(hcState()) === "Taken: the hub says you already have an agent with @agent-yy." && hcState().className.includes("field-error"),
+    "handle check: the hub's refusal stays when the re-read fails " + JSON.stringify(text(hcState())));
+  hcType("agent-yz"); hcType("agent-yy");
+  expect(text(hcState()).startsWith("Taken: the hub says"), "handle check: and when the handle is typed again");
+  // After a create, the hint is worked out again: the new handle is one's own.
+  // Stubbed, so the fixtures' joins stay as the cases below expect them.
+  let hcCreated = false;
+  win.Maity.api.post = (p, b) => (p === "/projects/maity/joins"
+    ? (hcCreated = true, Promise.resolve({ id: "join-hc", agent_id: "agt-new1", paste_line: "maity join https://hub.example/j/x", expires_at: "2099-01-01T00:00:00Z", created_at: "2026-10-23T00:00:00Z" }))
+    : hcPost(p, b));
+  win.Maity.api.getAll = (p) => (p === "/agents" && hcCreated
+    ? hcAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-new1", handle: "agent-new1", display_name: "Agent New", owner_id: "hum-maintainer", memberships: [], deleted_at: null }]), next_cursor: null }))
+    : hcAll(p));
+  hcType("agent-new1"); byId("join-display").value = "Agent New";
+  expect(text(hcState()) === "@agent-new1 is free.", "handle check: free before the create");
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(hcState()).startsWith("Taken: your agent Agent New has @agent-new1"), "handle check: after the create it is taken, by the new profile " + JSON.stringify(text(hcState())));
   win.Maity.api.post = hcPost; win.Maity.api.getAll = hcAll;
   await go("#/p/maity/inbox");
   await go("#/p/maity/join");
