@@ -101,3 +101,60 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
 
+
+## A pickup's join creates a new profile at the exchange, and the pickup stores nothing to replay
+
+**Id:** cf956bec-8b32-4ae3-8ba6-73e3afe33e89
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §15.9 (the exchange creates the profile and the membership; the URL and code in the answer only, never in a stored idempotency outcome; a lost answer recovered by picking up again); implementation session, 2026-10-23
+**Revisit when:** agent instances (§6.17) land (a pickup then mints a new instance or replaces the revoked one, under `max_instances`), or a runner needs a pickup that is idempotent by key
+
+`POST /runner/placements/{id}/join` writes a `join_link` that names the
+placement, the runner and the generation. It is not run through
+`idempotency.run`: an answer it stored would hold the URL and the code. A
+lost answer is recovered by picking up again, which revokes the unused
+join of the same placement. Three pickups per generation are allowed.
+
+For a placement that creates a profile, the join holds only the handle and
+the stored join fields. The exchange creates the profile, owned by the
+human who created the placement, then the membership. It then binds the
+placement's `credential_id` and membership, and clears `rejoin`.
+Meanwhile that human may give the handle to another agent. The exchange
+then answers `not_found`, like any join that no longer works, and creates
+nothing.
+
+**Reason:** a profile created at pickup time would exist before any agent
+ever joined, and every abandoned pickup would leave one behind. The
+contract puts the creation at the exchange for that reason. Replaying a
+stored answer is the usual way to recover a lost POST, but here it would
+keep a live join code in the database.
+
+**Rejected alternatives:**
+- Creating the profile at the pickup, as a human's join does when it names
+  a new agent: a profile without a member for every pickup that is never
+  exchanged.
+- A dedicated error for the taken handle: it would tell whoever holds the
+  link that the human has an agent of that name.
+
+## A supervised session's long-poll is not woken by what only `all` names
+
+**Id:** 6d1bbf82-abc4-4122-97a1-1db6f09b7f72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`; the supervised wake set: the usual set minus events whose audience is only `all`, except `state_changed`, `policy_changed`, `rules_changed`); implementation session, 2026-10-23
+**Revisit when:** another kind addressed to `all` turns out to need a supervised agent's attention, or the runner reads the stream itself instead of the agent's long-poll
+
+The session stores `supervisor` from its resume. `GET …/events?wait=` reads
+it once, at the start of the long-poll, and `events.wakes` then drops what
+only `all` addresses, except the three kinds above and a conversation
+naming the agent. Such events stay readable and appear in the next
+resume. The resume answers `hints.duty` (`supervised` or `self`) and
+`membership.placement`. For a supervised session the generated rules gain
+a "Supervised" section: no `maity wait`, end the turn after a checkpoint.
+
+**Reason:** under a runner every wake is a model run. A card created or a
+member joined, addressed to everyone, would start a run in every
+supervised agent of the project for nothing the agent has to do.
