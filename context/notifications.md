@@ -121,3 +121,44 @@ anyone noticing.
   counted differently for members and non-members.
 - Dropping the `system` kind: the mail-disabled notice has a real
   source, the account record, so the kind stays.
+
+## The bell's position is an opaque token of per-project positions, ordered per project and per account, never globally
+
+**Id:** b735056d-fb73-458b-8a85-d656dc7e218b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** decision by the contract owner, 2026-10-23; contract in `docs/api.md` §1.4, §1.7, §18.2, §18.3, §18.8
+**See:** notifications.md#a-mail-from-the-hub-carries-only-the-hubs-links-security-mail-has-its-own-budget-and-a-watch-is-never-visible-to-others — 0f0fb324-e995-42b3-88d3-33063e32918c — as of 2026-10-23
+**Revisit when:** the hub gains a hub-wide write order that every supported database provides, or the per-project lock (`lock_project`) changes
+
+The position the bell resumes from (`after`, `next_after`, `up_to`)
+is an opaque token that clients pass back unchanged. It holds one
+position per project the human is a member of (that project's highest
+`seq` covered) and one for the human's account records. Visibility
+order is guaranteed per project, by the project lock held until commit
+while a `seq` is allocated, and per account, by a lock on the account
+row; `at` is monotonic along the same lines, not globally. A project
+joined later starts at its position at join time, a project left drops
+out, and a position in the earlier two-part form is `invalid`, never
+read as the head. This replaces the two-part position `a.b` and its
+promise that numbers become visible in global order, recorded in the
+entry above.
+
+**Reason:** a global visibility order needs a hub-wide write mutex.
+Transactions that emit in several projects exist (runner revoke and
+remove, leak revocation, avatar change, `soul_changed`, profile
+delete), so a global lock taken next to the project locks deadlocks
+against ordinary writes. Per-project positions need only the locks
+the hub already takes. How an old token is treated was left to the
+contract's author and stands with the review of that change: read as
+the head, it would silently skip items and mark unseen ones read
+through "mark all read".
+
+**Rejected alternatives:**
+- A global sequence lock held until commit: deadlocks on multi-project
+  writes, and serialises all writes hub-wide.
+- Gap tracking with a time horizon: correctness rests on every
+  transaction finishing within the horizon.
+- A database-specific safe-snapshot sequence (`pg_snapshot_xmin`): no
+  MariaDB or SQLite equivalent.
