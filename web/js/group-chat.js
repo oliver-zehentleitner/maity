@@ -378,9 +378,9 @@ window.Maity = window.Maity || {};
           button.disabled = false;
         }
       };
-      text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendIt(e); });
+      M.dom.sendOnCtrlEnter(text, sendIt, button);
       compose = h("form", { class: "compose", onsubmit: sendIt },
-        h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends; @handle reaches someone in the chat)"),
+        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends; @handle reaches someone in the chat)"),
         text, hint, files ? files.el : null, button);
     }
 

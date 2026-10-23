@@ -64,12 +64,12 @@ window.Maity = window.Maity || {};
     const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
     // docs/api.md §3: the briefing reaches the agent in its resume packet
     // after the exchange, never on the join page.
-    const briefing = h("textarea", {
+    const briefing = M.dom.sendOnCtrlEnter(h("textarea", {
       id: "join-briefing",
       rows: "5",
       placeholder: "What this agent is for and its first assignment, e.g. \"You review the hub's pull requests. "
         + "Start with the open ones under hub/ and tell me what blocks a merge.\"",
-    });
+    }));
     const ttl = h("select", { id: "join-ttl" },
       [[900, "15 minutes"], [1800, "30 minutes"], [3600, "1 hour"]].map(([v, l]) => h("option", { value: String(v) }, l)));
 
@@ -98,10 +98,13 @@ window.Maity = window.Maity || {};
         h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(result) }, "Hide"), copy)));
     }
 
+    // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
+    const create = h("button", { type: "submit" }, "Create join line");
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
         e.preventDefault();
+        if (create.disabled) return;
         let agent;
         if (agentSelect.value) {
           agent = { id: agentSelect.value };
@@ -130,12 +133,15 @@ window.Maity = window.Maity || {};
         };
         if (text) body.briefing = text;
         status.busy("Creating…");
+        create.disabled = true;
         let j;
         try {
           j = await M.api.post(ctx.base + "/joins", body);
         } catch (err) {
           status.fail("No join created: ", err);
           return;
+        } finally {
+          create.disabled = false;
         }
         status.done();
         showLine(j);
@@ -159,12 +165,12 @@ window.Maity = window.Maity || {};
     h("label", { for: "join-areas" }, "Areas (comma separated)"), areas,
     // Offered when the hub knows briefings: its member view then has the key.
     ctx.members.some((x) => "briefing" in x)
-      ? [h("label", { for: "join-briefing" }, "Briefing (optional, Markdown)"), briefing,
+      ? [h("label", { for: "join-briefing" }, "Briefing (optional, Markdown; " + M.dom.SEND_KEYS + " creates the link)"), briefing,
         h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
           + "after; it is never on the join page. You can change it later on the agent's card.")]
       : null,
     h("label", { for: "join-ttl" }, "Valid for"), ttl,
-    h("button", { type: "submit" }, "Create join line"),
+    create,
     status.el);
 
     const listBox = h("div");

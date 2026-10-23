@@ -514,9 +514,7 @@ window.Maity = window.Maity || {};
       }
     }
 
-    text.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(e);
-    });
+    M.dom.sendOnCtrlEnter(text, send, button);
 
     const heading = h("h2", { tabindex: "-1" }, "Chat with " + agent.display_name);
     append(pane,
@@ -530,7 +528,7 @@ window.Maity = window.Maity || {};
       jump,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message (Ctrl+Enter sends)"),
+        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends)"),
         text, mentionHint, files0 ? files0.el : null, button, status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.

@@ -45,8 +45,8 @@ window.Maity = window.Maity || {};
     const card = h("select", { id: "message-card" }, h("option", { value: "" }, "no card"),
       tasks.items.filter((t) => !CLOSED.has(t.status)).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
     card.value = "";
-    const body = h("textarea", { id: "message-body", rows: "6", placeholder: "Markdown. @handle draws a member in and notifies them.",
-      "aria-describedby": "message-body-hint" });
+    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: "message-body", rows: "6", placeholder: "Markdown. @handle draws a member in and notifies them.",
+      "aria-describedby": "message-body-hint" }));
     // A prefilled @name from a chat (args[0]), as text, never markup.
     if (args && args[0]) body.value = args[0] + " ";
     const status = M.statusLine();
@@ -93,7 +93,7 @@ window.Maity = window.Maity || {};
     h("label", { for: "message-to" }, "To"), to,
     h("label", { for: "message-type" }, "What it is"), type,
     h("label", { for: "message-card" }, "About a card"), card,
-    h("label", { for: "message-body" }, "Message"), body,
+    h("label", { for: "message-body" }, "Message (" + M.dom.SEND_KEYS + " sends)"), body,
     // With the @ picker; the hub resolves, not the page.
     M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id),
     h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "

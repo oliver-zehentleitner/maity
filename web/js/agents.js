@@ -95,10 +95,12 @@ window.Maity = window.Maity || {};
     };
     const edit = () => {
       const id = "briefing-" + m.id;
-      const text = h("textarea", { id, rows: "6" });
+      const text = M.dom.sendOnCtrlEnter(h("textarea", { id, rows: "6" }));
       text.value = m.briefing || "";
+      const saveButton = h("button", { type: "submit" }, "Save briefing");
       const save = async (e) => {
         e.preventDefault();
+        if (saveButton.disabled) return;
         // Markdown keeps its spaces: only line ends are made the same; a
         // briefing of nothing but space is no briefing.
         const value = text.value.replace(/\r\n?/g, "\n");
@@ -107,6 +109,8 @@ window.Maity = window.Maity || {};
           return;
         }
         status.busy("Saving…");
+        // Held while it is saved: one PATCH per submission, by click or Ctrl+Enter.
+        saveButton.disabled = true;
         try {
           const updated = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { briefing: value.trim() ? value : null });
           m.briefing = updated && "briefing" in updated ? updated.briefing : (value.trim() ? value : null);
@@ -115,15 +119,17 @@ window.Maity = window.Maity || {};
           show();
         } catch (err) {
           status.fail("Not saved: ", err);
+        } finally {
+          saveButton.disabled = false;
         }
       };
       M.dom.clear(box);
       append(box, h("form", { class: "briefing-form", onsubmit: save },
-        h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters)"), text,
+        h("label", { for: id }, "Briefing (Markdown, at most 16,384 characters; " + M.dom.SEND_KEYS + " saves)"), text,
         h("p", { class: "hint" }, "The agent reads it at its next resume."),
         h("div", { class: "row" },
           h("button", { type: "button", onclick: show }, "Cancel"),
-          h("button", { type: "submit" }, "Save briefing")),
+          saveButton),
         status.el));
       text.focus();
     };
