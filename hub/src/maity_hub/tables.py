@@ -162,6 +162,12 @@ project = Table(
     # alone (§6.1, §6.12); the defaults fill projects made before 0024.
     Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
     Column("coordinator_substitute", String(ID)),
+    # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
+    # its weekly interval counts from, and the last slot the hub handled.
+    Column("jour_fixe", JSON_VALUE),
+    Column("jour_fixe_moderators", JSON_VALUE),
+    Column("jour_fixe_anchor", UtcDateTime),
+    Column("jour_fixe_last_slot", UtcDateTime),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -690,6 +696,83 @@ request = Table(
     Index("ix_request_project_status", "project_id", "status"),
     Index("ix_request_to_member_status", "to_member", "status"),
     Index("ix_request_to_human_status", "to_human", "status"),
+    **MYSQL_TABLE,
+)
+
+# --- the jour fixe (§20) ---------------------------------------------------------------
+
+jour_fixe_round = Table(
+    "jour_fixe_round",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("trigger", String(16), nullable=False),  # schedule, manual
+    Column("mode", String(16), nullable=False),  # message, chat
+    Column("reason", MARKDOWN_TEXT),  # a manual start's
+    Column("skip_reason", String(32)),
+    Column("missed_slots", Integer),
+    Column("scheduled_for", UtcDateTime, nullable=False),
+    Column("opened_at", UtcDateTime),
+    Column("answers_close_at", UtcDateTime),
+    Column("steps", JSON_VALUE, nullable=False),
+    Column("exchange_closed_at", UtcDateTime),
+    Column("report_due_at", UtcDateTime),
+    Column("reported_at", UtcDateTime),
+    Column("config", JSON_VALUE),
+    Column("moderator", JSON_VALUE),  # {member_id, instance}
+    Column("invited", JSON_VALUE, nullable=False),
+    Column("absent", JSON_VALUE, nullable=False),
+    Column("answers_received", Integer, nullable=False),
+    Column("conversation_id", String(ID)),
+    Column("statement", JSON_VALUE),
+    Column("posts", JSON_VALUE, nullable=False),
+    Column("report", JSON_VALUE),
+    # The round's HMAC key for the answer tags (§20.4): destroyed when the window closes.
+    Column("tag_key", String(HEX_SHA256)),
+    Column("created_at", UtcDateTime, nullable=False),
+    Index("ix_jour_fixe_round_project", "project_id", "scheduled_for"),
+    **MYSQL_TABLE,
+)
+
+# An answer to a round's questions. An anonymous one stores nothing that names its author:
+# no member, instance, session, credential, actor and no time of arrival (§20.4).
+jour_fixe_answer = Table(
+    "jour_fixe_answer",
+    metadata,
+    _id(primary_key=True),
+    _ref("round_id", "jour_fixe_round.id", nullable=False, index=True),
+    Column("anonymous", Boolean, nullable=False),
+    _membership_ref("author"),  # null for an anonymous answer
+    Column("went_well", MARKDOWN_TEXT),
+    Column("went_badly", MARKDOWN_TEXT),
+    Column("would_help", MARKDOWN_TEXT),
+    Column("tag", String(HEX_SHA256)),  # the answer's own tag, for a withdrawal by tag
+    Column("withdrawn", Boolean, nullable=False),  # a named answer's kept record
+    Column("redaction", JSON_VALUE),
+    Column("shuffle", String(HEX_SHA256), nullable=False),  # the order the readers see
+    **MYSQL_TABLE,
+)
+
+# One per member and round that answered: what keeps a second answer out. Deleted with
+# the round's key when the answer window closes (§20.4).
+jour_fixe_tag = Table(
+    "jour_fixe_tag",
+    metadata,
+    _ref("round_id", "jour_fixe_round.id", nullable=False),
+    Column("tag", String(HEX_SHA256), nullable=False),
+    PrimaryKeyConstraint("round_id", "tag"),
+    **MYSQL_TABLE,
+)
+
+# The minutes in which an agent membership had an instance online (§20.2): the default
+# moderator order counts them over 24 hours. Shown to nobody, pruned after a day.
+presence_minute = Table(
+    "presence_minute",
+    metadata,
+    _membership_ref("membership_id", nullable=False),
+    Column("minute", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("membership_id", "minute"),
     **MYSQL_TABLE,
 )
 
