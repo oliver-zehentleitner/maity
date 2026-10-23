@@ -36,6 +36,25 @@ def test_sqlite_keeps_foreign_keys_on_after_a_migration(engine: Engine) -> None:
             assert conn.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
 
 
+def test_sqlite_keeps_the_event_seq_autoincrement_through_every_migration(engine: Engine) -> None:
+    """A migration that rebuilds `event` on SQLite must keep AUTOINCREMENT, or a seq
+    freed by a delete could be handed out again (0002, docs/api.md §8)."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    def ddl() -> str:
+        with engine.connect() as conn:
+            sql: str = conn.exec_driver_sql(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'event'"
+            ).scalar_one()
+        return sql
+
+    migrate(engine)
+    assert "AUTOINCREMENT" in ddl()
+    downgrade(engine, "0002")
+    assert "AUTOINCREMENT" in ddl()
+
+
 def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)

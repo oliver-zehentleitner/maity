@@ -27,6 +27,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     PrimaryKeyConstraint,
     String,
     Table,
@@ -340,6 +341,20 @@ ticker_source = Table(
     Column("scanned_until", UtcDateTime),
     Column("resume_page", Integer),
     Column("round_started", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# The forge webhook of a project (§17.4): its secret sealed with MAITY_SECRET_KEY
+# (`secretbox`), and the result of the last verified delivery.
+forge_webhook = Table(
+    "forge_webhook",
+    metadata,
+    _ref("project_id", "project.id", primary_key=True),
+    Column("secret_sealed", LargeBinary, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("rotated_at", UtcDateTime),
+    Column("last_delivery_at", UtcDateTime),
+    Column("last_result", String(16)),
     **MYSQL_TABLE,
 )
 
@@ -669,7 +684,8 @@ event = Table(
     # session and credential columns, no foreign key: the log outlives what it names.
     Column("actor_runner_id", String(ID)),
     Column("subject_type", String(32)),
-    Column("subject_id", String(ID)),
+    # An id, or a deploy's `<environment>@<sha>` (§17.1).
+    Column("subject_id", String(255)),
     Column("audience", JSON_VALUE, nullable=False),
     # The agent's member id for a chat message (docs/api.md §9), else null.
     Column("conversation_id", String(ID)),

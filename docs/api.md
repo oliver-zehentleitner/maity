@@ -276,7 +276,7 @@ the hub records it on the session.
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
 | Ticker items inside the resume packet | 20, then `truncated: true` (§17.9) |
-| Forge webhook body | 1 MiB; 60 verified deliveries per minute per project, 60 unverified requests per minute per project and source address, and 60 requests per minute per source address for a project that does not exist or has no webhook secret, one bucket shared by all such requests (§17.4) |
+| Forge webhook body | 1 MiB, declared by one `Content-Length` (missing, repeated or larger: `payload_too_large` for every slug); 60 verified deliveries per minute per project; 60 requests per minute per slug and source address and 60 per source address, taken before the body by every request and given back only by one that verifies (§17.4) |
 | Ticker subscription | 20 areas per list (§17.8) |
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
@@ -7834,40 +7834,46 @@ POST /api/v1/projects/{slug}/forge/webhook
   for `deployment_status` it reads the deployment and its status the
   same way. A body that claims a merge the probe does not see writes
   nothing.
-- The body cap is 1 MiB here (forge payloads exceed §1.7's 64 KiB);
-  larger is `payload_too_large`, and the probe catches up on its
-  interval. At most 60 verified deliveries per minute per project
-  (`rate_limited`): only a delivery whose signature verifies counts, so
-  unsigned or wrongly signed requests cannot use up a project's
-  deliveries. A request for a project that does not exist, or for one
-  without a webhook secret, is answered `webhook_signature` before the
-  hub reads the body: there is no secret to check, so no body is worth
-  reading. It counts against no project's bucket — an unknown slug gets
-  none of its own — but against one bucket per source address (the
-  client address of §2.5) shared by all such requests, at most 60 per
-  minute. The other requests that do not verify — no or a wrong
-  signature, a body over the cap — are limited per project and source
-  address, also at most 60 per minute. Beyond either limit the hub
-  answers `rate_limited` with `Retry-After` before it reads the body, so
-  junk cannot make it read a megabyte per attempt without bound. Both
-  paths answer alike, refusal and limit: the 61st bad request in a
-  minute is `rate_limited` whether the slug exists and has a secret or
-  not, so neither the answer nor the limit tells anyone whether a
-  project exists or has a webhook secret. The limit is
-  per project because forges deliver from shared address pools: one
-  project's failing deliveries must not refuse another project's
-  verified ones from the same address. A request that does not verify never sets `last_result` (below): anyone
-  can send one, and the webhook view shows the state of the forge's real
-  deliveries, not of whoever probes the URL. The answer is `202` with
-  `{}` once the signature verifies; the forge's delivery id is kept as
-  `origin.delivery`.
+- The body cap is 1 MiB here (forge payloads exceed §1.7's 64 KiB),
+  declared by exactly one `Content-Length`: a missing or repeated one, or
+  one over the cap, is `payload_too_large` for every slug, before the hub
+  looks the project up; the probe catches up on its interval. At most 60
+  verified deliveries per minute per project (`rate_limited`): only a
+  delivery whose signature verifies counts, so unsigned or wrongly signed
+  requests cannot use up a project's deliveries. Every request reads its
+  declared body before it is answered, for a project that does not exist
+  or has no webhook secret too, so a body held back hangs alike whatever
+  the slug.
+- Every slug is treated the same until a signature verifies. Every
+  request first takes a place in a bucket per source address (the
+  client address of §2.5) and in a bucket per slug and source address,
+  60 per minute each; when either is full the hub answers
+  `rate_limited` with `Retry-After` at once, before the body. Then it
+  reads the declared body, and only then refuses — no or a wrong
+  signature, more than one signature header, a body over the cap, a
+  project that does not exist or has no webhook secret — or verifies.
+  Only a verified delivery gives both places back. So at most 60 bodies
+  per slug and address, and 60 per address, are read at once, and
+  neither the answer, the limit nor a body held back tells anyone
+  whether a project exists or has a webhook secret. The cost, accepted:
+  failing requests from one forge address can delay a verified delivery
+  from the same address, since it takes its place before it verifies;
+  the probe catches it up on its interval.
+- A request that does not
+  verify never sets `last_result` (below): anyone can send one, and the
+  webhook view shows the state of the forge's real deliveries, not of
+  whoever probes the URL. The answer is `202` with `{}` once the
+  signature verifies; a signed body that is not a JSON object is
+  `400 invalid`. The forge's delivery id is kept as `origin.delivery`
+  when it is at most 64 letters, digits and `-` (else `null`), and only
+  on the merge that delivery named.
 - Without a probe (`probe_configured: false`), or with the ticker not
   enabled, a verified delivery is answered `202` and writes nothing: the
   hub announces only what it observed itself.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
+| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A stored secret the instance key cannot open (the key unset, changed or lost) counts as not set, as §16.2 has it for the SMTP password: `configured: false`, and deliveries are refused until the secret is rotated. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
 | `POST /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | creates or rotates the secret and answers it once, as `{secret, url}`; the previous secret stops working at once. Emits `forge_webhook_changed` |
 | `DELETE /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | removes it; deliveries answer `webhook_signature` from then on. Emits `forge_webhook_changed` |
 

@@ -24,7 +24,9 @@ manual post, dedupe, the listing, the shaping per reader on every read
 path, the resume packet's `ticker`, `settings.ticker`, and the hub's own
 decision and release items are in, and merges through the probe (every
 2 minutes: the changed paths' area owners, the linked cards, the contract
-sections from the diff); the forge webhook with deploys follows.
+sections from the diff), and the forge webhook: its secret sealed with
+`MAITY_SECRET_KEY`, signed deliveries as triggers for the probe, and
+automatic deploys.
 
 ## Run it locally with plain Python
 
@@ -134,6 +136,7 @@ All settings come from the environment.
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODES` | `2` | Avatar decodes running at once, 1–64; a call that finds them all taken is `rate_limited`. |
+| `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. |

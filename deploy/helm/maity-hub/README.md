@@ -99,6 +99,21 @@ example; any cluster with the same pieces works.
    kubectl -n maity create secret generic maity-hub-forge --from-file=github-token=./github-token
    ```
 
+   The instance key for secrets the hub stores (`MAITY_SECRET_KEY`, the
+   forge webhook's secret, docs/api.md §17.4) is optional: without it no
+   webhook secret can be created. 32 random bytes, base64:
+
+   ```sh
+   head -c 32 /dev/urandom | base64 > ./secret-key
+   kubectl -n maity create secret generic maity-secret-key --from-file=MAITY_SECRET_KEY=./secret-key
+   ```
+
+   A value that is not exactly 32 bytes of base64 stops the hub and the
+   migrate Job from starting, so a typo shows at once. Keep a copy outside
+   the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
+   needs a new secret). The chart has no value of its own for it; it goes
+   in through `extraEnv` (below).
+
 4. **Values.** A `values.yaml` behind an ingress controller with
    cert-manager:
 
@@ -127,6 +142,11 @@ example; any cluster with the same pieces works.
        - namespaceSelector:
            matchLabels:
              kubernetes.io/metadata.name: ingress-nginx   # your controller's namespace
+   # The instance key, when created in step 3:
+   extraEnv:
+     - name: MAITY_SECRET_KEY
+       valueFrom:
+         secretKeyRef: {name: maity-secret-key, key: MAITY_SECRET_KEY}
    # With sslmode=verify-full:
    extraVolumes:
      - name: db-ca
