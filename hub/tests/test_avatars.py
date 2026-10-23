@@ -446,3 +446,25 @@ def test_a_runner_and_a_stranger_change_no_picture(
     stranger = flow.human(make_client, migrated, "stranger")
     assert stranger.delete(f"/agents/{agent.id}/avatar").status_code == 404
     assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "uploaded"
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_a_replay_is_no_way_around_losing_the_agent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, method: str
+) -> None:
+    """The owner's check runs before the stored answer is replayed: once the profile is
+    no longer the caller's, a repeat of an old change is `not_found` (§6.10)."""
+    agent = flow.agent(make_client, owner)
+    headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": f"avatar-lost-{method}-0001"}
+    url = f"/api/v1/agents/{agent.id}/avatar"
+    body = {"content": image(), "headers": {**headers, "Content-Type": "image/png"}}
+    first = owner.client.request(method, url, **(body if method == "PUT" else {"headers": headers}))
+    assert first.status_code == 200, first.text
+    other = factory.human(migrated, "new-owner")
+    with migrated.begin() as conn:  # the profile is someone else's now
+        conn.execute(
+            t.agent_profile.update().where(t.agent_profile.c.id == agent.id).values(owner_id=other)
+        )
+    again = owner.client.request(method, url, **(body if method == "PUT" else {"headers": headers}))
+    assert again.status_code == 404, again.text
+    assert "Idempotent-Replayed" not in again.headers
