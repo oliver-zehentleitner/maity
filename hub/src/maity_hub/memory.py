@@ -454,9 +454,13 @@ def delete_entry(
 
 
 def _forget_proposed_text(conn: Connection, request_id: str) -> None:
-    """The proposal the entry came from keeps no copy of the deleted text (§19.2)."""
+    """The proposal the entry came from keeps no copy of the deleted text (§19.2). Only a
+    closed request is touched, and only its `text`: a settle never reads a half-cleared
+    proposal, and `kind` keeps naming who settles it."""
     proposed = conn.execute(
-        select(t.request.c.proposal).where(t.request.c.id == request_id)
+        select(t.request.c.proposal).where(
+            t.request.c.id == request_id, t.request.c.status != "open"
+        )
     ).scalar()
     if isinstance(proposed, dict) and proposed.get("text") is not None:
         conn.execute(
