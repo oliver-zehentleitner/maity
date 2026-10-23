@@ -122,9 +122,11 @@ def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
     return {"id": card.id, "title": card.title, "status": card.status}
 
 
-def request_view(conn: Connection, row: Any) -> dict[str, Any]:
+def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> dict[str, Any]:
     """A request as §7 shows it; also the payload of its events (a personal request's
-    events excepted: `_payload`)."""
+    events excepted: `_payload`). `with_proposal` adds the fields a proposal's kind shows
+    (`proposals.view`): only `GET …/requests/{id}` asks for them, never an event, a list
+    or a resume packet (§19.1, §19.3)."""
     task = _task(conn, row.task_id)
     if row.personal and row.status != "open" and row.task_snapshot is not None:
         task = row.task_snapshot  # the card as it was when the request closed (§7)
@@ -153,7 +155,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
     }
-    shown = proposals.view(conn, row)
+    shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
         raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
     return view | shown
@@ -633,7 +635,7 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
             raise forbidden(
                 "requests:answer", "only the asker, the addressee or an answerer reads this"
             )
-        return JSONResponse(request_view(conn, row))
+        return JSONResponse(request_view(conn, row, with_proposal=True))
 
 
 # --- answering and withdrawing --------------------------------------------------------------

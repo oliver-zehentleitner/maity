@@ -46,8 +46,8 @@ class Answerer:
 
 
 Settle = Callable[[Connection, Settlement], None]
-# The kind's own fields in the request's view: also the payload of its events, so only
-# what every reader of the request may see. Never a key the view already has.
+# The kind's own fields in `GET …/requests/{id}`, never in an event, a list or a resume
+# packet: only what every reader of the request may see, never a key the view has.
 View = Callable[[Connection, Any, dict[str, Any]], dict[str, Any]]
 
 

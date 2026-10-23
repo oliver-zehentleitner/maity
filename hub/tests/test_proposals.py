@@ -196,7 +196,7 @@ def test_the_proposal_stays_in_the_hub(
     assert shown and all("proposal" not in view and "value" not in view for view in shown)
 
 
-def test_a_kind_names_who_answers_it(
+def test_a_kind_names_who_answers_it_whatever_the_answer(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     proxy = flow.human(make_client, migrated, "proxy")
@@ -204,23 +204,35 @@ def test_a_kind_names_who_answers_it(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "proxy", human_id=proxy.id)
     request_id = _file(migrated, flow.agent(make_client, owner, role="admin"), "test-admin")
-    refused = answer(proxy, request_id, reply_id="go")  # requests:answer, not project:admin
-    assert (refused.status_code, refused.json()["error"]["details"]) == (
-        403,
-        {"scope": "project:admin"},
-    )
-    agent = answer(flow.agent(make_client, owner, role="admin"), request_id, reply_id="go")
+    # requests:answer, not project:admin: refused for go, no, free text and talk alike
+    for body in ({"reply_id": "go"}, {"reply_id": "no"}, {"text": "hm"}, {"talk": True}):
+        refused = answer(proxy, request_id, **body)
+        assert (refused.status_code, refused.json()["error"]["details"]) == (
+            403,
+            {"scope": "project:admin"},
+        ), body
+    agent = answer(flow.agent(make_client, owner, role="admin"), request_id, reply_id="no")
     assert agent.json()["error"]["message"] == "a human with project:admin decides"
+    assert status(owner, request_id) == "open" and settled == []
     assert answer(owner, request_id, reply_id="go").status_code == 200
     assert len(settled) == 1
 
 
-def test_a_kind_adds_its_own_fields_to_the_view(
+def test_a_kinds_fields_show_on_the_request_only(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     request_id = _file(migrated, flow.agent(make_client, owner, role="admin"), "test-admin")
     view = owner.get(f"/projects/maity/requests/{request_id}").json()
     assert view["test_proposal"] == {"value": 7} and "proposal" not in view
+    answered = answer(owner, request_id, reply_id="go").json()
+    listed = owner.get("/projects/maity/requests?status=all").json()["items"]
+    with migrated.connect() as conn:
+        payloads = [
+            row.payload
+            for row in conn.execute(select(t.event).where(t.event.c.subject_id == request_id))
+        ]
+    assert len(payloads) == 2  # request_created, request_answered
+    assert all("test_proposal" not in v for v in [answered, *listed, *payloads])
 
 
 def test_an_unknown_kind_is_not_filed_and_fails_on_its_request_only(
