@@ -17,11 +17,13 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import clock, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
+from maity_hub.auth import credentials
 from maity_hub.auth.caller import Caller
+from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, humans_only, invalid, not_found, rate_limited
-from maity_hub.events import emit, on_rollback
+from maity_hub.events import emit, on_rollback, transaction
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
@@ -495,12 +497,34 @@ class ImportIn(Strict):
     reason: str | None = markdown(default=None)
 
 
+def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
+    """What the forge says passes the check every request body passes (§1.3): a string
+    in the hub's credential format in the title, the body or the login is refused as
+    `credential_in_payload` before anything is stored, and revoked as a leak."""
+    text = "\n".join(str(issue.get(k) or "") for k in ("title", "body", "author_login"))
+    found = credentials.find_all(text.encode())
+    if not found:
+        return
+    with transaction(engine_of(request)) as conn:
+        revoke_leaked(conn, found)
+    raise ApiError(
+        400,
+        "credential_in_payload",
+        "the issue contains a string in the hub's credential format",
+    )
+
+
 @router.post("/projects/{slug}/tasks/import")
 def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller) -> JSONResponse:
     """The one write that reads the forge before it answers: the card cannot exist
     without its title. The read runs before the transaction; nothing is stored when
     it fails."""
     fg = reader_of(request)
+    # A repeat answers from the first call's result and never reads the forge again
+    # (§1.5): the forge may be down by now.
+    replayed = idempotency.replay_first(engine_of(request), request, caller)
+    if replayed is not None:
+        return replayed
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
@@ -524,6 +548,7 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise invalid({"issue_url": "not_found_on_forge"})
     if issue["is_pull_request"]:
         raise invalid({"issue_url": "not_an_issue"})
+    _refuse_credentials(request, issue)
     create = TaskCreate(
         title=importing.title(issue),
         body=importing.body(ref.url, issue),
