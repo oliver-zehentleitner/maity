@@ -25,6 +25,7 @@ from maity_hub import (
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
+    takeovers,
 )
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
@@ -52,6 +53,7 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
+from maity_hub.routes import takeovers as takeover_routes
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +79,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # runs whether or not the hub holds a token (docs/api.md §11.2).
         image_worker = images.Worker(engine, reader)
         image_worker.start()
+        # A takeover's window ends without anybody calling (docs/api.md §6.19).
+        takeover_worker = takeovers.Worker(engine)
+        takeover_worker.start()
         yield
+        takeover_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -110,6 +116,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
+    app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)

@@ -43,6 +43,7 @@ class PolicyIn(Strict):
     spawn_requests: str | None = None
     spawn_consent_by: str | None = None
     max_placements: int | None = None
+    takeover_window_minutes: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -147,6 +148,11 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    window = change.takeover_window_minutes
+    if window is not None:
+        if not policy.WINDOW_MIN <= window <= policy.WINDOW_MAX:
+            errors["policy.takeover_window_minutes"] = "out_of_range"
+        proposed["takeover_window_minutes"] = window
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):

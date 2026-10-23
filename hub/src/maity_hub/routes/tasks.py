@@ -24,6 +24,7 @@ from maity_hub import (
     paging,
     ranks,
     releases,
+    takeovers,
     ticker,
 )
 from maity_hub import tables as t
@@ -697,6 +698,8 @@ def patch_task(
             values["area"] = body.area
         if "assigned_to" in given:
             mine.require("tasks:admin")
+            if card.claim_holder is not None and not cards.holds(mine, card):
+                takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = (
                 _member_id(conn, mine, body.assigned_to, "assigned_to")
                 if body.assigned_to
@@ -762,6 +765,8 @@ def patch_task(
         )
         if found is not None:
             _ping(conn, mine, caller, card, found, "body", before=previous_mentions)
+        if changed.get("status") in cards.CLOSED:
+            takeovers.reconcile(conn, card.id, caller.actor(mine.id), decided=False)
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
             releases.close(conn, card.id, fg)  # after the write's own event: release_ready last
         if card.kind == "release" and changed.get("status") == "done":
@@ -960,10 +965,15 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
         card = _project_card(conn, mine, card_id)
         if card.claim_holder is None:
             raise ApiError(409, "not_holder", "the card is not claimed")
-        if not cards.holds(mine, card):
-            if cards.sibling_holds(mine, card) and not mine.may("tasks:admin"):
+        takes = not cards.holds(mine, card)
+        if takes:
+            lead = _leads_its_team(mine, card)
+            if cards.sibling_holds(mine, card) and not (mine.may("tasks:admin") or lead):
                 raise _not_holder(card)
-            mine.require("tasks:admin")
+            if not lead:
+                mine.require("tasks:admin")
+            # An agent takes a card only through a takeover while the lease runs (§6.19).
+            takeovers.guard_move(conn, mine, card)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -971,6 +981,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
                     "the holder's lease has not expired",
                     {"lease_until": clock.rfc3339(card.lease_until)},
                 )
+        before = card
         old_holder = (card.claim_holder, card.claim_instance)
         now = clock.now()
         # Conditional: a renewal by the holder a moment ago must not be wiped.
@@ -1011,6 +1022,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        _after_move(conn, mine, caller, before, takes, (mine.id, mine.instance))
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -1112,7 +1124,13 @@ def assign(
             and chosen is not None
             and card.claim_instance not in (None, chosen)
         )
-        if card.claim_holder is not None and (card.claim_holder != assignee or moves_to_sibling):
+        before = card
+        takes = card.claim_holder is not None and (
+            card.claim_holder != assignee or moves_to_sibling
+        )
+        if takes:
+            # An agent takes a card only through a takeover while the lease runs (§6.19).
+            takeovers.guard_move(conn, mine, card)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -1168,12 +1186,40 @@ def assign(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        _after_move(conn, mine, caller, before, takes, (assignee, card.claim_instance))
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
 # --- checkpoint and report (§6.4, §6.6) -------------------------------------------------
+
+
+def _leads_its_team(mine: Membership, card: Any) -> bool:
+    """The calling instance is the lead of the team that holds the card (§6.19)."""
+    return (
+        mine.instance is not None
+        and card.claim_holder == mine.id
+        and mine.row.lead_instance == mine.instance
+    )
+
+
+def _after_move(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    before: Any,
+    took: bool,
+    to: tuple[int, str | None],
+) -> None:
+    """What a card write that may have taken the card from its holder leaves in the
+    takeover history (§6.19): an agent's move after the lease ran out is recorded as a
+    `lease_expired` takeover, and an open takeover the card left is closed —
+    `decided` when a human with `tasks:admin` moved it."""
+    if took and mine.kind == "agent":
+        takeovers.record_lease_expired(conn, mine, caller, before, to)
+    decided = took and mine.kind == "human" and mine.may("tasks:admin")
+    takeovers.reconcile(conn, before.id, caller.actor(mine.id), decided=decided)
 
 
 def _leads_within_team(mine: Membership, card: Any, assignee: str) -> bool:
@@ -1319,6 +1365,8 @@ def report(
             subject=("task", card.id),
         )
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
+        if body.done:
+            takeovers.reconcile(conn, card.id, caller.actor(mine.id), decided=False)
         if body.done and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
             ticker.on_release_done(

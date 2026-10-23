@@ -39,10 +39,25 @@ CHOICES = {
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
-FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds", "max_placements")
+WINDOW_MIN, WINDOW_MAX, WINDOW_DEFAULT = 5, 1440, 60  # takeover_window_minutes (§6.19)
+FIELDS = (
+    "preset",
+    *CHOICES,
+    "contract_arbiter",
+    "lease_seconds",
+    "max_placements",
+    "takeover_window_minutes",
+)
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
-# agents, nor reset the placement limit; only the field itself changes them (§6.1).
-KEPT_ON_PRESET = ("signing", "spawn_requests", "spawn_consent_by", "max_placements")
+# agents, nor reset the placement limit or the takeover window; only the field itself
+# changes them (§6.1).
+KEPT_ON_PRESET = (
+    "signing",
+    "spawn_requests",
+    "spawn_consent_by",
+    "max_placements",
+    "takeover_window_minutes",
+)
 
 
 def filled(preset: str, owner_id: str) -> dict[str, Any]:
@@ -51,6 +66,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         **_FILLINGS[preset],
         "lease_seconds": LEASE_DEFAULT,
         "max_placements": MAX_PLACEMENTS_DEFAULT,
+        "takeover_window_minutes": WINDOW_DEFAULT,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -71,6 +87,7 @@ def of(project: Any) -> dict[str, Any]:
         "spawn_requests": project.spawn_requests,
         "spawn_consent_by": project.spawn_consent_by,
         "max_placements": project.max_placements,
+        "takeover_window_minutes": project.takeover_window_minutes,
     }
 
 
@@ -88,4 +105,5 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "spawn_requests": policy["spawn_requests"],
         "spawn_consent_by": policy["spawn_consent_by"],
         "max_placements": policy["max_placements"],
+        "takeover_window_minutes": policy["takeover_window_minutes"],
     }
