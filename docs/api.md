@@ -320,7 +320,7 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated` |
+| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
@@ -1485,21 +1485,47 @@ transport, `Sec-Fetch-Site` and `next`.
    The `GET` shows "Create your Maity account for <address>" with four
    fields: the **password chosen at registration**, the **handle**, the
    **display name**, and — when the instance has terms — "I accept the
-   terms (<url>, version <version>)", unchecked.
+   terms (<url>, version <version>)", unchecked, for the instance's
+   current version. The form carries that version in a hidden field the
+   hub signs together with the registration token (HMAC under
+   `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
+   `POST` says exactly which version the person saw (§2.7.2).
 6. **Completion** (`POST` of that page). In this order: the mode is
    checked again (now `closed`, or the address no longer allowed: the
    page says registration is closed, nothing is created and the pending
    registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
    registration); the handle and the display name follow §2.7.4; the
-   terms box must be checked when terms are set. The hub then, in one
-   transaction, creates the human account with the address as its
-   verified address (`address_status: verified`, §18.4), the terms
-   acceptance (§2.7.2) and `account_status` `active` or `pending`
-   (approval, §2.7.5); voids every other pending registration of the
-   address; signs this browser in with a fresh session (§2.1, §2.6.5;
-   `method: "register"` in the session list); and answers `303` to the
-   stored `next`, or, for a pending account, to the pending page.
+   terms box must be checked when terms are set, and the signed version
+   in the form must be the instance's current one — if the terms changed
+   since the page was shown, nothing is created and no acceptance is
+   recorded, and the page comes back with the current terms, unchecked,
+   asking to confirm them anew (§2.7.2). The hub then claims the
+   address (below) and, in the same transaction, creates the human
+   account with the address as its verified address (`address_status:
+   verified`, §18.4), the terms acceptance (§2.7.2) and `account_status`
+   `active` or `pending` (approval, §2.7.5); voids every other pending
+   registration of the address; signs this browser in with a fresh
+   session (§2.1, §2.6.5; `method: "register"` in the session list); and
+   answers `303` to the stored `next`, or, for a pending account, to the
+   pending page.
+
+**One address, one account: the claim at completion.** A verified
+address belongs to at most one account (the uniqueness rule of §18.4).
+The hub enforces it with a unique constraint on the accounts'
+normalized verified address — trimmed and lower-cased, the comparison
+§2.6.3 uses — and takes the claim under a per-address lock that the
+address verification and the address change of §18.4 take as well.
+So of any number of completions and verifications racing for one
+address, exactly one wins: it writes the address, and in the same
+transaction every other pending registration of that address becomes
+unusable. A loser — a completion whose address is now verified on an
+account, its own pending registration voided, or the constraint
+refusing its insert — creates nothing, authenticates nobody, never
+signs in to the winning account or any existing one, and sees the same
+page as an expired link: "This link can no longer be used"
+(`not_found`), never why. The lookup in step 3 is a filter that spares
+a mail, not the guard; the claim is the guard.
 
 The token follows §18.6: the base64url of `{pending registration id,
 purpose: "register", nonce, expiry}` with an HMAC-SHA-256 over it under
@@ -1537,11 +1563,17 @@ provider's verified address, approval and terms of this section.
 
 When the instance sets terms (`terms: {url, version}`, §16.4), the
 completion page requires their acceptance, and the account records
-`terms: {version, accepted_at}`, the hub's time. The version shown is
-the one stored with the pending registration; when the instance's
-version changed meanwhile, the page shows the new one and records that.
-Accounts made otherwise — the operator's, invitations — record nothing.
-What a change of version does to existing accounts is not part of this
+`terms: {version, accepted_at}`, the hub's time. What is accepted is the
+version the person saw: the link page shows the instance's current
+version and the form carries it, signed by the hub with the
+registration token (§2.7.1). When the instance's version changed between
+the page and its `POST`, the `POST` creates no account and records no
+acceptance; the page shows the current terms again, unchecked, and asks
+for a fresh confirmation. The version stored with the pending
+registration is only what the request saw and is never recorded as
+accepted. Accounts made otherwise — the operator's, invitations — record nothing.
+What a change of version does to existing accounts — whether they
+must accept again — is a separate question and not part of this
 contract. `GET /me` carries `member.terms` (§5.1) for a human.
 
 #### 2.7.3 Rate limits and abuse
@@ -1579,20 +1611,33 @@ design).
 #### 2.7.5 Approval
 
 With `approval: operator` (§16.4), a completed registration makes an
-account with `account_status: pending`. Its session is real but sees
-only itself:
+account with `account_status: pending`. Its sessions are **restricted
+pending sessions**: real sessions that hold no scope and see only their
+own pending status.
 
-- `GET /me` answers `member` with `account_status: "pending"` and
-  `projects: []`; `GET /auth/session`, `GET /auth/methods`, `POST
-  /auth/logout`, `/auth/sessions*` and `POST /auth/password` work as
-  for every human.
-- Every other call is `forbidden` with `details.reason:
+- **Getting one.** The session the completion starts (§2.7.1); later,
+  `POST /auth/login` with the handle and the password (§2.1); and, where
+  the instance offers it, a sign-in link by mail (§2.6.3). Each gives
+  the same restricted session. Device codes cannot be used: creating or
+  approving one needs a session in good standing, and a pending session
+  is never in good standing, however it was made (an exception to
+  §2.6.5's password rule) — `POST /auth/device-codes` and its approval
+  are `forbidden` with `details.reason: account_pending`.
+- **What it may do.** `GET /me` answers `member` with `account_status:
+  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
+  /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
+  rules §2.6.5 sets for sessions not in good standing); `POST
+  /auth/password`. `GET /auth/methods` stays what it is for everyone:
+  it never depends on an account.
+- **Everything else** is `forbidden` with `details.reason:
   account_pending`, before any side effect: no project, no agent
-  profile, no notification read beyond the badge count of zero, no
-  search. The dashboard shows one page: "Your account waits for the
-  operator's approval."
+  profile, no notification, no address change, no search. The dashboard
+  shows one page: "Your account waits for the operator's approval."
 - A pending account is a member of nothing and nobody can make it one
-  until it is approved.
+  until it is approved. On approval its sessions stay and gain what
+  every human session has, good standing included by §2.6.5's rules
+  from then on.
 
 The instance admin approves or rejects it (§16.4). On approval it is
 `active`, the person gets a mail "Your Maity account is approved" with
@@ -9118,6 +9163,18 @@ device; the browser's own permission is per browser and is not stored.
   "invalid"}` (or the field's own name). The hub hands the checked
   address to SMTP as the single recipient; it never parses a list out of
   it.
+- **One account per address.** A verified address belongs to at most one
+  account, across registration (§2.7) and this section alike: a unique
+  constraint on the accounts' normalized verified address (trimmed,
+  lower-cased, as §2.6.3 compares), written under a per-address lock that
+  the verification here, an address change and the completion of a
+  registration (§2.7.1) all take. Exactly one of them wins an address.
+  A verification link for an address that another account verified
+  meanwhile is the page that says the link no longer works (§18.6,
+  never why), and it changes nothing; a pending address that another
+  account claims first stays unverified. Setting a `pending_address`
+  is not a claim and is never refused for this reason, so the call
+  says nothing about other accounts.
 - **Changing a verified address.** Once a verified address exists,
   setting another one or removing it (`null`) needs the human's own
   confirmation; how young a session is or how it was made does not
