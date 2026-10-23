@@ -33,3 +33,17 @@ PREFIXES = {
 
 def new_id(entity: str) -> str:
     return f"{PREFIXES[entity]}-{''.join(secrets.choice(CROCKFORD) for _ in range(12))}"
+
+
+# An agent instance's id (docs/api.md §6.17): no 0, 1, i, l or o, so that it reads
+# aloud and types without doubt. Four characters now; the pattern takes five.
+INSTANCE_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
+INSTANCE_LENGTH = 4
+
+
+def new_instance_id(taken: set[str]) -> str:
+    """An id not in `taken`: every id the membership ever gave, revoked ones included."""
+    while True:
+        candidate = "".join(secrets.choice(INSTANCE_ALPHABET) for _ in range(INSTANCE_LENGTH))
+        if candidate not in taken:
+            return candidate

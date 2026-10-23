@@ -13,6 +13,7 @@ from tests.conftest import ClientFactory
 
 TASK_KEYS = {
     "id",
+    "assigned_instance",
     "kind",
     "title",
     "body",

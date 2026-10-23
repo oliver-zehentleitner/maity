@@ -61,6 +61,7 @@ class Caller:
     agent_id: str | None = None
     owner_id: str | None = None  # the human who owns the agent profile
     credential_id: str | None = None
+    instance: str | None = None  # an agent credential's instance id (§6.17)
     session_id: str | None = None
     membership_id: int | None = None  # an agent's one membership
     project_id: str | None = None  # an agent's one project
@@ -272,6 +273,7 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.credential.c.revoked_at,
             t.credential.c.revoked_reason,
             t.credential.c.membership_id,
+            t.credential.c.instance,
             t.membership.c.project_id,
             t.membership.c.agent_id,
             t.agent_profile.c.owner_id,
@@ -340,14 +342,30 @@ def _agent(
             .where(t.agent_session.c.id == session.id)
             .values(last_seen_at=now)
         )
-    held = and_(t.card.c.claim_holder == membership_id, t.card.c.status.notin_(CLOSED_STATUSES))
+    instance: str = row.instance
+    # The claim is the instance's (§6.5): a sibling's call renews nothing of it. A claim
+    # made for the team before any instance could be named is taken by the first one.
+    conn.execute(
+        update(t.card)
+        .where(
+            t.card.c.claim_holder == membership_id,
+            t.card.c.claim_instance.is_(None),
+            t.card.c.status.notin_(CLOSED_STATUSES),
+        )
+        .values(claim_instance=instance)
+    )
+    held = and_(
+        t.card.c.claim_holder == membership_id,
+        t.card.c.claim_instance == instance,
+        t.card.c.status.notin_(CLOSED_STATUSES),
+    )
     if renew:
         lease = conn.execute(
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
         ).scalar_one()
         conn.execute(update(t.card).where(held).values(lease_until=now + timedelta(seconds=lease)))
     if session is not None:
-        # The claim belongs to the membership; it follows the live session.
+        # The claim belongs to the instance; it follows the instance's live session.
         conn.execute(
             update(t.card)
             .where(held, t.card.c.claim_session_id.is_distinct_from(session.id))
@@ -359,6 +377,7 @@ def _agent(
         agent_id=row.agent_id,
         owner_id=row.owner_id,
         credential_id=credential_id,
+        instance=instance,
         session_id=session.id if session else None,
         membership_id=membership_id,
         project_id=project_id,

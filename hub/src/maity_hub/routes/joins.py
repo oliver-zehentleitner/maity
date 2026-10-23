@@ -23,11 +23,12 @@ from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency
+from maity_hub import clock, events, idempotency, instances
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import require_secure_transport
+from maity_hub.auth.leaks import revoke
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
 from maity_hub.db import retrying
@@ -68,6 +69,9 @@ class JoinCreate(Strict):
     briefing: str | None = markdown(default=None)
     ttl_seconds: int = TTL_DEFAULT
     via: Literal["join", "public"] | None = None
+    # For an agent that is already a member: which instance the join adds (§6.17).
+    new_instance: bool | None = None
+    replaces: str | None = Field(default=None, max_length=5)
 
 
 class Exchange(Strict):
@@ -116,7 +120,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             capabilities=body.capabilities,
         )
         if existing is not None:
-            # A second clone of a member: a new credential, the membership as it is.
+            # A second clone of a member: a new instance, the membership as it is.
             # A role change goes through PATCH …/members/{id}, never through a join.
             differing = {
                 k: "differs_from_membership" for k, v in values.items() if getattr(existing, k) != v
@@ -131,6 +135,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "areas": existing.areas,
                 "capabilities": existing.capabilities,
             }
+        _check_instance(conn, body, existing)
         values.setdefault("role", "member")
         values.setdefault("areas", [])
         values.setdefault("capabilities", [])
@@ -150,6 +155,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 capabilities=values["capabilities"],
                 briefing=body.briefing or None,
                 via=via,
+                new_instance=bool(body.new_instance),
+                replaces=body.replaces,
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
@@ -174,6 +181,25 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
+    """A member's join says which instance it adds; a first join says neither (§3.1)."""
+    if existing is None:
+        if body.new_instance is not None or body.replaces is not None:
+            field = "replaces" if body.replaces is not None else "new_instance"
+            raise invalid({field: "not_a_member"}, "a first join creates the first instance")
+        return
+    if body.new_instance and body.replaces is not None:
+        raise invalid({"instance": "one_of"}, "new_instance or replaces, not both")
+    if body.replaces is not None:
+        if not instances.INSTANCE_PATTERN.fullmatch(body.replaces):
+            raise invalid({"replaces": "not_an_instance"})
+        instances.require_active(conn, existing, body.replaces, "replaces")
+        return
+    if not body.new_instance:
+        raise invalid({"instance": "required"}, "the agent is a member: new_instance or replaces")
+    instances.refuse_over_quota(conn, existing)
 
 
 def _agent_for_join(conn: Connection, agent: JoinAgent, owner_id: str) -> str:
@@ -452,7 +478,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         raise rate_limited(wait)
     engine = engine_of(request)
 
-    def run() -> tuple[str, str, str, str, str] | None:
+    def run() -> tuple[str, str, str, str, str, str] | None:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
@@ -490,7 +516,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
     outcome = await run_in_threadpool(retrying, run)
     if outcome is None:
         raise ApiError(403, "code_invalid", "the code does not match this join")
-    value, credential_id, agent_id, project_slug, signing = outcome
+    value, credential_id, agent_id, project_slug, signing, instance = outcome
     return Response(
         value,
         status_code=201,
@@ -498,6 +524,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         headers={
             "Maity-Credential-Id": credential_id,
             "Maity-Member-Id": agent_id,
+            "Maity-Instance": instance,
             "Maity-Project": project_slug,
             "Maity-Hub": settings.public_url,
             # The page's curl recipe prints the headers: a project that refuses
@@ -521,7 +548,7 @@ def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
     return reports_to if active is not None else None
 
 
-def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str]:
+def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str, str]:
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
     lock_project(conn, row.project_id)
@@ -564,19 +591,39 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         membership_id = int(key[0])
     else:
         membership_id = member.id
+        _recheck_instance(conn, row, member)
     joined = member is None
     credential_id = new_id("credential")
     value, verifier = credentials.issue(credential_id)
+    instance = instances.next_id(conn, membership_id)
     conn.execute(
         insert(t.credential).values(
             id=credential_id,
             membership_id=membership_id,
+            instance=instance,
+            replaces=row.replaces,
             verifier=verifier,
             join_id=row.id,
             client=client,
             created_at=now,
         )
     )
+    conn.execute(update(t.join_link).where(t.join_link.c.id == row.id).values(instance=instance))
+    if row.replaces is not None:
+        assert member is not None
+        # Moved before the revocation, so that the lead passes on and is never null.
+        _move_to_replacement(conn, member, row.replaces, instance, credential_id)
+        old = instances.require_active(conn, member, row.replaces, "replaces")
+        revoke(conn, old.id, "replaced", by=row.created_by)
+        emit(
+            conn,
+            row.project_id,
+            "credential_revoked",
+            [f"member:{row.agent_id}", "role:owner"],
+            {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
+            actor=Actor(membership_id=membership_id, credential_id=credential_id),
+            subject=("credential", old.id),
+        )
     if joined:
         new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
         emit(
@@ -588,4 +635,66 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
             subject=("member", row.agent_id),
         )
-    return value, credential_id, row.agent_id, project.slug, project.signing
+    return value, credential_id, row.agent_id, project.slug, project.signing, instance
+
+
+def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:
+    """The join's instance rules again under the project lock (§3.3): another
+    exchange may have used the slot or revoked the instance to replace since. The
+    code is then not consumed: the transaction rolls back."""
+    if row.replaces is not None:
+        instances.require_active(conn, member, row.replaces, "replaces")
+    elif row.new_instance:
+        instances.refuse_over_quota(conn, member)
+    else:
+        # A join made before instances existed, for a member: it adds one.
+        instances.refuse_over_quota(conn, member)
+
+
+def _move_to_replacement(
+    conn: Connection, member: Any, old: str, new: str, credential_id: str
+) -> None:
+    """The replaced instance's claims, checkpoints and place as lead move to the new
+    instance, each card with a `task_claimed` naming `replaces` (§6.17)."""
+    from maity_hub.routes.tasks import audience  # tasks imports this module's neighbours
+
+    now = clock.now()
+    held = conn.execute(
+        select(t.card).where(
+            t.card.c.claim_holder == member.id,
+            t.card.c.claim_instance == old,
+            t.card.c.status.notin_(("done", "cancelled")),
+        )
+    ).all()
+    for card in held:
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(claim_instance=new, claim_session_id=None, updated_at=now)
+        )
+    conn.execute(
+        update(t.card)
+        .where(t.card.c.assigned_to == member.id, t.card.c.assigned_instance == old)
+        .values(assigned_instance=new)
+    )
+    if member.lead_instance == old:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == member.id).values(lead_instance=new)
+        )
+    actor = Actor(membership_id=member.id, credential_id=credential_id)
+    for card in held:
+        card = conn.execute(select(t.card).where(t.card.c.id == card.id)).one()
+        emit(
+            conn,
+            member.project_id,
+            "task_claimed",
+            audience(conn, card),
+            {
+                "holder": member.agent_id,
+                "instance": new,
+                "replaces": old,
+                "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+            },
+            actor=actor,
+            subject=("task", card.id),
+        )

@@ -57,6 +57,8 @@ def test_the_member_view_has_the_contract_shape(
         "owner",  # likewise, and it owns the agent (§6.2)
         "credentials",
         "shared_environment",  # likewise (§5.3)
+        "team",  # the team's rulebook and its instances (§6.17, §6.18)
+        "instances",
     }
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (
@@ -258,6 +260,8 @@ def test_credentials_are_listed_without_values(
         "last_used_at",
         "last_used_via",
         "session_id",
+        "instance",
+        "replaces",
         "revoked_at",
         "revoked_by",
         "revoked_reason",
@@ -357,7 +361,10 @@ def test_a_join_for_a_member_names_its_current_reports_to(
     b = flow.agent(make_client, owner, reports_to=a.id)
     other = owner.post("/projects/maity/joins", {"agent": {"id": a.id}, "reports_to": b.id})
     assert other.json()["error"]["details"]["fields"] == {"reports_to": "differs_from_membership"}
-    same = owner.post("/projects/maity/joins", {"agent": {"id": b.id}, "reports_to": a.id})
+    same = owner.post(
+        "/projects/maity/joins",
+        {"agent": {"id": b.id}, "reports_to": a.id, "replaces": b.instance},
+    )
     assert same.status_code == 201, same.text
 
 

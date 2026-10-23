@@ -94,6 +94,7 @@ class Agent:
     value: str  # the credential, as the exchange would return it
     verifier: str
     session_id: str | None
+    instance: str = "wle2"
 
 
 def agent(
@@ -103,6 +104,7 @@ def agent(
     role: str = "member",
     *,
     with_session: bool = True,
+    instance: str = "wle2",
 ) -> Agent:
     agent_id = new_id("agent")
     with engine.begin() as conn:
@@ -124,6 +126,7 @@ def agent(
             insert(t.credential).values(
                 id=credential_id,
                 membership_id=membership_id,
+                instance=instance,
                 verifier=verifier,
                 created_at=clock.now(),
             )
@@ -142,7 +145,9 @@ def agent(
                     live=True,
                 )
             )
-    return Agent(agent_id, owner_id, membership_id, credential_id, value, verifier, session_id)
+    return Agent(
+        agent_id, owner_id, membership_id, credential_id, value, verifier, session_id, instance
+    )
 
 
 def card(engine: Engine, project_id: str, created_by: int, **values: Any) -> str:

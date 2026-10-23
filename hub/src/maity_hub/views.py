@@ -277,6 +277,11 @@ def member_views(
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
     ]
     owners = _owners(conn, {r.agent_id: agents[r.agent_id] for r in detailed})
+    from maity_hub import instances  # instances reads the tables views also reads
+
+    handles = {a.id: a.handle for a in agents.values()}
+    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles)
+    team_of.update(instances.views(conn, detailed, handles, details=True))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
     views = []
@@ -323,6 +328,9 @@ def member_views(
                 "placement": placed.get(row.id),  # always null for a human
             }
         )
+        if row.agent_id is not None:
+            view["team"] = instances.team(conn, row)
+            view["instances"] = team_of.get(row.id, [])
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         if briefing(row) if callable(briefing) else briefing:
@@ -436,6 +444,8 @@ def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
         "last_used_at": ts(row.last_used_at),
         "last_used_via": row.last_used_via,
         "session_id": session,
+        "instance": row.instance,
+        "replaces": row.replaces,
         "revoked_at": ts(row.revoked_at),
         "revoked_by": row.revoked_by,
         "revoked_reason": row.revoked_reason,
@@ -454,6 +464,9 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "burned": row.burned_at is not None,
         "revoked_at": ts(row.revoked_at),
         "via": row.via,
+        "new_instance": bool(row.new_instance),
+        "replaces": row.replaces,
+        "instance": row.instance,
     }
 
 
@@ -488,6 +501,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
+    from maity_hub.instances import address
     from maity_hub.releases import tags  # releases reads views; imported here, not at the top
 
     release_tags = tags(conn, [r for r in rows if r.kind == "release"])
@@ -496,8 +510,11 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
     for row in rows:
         claim = None
         if row.claim_holder is not None:
+            holder = members[row.claim_holder]
             claim = {
-                "holder": members[row.claim_holder],
+                "holder": holder,
+                "instance": row.claim_instance,
+                "address": address(holder, row.claim_instance) if row.claim_instance else None,
                 "session_id": row.claim_session_id,
                 "since": ts(row.claim_since),
                 "lease_until": ts(row.lease_until),
@@ -516,6 +533,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "area": row.area,
                 "created_by": members.get(row.created_by),
                 "assigned_to": members.get(row.assigned_to),
+                "assigned_instance": row.assigned_instance,
                 "claim": claim,
                 "checkpoint": row.checkpoint,
                 "depends_on": sorted(edges[row.id]["depends_on"]),
@@ -573,6 +591,11 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     `Membership`) is the member the views are for; without one a redaction's reason is
     hidden, so a caller that forgets to pass it shows less, never more."""
     actors = principal_ids(conn, (r.actor_membership for r in rows))
+    from maity_hub.instances import instances_of
+
+    instance_of = instances_of(
+        conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
+    )
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (
         dict(
@@ -592,6 +615,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             actor = {
                 "kind": "member",
                 "member_id": actors[row.actor_membership],
+                "instance": instance_of.get(row.actor_credential_id or ""),
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,

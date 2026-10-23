@@ -28,6 +28,7 @@ PACKET = {
     "events",
     "peers",
     "operations",
+    "team",
 }
 
 
@@ -65,7 +66,19 @@ def test_the_packet_has_every_part_of_the_contract(
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
         "briefing": None,
+        "team": {
+            "max_instances": 1,
+            "distribution": "free",
+            "lead_instance": None,
+            "wake": "all",
+            "review_within_team": False,
+            "updated_by": None,
+            "updated_at": None,
+        },
     }
+    assert packet["me"]["instance"] == agent.instance
+    assert packet["me"]["address"] == f"{agent.id}#{agent.instance}"
+    assert packet["team"] == []
     assert packet["project"]["slug"] == "maity" and packet["project"]["keep_the_why"] is True
     assert packet["keep_the_why"]["enabled"] is True
     assert "keep-the-why" in packet["keep_the_why"]["instruction"]

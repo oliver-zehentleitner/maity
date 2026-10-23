@@ -31,7 +31,15 @@ def invalid_transition(current: str, wanted: str) -> ApiError:
 
 
 def holds(mine: Membership, card: Any) -> bool:
-    return bool(card.claim_holder == mine.id)
+    """The holder is the holding instance (§6.4): a sibling of the team does not hold."""
+    if card.claim_holder != mine.id:
+        return False
+    return mine.instance is None or card.claim_instance in (None, mine.instance)
+
+
+def sibling_holds(mine: Membership, card: Any) -> bool:
+    """Another instance of the caller's own team holds the card."""
+    return card.claim_holder == mine.id and not holds(mine, card)
 
 
 def has_done_authority(mine: Membership, card: Any) -> bool:

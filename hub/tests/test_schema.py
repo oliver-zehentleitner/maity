@@ -189,7 +189,11 @@ def test_one_live_session_per_credential(conn: Connection) -> None:
     credential_id = new_id("credential")
     conn.execute(
         insert(t.credential).values(
-            id=credential_id, membership_id=member, verifier="0" * 64, created_at=NOW
+            id=credential_id,
+            membership_id=member,
+            instance="wle2",
+            verifier="0" * 64,
+            created_at=NOW,
         )
     )
 
@@ -278,6 +282,7 @@ def test_a_revocation_reason_may_be_long(conn: Connection) -> None:
         insert(t.credential).values(
             id=new_id("credential"),
             membership_id=member,
+            instance="wle2",
             verifier="0" * 64,
             created_at=NOW,
             revoked_reason=reason,
@@ -300,7 +305,11 @@ def test_a_marker_is_true_or_null_never_false(conn: Connection, table: str) -> N
             credential_id = new_id("credential")
             conn.execute(
                 insert(t.credential).values(
-                    id=credential_id, membership_id=member, verifier="0" * 64, created_at=NOW
+                    id=credential_id,
+                    membership_id=member,
+                    instance="wle2",
+                    verifier="0" * 64,
+                    created_at=NOW,
                 )
             )
             conn.execute(
