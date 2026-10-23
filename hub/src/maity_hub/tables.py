@@ -118,7 +118,18 @@ human_session = Table(
     Column("last_seen_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("ended_at", UtcDateTime),
-    Column("source", String(64)),
+    Column("source", String(64)),  # the address the session started from
+    # The session list (docs/api.md §2.6.5): a public id that is never the cookie's
+    # value, how it was made, what the browser said about itself at the sign-in, the
+    # address of the latest call, the session that approved a device code, and why it
+    # ended (logout, revoked, end_others, password_change).
+    Column("public_id", String(ID), nullable=False, unique=True),
+    Column("method", String(16), nullable=False),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("ip", String(64)),
+    Column("approved_by", String(ID)),
+    Column("ended_by", String(16)),
     **MYSQL_TABLE,
 )
 
