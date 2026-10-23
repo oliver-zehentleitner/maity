@@ -44,10 +44,13 @@ window.Maity = window.Maity || {};
     }));
   }
 
-  // Newest chat first; the ones without messages after, by title.
-  function ordered(chats) {
+  // Unread chats first, then the newest; the ones without messages after,
+  // by title. The open chat counts as read, as the list shows it.
+  function ordered(chats, currentId) {
     const at = (c) => c.last_message_at || "";
-    return chats.slice().sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.title.localeCompare(b.title)));
+    const unread = (c) => (c.id !== currentId && (c.unread || c.mentions) ? 1 : 0);
+    return chats.slice().sort((a, b) => unread(b) - unread(a)
+      || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.title.localeCompare(b.title)));
   }
 
   // Up to three participants' pictures (js/avatar.js); with one, its
@@ -59,22 +62,27 @@ window.Maity = window.Maity || {};
       chat.participants.length === 1 ? h("span", { class: "dot " + chat.participants[0].presence }) : null);
   }
 
-  // Under the title: who and how present, then an unsent draft, else the
-  // last message where the hub sends it (`last_message`), else nothing.
-  // The open chat's own draft is in its composer, not repeated here.
+  // Under the title: who it is — for a direct chat the agent's handle and
+  // harness, which tell apart names that share their owner's prefix; for a
+  // group its people — then an unsent draft, else the last message where
+  // the hub sends it (`last_message`), else nothing. Presence is the dot
+  // (and its words for a screen reader), not a line of its own. The open
+  // chat's own draft is in its composer, not repeated here.
   function sublines(ctx, chat, current) {
+    const one = chat.participants.length === 1 ? chat.participants[0] : null;
     const who = chat.kind === "group"
-      ? (chat.access === "observer" ? "you read along · " : "") + (chat.closed ? "closed · " : "") + chat.participants.map((m) => m.display_name).join(", ")
-      : chat.participants.length === 1
-      ? PRESENCE_LABELS[chat.participants[0].presence] || chat.participants[0].presence
+      ? (chat.access === "observer" ? "you read along · " : "") + (chat.closed ? "closed · " : "") + "group · " + chat.participants.map((m) => m.display_name).join(", ")
+      : one
+      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + one.handle : null, one.harness || null].filter(Boolean).join(" · ")
       : chat.participants.map((m) => m.display_name).join(", ");
+    const presence = chat.kind !== "group" && one ? PRESENCE_LABELS[one.presence] || one.presence || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;
     let line = null;
     if (draft) line = "Draft: " + draft;
     else if (last && last.redacted) line = "A message was removed.";
     else if (last) line = (last.from === ctx.me.id ? "You: " : "") + last.body;
-    return { who, line, draft: !!draft };
+    return { who, presence, line, draft: !!draft };
   }
 
   function listItem(ctx, chat, currentId) {
@@ -93,7 +101,9 @@ window.Maity = window.Maity || {};
       "aria-current": current ? "page" : null,
     },
     avatars(chat),
-    h("span", { class: "conv-title" }, chat.title),
+    // The full name, wrapped, never cut; as the tooltip too.
+    h("span", { class: "conv-title", title: chat.title }, chat.title),
+    sub.presence ? apart(", " + sub.presence) : null,
     when ? [apart(", "), h("span", { class: "conv-time" }, when)] : null,
     unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
     !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: "mentions you" }, "@"), apart(" mentions you")] : null,
@@ -114,7 +124,7 @@ window.Maity = window.Maity || {};
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
       clear(ul);
-      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
+      ordered(chatsOf(ctx, mine, byAgent, groups), currentId).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);

@@ -1404,9 +1404,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const conv = (name) => convs().find((a) => a.querySelector(".conv-title").textContent === name);
   // Own agents' direct chats and the fixtures' one group chat (§9.3).
   expect(convs().length === 6 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents and group chats, nothing open yet");
-  expect(convs()[0].querySelector(".conv-title").textContent === "Agent D" && convs()[1].querySelector(".conv-title").textContent === "Release 0.2 go/no-go"
-    && convs()[2].querySelector(".conv-title").textContent === "Agent A",
-    "chat: the newest chat first, the ones without messages after");
+  // Unread first (the group chat with a mention, Agent A), then the newest; without messages last.
+  const convOrder = () => convs().map((a) => a.querySelector(".conv-title").textContent + (a.classList.contains("unread") ? "*" : ""));
+  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
+    "chat: unread first, then the newest, the ones without messages after " + JSON.stringify(convOrder()));
   const convA = conv("Agent A");
   expect(convA.getAttribute("href") === "#/p/maity/chat/agt-a" && text(convA).includes("Endpoints for join, tasks and requests are drafted.")
     && convA.querySelector(".count") && convA.querySelector(".count").textContent === "1" && convA.classList.contains("unread")
@@ -1414,6 +1415,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "chat: an entry has the agent, the last message, its time, the unread count, presence and an avatar");
   expect(text(conv("Agent D")).includes("You: Keep the inbox usable"), "chat: one's own last message reads You:");
   expect(!conv("Agent B").querySelector(".preview") && text(conv("Agent C")).includes("paused"), "chat: no messages, no preview; presence in words");
+  // Names that share their owner's long prefix (Oliver's list: every row read "Oliver Zehentleit…"): whole, wrapped, and told apart.
+  const clLong = (r) => ({ items: r.items.map((m) => (m.kind === "agent" && m.owner_id === "hum-maintainer"
+    ? Object.assign({}, m, { display_name: "Oliver Zehentleitner " + m.display_name, handle: "oz-" + m.handle }) : m)), next_cursor: null });
+  const clGet = win.Maity.api.getAll, clGet1 = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maity/members") ? clGet(p).then(clLong) : clGet(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? clGet1(p).then(clLong) : clGet1(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat"); for (let k = 0; k < 4; k++) await tick();
+  const clRow = (tail) => convs().find((a) => a.querySelector(".conv-title").textContent === "Oliver Zehentleitner " + tail);
+  expect(clRow("Agent A") && clRow("Agent D") && clRow("Agent A").querySelector(".conv-title").getAttribute("title") === "Oliver Zehentleitner Agent A"
+    && text(clRow("Agent A").querySelector(".conv-sub")).includes("@oz-agent-a") && text(clRow("Agent D").querySelector(".conv-sub")).includes("@oz-agent-d"),
+    "chat list: names with a shared prefix are whole, with the full name as a tooltip, and told apart by their handles");
+  expect(clRow("Agent A").querySelector(".conv-time") && !clRow("Agent A").querySelector(".conv-title .conv-time")
+    && clRow("Agent A").querySelector(".conv-time").parentNode === clRow("Agent A"),
+    "chat list: the time is its own cell beside the name, never inside it");
+  expect(text(clRow("Agent A").querySelector(".conv-sub")).startsWith("agent · ") && !text(clRow("Agent A").querySelector(".conv-sub")).includes("online")
+    && text(convs().find((a) => a.querySelector(".conv-title").textContent === "Release 0.2 go/no-go").querySelector(".conv-sub")).startsWith("group · "),
+    "chat list: an agent and a group are marked as such; presence is the dot, not a line");
+  win.Maity.api.getAll = clGet; win.Maity.api.get = clGet1;
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat");
+  // The header's link rows no longer style every nav: the chat list was a squeezed row of one-line links.
+  const clCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  expect(!/(^|\n)nav \{/.test(clCss) && !/(^|\n)nav a \{/.test(clCss) && /nav\.switcher, nav\.views \{/.test(clCss)
+    && !/\.conv-title \{[^}]*nowrap/.test(clCss) && /@media \(max-width: 720px\) \{\s*\.chat-layout \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(clCss),
+    "chat list: no header rule reaches it, its names wrap, and a phone shows it as one column");
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelectorAll(".msg").length === 2, "conversation with A");
   expect(main.querySelector("li.msg.in .md p") && main.querySelector("li.msg.in .md br"), "chat: an agent's message is drawn as Markdown, its line break kept");
@@ -1476,7 +1501,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat/agt-a");
   expect(main.querySelector("textarea").value === "half a thought", "chat: the draft is back in its chat");
   expect(!text(conv("Agent A")).includes("Draft:"), "chat: the open chat's draft is in its composer, not in its row");
-  expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, .+, online: You: Keep the inbox/.test(text(conv("Agent D"))),
+  expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, online, .+, agent · @agent-d · Claude Code: You: Keep the inbox/.test(text(conv("Agent D"))),
     "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
   // A redacted last message.
