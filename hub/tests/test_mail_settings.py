@@ -296,9 +296,13 @@ def test_the_password_is_stored_encrypted_and_never_returned(
     rekeyed = admin(make_client, migrated, env_of(MAITY_SECRET_KEY=OTHER_KEY)).get(PATH).json()
     assert rekeyed["password"] == {"set": False, "source": None}
     assert "password" in rekeyed["missing"]
+    assert rekeyed["warnings"] == ["smtp_password_unreadable"]
+    keyless = admin(make_client, migrated, env_of()).get(PATH).json()
+    assert keyless["warnings"] == ["smtp_password_unreadable"]
 
     removed = keyed.patch(PATH, {"password": None}).json()
     assert removed["password"] == {"set": False, "source": None}
+    assert removed["warnings"] == []
 
 
 def test_a_password_from_the_environment_wins_and_cannot_be_patched(
@@ -324,7 +328,11 @@ def test_kubernetes_flags_a_password_from_the_database(
     health = owner.client.get("/api/v1/health")
     assert health.status_code == 200 and "smtp" not in health.text
     plaintext = admin(make_client, migrated, env_of(MAITY_SMTP_ALLOW_PLAINTEXT="true"))
-    assert plaintext.get(PATH).json()["warnings"] == ["smtp_plaintext_allowed"]
+    # That hub has no instance key, so the stored password is flagged as well.
+    assert plaintext.get(PATH).json()["warnings"] == [
+        "smtp_plaintext_allowed",
+        "smtp_password_unreadable",
+    ]
 
 
 # --- the test send ------------------------------------------------------------------

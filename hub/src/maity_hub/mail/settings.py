@@ -80,6 +80,8 @@ class Resolved:
     password: str | None = field(repr=False)
     password_source: str | None
     last_test: dict[str, Any] | None
+    # A password is stored but cannot be opened: no instance key, or another one.
+    password_unreadable: bool = False
 
     def value(self, name: str) -> Any:
         return self.values[name][0]
@@ -117,6 +119,8 @@ class Resolved:
             found.append("smtp_password_in_database")
         if self.env.allow_plaintext:
             found.append("smtp_plaintext_allowed")
+        if self.password_unreadable:
+            found.append("smtp_password_unreadable")
         return found
 
 
@@ -132,12 +136,22 @@ def resolve(conn: Connection, env: MailEnvironment, secret_key: bytes | None) ->
         values["port"] = (DEFAULT_PORTS[values["tls"][0]], "default")
     password: str | None
     source: str | None
+    sealed = store.sealed(conn, PASSWORD_SECRET)
     if env.password is not None:
         password, source = env.password, "env"
     else:
-        password = _unseal(secret_key, store.sealed(conn, PASSWORD_SECRET))
+        password = _unseal(secret_key, sealed)
         source = "admin" if password is not None else None
-    return Resolved(env, secret_key is not None, values, password, source, stored.get(LAST_TEST))
+    return Resolved(
+        env,
+        secret_key is not None,
+        values,
+        password,
+        source,
+        stored.get(LAST_TEST),
+        # Loud, never a quiet "not set": the admin sets it again (re-key) or removes it.
+        password_unreadable=sealed is not None and _unseal(secret_key, sealed) is None,
+    )
 
 
 def view(conn: Connection, resolved: Resolved) -> dict[str, Any]:
@@ -318,6 +332,10 @@ _WARNINGS = {
     "smtp_plaintext_allowed": (
         "mail: MAITY_SMTP_ALLOW_PLAINTEXT is set; a server without STARTTLS gets every "
         "mail in clear, sign-in links included (insecure, for a test bench only)"
+    ),
+    "smtp_password_unreadable": (
+        "mail: a stored SMTP password does not open with the current MAITY_SECRET_KEY "
+        "(or none is set); set the password again or remove it"
     ),
 }
 

@@ -7,6 +7,9 @@ default. `instance_secret` holds the admin-set secrets sealed with `MAITY_SECRET
 handed to SMTP or held back, by budget kind and outcome, for the counters of the last
 hour; no address and no content.
 
+A downgrade drops all three: the admin then sets the mail values and the SMTP password
+again.
+
 Revision ID: 0026
 Revises: 0020
 Create Date: 2026-10-23
