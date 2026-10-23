@@ -55,25 +55,26 @@ stores are capped at 64 KiB each, so reading them whole costs little.
 - A separate tag table: a join and a migration for a list of at most
   five words per entry.
 
-## An agent's community entry is a proposal through the shared mechanism; the go checks `project:admin`
+## An agent's community entry is a proposal through the shared mechanism; only a `project:admin` human answers it
 
 **Id:** 387e5443-ec34-4e96-9aa3-96faf8fcffb8
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the hub owner's structure answer and the proposals PR (#230), 2026-10-23 (one `request.proposal` JSON column and a `proposals` module shared with the admin agent's member change); the coordinator's ruling in the review of #226, 2026-10-23 (the 202 in this PR; soul proposals after personal requests)
+**Source:** the hub owner's structure answer and the proposals PR (#230, with its answerer rule after review), 2026-10-23 (one `request.proposal` JSON column and a `proposals` module shared with the admin agent's member change); the coordinator's ruling in the review of #226, 2026-10-23 (the 202 in this PR; soul proposals after personal requests)
 **Revisit when:** personal requests exist (route `POST /me/soul/proposals` through the same mechanism), agent instances exist (fill `by.instance`), or the request answer rules gain a scope check of their own
 
 An agent's `POST …/memory` with `store: "community"` answers `202` with
 a `consent` request to `owner`. Its `proposal` is `{kind: "memory",
-store, text, tags}`. `memory` registers that kind with `humans_only`
-and a `view`, so the request shows `memory_proposal`. Its `settle`, in
-`maity_hub/memory.py` beside the domain rather than in a route module,
-stores the entry on `go`: the agent as `by`, its session as when it
-asked, and the answering human as `confirmed_by`. Before that, the settle
-checks that the answering human holds `project:admin` and refuses
-otherwise. The refusal runs inside the answer's transaction, so a
-proxy's `go` changes nothing. `POST /me/soul/proposals` is not routed
+store, text, tags}`. `memory` registers that kind with an `Answerer` of
+scope `project:admin`, humans only, which gates every answer (`go`, `no`,
+text, talk), and with a `view`, so `GET …/requests/{id}` shows
+`memory_proposal`. No event, list or resume packet carries it. Its
+`settle` lives in `maity_hub/memory.py`, beside the domain rather than in
+a route module. On `go` it stores the entry: the agent as `by`, its
+session as when it asked, and the answering human as `confirmed_by`. A
+store that filled up in the meantime refuses the go with `memory_full`,
+and the answer rolls back. `POST /me/soul/proposals` is not routed
 yet: a soul proposal is a personal request (§7), which the hub does not
 have. Agent instances (§6.17) do not exist yet, so `by.instance` is null
 and an entry records the session instead.
@@ -81,8 +82,8 @@ and an entry records the session instead.
 **Reason:** a column and a settle hook per proposal kind would grow
 apart with every feature that needs a human's go. The answer route lets
 anyone with `requests:answer` answer a consent to `owner`, a proxy
-included, but §19.2 gives the go to `project:admin` alone. The check
-belongs to the kind, which knows its rule.
+included, but §19.2 gives the answer to `project:admin` alone. The rule
+belongs to the kind, and the shared mechanism applies it to every answer.
 
 **Rejected alternatives:**
 - A `memory_proposal` column and a `memory.settle` call beside
@@ -91,6 +92,8 @@ belongs to the kind, which knows its rule.
 - `501 not_implemented` until the mechanism landed: not a code of the
   contract (§1.3), and the mechanism already existed as a consent to
   `owner`.
+- A `project:admin` check inside `settle`, on `go` only: a proxy's `no`
+  would still have closed the request.
 
 ## `changed_since_cursor` reads the memory events after the cursor
 
