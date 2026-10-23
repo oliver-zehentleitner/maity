@@ -20,7 +20,7 @@ from maity_hub.deps import AgentCaller, AnyCaller, HumanCaller, engine_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, markdown
 from maity_hub.routes.agents import owned
-from maity_hub.routes.requests import file_consent, load_request
+from maity_hub.routes.requests import file_consent, request_view
 
 router = APIRouter()
 
@@ -169,6 +169,15 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _load_proposal(conn: Connection, request_id: str) -> dict[str, Any]:
+    """A replayed proposal answers as the first time: the request with its proposal."""
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+    return request_view(conn, row, with_proposal=True)
+
+
+idempotency.LOADERS["proposal_request"] = idempotency.plain(_load_proposal)
+
+
 def _propose_community(
     conn: Connection, mine: Membership, caller: Caller, body: EntryIn
 ) -> idempotency.Outcome:
@@ -185,7 +194,9 @@ def _propose_community(
         "A project admin's go stores it with the agent as its author.",
         proposal=memory.proposal(body.text, body.tags),
     )
-    return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
+    # The asker's own answer, as its `GET …/requests/{id}` shows the request (§19.2).
+    view = _load_proposal(conn, request_id)
+    return idempotency.Outcome(202, "proposal_request", request_id, view)
 
 
 @router.delete("/projects/{slug}/memory/{entry_id}")

@@ -518,3 +518,28 @@ def test_deleting_a_proposed_entry_clears_the_proposals_text(
     assert remove(owner, entry["id"]).status_code == 200
     proposal = owner.get(f"/projects/maity/requests/{request['id']}").json()["memory_proposal"]
     assert proposal["text"] is None and proposal["store"] == "community"
+
+
+def test_a_proxy_answers_no_answer_at_all(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    proxy = _second_human(make_client, migrated, "proxy")
+    for body in ({"reply_id": "no"}, {"text": "rather not"}, {"reply_id": "go"}):
+        refused = proxy.post(f"/projects/maity/requests/{request['id']}/answer", body)
+        assert refused.status_code == 403, refused.text
+    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+
+
+def test_the_proposed_text_is_in_no_event(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request = agent.post(M, {"store": "community", "text": "the secret word"}).json()
+    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    with migrated.connect() as conn:
+        payloads = [str(p) for p in conn.execute(select(t.event.c.payload)).scalars()]
+    assert not [p for p in payloads if "the secret word" in p]
+    shown = owner.get(f"/projects/maity/requests/{request['id']}").json()
+    assert shown["memory_proposal"]["text"] == "the secret word"  # only GET shows it

@@ -21,10 +21,9 @@ from maity_hub import clock, events, idempotency, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.scopes import has_scope
 from maity_hub.views import ts
 
 # §1.7: in bytes of UTF-8, so that a cap means the same in every script.
@@ -385,48 +384,44 @@ def proposal(text: str, tags: list[str]) -> dict[str, Any]:
 
 
 def proposal_view(conn: Connection, request: Any, proposed: dict[str, Any]) -> dict[str, Any]:
-    """`memory_proposal` on the request: the proposed entry, so the inbox shows the text."""
-    return {"store": proposed["store"], "text": proposed["text"], "tags": proposed["tags"]}
+    """`memory_proposal` in `GET …/requests/{id}` (never in an event, a list or a packet):
+    the proposed entry, so the inbox shows the text it is asked to confirm."""
+    entry = {"store": proposed["store"], "text": proposed["text"], "tags": proposed["tags"]}
+    return {"memory_proposal": entry}
 
 
-def settle(
-    conn: Connection,
-    request: Any,
-    proposed: dict[str, Any],
-    outcome: str,
-    actor: Actor | None,
-    by: str | None,
-) -> None:
-    """On `go`, store the entry with the agent as `by` and the human as `confirmed_by`.
-    Only a human with `project:admin` gives it (§19.2): anyone else's `go` fails here, in
-    the answer's transaction, so nothing of the answer is kept."""
-    if outcome != "go":
+def settle(conn: Connection, settled: proposals.Settlement) -> None:
+    """On `go`, store the entry with the asking agent as `by` and the human who answered
+    as `confirmed_by` (§19.2). Who may answer is the kind's `Answerer`: a human with
+    `project:admin`, for every answer, not only the go. A store that filled up meanwhile
+    refuses the go with `memory_full`, and the answer rolls back."""
+    if settled.outcome != "go":
         return
-    answerer = conn.execute(
-        select(t.membership).where(
-            t.membership.c.project_id == request.project_id,
-            t.membership.c.human_id == by,
-            t.membership.c.active.is_(True),
-        )
-    ).first()
-    if answerer is None or not has_scope(answerer.role, "human", "project:admin"):
-        raise forbidden("project:admin", "a community entry is confirmed by a project admin")
-    asker = member(conn, request.asked_by)
-    writer = Writer(asker, "agent", request.asked_session_id)
+    request = settled.request
+    writer = Writer(member(conn, request.asked_by), "agent", settled.proposer.session_id)
     add_entry(
         conn,
         request.project_id,
         writer,
-        actor,
+        settled.closer,
         "community",
-        proposed["text"],
-        proposed["tags"],
-        confirmed_by=by,
+        settled.proposal["text"],
+        settled.proposal["tags"],
+        confirmed_by=settled.approver,
         request_id=request.id,
     )
 
 
-proposals.register(PROPOSAL, settle, humans_only=True, view=proposal_view)
+proposals.register(
+    PROPOSAL,
+    settle,
+    proposals.Answerer(
+        scope="project:admin",
+        humans_only=True,
+        refusal="a community entry is confirmed by a human with project:admin",
+    ),
+    view=proposal_view,
+)
 
 
 def delete_entry(
