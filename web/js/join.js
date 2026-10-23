@@ -98,10 +98,13 @@ window.Maity = window.Maity || {};
         h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(result) }, "Hide"), copy)));
     }
 
+    // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
+    const create = h("button", { type: "submit" }, "Create join line");
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
         e.preventDefault();
+        if (create.disabled) return;
         let agent;
         if (agentSelect.value) {
           agent = { id: agentSelect.value };
@@ -130,12 +133,15 @@ window.Maity = window.Maity || {};
         };
         if (text) body.briefing = text;
         status.busy("Creating…");
+        create.disabled = true;
         let j;
         try {
           j = await M.api.post(ctx.base + "/joins", body);
         } catch (err) {
           status.fail("No join created: ", err);
           return;
+        } finally {
+          create.disabled = false;
         }
         status.done();
         showLine(j);
@@ -164,7 +170,7 @@ window.Maity = window.Maity || {};
           + "after; it is never on the join page. You can change it later on the agent's card.")]
       : null,
     h("label", { for: "join-ttl" }, "Valid for"), ttl,
-    h("button", { type: "submit" }, "Create join line"),
+    create,
     status.el);
 
     const listBox = h("div");

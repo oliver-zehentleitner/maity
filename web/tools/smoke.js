@@ -2633,6 +2633,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   tkCeSend.disabled = false;
   expect(!tkCe.length, "Ctrl+Enter: the ticker post: plain Enter and a disabled Post send nothing");
   byId("ticker-post-text").dispatch("keydown", { key: "Enter", ctrlKey: true }); for (let k = 0; k < 3; k++) await tick();
+  byId("ticker-post-text").dispatch("keydown", { key: "Enter", ctrlKey: true }); for (let k = 0; k < 3; k++) await tick();
   expect(JSON.stringify(tkCe) === JSON.stringify(["/projects/maity/ticker"])
     && main.querySelectorAll("label").find((l) => l.getAttribute("for") === "ticker-post-text").textContent.includes("Ctrl+Enter posts"),
     "Ctrl+Enter: the ticker post is posted, and its label says so");
@@ -3282,6 +3283,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     }
     await ceKey(field, { metaKey: true });
     expect(ceCalls.length === 1 && ceCalls[0][1] === path, "Ctrl+Enter: " + name + ": Cmd+Enter sends it " + JSON.stringify(ceCalls));
+    // The write is held (it never answers here): pressing again sends nothing more.
+    await ceKey(field, { ctrlKey: true });
+    expect(ceCalls.length === 1, "Ctrl+Enter: " + name + ": not again while the first is on its way");
     ceCalls.length = 0;
   };
   const ceLabel = (id) => main.querySelectorAll("label").concat(header.querySelectorAll("label")).find((l) => l.getAttribute("for") === id);
