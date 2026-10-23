@@ -92,3 +92,33 @@ text into the dashboard.
 - Keeping the addresses of ended sessions for the 30 days the list shows
   them: the sign-in record of §2.6.5 keeps where a session started, so
   a second copy is not needed.
+
+## Until the other sign-in methods exist, every session is in good standing and the mail link reports `not_implemented`
+
+**Id:** a6967e81-d77f-45dd-b5ab-dbd5628d7c8a
+**Type:** workaround
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5, §2.6.6; the implementation of tsk-bjmkt2akq5dn, 2026-10-23
+**Revisit when:** the device code (§2.6.2) or the sign-in link (§2.6.3) lands, or account records (§18.1) exist
+
+`auth.sessions.good_standing` is true for a session made by password and
+false for every other method; with only the password built, every
+session is in good standing. The rules for sessions that are not
+(`not_in_good_standing`, `session_too_new`, `end-others` ending only the
+others that are not either, the approval chain on `DELETE`) are written
+and tested on rows of the other methods already. The marking of a
+`session_created` item that grants good standing to those, and the
+`created` record in the list (null for now), come with account records.
+`GET /admin/settings/sign-in` lists `not_implemented` in `missing`, so
+`email_link_available` stays false until the hub serves the link.
+
+**Reason:** the web's session view calls these routes now, so the list
+had to come before the methods that make sessions out of good standing.
+Saying `not_implemented` is the honest answer while the switch is on and
+the mail settings are complete but nothing would send the link.
+
+**Rejected alternatives:**
+- Answering `email_link_available` from the setting and the mail
+  settings alone, as §2.6.6 reads: it would report a method the hub
+  cannot perform.
