@@ -500,11 +500,13 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
 - Each says the browser and system it claimed, how it signed in, where
   from and when, which session approved a device code, and whether it is
   confirmed (`good_standing`). The current one is marked.
-- **This was me** on a session whose sign-in alert is unread marks that
-  alert read by its id (§18.3); it is offered only from a confirmed
-  session older than the one it confirms, never on the session itself.
-  An alert with no session (an address change) has its own **This was
-  me**.
+- **This was me** on a session whose sign-in alert is unread, ended
+  sessions included, marks that alert read by its id (§18.3); it is
+  offered only from a confirmed session older than the one it confirms,
+  never on the session itself. An alert with no session (an address
+  change) has its own **This was me**. The hub answers 200 even when it
+  skipped the id, so "Confirmed" is said only when the alert is gone
+  from the unread ones afterwards.
 - **End** per session and **End all other sessions**. From a session that
   is not confirmed, **End** on a confirmed one is disabled ("Confirm this
   session's sign-in from another session first"), and while it is under
@@ -512,15 +514,23 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   ("This session is too new to end older ones"); End all other sessions
   from it ends only the unconfirmed ones, and says so. The hub's
   refusals (`not_in_good_standing`, `session_too_new`) are said in words.
-- The ended sessions of the last 30 days, folded.
+- The ended sessions of the last 30 days, folded (open when one of them
+  has an unconfirmed alert).
 - **A held address change** (§2.6.3) with **Approve** (a confirmed
   session at least a day old) and **Reject** (a confirmed session), each
-  naming the change's id and address; one replaced meanwhile (`conflict`)
-  is said, not approved.
+  naming the change's id and address, and saying which session asked for
+  it and whether that one is confirmed; one replaced meanwhile
+  (`conflict`) is said, not approved, and the change that replaced it is
+  shown.
 - **The mail sign-in banner**: while a sign-in by mail is unconfirmed and
-  its session active, every other session shows it at the top of every
-  page, with **End this session** (one click) and, where allowed, **This
-  was me**.
+  its session, or a session it approved by device code, is active, every
+  other session shows it at the top of every page, and says which
+  approved session is still active. **End this session** (one click)
+  ends those that are, under the same rules as the list (disabled with
+  the reason where the hub would refuse); **This was me** where allowed.
+  It comes and goes with the 15-second count of unread sign-in alerts,
+  without navigating.
+- Times are compared as instants on the hub's clock (`Maity-Server-Time`).
 - A hub without the list says so, and is asked once per page load.
 
 **Change password** (`#/account`) sends `POST /auth/password {current,

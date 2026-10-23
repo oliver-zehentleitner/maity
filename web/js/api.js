@@ -402,7 +402,7 @@ window.Maity = window.Maity || {};
     const cur = currentSession();
     if (s.id === cur.id || cur.good_standing) return;
     if (s.good_standing) fail(403, "forbidden", "not in good standing", path, { reason: "not_in_good_standing" });
-    if (youngerThanHour(cur) && s.created_at < cur.created_at) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
+    if (youngerThanHour(cur) && Date.parse(s.created_at) < Date.parse(cur.created_at)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
   }
   // Ending one ends the sessions it approved by device code, and theirs.
   function endSession(s, by) {
@@ -416,9 +416,9 @@ window.Maity = window.Maity || {};
     if (!cur || !cur.good_standing) return false;
     if (x.target && x.target.type === "session") {
       const reported = fixtures()["sessions.json"].items.find((s) => s.id === x.target.id);
-      return !!reported && reported.id !== cur.id && cur.created_at < reported.created_at;
+      return !!reported && reported.id !== cur.id && Date.parse(cur.created_at) < Date.parse(reported.created_at);
     }
-    return cur.created_at < x.at;
+    return Date.parse(cur.created_at) < Date.parse(x.at);
   }
 
   // A position's two parts, and whether an item lies past one (§18.2).
@@ -493,9 +493,11 @@ window.Maity = window.Maity || {};
       return { ended: true };
     }],
     ["POST", /^\/auth\/sessions\/end-others$/, (m, body, path) => {
+      // From a session not in good standing only the others not in good
+      // standing, and while it is under an hour old none older than itself.
       const cur = currentSession();
-      if (!cur.good_standing && youngerThanHour(cur)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
-      const ended = activeSessions().filter((s) => s.id !== cur.id && (cur.good_standing || !s.good_standing));
+      const ended = activeSessions().filter((s) => s.id !== cur.id && (cur.good_standing
+        || (!s.good_standing && !(youngerThanHour(cur) && Date.parse(s.created_at) < Date.parse(cur.created_at)))));
       ended.forEach((s) => endSession(s, "end_others"));
       return { ended: ended.length };
     }],
