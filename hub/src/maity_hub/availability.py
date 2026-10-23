@@ -246,8 +246,8 @@ def _any_available(
     conn: Connection, project: Any, membership_ids: list[int], now: datetime
 ) -> bool:
     rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(membership_ids))).all()
-    presences = _presences(conn, rows)
-    humans = _humans(conn, rows)
+    presences = presences_of(conn, rows)
+    humans = humans_of(conn, rows)
     return any(
         computed(r, presences[r.id], humans.get(r.human_id), project, now)["state"] == "available"
         for r in rows
@@ -264,7 +264,7 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
         return None
     now = clock.now()
     rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(ids))).all()
-    presences = _presences(conn, rows)
+    presences = presences_of(conn, rows)
     found = {r.id: computed(r, presences[r.id], None, project, now) for r in rows}
     if not all(_out_beyond_grace(r, found[r.id], now) for r in rows):
         return None
@@ -282,7 +282,7 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
         ).first()
         if stand_in is not None:
             shown = computed(
-                stand_in, _presences(conn, [stand_in])[stand_in.id], None, project, now
+                stand_in, presences_of(conn, [stand_in])[stand_in.id], None, project, now
             )
             if shown["state"] == "available":
                 return None
@@ -298,13 +298,13 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
 # --- announcing ---------------------------------------------------------------------------
 
 
-def _presences(conn: Connection, rows: Sequence[Any]) -> dict[int, str]:
+def presences_of(conn: Connection, rows: Sequence[Any]) -> dict[int, str]:
     from maity_hub.views import member_views  # views reads this module for its fields
 
     return {row.id: v["presence"] for row, v in zip(rows, member_views(conn, rows), strict=True)}
 
 
-def _humans(conn: Connection, rows: Sequence[Any]) -> dict[str, Any]:
+def humans_of(conn: Connection, rows: Sequence[Any]) -> dict[str, Any]:
     ids = {r.human_id for r in rows if r.human_id is not None}
     if not ids:
         return {}
@@ -347,8 +347,8 @@ def act_due(conn: Connection, project_id: str, actor: Actor | None = None) -> No
         return
     now = clock.now()
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    presences = _presences(conn, rows)
-    humans = _humans(conn, rows)
+    presences = presences_of(conn, rows)
+    humans = humans_of(conn, rows)
     for row in rows:
         found = computed(row, presences[row.id], humans.get(row.human_id), project, now)
         if not in_outage(row, found["state"]) or not policy_due(row, found, now):
@@ -356,6 +356,17 @@ def act_due(conn: Connection, project_id: str, actor: Actor | None = None) -> No
         if row.cover_state == "none_available" and policy_of(row)["on_unavailable"] != "substitute":
             continue
         act(conn, row, actor)
+
+
+def outcome(conn: Connection, row: Any) -> str:
+    """What `act` will answer for this row now: `wait`, `substitute` or `none_available`."""
+    from maity_hub import cover
+
+    if policy_of(row)["on_unavailable"] == "wait":
+        return "wait"
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    found = cover.available(conn, project, cover.cover_order(conn, project, row), clock.now())
+    return "substitute" if found else "none_available"
 
 
 def act(conn: Connection, row: Any, actor: Actor | None) -> str:
@@ -389,8 +400,8 @@ def reconcile(
     if not rows:
         return []
     now = clock.now()
-    presences = _presences(conn, rows)
-    humans = _humans(conn, rows)
+    presences = presences_of(conn, rows)
+    humans = humans_of(conn, rows)
     projects: dict[str, Any] = {}
     announced = []
     returned: set[str] = set()
@@ -429,10 +440,12 @@ def reconcile(
             values["outage_since"] = None
             shown_cover = COVER_SHOWN.get(row.cover_state or "")
         conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(**values))
+        acts_now = None
         if is_out and not was_out:
             fresh = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
             if policy_due(fresh, found, now):  # a grace of 0: the policy acts at once
-                shown_cover = act(conn, fresh, actor)
+                acts_now = fresh
+                shown_cover = outcome(conn, fresh)
             payload = _payload(row, found, since, shown_cover)
         elif was_out and not is_out:
             payload = _payload(row, found, since, shown_cover)
@@ -447,6 +460,8 @@ def reconcile(
                 subject=("member", payload["member_id"]),
             )
             announced.append(payload)
+        if acts_now is not None:
+            act(conn, acts_now, actor)  # after the outage is announced, as on return
         if was_out and not is_out and row.cover_state is not None:
             from maity_hub import cover
 
