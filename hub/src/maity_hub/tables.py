@@ -32,6 +32,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    false,
 )
 
 from maity_hub.db import metadata
@@ -560,10 +561,17 @@ request = Table(
     Column("mentions", JSON_VALUE),  # resolved from `summary` and `tried` (§8.6)
     Column("options", JSON_VALUE, nullable=False),
     Column("priority", String(16), nullable=False),
-    # `to`: a member, a role, or the project's owner.
-    Column("to_kind", String(16), nullable=False),  # member, role, owner
+    # `to`: a member, a role, the project's owner, or (filed by the hub only) the human who
+    # owns an agent profile, member of the project or not: a personal request (§7).
+    Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
     Column("to_role", String(16)),
+    _ref("to_profile", "agent_profile.id"),
+    _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
+    Column("personal", Boolean, nullable=False, server_default=false()),
+    # A closed personal request's card as it was when it closed (§7): a non-member owner
+    # does not follow the card after the outcome.
+    Column("task_snapshot", JSON_VALUE),
     _membership_ref("asked_by", nullable=False),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
@@ -582,13 +590,20 @@ request = Table(
     *_audit(),
     Column("created_at", UtcDateTime, nullable=False),
     CheckConstraint(
-        "(to_kind = 'member' AND to_member IS NOT NULL AND to_role IS NULL)"
-        " OR (to_kind = 'role' AND to_role IS NOT NULL AND to_member IS NULL)"
-        " OR (to_kind = 'owner' AND to_member IS NULL AND to_role IS NULL)",
+        "(to_kind = 'member' AND to_member IS NOT NULL AND to_role IS NULL AND to_human IS NULL)"
+        " OR (to_kind = 'role' AND to_role IS NOT NULL AND to_member IS NULL AND to_human IS NULL)"
+        " OR (to_kind = 'owner' AND to_member IS NULL AND to_role IS NULL AND to_human IS NULL)"
+        " OR (to_kind = 'profile_owner' AND to_profile IS NOT NULL AND to_human IS NOT NULL"
+        " AND to_member IS NULL AND to_role IS NULL)",
         name="to_shape",
+    ),
+    CheckConstraint(
+        "(personal AND to_kind = 'profile_owner') OR (NOT personal AND to_kind <> 'profile_owner')",
+        name="personal_shape",
     ),
     Index("ix_request_project_status", "project_id", "status"),
     Index("ix_request_to_member_status", "to_member", "status"),
+    Index("ix_request_to_human_status", "to_human", "status"),
     **MYSQL_TABLE,
 )
 

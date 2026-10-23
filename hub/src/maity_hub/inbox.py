@@ -26,13 +26,16 @@ CONSENT_ROLES = ("admin", "proxy")
 
 @dataclass(frozen=True)
 class Addressee:
-    kind: str  # member, role, owner
+    kind: str  # member, role, owner, profile_owner
     member: int | None = None
     role: str | None = None
+    profile: str | None = None  # profile_owner: the agent profile whose owner is meant
 
     def text(self, conn: Connection) -> str:
         if self.kind == "owner":
             return "owner"
+        if self.kind == "profile_owner":
+            return f"profile_owner:{self.profile}"
         if self.kind == "role":
             return f"role:{self.role}"
         from maity_hub.views import principal_id
@@ -43,7 +46,7 @@ class Addressee:
 
 
 def addressee_of(row: Any) -> Addressee:
-    return Addressee(row.to_kind, row.to_member, row.to_role)
+    return Addressee(row.to_kind, row.to_member, row.to_role, row.to_profile)
 
 
 def owner_membership(conn: Connection, project_id: str) -> Any:
@@ -59,7 +62,10 @@ def owner_membership(conn: Connection, project_id: str) -> Any:
 
 
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
-    """`to=me`: the caller's member id, `owner` for the owner, a role the caller holds."""
+    """`to=me`: the caller's member id, `owner` for the owner, a role the caller holds.
+    A personal request is addressed to a human, never through a project (§7)."""
+    if request.personal:
+        return False
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
@@ -89,8 +95,9 @@ def needs_a_human(request: Any, mine: Membership) -> bool:
 
 def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     """`requests:answer` for every class; the addressee in its own right for the others.
-    Never an agent where the request needs a human."""
-    if needs_a_human(request, mine):
+    Never an agent where the request needs a human, and nobody through a project for a
+    personal request: its human answers it through `POST /requests/{id}/answer` (§7)."""
+    if request.personal or needs_a_human(request, mine):
         return False
     if mine.may("requests:answer"):
         return True
