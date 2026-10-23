@@ -292,6 +292,32 @@ environment_overlap = Table(
     **MYSQL_TABLE,
 )
 
+# --- the change ticker (docs/api.md §17) --------------------------------------------
+#
+# An item is an event of kind `ticker`; these keep what the event log cannot: the
+# dedupe keys under a unique constraint (§17.7) and each membership's follow and mute
+# (§17.8).
+
+ticker_dedupe = Table(
+    "ticker_dedupe",
+    metadata,
+    _ref("project_id", "project.id", nullable=False),
+    Column("dedupe_key", String(255), nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    PrimaryKeyConstraint("project_id", "dedupe_key"),
+    **MYSQL_TABLE,
+)
+
+ticker_subscription = Table(
+    "ticker_subscription",
+    metadata,
+    _membership_ref("membership_id", primary_key=True),
+    Column("follow", JSON_VALUE, nullable=False),  # {"areas": [...], "types": [...]}
+    Column("mute", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
 # --- runners (docs/api.md §15) ------------------------------------------------------
 #
 # A runner is a caller of its own, owned by a human: not an agent profile and

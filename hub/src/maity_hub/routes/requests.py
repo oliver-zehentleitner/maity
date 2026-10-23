@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements
+from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -20,6 +20,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
+from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
 
 router = APIRouter()
@@ -119,7 +120,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "tried": row.tried,
         "mentions": row.mentions or [],
         "options": row.options,
-        "replies": inbox.replies(klass(row), row.options),
+        "replies": replies(klass(row), row.options),
         "priority": row.priority,
         "to": inbox.addressee_of(row).text(conn),
         "asked_by": _person(conn, row.asked_by, row.asked_session_id),
@@ -629,8 +630,8 @@ def answer(
         given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
         if not given or ("talk" in given and len(given) > 1):
             raise invalid({"answer": "reply_id_or_text_or_talk"})
-        replies = {r["id"] for r in inbox.replies(klass(row), row.options)}
-        if body.reply_id is not None and body.reply_id not in replies:
+        reply_ids = {r["id"] for r in replies(klass(row), row.options)}
+        if body.reply_id is not None and body.reply_id not in reply_ids:
             raise invalid({"reply_id": "not_a_reply"})
         conversation_id = None
         if body.talk:
@@ -683,6 +684,7 @@ def answer(
             actor=caller.actor(mine.id),
             subject=("request", row.id),
         )
+        ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -801,6 +803,9 @@ def close_request(
         actor=actor,
         subject=("request", row.id),
     )
+    if kind == "request_answered":
+        project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+        ticker.on_request_answered(conn, project, _row(conn, row.id), actor)
 
 
 def file_consent(

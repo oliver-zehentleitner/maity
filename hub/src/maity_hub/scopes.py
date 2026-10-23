@@ -17,6 +17,8 @@ _GRANTS: dict[str, set[str]] = {
     "requests:answer": {"owner", "admin", "proxy"},
     "events:post": _ALL,
     "events:admin": {"owner", "admin"},
+    # A manual ticker post (§17.6); agents included.
+    "ticker:post": {"owner", "admin"},
     "credentials:admin": {"owner", "admin"},
     # Propose placements and stop, start, restart or delete them (§15.6); agents included.
     "agents:propose": {"owner", "admin"},

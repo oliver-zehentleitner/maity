@@ -18,7 +18,12 @@ capabilities, and placements (desired and reported state, agents'
 proposals with consent, the closing rules) are in; the join pickup and
 supervised sessions follow. Mentions (`docs/api.md` §8.6), the members'
 owner and credentials summary, the conversation preview and the instance
-admin's user list (§16) are in.
+admin's user list (§16) are in. The change ticker (`docs/api.md` §17):
+items with their computed audience and the members' follow and mute, the
+manual post, dedupe, the listing, the shaping per reader on every read
+path, the resume packet's `ticker`, `settings.ticker`, and the hub's own
+decision and release items are in; merges through the probe and the
+forge webhook with deploys follow.
 
 ## Run it locally with plain Python
 

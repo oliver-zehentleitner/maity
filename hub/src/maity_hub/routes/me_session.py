@@ -19,6 +19,7 @@ from maity_hub import (
     idempotency,
     ranks,
     rules,
+    ticker,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -341,6 +342,7 @@ def _packet(
         "claims": task_views(conn, held, fg),
         "assigned": task_views(conn, assigned, fg),
         "requests": _requests_block(conn, mine, cursor),
+        "ticker": ticker.packet(conn, mine, cursor),
         "events": {
             "after": cursor,
             "items": event_views(conn, rows, mine),

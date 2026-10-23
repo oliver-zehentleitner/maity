@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -49,8 +50,39 @@ class AbsenceIn(Strict):
     scope: str = Field(min_length=1, max_length=16384)
 
 
+class TickerSettingsIn(Strict):
+    """`settings.ticker` (§17.3): the switch for the automatic sources, the contract
+    files and who implements which section; capped at 10 files, 200 keys, 20 tokens."""
+
+    enabled: bool = False
+    contract_files: list[str] = Field(default_factory=list, max_length=10)
+    contract_implementers: dict[str, list[str]] = Field(default_factory=dict, max_length=200)
+
+
+SECTION_KEY = re.compile(r"^(\*|\d+(\.\d+)*)$")
+IMPLEMENTER = re.compile(r"^(member|role|area):\S{1,255}$")
+
+
+def _check_ticker(settings: TickerSettingsIn) -> None:
+    errors: dict[str, str] = {}
+    if any(not f or len(f) > 255 for f in settings.contract_files):
+        errors["settings.ticker.contract_files"] = "invalid"
+    for key, tokens in settings.contract_implementers.items():
+        if not SECTION_KEY.match(key):
+            errors["settings.ticker.contract_implementers"] = "invalid"
+        elif len(tokens) > 20:
+            errors["settings.ticker.contract_implementers"] = "too_many"
+        elif any(not IMPLEMENTER.match(x) for x in tokens):
+            errors["settings.ticker.contract_implementers"] = "invalid"
+    if errors:
+        raise invalid(errors)
+
+
 class SettingsIn(Strict):
-    release_checklist: list[str] = Field(default_factory=list, max_length=50)
+    """Top-level keys (§6.1): a key named replaces its whole value, `null` removes it."""
+
+    release_checklist: list[str] | None = Field(default=None, max_length=50)
+    ticker: TickerSettingsIn | None = None
 
 
 class ProjectCreate(Strict):
@@ -263,7 +295,21 @@ def patch_project(
         if "repository" in given:
             values.update(_repository_columns(body.repository))
         if "settings" in given and body.settings is not None:
-            values["settings"] = body.settings.model_dump()
+            # §6.1: merged by top-level key. A key named replaces its whole value (nested
+            # objects are not merged), `null` removes it so it reads as its default, and a
+            # key not named stays; `{}` changes nothing.
+            named = body.settings.model_fields_set
+            if body.settings.ticker is not None:
+                _check_ticker(body.settings.ticker)
+            dumped = body.settings.model_dump()
+            merged = dict(project.settings or {})
+            for key in named:
+                if dumped[key] is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = dumped[key]
+            if merged != (project.settings or {}):
+                values["settings"] = merged
         new_policy = None
         if "policy" in given and body.policy is not None:
             new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)

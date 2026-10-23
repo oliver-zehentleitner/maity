@@ -75,6 +75,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## T
 - [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL
+- [ticker.md](ticker.md) — a ticker item is an event with its dedupe key in a table of its own; shaped per reader where every event view is made; settings replaced key by key
 
 ## U
 

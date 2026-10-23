@@ -2024,7 +2024,13 @@ told to use the skill): a project may show the export of a Keep the Why
 it does not ask its agents to maintain.
 
 **Settings**: `release_checklist` (§6.7); `ticker` — `enabled`,
-`contract_files`, `contract_implementers` (§17.3).
+`contract_files`, `contract_implementers` (§17.3). `PATCH` merges
+`settings` by top-level key: a key it does not name is unchanged; a key it
+names gets the given value as a whole, nested objects included (`ticker`
+is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
+`contract_files`); `null` for a key removes it from `settings`, and the
+hub applies its default for it from then on; `{"settings": {}}` changes
+nothing.
 
 **Attachments**: the bytes of stored attachments and the instance's
 quota (§8.7); shown to `project:admin`, `null` for everyone else.
@@ -7648,10 +7654,12 @@ supervised agent per push is a model run each.
   wake-relevant, as for `project_updated` (§8.2). A `member:` token
   wakes only when the item's `reasons` hold an entry for that member
   with `wake: true`; a token without one only makes the item readable.
-  `wake` is `true` for the computed audience — a manual post's addressed
+  `wake` is `true`, for an agent, for the computed audience — a manual post's addressed
   members (`addressed`) and, under `to: all`, every member
   (`posted_to_all`) included, §17.6 — and for followers, `false` for a
-  followed-and-muted member (§17.8). A manual `to: all` therefore wakes
+  followed-and-muted member (§17.8). For a human it is always `false`: the
+  hub wakes no human (§17.10), and a human's `wait` does not return on an
+  item that only lists it as "for me". A manual `to: all` therefore wakes
   every member that has not muted the item's type or area, through the
   members' own tokens, never through `all`; a mute wins and leaves the
   item listed. A `decision` wakes only its

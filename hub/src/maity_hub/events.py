@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, Connection, Engine, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, ticker_read
 from maity_hub import tables as t
 
 _PENDING = "maity_pending_events"
@@ -164,21 +164,28 @@ SEE_ALL_ROLES = ("owner", "admin")
 HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
 
 
-def hidden_redactions(conn: Connection, rows: Sequence[Any]) -> frozenset[str]:
-    """The `subject_id`s among `rows`' `event_redacted` that name an event of a
-    humans-only kind: such a tombstone is as unreadable to agents as the event it
-    redacts (§8.5). One query per batch, nothing when the batch has no tombstone."""
+def hidden_redactions(
+    conn: Connection, rows: Sequence[Any], membership: Any = None
+) -> frozenset[str]:
+    """What a batch needs read once to judge its rows (§8.5, §17.5):
+    - the `subject_id`s of `event_redacted` that name an event of a humans-only kind,
+      as unreadable to agents as the event they redact;
+    - `notice:<seq>` for each `event_redacted` whose subject is a ticker item: it is
+      shaped like the item and never wakes;
+    - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
+      one, whose request it may not read now: no item, no placeholder, no notice."""
+    hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
-        return frozenset()
-    return frozenset(
-        str(seq)
-        for seq in conn.execute(
-            select(t.event.c.seq).where(
-                t.event.c.seq.in_(seqs), t.event.c.kind.in_(HUMANS_ONLY_KINDS)
-            )
-        ).scalars()
-    )
+        return frozenset(hidden)
+    subjects = conn.execute(select(t.event).where(t.event.c.seq.in_(seqs))).all()
+    for subject in subjects:
+        if subject.kind in HUMANS_ONLY_KINDS:
+            hidden.add(str(subject.seq))
+        if subject.kind == "ticker":
+            hidden.add(f"notice:{subject.seq}")
+    hidden |= {f"ticker:{seq}" for seq in ticker_read.withheld(conn, subjects, membership)}
+    return frozenset(hidden)
 
 
 def readable_by(
@@ -192,6 +199,15 @@ def readable_by(
     )
     if humans_only and membership.agent_id is not None:
         return False
+    if row.kind == "ticker" and f"ticker:{row.seq}" in hidden:
+        return False  # a decision whose request it may not read: no item at all (§17.5)
+    if row.kind == "event_redacted" and f"ticker:{row.subject_id}" in hidden:
+        return False  # nor the notice of its removal
+    if row.kind == "ticker_subscription_changed":
+        # The member's own business, and the human owners' and admins' (§17.12).
+        return (row.payload or {}).get("member_id") == principal or (
+            membership.agent_id is None and membership.role in SEE_ALL_ROLES
+        )
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
@@ -216,6 +232,7 @@ def read(
         lambda row, hidden: readable_by(row, membership, principal, hidden),
         after,
         limit,
+        membership,
     )
 
 
@@ -225,6 +242,7 @@ def _scan(
     readable: Callable[[Any, frozenset[str]], bool],
     after: int,
     limit: int,
+    membership: Any = None,
 ) -> tuple[list[Any], int, bool]:
     found: list[Any] = []
     examined = after
@@ -235,7 +253,7 @@ def _scan(
             .order_by(t.event.c.seq)
             .limit(500)
         ).all()
-        hidden = hidden_redactions(conn, batch)
+        hidden = hidden_redactions(conn, batch, membership)
         for row in batch:
             if readable(row, hidden):
                 if len(found) == limit:
@@ -279,6 +297,8 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
     admin never wakes, and neither does a kind in NON_WAKING."""
     if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
+    if row.kind == "ticker":
+        return ticker_read.wakes(row, principal)
     audience = row.audience or []
     return (
         "all" in audience
@@ -293,7 +313,14 @@ def read_waking(
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
-    found = [r for r in rows if wakes(r, membership, principal)][:limit]
+    # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
+    notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
+    found = [
+        r
+        for r in rows
+        if wakes(r, membership, principal)
+        and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
+    ][:limit]
     if found and (len(found) == limit or truncated):
         return found, found[-1].seq
     return found, examined
@@ -305,6 +332,7 @@ def highest_readable(conn: Connection, project_id: str, membership: Any, princip
         conn,
         t.event.c.project_id == project_id,
         lambda row, hidden: readable_by(row, membership, principal, hidden),
+        membership,
     )
 
 
@@ -320,7 +348,10 @@ def highest_for_runner(conn: Connection, project_ids: Sequence[str], runner_id: 
 
 
 def _highest(
-    conn: Connection, scope: ColumnElement[bool], readable: Callable[[Any, frozenset[str]], bool]
+    conn: Connection,
+    scope: ColumnElement[bool],
+    readable: Callable[[Any, frozenset[str]], bool],
+    membership: Any = None,
 ) -> int:
     query = select(t.event).where(scope).order_by(t.event.c.seq.desc()).limit(500)
     before = None
@@ -328,7 +359,7 @@ def _highest(
         batch = conn.execute(
             query.where(t.event.c.seq < before) if before is not None else query
         ).all()
-        hidden = hidden_redactions(conn, batch)
+        hidden = hidden_redactions(conn, batch, membership)
         for row in batch:
             if readable(row, hidden):
                 seq: int = row.seq
