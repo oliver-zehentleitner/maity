@@ -292,7 +292,7 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, m.display_name), h("span", { class: "muted" }, " @" + m.handle),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + m.handle),
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 
@@ -341,7 +341,7 @@ window.Maity = window.Maity || {};
       const role = { title: "Role", cell: (m) => m.role };
       const presence = { title: "Presence", presence: true, cell: presenceNodes };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
-      const owner = { title: "Owner", cell: (m) => (m.owner ? m.owner.display_name : nameOf(m.owner_id)) };
+      const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       append(clear(box),

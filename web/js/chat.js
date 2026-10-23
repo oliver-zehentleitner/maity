@@ -194,8 +194,8 @@ window.Maity = window.Maity || {};
     return reason === null ? null : reason.trim();
   }
   function tombstone(ctx, r) {
-    const by = r && r.by ? " by " + ctx.nameOf(r.by) : "";
-    return h("p", { class: "muted msg-redacted" }, "This message was removed" + by + (r && r.reason ? ": " + r.reason : "") + ".");
+    return h("p", { class: "muted msg-redacted" }, "This message was removed",
+      r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
   // opts.group: a group chat's message (no delivery: several recipients,
@@ -205,10 +205,11 @@ window.Maity = window.Maity || {};
     const own = msg.from === ctx.me.id;
     // A grouped message says when, not again who.
     const delivery = (m) => (own && !o.group ? (m.delivered_at ? " · reached a session" : " · not picked up yet") : "");
-    const said = (m) => (grouped ? formatTime(m.sent_at) + delivery(m)
-      : (own ? "" : ctx.nameOf(m.from) + " · ") + formatTime(m.sent_at) + delivery(m));
-    const meta = h("span", { class: "meta" }, said(msg));
-    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = said(fresh); });
+    // Who (a link to them), then when; a delivery update rewrites the when alone.
+    const said = (m) => formatTime(m.sent_at) + delivery(m);
+    const when = h("span", { class: "when" }, said(msg));
+    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from), " · "], when);
+    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).

@@ -215,13 +215,13 @@ window.Maity = window.Maity || {};
           h("header", null,
             M.avatar(m, 28),
             p.dot,
-            h("h3", null, m.display_name),
+            h("h3", null, M.dom.memberRef(ctx, m.id)),
             h("span", { class: "handle" }, "@" + m.handle),
             p.label),
           h("dl", { class: "facts" },
-            h("dt", null, "Owner"), h("dd", null, ctx.nameOf(m.owner_id)),
+            h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),
             h("dt", null, "Role"), h("dd", null, m.role),
-            h("dt", null, "Reports to"), h("dd", null, ctx.nameOf(m.reports_to)),
+            h("dt", null, "Reports to"), h("dd", null, m.reports_to ? M.dom.memberRef(ctx, m.reports_to) : "—"),
             h("dt", null, "Areas"), h("dd", null, m.areas.length ? m.areas.join(", ") : "—"),
             m.capabilities && m.capabilities.length
               ? [h("dt", null, "Capabilities"), h("dd", null, m.capabilities.join(", "))]
