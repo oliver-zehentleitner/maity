@@ -982,3 +982,49 @@ card_watch = Table(
     PrimaryKeyConstraint("card_id", "membership_id"),
     **MYSQL_TABLE,
 )
+
+# A human's notification settings (docs/api.md §18.4): the browser and mail preferences
+# as one JSON value, beside the address and its verification. `pending_nonce` makes the
+# newest verification link the only valid one; `epoch` moves when the address changes or
+# is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
+# held for approval (§18.4).
+notification_settings = Table(
+    "notification_settings",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("preferences", JSON_VALUE, nullable=False),
+    Column("address", String(254)),
+    Column("address_status", String(16), nullable=False),  # none pending verified disabled
+    Column("verified_at", UtcDateTime),
+    Column("pending_address", String(254)),
+    Column("pending_nonce", String(32)),
+    Column("pending_expires_at", UtcDateTime),
+    Column("epoch", Integer, nullable=False),
+    Column("hard_failures", Integer, nullable=False),
+    Column("disabled_at", UtcDateTime),
+    Column("address_change", JSON_VALUE),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Mail waiting for the sender (docs/api.md §16.2, §18.5): written in the transaction that
+# decides it, sent by the mail worker, counted in `mail_delivery` by its budget kind. The
+# body is the hub's own text; nothing a member wrote is in it unquoted.
+mail_outbox = Table(
+    "mail_outbox",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),  # notification security sign_in
+    _ref("human_id", "human.id"),
+    Column("recipient", String(254), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("headers", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("not_before", UtcDateTime, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("status", String(16), nullable=False),  # waiting sent failed dropped
+    Index("ix_mail_outbox_due", "status", "not_before"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)

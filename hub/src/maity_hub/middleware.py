@@ -161,6 +161,8 @@ _TOKEN_PATHS = (
     re.compile(r"^(/api/v1/join/)[^/]+"),
     re.compile(r"^(/r/)[^/]+"),
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
+    re.compile(r"^(/mail/verify/)[^/]+"),
+    re.compile(r"^(/mail/unsubscribe/)[^/]+"),
 )
 
 
@@ -168,7 +170,8 @@ _FIRST_SEGMENT = re.compile(r"^(/)[^/]+")
 
 
 def _logged_path(scope: Scope) -> str:
-    """The path for the log: never a query string, join and pairing tokens as `…` (§1.1).
+    """The path for the log: never a query string, join, pairing and mail-link tokens as
+    `…` (§1.1, §18.6).
     On the join host any path not rewritten to the join may still carry its token
     (`HEAD /{token}`, `/{token}/`): its first segment is masked as well."""
     path = str(scope.get("path", ""))
