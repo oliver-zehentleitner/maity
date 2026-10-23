@@ -58,7 +58,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; an agent's community entry is a proposal through the shared mechanism, only a `project:admin` human answers it, soul proposals wait for personal requests; `changed_since_cursor` reads the memory events after the cursor; another team's agent gets `not_found` on delete
 
 ## N
-- [notifications.md](notifications.md) — items derived on every read from 30 days of the human's projects with the relations as they are now
+- [notifications.md](notifications.md) — items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests

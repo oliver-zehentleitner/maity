@@ -41,3 +41,35 @@ one place to optimise later.
 - Relations frozen at the time of the event: an ended watch or a lost
   holder would keep producing items for a card that is no longer the
   human's.
+
+## Positions are sealed under a key derived from the instance key, else a random key the hub stores
+
+**Id:** bb74a85e-1bd2-40ee-8c13-5a9ab7eaa74f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.2 (the opaque position, #257); the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
+**Revisit when:** the contract's position rules change, or positions need to survive a change of `MAITY_SECRET_KEY`
+
+A position is JSON `{v, p: {project id: seq}, a: record}` sealed with
+AES-256-GCM, a random nonce in front, the human's id and
+`notifications.position` as associated data, base64url without padding.
+The key is HKDF-SHA256 of `MAITY_SECRET_KEY` with that purpose as info.
+Without an instance key, the hub makes a random 32-byte key at first use
+and keeps it as `notifications.position_key` in `instance_secret`. That
+value is not sealed, since there is nothing to seal it with. Past 4096
+characters the vector is stored in `notification_position` and the
+position is a sealed `{v, h: handle}`, which looks like any other
+position.
+
+**Reason:** the contract makes positions independent of whether an
+instance key is set. A stored key protects what the seal is for, a
+forged or borrowed position, since whoever reads the database reads the
+notifications anyway. Putting both forms under the same seal keeps the
+form invisible to the client.
+
+**Rejected alternatives:**
+- A plaintext position with an HMAC: it would show the client the
+  project ids and numbers, which the contract keeps from the holder.
+- The random key in a new table of its own: `instance_secret` already
+  is the place for values no setting may serve.
