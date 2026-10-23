@@ -80,3 +80,44 @@ consent rule.
   round): `request_withdrawn` carried the whole request, so a
   withdrawal put the soul text into an event every owner and admin
   reads.
+
+## A human's preferences are a fourth store: written by the human, proposed by agents, read by every agent sharing a project
+
+**Id:** 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision 2026-10-23; contract in `docs/api.md` §19.4
+**Revisit when:** humans switch the inclusion off in most projects, proposals are mostly rejected, or preferences start carrying rules that belong in a project's rules text
+**See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-23
+**See:** memory.md#memory-events-carry-ids-only-and-a-soul-proposal-goes-to-the-owners-personal-inbox — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-10-23
+
+Each human has one preferences text: how they like to work and be
+treated, language, tone, what they never want, how they decide. The
+human writes it. An admin agent of a shared project or the human's
+proxy may propose a new version as a personal `consent` request; the
+human sees current text, proposal and diff, and accepts, edits and
+accepts, or rejects. Every agent member of a project the human is a
+member of gets the text in its resume packet, quoted with its author
+and ranked below the project's rules; the human can switch a project
+off. When the human brings one of their agents into a project they are
+not a member of, a join checkbox gives that one agent the preferences,
+as a live reference. Preferences are context, never permissions.
+
+**Reason:** every agent working with a human should know how that human
+likes to work, without the human repeating it per project, and the
+human wants to see and edit every change to that text.
+
+**Rejected alternatives:**
+- Writing preferences into each project's briefing by hand: the same
+  text duplicated per project, drifting apart.
+- Letting agents write the text directly: the maintainer wants to see
+  and edit every change.
+- Visible only to the human's own agents: the maintainer wants every
+  agent, whatever its owner, to know how a human likes to work.
+
+The details the decision left open — a stale proposal answered as
+`conflict` rather than rebased, the proxy read as an agent holding
+`proxy` in a project the human owns, other humans not reading the
+text, the packet and proposal caps — are the contract owner's rulings
+in `docs/api.md` §19.4, open to the maintainer's review.
