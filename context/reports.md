@@ -26,3 +26,32 @@ one way into review, and saying so explicitly keeps the board from
 showing every text card as an unverified code report.
 
 **Alternatives:** unknown.
+
+## A done card whose pull request is still open takes a new report
+
+**Id:** 2280ced7-c51f-48f5-aab7-3bdacc7de21e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-23 (inbox request), after a report from a project on maity.team; contract in `docs/api.md` §6.6
+**Revisit when:** `done` is redefined to mean merged, or a card's work spans more than one pull request
+
+A card can be `done` while its pull request is still open: a reviewer
+closes the card on approval, and the pull request then conflicts with
+another merge and is rebased. The member whose report is on the card may
+report again while that pull request is open and the new report names
+the same pull request. The report and the probe are updated; status,
+`closed_at` and the claim are not.
+
+**Reason:** without it the card keeps showing a head the branch no
+longer has, and the new head travels only in a free-text message, which
+is what the report exists to replace. Updating only the report keeps
+`done` meaning what it means today for counts, dependencies and
+releases.
+
+**Alternatives:** `done` waits for the merge: a reviewer's done becomes
+an approval and the hub closes the card when the probe sees the merge.
+Not chosen now: it changes when a card counts as done for dependencies,
+releases and the board counts, a separate and larger contract. A new
+report on any closed card: rejected, a `cancelled` card or a merged pull
+request has nothing left to report.

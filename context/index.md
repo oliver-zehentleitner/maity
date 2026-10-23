@@ -73,7 +73,7 @@ Why Maity is built the way it is.
 ## Q
 
 ## R
-- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe
+- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report
 
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core
