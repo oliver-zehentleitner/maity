@@ -7,7 +7,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, formatAgo, formatTime } = M.dom;
+  const { h, append, clear, formatAgo, formatTime } = M.dom;
 
   const PRESENCE_LABELS = { online: "Online", away: "Away", offline: "Offline", paused: "Paused" };
 
@@ -176,13 +176,45 @@ window.Maity = window.Maity || {};
   // Shared with the Members view.
   M.pauseWords = { effect: PAUSE_EFFECT, paused: PAUSED_EFFECT };
 
-  M.views.agents = async function (ctx, root) {
+  M.views.agents = async function (ctx, root, args) {
     const agents = ctx.members.filter((m) => m.kind === "agent");
     const creds = await Promise.all(agents.map((m) => loadCredentials(ctx, m)));
+    const online = agents.filter((m) => m.presence === "online").length;
+
+    // Joining lives here (docs/api.md §3.1, js/join.js): the panel under the
+    // title, the open joins as seats at the front of the grid, the others
+    // folded at the end. Only for those who may create joins.
+    const grid = h("div", { class: "profiles" });
+    const earlierBox = h("div", { class: "earlier-box" });
+    const countLine = h("p", { class: "muted agents-count" });
+    const joinButton = h("button", { type: "button", class: "primary join-open" }, "+ Join an agent");
+    let J = null;
+    const drawCount = () => {
+      const open = J ? J.openCount() : 0;
+      countLine.textContent = agents.length + (agents.length === 1 ? " agent" : " agents") + " · " + online + " online"
+        + (J ? " · " + open + (open === 1 ? " open join" : " open joins") : "");
+    };
+    let cards = [];
+    const drawGrid = () => {
+      append(clear(grid), J ? J.seats() : null, cards);
+      append(clear(earlierBox), J ? J.earlier() : null);
+      drawCount();
+    };
+    if (ctx.canAdmin && M.join) {
+      J = await M.join.mount(ctx, {
+        changed: drawGrid,
+        opened: (yes) => { joinButton.hidden = yes; if (!yes) joinButton.focus(); },
+      });
+      joinButton.addEventListener("click", () => J.open(joinButton));
+    }
+
+    append(root, h("div", { class: "toolbar agents-head" }, h("h2", null, "Agents"), J ? joinButton : null),
+      countLine, J ? [J.panel, J.listStatus.el] : null);
+    // No agents yet: the panel opens, and the way in is said.
     if (!agents.length) {
-      append(root, h("h2", null, "Agents"),
-        h("p", { class: "muted" }, "No agents in this project yet. ",
-          ctx.canAdmin ? h("a", { href: ctx.link("join") }, "Join an agent.") : null));
+      append(root, h("p", { class: "muted" }, "No agents in this project yet.", J ? " Join one: its line is made here." : ""), grid, earlierBox);
+      drawGrid();
+      if (J) J.open(joinButton);
       return;
     }
 
@@ -205,8 +237,7 @@ window.Maity = window.Maity || {};
       }
     });
 
-    append(root, h("h2", null, "Agents"), presenceStatus.el,
-      h("div", { class: "profiles" }, agents.map((m, i) => {
+    cards = agents.map((m, i) => {
         const mine = m.owner_id === ctx.me.id;
         const s = m.session;
         const p = presenceNodes(m);
@@ -245,6 +276,10 @@ window.Maity = window.Maity || {};
             ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(creds[i].error))
             : credentials(ctx, m, creds[i].list),
           mine ? h("p", { class: "chat-link" }, h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
-      })));
+      });
+    append(root, presenceStatus.el, grid, earlierBox);
+    drawGrid();
+    // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
+    if (J && args && args[0] === "join") J.open(joinButton);
   };
 })(window.Maity);

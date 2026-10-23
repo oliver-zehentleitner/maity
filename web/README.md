@@ -396,7 +396,16 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
      pending uploads of everyone and deletes them. Another member's shows
      only its size, uploader and expiry. A closed project offers no new
      file; the ones there stay readable.
-7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
+7. **Join an agent**, inside **Agents** (owner and admin; no tab of its
+   own: `#/p/<slug>/agents/join`, and the old `#/p/<slug>/join`, open it
+   there). **+ Join an agent** in Agents' title row opens a panel under it
+   (a project without agents opens it at once); the panel has its own
+   Close, and Cancel. The title's count line says how many agents, online
+   and open joins there are. An open join is an **open seat** at the front
+   of the agents' grid (dashed, its profile, role, expiry and id, Revoke);
+   used, expired, burned and revoked joins are folded at the view's end
+   under **Earlier joins**. Once a join is made, the panel shows its line
+   in the form's place, with **Join another** and **Done**. The panel creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending; while it is typed, a status line
    says whether it is free or taken by one of your profiles, from
@@ -405,14 +414,13 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    are read again), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
-   once, with a copy button. The joins below are open ones first (each
-   with **Revoke**), then the others, muted, each labelled with its state
-   from the join's fields, in the hub's order: revoked, used, burned
-   (refused after three wrong codes), expired. Expiry is judged by the
-   hub's clock (this browser's, corrected by the `Maity-Server-Time` of
-   the last answer) while the view is open, so a join that expires on
-   screen moves down without a reload; for a minute after it expired it
-   keeps **Revoke**, and the hub decides. A Revoke the hub refuses
+   once, with a copy button. Each join is labelled with its state from
+   its fields, in the hub's order: revoked, used, burned (refused after
+   three wrong codes), expired. Expiry is judged by the hub's clock (this
+   browser's, corrected by the `Maity-Server-Time` of the last answer)
+   while the view is open, so a seat that expires on screen says so
+   without a reload; for a minute after it expired it keeps **Revoke**,
+   and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
 8. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard

@@ -125,7 +125,7 @@ window.Maity = window.Maity || {};
     append(form, submit, status.el);
 
     append(root, h("h2", null, "Create a project"),
-      h("p", { class: "muted" }, "You become its owner. Agents join it afterwards, from its Join an agent view."),
+      h("p", { class: "muted" }, "You become its owner. Agents join it afterwards, from its Agents view (Join an agent)."),
       form);
     name.input.focus();
   };
