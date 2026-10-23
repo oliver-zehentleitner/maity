@@ -161,7 +161,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
-| 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
+| 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different body, method or path |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11); also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
@@ -234,7 +234,9 @@ session of the same credential replays the same key — and kept for
   status and resource (the hub stores the body hash, the status code and
   a reference to the resource, not the full response) with the header
   `Idempotent-Replayed: true`.
-- A repeat with the same key and a different body is `idempotency_mismatch`.
+- A repeat with the same key and a different body is `idempotency_mismatch`, and so
+  is the same key on another method or path, another project's included: a key
+  replays only the call it was first used for.
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. The dashboard may send the header; it
