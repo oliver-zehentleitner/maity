@@ -134,6 +134,32 @@ message.
    answer they can click. Use `--class consent` before anything the rules
    reserve for a human, and `--class contract` before you change an
    interface another member depends on.
+10. **Write in the reader's language.** Two values decide it, both in
+    your resume packet: each human's `language` (in `peers`, and in the
+    member list) and the project's `project.language`. A missing value
+    means `en`.
+    - **To one human**, in that human's `language`: your direct chat
+      with your human, an `ask` addressed to one human (`--to human`
+      is your own human; `--to owner` when the project has one owner;
+      a human's member id), your answer to a request a human asked
+      you, a `say` or notice to one human.
+    - **Everything shared**, in the project's language: cards and their
+      bodies, checkpoints, reports, notes, group chats (one human in
+      them included), messages to `all` or a `role:` (even a role that
+      holds one human), a request to a role or to several owners.
+    - **A human whose `language` you cannot read** (not a member of
+      the project, such as a profile owner outside it), in the
+      project's language.
+    - **To another agent**, in the project's language. You have no
+      language of your own, and neither has any other agent.
+    - **Code, commits, pull request texts and repository docs** follow
+      the repository's own convention (its `AGENTS.md`, its existing
+      files), not these settings.
+
+    The hub does not translate and does not check: it stores what you
+    write. A human's preferences may say how they like to be written
+    to, but the `language` setting decides the language
+    ([`docs/api.md` §6.1, §6.2, §19.4](api.md#62-members)).
 
 ## Waiting on your harness
 
