@@ -49,7 +49,7 @@ def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Pa
 
 
 def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engine) -> None:
-    """0019 down: deleted profiles whose handle a live one took get their id appended, so
+    """0032 down: deleted profiles whose handle a live one took get their id appended, so
     the old `(owner_id, handle)` key holds again and is enforced."""
     from datetime import UTC, datetime
 
@@ -74,7 +74,7 @@ def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engi
                     created_at=now, deleted_at=deleted, live=None if deleted else True,
                 )
             )  # fmt: skip
-    downgrade(engine, "0018")
+    downgrade(engine, "0020")
     with engine.connect() as conn:
         rows = conn.exec_driver_sql("SELECT id, handle FROM agent_profile ORDER BY id").all()
     assert [tuple(r) for r in rows] == [

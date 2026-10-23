@@ -6,8 +6,8 @@ profile of the same owner at once: the handle is unique per owner among the prof
 that are not deleted, through the hub's at-most-one marker (`live`, true or NULL; NULL
 never collides), which every engine enforces the same way.
 
-Revision ID: 0019
-Revises: 0018
+Revision ID: 0032
+Revises: 0020
 Create Date: 2026-10-23
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0019"
-down_revision: str | None = "0018"
+revision: str = "0032"
+down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
