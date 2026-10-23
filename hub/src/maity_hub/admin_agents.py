@@ -187,6 +187,13 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     boss = proposal["values"].get("reports_to")
     if boss is not None and target.id in members.chain(conn, boss):
         raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
+    cover = proposal["values"].get("availability_policy")
+    if cover is not None:
+        from maity_hub import availability
+
+        errors = availability.policy_errors(conn, target.project_id, target, cover)
+        if errors:  # a substitute left, or changed, while the request waited (§6.12)
+            raise invalid(errors, "the cover cannot apply as proposed any more")
 
 
 def settle(conn: Connection, s: proposals.Settlement) -> None:

@@ -38,6 +38,38 @@ INTERVAL = 60.0  # seconds between the worker's sweeps
 CLOSED_CARD = ("done", "cancelled")
 
 
+def policy_errors(
+    conn: Connection, project_id: str, target: Any, policy: dict[str, Any]
+) -> dict[str, str]:
+    """What is wrong with a policy for `target` as the project is now, keyed
+    `availability_policy.<field>`: on a PATCH, and again when an admin agent's proposal
+    gets its go, since a substitute may have left in the meantime."""
+    from maity_hub.access import member_row
+    from maity_hub.errors import ApiError
+    from maity_hub.scopes import ROLES
+
+    errors: dict[str, str] = {}
+    if policy["on_unavailable"] not in ON_UNAVAILABLE:
+        errors["availability_policy.on_unavailable"] = "unknown"
+    if not 0 <= policy["grace_minutes"] <= GRACE_MAX:
+        errors["availability_policy.grace_minutes"] = "out_of_range"
+    for entry in policy["substitutes"]:
+        if entry.startswith("role:"):
+            if entry.removeprefix("role:") not in ROLES:
+                errors["availability_policy.substitutes"] = "unknown_role"
+            continue
+        if entry == (target.agent_id or target.human_id):
+            errors["availability_policy.substitutes"] = "self"
+            continue
+        try:
+            member_row(conn, project_id, entry)
+        except ApiError:
+            errors["availability_policy.substitutes"] = "not_a_member"
+    if policy["on_unavailable"] == "substitute" and not policy["substitutes"]:
+        errors.setdefault("availability_policy.substitutes", "required")
+    return errors
+
+
 def policy_of(row: Any) -> dict[str, Any]:
     """The membership's `availability_policy`; a row that never set one has the default."""
     stored = row.availability_policy or {}
@@ -672,6 +704,17 @@ def member_removed(conn: Connection, project_id: str, removed: Any, actor: Actor
 
     removed_id = removed.agent_id or removed.human_id
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    # Every seat reset is told to everyone and, by name, to every human who decides
+    # (§6.2): the owners and the human admins.
+    deciders = conn.execute(
+        select(t.membership.c.human_id).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.human_id.isnot(None),
+            t.membership.c.role.in_(("owner", "admin")),
+        )
+    ).scalars()
+    audience = ["all", *(f"member:{h}" for h in sorted(deciders))]
     old = policy.of(project)
     new = dict(old)
     if project.coordinator == removed_id:
@@ -686,7 +729,7 @@ def member_removed(conn: Connection, project_id: str, removed: Any, actor: Actor
             conn,
             project,
             "policy_changed",
-            ["all"],
+            audience,
             {"old": old, "new": new, "reason": "member_removed"},
             actor=actor,
         )
@@ -718,7 +761,7 @@ def member_removed(conn: Connection, project_id: str, removed: Any, actor: Actor
             conn,
             project_id,
             "member_updated",
-            ["all"],
+            audience,
             {**view, "changed": ["availability_policy"]},
             actor=actor,
             subject=("member", view["id"]),
