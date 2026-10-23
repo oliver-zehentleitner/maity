@@ -587,7 +587,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .chat-back { display: inline-block; margin-bottom: 8px; }
 }
 
-.messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+/* Rows as tall as their message: in the open chat the list is given the pane's
+   height, and a grid's default (stretch) would share it out among few rows. */
+.messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; align-content: start; }
 
 .msg {
   max-width: min(36rem, 90%);
