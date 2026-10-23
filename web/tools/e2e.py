@@ -97,6 +97,9 @@ class Run:
         for width, height, scheme in PASSES:
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
+            # From the page's top: content scrolled under the sticky header by an
+            # earlier step would be measured against the header's links.
+            page.evaluate("window.scrollTo(0, 0)")
             # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
             if not page.evaluate("typeof window.axe === 'object'"):
                 page.evaluate(self.axe)
