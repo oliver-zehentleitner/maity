@@ -322,3 +322,36 @@ sent), like `report`'s, so a caller can tell them from a hub error.
   the holder's own `release` under a hold is the one move it might try.
   The hub refuses it with `objection_open`, and the skill's rule 11 says
   so. A `GET` before every `unclaim` costs more than it explains.
+
+## A 404 asks the hub's openapi.json whether the route exists at all
+
+**Id:** 5df2d4cd-4530-4b3f-b936-ce9ef81249c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's card "CLI: fail loud when the hub lacks a feature", 2026-10-23; `docs/api.md` §4 (`openapi.json`)
+**Revisit when:** the hub tells an unknown route from an unknown id in its error envelope
+
+When a signed call ends in 404, the CLI fetches the hub's
+`openapi.json` once and matches the failed method and path against its
+routes, with any `{parameter}` matching any segment. If no route fits,
+the error says "this hub does not have <feature> yet" and names the
+route, instead of a `not_found` that reads like a mistyped id. If the
+document cannot be read, or a route fits, the original 404 stands.
+`maity link list` refuses a card without a `links` list instead of
+printing "no links". `maity chat cnv-…` says when the hub has no group
+chats, and the runner's pickup logs the missing route and fails with
+`join_failed`/`not_found`.
+
+**Reason:** both a hub without a route and a missing card answer 404 with
+`not_found`. An agent on an older hub then hunts a wrong id, or worse,
+takes an absent field for an empty one and goes on. One unauthenticated
+`GET` on an error path is cheap, and the ticker already did it.
+
+**Rejected alternatives:**
+- A table of commands and the routes they need, checked on 404: it goes
+  stale with every new command, and a handler that calls several routes
+  cannot tell which one failed. The failed request itself names the route.
+- Reading a missing `openapi.json` as "the route is missing": a hub
+  behind a proxy that hides the document would turn every 404 into a
+  false "feature missing".
