@@ -58,6 +58,7 @@ class Item:
     member: bool = True  # False for a personal request of a project the human is not in
     record_type: str | None = None
     session_id: str | None = None  # a security item's session
+    text: str | None = None  # a message's text, shown only where the human asked (§18.2)
 
     @property
     def id(self) -> str:
@@ -204,6 +205,7 @@ def _classify(
                 title = f"{writer} mentioned you in {_handle(conn, row.conversation_id)}"
             return Item(
                 kind="mention" if mentioned else "chat",
+                text=None if row.redacted else payload.get("body"),
                 title=None if row.redacted else _cut(title),
                 target={"type": "conversation", "id": row.conversation_id},
                 url=_url(where, f"/#/p/{project.slug}/chat/{row.conversation_id}"),
@@ -397,7 +399,13 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
 # --- views ---------------------------------------------------------------------------
 
 
-def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
+CONTENT_MAX = 120
+
+
+def view(
+    conn: Connection, where: Scope, item: Item, content: frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    """`content` is the kinds whose message text the human's `browser.content` asks for."""
     project = None
     if item.project_id is not None:
         row = conn.execute(
@@ -421,6 +429,10 @@ def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
     }
     if item.reason is not None:
         answer["reason"] = item.reason
+    if item.kind in content and isinstance(item.text, str) and not item.redacted:
+        # Plain text: Markdown not rendered, line breaks folded into spaces (§18.2).
+        flat = " ".join(item.text.split())
+        answer["content"] = flat[:CONTENT_MAX]
     return answer
 
 

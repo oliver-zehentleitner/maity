@@ -21,7 +21,7 @@ from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
-from maity_hub.notifications import items, listing, positions
+from maity_hub.notifications import items, listing, positions, preferences
 from maity_hub.notifications.items import KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
@@ -170,7 +170,9 @@ def _answer(
         if limit and len(newest) > limit:
             next_cursor = listing.cursor_of(page[-1])
         next_position = head
-    answer["items"] = [items.view(conn, where, item) for item in page]
+    browser = preferences.preferences(conn, human_id)["browser"]
+    content = frozenset(kind for kind, on in browser["content"].items() if on)
+    answer["items"] = [items.view(conn, where, item, content) for item in page]
     answer["next_cursor"] = next_cursor
     answer["next_after"] = positions.issue(conn, hub.secret_key, human_id, next_position)
     answer["server_time"] = clock.rfc3339(clock.now())
