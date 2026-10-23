@@ -130,7 +130,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -266,7 +266,7 @@ the hub records it on the session.
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
 | Ticker items inside the resume packet | 20, then `truncated: true` (§17.9) |
-| Forge webhook body | 1 MiB; 60 deliveries per minute per project (§17.4) |
+| Forge webhook body | 1 MiB; 60 verified deliveries per minute per project, 60 unverified requests per minute per project and source address (§17.4) |
 | Ticker subscription | 20 areas per list (§17.8) |
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
@@ -2154,7 +2154,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `team` only by the human who owns the agent profile, member or not, and by nobody else (§6.18) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
-| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -2191,6 +2191,33 @@ membership reporting to a former member, and the agent is never refused
 for a boss it cannot change. The exchange makes this check again after
 it has taken the project lock, so a removal cannot commit between the
 check and the new membership.
+
+**Removing a member resets every seat that names it.** A seat is a
+value that names one member to act for the project or a card, or to
+stand in for one. When the removed member holds one, the same
+transaction sets it to the fallback below — never to another member
+chosen in passing, and never a reason to refuse the removal:
+
+| Seat | Reset to | Event |
+|---|---|---|
+| `policy.contract_arbiter` | held by an agent: `role:admin`, the value that names no single member, when the project has an active member with the role `admin`; held by a human, or no such member: the project's owner — the member id of the human holding `owner` (with several, the one who joined first). A seat a human held never lands on an agent this way, as cover never moves it to one (§6.12) | `policy_changed` |
+| `policy.coordinator` | `role:admin`, its default (§6.1); with no agent admin that means no coordinator gate, as §6.1 says | `policy_changed` |
+| `policy.coordinator_substitute` | `null`, its default | `policy_changed` |
+| `contract.arbiter` of a contract card that is not `done` or `cancelled` (§6.8) | held by an agent: the project's `policy.contract_arbiter`, after the reset above — the card's default; held by a human: the project's owner, as for the policy seat — never `role:admin`, so a card a human arbitrated never passes to an agent | `task_updated` per card, `fields: ["contract"]` |
+| an entry of another member's `availability_policy.substitutes` (§6.12) | removed from the list; a `substitute` policy whose list ends up empty becomes `wait`, since an empty list with `substitute` is `invalid` | `member_updated` per member, `changed: ["availability_policy"]` |
+
+One `policy_changed` carries every policy field the removal reset (`old`,
+`new`, `reason: "member_removed"`, `rules_version` bumped). Each of these
+events has its usual audience plus `member:<id>` of every human member
+holding `owner` or `admin`: the humans who name the next holder
+(`PATCH /projects/{slug}` under `project:admin`, a card's arbiter under
+`tasks:admin`, a member's cover under `members:admin`) see it as
+addressed to them, not only as a broadcast. A closed card keeps the
+arbiter it was decided by, as a record. This holds for every removal, an
+agent profile's cascade (§6.3) included, where the owner deleting the
+profile may not be a member of the project at all and the project's
+humans would otherwise learn of the empty seat from nothing but
+`member_updated`.
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).
@@ -2255,14 +2282,25 @@ own human or to another agent of that human never is.
   apply to the pair as one: a further `PATCH` of that member's
   `reports_to` withdraws every open request of it (`reason:
   "superseded"`) and is handled on its own: applied at once, or new
-  requests. Removing either member withdraws them (`reason:
+  requests. Such a `PATCH` is a withdrawal, so it follows the
+  withdrawal rule below: from an agent that is not the asker it is
+  `forbidden` with `details.reason: "pending_consent"` and changes
+  nothing; a human who may `PATCH` the member supersedes as before. Removing either member withdraws them (`reason:
   "member_removed"`). The cycle check runs again at the `go` that would
   set the edge, against the members as they are then: such a `go` that
   would now close a cycle is `invalid` with `details.fields.reports_to:
   "cycle"`, nothing changes, and the request stays open for a `no` or a
-  withdrawal. Withdrawal of either request is open to the asker, to
-  holders of `requests:answer` and to the subordinate's owner, and
-  withdraws the other as well.
+  withdrawal. Withdrawal of either request is open to the asker, to the
+  two owners of the edge, and to every human who holds
+  `requests:answer` or `members:admin` in the project, and withdraws the
+  other as well. No other agent withdraws it, whatever its scopes: an
+  admin or proxy agent that is not the asker gets `forbidden` with
+  `details.reason: "pending_consent"`. Both owners are deciding on the
+  edge; an agent that did not ask for it does not end that decision for
+  them, although the edge itself would grant nothing — and no human
+  loses a lever over it: the project's human owners and admins can still
+  withdraw or supersede the pair while the two owners have not
+  answered.
 - **Joins and placements.** A join (§3.1) or a new-profile placement
   (§15.6) whose `reports_to` would be cross-owner for the agent it
   creates passes the same consent. Its creator owns the profile, so the
@@ -2346,8 +2384,10 @@ do"), and `members:admin` in a project gives no right to it.
   member of that project.
 - **Events.** Per project, the cascade emits what `DELETE …/members/{id}`
   emits: `member_updated` with `removed_at` for the profile's member,
-  `member_updated` for each member whose `reports_to` it cleared, and
-  `placement_updated` for each placement it closes. Their `actor` is the
+  `member_updated` for each member whose `reports_to` it cleared,
+  `placement_updated` for each placement it closes, and the events of
+  every seat the profile's member held and the removal reset (§6.2):
+  `policy_changed`, `task_updated`, `member_updated`. Their `actor` is the
   deleting owner: the member actor when the owner is a member of that
   project, otherwise the human actor (`kind: "human"`, §8.1).
 - **Tombstone.** The profile then carries `deleted_at`; its avatar is
@@ -3147,7 +3187,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below). `{"until": null}` clears the caller's stored limit, from an agent or a human |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway. `{"until": null}` clears the caller's stored limit, from an agent or a human |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -4157,7 +4197,7 @@ holder's requests). Events: `task_claimed` with `takeover_id` and
 | `GET /projects/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
 | `POST /projects/{slug}/requests/{id}/answer` | `requests:answer`, or the addressee (member or role) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf |
-| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the subordinate's owner (§2.3); a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
+| `POST /projects/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
 without `to` goes to `policy.contract_arbiter`; an agent asker whose human
@@ -4285,7 +4325,7 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
@@ -4304,12 +4344,12 @@ a client that finds no `kind` reads it as `"member"`. `payload` is per kind; sta
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all** | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `role:admin`, `member:<coordinator>` (or `role:admin` under the default, §6.12); also `role:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `role:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
-| `state_changed`, `policy_changed`, `absence_changed` | **all** | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); never image bytes |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
@@ -5142,7 +5182,7 @@ parties as the audience — nobody else, admins included.
 |---|---|---|
 | `GET /projects/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
 | `GET /projects/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent | the conversation as its direct item in the list (§9.3) |
-| `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>`, `limit`; oldest first; `{items, cursor}` |
+| `GET /projects/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; `before` pages back as in a group chat (§9.2): the `limit` messages with a lower `seq`, `after` and `before` together `invalid`, and it marks nothing read. On every read, `before` or not, `earlier` is the lowest `seq` of the page when older messages exist — the value to pass as the next `before` — and `null` when none do or the page is empty. A direct conversation has no window: without `before` it reads from `after` as always |
 | `POST /projects/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?}` (§8.7); `201` with the message |
 
 Message shape:
@@ -5927,7 +5967,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET, POST | `/projects/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
-| POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer` | 7 |
+| POST | `/projects/{slug}/requests/{id}/withdraw` | asker / `requests:answer`; a cross-owner `reports_to` request also the two owners, of the agents only the asker | 7 |
 | GET, POST | `/projects/{slug}/events` | `project:read` / `events:post` | 8 |
 | GET | `/projects/{slug}/messages` | `project:read` | 8.8 |
 | POST | `/projects/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
@@ -6072,10 +6112,10 @@ reviewer role.
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
-| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; writes the file into the current working directory under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. |
+| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file into `./maity-files/` under the current directory (created with mode 0700 if missing; never into the current directory itself, so a sender cannot drop a `conftest.py` or a `Makefile` into a working tree) under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. |
 | `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle, `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). *Planned (messages).* |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
-| `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
+| `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read — in a group chat; in a direct conversation the command itself marks nothing read, and the messages count as read once `maity wait` or `maity resume` passes them; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
 | `maity answer <request> [--reply ID] [--text T]` | `POST /requests/{id}/answer` |
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
@@ -7462,7 +7502,9 @@ implements which section in `settings.ticker` (§6.1):
   the file at the base. A changed heading line belongs to its own
   section.
 - `contract_implementers` maps a section to tokens: `area:<path>` (the
-  owner of that area), `member:<id>`, `role:<role>`. The longest
+  member owning the narrowest area that contains the path, §6.2 — the
+  same meaning as in a manual post's `to`, §17.6), `member:<id>`,
+  `role:<role>`. The longest
   matching key wins (`8.2` before `8`); `*` applies to a section no key
   matches. A token that names no current member, area or role resolves
   to nobody; the settings view shows it as unresolved.
@@ -7513,15 +7555,35 @@ POST /api/v1/projects/{slug}/forge/webhook
   interval. At most 60 verified deliveries per minute per project
   (`rate_limited`): only a delivery whose signature verifies counts, so
   unsigned or wrongly signed requests cannot use up a project's
-  deliveries. The answer is `202` with `{}` once the signature
-  verifies; the forge's delivery id is kept as `origin.delivery`.
+  deliveries. A request for a project that does not exist, or for one
+  without a webhook secret, is answered `webhook_signature` before the
+  hub reads the body: there is no secret to check, so no body is worth
+  reading. It counts against no project's bucket — an unknown slug gets
+  none of its own — but against one bucket per source address (the
+  client address of §2.5) shared by all such requests, at most 60 per
+  minute. The other requests that do not verify — no or a wrong
+  signature, a body over the cap — are limited per project and source
+  address, also at most 60 per minute. Beyond either limit the hub
+  answers `rate_limited` with `Retry-After` before it reads the body, so
+  junk cannot make it read a megabyte per attempt without bound. Both
+  paths answer alike, refusal and limit: the 61st bad request in a
+  minute is `rate_limited` whether the slug exists and has a secret or
+  not, so neither the answer nor the limit tells anyone whether a
+  project exists or has a webhook secret. The limit is
+  per project because forges deliver from shared address pools: one
+  project's failing deliveries must not refuse another project's
+  verified ones from the same address. A request that does not verify never sets `last_result` (below): anyone
+  can send one, and the webhook view shows the state of the forge's real
+  deliveries, not of whoever probes the URL. The answer is `202` with
+  `{}` once the signature verifies; the forge's delivery id is kept as
+  `origin.delivery`.
 - Without a probe (`probe_configured: false`), or with the ticker not
   enabled, a verified delivery is answered `202` and writes nothing: the
   hub announces only what it observed itself.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`; `last_result` is `ok`, `signature`, `ignored`, `too_large`, `rate_limited` or `null`; never the secret |
+| `GET /projects/{slug}/forge/webhook` | `project:admin`, human only | `{configured, url, created_at, rotated_at, last_delivery_at, last_result}`, both of the last verified delivery only; `last_result` is `ok`, `ignored`, `rate_limited` or `null`; never the secret. A forge whose deliveries stop verifying (a secret rotated on one side only, a body over the cap) shows as a `last_delivery_at` that stops moving; the forge's own delivery log shows the `401` or `413` |
 | `POST /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | creates or rotates the secret and answers it once, as `{secret, url}`; the previous secret stops working at once. Emits `forge_webhook_changed` |
 | `DELETE /projects/{slug}/forge/webhook/secret` | `project:admin`, human only | removes it; deliveries answer `webhook_signature` from then on. Emits `forge_webhook_changed` |
 
@@ -7560,8 +7622,13 @@ supervised agent per push is a model run each.
   wake-relevant, as for `project_updated` (§8.2). A `member:` token
   wakes only when the item's `reasons` hold an entry for that member
   with `wake: true`; a token without one only makes the item readable.
-  `wake` is `true` for the computed audience and for followers, `false`
-  for a followed-and-muted member (§17.8). A `decision` wakes only its
+  `wake` is `true` for the computed audience — a manual post's addressed
+  members (`addressed`) and, under `to: all`, every member
+  (`posted_to_all`) included, §17.6 — and for followers, `false` for a
+  followed-and-muted member (§17.8). A manual `to: all` therefore wakes
+  every member that has not muted the item's type or area, through the
+  members' own tokens, never through `all`; a mute wins and leaves the
+  item listed. A `decision` wakes only its
   computed audience — the asker, the `on_behalf_of` member, the card's
   holder and assignee, the contract watchers, each a reader of the
   request: followers of `decision` are listed with `wake: false`, and
@@ -7666,7 +7733,29 @@ omitted.
   from what the post names: `release_task_id` for a release; every
   member for a deploy; `areas` (at most 20 paths) for a note, whose
   owners are the audience. `all` puts every active member in the
-  audience and wakes them all (`posted_to_all`).
+  audience and wakes every unmuted one (`posted_to_all`): unlike the
+  automatic items, whose `all` never wakes, a manual `to: all` wakes
+  every member through its own `member:` token, a supervised session
+  too — the poster chose to reach everyone, and the 5 such posts per hour
+  (below) bound it. A mute wins (§17.3, §17.8): a member who muted the
+  item's type or area is removed from the computed audience and not
+  woken; it still lists the item, which every member reads through
+  `all`.
+- A token list is resolved at write time, like the computed audience,
+  and stored as `member:<id>` tokens only — never as `role:` or `area:`
+  tokens (§8.2 would read a `role:` token by its general rule):
+  `member:<id>` is that member; `role:<role>` is every active member
+  holding that role; `area:<path>` is the member owning the narrowest
+  area that contains the path (§6.2), nobody when no area does — the one
+  meaning of an `area:` token in this section, `contract_implementers`
+  included (§17.3). A `member:` token that
+  names no active member, or a malformed token, is `invalid`
+  (`details.fields.to`); a role or area that resolves to nobody adds
+  nobody. Each resolved member gets a `reasons` entry with `why:
+  "addressed"` and `wake: true` — addressed by the poster counts as
+  computed for waking (§17.5); a member named by several tokens gets one
+  entry. The subscriptions then apply as to any computed audience
+  (§17.3): a mute wins over the addressing, as under `to: all`.
 - `deploy` is `{environment, sha?, version?, log_url?}` for
   `type: deploy`; `environment` 1–64 characters, one of `sha` or
   `version` required.

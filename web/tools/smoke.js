@@ -2334,6 +2334,136 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = gcMe;
   await go("#/p/maity/inbox");
 
+  // Attachments (docs/api.md §8.7): upload when chosen, name when sent, images inline, files as downloads.
+  const atCalls = [];
+  const atRaw = win.Maity.api.postRaw, atPost = win.Maity.api.post, atDel = win.Maity.api.del, atUrl = win.Maity.api.attachmentUrl;
+  win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
+  win.Maity.api.post = (p, b) => { atCalls.push(["POST", p, b]); return atPost(p, b); };
+  win.Maity.api.del = (p) => { atCalls.push(["DELETE", p]); return atDel(p); };
+  // Fixture mode serves an object URL; the test's stand-in files have none, so a path stands in.
+  win.Maity.api.attachmentUrl = (slug, id, download) => "/api/v1/projects/" + slug + "/attachments/" + id + "/content" + (download ? "?download=1" : "");
+  const atPick = async (id, files) => { const i = byId(id); i.files = files; i.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); };
+  const atFile = (name, bytes, size, type) => Object.assign(fakeFile(bytes, size, type), { name });
+  await go("#/p/maity/chat/agt-b");
+  expect(byId("chat-files") && main.querySelector("label.attach-button").getAttribute("for") === "chat-files", "attachments: the composer offers Attach files");
+  await atPick("chat-files", [atFile("big.bin", [1, 2, 3], 10 * 1024 * 1024 + 1, "application/octet-stream")]);
+  expect(!atCalls.length && text(main).includes("big.bin is larger than 10 MiB"), "attachments: over 10 MiB refused before uploading");
+  await atPick("chat-files", [atFile("shot.png", PNG, 2048, "image/png"), atFile("notes.txt", [0x68, 0x69], 2, "text/plain")]);
+  expect(atCalls[0][0] === "RAW" && atCalls[0][1] === "/projects/maity/attachments?name=shot.png" && atCalls[0][2] === "image/png"
+    && atCalls[1][1] === "/projects/maity/attachments?name=notes.txt" && atCalls[1][2] === "text/plain"
+    && main.querySelectorAll(".attach-pending li").length === 2 && text(main.querySelector(".attach-pending")).includes("shot.png"),
+    "attachments: each file is uploaded raw, an image with its sniffed type, and shown as pending");
+  btn(main.querySelectorAll(".attach-pending li")[1], "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(atCalls[2][0] === "DELETE" && /\/projects\/maity\/attachments\/att-/.test(atCalls[2][1]) && main.querySelectorAll(".attach-pending li").length === 1,
+    "attachments: a pending one removed is deleted");
+  main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const atSent = atCalls.find((c) => c[0] === "POST" && c[1] === "/projects/maity/conversations/agt-b/messages");
+  const atMsg = main.querySelectorAll("li.msg").pop();
+  expect(atSent && atSent[2].body === "" && atSent[2].attachments.length === 1 && atMsg.querySelector("img.attach-image")
+    && atMsg.querySelector("img.attach-image").getAttribute("alt") === "shot.png" && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: a message of only a file is sent and shows the image inline");
+  // A file that is no image: its name, size and type, a download link, nothing rendered.
+  await atPick("chat-files", [atFile("build.log", [0x6c, 0x6f, 0x67], 300, "text/plain")]);
+  byId("chat-text").value = "the log"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const atLog = main.querySelectorAll("li.msg").pop();
+  expect(!atLog.querySelector("img") && atLog.querySelector("a.attach-link").getAttribute("download") === "build.log"
+    && /\/content\?download=1$/.test(atLog.querySelector("a.attach-link").getAttribute("href")) && text(atLog).includes("300 B · text/plain"),
+    "attachments: any other file is only a download, with its name, size and type");
+  // Deleting a file of the chat (§8.7: the human party), and someone else's deletion arriving.
+  const atConfirm = win.confirm;
+  win.confirm = () => true;
+  btn(atLog, "Delete").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(atCalls.slice(-1)[0][0] === "DELETE" && text(atLog).includes("build.log: removed."), "attachments: a file of the chat deleted, said in place");
+  win.confirm = atConfirm;
+  // The hub's refusals, in words.
+  win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "pending" }));
+  await atPick("chat-files", [atFile("more.png", PNG, 100, "image/png")]);
+  expect(text(main).includes("Not attached: more.png: you have 20 files, or 100 MiB, waiting to be sent"), "attachments: the pending quota in words");
+  win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
+  await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
+  expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
+  win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
+  // A group chat: the participant attaches; a project message too.
+  await go("#/p/maity/chat/cnv-0007");
+  expect(byId("group-files"), "attachments: a group chat's composer offers files");
+  await go("#/p/maity/message");
+  await atPick("message-files", [atFile("plan.pdf", [0x25, 0x50, 0x44, 0x46], 900, "application/pdf")]);
+  byId("message-body").value = "the plan"; main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const atEvent = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maity/events").pop();
+  expect(atEvent && atEvent[2].attachments.length === 1 && atEvent[2].body === "the plan", "attachments: a project message names its file");
+  // The mock as the hub: an id that is no pending upload of the poster is refused.
+  let atBad = null;
+  try { await atPost("/projects/maity/events", { kind: "message", type: "notice", to: "all", body: "x", attachments: ["att-9999"] }); } catch (err) { atBad = err; }
+  expect(atBad && atBad.details.fields.attachments["att-9999"] === "unknown", "attachments: the mock refuses an id that is no pending upload of the poster");
+  // Project settings: everyone's pending uploads, another member's without name or type.
+  await atRaw("/projects/maity/attachments?name=draft.png", fakeFile(PNG, 64), "image/png");
+  const atAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/attachments?status=pending"
+    ? atAll(p).then((r) => ({ items: r.items.concat([{ id: "att-other", uploaded_by: "agt-b", size: 4096, uploaded_at: "2026-10-23T00:00:00Z", expires_at: "2026-10-24T00:00:00Z",
+      name: null, type: null, kind: null, sha256: null, width: null, height: null, message_seq: null }]), next_cursor: null }))
+    : atAll(p));
+  await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  const atAdmin = header.querySelector(".attach-admin");
+  expect(atAdmin && text(atAdmin).includes("draft.png") && text(atAdmin).includes("4.0 KB · Agent B") && !text(atAdmin).includes("null"),
+    "attachments: the admin sees everyone's pending uploads, another member's by size and uploader only");
+  win.Maity.api.getAll = atAll;
+  await projectSettings();
+  // The mock never reuses an id after a deletion.
+  const atX = await atRaw("/projects/maity/attachments?name=x.txt", fakeFile([0x78], 1, "text/plain"), "text/plain");
+  const atY = await atRaw("/projects/maity/attachments?name=y.txt", fakeFile([0x79], 1, "text/plain"), "text/plain");
+  await atDel("/projects/maity/attachments/" + atX.id);
+  const atZ = await atRaw("/projects/maity/attachments?name=z.txt", fakeFile([0x7a], 1, "text/plain"), "text/plain");
+  expect(atZ.id !== atY.id && atZ.id !== atX.id, "attachments: the mock gives a new id after a deletion");
+  // One's own uploads no message names yet, offered in the composer to attach or remove.
+  await go("#/p/maity/chat/agt-b");
+  const atEarlier = () => main.querySelector(".attach-earlier-box");
+  const atEarlierItem = (name) => main.querySelectorAll(".attach-earlier li").find((li) => text(li).includes(name));
+  expect(!atEarlier().hidden && atEarlierItem("draft.png") && atEarlierItem("y.txt") && atEarlierItem("z.txt") && !atEarlierItem("x.txt"),
+    "attachments: one's files waiting from before are offered");
+  btn(atEarlierItem("z.txt"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(atCalls.slice(-1)[0][0] === "DELETE" && atCalls.slice(-1)[0][1].endsWith("/" + atZ.id) && !atEarlierItem("z.txt"), "attachments: one waiting from before removed");
+  btn(atEarlierItem("y.txt"), "Attach").click(); await tick();
+  expect(text(main.querySelector(".attach-pending")).includes("y.txt") && !atEarlierItem("y.txt"), "attachments: one waiting from before attached");
+  byId("chat-text").value = "the rest"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const atRest = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maity/conversations/agt-b/messages").pop();
+  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && atEarlierItem("draft.png") && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: it is sent with the message, the others still wait");
+  // An image that fails to load: said, its download link kept.
+  const atImg = main.querySelectorAll("li.msg").find((li) => li.querySelector("img.attach-image"));
+  atImg.querySelector("img.attach-image").dispatch("error");
+  expect(!atImg.querySelector("img.attach-image") && text(atImg).includes("shot.png: could not be shown.") && atImg.querySelector("a.attach-link") && btn(atImg, "Delete"),
+    "attachments: an image that did not load is said, not called removed");
+  // Inline only a raster type the hub produced; any id the hub gives.
+  const atSvg = win.Maity.attachments.render({ slug: "maity" }, { body: "", attachments: [{ id: "f1", name: "a.svg", size: 10, type: "image/svg+xml", kind: "image" }] }, null);
+  expect(!atSvg.querySelector("img") && atSvg.querySelector("a.attach-link"), "attachments: an image of another type is only a download");
+  expect(win.Maity.dom.h("img", { src: "/api/v1/projects/maity/attachments/file_7Q/content" }), "attachments: the id is the hub's, not parsed");
+  // A closed project takes no new files.
+  const atState = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? atState(p).then((x) => Object.assign({}, x, { state: "archived" })) : atState(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b");
+  expect(!byId("chat-files") && main.querySelector("img.attach-image"), "attachments: a closed project offers no new file, and still shows the ones there");
+  win.Maity.api.get = atState;
+  // Only the hub's own attachment path is a link or an image source.
+  let atForeign = null;
+  try { win.Maity.dom.h("a", { href: "/api/v1/projects/maity/attachments/../../me" }); } catch (err) { atForeign = err; }
+  expect(atForeign && win.Maity.dom.h("img", { src: "/api/v1/projects/maity/attachments/att-1/content" }), "attachments: only the attachment path itself is allowed");
+  // A hub without attachments is asked for the waiting uploads once per page load.
+  const atAll2 = win.Maity.api.getAll;
+  let atAsked = 0;
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
+    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : atAll2(p));
+  await go("#/p/maity/chat/agt-b"); await go("#/p/maity/message"); await go("#/p/maity/chat/agt-b");
+  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub without them is asked once, nothing offered");
+  // Project settings then asks no more either.
+  let atAskedAll = 0;
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
+  await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  expect(atAskedAll === 0 && text(header.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
+  await projectSettings();
+  win.Maity.api.getAll = atAll2;
+  win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
+  await go("#/p/maity/inbox");
+
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.
   const ovGets = [];
   const ovGet = win.Maity.api.get;
