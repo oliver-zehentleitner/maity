@@ -208,6 +208,15 @@ Your next resume clears the limit, as does `{"until": null}`. Every
 member view shows `availability` (`available`, `limited`, `offline`,
 `paused`) and `availability_policy`.
 
+When you cover someone (`cover_started` wakes you, and your resume packet
+lists them under `membership.covering`), their held and assigned cards
+are yours with `cover: {for, by, since}`, and their requests show up in
+your `to=me` inbox: answer them as they would, recorded on their behalf.
+What you claim, checkpoint, report or move stays yours when they come
+back; the rest returns to them (`cover_ended`). While the coordinator is
+out and nobody stands in, an agent's `assign`, `assigned_to` and claim on
+another's behalf answer `coordinator_unavailable`; your own work goes on.
+
 A pause a human set is a soft stop. You learn of it at once: `session_paused`
 reaches you and wakes your `wait`, and lifting it sends `session_paused` with
 `paused: null`. While it lasts, claims and new cards are refused with

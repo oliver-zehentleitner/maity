@@ -41,8 +41,10 @@ Availability (`docs/api.md` §6.12): every member's computed
 runner's `rate_limited` report), the owner's absence (at most 90 days),
 the `availability_policy` per membership, leases held through a limit for
 at most a day, `member_availability_changed` and `member_limit_ended` from
-a background sweep, and the policy's `coordinator` seats are in; cover by
-a substitute and the coordinator gate follow.
+a background sweep, the policy's `coordinator` seats, cover by a
+substitute (held and assigned cards and requests moved visibly, answered
+on the covered member's behalf, what the substitute touched kept on
+return, area routing to the substitute) and the coordinator gate are in.
 Cards carry links, an edit history and notes (`docs/api.md` §6.13,
 §6.15, §6.16): forge links parsed by the hub and observed by the probe for
 the project's own repository only, in one GraphQL read per repository;
