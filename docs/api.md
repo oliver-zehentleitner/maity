@@ -574,8 +574,12 @@ include the scope. No call made with an agent credential may:
   `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
-- take over, assign away or release a card a human holds (§6.19),
-  lease or no lease;
+- take over, assign away, release or end a card a human holds (§6.19),
+  lease or no lease. This covers `PATCH assigned_to` away from the
+  human and a status change that drops the human's claim (`cancelled`,
+  back to `open`), whatever the agent's role or scopes, and is refused
+  before any scope check. `done` through the project's done authority
+  (§6.4, §6.1) is not affected;
 - override a takeover in which any agent involved is not owned by the
   overriding agent's own owner (§6.19);
 - answer the decision on a cross-owner takeover with `transfer`, or
