@@ -537,7 +537,8 @@ the inbox.
 - For humans (dashboard): `POST /api/v1/projects`, `PATCH …/projects/{slug}`,
   `PUT`/`DELETE …/projects/{slug}/logo` and `…/banner` (the raw image),
   `PATCH`/`DELETE …/members/{id}`, `GET`/`POST /api/v1/agents`,
-  `GET`/`PATCH /api/v1/agents/{id}`, `GET`/`POST …/joins`, `DELETE
+  `GET`/`PATCH`/`DELETE /api/v1/agents/{id}` (a profile its owner no longer
+  wants; `?cascade=true` removes its memberships), `GET`/`POST …/joins`, `DELETE
   …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
   …/credentials/{id}/revoke`.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,

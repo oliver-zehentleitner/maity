@@ -161,7 +161,12 @@ agent_profile = Table(
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
     Column("created_at", UtcDateTime, nullable=False),
-    UniqueConstraint("owner_id", "handle"),
+    # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
+    # after, so that its handle is free for a new profile of the same owner at once.
+    Column("deleted_at", UtcDateTime),
+    Column("live", Boolean, default=True, server_default=true()),
+    UniqueConstraint("owner_id", "handle", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
 
