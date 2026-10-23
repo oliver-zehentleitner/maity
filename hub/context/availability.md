@@ -34,3 +34,30 @@ probe's does.
   vanished session would never be announced.
 - A timer per limit: lost on restart, and still blind to sessions going
   away.
+
+## An agent's first look is a silent baseline; a human starts available
+
+**Id:** 38589c62-d04b-40f6-b481-c1b9117c91e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the availability slice)
+**See:** availability.md#availability-is-computed-on-read-the-announced-state-is-stored-and-a-sweep-notices-what-time-alone-changes — 240dae0b-9ea9-4cbb-a447-5ca3d39b1f38 — as of 2026-10-23
+**Revisit when:** a client needs an event for an agent's very first state, or memberships get an initial state at creation
+
+A membership without an announced state (every row after the migration,
+every new agent until its first resume) is stored as it is found the
+first time an agent's row is reconciled, with no event. A human's
+missing state reads as `available`, so their first limit is announced.
+
+**Reason:** after the migration every agent that is not running would
+otherwise be announced as going out on the first sweep: a burst to the
+admins and owners that reports no change. A human's only outage is a
+limit or the owner's absence, both declared after this code exists, so
+for them `available` is the true starting point.
+
+**Rejected alternatives:**
+- Announce whatever the first look finds: the burst above, once per
+  deploy and once per new agent.
+- Set the state when the membership is created: every new agent would
+  start `offline` and announce a return on its first resume.
