@@ -446,9 +446,24 @@ def delete_entry(
             deleted_reason=reason,
         )
     )
+    if row.request_id is not None:
+        _forget_proposed_text(conn, row.request_id)
     row = entry_row(conn, row.id)
     announce(conn, "memory_deleted", row, (mine.kind, mine.principal_id), caller.actor(mine.id))
     return row
+
+
+def _forget_proposed_text(conn: Connection, request_id: str) -> None:
+    """The proposal the entry came from keeps no copy of the deleted text (§19.2)."""
+    proposed = conn.execute(
+        select(t.request.c.proposal).where(t.request.c.id == request_id)
+    ).scalar()
+    if isinstance(proposed, dict) and proposed.get("text") is not None:
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == request_id)
+            .values(proposal={**proposed, "text": None})
+        )
 
 
 # --- the resume packet (§19.3) -------------------------------------------------------------------

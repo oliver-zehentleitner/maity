@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -308,12 +309,29 @@ def test_soul_changed_reaches_every_project_and_the_owner_outside_it(
     assert first.actor_membership is None  # no membership there to act through
 
 
+def _together(calls: list[Any]) -> list[Any]:
+    """Run the calls at the same moment: each thread waits at a barrier first. Only a
+    server database runs them side by side; SQLite serialises the writers anyway."""
+    barrier = threading.Barrier(len(calls))
+
+    def run(call: Any) -> Any:
+        barrier.wait()
+        return call()
+
+    with ThreadPoolExecutor(len(calls)) as pool:
+        return list(pool.map(run, calls))
+
+
 def test_concurrent_first_soul_writes_both_count(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
+    """Meaningful on a server database: without the profile lock both writers insert."""
     agent = flow.agent(make_client, owner)
-    with ThreadPoolExecutor(2) as pool:
-        answers = list(pool.map(lambda n: put_soul(owner, agent.id, f"soul {n}"), range(2)))
+    second = flow.Human(make_client(), owner.csrf, owner.id)
+    second.client.cookies.update(owner.client.cookies)
+    answers = _together(
+        [lambda: put_soul(owner, agent.id, "soul 0"), lambda: put_soul(second, agent.id, "soul 1")]
+    )
     assert sorted(a.status_code for a in answers) == [200, 200], [a.text for a in answers]
     assert sorted(a.json()["version"] for a in answers) == [1, 2]
     versions = owner.get(f"/agents/{agent.id}/soul/versions").json()["items"]
@@ -389,14 +407,14 @@ def test_blank_text_is_refused(owner: flow.Human, make_client: ClientFactory, te
 def test_two_concurrent_adds_at_the_cap_leave_one_out(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
+    """Meaningful on a server database: without the project lock both adds pass the cap."""
     agent = flow.agent(make_client, owner)
     second = flow.Agent(make_client(), agent.credential, agent.credential_id, agent.id)
     for n in range(memory.STORE_MAX // memory.ENTRY_MAX - 1):
         added(agent, f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4))
     full = "y" * memory.ENTRY_MAX
-    with ThreadPoolExecutor(2) as pool:
-        codes = sorted(pool.map(lambda who: add(who, full).status_code, [agent, second]))
-    assert codes == [201, 409]
+    answers = _together([lambda: add(agent, full), lambda: add(second, full)])
+    assert sorted(a.status_code for a in answers) == [201, 409]
 
 
 def _insert_entry(engine: Engine, project_id: str, team: int) -> str:
@@ -458,3 +476,45 @@ def test_only_a_project_admin_gives_the_go(
     assert answered.status_code == 403, answered.text
     assert agent.get(M).json()["items"] == []
     assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+
+
+def test_a_replay_answers_only_a_caller_who_still_reads_the_entry(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    entry = added(agent)
+    admin = _second_human(make_client, migrated, "admin")
+    key = {"X-CSRF-Token": admin.csrf, "Idempotency-Key": "memory-replay-key-01"}
+    url = f"/api/v1{M}/{entry['id']}"
+    first = admin.client.request("DELETE", url, json={"reason": "stale"}, headers=key)
+    assert first.status_code == 200, first.text
+    with migrated.begin() as conn:  # the admin is an admin no longer
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+        )
+    again = admin.client.request("DELETE", url, json={"reason": "stale"}, headers=key)
+    assert again.status_code == 404
+
+
+def test_go_on_a_full_community_store_refuses_and_keeps_the_request_open(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request = agent.post(M, {"store": "community", "text": "one more"}).json()
+    for n in range(memory.STORE_MAX // memory.ENTRY_MAX):
+        owner.post(M, {"store": "community", "text": f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4)})
+    go = owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 409 and go.json()["error"]["code"] == "memory_full"
+    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+
+
+def test_deleting_a_proposed_entry_clears_the_proposals_text(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request = agent.post(M, {"store": "community", "text": "a secret by mistake"}).json()
+    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    (entry,) = agent.get(M).json()["items"]
+    assert remove(owner, entry["id"]).status_code == 200
+    proposal = owner.get(f"/projects/maity/requests/{request['id']}").json()["memory_proposal"]
+    assert proposal["text"] is None and proposal["store"] == "community"

@@ -8661,7 +8661,8 @@ something was there and who removed it.
   entry carries its instance. Any instance of the team deletes the
   team's entries; so do the agent's owner and humans with
   `members:admin`. An admin agent never deletes another team's memory,
-  whatever its role (`forbidden`, `details.reason: "humans_only"`).
+  whatever its role: it does not read it either, so the entry does not
+  exist for it (`not_found`, §1.3).
   Nobody else reads them — not the project's owner or admins as such,
   and not through events, which carry ids only (§19.3).
 - **Community** (`store: "community"`): a human with `project:admin`
@@ -8671,7 +8672,10 @@ something was there and who removed it.
   `project:admin` (an agent's answer is `forbidden`, `details.reason:
   "humans_only"`), and `go` stores the entry with the agent as `by`
   and the human as `confirmed_by`. Agents never delete community
-  entries; they propose a replacement and say so in the request.
+  entries; they propose a replacement and say so in the request. When
+  an entry stored from a proposal is deleted, the request's
+  `memory_proposal.text` becomes `null` too, so the deleted text
+  survives nowhere.
 
 **Caps**, fixed: an entry 2 KiB, the soul 8 KiB, a team 64 KiB of live
 entries, the community 64 KiB of live entries (§1.7). A write that would
