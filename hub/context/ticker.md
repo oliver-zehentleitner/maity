@@ -65,14 +65,22 @@ renamed request title shows as it is now.
 was switched on. The probe worker runs a merge round every 2 minutes,
 beside its 5-minute sweep: for each project with a source row and an
 observable repository, it reads the pull requests closed against the
-default branch, keeps those merged after `merges_since` that have no
-`merge:<n>` key yet, reads each one's files (at most 300), and for a
-contract file among them that file at the merge commit and at the base.
-The sections come from the unified diff: added lines are looked up in the
-file at the merge commit, deleted lines in the file at the base. Each
-item is written in a short transaction of its own, under the project
-lock, after the ticker is checked again. Without a patch, or for a file
-over 1 MiB, the sections are unknown and every implementer applies.
+default branch, most recently updated first, page by page until a page
+reaches back before `merges_since` (a merge updates its pull request, so
+nothing older can follow), at most 20 pages; a cut backlog is logged as a
+warning. It keeps those merged after `merges_since` that have no
+`merge:<n>` key yet, reads each one's files (at most 300; a rename counts
+for its old and its new path, and a renamed contract file is a contract
+change), and for a contract file that file at the merge commit and at the
+base. The sections come from the unified diff: added lines are looked up
+in the file at the merge commit, deleted lines in the file at the base.
+Each item is written in a short transaction of its own, under the
+project lock, only if the ticker is still on, `merges_since` is the one
+the round started from, and the repository and branch are the same;
+otherwise the round ends. Without a patch, or for a file over 1 MiB, the
+sections are unknown and every implementer applies. A project that had
+the ticker on before this part arrived gets the upgrade's moment, from
+the migration and again from the next PATCH that switches it on.
 
 **Reason:** §17.4 announces nothing older than the switch, so the moment
 has to be stored; the dedupe key alone would announce the whole history
