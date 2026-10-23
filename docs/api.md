@@ -203,8 +203,8 @@ endpoint; a cursor is valid for one ordering and one filter set. The
 events endpoint uses `after=<seq>` instead of a cursor (§8).
 `GET /me/notifications` takes, beside `cursor`, an `after` position
 (§18.2) that is as opaque as a cursor: passed back unchanged, never
-parsed, compared or built by a client; one the hub cannot read is
-`invalid`.
+parsed, compared or built by a client; one the hub cannot open for
+the caller is `invalid` with `details.fields.after: "position"`.
 
 ### 1.5 Idempotency
 
@@ -278,7 +278,7 @@ the hub records it on the session.
 | Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
-| `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters (§18.2) |
+| `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
 | `POST /me/notifications/read` | 200 `ids` (§18.3) |
 | Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§18.5) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
@@ -8277,7 +8277,7 @@ no membership.
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
-  "next_after": "eyJ2IjoxLCJwIjp7Im1haXR5Ijo0MjM3fSwiciI6MTE4fQ",
+  "next_after": "<opaque position>",
   "server_time": "2026-10-22T13:10:05Z"
 }
 ```
@@ -8289,17 +8289,37 @@ parse or compare one, and never derive one from an item's `seq` or
 record number. A position is valid only for the human it was issued
 to.
 
-What a position holds, for implementers: one component per project the
-human is a member of — the highest `seq` of that project it covers —
-and one for the human's account records — the highest record number
-it covers. An event lies behind the position when its `seq` is at or
+What a position holds, for implementers: a **vector** of one component
+per project the human is a member of — the project's id (never its
+slug) and the highest `seq` of that project the position covers — and
+one for the human's account records — the highest record number it
+covers. An event lies behind the position when its `seq` is at or
 below its own project's component, a record when its number is at or
 below the account component; an item is past the position otherwise.
-The encoding is the hub's choice; it is versioned, so the hub can tell
-an encoding it no longer issues apart, and it stays within the cap of
-§1.7. Recommended: base64url without padding of a small JSON object,
-`{"v":1,"p":{"<project>":<seq>,…},"r":<record number>}`. The rules
-that make a position safe to resume from:
+
+**Sealed and bound.** The hub seals every position with the
+authenticated encryption of §16.2 (AES-256-GCM, a random 96-bit nonce
+per seal stored with the ciphertext) under the instance key
+`MAITY_SECRET_KEY`, with associated data the human's account id and
+the purpose string `notifications.position`, and a version inside, so
+the hub can tell a form it no longer issues apart. The holder of a
+position learns nothing from it — no project, no number — and a
+position opens only for the human it was issued to. The hub opens and
+checks `after` or `up_to` before any work that depends on the human's
+memberships. The position comes in two forms, equally opaque to
+clients:
+
+- **Inline** — the normal case: the sealed vector itself, base64url
+  without padding.
+- **Handle** — the overflow case, when the inline form would exceed
+  the cap of §1.7 (a human in very many projects): the hub stores the
+  vector and hands out a sealed handle to it, sealed and bound the same
+  way. A stored vector is immutable — a new position is a new stored
+  vector — and is kept at least 30 days after its last use.
+
+The hub never omits a component, never resets a position to the head,
+and never fails a valid request because of a position's size. The
+rules that make a position safe to resume from:
 
 - **One snapshot.** Each answer reads the events, the account records,
   the read flags and the counts in one database transaction at
@@ -8351,14 +8371,25 @@ that make a position safe to resume from:
   began (the human left and joined again) is raised to that position. A
   project the human has left drops out of `next_after`. The account
   component needs no such rule.
-- **Positions the hub cannot read.** An `after` or `up_to` that does not
-  decode, has an encoding version the hub does not accept, was issued
-  to another human, or is in the two-part form `<seq>.<record>` the hub
-  issued before this rule, is `invalid` with `details.fields.after` (or
-  `details.fields.up_to`) `"position"`. It is never read as the head:
-  that would drop unseen items from the long-poll and mark them read
-  through `up_to`. The dashboard then reads `?limit=0` for a fresh
-  position and continues from it.
+- **Positions the hub cannot read.** An `after` or `up_to` that does
+  not open for this human — forged, altered, issued to another human,
+  sealed under a key the instance no longer has, of a version the hub
+  no longer accepts, a handle whose stored vector has expired, or the
+  two-part form `<seq>.<record>` the hub issued before this rule — is
+  `invalid` with `details.fields.after` (or `details.fields.up_to`)
+  `"position"`. The answer is the same in every case and never names a
+  project. Such a position is never read as the head, which would drop
+  unseen items from the long-poll and mark them read through `up_to`.
+  The recovery differs by parameter:
+  - **`after`:** only `details.fields.after: "position"` lets the
+    client start again from the head: it reads `?limit=0` for a fresh
+    position and long-polls from there. This abandons the browser
+    notifications of the items between the old position and the new
+    head — they are not shown as browser notifications. The counts and
+    the bell refresh from that read, and no read flag changes.
+  - **`up_to`** (§18.3): the call marks nothing. The client does not
+    retry it with a fresh position on its own; it refreshes the bell,
+    and only a new action of the human marks again.
 - **Without `after`** (newest first, older ones through `cursor`),
   `next_after` is the snapshot's head: everything not listed is older
   and reached through `cursor`, and a long-poll from `next_after`
@@ -8437,8 +8468,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"up_to": "<position>", "kind"?: "card", "project"?: "maity"}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
-  optionally of one kind or one project. A position the hub cannot read
-  is `invalid` (§18.2).
+  optionally of one kind or one project. A position the hub cannot
+  open is `invalid` with `details.fields.up_to: "position"` and marks
+  nothing; the dashboard does not retry it with a fresh position on
+  its own, it refreshes the bell, and only a new "mark all read" by the
+  human marks again (§18.2).
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
@@ -8719,9 +8753,12 @@ mail.
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
   also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,
   `<position>` being the `next_after` of the previous answer as an
-  opaque string (§18.2); on `invalid` it starts again from a
-  `?limit=0` read,
-  and shows each new item of a kind the human switched on through the
+  opaque string (§18.2). On `invalid` with
+  `details.fields.after: "position"`, and only on that error, it reads
+  `?limit=0` and long-polls from the fresh position: the items between
+  the old position and the new head get no browser notification, the
+  counts and the bell refresh, read flags stay as they are. It shows
+  each new item of a kind the human switched on through the
   Notification API, with the item's `id` as `tag` so that two open tabs
   show it once; a click focuses the tab and opens the `url`. There is no
   push without an open tab: Web Push needs a service worker and a
