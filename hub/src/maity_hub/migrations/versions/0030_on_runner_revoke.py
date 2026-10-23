@@ -6,8 +6,8 @@ the runner learns from its next call (`stopped`). An agent credential that a sto
 revokes after the placement's grace carries when and by whom (`revoke_due_at`,
 `revoke_due_by`) until it is revoked.
 
-Revision ID: 0019
-Revises: 0018
+Revision ID: 0030
+Revises: 0020
 Create Date: 2026-10-23
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0019"
-down_revision: str | None = "0018"
+revision: str = "0030"
+down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

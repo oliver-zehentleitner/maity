@@ -10,4 +10,4 @@
   `stop_grace_seconds` later (at once under the override); the answer carries
   `on_runner_revoke: [{project, rule, stopped}]`, `runner_credential_revoked` the rule and
   the stopped placements, and the revoked runner's next call `details.stop` (migration
-  `0019_on_runner_revoke`)
+  `0030_on_runner_revoke`)
