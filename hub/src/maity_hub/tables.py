@@ -162,7 +162,7 @@ project = Table(
     # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
-    # alone (§6.1, §6.12); the defaults fill projects made before 0020.
+    # alone (§6.1, §6.12); the defaults fill projects made before 0024.
     Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
     Column("coordinator_substitute", String(ID)),
     Column("absence_until", UtcDateTime),
