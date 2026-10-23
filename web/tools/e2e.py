@@ -348,9 +348,10 @@ def watch_page(run: Run, page: Page) -> None:
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
         # A hub without notifications (docs/api.md §18) answers their read with
-        # 404 on every page; the page goes on without them, and the
-        # notifications step checks that.
-        if resp.status == 404 and path.startswith("/api/v1/me/notifications?"):
+        # 404 on every page, and their settings (which the page then no longer
+        # asks for); the page goes on without them, and the notifications step
+        # checks that.
+        if resp.status == 404 and (path.startswith("/api/v1/me/notifications?") or path == "/api/v1/me/notification-settings"):
             run.no_notifications = True
             return
         # Signed out, the page asks /auth/session first and expects 401.

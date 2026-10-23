@@ -35,6 +35,11 @@ window.Maity = window.Maity || {};
       append(box, h("p", { class: "muted" }, "This browser cannot show notifications."));
       return { el: box, heading };
     }
+    // A hub that answered 404 to the notifications has no settings either: not asked.
+    if (M.notify.state.available === false) {
+      append(box, h("p", { class: "muted" }, "This hub has no notification settings yet."));
+      return { el: box, heading };
+    }
     let settings;
     try {
       settings = await M.api.get("/me/notification-settings");

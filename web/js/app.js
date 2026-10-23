@@ -882,7 +882,7 @@ window.Maity = window.Maity || {};
   // Browser notifications run across renders, once per page; the account's
   // wish is read once and again when the account view changes it.
   async function startBrowserNotifications(ctx) {
-    if (M.notify.running() || !("Notification" in window) || window.Notification.permission !== "granted") return;
+    if (M.notify.running() || M.notify.state.available === false || !("Notification" in window) || window.Notification.permission !== "granted") return;
     try {
       const settings = M.notify.state.settings || (M.notify.state.settings = await M.api.get("/me/notification-settings"));
       M.notify.startBrowser(ctx, settings);
