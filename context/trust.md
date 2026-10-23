@@ -214,7 +214,8 @@ no project is not stated beyond the contract's rule itself.
 
 **Id:** 10798a45-310b-4c30-859f-30fea2454ece
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 42d8258e-7dd7-4c6f-96e4-61926576d299
 **Evidence:** confirmed
 **Source:** the maintainer's decision, inbox and chat, 2026-10-22; humans as substitutes and as covered members added on his answer to the pull request's open questions the same day
 **Revisit when:** the first substitution in practice ping-pongs, strands a card, or hands a review to the member whose work it is; or a limit is used to hold cards against a human
