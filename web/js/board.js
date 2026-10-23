@@ -60,7 +60,7 @@ window.Maity = window.Maity || {};
     if (!claim) {
       return h("p", { class: "claim unclaimed" }, dot("none"), c.assigned_to ? "Assigned, not claimed" : "Unclaimed");
     }
-    const who = h("strong", { title: ctx.nameOf(claim.holder) }, handleOf(ctx, claim.holder));
+    const who = h("strong", { title: ctx.nameOf(claim.holder) }, M.dom.memberRef(ctx, claim.holder, { text: "handle" }));
     if (claim.expired) {
       return h("p", { class: "claim expired" }, dot("expired"), who, " · lease expired " + formatTime(claim.lease_until));
     }
@@ -183,7 +183,7 @@ window.Maity = window.Maity || {};
   }
 
   const tickedBy = (ctx, item) => (item.done && item.by
-    ? h("span", { class: "muted" }, " · " + ctx.nameOf(item.by) + (item.at ? " " + formatAgo(item.at) : ""))
+    ? h("span", { class: "muted" }, " · ", M.dom.memberRef(ctx, item.by), item.at ? " " + formatAgo(item.at) : "")
     : null);
 
   // The hub's refusals of a release edit (docs/api.md §6.7), in words.
@@ -362,7 +362,7 @@ window.Maity = window.Maity || {};
   }
 
   // A contract's arbiter may be a role ("role:admin"): named in words.
-  const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : ctx.nameOf(a));
+  const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : M.dom.memberRef(ctx, a));
 
   // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
   function actions(...controls) {
@@ -413,8 +413,9 @@ window.Maity = window.Maity || {};
           h("span", { class: "request-id" }, c.blocked_by_request), ")")
         : null,
       c.contract
-        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter " + arbiterName(ctx, c.contract.arbiter)
-          + ((c.contract.watchers || []).length ? " · watched by " + c.contract.watchers.map(ctx.nameOf).join(", ") : ""))
+        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter ", arbiterName(ctx, c.contract.arbiter),
+          (c.contract.watchers || []).length
+            ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
       checkpoint(c),
       report(ctx, c),

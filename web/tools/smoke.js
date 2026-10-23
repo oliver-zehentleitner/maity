@@ -3568,6 +3568,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await mrFollow("#/p/maity/agents", "the agents");
   await mrFollow("#/p/maity/org", "the organisation");
   await mrFollow("#/p/maity/members", "the members list");
+  await mrFollow("#/p/maity/board", "the board");
   // The inbox: the entry's asker.
   await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");
