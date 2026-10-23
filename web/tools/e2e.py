@@ -89,6 +89,8 @@ class Run:
         self.problems: list[str] = []
         self.axe = ""
         self.a11y_findings: list[dict] = []
+        # Set when the hub answers the notifications read with 404 (§18).
+        self.no_notifications = False
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -345,6 +347,13 @@ def watch_page(run: Run, page: Page) -> None:
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
+        # A hub without notifications (docs/api.md §18) answers their read with
+        # 404 on every page, and their settings (which the page then no longer
+        # asks for); the page goes on without them, and the notifications step
+        # checks that.
+        if resp.status == 404 and (path.startswith("/api/v1/me/notifications?") or path == "/api/v1/me/notification-settings"):
+            run.no_notifications = True
+            return
         # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
         # uploads waiting to be sent (§8.7); a hub without attachments answers 404.
@@ -1374,6 +1383,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     no_problems(run, "board cards")
     board_order_step(run, page)
     overview_step(run, page)
+    notifications_step(run, page)
 
 
 def board_order_step(run: Run, page: Page) -> None:
@@ -1521,6 +1531,30 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
     detach()
     expect(view).to_contain_text("No runner is allowed in this project yet.")
     no_problems(run, "project runners")
+
+
+def notifications_step(run: Run, page: Page) -> None:
+    """Notifications, stage 1 (docs/api.md §18.2): the bell, its list, its keyboard."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    expect(page.locator("main section.view-inbox")).to_be_visible()
+    bell = page.locator("header button.bell")
+    if run.no_notifications:
+        # Only a hub without the endpoint is skipped: no bell, and no error on the page.
+        run.step("notifications: this hub has no notifications yet; no bell, the counts from /me")
+        expect(bell).to_have_count(0)
+        expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
+        no_problems(run, "notifications")
+        return
+    run.step("notifications: the owner opens the bell, reads the list, closes it with Escape")
+    bell.click()
+    panel = page.locator("header .bell-panel")
+    expect(panel).to_be_visible()
+    run.a11y(page, "notifications bell")
+    run.shot(page, "notifications-bell")
+    page.keyboard.press("Escape")  # the focus is on the bell after the click
+    expect(panel).to_be_hidden()
+    expect(bell).to_be_focused()
+    no_problems(run, "notifications")
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:

@@ -160,6 +160,7 @@ window.Maity = window.Maity || {};
     // Your agents' pictures (§6.10: the profile's owner sets them); a hub
     // without the field shows the profiles without the editor.
     const agents = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id)).catch(() => null);
+    const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     append(root, h("h2", null, "Your account"),
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
@@ -173,10 +174,13 @@ window.Maity = window.Maity || {};
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", null,
           h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + a.handle)),
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
+      notify ? notify.el : null,
       h("h3", null, "Change password"),
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
     // #/account/picture (the profile menu's Picture) starts at the picture.
     if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
+    // #/account/notifications (the bell's settings link) starts there.
+    if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
   };
 })(window.Maity);

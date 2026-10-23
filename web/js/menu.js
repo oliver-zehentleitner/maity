@@ -33,7 +33,18 @@ window.Maity = window.Maity || {};
     svg.appendChild(hole);
     return svg;
   }
-  M.icons = { gear };
+  // A bell: a dome on a rim, and the clapper below; it takes the text colour.
+  function bell(size) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 24 24"], ["width", String(size)], ["height", String(size)], ["aria-hidden", "true"], ["focusable", "false"], ["class", "icon"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const body = document.createElementNS(SVG, "path");
+    body.setAttribute("d", "M12 3a6 6 0 0 0-6 6v4.2L4 16.5V18h16v-1.5l-2-3.3V9a6 6 0 0 0-6-6zm-2.2 16a2.2 2.2 0 0 0 4.4 0z");
+    body.setAttribute("class", "icon-fill");
+    svg.appendChild(body);
+    return svg;
+  }
+  M.icons = { gear, bell };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...] }
   M.menuButton = function (spec) {
