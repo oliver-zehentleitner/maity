@@ -58,7 +58,7 @@ Why Maity is built the way it is.
 ## M
 - [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners; deleting an agent profile: owner only, cascade opt-in, a tombstone
 - [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox
-- [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved
+- [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved; project messages have their own listing rather than a scan of the events
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
