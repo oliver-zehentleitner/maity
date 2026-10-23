@@ -331,3 +331,66 @@ def test_no_gate_without_a_coordinator_and_none_within_the_grace(
         ).status_code
         == 200
     )
+
+
+# --- review of #285 -------------------------------------------------------------------------
+
+
+def test_a_card_moved_on_to_a_third_member_is_never_taken_back(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    third = flow.agent(make_client, owner)
+    for agent in (covered, sub, third):
+        agent.resume()
+    held, assigned = task(owner), task(owner)
+    covered.post(f"/projects/maity/tasks/{held['id']}/claim", {})
+    owner.post(f"/projects/maity/tasks/{assigned['id']}/assign", {"assignee": covered.id})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    # The substitute gives the held card back to the board and a third member claims it;
+    # a human hands the assigned one to the third member, who claims it too.
+    assert sub.post(f"/projects/maity/tasks/{held['id']}/release").status_code == 200
+    assert third.post(f"/projects/maity/tasks/{held['id']}/claim", {}).status_code == 200
+    owner.post(f"/projects/maity/tasks/{assigned['id']}/assign", {"assignee": third.id})
+    assert third.post(f"/projects/maity/tasks/{assigned['id']}/claim", {}).status_code == 200
+    covered.resume()
+    for card in (held, assigned):
+        shown = card_of(owner, card["id"])
+        assert shown["claim"]["holder"] == third.id and shown["cover"] is None
+    ended = events(migrated, "cover_ended")
+    assert all(not e.payload["returned"] and not e.payload["kept"] for e in ended)
+
+
+def test_a_substitute_who_could_not_answer_a_proposals_kind_is_skipped(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    proxy = flow.human(make_client, migrated, handle="proxy")
+    factory.membership(migrated, project_id, role="proxy", human_id=proxy.id)
+    admin_human = flow.human(make_client, migrated, handle="admin")
+    factory.membership(migrated, project_id, role="admin", human_id=admin_human.id)
+    lead = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    for agent in (lead, reviewer):
+        agent.resume()
+    # An admin agent's change of a reviewer waits for a human with members:admin.
+    asked = lead.patch(f"/projects/maity/members/{reviewer.id}", {"role": "member"})
+    assert asked.status_code == 202, asked.text
+    policy(
+        owner,
+        owner.id,
+        on_unavailable="substitute",
+        substitutes=[proxy.id, admin_human.id],
+        grace_minutes=0,
+    )
+    for human in (proxy, admin_human):
+        human.get("/me")  # present: both could cover, by availability
+    owner.post("/me/limit", {"until": z(now[0] + timedelta(hours=2))})
+    started = {e.payload["substitute_id"]: e.payload for e in events(migrated, "cover_started")}
+    assert started[admin_human.id]["requests"] == [asked.json()["id"]]
+    assert proxy.id not in started
