@@ -191,11 +191,12 @@ def older_than(cursor: str) -> tuple[datetime, int, int] | None:
     try:
         at, side, number = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
         moment = datetime.fromisoformat(str(at))
+        place = (moment, int(side), int(number))
     except (binascii.Error, ValueError, TypeError):
         return None
     if moment.utcoffset() != timedelta(0):
         return None  # a cursor this hub made is UTC
-    return (moment, int(side), int(number))
+    return place
 
 
 def select_items(

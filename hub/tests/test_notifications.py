@@ -308,3 +308,26 @@ def test_a_card_view_shows_only_the_readers_own_watch(
     assert next(c for c in listed if c["id"] == card["id"])["watching"] is True
     assert agent.get(f"/projects/maity/tasks/{card['id']}").json()["watching"] is False
     assert "watchers" not in owner.get(f"/projects/maity/tasks/{card['id']}").json()
+
+
+def test_a_malformed_cursor_is_invalid(owner: flow.Human) -> None:
+    import base64
+    import json
+
+    raw = json.dumps(["2026-10-23T10:00:00+00:00", "x", 1]).encode()
+    cursor = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    response = owner.get(N, params={"cursor": cursor})
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
+
+
+def test_a_replayed_card_write_carries_watching(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(make_client, owner)
+    key = {"Idempotency-Key": "replay-key-0000000001"}
+    body = {"title": "Once"}
+    first = agent.client.post("/api/v1/projects/maity/tasks", json=body, headers=agent.auth | key)
+    again = agent.client.post("/api/v1/projects/maity/tasks", json=body, headers=agent.auth | key)
+    assert again.headers.get("Idempotent-Replayed") == "true"
+    assert first.json()["watching"] is False and again.json()["watching"] is False
