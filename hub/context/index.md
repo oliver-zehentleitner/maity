@@ -69,6 +69,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## R
 - [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
+- [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot
 
 ## S
 - [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI
