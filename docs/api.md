@@ -2450,19 +2450,24 @@ it behaves as a `task` and exists so that the board and the release list
 can tell it from feature work). `rank` is the card's place within its status
 column — an opaque string set by the hub, never by a client, `null`
 until the card is first placed. **Card order** within a status is total:
-cards with a rank by rank (bytewise), then cards without one by
-`created_at`, then by `id`. A `move` is applied to the column as it is
+cards with a rank by rank (bytewise), then cards without one; equal
+ranks, and cards without one, by `created_at`, then by `id`. A `move` is applied to the column as it is
 when the move runs, under the project's lock: the hub gives ranks to the
 column's unranked cards up to and including the neighbour where that is
 needed to express the intent, and may at any time reassign ranks in a
 column to keep room between them; every card whose rank changes gets a
-`task_updated` with `fields: ["rank"]`. A status change keeps the rank,
+`task_updated` with `fields: ["rank"]`. A move changes neither a card's
+`updated_at` nor its history: it is layout, not an edit. A status change keeps the rank,
 and the card takes its place among the target column by the same order.
 Among `open` cards the order is the priority: an agent that picks its
 next card on its own takes the first claimable one, by
 `GET …/tasks?status=open`; rank is advice, never a gate — claim policy,
 dependencies and assignment apply as before. The resume packet lists the
-agent's assigned cards in this order. `label` is optional: `fix`, `feature`,
+agent's assigned cards in this order, and `GET …/tasks` lists in it by
+default (`order=board`). A page of it goes on after the last card it
+showed: a card that moves while a client pages may show twice or not at
+all, and when the last card shown moves itself, so may the cards it
+passed. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `status`:
 

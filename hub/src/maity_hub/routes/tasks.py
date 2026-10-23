@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import cards, clock, idempotency, mentions, paging, releases
+from maity_hub import cards, clock, idempotency, mentions, paging, ranks, releases
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -426,6 +427,7 @@ def list_tasks(
     assigned_to: str | None = None,
     area: str | None = None,
     closed_after: datetime | None = None,
+    order: Literal["board", "updated"] = "board",
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
@@ -461,8 +463,25 @@ def list_tasks(
             query = query.where(
                 or_(t.card.c.closed_at.is_(None), t.card.c.closed_at > closed_after)
             )
+        bound = paging.scope(
+            status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
+            area=area, closed_after=closed_after, order=order,
+        )  # fmt: skip
+        if order == "board":
+            # The board's order (§6.4) is not one the database keeps: sorted here, a
+            # project's cards at a time, and paged after the last item shown.
+            def key(row: Any) -> tuple[Any, ...]:
+                return ranks.board_key(cards.STATUSES, row)
+
+            ordered = sorted(conn.execute(query).all(), key=key)
+            if cursor is not None:
+                ordered = _after(ordered, *paging.unkey(cursor, bound), key)
+            shown = ordered[:limit]
+            more = len(ordered) > limit
+            following = paging.key_cursor(shown[-1].id, key(shown[-1]), bound) if more else None
+            return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
         if cursor is not None:
-            after_at, after_id = paging.uncursor(cursor)
+            after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
                 or_(
                     t.card.c.updated_at < after_at,
@@ -473,8 +492,26 @@ def list_tasks(
             query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc()).limit(limit + 1)
         ).all()
         page = rows[:limit]
-        next_cursor = paging.cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
+        next_cursor = (
+            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
+        )
         return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
+
+
+def _after(
+    ordered: list[Any], anchor: str, was: tuple[Any, ...], key: Callable[[Any], tuple[Any, ...]]
+) -> list[Any]:
+    """The cards after the last one a page showed. Its place where it still sits in the
+    same column: a move ranks unranked cards on the way and spreads a column out, which
+    changes their keys but never the order of the cards that did not move. Its key at
+    the time where it left the column."""
+    for i, row in enumerate(ordered):
+        if row.id == anchor and key(row)[0] == was[0]:
+            return ordered[i + 1 :]
+    try:
+        return [r for r in ordered if key(r) > was]
+    except TypeError:  # a key of another shape: not a cursor this list gave
+        raise invalid({"cursor": "invalid"}) from None
 
 
 @router.get("/projects/{slug}/tasks/{card_id}")
@@ -878,6 +915,72 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             subject=("task", card.id),
         )
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+class MoveIn(Strict):
+    before: str | None = None
+    after: str | None = None
+    to: Literal["top", "bottom"] | None = None
+
+
+@router.post("/projects/{slug}/tasks/{card_id}/move")
+def move(
+    slug: str, card_id: str, body: MoveIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """Places a card within its status column (§6.4): before or after a neighbour, or at
+    the top or the bottom. Ranks change only where the order needs them to; every card
+    whose rank changes is announced."""
+    fg = reader_of(request)
+    given = [k for k in ("before", "after", "to") if getattr(body, k) is not None]
+    if len(given) != 1:
+        raise invalid({"move": "one_of_before_after_to"}, "give exactly one of before, after, to")
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine.require("tasks:admin")
+        # The column as it is when the move runs, under the project's lock (§6.4).
+        mine = _locked(conn, mine)
+        if mine.project.state in CLOSED_STATES:
+            raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
+        card = _project_card(conn, mine, card_id)
+        column = sorted(
+            conn.execute(
+                select(t.card).where(
+                    t.card.c.project_id == mine.project.id, t.card.c.status == card.status
+                )
+            ).all(),
+            key=ranks.column_key,
+        )
+        others = [c.id for c in column if c.id != card.id]
+        if body.to is not None:
+            index = 0 if body.to == "top" else len(others)
+        else:
+            neighbour_id = body.before or body.after
+            assert neighbour_id is not None
+            field = "before" if body.before is not None else "after"
+            neighbour = _project_card(conn, mine, neighbour_id)  # not_found when missing
+            if neighbour.id == card.id or neighbour.status != card.status:
+                raise invalid({field: "not_in_this_column"}, "a neighbour in the same column")
+            index = others.index(neighbour.id) + (1 if field == "after" else 0)
+        for changed_id, rank in sorted(ranks.place(column, card.id, index).items()):
+            conn.execute(update(t.card).where(t.card.c.id == changed_id).values(rank=rank))
+            emit(
+                conn,
+                mine.project.id,
+                "task_updated",
+                audience(conn, _card(conn, changed_id)),
+                {
+                    "id": changed_id,
+                    "fields": ["rank"],
+                    "rank": rank,
+                    "project_state": mine.project.state,
+                },
+                actor=caller.actor(mine.id),
+                subject=("task", changed_id),
+            )
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

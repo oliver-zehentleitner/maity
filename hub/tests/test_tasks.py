@@ -18,6 +18,7 @@ TASK_KEYS = {
     "body",
     "label",
     "status",
+    "rank",
     "area",
     "created_by",
     "assigned_to",
@@ -206,14 +207,18 @@ def test_the_board_filters_orders_and_pages(owner: flow.Human) -> None:
     ids = [task(owner, label="fix" if i % 2 else "chore")["id"] for i in range(5)]
     owner.patch(f"/projects/maity/tasks/{ids[0]}", {"status": "cancelled"})
     page = owner.get("/projects/maity/tasks?limit=2").json()
-    assert [c["id"] for c in page["items"]] == [ids[0], ids[4]]  # updated_at desc
+    # The board's order (§6.4): columns in board order, unranked cards by creation, the
+    # closed column last.
+    assert [c["id"] for c in page["items"]] == [ids[1], ids[2]]
+    updated = owner.get("/projects/maity/tasks?limit=2&order=updated").json()
+    assert [c["id"] for c in updated["items"]] == [ids[0], ids[4]]  # updated_at desc
     seen = [c["id"] for c in page["items"]]
     cursor = page["next_cursor"]
     while cursor:
         page = owner.get(f"/projects/maity/tasks?limit=2&cursor={cursor}").json()
         seen += [c["id"] for c in page["items"]]
         cursor = page["next_cursor"]
-    assert sorted(seen) == sorted(ids) and len(seen) == 5
+    assert seen == [ids[1], ids[2], ids[3], ids[4], ids[0]]
     fixes = owner.get("/projects/maity/tasks?label=fix").json()["items"]
     assert {c["id"] for c in fixes} == {ids[1], ids[3]}
     open_only = owner.get("/projects/maity/tasks?status=open").json()["items"]

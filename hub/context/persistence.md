@@ -378,3 +378,54 @@ off.
 - Native `ALTER TABLE … DROP COLUMN` (SQLite 3.35+): Alembic's SQLite
   dialect still goes through batch mode for it, and columns with
   constraints cannot be dropped natively anyway.
+
+## The board's card order is sorted in Python, not by the database
+
+**Id:** 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
+**Revisit when:** a project's board grows to thousands of cards
+
+`GET …/tasks` reads a project's cards that match the filters and sorts them
+in Python by `ranks.board_key`: the columns in board order, then within
+one by rank, then by `created_at`, then by `id`, and closed cards by
+`closed_at` newest first, then by `id`. A page's cursor names the last
+card it showed and that card's sort key, and is bound to the list's
+filters and order. The next page goes on after that card where it now
+sits in the same column, and after its old key when it left the column.
+When that card moves itself, the cards it passed may be skipped or
+repeated; the contract says so.
+`order=updated` keeps the old keyset paging by `updated_at`, now bound to
+the filters as well. A rank is a string over digits and lower-case letters
+that never ends in `0`. A move keys between its ranked neighbours, a
+fractional index, and spreads the column out to short keys when one would
+grow past 24 characters, or when the column's ranks are not strictly
+increasing: every empty column starts at the same key, and a rank travels
+with a status change. A move changes neither `updated_at` nor the
+history: it is layout, not an edit.
+
+**Reason:** the contract compares ranks bytewise and orders across states
+with keys of different kinds. PostgreSQL compares text by its locale, so
+SQL would need a collation per engine and a `CASE` per state on all three
+engines. Python compares the ASCII ranks bytewise everywhere, and a
+board is a few hundred cards; the board asks for 200 at a time.
+
+**Rejected alternatives:**
+- Keyset paging in SQL with `COLLATE "C"` on PostgreSQL and a `CASE` for
+  the closed columns. It is exact for very large boards, but the order
+  logic would be spread over three dialects and the cursor would carry
+  the whole sort tuple.
+- Paging by position (the next item's index). Every move, creation or
+  status change before the cursor shifts the list, so cards were skipped
+  and repeated between pages (found in review).
+- A keyset on the sort key alone. A move ranks the unranked cards before
+  its target on the way, so their keys change kind (unranked keys sort
+  after ranked ones) while their order stays: a cursor holding such a key
+  sorts after the whole column and the next page loses it. A spread
+  rewrites every key the same way. The order of the cards that did not
+  move is what lasts, so the cursor follows the last card shown.
+- Integer positions renumbered on every move. They are simple to compare,
+  but a move rewrites every card after it, and each of those is an event.
+

@@ -512,6 +512,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "mentions": row.mentions or [],
                 "label": row.label,
                 "status": row.status,
+                "rank": row.rank,
                 "area": row.area,
                 "created_by": members.get(row.created_by),
                 "assigned_to": members.get(row.assigned_to),

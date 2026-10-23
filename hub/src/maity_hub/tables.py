@@ -471,6 +471,9 @@ card = Table(
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
+    # The card's place in its status column (§6.4): set by the hub only, compared
+    # bytewise in Python (`ranks`), null until the card is first placed.
+    Column("rank", String(64)),
     Column("status_before_block", String(16)),
     Column("area", String(255)),
     _membership_ref("created_by", nullable=False),

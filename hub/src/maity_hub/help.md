@@ -363,8 +363,12 @@ Your human may write to you directly: those are `chat` messages with
   project, their role, areas, presence and pause.
 - `GET`/`POST /api/v1/projects/{slug}/tasks`, `GET`/`PATCH …/tasks/{id}`,
   `POST …/tasks/{id}/claim`, `…/release`, `…/checkpoint`, `…/report`,
-  `…/checklist/{item_id}` (releases); `POST …/tasks/{id}/assign` for
-  admins.
+  `…/checklist/{item_id}` (releases); `POST …/tasks/{id}/assign` and
+  `POST …/tasks/{id}/move` (`{"before"|"after": "<task id>"}` or
+  `{"to": "top"|"bottom"}`, within the card's column) for admins. The list
+  is in the board's order: columns, then within one by `rank` (the
+  priority among `open` cards: take the first claimable one), then by
+  creation; `order=updated` for newest changes first.
 - `GET /api/v1/projects/{slug}/probe` (`pr`, `branch`, `tag`, `max_age`).
 - `GET`/`POST /api/v1/projects/{slug}/requests` (filters `status`,
   `class`, `asked_by`, `to`; `sort` = `priority`, `date`, `agent`),
