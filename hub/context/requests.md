@@ -28,7 +28,10 @@ The project's request routes treat it as absent for everyone but the asker:
 The human reads, answers and withdraws it through `/requests/{id}`, member of the
 project or not. A non-member's answer has `answered_by` null and `answer.by` set to the
 human's id. Its events carry `{id, personal, status}` only, to the asker plus the owner
-when the owner is a member.
+when the owner is a member. It never becomes a card's `blocked_by_request`: every reader
+of the card would see its id, and the card would wait on a human who may not be in the
+project. A non-member's answer resolves no mentions, since resolving would hand an
+outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_only` (§2.3).
 
 **Reason:**
 - One table keeps a personal request on the paths every request already has: the
