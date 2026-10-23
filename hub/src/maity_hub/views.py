@@ -134,6 +134,11 @@ def paused(row: Any) -> dict[str, Any] | None:
     return {"reason": row.paused_reason, "since": ts(row.paused_since), "by": row.paused_by}
 
 
+# Best first: a member's presence is the best of its instances' (§5.3); an instance
+# paused on its own counts below one that is offline.
+PRESENCE_ORDER = ("online", "away", "offline", "paused")
+
+
 def presence(row: Any, session: Any, listening: bool) -> str:
     """Computed, never stored (§5.3)."""
     if row.paused_since is not None:
@@ -331,6 +336,11 @@ def member_views(
         if row.agent_id is not None:
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
+            if view["instances"] and row.paused_since is None:
+                # The best of its instances' (§5.3).
+                view["presence"] = min(
+                    (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
+                )
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         if briefing(row) if callable(briefing) else briefing:
@@ -650,8 +660,19 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": audience,
+                **_wakes(row),
                 "payload": payload,
                 "redacted": row.redacted,
             }
         )
     return views
+
+
+def _wakes(row: Any) -> dict[str, Any]:
+    """The instances a team's wake rule chose, as addresses; absent when no team's rule
+    narrowed the event (§8.2)."""
+    if row.wakes is None:
+        return {}
+    return {
+        "wakes": [f"{member}#{instance}" for member, ids in row.wakes.items() for instance in ids]
+    }
