@@ -259,6 +259,26 @@ def test_an_unknown_kind_is_not_filed_and_fails_on_its_request_only(
     assert request_id not in [r["id"] for r in packet.json()["requests"]["to_answer"]]
 
 
+def test_the_proposers_removal_withdraws_an_unknown_kind_without_settling(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    request_id = _file(migrated, admin)
+    with transaction(migrated) as conn:  # a hub that no longer knows the kind
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == request_id)
+            .values(proposal={"kind": "gone", "value": 7})
+        )
+    removed = owner.delete(f"/projects/maity/members/{admin.id}")
+    assert removed.status_code == 200, removed.text  # the removal is not held up by it
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+    assert row.status == "withdrawn" and settled == []
+    assert "'gone' is unknown to this hub" in row.withdraw_reason
+    assert row.withdraw_reason.startswith("the proposer was removed")
+
+
 def test_a_kind_is_registered_once() -> None:
     with pytest.raises(ValueError, match="registered already"):
         proposals.register("test", _settle, proposals.Answerer(humans_only=False))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -23,6 +24,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
@@ -839,10 +841,20 @@ def close_request(
     """Answer (`go`, in `by`'s name) or withdraw an open request from inside the hub, as
     the routes above would. A proposal it carries is settled here, like every other
     close; a placement is not settled again: the placement code that calls this settles
-    its own side (§15.6)."""
+    its own side (§15.6). A proposal of a kind this hub does not know is withdrawn
+    without its settle hook, and the reason and the log say so: a close the hub makes
+    itself (the proposer's removal) must not fail on it, while an explicit answer still
+    does (`proposals.require_known`)."""
     row = _row(conn, request_id)
     if row.status != "open":
         return
+    unknown = not proposals.known(row)
+    if unknown:
+        outcome = "withdrawn"
+        kind = (proposals.of(row) or {}).get("kind")
+        note = f"its proposal's kind {kind!r} is unknown to this hub, so it was not settled"
+        reason = f"{reason}; {note}" if reason else note
+        log.warning("request %s withdrawn by the hub: %s", row.id, note)
     now = clock.now()
     audit = {
         "changed_by_credential": actor.credential_id if actor else None,
@@ -886,7 +898,8 @@ def close_request(
         )
         kind, extra = "request_answered", {}
     _unblock(conn, row)
-    proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
+    if not unknown:
+        proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
     view = request_view(conn, _row(conn, row.id))
     emit(
         conn,
