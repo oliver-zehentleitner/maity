@@ -284,6 +284,10 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    from maity_hub import briefings  # briefings formats with this module's helpers
+
+    briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
+    writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
     views = []
     for row in rows:
         head = (
@@ -333,8 +337,9 @@ def member_views(
             view["instances"] = team_of.get(row.id, [])
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
-        if briefing(row) if callable(briefing) else briefing:
+        if row.id in briefed:
             view["briefing"] = row.briefing
+            view.update(briefings.fields(row, writers))
         if details(row) if callable(details) else details:
             view["owner"] = owners.get(row.agent_id) if row.agent_id else None
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None

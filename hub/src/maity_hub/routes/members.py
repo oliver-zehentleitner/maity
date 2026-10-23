@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -11,17 +12,23 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, case, select, update
 
-from maity_hub import clock, idempotency, instances, placements, rules
+from maity_hub import admin_agents, briefings, clock, idempotency, instances, placements, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.events import emit, lock_project
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.scopes import ROLES
-from maity_hub.views import credential_view, human_paused, member_view, member_views
+from maity_hub.views import (
+    credential_view,
+    human_paused,
+    member_view,
+    member_views,
+    principal_id,
+)
 
 router = APIRouter()
 
@@ -47,6 +54,12 @@ class MemberPatch(Strict):
 
 class RevokeIn(Strict):
     reason: str | None = markdown(default=None)
+
+
+def _request(conn: Connection, request_id: str) -> dict[str, Any]:
+    from maity_hub.routes.requests import load_request  # it imports this module's peers
+
+    return load_request(conn, request_id)
 
 
 def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
@@ -106,7 +119,7 @@ def validate_assignment(
         except ApiError:
             errors["reports_to"] = "not_a_member"
         else:
-            if member is not None and member in _chain(conn, values["reports_to"]):
+            if member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
@@ -121,7 +134,7 @@ def validate_assignment(
     return values
 
 
-def _chain(conn: Connection, membership_id: int) -> set[int]:
+def chain(conn: Connection, membership_id: int) -> set[int]:
     """The member and everyone it reports up to (§6.2)."""
     seen: set[int] = set()
     current: int | None = membership_id
@@ -169,6 +182,27 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         return JSONResponse({"items": views, "next_cursor": None})
 
 
+@router.get("/projects/{slug}/members/{member_id}/briefings")
+def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """A member's briefing versions, newest first (§6.2): for the agent's owner, a member
+    of the project or not, and for a human with `members:admin`."""
+    with engine_of(request).begin() as conn:
+        project = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).first()
+        if project is None or caller.kind == "runner":
+            raise not_found()
+        try:
+            target = member_row(conn, project.id, member_id)
+        except ApiError:
+            target = None
+        if target is None or not instances.owns_agent(conn, caller, target):
+            mine = membership(conn, caller, slug)  # not_found for a stranger
+            if target is None or target.agent_id is None:
+                raise not_found()
+            if mine.kind != "human" or not mine.may("members:admin"):
+                raise forbidden("members:admin", "the agent's owner or an admin reads them")
+        return JSONResponse({"items": briefings.history(conn, target.id)})
+
+
 @router.get("/projects/{slug}/members/{member_id}")
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
@@ -193,6 +227,89 @@ def _owned_agents(conn: Connection, mine: Any) -> set[str]:
     )
 
 
+@dataclass(frozen=True)
+class Change:
+    """Who makes a membership change and how it is recorded: the event's actor, the
+    principal a pause names as `by`, the human on whose authority credentials are
+    revoked (the approver of an agent's change, §2.3 ᵃ), and the audit columns."""
+
+    project: Any
+    actor: Actor
+    by: str
+    approver: str
+    credential_id: str | None
+    via: str | None
+
+
+def change_of(mine: Membership, caller: Caller) -> Change:
+    return Change(
+        mine.project,
+        caller.actor(mine.id),
+        mine.principal_id,
+        mine.principal_id,
+        caller.credential_id,
+        caller.via,
+    )
+
+
+def apply_patch(
+    conn: Connection,
+    change: Change,
+    target: Any,
+    values: dict[str, Any],
+    pause: tuple[bool, str | None],
+) -> dict[str, Any]:
+    """Write a membership change and announce it; `pause` is (given, reason). Returns
+    the changed columns with their old values, for `member_changed_by_agent`."""
+    changed = {k: v for k, v in values.items() if getattr(target, k) != v}
+    old = {k: getattr(target, k) for k in changed}
+    member_id = principal_id(conn, target.id)
+    assert member_id is not None
+    if changed:
+        columns = {k: v for k, v in changed.items() if k != "briefing"}
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == target.id)
+            .values(**columns, changed_by_credential=change.credential_id, changed_via=change.via)
+        )
+        if "briefing" in changed:
+            # A new version, by whoever wrote it (§6.2); its text is never in an event.
+            briefings.record(conn, target.id, changed["briefing"], change.by, clock.now())
+        row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+        view = member_view(conn, row)  # to everyone: never the briefing
+        if "briefing" in changed:
+            view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
+        if {"role", "areas"} & changed.keys():
+            # The member's role brief is part of the rules: a bump (§6.9).
+            rules.bump(
+                conn,
+                change.project,
+                "member_updated",
+                ["all"],
+                view,
+                actor=change.actor,
+                subject=("member", member_id),
+            )
+        else:
+            emit(
+                conn,
+                change.project.id,
+                "member_updated",
+                ["all"],
+                view,
+                actor=change.actor,
+                subject=("member", member_id),
+            )
+    given, reason = pause
+    if given:
+        if target.agent_id is None:
+            # A human's absence is the project's `absence` (§6.1, §5.3).
+            raise invalid({"paused": "agents_only"}, "paused is for agent members")
+        row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+        set_paused(conn, change, row, reason)
+    return old
+
+
 @router.patch("/projects/{slug}/members/{member_id}")
 def patch_member(
     slug: str, member_id: str, body: MemberPatch, request: Request, caller: AnyCaller
@@ -215,8 +332,14 @@ def patch_member(
             view = member_view(conn, target, briefing=reader.may("members:admin"))
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         mine = membership(conn, caller, slug)
-        mine.require("members:admin")
+        agent_admin = mine.kind == "agent" and mine.role == "admin"
         target = member_row(conn, mine.project.id, member_id)
+        if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
+            raise humans_only("an agent never changes a human's membership")
+        if not agent_admin:
+            mine.require("members:admin")
+        if agent_admin:
+            admin_agents.check_patch(mine, target, body, given)
         kind = "agent" if target.agent_id else "human"
         if body.reports_to is not None:
             # Two PATCHes naming each other must not both pass the cycle check.
@@ -238,54 +361,26 @@ def patch_member(
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
-        changed = {k: v for k, v in values.items() if getattr(target, k) != v}
-        if changed:
-            conn.execute(
-                update(t.membership)
-                .where(t.membership.c.id == target.id)
-                .values(
-                    **changed, changed_by_credential=caller.credential_id, changed_via=caller.via
-                )
+        pause = ("paused" in given, body.paused.reason if body.paused else None)
+        if agent_admin and admin_agents.needs_consent(conn, mine, target, values, pause):
+            # The whole PATCH waits for the owner's go (§2.3 ᵃ).
+            request_id = admin_agents.propose(
+                conn, mine, caller, target, {"action": "patch", "values": values, "pause": pause}
             )
-            row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-            view = member_view(conn, row)  # to everyone: never the briefing
-            if {"role", "areas"} & changed.keys():
-                # The member's role brief is part of the rules: a bump (§6.9).
-                rules.bump(
-                    conn,
-                    mine.project,
-                    "member_updated",
-                    ["all"],
-                    view,
-                    actor=caller.actor(mine.id),
-                    subject=("member", member_id),
-                )
-            else:
-                emit(
-                    conn,
-                    mine.project.id,
-                    "member_updated",
-                    ["all"],
-                    view,
-                    actor=caller.actor(mine.id),
-                    subject=("member", member_id),
-                )
-        if "paused" in given:
-            if target.agent_id is None:
-                # A human's absence is the project's `absence` (§6.1, §5.3).
-                raise invalid({"paused": "agents_only"}, "paused is for agent members")
-            set_paused(conn, mine, target, body.paused.reason if body.paused else None, caller)
+            return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
+        change = change_of(mine, caller)
+        old = apply_patch(conn, change, target, values, pause)
+        if agent_admin and "role" in old:
+            admin_agents.announce(conn, change, target, "role", old["role"], values["role"])
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def set_paused(
-    conn: Connection, mine: Membership, target: Any, reason: str | None, caller: Caller
-) -> None:
-    """Set or clear `paused` (§5.3). Setting it tells the member itself (its long-poll
-    wakes), `reports_to` and the admins; lifting a pause someone else set tells them
-    the same way, with `paused: null`."""
+def set_paused(conn: Connection, change: Change, target: Any, reason: str | None) -> None:
+    """Set or clear `paused` (§5.3), naming `change.by`. Setting it tells the member
+    itself (its long-poll wakes), `reports_to` and the admins; lifting a pause someone
+    else set tells them the same way, with `paused: null`."""
     now = clock.now()
     lifts_a_human_pause = reason is None and human_paused(target)
     conn.execute(
@@ -294,7 +389,7 @@ def set_paused(
         .values(
             paused_reason=reason,
             paused_since=now if reason else None,
-            paused_by=caller.principal_id if reason else None,
+            paused_by=change.by if reason else None,
         )
     )
     if reason is None and not lifts_a_human_pause:
@@ -306,104 +401,118 @@ def set_paused(
         audience.insert(1, f"member:{view['reports_to']}")
     emit(
         conn,
-        mine.project.id,
+        change.project.id,
         "session_paused",
         audience,
         {"session": view.get("session"), "paused": view["paused"]},
-        actor=caller.actor(mine.id),
+        actor=change.actor,
         subject=("member", view["id"]),
     )
+
+
+def apply_remove(conn: Connection, change: Change, target: Any) -> None:
+    """Remove a membership (§6.2): its credentials revoked on the approver's authority,
+    its claims released, every `reports_to` that names it cleared."""
+    now = clock.now()
+    credentials = (
+        conn.execute(
+            select(t.credential.c.id).where(
+                t.credential.c.membership_id == target.id, t.credential.c.revoked_at.is_(None)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for credential_id in credentials:
+        revoke(conn, credential_id, "member_removed", by=change.approver)
+    placements.membership_removed(conn, target.id, change.actor, change.approver)
+    conn.execute(
+        update(t.card)
+        .where(t.card.c.claim_holder == target.id, t.card.c.status.notin_(("done", "cancelled")))
+        .values(
+            claim_holder=None,
+            claim_instance=None,
+            claim_session_id=None,
+            claim_since=None,
+            lease_until=None,
+            status=case((t.card.c.status == "in_progress", "open"), else_=t.card.c.status),
+            updated_at=now,
+        )
+    )
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.id == target.id)
+        .values(active=None, removed_at=now, changed_via=change.via)
+    )
+    removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    view = member_view(conn, removed)  # to everyone: never the briefing
+    emit(
+        conn,
+        change.project.id,
+        "member_updated",
+        ["all"],
+        view,
+        actor=change.actor,
+        subject=("member", view["id"]),
+    )
+    # The chain never names a former member: nor does a join still to be used.
+    reported = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.reports_to == target.id, t.membership.c.active.is_(True)
+        )
+    ).scalars()
+    for report_id in sorted(reported):
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == report_id)
+            .values(
+                reports_to=None,
+                changed_by_credential=change.credential_id,
+                changed_via=change.via,
+            )
+        )
+        row = conn.execute(select(t.membership).where(t.membership.c.id == report_id)).one()
+        report = member_view(conn, row)
+        emit(
+            conn,
+            change.project.id,
+            "member_updated",
+            ["all"],
+            report,
+            actor=change.actor,
+            subject=("member", report["id"]),
+        )
+    conn.execute(
+        update(t.join_link)
+        .where(t.join_link.c.reports_to == target.id, t.join_link.c.used_at.is_(None))
+        .values(reports_to=None)
+    )
+    placements.forget_boss(conn, change.project.id, target.id)
 
 
 @router.delete("/projects/{slug}/members/{member_id}")
 def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("members:admin")
+        agent_admin = mine.kind == "agent" and mine.role == "admin"
         target = member_row_or_removed(conn, mine.project.id, member_id)
+        if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
+            raise humans_only("an agent never removes a human's membership")
+        if not agent_admin:
+            mine.require("members:admin")
+        if agent_admin:  # before the idempotent answer: it carries the briefing
+            admin_agents.check_target(mine, target)
         if target.active is None:  # removed already: DELETE is idempotent (§6.2)
             return idempotency.Outcome(
                 200, "member", str(target.id), load_member(conn, str(target.id))
             )
+        if agent_admin:
+            # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
+            request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
+            return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         if target.role == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
-        now = clock.now()
-        credentials = (
-            conn.execute(
-                select(t.credential.c.id).where(
-                    t.credential.c.membership_id == target.id, t.credential.c.revoked_at.is_(None)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for credential_id in credentials:
-            revoke(conn, credential_id, "member_removed", by=caller.principal_id)
-        placements.membership_removed(conn, target.id, caller.actor(mine.id), caller.principal_id)
-        conn.execute(
-            update(t.card)
-            .where(
-                t.card.c.claim_holder == target.id, t.card.c.status.notin_(("done", "cancelled"))
-            )
-            .values(
-                claim_holder=None,
-                claim_instance=None,
-                claim_session_id=None,
-                claim_since=None,
-                lease_until=None,
-                status=case((t.card.c.status == "in_progress", "open"), else_=t.card.c.status),
-                updated_at=now,
-            )
-        )
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.id == target.id)
-            .values(active=None, removed_at=now, changed_via=caller.via)
-        )
-        removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-        view = member_view(conn, removed)  # to everyone: never the briefing
-        emit(
-            conn,
-            mine.project.id,
-            "member_updated",
-            ["all"],
-            view,
-            actor=caller.actor(mine.id),
-            subject=("member", member_id),
-        )
-        # The chain never names a former member: nor does a join still to be used.
-        reported = conn.execute(
-            select(t.membership.c.id).where(
-                t.membership.c.reports_to == target.id, t.membership.c.active.is_(True)
-            )
-        ).scalars()
-        for report_id in sorted(reported):
-            conn.execute(
-                update(t.membership)
-                .where(t.membership.c.id == report_id)
-                .values(
-                    reports_to=None,
-                    changed_by_credential=caller.credential_id,
-                    changed_via=caller.via,
-                )
-            )
-            row = conn.execute(select(t.membership).where(t.membership.c.id == report_id)).one()
-            report = member_view(conn, row)
-            emit(
-                conn,
-                mine.project.id,
-                "member_updated",
-                ["all"],
-                report,
-                actor=caller.actor(mine.id),
-                subject=("member", report["id"]),
-            )
-        conn.execute(
-            update(t.join_link)
-            .where(t.join_link.c.reports_to == target.id, t.join_link.c.used_at.is_(None))
-            .values(reports_to=None)
-        )
-        placements.forget_boss(conn, mine.project.id, target.id)
+        apply_remove(conn, change_of(mine, caller), target)
         # The answer goes to the admin who removed it, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 

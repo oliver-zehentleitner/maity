@@ -13,6 +13,7 @@ from maity_hub import (
     API_VERSION,
     __version__,
     avatars,
+    briefings,
     clock,
     environment,
     events,
@@ -34,9 +35,9 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
-from maity_hub.routes.members import PausedIn, load_member, set_paused
+from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
-from maity_hub.scopes import has_scope, scopes_for
+from maity_hub.scopes import listed_scopes
 from maity_hub.views import (
     absence,
     event_views,
@@ -90,6 +91,9 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("GET", "/projects/{slug}/rules", "project:read"),
     ("GET", "/projects/{slug}/members", "project:read"),
     ("GET", "/projects/{slug}/members/{id}", "project:read"),
+    # An admin agent within §2.3 ᵃ: member and reviewer agents, never itself.
+    ("PATCH", "/projects/{slug}/members/{id}", "members:admin"),
+    ("DELETE", "/projects/{slug}/members/{id}", "members:admin"),
     ("GET", "/projects/{slug}/tasks", "project:read"),
     ("GET", "/projects/{slug}/tasks/{id}", "project:read"),
     ("POST", "/projects/{slug}/tasks", "tasks:write"),
@@ -318,7 +322,8 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = scopes_for(mine.role, "agent")
+    scopes = listed_scopes(mine.role, "agent")
+    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -345,6 +350,8 @@ def _packet(
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
+            "briefing_by": written.get(mine.row.briefing_by) if mine.row.briefing_by else None,
+            "briefing_version": mine.row.briefing_version,
             "team": instances.team(conn, mine.row),
         },
         "team": siblings,
@@ -422,7 +429,7 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
 def operations(project: Any, role: str) -> list[str]:
     allowed = []
     for method, path, scope in OPERATIONS:
-        if scope is not None and not has_scope(role, "agent", scope):
+        if scope is not None and scope not in listed_scopes(role, "agent"):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
@@ -444,7 +451,9 @@ def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONRespon
                 "a human paused you; only they or an admin can change it",
                 {"reason": "paused_by_human"},
             )
-        set_paused(conn, mine, mine.row, body.paused.reason if body.paused else None, caller)
+        set_paused(
+            conn, change_of(mine, caller), mine.row, body.paused.reason if body.paused else None
+        )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
