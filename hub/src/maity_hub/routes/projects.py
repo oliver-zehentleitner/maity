@@ -43,6 +43,7 @@ class PolicyIn(Strict):
     spawn_requests: str | None = None
     spawn_consent_by: str | None = None
     max_placements: int | None = None
+    on_runner_revoke: str | None = None
 
 
 class AbsenceIn(Strict):
@@ -123,7 +124,12 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
 
 
 def _apply_policy(
-    conn: Connection, project_id: str, current: dict[str, Any], change: PolicyIn, owner_id: str
+    conn: Connection,
+    project_id: str,
+    current: dict[str, Any],
+    change: PolicyIn,
+    owner_id: str,
+    instance_rule: str,
 ) -> dict[str, Any]:
     proposed = dict(current)
     if change.preset is not None:
@@ -147,6 +153,9 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
+        # The operator made stop a floor (§15.3, §16): no project keeps its agents.
+        errors["policy.on_runner_revoke"] = "stop_floor"
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
@@ -245,7 +254,14 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         assert key is not None
         owner = int(key[0])
         if body.policy is not None:
-            proposed = _apply_policy(conn, project_id, filled, body.policy, caller.principal_id)
+            proposed = _apply_policy(
+                conn,
+                project_id,
+                filled,
+                body.policy,
+                caller.principal_id,
+                settings_of(request).on_runner_revoke,
+            )
             conn.execute(
                 update(t.project)
                 .where(t.project.c.id == project_id)
@@ -318,7 +334,14 @@ def patch_project(
                 ticker.switched_on(conn, project.id)
         new_policy = None
         if "policy" in given and body.policy is not None:
-            new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)
+            new_policy = _apply_policy(
+                conn,
+                project.id,
+                policy.of(project),
+                body.policy,
+                owner_id,
+                settings_of(request).on_runner_revoke,
+            )
             if new_policy == policy.of(project):
                 new_policy = None
         state_changes = "state" in given and body.state != project.state

@@ -418,6 +418,8 @@ def test_a_revocation_is_announced_in_every_attached_project(
             "runner_id": runner.id,
             "credential_id": runner.credential_id,
             "reason": "stolen",
+            "on_runner_revoke": "keep",  # the instance default, nothing running (§15.3)
+            "stopped": [],
         }
         assert revoked["actor"]["member_id"] == owner.id
 

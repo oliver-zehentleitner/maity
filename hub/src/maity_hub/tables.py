@@ -152,6 +152,8 @@ project = Table(
     Column("max_placements", Integer, nullable=False, server_default="8"),
     # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
+    # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
+    Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -262,6 +264,10 @@ credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # A runner's stop revokes the agents' credentials after the placement's grace
+    # (§15.3): when, and on whose authority, until it is revoked.
+    Column("revoke_due_at", UtcDateTime),
+    Column("revoke_due_by", String(ID)),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -415,6 +421,9 @@ runner_credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # What its revocation applied, per attached project: `[{project_id, rule, stopped}]`;
+    # the runner is told the stopped placements on its next call (§15.3).
+    Column("stopped", JSON_VALUE),
     # True while unrevoked, NULL afterwards: one live credential per runner (§15.1).
     Column("live", Boolean, default=True),
     UniqueConstraint("runner_id", "live"),
