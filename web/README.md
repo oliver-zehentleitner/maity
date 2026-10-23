@@ -284,7 +284,11 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    with signing out. The open chat fills the screen below the header
    (the visual viewport, so a phone's keyboard counts): its history
    scrolls, the composer stays at the bottom, and a new message keeps the
-   history at its end unless the human scrolled up. A redraw of the list
+   history at its end unless the human scrolled up. Whether the reader is
+   at the end follows their own scrolling, so content that grows after it
+   was drawn (an image loading, the pane resized) keeps them there too; a
+   chat opens at the first unread message, else at its end. Group chats
+   follow the same way, with the same **Newest** pill. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
    back; opening a chat there moves the focus to its heading. The history
