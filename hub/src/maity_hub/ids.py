@@ -29,6 +29,7 @@ PREFIXES = {
     "runner_session": "rses",
     "placement": "plc",
     "memory": "mem",
+    "conversation": "cnv",
 }
 
 

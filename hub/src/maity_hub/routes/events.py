@@ -9,15 +9,16 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, longpoll, mentions
+from maity_hub import clock, events, group_chats, idempotency, longpoll, mentions
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.views import event_views
 
@@ -50,13 +51,6 @@ class RedactIn(Strict):
     # What the caller means to redact (§8.5); the hub redacts nothing else. Checked by
     # hand, so that any other value, `null` included, is `unknown` and not a type error.
     expect: Any = None
-
-
-def _closed_group_chat_message(row: Any) -> bool:
-    """A message of a closed group chat (§9). The hub has no group chats yet, so no
-    event is one, and `expect: closed_chat_message` refuses everything until it has."""
-    del row
-    return False
 
 
 def load_event(conn: Connection, seq: str, reader: Any = None) -> dict[str, Any]:
@@ -227,6 +221,7 @@ def post_message(
     if body.type not in MESSAGE_TYPES:
         raise invalid({"type": "unknown"})
     me = mine.principal_id
+    group: Any = None
     if body.type == "chat":
         if body.conversation_id is None:
             raise invalid({"conversation_id": "required_for_chat"})
@@ -234,6 +229,14 @@ def post_message(
             raise invalid(
                 {"to": "not_for_chat"}, "a chat goes to the other party of its conversation"
             )
+    if body.type == "chat" and group_chats.is_group(body.conversation_id):
+        assert body.conversation_id is not None
+        group = _group_for_posting(conn, mine, body.conversation_id)
+        to = group.id
+        current = group_chats.stays(conn, group.id)
+        audience = group_chats.audience(current)
+    elif body.type == "chat":
+        assert body.conversation_id is not None
         try:
             agent, human = chat_parties(conn, mine, body.conversation_id)
         except ApiError:
@@ -273,7 +276,17 @@ def post_message(
         if found is None:
             raise invalid({"task_id": "unknown_task"})
     mentioned: list[dict[str, Any]] = []
-    if body.type != "chat":  # a chat stays between its two parties (§8.6)
+    if group is not None:
+        # Against the chat's participants only; anyone else's handle stays text, and
+        # each participant mentioned but the writer counts one ping (§8.6).
+        inside = {group_chats.principal(s) for s in current}
+        mentioned = [
+            m
+            for m in mentions.resolve(conn, mine.project.id, body.body, "body")
+            if m["member_id"] in inside
+        ]
+        mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
+    elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
         named = mentions.members(mentioned)
         roles = _roles(conn, mine.project.id, named)
@@ -296,6 +309,8 @@ def post_message(
         "task_id": body.task_id,
         "mentions": mentioned,
     }
+    if group is not None:  # where an agent that lost the chat answers (§9.4)
+        payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
     seq = events.emit(
         conn,
         mine.project.id,
@@ -306,7 +321,54 @@ def post_message(
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
     )
+    if group is not None:  # whoever speaks has read up to there (§9.2)
+        remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq))
+
+
+def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:
+    """The open group chat the caller takes part in (§9.2)."""
+    group = group_chats.find(conn, mine.project.id, conversation_id)
+    found = group_chats.access(conn, conversation_id, mine) if group is not None else None
+    if found is None:
+        raise invalid({"conversation_id": "not_a_conversation"})
+    if found == "observer":
+        raise ApiError(
+            403, "forbidden", "an owner reads along and does not post", {"reason": "observer"}
+        )
+    group_chats.refuse_closed(group)
+    return group
+
+
+def remember_read(conn: Connection, reader: int, conversation_id: str, seq: int) -> None:
+    """Move the reader's read mark in a conversation up to `seq`, never down."""
+    updated = conn.execute(
+        update(t.conversation_read)
+        .where(
+            t.conversation_read.c.reader == reader,
+            t.conversation_read.c.conversation_id == conversation_id,
+            t.conversation_read.c.last_seq < seq,
+        )
+        .values(last_seq=seq)
+    ).rowcount
+    if updated:
+        return
+    exists = conn.execute(
+        select(t.conversation_read.c.last_seq).where(
+            t.conversation_read.c.reader == reader,
+            t.conversation_read.c.conversation_id == conversation_id,
+        )
+    ).first()
+    if exists is None:
+        try:
+            with conn.begin_nested():
+                conn.execute(
+                    insert(t.conversation_read).values(
+                        reader=reader, conversation_id=conversation_id, last_seq=seq
+                    )
+                )
+        except IntegrityError:  # another tab read first; the larger seq wins next time
+            pass
 
 
 def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str, str]:
@@ -350,10 +412,13 @@ def redact(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("events:admin")
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()
+        if row is not None and group_chats.is_group(row.conversation_id):
+            # A group chat's own rule: a place in the chat, no scope (§8.5).
+            return _redact_in_group(conn, mine, caller, row, body)
+        mine.require("events:admin")
         if row is None:
             raise not_found()
         # What the caller cannot read does not exist for it; no later refusal may say
@@ -377,37 +442,101 @@ def redact(
                 400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
             )
         # Compared only for an event the caller could redact without it (§8.5): `expect`
-        # never tells anyone else what a `seq` is.
-        if "expect" in body.model_fields_set and not _closed_group_chat_message(row):
+        # never tells anyone else what a `seq` is. No group chat's message comes here.
+        if "expect" in body.model_fields_set:
             raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
-        if not row.redacted:
-            # The one mutation the log allows, itself on record (§8.5).
-            tombstone = {
-                "redacted": True,
-                "reason": body.reason,
-                "by": mine.principal_id,
-                "at": clock.rfc3339(clock.now()),
-            }
-            # Only the first of two concurrent redactions writes and is announced; the
-            # other answers with the tombstone that stands, as a repeat does.
-            won = conn.execute(
-                update(t.event)
-                .where(t.event.c.seq == seq, t.event.c.redacted.is_(False))
-                .values(payload=tombstone, redacted=True)
-            ).rowcount
-            if won == 1:
-                events.emit(
-                    conn,
-                    mine.project.id,
-                    "event_redacted",
-                    audience,
-                    {"seq": seq, "reason": body.reason},
-                    actor=caller.actor(mine.id),
-                    subject=("event", str(seq)),
-                    # A chat's notice is the chat's, as the message was: no see-all
-                    # reaches it.
-                    conversation_id=row.conversation_id,
-                )
+        _tombstone(conn, mine, caller, row, body.reason, audience)
         return idempotency.Outcome(200, "event", str(seq), load_event(conn, str(seq), mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _tombstone(
+    conn: Connection, mine: Membership, caller: Caller, row: Any, reason: str, audience: list[str]
+) -> None:
+    """The one mutation the log allows, itself on record (§8.5); a second redaction of
+    the same event changes nothing."""
+    if row.redacted:
+        return
+    tombstone = {
+        "redacted": True,
+        "reason": reason,
+        "by": mine.principal_id,
+        "at": clock.rfc3339(clock.now()),
+    }
+    # Only the first of two concurrent redactions writes and is announced; the other
+    # answers with the tombstone that stands, as a repeat does.
+    won = conn.execute(
+        update(t.event)
+        .where(t.event.c.seq == row.seq, t.event.c.redacted.is_(False))
+        .values(payload=tombstone, redacted=True)
+    ).rowcount
+    if won != 1:
+        return
+    events.emit(
+        conn,
+        mine.project.id,
+        "event_redacted",
+        audience,
+        {"seq": row.seq, "reason": reason},
+        actor=caller.actor(mine.id),
+        subject=("event", str(row.seq)),
+        # A chat's notice is the chat's, as the message was: no see-all reaches it.
+        conversation_id=row.conversation_id,
+    )
+
+
+def _not_a_participant() -> ApiError:
+    return ApiError(
+        403, "forbidden", "only a human in the chat redacts here", {"reason": "not_a_participant"}
+    )
+
+
+def _redact_in_group(
+    conn: Connection, mine: Membership, caller: Caller, row: Any, body: RedactIn
+) -> idempotency.Outcome:
+    """§8.5 in a group chat: any human participant now, no agent; once the chat closed,
+    its former human participants, and a human with `members:admin` blind, by `seq`."""
+    group = group_chats.find(conn, mine.project.id, row.conversation_id)
+    closed = group.closed_at is not None
+    hidden = events.hidden_redactions(conn, [row], mine.row)
+    blind = False
+    if not events.readable_by(row, mine.row, mine.principal_id, hidden):
+        if not (closed and mine.kind == "human" and mine.may("members:admin")):
+            raise not_found()
+        if row.kind != "message":  # only a message is redacted blind
+            raise not_found()
+        blind = True
+    if row.kind == "event_redacted":
+        raise ApiError(
+            400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
+        )
+    if row.kind != "message":  # a chat's own record (created, updated) holds no text
+        raise ApiError(400, "invalid", "only a message is redacted", {"reason": "not_a_message"})
+    if not blind:
+        if mine.kind != "human":
+            raise humans_only("an agent never redacts; it asks a human in the chat")
+        if not closed and group_chats.stay(conn, group.id, mine.id) is None:
+            raise _not_a_participant()  # an owner reading through its agent, a former one
+        former = group_chats.last_stay(conn, group.id, mine.id) is not None
+        if closed and not former and not mine.may("members:admin"):
+            raise _not_a_participant()
+    if "expect" in body.model_fields_set and not (closed and row.kind == "message"):
+        raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
+    current = group_chats.stays(conn, group.id)
+    audience = group_chats.audience(current)
+    if closed:
+        everyone = group_chats.stays(conn, group.id, current=False)
+        audience += [f"member:{s.human_id}" for s in everyone if s.human_id]
+        audience.append(f"member:{mine.principal_id}")
+    _tombstone(conn, mine, caller, row, body.reason, list(dict.fromkeys(audience)))
+    if blind:  # never the event: its actor and audience are not the admin's to read
+        return idempotency.Outcome(200, "blind_redaction", str(row.seq), _blind(row.seq))
+    return idempotency.Outcome(200, "event", str(row.seq), load_event(conn, str(row.seq), mine))
+
+
+def _blind(seq: int) -> dict[str, Any]:
+    return {"seq": seq, "redacted": True}
+
+
+idempotency.LOADERS["blind_redaction"] = idempotency.plain(lambda _conn, seq: _blind(int(seq)))
