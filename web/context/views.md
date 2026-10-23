@@ -428,24 +428,32 @@ open that chat.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
-**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or a project's event log grows so long that reading it from the start is slow
+**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
 
-The Messages tab reads the project's events from the start
-(`after=0&wait=0`), 200 per page, and keeps every message that is not a
-chat, plus the removed ones. It shows them newest first and filters them
-by type in the page. New messages, removals and deleted files arrive
-through the project's feed, the same one the other views read. A removed
-message has no type left, so it shows only when no filter is set.
+The Messages tab reads the project's latest 5000 events
+(`wait=0`, 200 per page, from the head that `after=latest` names) and
+keeps every message that is not a chat and not removed. When the log is
+longer, the view says that older messages are not read. A cursor that
+does not move stops the read with an error. The view shows the messages
+newest first and filters them by type in the page. New messages, removals
+and deleted files arrive through the project's feed and change the list
+in place. A removed message leaves the list and is never shown as a
+tombstone. Tombstones come with §8.8 once the hub serves it.
 
 **Reason:** §8.3 is the only read the hub answers that returns project
-messages, and the audience filter on it already decides what this reader
-may see. The contract's listing (§8.8) has the same readable set, so the
-view switches to it once the hub serves it. Reading
-it from the start is one sequential read per opening, which is fine for
-projects of the size V1 expects, and it needs nothing new from the hub.
+messages, and its audience filter already decides what this reader may
+see. It is not §8.8's set, though: §8.5 replaces a removed message's
+whole payload, so a removed chat message looks like a removed project
+message there, and §8.8 never lists the former. Showing no tombstone is
+the one way the scan never lists a chat's. A stated window bounds the
+requests per opening without hiding that something is missing.
 
 **Rejected alternative:** waiting for the hub's message listing before
 building the view: it would leave project messages unreadable in the
-dashboard, the gap noted on the attachments change. Reading only the
-latest window of events: older messages would silently not be there.
+dashboard, the gap noted on the attachments change. Reading the whole log
+from the start: one request per 200 events on every opening, with no
+bound. Keeping tombstones whose audience is `all` or a role: it still
+hides the removal of a message sent to one member, and guesses at what
+the hub knows. Having the hub mark a conversation's message after
+redaction: a contract change that §8.8 already makes unnecessary.
