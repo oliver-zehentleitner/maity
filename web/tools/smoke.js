@@ -3083,7 +3083,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : ovGet(p));
   await go("#/p/maity/overview");
   expect(!main.querySelector(".error") && ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
-    && text(main).includes("The counts could not be read: this hub has no overview yet."), "overview: without the endpoint the rest stays, the counts said missing");
+    && main.querySelector(".overview-missing") && text(main).includes("This hub has no overview yet") && !main.querySelector(".send-status.failed"),
+    "overview: without the endpoint the rest stays, the counts said missing quietly, never as an error");
+  // A refresh that meets the 404 again stays quiet too; any other failure is an error.
+  win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : ovGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/overview");
+  expect(main.querySelector(".send-status.failed") && text(main).includes("The counts could not be read: down") && !main.querySelector(".overview-missing"),
+    "overview: a 500 is still said as an error");
   win.Maity.api.get = ovGet;
   // An owner gets no timer: the events reach them. A redraw keeps the focus on the same link.
   win.Maity.api.get = (p) => {

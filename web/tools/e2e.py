@@ -1512,9 +1512,10 @@ def overview_step(run: Run, page: Page) -> None:
     main = page.locator("main")
     expect(main.locator("section.overview-part").first).to_be_visible()
     run.a11y(page, "overview")
-    if "this hub has no overview yet" in main.inner_text():
+    if main.locator(".overview-missing").count():
         # Only a hub without the endpoint is skipped, and the page has to say so.
-        run.step("overview: this hub has no overview endpoint yet; links and members show, the counts are said missing")
+        run.step("overview: this hub has no overview endpoint yet; links and members show, the counts are said missing, not as an error")
+        expect(main.locator(".send-status.failed")).to_have_count(0)
         run.problems = [p for p in run.problems if not re.match(r"GET /api/v1/projects/e2e-alpha/overview\?\S* answered 404$", p)]
         no_problems(run, "overview")
         return
