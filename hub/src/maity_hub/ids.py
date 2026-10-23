@@ -29,6 +29,8 @@ PREFIXES = {
     "runner_session": "rses",
     "placement": "plc",
     "memory": "mem",
+    "jour_fixe": "jfx",
+    "jour_fixe_answer": "jfa",
 }
 
 
