@@ -67,12 +67,13 @@ def send(resolved: Resolved, mail: EmailMessage, *, timeout: float = TIMEOUT) ->
     assert sender is not None and resolved.value("host")
     recipient = str(mail["To"].addresses[0].addr_spec)
     secrets = _secrets(resolved)
-    last: tuple[int, bytes] | None = None
     try:
-        last = _converse(resolved, sender.address, recipient, mail, time.monotonic() + timeout)
+        code, reply = _converse(
+            resolved, sender.address, recipient, mail, time.monotonic() + timeout
+        )
     except _Stop as stop:
         return _outcome(False, stop.stage, stop.code, stop.reply, secrets)
-    return _outcome(True, None, last[0], last[1], secrets)
+    return _outcome(True, None, code, reply, secrets)
 
 
 def _converse(
