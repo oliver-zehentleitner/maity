@@ -42,7 +42,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## I
 - [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only; avatars decoded in a self-limiting process (-I, empty environment, size from the header first); replays first, the change limit counts refused images
-- [instances.md](instances.md) — the holding instance stored on the card, an unnamed team claim taken by the first caller; the rulebook through the member PATCH with team alone, a non-member owner included; a replacement moves claims and lead before revoking
+- [instances.md](instances.md) — an agent's claim always names its instance, none held by nobody; the rulebook through the member PATCH with team alone, a non-member owner included; a replacement moves claims and lead before revoking; what a rollback and old join links do
 
 ## J
 - [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel; the join host as a path rewrite in the middleware, matched on the hostname alone (fails closed); unused join links and new-profile placements lose reports_to with the removed member, the exchange keeps only an active boss

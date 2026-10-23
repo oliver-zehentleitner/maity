@@ -1,10 +1,40 @@
 # Agent instances
 
+## An agent's claim always names its instance; one that names none is held by nobody
+
+**Id:** 9b49f9d7-20a6-4605-a4ef-a2fc19e2455a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the agent-instances change, 2026-10-23 (`docs/api.md` §6.5, §6.17, §6.18)
+
+Every path that gives an agent member a claim names the instance or
+refuses: an admin's `claim` with a bare member id, and an `assign` that
+moves an expired claim to a team, both resolve the instance (the named
+one, the team's only one, or its lead under `distribution: lead`) and
+otherwise answer `instance_required`, also for a team with no active
+instance. `assign` takes the `instance` field of §6.18 for this.
+`cards.holds()` fails closed: an agent holds a card only when
+`claim_instance` is its own instance. A claim the upgrade could not
+bind to an instance stays held by nobody until a human reassigns it.
+
+**Reason:** the contract says a card is held by exactly one instance.
+Letting the first sibling to call take an unbound claim meant any
+sibling could take it silently — even a plain read bound it — and no
+event named the instance that got it.
+
+**Rejected alternatives:**
+- The first caller of the team takes the claim (631e9211) — silent, and
+  any sibling wins it with any call.
+- Binding such a claim to the oldest active instance — a choice the hub
+  would make for the owner, with no rule in the contract behind it.
+
 ## A claim no instance can be named for is taken by the team's first caller
 
 **Id:** 631e9211-e4e9-4352-88d2-426bec37b5d9
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 9b49f9d7-20a6-4605-a4ef-a2fc19e2455a
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-23 (agent instances, `docs/api.md` §6.5, §6.17)
 **Revisit when:** the contract defines how a claim for a team with no resolvable instance lands, or `assign` takes its `instance` field (§6.18)
@@ -43,8 +73,12 @@ top of the handler, before the member check, to `instances.patch_team`:
 the human who owns the agent profile may call it without being a member
 of the project; anyone else who is no member gets `not_found` as for any
 project they cannot see; every other caller is `forbidden` with
-`details.reason: humans_only`. A body that mixes `team` with other
-fields is `invalid` (`details.fields.team: "alone"`) and changes nothing.
+`details.reason: humans_only`, an agent before any other check. A body
+that mixes `team` with other fields is `invalid`
+(`details.fields.team: "alone"`) and changes nothing. An owner who is no
+member gets `204` without a body, since a non-member sees nothing of the
+project; a member gets the member view, with the briefing only when it
+holds `members:admin`.
 
 **Reason:** §6.18 makes the rulebook the owner's alone and lets an owner
 who is no member set it, while every other field of the PATCH is a
@@ -79,3 +113,24 @@ instance takes it, which a team under a `lead` rule would read as having
 no lead.
 
 **Alternatives:** none other was considered.
+
+## Upgrading to instances: what a rollback and old join links do
+
+**Id:** 437034ac-37a4-4e69-a635-16b01596e7d7
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the agent-instances change, 2026-10-23 (migration `agent_instances_and_team_rules`)
+
+The migration gives every existing credential a new random instance id.
+A downgrade drops the ids, so a downgrade followed by an upgrade gives
+every instance a new id; an address someone noted before the rollback
+no longer resolves. A join link created before the upgrade carries
+neither `new_instance` nor `replaces`; when it is for an existing member,
+its exchange is refused with `instance_quota`,
+which is harmless because join codes live one hour at most.
+
+**Reason:** ids are never reused within a membership, and the migration
+cannot know which id a credential had before a rollback; keeping the old
+ids would need them stored outside the schema the downgrade removes.
+
