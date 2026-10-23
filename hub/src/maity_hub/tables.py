@@ -601,6 +601,9 @@ request = Table(
     _ref("task_id", "card.id"),
     # A consent request filed for a placement proposal (§15.6); only the hub sets it.
     _ref("placement_id", "placement.id", index=True),
+    # What a `consent` request applies on its go: `{"kind": …}`, settled by the kind
+    # registered in `proposals` (§2.3 ᵃ); null for every other request.
+    Column("proposal", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),

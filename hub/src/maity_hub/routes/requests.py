@@ -11,7 +11,16 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, ticker
+from maity_hub import (
+    avatars,
+    clock,
+    idempotency,
+    inbox,
+    mentions,
+    placements,
+    proposals,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -746,6 +755,7 @@ def answer(
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -801,6 +811,7 @@ def withdraw(
         )
         _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -893,12 +904,15 @@ def file_consent(
     conn: Connection,
     mine: Membership,
     caller: Caller,
-    placement_id: str,
     title_text: str,
     summary: str,
+    *,
+    placement_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
 ) -> str:
-    """The consent request for an agent's placement proposal (§15.6): to the owner,
-    go/no, waiting, and linked to the placement; returns its id."""
+    """A consent request to the owner, go/no, waiting, linked to the placement it
+    settles (§15.6) or carrying the proposal it applies (`proposals`, §2.3 ᵃ); returns
+    its id."""
     request_id = new_id("request")
     to = inbox.Addressee("owner")
     conn.execute(
@@ -915,6 +929,7 @@ def file_consent(
                 "asked_by": mine.id,
                 "asked_session_id": caller.session_id,
                 "placement_id": placement_id,
+                "proposal": proposal,
                 "while_open": "wait",
                 "status": "open",
                 "changed_by_credential": caller.credential_id,

@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.scopes import ROLES, has_scope
@@ -85,12 +86,13 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
 
 def needs_a_human(request: Any, mine: Membership) -> bool:
     """A placement's consent request under `spawn_consent_by: human` (§6.1, §15.6):
-    starting an agent spends compute and model budget, so no agent gives the go."""
-    return (
-        mine.kind == "agent"
-        and request.placement_id is not None
-        and mine.project.spawn_consent_by == "human"
-    )
+    starting an agent spends compute and model budget, so no agent gives the go; and a
+    proposal whose kind only a human answers (§2.3 ᵃ)."""
+    if mine.kind != "agent":
+        return False
+    if request.placement_id is not None and mine.project.spawn_consent_by == "human":
+        return True
+    return proposals.humans_only(request)
 
 
 def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
