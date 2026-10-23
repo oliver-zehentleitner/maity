@@ -523,15 +523,14 @@ window.Maity = window.Maity || {};
     // unread chats and mentions (docs/api.md §18.2); else the open requests.
     const total = N.available ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
-    const pill = (p) => {
-      if (!N.available) return count(p.open_requests);
-      const c = M.notify.projectCount(p);
-      const words = [c.requests ? c.requests + " open" : null, c.chat ? c.chat + " unread in chats" : null,
-        c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ");
-      return c.total ? h("span", { class: "count", "aria-label": words }, String(c.total)) : null;
-    };
+    // The same words on every pill: what the number is made of.
+    const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": [c.requests ? c.requests + " open" : null,
+      c.chat ? c.chat + " unread in chats" : null, c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ") },
+    String(c.total)) : null);
+    const pill = (p) => (N.available ? counted(M.notify.projectCount(p)) : count(p.open_requests));
+    const all = N.available ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "#/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", count(total)),
+      h("a", { href: "#/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.slug, "inbox"),
         "aria-current": ctx.scope === "project" && p.slug === ctx.slug ? "page" : null,
@@ -744,7 +743,9 @@ window.Maity = window.Maity || {};
       // Re-reads /me for the switcher's counts. What counts as seen stays;
       // the inbox marks it after an answer of its own.
       refreshCounts: async () => {
-        const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read()]);
+        // A failed notifications read keeps the last counts and leaves /me's
+        // refresh standing; the next round reads them again.
+        const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderBell(ctx);

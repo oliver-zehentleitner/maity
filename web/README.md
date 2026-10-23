@@ -44,7 +44,9 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
 (`by_project`, computed by the hub):
 - **Switcher pill.** A project's pill counts its open requests plus its
   unread chats and mentions, and its label says which. **All projects**
-  shows the hub's `total`.
+  shows the hub's `total`, with the same words; it includes a personal
+  request of a project the human is not in (`member: false`), which is
+  on no project's pill.
 - **Tabs.** The **Inbox** tab shows the project's open requests, the
   **Chat** tab its unread chats.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
@@ -54,18 +56,26 @@ A **bell** left of the menus has the unread count of every kind but the
 open requests. It reads the latest 20 items when it opens, unread ones
 marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
-marks it read; **Mark all read** marks everything up to that answer's
-position (`next_after`, passed back unchanged). A sign-in or an address
-change leads to the account, a personal request of a project one is not
-in to everything waiting. The bell links to the settings.
+marks it read, except a sign-in or address alert (`security`): that is
+confirmed only explicitly, so opening it to look never gives the
+reported session good standing (§2.6.5, §18.3). **Mark all read** marks
+everything up to that answer's position (`next_after`, passed back
+unchanged) and leaves those alerts; it is not offered when they are all
+that is unread, and the panel says so. A sign-in or an address change
+leads to the account for now (there is no session list in the page yet),
+a personal request of a project one is not in to everything waiting (the
+personal inbox, `#/requests/<id>`, is not in the page yet). Escape closes
+the panel from the bell or inside it. The bell links to the settings.
 
 **Browser notifications** are opt-in on the account
 (`#/account/notifications`). Turning them on is the one place the
 browser's permission is asked, and its answer is shown beside the switch.
 After that:
 - **Delivery.** While a tab is open, also in the background, the page
-  long-polls `?after=<position>&wait=55` from the counts' `next_after`,
-  taking each answer's `next_after` as the next start, and shows each new item of a kind
+  long-polls `?after=<position>&wait=55` from a fresh `limit=0` head
+  read when it starts (also after a setting changed and after another
+  tab had the long-poll), taking each answer's `next_after` as the next
+  start, so nothing from before pops up at once. It shows each new item of a kind
   switched on. The item's `id` is the tag, so two tabs show it once.
   Clicking one opens its place.
 - **What is shown.** Nothing for one's own actions. A chat's or a

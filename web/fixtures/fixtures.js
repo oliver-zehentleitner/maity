@@ -1807,6 +1807,22 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/#/p/maity/agents"
       },
       {
+        "actor": null,
+        "at": "2026-10-22T13:18:00Z",
+        "id": "ntf-acr-7",
+        "kind": "security",
+        "project": null,
+        "read": false,
+        "record": "acr-7",
+        "redacted": false,
+        "target": {
+          "id": "ses-x9",
+          "type": "session"
+        },
+        "title": "New sign-in: Firefox on Linux (email_link)",
+        "url": "https://maity.team/#/account"
+      },
+      {
         "actor": {
           "avatar_url": null,
           "display_name": "Agent B",
@@ -1830,6 +1846,7 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/#/p/maity/board?task=tsk-0004"
       },
       {
+        "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "actor": {
           "avatar_url": null,
           "display_name": "Agent A",
@@ -1851,6 +1868,30 @@ window.MAITY_FIXTURES = {
         },
         "title": "Agent A in agent-a",
         "url": "https://maity.team/#/p/maity/chat/agt-a"
+      },
+      {
+        "actor": {
+          "avatar_url": null,
+          "display_name": "LV Agent",
+          "member_id": "agt-l1"
+        },
+        "at": "2026-10-22T12:55:00Z",
+        "id": "ntf-acr-6",
+        "kind": "inbox",
+        "project": {
+          "member": false,
+          "name": "lasteverLM",
+          "slug": "lasteverlm"
+        },
+        "read": false,
+        "record": "acr-6",
+        "redacted": false,
+        "target": {
+          "id": "req-p001",
+          "type": "request"
+        },
+        "title": "LV Agent asks you: May I take over tsk-77?",
+        "url": "https://maity.team/#/requests/req-p001"
       },
       {
         "actor": {

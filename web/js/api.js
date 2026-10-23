@@ -344,8 +344,8 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
-  // §18.2 counts, overall and per project. The fixtures have events only,
-  // so a position is "<seq>.0".
+  // §18.2 counts, overall and per project. Items from events carry seq,
+  // those from account records record "acr-<n>"; a position is "a.b".
   const KINDS = ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security", "system"];
   function notificationCounts() {
     const counts = {};
@@ -354,7 +354,13 @@ window.Maity = window.Maity || {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security" && k !== "system").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.slug).inbox += n; });
     fixtures()["notifications.json"].items.forEach((x) => {
-      if (x.read || x.kind === "inbox") return;
+      if (x.read) return;
+      // A personal request of a project one is no member of (§7): counted
+      // in inbox, on an entry with member false; the rest come from /me.
+      if (x.kind === "inbox") {
+        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.slug).inbox += 1; of(x.project.slug).member = false; }
+        return;
+      }
       counts[x.kind] += 1;
       if (x.project && x.kind !== "security" && x.kind !== "system") of(x.project.slug)[x.kind] += 1;
     });
@@ -362,7 +368,14 @@ window.Maity = window.Maity || {};
     Object.values(byProject).forEach((c) => { c.total = c.inbox + c.chat + c.mention; });
     return { counts, by_project: byProject };
   }
-  const positionSeq = (pos) => Number(String(pos).split(".")[0]);
+  // A position's two parts, and whether an item lies past one (§18.2).
+  const parts = (pos) => String(pos).split(".").map(Number);
+  const recordNo = (x) => (x.record ? Number(x.record.slice(4)) : null);
+  const pastOf = (x, pos) => { const [a, b] = parts(pos); return x.record ? recordNo(x) > b : x.seq > a; };
+  const headOf = (items) => Math.max(0, ...items.filter((x) => !x.record).map((x) => x.seq)) + "."
+    + Math.max(0, ...items.filter((x) => x.record).map(recordNo));
+  // One order: by at, events before records (§18.2).
+  const inOrder = (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : (a.record ? 1 : 0) - (b.record ? 1 : 0));
   // An agent's owner as §6.2 shows it: always the human, member or not.
   function humanOf(id) {
     const m = me().member;
@@ -458,27 +471,42 @@ window.Maity = window.Maity || {};
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       const projects = query.get("project") ? query.get("project").split(",") : null;
-      let items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
-        && (!kinds || kinds.includes(x.kind)) && (!projects || projects.includes(x.project.slug)));
+      const allowed = n.settings.browser.content || {};
+      // content only on chat and mention, and only when the settings allow it (§18.2).
+      const view = (x) => {
+        const out = Object.assign({}, x);
+        delete out._text;
+        if (x._text && allowed[x.kind]) out.content = x._text.replace(/\s+/g, " ").slice(0, 120);
+        return out;
+      };
+      const items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
+        && (!kinds || kinds.includes(x.kind)) && (!projects || (x.project && projects.includes(x.project.slug))));
       const after = query.get("after");
-      const head = Math.max(0, ...n.items.map((x) => x.seq));
-      let listed;
+      const head = headOf(n.items);
       if (after !== null) {
-        const past = items.filter((x) => x.seq > positionSeq(after)).sort((a, b) => a.seq - b.seq);
-        listed = past.slice(0, limit);
-        const next = past.length > limit ? listed[listed.length - 1].seq : Math.max(head, positionSeq(after));
-        return { counts, by_project: byProject, items: listed, next_cursor: null, next_after: (limit ? next : positionSeq(after)) + ".0", server_time: nowIso() };
+        if (!limit) return { counts, by_project: byProject, items: [], next_cursor: null, next_after: after, server_time: nowIso() };
+        const past = items.filter((x) => pastOf(x, after)).sort(inOrder);
+        const listed = past.slice(0, limit);
+        const [a, b] = parts(after);
+        const [ha, hb] = parts(head);
+        // Cut: moved by what was listed; else the head, never below after.
+        const next = past.length > limit
+          ? Math.max(a, ...listed.filter((x) => !x.record).map((x) => x.seq)) + "." + Math.max(b, ...listed.filter((x) => x.record).map(recordNo))
+          : Math.max(a, ha) + "." + Math.max(b, hb);
+        return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
       }
-      listed = items.slice().sort((a, b) => b.seq - a.seq).slice(0, limit);
-      return { counts, by_project: byProject, items: listed, next_cursor: null, next_after: head + ".0", server_time: nowIso() };
+      const listed = items.slice().sort(inOrder).reverse().slice(0, limit);
+      return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: head, server_time: nowIso() };
     }],
     // §18.3: by ids, or everything up to a seq (of one kind or project).
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
+      // up_to never reaches a security item: those only by id (§18.3).
       n.items.forEach((x) => {
         if (body.ids ? body.ids.includes(x.id)
-          : x.seq <= positionSeq(body.up_to) && (!body.kind || x.kind === body.kind) && (!body.project || x.project.slug === body.project)) x.read = true;
+          : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
+            && (!body.project || (x.project && x.project.slug === body.project))) x.read = true;
       });
       return notificationCounts();
     }],

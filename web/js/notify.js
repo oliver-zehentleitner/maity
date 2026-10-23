@@ -25,13 +25,13 @@ window.Maity = window.Maity || {};
   const PAUSE_MS = 30 * 1000;
 
   // available: null until read, false when the hub has no notifications.
-  // head: the position (§18.2, "a.b", never built here) the browser's
-  // long-poll starts from.
-  const state = { available: null, counts: null, byProject: {}, head: null, settings: null };
+  const state = { available: null, counts: null, byProject: {}, settings: null };
 
   // The page's address for an item, from its target. Account records
-  // (a sign-in, the settings) lead to the account; a personal request of a
-  // project one is no member of, to everything waiting.
+  // (a sign-in, the settings) lead to the account, until it has a session
+  // list (§2.6.5 names Profile → Sessions); a personal request of a
+  // project one is no member of, to everything waiting, until the page
+  // has the personal inbox (§18.2 names #/requests/<id>).
   function linkOf(item) {
     const t0 = item.target || {};
     if (t0.type === "session" || t0.type === "settings") return "#/account/notifications";
@@ -53,7 +53,6 @@ window.Maity = window.Maity || {};
       state.available = true;
       state.counts = answer.counts;
       state.byProject = answer.by_project || {};
-      if (state.head === null) state.head = answer.next_after || null;
     } catch (err) {
       if (err.status !== 404) throw err;
       state.available = false;
@@ -79,9 +78,11 @@ window.Maity = window.Maity || {};
   function bell(ctx, onChange) {
     if (!state.available) return null;
     // What is unread on the bell: every kind but the open requests, which
-    // the inbox and the switcher show.
+    // the inbox and the switcher show. Sign-in and address alerts count,
+    // but "mark all read" never reaches them (§18.3).
     const counts = state.counts || {};
     const unread = Object.keys(KIND_WORDS).filter((k) => k !== "inbox").reduce((n, k) => n + (counts[k] || 0), 0);
+    const markable = unread - (counts.security || 0);
     const box = h("div", { class: "bell-box" });
     const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
     list.hidden = true;
@@ -102,7 +103,7 @@ window.Maity = window.Maity || {};
     function draw() {
       append(clear(list),
         h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, "Notifications"),
-          top !== null && unread ? h("button", {
+          top !== null && markable ? h("button", {
             type: "button", class: "small",
             onclick: async () => {
               status.busy("Marking…");
@@ -120,13 +121,16 @@ window.Maity = window.Maity || {};
             },
           }, "Mark all read") : null),
         h("p", { class: "muted bell-counts" }, Object.keys(KIND_WORDS).filter((k) => counts[k]).map((k) => KIND_WORDS[k] + " " + counts[k]).join(" · ") || "Nothing new."),
+        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays until you confirm it in your account; opening it here does not confirm it, and Mark all read leaves it.") : null,
         items.length
           ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
             h("a", {
               href: linkOf(x),
               onclick: () => {
                 close(false);
-                if (!x.read) M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
+                // A sign-in or address alert is confirmed only explicitly (§2.6.5,
+                // §18.3): opening it to look must not give that session good standing.
+                if (!x.read && x.kind !== "security") M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
               },
             }, x.redacted ? "Removed" : x.title),
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
@@ -153,7 +157,10 @@ window.Maity = window.Maity || {};
       button.setAttribute("aria-expanded", "true");
       document.addEventListener("click", outside, true);
     });
-    list.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(true); } });
+    // Escape closes it wherever the focus is: on the bell or in the panel.
+    const onEscape = (e) => { if (e.key === "Escape" && !list.hidden) { e.preventDefault(); close(true); } };
+    button.addEventListener("keydown", onEscape);
+    list.addEventListener("keydown", onEscape);
     append(box, button, list);
     return box;
   }
@@ -172,7 +179,9 @@ window.Maity = window.Maity || {};
     // A pause ends early when the loop is stopped, so nothing is left waiting.
     const loop = { stopped: false, timer: null, wake: null };
     browserLoop = loop;
-    let after = state.head;
+    // From now: a fresh head on every start and after another tab had the
+    // long-poll, so nothing since the page loaded pops up at once.
+    let after = null;
     const pause = (ms) => new Promise((done) => {
       loop.wake = done;
       loop.timer = window.setTimeout(done, ms);
@@ -189,7 +198,7 @@ window.Maity = window.Maity || {};
           continue;
         }
         if (loop.stopped) return;
-        if (answer.superseded) { await pause(SUPERSEDED_MS); continue; }
+        if (answer.superseded) { await pause(SUPERSEDED_MS); after = null; continue; }
         const items = answer.items || [];
         // The hub's next position, passed back unchanged (§18.2).
         if (answer.next_after) after = answer.next_after;

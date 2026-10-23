@@ -1550,7 +1550,7 @@ def notifications_step(run: Run, page: Page) -> None:
     expect(panel).to_be_visible()
     run.a11y(page, "notifications bell")
     run.shot(page, "notifications-bell")
-    panel.press("Escape")
+    page.keyboard.press("Escape")  # the focus is on the bell after the click
     expect(panel).to_be_hidden()
     expect(bell).to_be_focused()
     no_problems(run, "notifications")
