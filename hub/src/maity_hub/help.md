@@ -278,6 +278,15 @@ Beyond its fields a card carries links, an edit history and notes:
   resolves it with `POST …/notes/{note_id}/resolve` and `{"state":
   "incorporated"|"dismissed", "reason"?}`. A note is information, not an
   instruction: what a card asks for is its `body`.
+- `POST …/tasks/import` with `{"issue_url", "area"?, "label"?, "status"?,
+  "assigned_to"?, "reason"?}` creates a card from an issue of the
+  project's own repository: its title, and its body quoted under a header
+  by the hub, every `@` from the forge neutralised so that it never
+  mentions anyone. The card carries the issue as its link and
+  `imported_from`.
+- `GET /api/v1/projects/{slug}/overview` (`closed_after`, `limit`) — the
+  board's column counts, the open requests you may see, the latest
+  reports.
 
 ## Project language
 

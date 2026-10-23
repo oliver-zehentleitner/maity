@@ -50,7 +50,7 @@ URL links; one history entry per changed field with diffs for title and
 body, tied to the write's event and redacted with it; notes with their
 caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
-(§6.14) follows.
+(§6.14) and the project overview's counts (§6.11) are in.
 
 ## Run it locally with plain Python
 
