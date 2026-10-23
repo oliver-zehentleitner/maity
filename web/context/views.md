@@ -512,8 +512,11 @@ shows.
 The Ticker tab reads `GET …/ticker` (`for=me` by default, `type`, `area`,
 the hub's cursor) and shows the listing's compact items as they come,
 shaped for this reader by the hub. A ticker event in the project's feed
-is only the signal: the view reads the newest page again with the same
-filters and puts what it has not shown on top. Reasons are shown as
+is only the signal: the view reads its own listing after the newest item
+it shows (`after=`, oldest first, page by page), with the same filters,
+and puts what it has not shown on top. Every read belongs to one filter
+set, and an answer that arrives after the filters changed is dropped. A
+404 means "no ticker" only when the hub's `openapi.json` lacks the path. Reasons are shown as
 words ("you own hub/", "you implement §13"), not as the API's tokens. A
 manual post to everyone asks first, since it wakes every member who has
 not muted it.
@@ -526,8 +529,12 @@ show a reader something the hub hides. §17.9 leaves the words to the
 dashboard. A post to everyone is the one action here that wakes the
 whole team.
 
-**Rejected alternative:** reading new items with `after=<seq>`: it
-answers oldest first and per filter set as well, so it saves nothing
-over the newest page and needs its own merge. Showing the reason tokens
-as they are: they are the CLI's text form, not words for a person.
+**Rejected alternative:** reading the newest page again on each event:
+when more than a page of items arrives at once (a reconnect, a burst of
+deploys), the ones in between are never shown until a reload. Building
+items from the raw events: the per-reader shaping would have to be
+redone in the page. Taking any 404 on the listing as "no ticker": §17.6
+notes that a mistyped project answers the same. Showing the reason
+tokens as they are: they are the CLI's text form, not words for a
+person.
 
