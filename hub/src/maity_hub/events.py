@@ -159,12 +159,39 @@ def emit(
 
 
 SEE_ALL_ROLES = ("owner", "admin")
+# Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
+# environment, which only the humans responsible may know.
+HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
 
 
-def readable_by(row: Any, membership: Any, principal: str) -> bool:
+def hidden_redactions(conn: Connection, rows: Sequence[Any]) -> frozenset[str]:
+    """The `subject_id`s among `rows`' `event_redacted` that name an event of a
+    humans-only kind: such a tombstone is as unreadable to agents as the event it
+    redacts (§8.5). One query per batch, nothing when the batch has no tombstone."""
+    seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
+    if not seqs:
+        return frozenset()
+    return frozenset(
+        str(seq)
+        for seq in conn.execute(
+            select(t.event.c.seq).where(
+                t.event.c.seq.in_(seqs), t.event.c.kind.in_(HUMANS_ONLY_KINDS)
+            )
+        ).scalars()
+    )
+
+
+def readable_by(
+    row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
+) -> bool:
     """§8.2: audience `all`, `member:<id>`, `role:<role>`, or one's own; owners and
     admins read every event of the project."""
     audience = row.audience or []
+    humans_only = row.kind in HUMANS_ONLY_KINDS or (
+        row.kind == "event_redacted" and row.subject_id in hidden
+    )
+    if humans_only and membership.agent_id is not None:
+        return False
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
@@ -186,7 +213,7 @@ def read(
     return _scan(
         conn,
         t.event.c.project_id == project_id,
-        lambda row: readable_by(row, membership, principal),
+        lambda row, hidden: readable_by(row, membership, principal, hidden),
         after,
         limit,
     )
@@ -195,7 +222,7 @@ def read(
 def _scan(
     conn: Connection,
     scope: ColumnElement[bool],
-    readable: Callable[[Any], bool],
+    readable: Callable[[Any, frozenset[str]], bool],
     after: int,
     limit: int,
 ) -> tuple[list[Any], int, bool]:
@@ -208,8 +235,9 @@ def _scan(
             .order_by(t.event.c.seq)
             .limit(500)
         ).all()
+        hidden = hidden_redactions(conn, batch)
         for row in batch:
-            if readable(row):
+            if readable(row, hidden):
                 if len(found) == limit:
                     return found, found[-1].seq, True
                 found.append(row)
@@ -238,7 +266,7 @@ def read_for_runner(
     rows, examined, _ = _scan(
         conn,
         t.event.c.project_id.in_(project_ids),
-        lambda row: runner_reads(row, runner_id),
+        lambda row, _hidden: runner_reads(row, runner_id),
         after,
         limit,
     )
@@ -276,7 +304,7 @@ def highest_readable(conn: Connection, project_id: str, membership: Any, princip
     return _highest(
         conn,
         t.event.c.project_id == project_id,
-        lambda row: readable_by(row, membership, principal),
+        lambda row, hidden: readable_by(row, membership, principal, hidden),
     )
 
 
@@ -285,19 +313,24 @@ def highest_for_runner(conn: Connection, project_ids: Sequence[str], runner_id: 
     if not project_ids:
         return 0
     return _highest(
-        conn, t.event.c.project_id.in_(project_ids), lambda row: runner_reads(row, runner_id)
+        conn,
+        t.event.c.project_id.in_(project_ids),
+        lambda row, _hidden: runner_reads(row, runner_id),
     )
 
 
-def _highest(conn: Connection, scope: ColumnElement[bool], readable: Callable[[Any], bool]) -> int:
+def _highest(
+    conn: Connection, scope: ColumnElement[bool], readable: Callable[[Any, frozenset[str]], bool]
+) -> int:
     query = select(t.event).where(scope).order_by(t.event.c.seq.desc()).limit(500)
     before = None
     while True:
         batch = conn.execute(
             query.where(t.event.c.seq < before) if before is not None else query
         ).all()
+        hidden = hidden_redactions(conn, batch)
         for row in batch:
-            if readable(row):
+            if readable(row, hidden):
                 seq: int = row.seq
                 return seq
         if len(batch) < 500:

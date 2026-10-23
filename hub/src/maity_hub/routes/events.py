@@ -19,7 +19,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.models import Strict, Written, markdown
-from maity_hub.views import event_view, event_views
+from maity_hub.views import event_views
 
 router = APIRouter()
 
@@ -49,12 +49,24 @@ class RedactIn(Strict):
     reason: str = markdown(min_length=1)
 
 
-def load_event(conn: Connection, seq: str) -> dict[str, Any]:
+def load_event(conn: Connection, seq: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.event).where(t.event.c.seq == int(seq))).one()
-    return event_view(conn, row)
+    return event_views(conn, [row], reader)[0]
 
 
-idempotency.LOADERS["event"] = idempotency.plain(load_event)
+def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, Any]:
+    """A replay shows the event as the caller saw it the first time: the caller's
+    membership in the event's project is the reader (§8.5)."""
+    row = conn.execute(select(t.event).where(t.event.c.seq == int(seq))).one()
+    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    try:
+        reader = membership(conn, request.state.caller, slug) if slug else None
+    except ApiError:
+        reader = None
+    return event_views(conn, [row], reader)[0]
+
+
+idempotency.LOADERS["event"] = _load_for_caller
 
 
 # --- reading and waiting -------------------------------------------------------------------
@@ -116,7 +128,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
                 events.mark_delivered(conn, rows, mine.principal_id)
             cursor = rows[-1].seq if rows else max(examined, since)
-            return event_views(conn, rows), cursor
+            return event_views(conn, rows, mine), cursor
 
     if wait == 0:
         items, cursor = await run_in_threadpool(read, False, after)
@@ -331,7 +343,14 @@ def redact(
         ).first()
         if row is None:
             raise not_found()
-        audience = ["role:owner", "role:admin"]
+        # What the caller cannot read does not exist for it; no later refusal may say
+        # otherwise (§8.5).
+        if not events.readable_by(
+            row, mine.row, mine.principal_id, events.hidden_redactions(conn, [row])
+        ):
+            raise not_found()
+        # The tombstone's event reaches whoever could read the event, never more (§8.5).
+        audience = list(row.audience or [])
         if row.conversation_id is not None:
             # A chat is redacted only by its human party; to anyone else it does not
             # exist, and the tombstone's event goes to the two parties (§8.5).
@@ -339,6 +358,10 @@ def redact(
             if mine.id != human.id:
                 raise not_found()
             audience = [f"member:{row.conversation_id}", f"member:{human.human_id}"]
+        if row.kind == "event_redacted":  # a tombstone's record is not itself redacted
+            raise ApiError(
+                400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
+            )
         if not row.redacted:
             # The one mutation the log allows, itself on record (§8.5).
             tombstone = {
@@ -358,7 +381,9 @@ def redact(
                 {"seq": seq, "reason": body.reason},
                 actor=caller.actor(mine.id),
                 subject=("event", str(seq)),
+                # A chat's notice is the chat's, as the message was: no see-all reaches it.
+                conversation_id=row.conversation_id,
             )
-        return idempotency.Outcome(200, "event", str(seq), load_event(conn, str(seq)))
+        return idempotency.Outcome(200, "event", str(seq), load_event(conn, str(seq), mine))
 
     return idempotency.run(engine_of(request), request, caller, action)

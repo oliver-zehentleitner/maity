@@ -220,6 +220,19 @@ def member_view(
     return member_views(conn, [row], briefing=briefing, details=details)[0]
 
 
+def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
+    """`shared_environment` of the agent rows given, per project (§5.3)."""
+    from maity_hub import environment
+
+    by_project: dict[str, set[int]] = {}
+    for row in rows:
+        by_project.setdefault(row.project_id, set()).add(row.id)
+    found: dict[int, list[dict[str, str]]] = {}
+    for project_id, ids in by_project.items():
+        found.update(environment.views(conn, project_id, ids))
+    return found
+
+
 def member_views(
     conn: Connection,
     rows: Sequence[Any],
@@ -256,6 +269,7 @@ def member_views(
     ]
     owners = _owners(conn, {r.agent_id: agents[r.agent_id] for r in detailed})
     counted = _credential_counts(conn, {r.id for r in detailed})
+    sharing = _sharing(conn, detailed)
     views = []
     for row in rows:
         head = (
@@ -307,6 +321,8 @@ def member_views(
         if details(row) if callable(details) else details:
             view["owner"] = owners.get(row.agent_id) if row.agent_id else None
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
+            # Never in an event: views built for events pass no `details` (§5.3).
+            view["shared_environment"] = sharing.get(row.id, [])
         views.append(view)
     return views
 
@@ -500,8 +516,31 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
     return event_views(conn, [row])[0]
 
 
-def event_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
-    """`event_view` for several events, with one query for the actors."""
+def _sees_reasons(reader: Any) -> bool:
+    """A redaction's reason reaches the human owners and admins (§8.5); the redactor
+    reads its own reason in any case."""
+    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
+
+
+def _without_reason(row: Any, reader: Any) -> Any:
+    """`row.payload` as `reader` sees it: the reason of a redaction (the `event_redacted`
+    notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
+    Every other event's `reason` is untouched."""
+    payload = row.payload
+    redaction = row.kind == "event_redacted" or row.redacted
+    if not redaction or not isinstance(payload, dict) or _sees_reasons(reader):
+        return payload
+    if reader is not None and row.kind == "event_redacted" and row.actor_membership == reader.id:
+        return payload  # the redactor's own notice
+    if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
+        return payload  # the redactor's own tombstone
+    return {**payload, "reason": None}  # no reader known: hidden, never shown by default
+
+
+def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> list[dict[str, Any]]:
+    """`event_view` for several events, with one query for the actors. `reader` (a
+    `Membership`) is the member the views are for; without one a redaction's reason is
+    hidden, so a caller that forgets to pass it shows less, never more."""
     actors = principal_ids(conn, (r.actor_membership for r in rows))
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (
@@ -543,7 +582,7 @@ def event_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": row.audience,
-                "payload": row.payload,
+                "payload": _without_reason(row, reader),
                 "redacted": row.redacted,
             }
         )

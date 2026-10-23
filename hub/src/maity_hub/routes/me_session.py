@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import API_VERSION, __version__, clock, events, idempotency, rules
+from maity_hub import API_VERSION, __version__, clock, environment, events, idempotency, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
@@ -99,12 +99,20 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
 ]
 
 
+class EnvironmentIn(Strict):
+    """Declared, never verified (§5.2): ids the client derives per hub."""
+
+    home: str | None = Field(default=None, pattern=environment.ID.pattern)
+    workspace: str | None = Field(default=None, pattern=environment.ID.pattern)
+
+
 class ResumeIn(Strict):
     harness: str | None = Field(default=None, max_length=200)
     harness_version: str | None = Field(default=None, max_length=200)
     model: str | None = Field(default=None, max_length=200)
     client: str = Field(min_length=1, max_length=200)
     cursor: int | None = Field(default=None, ge=0)
+    environment: EnvironmentIn | None = None
 
 
 class MePatch(Strict):
@@ -181,8 +189,11 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 last_seen_at=now,
                 acknowledged_seq=cursor,
                 live=True,
+                env_home=body.environment.home if body.environment else None,
+                env_workspace=body.environment.workspace if body.environment else None,
             )
         )
+        environment.refresh(conn, mine.project.id, mine.id)
         conn.execute(
             update(t.card)
             .where(t.card.c.claim_holder == mine.id, t.card.c.status.notin_(CLOSED_STATUSES))
@@ -322,7 +333,7 @@ def _packet(
         "requests": _requests_block(conn, mine, cursor),
         "events": {
             "after": cursor,
-            "items": event_views(conn, rows),
+            "items": event_views(conn, rows, mine),
             "cursor": events_cursor,
             "truncated": truncated,
         },

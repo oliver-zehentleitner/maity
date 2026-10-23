@@ -93,6 +93,88 @@ def test_everyone_with_events_post_may_message_all(
 # --- §8.5 redaction --------------------------------------------------------------------------
 
 
+def test_a_redaction_cannot_be_redacted(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "a secret"})
+    with migrated.connect() as conn:
+        tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    again = owner.post(f"/projects/maity/events/{tomb.seq}/redact", {"reason": "hide it"})
+    assert again.status_code == 400
+    assert again.json()["error"]["details"] == {"reason": "already_redacted"}
+
+
+def test_only_human_admins_and_the_redactor_read_the_reason(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+
+    def seen(who: Any) -> dict[str, Any]:
+        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        notice = next(e for e in items if e["kind"] == "event_redacted")
+        tomb = next(e for e in items if e["seq"] == leaked["seq"])
+        return {"notice": notice["payload"]["reason"], "tomb": tomb["payload"]["reason"]}
+
+    assert seen(owner) == {"notice": "the token", "tomb": "the token"}
+    for reader in (agent, admin):  # an admin agent is no human admin (§8.5)
+        assert seen(reader) == {"notice": None, "tomb": None}
+    packet = agent.resume(cursor=0).json()["events"]["items"]
+    notice = next(e for e in packet if e["kind"] == "event_redacted")
+    assert notice["payload"] == {"seq": leaked["seq"], "reason": None}
+
+
+def test_a_chats_redaction_notice_stays_in_the_chat(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    agent = flow.agent(make_client, owner)
+    message = chat(agent, agent.id, "the key abc").json()
+    second = flow.human(make_client, migrated, "second-admin")
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=second.id)
+    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "the key abc"})
+    with migrated.connect() as conn:
+        notice = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+    assert notice.conversation_id == agent.id  # the chat's, as the message was
+
+    def kinds(who: Any, **headers: Any) -> list[Any]:
+        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        return [e for e in items if e["kind"] == "event_redacted"]
+
+    assert kinds(second) == []  # a second human admin does not read it (§8.5)
+    [seen] = kinds(owner)
+    assert seen["payload"]["reason"] == "the key abc"  # the redactor
+    [theirs] = kinds(agent)
+    assert theirs["payload"]["reason"] is None  # the agent party
+    # An event the caller cannot read stays not_found, before already_redacted.
+    again = second.post(f"/projects/maity/events/{notice.seq}/redact", {"reason": "x"})
+    assert again.status_code == 404
+
+
+def test_without_a_reader_the_reason_is_hidden(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.views import event_views
+
+    agent = flow.agent(make_client, owner)
+    leaked = say(agent, to="all", body="a secret").json()
+    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+    with migrated.connect() as conn:
+        rows = [
+            *conn.execute(select(t.event).where(t.event.c.redacted.is_(True))),
+            *conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")),
+        ]
+        views = event_views(conn, rows)  # no reader: a runner's or a placement's list
+    assert [v["payload"]["reason"] for v in views] == [None, None]
+
+
 def test_redaction_replaces_the_payload_and_is_itself_recorded(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -111,7 +193,7 @@ def test_redaction_replaces_the_payload_and_is_itself_recorded(
     assert body["audience"] == leaked["audience"]
     with migrated.connect() as conn:
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
-    assert tomb.audience == ["role:owner", "role:admin"]
+    assert tomb.audience == leaked["audience"]  # the event's own, never wider (§8.5)
     assert tomb.payload == {"seq": leaked["seq"], "reason": "a secret"}
     again = owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "twice"})
     assert again.json()["payload"]["reason"] == "a secret"  # the first tombstone stands

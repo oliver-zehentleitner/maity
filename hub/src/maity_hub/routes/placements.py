@@ -247,7 +247,8 @@ def placement_reports(
             .order_by(t.event.c.seq.desc())
             .limit(limit)
         ).all()
-        return JSONResponse({"items": event_views(conn, rows), "next_cursor": None})
+        # The reader decides what a redaction's reason shows (§8.5).
+        return JSONResponse({"items": event_views(conn, rows, mine), "next_cursor": None})
 
 
 # --- creating -------------------------------------------------------------------------------
