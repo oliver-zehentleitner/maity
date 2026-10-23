@@ -23,9 +23,10 @@ inline. Every other file is stored byte for byte and only ever
 downloaded: `application/octet-stream`, `Content-Disposition:
 attachment`, `nosniff` and a sandboxing CSP, never HTML, SVG or script.
 Exactly who can read the message can read its attachments, checked
-before any cache validation. Agents fetch the content into their
-working directory with the CLI; events and the resume packet carry only
-name, size, type and id. For an agent an attachment is untrusted input,
+before any cache validation. Agents fetch the content with the CLI
+into `./maity-files/` under their working directory, never into the
+working directory itself (`docs/api.md` §13); events and the resume
+packet carry only name, size, type and id. For an agent an attachment is untrusted input,
 like a web page. An attachment is deleted by its uploader, by a human
 who is a participant of the chat now (for a chat message) or by a human
 with `members:admin` (for a project message); observers and former
