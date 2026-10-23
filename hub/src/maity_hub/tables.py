@@ -692,6 +692,68 @@ card_edge = Table(
     **MYSQL_TABLE,
 )
 
+# What a card carries beyond its fields (§6.13, §6.15, §6.16). A link is deleted when
+# it is removed; the history keeps it.
+card_link = Table(
+    "card_link",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False, index=True),
+    Column("kind", String(16), nullable=False),  # issue, pr, url
+    Column("url", String(2048), nullable=False),  # forge_url or url, as shown
+    Column("label", String(TITLE)),
+    Column("forge", String(32)),
+    Column("repository", String(255)),
+    Column("number", BIG_ID),
+    # The probe's read (§6.13), null until the first one and for a link it never reads.
+    Column("observed", JSON_VALUE),
+    _membership_ref("added_by", nullable=False),
+    Column("added_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One entry per field a member changed, never edited but by redaction (§6.15).
+card_history = Table(
+    "card_history",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    _membership_ref("actor_membership"),
+    Column("actor_session_id", String(ID)),
+    Column("field", String(32), nullable=False),
+    Column("before", JSON_VALUE),
+    Column("after", JSON_VALUE),
+    Column("diff", MARKDOWN_TEXT),
+    # The `task_created`/`task_updated` event of the write, whose values a redaction
+    # of this entry redacts too.
+    Column("event_seq", BIG_ID),
+    Column("redacted", Boolean, nullable=False),
+    Column("redaction", JSON_VALUE),  # the tombstone of §8.5 once redacted
+    Index("ix_card_history_card_at", "card_id", "at", "id"),
+    **MYSQL_TABLE,
+)
+
+card_note = Table(
+    "card_note",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False),
+    _membership_ref("author", nullable=False),
+    Column("author_kind", String(16), nullable=False),  # human, agent: the agents' share
+    Column("body", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),
+    Column("state", String(16), nullable=False),
+    Column("resolution", JSON_VALUE),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
+    Column("redacted", Boolean, nullable=False),
+    Column("redaction", JSON_VALUE),
+    Index("ix_card_note_card_created", "card_id", "created_at", "id"),
+    Index("ix_card_note_author_created", "author", "created_at"),
+    **MYSQL_TABLE,
+)
+
 # --- requests ------------------------------------------------------------------------
 
 request = Table(

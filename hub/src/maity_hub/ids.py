@@ -30,6 +30,9 @@ PREFIXES = {
     "placement": "plc",
     "memory": "mem",
     "conversation": "cnv",
+    "link": "lnk",
+    "history": "hst",
+    "note": "nte",
 }
 
 

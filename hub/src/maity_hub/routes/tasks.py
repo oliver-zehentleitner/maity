@@ -30,6 +30,8 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
+from maity_hub.board import history
+from maity_hub.board import links as card_links
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import emit, lock_project
@@ -93,6 +95,7 @@ class TaskCreate(Written):
     ktw_ref: str | None = Field(default=None, max_length=255)
     release: ReleaseIn | None = None
     contract: ContractIn | None = None
+    links: list[card_links.LinkIn] = Field(default_factory=list, max_length=20)  # §6.13
     reason: str | None = markdown(default=None)
 
 
@@ -412,7 +415,9 @@ def _touch_partners(
             audience(conn, partner),
             {
                 "id": partner_id,
+                "fields": ["ships_with"],
                 "ships_with": task_view(conn, partner, fg)["ships_with"],
+                "history": [],  # the mirrored edge is the hub's; the edit is on the other card
                 "project_state": mine.project.state,
             },
             actor=caller.actor(mine.id),
@@ -642,21 +647,54 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
         _touch_partners(conn, mine, caller, partners, fg)
         card = _card(conn, card_id)
+        for link in body.links:
+            card_links.add(conn, card, link, mine.project.repository_url, mine.id)
         view = task_view(conn, card, fg)
-        emit(
+        # One history entry for the creation, with the card's fields as created (§6.15).
+        fields = [name for name in CREATED if name in view and view[name] not in (None, [])]
+        entry = history.created(
+            conn, card_id, {name: view[name] for name in fields}, caller.actor(mine.id)
+        )
+        seq = emit(
             conn,
             mine.project.id,
             "task_created",
             audience(conn, card),
-            {**view, **state},
+            {
+                **{k: v for k, v in view.items() if k != "body"},  # never in an event
+                "fields": fields,
+                "history": [entry],
+                **state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card_id),
         )
+        history.stamp(conn, [entry], seq)
         _ping(conn, mine, caller, card, found, "body", before=[])
         releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
         return idempotency.Outcome(201, "task", card_id, view)
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    response = idempotency.run(engine_of(request), request, caller, action)
+    if body.links and response.status_code == 201 and request.app.state.probe is not None:
+        request.app.state.probe.links_added()  # after the commit, never awaited (§6.13)
+    return response
+
+
+# A card's fields as its creation records them (§6.15).
+CREATED = (
+    "kind",
+    "title",
+    "body",
+    "label",
+    "status",
+    "area",
+    "assigned_to",
+    "depends_on",
+    "ships_with",
+    "ktw_ref",
+    "contract",
+    "links",
+)
 
 
 @router.patch("/projects/{slug}/tasks/{card_id}")
@@ -734,6 +772,11 @@ def patch_task(
             values["contract"] = _patched_contract(conn, mine, card, body.contract)
         if body.depends_on is not None:
             _refuse_closed_release(card)
+        before = (
+            task_view(conn, card, fg)
+            if body.depends_on is not None or body.ships_with is not None
+            else None
+        )
         depends_changed = body.depends_on is not None and cards.set_depends_on(
             conn, mine.project.id, card.id, body.depends_on
         )
@@ -765,25 +808,53 @@ def patch_task(
                 changed_via=caller.via,
             )
         )
+        before_card = card
         card = _card(conn, card.id)
         view = task_view(conn, card, fg)
-        payload = {k: view[k] for k in changed if k in view}
-        if depends_changed:
-            payload["depends_on"] = view["depends_on"]
-        if partners:
-            payload["ships_with"] = view["ships_with"]
+        payload = {k: view[k] for k in changed if k in view and k != "body"}  # never body
+        fields = [k for k in changed if k in view]
+        extra: list[tuple[str, Any, Any]] = []
+        for name, moved in (("depends_on", depends_changed), ("ships_with", bool(partners))):
+            if moved and before is not None and before[name] != view[name]:
+                payload[name] = view[name]
+                fields.append(name)
+                extra.append((name, before[name], view[name]))
         if "release_data" in changed:
             payload["release"] = view["release"]
+            fields.append("release")
+        old_state = (before_card.contract or {}).get("state")
+        if "contract" in changed and old_state != (card.contract or {}).get("state"):
+            extra.append(("contract.state", old_state, (card.contract or {}).get("state")))
+        entries = history.record(
+            conn,
+            before_card,
+            changed,
+            caller.actor(mine.id),
+            shown={
+                "assigned_to": (
+                    principal_id(conn, before_card.assigned_to),
+                    principal_id(conn, card.assigned_to),
+                )
+            },
+            extra=extra,
+        )
         _touch_partners(conn, mine, caller, partners, fg)
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "task_updated",
             audience(conn, card),
-            {**payload, "id": card.id, "project_state": mine.project.state},
+            {
+                **payload,
+                "id": card.id,
+                "fields": sorted(set(fields)),
+                "history": entries,
+                "project_state": mine.project.state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        history.stamp(conn, entries, seq)
         if found is not None:
             _ping(conn, mine, caller, card, found, "body", before=previous_mentions)
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
@@ -1088,6 +1159,7 @@ def move(
                     "id": changed_id,
                     "fields": ["rank"],
                     "rank": rank,
+                    "history": [],  # a move is layout, not history (§6.15)
                     "project_state": mine.project.state,
                 },
                 actor=caller.actor(mine.id),
@@ -1156,6 +1228,19 @@ def assign(
         )
         if assigned.rowcount != 1:  # the holder renewed in the meantime
             raise _lease_active(_card(conn, card.id))
+        if assignee != card.assigned_to:
+            history.record(
+                conn,
+                card,
+                {"assigned_to": assignee},
+                caller.actor(mine.id),
+                shown={
+                    "assigned_to": (
+                        principal_id(conn, card.assigned_to),
+                        principal_id(conn, assignee),
+                    )
+                },
+            )
         old_assignee = card.assigned_to
         card = _card(conn, card.id)
         emit(

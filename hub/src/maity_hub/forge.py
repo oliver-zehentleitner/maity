@@ -398,6 +398,46 @@ class Forge:
         url = repo.get("openGraphImageUrl")
         return url if isinstance(url, str) else None
 
+    def items(self, repository: str, numbers: list[int]) -> dict[int, dict[str, Any] | None]:
+        """Issues and pull requests of one repository by number, in one GraphQL read (card
+        links, §6.13): per number `{type, title, state, merged}`, or None when the forge
+        has no such item or the token cannot read it."""
+        if self.token is None:
+            raise ForgeUnavailableError("no forge token")
+        owner, name = repository.split("/", 1)
+        fields = " ".join(
+            f"n{n}: issueOrPullRequest(number: {n}) {{ __typename "
+            "... on Issue { title state } ... on PullRequest { title state merged } }"
+            for n in numbers
+        )
+        found = self._call(
+            "/graphql",
+            {
+                "query": "query($owner: String!, $name: String!) { repository(owner: $owner, "
+                f"name: $name) {{ {fields} }} }}",
+                "variables": {"owner": owner, "name": name},
+            },
+        )
+        if not isinstance(found, dict):
+            raise ForgeUnavailableError("the forge answered GraphQL with no object")
+        errors = found.get("errors") or []
+        if any(not isinstance(e, dict) or e.get("type") != "NOT_FOUND" for e in errors):
+            raise ForgeUnavailableError("the forge answered GraphQL with errors")
+        repo = (found.get("data") or {}).get("repository") or {}
+        answer: dict[int, dict[str, Any] | None] = {}
+        for n in numbers:
+            item = repo.get(f"n{n}")
+            if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+                answer[n] = None
+                continue
+            answer[n] = {
+                "type": item.get("__typename"),
+                "title": item["title"],
+                "state": str(item.get("state", "")).lower(),
+                "merged": item.get("merged") is True,
+            }
+        return answer
+
     # --- files on the default branch (docs/api.md §11.3) ------------------------------------
 
     def file(self, repository: str, path: str, cap: int) -> bytes | None:

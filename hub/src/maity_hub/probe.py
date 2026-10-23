@@ -37,6 +37,7 @@ from maity_hub.views import principal_id
 log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
+LINKS = ""  # a job that is no card id: read the card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
@@ -320,6 +321,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         and card.report.get("code") is not False
     ]
     work += [(observe_release, (engine, fg, project_id)) for project_id in sorted(observable)]
+    work += [(observe_links, (engine, fg, project_id)) for project_id in sorted(observable)]
     for job, args in work:
         if stop is not None and stop.is_set():
             return
@@ -490,6 +492,30 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
             return
 
 
+def observe_links(engine: Engine, fg: forge.Forge, project_id: str) -> int:
+    """The project's card links (§6.13): its own repository's issues and pull requests."""
+    from maity_hub.board import links  # board reads the views, which read the probe's rows
+
+    return links.observe(engine, fg, project_id)
+
+
+def links_due(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
+    """A round over the links of every observable project: after links were added."""
+    with engine.connect() as conn:
+        projects = conn.execute(
+            select(t.project.c.id, t.project.c.repository_url).where(
+                t.project.c.repository_url.is_not(None)
+            )
+        ).all()
+    for project in sorted(projects, key=lambda p: p.id):
+        if stop is not None and stop.is_set():
+            return
+        if fg.configured_for(project.repository_url) and not _guarded(
+            observe_links, engine, fg, project.id
+        ):
+            return
+
+
 def _guarded(work: Callable[..., Any], *args: Any) -> bool:
     """Run one piece of work; False when the forge did not answer."""
     try:
@@ -534,6 +560,10 @@ class Worker:
         """A verified `deployment_status` delivery: read that deployment now (§17.4)."""
         self.jobs.put(("deploy", project_id, deployment_id, delivery))
 
+    def links_added(self) -> None:
+        """Called after a link was added and committed: read the links soon (§6.13)."""
+        self.jobs.put(LINKS)
+
     def _run(self) -> None:
         next_sweep = clock.now()
         next_merges = clock.now()
@@ -557,5 +587,8 @@ class Worker:
                     _guarded(announce_merges, self.engine, self.fg, job[1], job[2], job[3])
                 else:
                     _guarded(announce_deploy, self.engine, self.fg, job[1], job[2], job[3])
+                continue
+            if job == LINKS:
+                _guarded(links_due, self.engine, self.fg, self.stopping)
                 continue
             _guarded(observe_report, self.engine, self.fg, job, 0)

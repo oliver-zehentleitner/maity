@@ -38,6 +38,7 @@ from maity_hub.routes import (
     admin,
     agents,
     avatars,
+    board,
     conversations,
     forge_webhook,
     joins,
@@ -131,6 +132,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
+    app.include_router(board.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
