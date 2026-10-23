@@ -9,4 +9,4 @@
 - hub: `POST /me/resume` accepts `supervisor: "maity-runner/<version>"` (§15.11):
   `hints.duty`, `membership.placement`, a "Supervised" section in the rules, and a long-poll
   that is not woken by what only `all` addresses (but `state_changed`, `policy_changed`,
-  `rules_changed`). Migration `0018`.
+  `rules_changed`). Migration `0019`.
