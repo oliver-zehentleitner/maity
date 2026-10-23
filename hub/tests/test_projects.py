@@ -75,6 +75,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "max_placements": 8,
         "coordinator": "role:admin",
         "coordinator_substitute": None,
+        "jour_fixe": None,
+        "jour_fixe_moderators": None,
     }
     assert body["absence"] is None and body["rules_version"] == 1
     me = owner.get("/me").json()
