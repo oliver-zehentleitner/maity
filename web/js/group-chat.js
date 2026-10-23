@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
     // An observer outside the project is not in the member list: said so, not by id.
     const observerName = (o) => (o === ctx.me.id ? "you" : ctx.outsider ? "another agent's owner"
-      : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
+      : ctx.memberById && ctx.memberById[o] ? M.dom.memberRef(ctx, o) : "an owner outside the project");
 
     const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
@@ -258,7 +258,7 @@ window.Maity = window.Maity || {};
     const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, "Also read by: ",
         view.observers.map((o, i) => [i ? ", " : null, observerName(o),
-          " (owner of " + view.participants.filter((p) => p.owner_id === o).map((p) => nameOf(ctx, p.member_id)).join(", ") + ")"]),
+          " (owner of ", view.participants.filter((p) => p.owner_id === o).map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id)]), ")"]),
         ". They read every message and write nothing.")
       : null);
 

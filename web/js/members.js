@@ -88,11 +88,12 @@ window.Maity = window.Maity || {};
     const byId = () => Object.fromEntries(items.map((m) => [m.id, m]));
     const nameOf = (id) => { const m = byId()[id]; return m ? m.display_name : ctx.nameOf(id); };
 
+    // Who paused it is a member like any other: a link to them.
     function pausedText(m) {
       const p = m.paused;
       if (!p) return "";
-      const by = p.by === m.id ? "paused itself" : "paused by " + nameOf(p.by);
-      return by + " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "");
+      const by = p.by === m.id ? "paused itself" : ["paused by ", M.dom.memberRef(ctx, p.by)];
+      return [by, " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "")];
     }
 
     // Focus survives a redraw by key: the element drawn for the same key.

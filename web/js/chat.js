@@ -371,7 +371,7 @@ window.Maity = window.Maity || {};
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map(draw)
         : h("li", { class: "empty" }, h("p", null, "No messages yet."),
-          h("p", { class: "muted" }, agent.display_name + " reads what you write here at its next wait or resume.")));
+          h("p", { class: "muted" }, M.dom.memberRef(ctx, agent.id), " reads what you write here at its next wait or resume.")));
     // Back to the newest, when the human has scrolled up; with what came meanwhile.
     let unseen = 0;
     const jump = h("button", { type: "button", class: "small jump-latest", hidden: true, onclick: () => {
@@ -540,7 +540,7 @@ window.Maity = window.Maity || {};
 
     M.dom.sendOnCtrlEnter(text, send, button);
 
-    const heading = h("h2", { tabindex: "-1" }, "Chat with " + agent.display_name);
+    const heading = h("h2", { tabindex: "-1" }, "Chat with ", M.dom.memberRef(ctx, agent.id));
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },

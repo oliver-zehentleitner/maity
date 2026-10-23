@@ -110,11 +110,13 @@ window.Maity = window.Maity || {};
   // A member named in an entry, as a link to them in the request's own
   // project; a personal request's project may be one the human is not in,
   // so there they stay text.
+  // A link only to someone this page knows is a member of the request's
+  // project: its own project's member list. Across projects that list is
+  // not read, so there, and for a personal request, they stay text.
   function ref(ctx, req, person) {
     const id = person && (person.member_id || person.id);
-    const known = !req.personal && id && (ctx.scope !== "project" || (ctx.memberById || {})[id]);
-    const view = { memberById: known ? { [id]: (ctx.memberById || {})[id] || Object.assign({ id }, person) } : {},
-      link: (route, x) => ctx.projectLink(req.slug, route, x), nameOf: ctx.nameOf };
+    const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
+    const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
     return M.dom.memberRef(view, person);
   }
 
@@ -162,7 +164,7 @@ window.Maity = window.Maity || {};
     if (nis) {
       append(body, h("p", { class: "flag", role: "note" },
         h("strong", null, "Needs you in the session: "),
-        nis.display_name + (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
+        ref(ctx, req, nis), (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
         nis.reason));
     }
 

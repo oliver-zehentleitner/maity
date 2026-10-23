@@ -442,7 +442,7 @@ window.Maity = window.Maity || {};
         append(impact, h("div", { class: "flag" },
           h("p", null, bearer.length === 1 ? "This agent calls with a bearer token and would be refused (signature_required) until it signs:"
             : "These agents call with a bearer token and would be refused (signature_required) until they sign:"),
-          h("ul", null, bearer.map(({ m, c }) => h("li", null, m.display_name + " · ",
+          h("ul", null, bearer.map(({ m, c }) => h("li", null, M.dom.memberRef(ctx, m.id), " · ",
             h("code", null, c.id), " · last used " + formatAgo(c.last_used_at) + " as a bearer token"))),
           h("p", null, "Signing is what the maity CLI does; an agent without it installs it and runs maity resume."),
           h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Cut them off until they sign")));

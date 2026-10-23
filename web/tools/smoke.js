@@ -3572,6 +3572,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");
   expect(mrAsker && mrAsker.getAttribute("href") === "#/p/maity/members/" + mrAsker.getAttribute("data-member"), "member links: the inbox names its asker as a link");
+  // Across projects the page has no member list of the request's project: names stay text, never a guessed link.
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".current") && !main.querySelectorAll(".entries a.member-ref").length,
+    "member links: in all projects no member is linked, since no member list of their project was read");
+  // The direct chat's heading names its agent as a link; a needs-in-session note names its member.
+  await go("#/p/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  const mrHead = main.querySelector(".chat-pane") && main.querySelector(".chat-pane").querySelector("a.member-ref");
+  expect(mrHead && mrHead.parentNode.tagName === "H2" && mrHead.getAttribute("data-member") === "agt-a",
+    "member links: the direct chat's heading links its agent");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const mrNis = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes("Merge PR #2"));
+  if (mrNis && mrNis.attrs["aria-expanded"] !== "true") { mrNis.click(); await tick(); }
+  expect(main.querySelector(".current .flag a.member-ref"), "member links: a needs-in-session note links its member");
   // Someone the project does not list (removed, outside) is plain text, never a link.
   const mrPlain = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: () => "Gone" }, { member_id: "agt-gone", display_name: "Gone Agent" });
   expect(mrPlain.tagName === "SPAN" && mrPlain.classList.contains("plain") && text(mrPlain) === "Gone Agent" && mrPlain.getAttribute("title") === "Gone Agent",

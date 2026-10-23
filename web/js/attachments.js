@@ -288,7 +288,7 @@ window.Maity = window.Maity || {};
       if (!items.length) append(list, h("li", { class: "muted" }, "None."));
       items.forEach((a) => append(list, h("li", null,
         a.name ? a.name + " · " : "",
-        sizeOf(a.size) + " · " + (ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by) + " · expires " + formatAgo(a.expires_at),
+        sizeOf(a.size) + " · ", M.dom.memberRef(ctx, a.uploaded_by), " · expires " + formatAgo(a.expires_at),
         " ", h("button", {
           type: "button", class: "small", "aria-label": "Delete the pending upload of " + sizeOf(a.size) + " by " + (ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by),
           onclick: async () => {
