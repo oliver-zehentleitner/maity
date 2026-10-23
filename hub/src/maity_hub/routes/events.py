@@ -388,10 +388,26 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
     return {(r.agent_id or r.human_id): r.role for r in rows}
 
 
+def writer(conn: Connection, caller: Caller, slug: str) -> Membership:
+    """The caller's membership for a write; an owner outside the project, who reads along
+    in its agents' chats, gets `forbidden` with `reason: observer` for every write of it
+    (§9.2), anyone else without a membership `not_found`."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError:
+        from maity_hub.routes.conversations import outsider
+
+        if outsider(conn, caller, slug) is not None:
+            raise ApiError(
+                403, "forbidden", "an owner outside reads along only", {"reason": "observer"}
+            ) from None
+        raise
+
+
 @router.post("/projects/{slug}/events")
 def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = writer(conn, caller, slug)
         mine.require("events:post")
         view = post_message(conn, mine, caller, body)
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
@@ -414,16 +430,7 @@ def redact(
         raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        try:
-            mine = membership(conn, caller, slug)
-        except ApiError:
-            from maity_hub.routes.conversations import outsider
-
-            if outsider(conn, caller, slug) is not None:  # reads along, redacts nothing
-                raise ApiError(
-                    403, "forbidden", "an owner outside reads along only", {"reason": "observer"}
-                ) from None
-            raise
+        mine = writer(conn, caller, slug)
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()

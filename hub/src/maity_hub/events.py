@@ -266,15 +266,20 @@ def read(
     after: int,
     limit: int,
     *,
-    unmentioned_chat: bool = True,
+    chat_windows: dict[str, int] | None = None,
 ) -> tuple[list[Any], int, bool]:
     """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
-    Without `unmentioned_chat`, a group chat's message that does not mention `principal`
-    is passed over and does not count against `limit` (the resume packet, §5.2)."""
+    With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
+    and the seq its current stay's window starts after), a group chat's message is kept
+    only when it mentions `principal` and lies in that window; any other is passed over
+    and does not count against `limit`."""
 
     def wanted(row: Any, hidden: frozenset[str]) -> bool:
-        if not unmentioned_chat and _group_chat(row) and row.kind == "message":
+        if chat_windows is not None and _group_chat(row) and row.kind == "message":
+            window = chat_windows.get(row.conversation_id)
             mentioned = (row.payload or {}).get("mentions") or []
+            if window is None or row.seq <= window:
+                return False
             if not any(m.get("member_id") == principal for m in mentioned):
                 return False
         return readable_by(row, membership, principal, hidden)
