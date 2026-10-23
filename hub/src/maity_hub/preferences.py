@@ -371,20 +371,42 @@ def recent_proposals(conn: Connection, membership_id: int, human_id: str) -> lis
 
 
 def proposal_view(conn: Connection, request: Any, proposed: dict[str, Any]) -> dict[str, Any]:
-    """`memory_proposal` in `GET /requests/{id}`, with what the review shows (§19.4)."""
-    current = view(conn, proposed["human_id"])
+    """`memory_proposal` as filed, for every reader of the request. What the review adds
+    from the human's current text is the human's alone (`review_view`)."""
     shown = {
         "store": "preferences",
         "human_id": proposed["human_id"],
         "markdown": proposed["markdown"],
         "base_version": proposed["base_version"],
         "reason": proposed.get("reason"),
-        "current": {"markdown": current["markdown"], "version": current["version"]},
-        "stale": proposed["base_version"] != current["version"],
     }
     if "result" in proposed:
         shown["result"] = proposed["result"]
     return {"memory_proposal": shown}
+
+
+def review_view(conn: Connection, request: Any) -> dict[str, Any]:
+    """`current` and `stale` for the human reviewing a proposal of their own text: never
+    for the proposer, who may not read the text where the human switched it off."""
+    proposed = request.proposal
+    current = view(conn, proposed["human_id"])
+    return {
+        "current": {"markdown": current["markdown"], "version": current["version"]},
+        "stale": proposed["base_version"] != current["version"],
+    }
+
+
+def open_proposals(conn: Connection, membership_id: int, human_id: str) -> list[Any]:
+    """This membership's open preference proposals for this human, of any age."""
+    rows = conn.execute(
+        select(t.request).where(
+            t.request.c.asked_by == membership_id,
+            t.request.c.to_kind == "human",
+            t.request.c.to_human == human_id,
+            t.request.c.status == "open",
+        )
+    ).all()
+    return [r for r in rows if (r.proposal or {}).get("kind") == KIND]
 
 
 def settle(conn: Connection, settled: proposals.Settlement) -> None:

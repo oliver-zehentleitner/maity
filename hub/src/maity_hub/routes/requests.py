@@ -1156,8 +1156,16 @@ def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONRe
     _human(caller)
     with engine_of(request).begin() as conn:
         row = _personal(conn, caller, request_id)
-        # The reading human reviews what a proposal would apply (§19.4).
+        # The reading human reviews what a proposal would apply (§19.4), against their
+        # current text, which only they see here.
         view = request_view(conn, row, with_proposal=True)
+        if (row.proposal or {}).get("kind") == "preferences":
+            from maity_hub import preferences
+
+            view["memory_proposal"] = {
+                **view["memory_proposal"],
+                **preferences.review_view(conn, row),
+            }
         return JSONResponse({**view, "project": _project_inline(conn, row.project_id)})
 
 
