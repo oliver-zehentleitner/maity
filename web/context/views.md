@@ -688,3 +688,35 @@ plain-text rule the same on every page.
 
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
+
+## A route the hub does not serve is said quietly, and the page does not ask it again
+
+**Id:** aa3669b7-71e6-4e87-9376-5759824653d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card from H's audit of every route the web calls against the hub on main (tsk-yht5tzadgv83, tsk-056gjh5jpfq7), 2026-10-23: 19 of 83 not served, some red, the notifications read every 15 s regardless; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub answers a capability list, or every route the web calls is served on every supported hub
+
+A 404 or 405 means "not on this hub" only when the hub's machine form
+does not list that method for that path (`M.api.missingRoute`); a 404 on
+a listed route is the resource's (a project left, a card gone) and stays
+an error, as does one while the machine form cannot be read. A view that
+needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
+and notes the route (`M.api.absent`, method and path without the query,
+until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+notifications' long-poll, the overview's re-reads and the sessions list
+ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
+error.
+
+**Reason:** an older hub without a feature is the normal case while the
+hub grows, not a failure of the reader's; a red line for it reads as
+something broken, and a timer that keeps asking costs a request every
+15 seconds for nothing.
+
+**Rejected alternative:** a check of the machine form before every call,
+as for the controls (views.md: controls only for routes the hub lists):
+the answer of the call itself already says it, and these reads happen
+whether or not a control is drawn. Caching every 404 by its full path: a
+card or a request that is gone answers 404 too, and must not be taken for
+a missing feature.

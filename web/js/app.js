@@ -944,6 +944,9 @@ window.Maity = window.Maity || {};
   async function render() {
     const seq = ++renderSeq;
     stopTimers();
+    // A route noted as not on this hub holds within one view only: after a
+    // deploy, the next navigation asks it again.
+    M.api.absent.clear();
     const main = document.getElementById("main");
     let where = { scope: "unknown" };
     let ctx;

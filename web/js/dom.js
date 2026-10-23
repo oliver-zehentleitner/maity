@@ -186,6 +186,9 @@ window.Maity = window.Maity || {};
     return field;
   }
 
+  // What a view says where a feature of a newer hub would be: muted, not red.
+  const notOnHub = (text) => h("p", { class: "muted not-on-hub" }, text);
+
   // A member as every view names them: always a way to their view in the
   // project (the maintainer's rule: a member is always clickable), the full
   // name as tooltip. `who` is a member id or a reference carrying
@@ -205,5 +208,5 @@ window.Maity = window.Maity || {};
     return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
   }
 
-  M.dom = { memberRef, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  M.dom = { memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);

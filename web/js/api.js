@@ -1903,12 +1903,46 @@ window.Maity = window.Maity || {};
     return hubPaths;
   }
 
+  // Whether the hub's machine form lists a route for this method and this
+  // concrete path (its parameters matched as path segments); null when the
+  // machine form cannot be read.
+  const escapeRe = (t) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
+  function routeListed(method, path) {
+    const want = method.toUpperCase();
+    const at = String(path).split("?")[0];
+    return hubRoutes().then((found) => Array.from(found).some((key) => {
+      const [m, template] = key.split(" ");
+      return m === want && new RegExp("^" + template.split("{}").map(escapeRe).join("[^/]+") + "$").test(at);
+    }), () => null);
+  }
+
+  // A route this hub does not serve: a 404 or 405 for a method and path its
+  // machine form does not list. Where a view's feature needs one, that is a
+  // fact of this hub, said quietly in its place (M.dom.notOnHub), never as
+  // an error, and the view does not ask it again until the next navigation,
+  // so no timer keeps knocking. A 404 on a route the hub lists is the
+  // resource's (a project left, a card gone) and stays an error, as does an
+  // answer when the machine form cannot be read, and any 5xx, network
+  // failure, 401 or 403.
+  const absentRoutes = new Set();
+  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
+
   M.api = {
+    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
+    // A promise: true when err says the route itself is missing (see above).
+    missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
+      ? routeListed(method, path).then((yes) => yes === false) : Promise.resolve(false)),
+    absent: {
+      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
+      has: (method, path) => absentRoutes.has(routeOf(method, path)),
+      // On every navigation (js/app.js): a hub deployed meanwhile is asked again.
+      clear: () => { absentRoutes.clear(); },
+    },
     // Whether the hub serves `method path` (path as in docs/api.md, without
     // the prefix); rejects when its machine form cannot be read.
     hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
     // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubPaths = null; },
+    forgetRoutes: () => { hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

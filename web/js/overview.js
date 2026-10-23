@@ -112,7 +112,6 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, "No card has been reported yet."));
   }
 
-  const missing = (err) => !!err && err.status === 404;
 
   M.views.overview = async function (ctx, root) {
     const since = new Date(Date.now() - M.boardWindowDays * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -128,14 +127,18 @@ window.Maity = window.Maity || {};
         o ? [board(ctx, o), requests(ctx, o), reports(ctx, o)]
           // A hub without the overview (404) is said quietly, as a fact of
           // that hub, never as an error; any other failure is one.
-          : missing(err) ? h("p", { class: "muted overview-missing" }, "This hub has no overview yet, so no counts are shown here.")
+          : err.notOnHub ? h("p", { class: "muted overview-missing" }, "This hub has no overview yet, so no counts are shown here.")
           : h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message));
       const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
       if (again) again.focus();
     }
+    // Not on this hub: said once, and its timers and events ask no more.
+    const absent = () => M.api.absent.has("GET", path);
     try {
+      if (absent()) throw new M.api.ApiError("not on this hub", 404, path, "not_found");
       draw(await M.api.get(path));
     } catch (err) {
+      if (absent() || await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); }
       draw(null, err);
     }
     append(root, h("h2", null, "Overview"), status.el, box);
@@ -144,13 +147,14 @@ window.Maity = window.Maity || {};
     let reading = false;
     let pendingRead = false;
     async function reread() {
+      if (absent()) return;
       if (reading) { pendingRead = true; return; }
       reading = true;
       try {
         draw(await M.api.get(path));
         status.done();
       } catch (err) {
-        if (missing(err)) { draw(null, err); status.done(); } else status.fail("Could not refresh: ", err);
+        if (await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); draw(null, err); status.done(); } else status.fail("Could not refresh: ", err);
       } finally {
         reading = false;
         if (pendingRead) { pendingRead = false; reread(); }
