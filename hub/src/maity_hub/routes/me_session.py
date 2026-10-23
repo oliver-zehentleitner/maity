@@ -507,14 +507,19 @@ def _credential(conn: Connection, caller: Caller) -> Any:
 def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _own_membership(conn, caller)
-        human_set = mine.row.paused_since is not None and mine.row.paused_by != caller.agent_id
-        if human_set or instances.human_paused(mine.row, _credential(conn, caller)):
-            # A human's pause is lifted or replaced by members:admin only (§5.3).
+        credential = _credential(conn, caller)
+        for row in (mine.row, credential):
+            if row.paused_since is None or row.paused_by == caller.agent_id:
+                continue
+            # Someone else's pause is not the agent's to lift or replace (§5.3): a
+            # human's, or an admin agent's, which `by` names.
+            by_agent = str(row.paused_by).startswith("agt-")
             raise ApiError(
                 403,
                 "forbidden",
-                "a human paused you; only they or an admin can change it",
-                {"reason": "paused_by_human"},
+                f"{'an admin agent' if by_agent else 'a human'} paused you; "
+                "only they or an admin can change it",
+                {"reason": "paused_by_admin" if by_agent else "paused_by_human"},
             )
         # The calling instance's own pause; its siblings carry on (§5.3).
         set_paused(

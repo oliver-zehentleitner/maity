@@ -1,8 +1,10 @@
 ### Added
 
 - hub: the team's rules at work (`docs/api.md` §6.18, §8.2) — `assign` sets
-  `assigned_instance`, round robin picks the next free instance, the lead
-  instance hands out its team's cards, a claim by another instance is
+  `assigned_instance` on every path that assigns a card to a team (none under
+  `free`), round robin rotates in order of creation, skipping revoked and paused
+  instances and preferring online ones, the lead instance hands out its team's
+  cards nobody holds, a claim by another instance is
   `instance_assigned`, one instance does not review another's work unless
   `review_within_team` (`same_team_review`), the holder and an assigned
   instance are named by `instance:` audience tokens that wake only that

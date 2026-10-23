@@ -633,6 +633,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
     seats.reset(conn, change.project.id, removed, change.actor)
+    instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
 
 
 @router.delete("/projects/{slug}/members/{member_id}")

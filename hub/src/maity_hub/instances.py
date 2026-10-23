@@ -339,6 +339,19 @@ def instances_of(conn: Connection, credential_ids: Iterable[str | None]) -> dict
     )
 
 
+def assigned_for(conn: Connection, member: Any, named: str | None) -> str | None:
+    """The `assigned_instance` a card assigned to `member` gets (§6.18), on every path
+    that assigns it: none under `free`, where any instance claims; the named one under
+    `lead`; the named one or the next in turn under `round_robin`. A human has none."""
+    if member.agent_id is None or member.distribution == "free":
+        return None
+    if named is not None:
+        return named
+    if member.distribution == "round_robin":
+        return round_robin(conn, member)
+    return None  # under `lead` the lead instance chooses
+
+
 def round_robin(conn: Connection, member: Any) -> str | None:
     """The next instance after the one last chosen, in order of `created_at`, skipping
     revoked and paused ones and preferring those online (§6.18); `None` when none is
@@ -350,18 +363,20 @@ def round_robin(conn: Connection, member: Any) -> str | None:
     candidates = [c for c in active(conn, member.id) if c.paused_since is None]
     if not candidates:
         return None
-    last_at = (
+    last = (
         conn.execute(
-            select(t.credential.c.created_at).where(
+            select(t.credential.c.created_at, t.credential.c.id).where(
                 t.credential.c.membership_id == member.id,
                 t.credential.c.instance == member.round_robin_last,
             )
-        ).scalar()
+        ).first()
         if member.round_robin_last is not None
         else None
     )
-    # The rotation goes on after the last one chosen, also when that one has left it.
-    after = [c for c in candidates if last_at is not None and c.created_at > last_at]
+    # The rotation goes on after the last one chosen, also when that one has left it,
+    # by the key `active()` orders by, so two instances created in one instant still
+    # take turns.
+    after = [c for c in candidates if last is not None and (c.created_at, c.id) > tuple(last)]
     order = after + [c for c in candidates if c not in after]
     sessions = _live_sessions(conn, [c.id for c in order])
     now = clock.now()
