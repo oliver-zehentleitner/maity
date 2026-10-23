@@ -101,3 +101,36 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
 
+## A runner's stop revokes its agents' credentials when they are next used
+
+**Id:** 61d651db-f260-4baf-9af2-498d711d0492
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of `on_runner_revoke` (`docs/api.md` §15.3), 2026-10-23
+**Revisit when:** something must happen at the moment a grace ends (an event, a notice), or a credential that is due but unused should leave the database
+
+Under `stop` the agent credentials of the closed placements are revoked
+`stop_grace_seconds` after the runner's revocation. The hub writes when
+(`credential.revoke_due_at`) and on whose authority (`revoke_due_by`). From
+that moment the credential is refused (`credential_revoked`, reason
+`runner_revoked`), and the first call after it writes the revocation in a
+transaction of its own, because the call's own transaction rolls back with
+the refusal. Until then the credential view and the counts show it as
+revoked once it is due. With the owner's `agents: "stop"` they are revoked
+at once.
+
+**Reason:** the grace only has to hold for the agent that would use the
+credential, and every use passes the auth check, so the check is where it
+ends. No clock has to fire for a credential nobody uses, and the views
+tell the owner the truth at any time.
+
+**Rejected alternatives:**
+- A sweep worker that revokes due credentials, like the forge probe's.
+  It is one more thread per process, races the auth check by up to its
+  interval, and a credential nobody uses gains nothing from being written
+  sooner.
+- Revoking at once and leaving the grace to the agent's stop request.
+  The agent could not park its work: its next call, the checkpoint
+  included, would already be refused.
+
