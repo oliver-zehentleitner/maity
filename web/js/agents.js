@@ -208,6 +208,17 @@ window.Maity = window.Maity || {};
       joinButton.addEventListener("click", () => J.open(joinButton));
     }
 
+    // An agent running its line takes its seat: the view redraws with its
+    // card, unless the panel is open; then only the seats move and the app's
+    // reload flag stands.
+    if (J) {
+      ctx.onEvents((events) => {
+        if (!events.some((e) => e.kind === "member_joined")) return;
+        if (J.busy()) J.reread();
+        else ctx.refresh();
+      });
+    }
+
     append(root, h("div", { class: "toolbar agents-head" }, h("h2", null, "Agents"), J ? joinButton : null),
       countLine, J ? [J.panel, J.listStatus.el] : null);
     // No agents yet: the panel opens, and the way in is said.

@@ -311,7 +311,7 @@ window.Maity = window.Maity || {};
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { open, close, seats, earlier, openCount };
+    return { open, close, seats, earlier, openCount, reread };
   }
 
   // On a page the router has not attached yet (a direct #/agents/join), the
@@ -385,6 +385,11 @@ window.Maity = window.Maity || {};
       seats: () => (impl ? impl.seats() : []),
       earlier: () => (impl ? impl.earlier() : null),
       openCount: () => (impl ? impl.openCount() : 0),
+      // A failed first read keeps its Try again.
+      reread: () => (impl ? impl.reread() : Promise.resolve()),
+      // An open panel holds a form being filled in or a line shown once: a
+      // redraw of the view would lose either.
+      busy: () => !panel.hidden,
     };
   }
 

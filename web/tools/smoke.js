@@ -1912,6 +1912,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jfRetry.click(); for (let k = 0; k < 4; k++) await tick();
   expect(byId("join-agent") && main.querySelector("article.seat"), "join: Try again reads them and draws the form and the seats");
   win.Maity.api.getAll = jfAll;
+  // An agent running its line: with the panel closed the view redraws with
+  // its card; with the panel open only the joins are read again.
+  const mjGet = win.Maity.api.get;
+  let mjFeed = [];
+  win.Maity.api.get = (p) => (p.includes("/events?")
+    ? Promise.resolve({ items: mjFeed.splice(0), cursor: 10100, superseded: false }) : mjGet(p));
+  let mjReads = 0;
+  win.Maity.api.getAll = (p) => { if (p === "/projects/maity/joins") mjReads++; return jfAll(p); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  const mjBefore = jpPanel();
+  mjFeed = [{ seq: 10100, kind: "member_joined", actor: { member_id: "agt-x" }, payload: {} }];
+  await fireIntervals(); for (let k = 0; k < 12; k++) await tick();
+  expect(jpPanel() && jpPanel() !== mjBefore, "join: an agent joining redraws Agents while the panel is closed");
+  main.querySelector("button.join-open").click(); await tick();
+  const mjOpen = jpPanel();
+  mjReads = 0;
+  mjFeed = [{ seq: 10101, kind: "member_joined", actor: { member_id: "agt-x" }, payload: {} }];
+  await fireIntervals(); for (let k = 0; k < 12; k++) await tick();
+  expect(jpPanel() === mjOpen && !mjOpen.hidden && mjReads === 1, "join: with the panel open only the joins are read again (" + mjReads + ")");
+  win.Maity.api.get = mjGet; win.Maity.api.getAll = jfAll;
   // A join that expires while the view is open moves to the others without a reload.
   const jAll = win.Maity.api.getAll;
   const soon = { id: "join-soon", agent_id: "agt-b", role: "member", created_by: "hum-maintainer", created_at: new Date().toISOString(),
