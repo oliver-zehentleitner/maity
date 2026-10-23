@@ -86,20 +86,26 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
 def refuse_same_team_review(mine: Membership, card: Any) -> None:
     """Under `review_within_team: false` one instance does not judge another's work:
     the reporting team's other instances do not move it out of review (§6.18)."""
+    if mine.instance is None or mine.row.review_within_team:
+        return
     report = card.report or {}
-    reported = report.get("reported_instance")
-    if (
-        mine.instance is None
-        or mine.row.review_within_team
-        or report.get("reported_by") != mine.principal_id
-        or reported in (None, mine.instance)
-    ):
+    reporters = card.reported_instances or [
+        {"member_id": report.get("reported_by"), "instance": report.get("reported_instance")}
+    ]
+    # Any other instance of the caller's team that ever reported the card (§6.18).
+    others = [
+        r["instance"]
+        for r in reporters
+        if r.get("member_id") == mine.principal_id
+        and r.get("instance") not in (None, mine.instance)
+    ]
+    if not others:
         return
     raise ApiError(
         403,
         "forbidden",
         "another instance of your team reported this card; it is not yours to review",
-        {"reason": "same_team_review", "instance": reported},
+        {"reason": "same_team_review", "instance": others[-1]},
     )
 
 

@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import events, listening
+from maity_hub import clock, events, listening
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -31,11 +31,11 @@ def _team(owner: flow.Human, member_id: str, **team: Any) -> Any:
 
 
 def _pair(
-    make_client: ClientFactory, owner: flow.Human, **join: Any
+    make_client: ClientFactory, owner: flow.Human, distribution: str = "free", **join: Any
 ) -> tuple[flow.Agent, flow.Agent]:
     """One team of two instances, both resumed."""
     first = flow.agent(make_client, owner, **join)
-    _team(owner, first.id, max_instances=2)
+    _team(owner, first.id, max_instances=2, distribution=distribution)
     second = flow.agent(make_client, owner, agent={"id": first.id}, new_instance=True)
     for agent in (first, second):
         assert agent.resume().status_code == 200
@@ -91,7 +91,7 @@ def _membership(engine: Engine, agent: flow.Agent) -> Any:
 def test_an_assigned_instance_is_the_only_one_to_claim(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
-    first, second = _pair(make_client, owner)
+    first, second = _pair(make_client, owner, "round_robin")
     card = _assigned(owner, first, instance=second.instance)
     assert card["assigned_instance"] == second.instance
     refused = first.post(f"/projects/maity/tasks/{card['id']}/claim", {})
@@ -192,7 +192,7 @@ def test_review_within_the_team(
     owner: flow.Human, make_client: ClientFactory, within: bool
 ) -> None:
     owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
-    author, reviewer = _pair(make_client, owner, role="admin")
+    author, reviewer = _pair(make_client, owner, "round_robin", role="admin")
     if within:
         _team(owner, author.id, review_within_team=True)
     card_id = _reported(owner, author)
@@ -220,7 +220,7 @@ class _Reader:
 def test_an_instance_token_is_read_by_the_team_and_wakes_only_that_instance(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    first, second = _pair(make_client, owner)
+    first, second = _pair(make_client, owner, "round_robin")
     card = _assigned(owner, first, instance=first.instance)
     event = _last(migrated, "task_assigned")
     assert f"instance:{first.id}#{first.instance}" in event.audience
@@ -269,7 +269,7 @@ def test_next_free_wakes_the_listening_instance_with_the_fewest_claims(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
 ) -> None:
     first, second = _pair(make_client, owner)
-    busy = _assigned(owner, first, instance=first.instance)
+    busy = _assigned(owner, first)
     assert first.post(f"/projects/maity/tasks/{busy['id']}/claim", {}).status_code == 200
     _team(owner, first.id, wake="next_free")
     _listen(listens, first)
@@ -397,3 +397,178 @@ def test_a_message_to_an_instance_address_wakes_that_instance(
     )
     assert unknown.status_code == 400
     assert unknown.json()["error"]["details"]["fields"] == {"to": "not_an_instance"}
+
+
+# --- review findings ---------------------------------------------------------------------
+
+
+def test_the_lead_never_moves_a_held_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    lead, _ = _pair(make_client, owner)
+    _team(owner, lead.id, distribution="lead", lead_instance=lead.instance)
+    outsider = flow.agent(make_client, owner)
+    for holder in (owner, outsider):
+        card = _assigned(owner, lead)
+        path = f"/projects/maity/tasks/{card['id']}"
+        claimed = holder.post(f"{path}/claim", {})
+        assert claimed.status_code == 200, claimed.text
+        with migrated.begin() as conn:
+            conn.execute(
+                t.card.update().where(t.card.c.id == card["id"]).values(lease_until=clock.now())
+            )
+        moved = lead.post(f"{path}/assign", {"assignee": lead.id, "instance": lead.instance})
+        if holder is owner:
+            assert moved.status_code == 403, moved.text
+            assert moved.json()["error"]["details"]["reason"] == "humans_only"
+        else:
+            assert moved.status_code == 409, moved.text
+            assert moved.json()["error"]["code"] == "takeover_required"
+        assert owner.get(f"{path}").json()["claim"]["holder"] == holder.id
+
+
+def test_a_held_card_does_not_move_to_a_sibling_by_assign(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = _pair(make_client, owner, "round_robin")
+    card = _assigned(owner, first, instance=first.instance)
+    path = f"/projects/maity/tasks/{card['id']}"
+    assert first.post(f"{path}/claim", {}).status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(
+            t.card.update().where(t.card.c.id == card["id"]).values(lease_until=clock.now())
+        )
+    moved = owner.post(f"{path}/assign", {"assignee": first.id, "instance": second.instance})
+    assert moved.status_code == 409 and moved.json()["error"]["code"] == "takeover_required"
+
+
+def test_round_robin_applies_on_every_path_that_assigns(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first, second = _pair(make_client, owner, "round_robin")
+    created = owner.post("/projects/maity/tasks", {"title": "Made", "assigned_to": first.id})
+    assert created.json()["assigned_instance"] == first.instance
+    other = owner.post("/projects/maity/tasks", {"title": "Later"}).json()
+    patched = owner.patch(f"/projects/maity/tasks/{other['id']}", {"assigned_to": first.id})
+    assert patched.json()["assigned_instance"] == second.instance
+    owner.patch(f"/projects/maity/members/{first.id}", {"areas": ["hub/"]})
+    found = owner.post("/projects/maity/tasks", {"title": "Found", "area": "hub/"})
+    assert found.json()["assigned_to"] == first.id
+    assert found.json()["assigned_instance"] == first.instance
+
+
+def test_round_robin_takes_turns_when_two_instances_share_a_moment(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = _pair(make_client, owner, "round_robin")
+    with migrated.begin() as conn:
+        same = conn.execute(
+            select(t.credential.c.created_at).where(t.credential.c.instance == first.instance)
+        ).scalar_one()
+        conn.execute(
+            t.credential.update()
+            .where(t.credential.c.instance == second.instance)
+            .values(created_at=same)
+        )
+    turns = [_assigned(owner, first)["assigned_instance"] for _ in range(4)]
+    assert sorted(turns) == sorted([first.instance, second.instance] * 2)
+    assert turns[0] != turns[1] and turns[1] != turns[2]
+
+
+def test_an_instance_under_free_is_refused(owner: flow.Human, make_client: ClientFactory) -> None:
+    first, _ = _pair(make_client, owner)
+    card = owner.post("/projects/maity/tasks", {"title": "A card"}).json()
+    response = owner.post(
+        f"/projects/maity/tasks/{card['id']}/assign",
+        {"assignee": first.id, "instance": first.instance},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["fields"] == {"instance": "distribution_free"}
+
+
+def test_reporting_again_does_not_clear_another_instances_work(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
+    author, reviewer = _pair(make_client, owner, "round_robin", role="admin")
+    card_id = _reported(owner, author)
+    with migrated.begin() as conn:  # the sibling came to hold it some other way
+        conn.execute(
+            t.card.update()
+            .where(t.card.c.id == card_id)
+            .values(status="in_progress", claim_instance=reviewer.instance)
+        )
+    again = reviewer.post(
+        f"/projects/maity/tasks/{card_id}/report",
+        {"summary": "Mine now.", "pr_status": "none", "code": False},
+    )
+    assert again.status_code == 200, again.text
+    assert "reported_instances" not in again.json()["report"]
+    done = reviewer.patch(f"/projects/maity/tasks/{card_id}", {"status": "done"})
+    assert done.status_code == 403, done.text
+    assert done.json()["error"]["details"] == {
+        "reason": "same_team_review",
+        "instance": author.instance,
+    }
+
+
+def test_an_outsider_does_not_read_an_instance_token(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first, second = _pair(make_client, owner)
+    outsider = flow.agent(make_client, owner)
+    address = f"{first.id}#{second.instance}"
+    sent = owner.post(
+        "/projects/maity/events",
+        {"kind": "message", "type": "notice", "to": address, "body": "For you."},
+    ).json()
+    seen = {i["seq"] for i in outsider.get("/projects/maity/events").json()["items"]}
+    assert sent["seq"] not in seen
+    team = {i["seq"] for i in first.get("/projects/maity/events").json()["items"]}
+    assert sent["seq"] in team
+
+
+def test_the_long_poll_wakes_only_the_addressed_instance(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first, second = _pair(make_client, owner)
+    cursor = owner.get("/projects/maity/events").json()["cursor"]
+    owner.post(
+        "/projects/maity/events",
+        {
+            "kind": "message",
+            "type": "notice",
+            "to": f"{first.id}#{second.instance}",
+            "body": "Wake up.",
+        },
+    )
+    woken = second.get(f"/projects/maity/events?after={cursor}&wait=1").json()["items"]
+    assert [i["payload"]["body"] for i in woken] == ["Wake up."]
+    asleep = first.get(f"/projects/maity/events?after={cursor}&wait=1").json()["items"]
+    assert asleep == []
+
+
+def test_an_admin_agents_pause_is_named_as_such(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.credential.update()
+            .where(t.credential.c.id == agent.credential_id)
+            .values(paused_reason="hold", paused_since=clock.now(), paused_by=admin.id)
+        )
+    response = agent.patch("/me", {"paused": None})
+    assert response.status_code == 403
+    assert response.json()["error"]["details"] == {"reason": "paused_by_admin"}
+
+
+def test_removing_the_last_narrowing_team_stops_the_lookup(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, _ = _pair(make_client, owner)
+    _team(owner, first.id, wake="next_free")
+    assert owner.delete(f"/projects/maity/members/{first.id}").status_code == 200
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.project.c.team_wake)).scalar_one() is False

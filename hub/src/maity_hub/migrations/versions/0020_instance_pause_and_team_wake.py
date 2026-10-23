@@ -4,9 +4,10 @@
 An instance is a credential, so its pause lives on the credential row, in the same
 three columns as the membership's. An event records which instances it wakes for each
 team whose `wake` rule narrowed it (`wakes`, null when none did), and `round_robin`
-remembers its last choice on the membership. The project row says whether any of its
-teams narrows at all (`team_wake`), so that a project without such a team costs no
-extra query per event.
+remembers its last choice on the membership. A card keeps every instance that reported
+it (`reported_instances`), for `review_within_team`. The project row says whether any
+of its teams narrows at all (`team_wake`), so that a project without such a team costs
+no extra query per event.
 
 Revision ID: 0020
 Revises: 0019
@@ -38,6 +39,8 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("paused_by", sa.String(length=40), nullable=True))
     with op.batch_alter_table("membership", schema=None) as batch_op:
         batch_op.add_column(sa.Column("round_robin_last", sa.String(length=5), nullable=True))
+    with op.batch_alter_table("card", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("reported_instances", JSON_VALUE, nullable=True))
     with op.batch_alter_table("event", schema=None) as batch_op:
         batch_op.add_column(sa.Column("wakes", JSON_VALUE, nullable=True))
     with op.batch_alter_table("project", schema=None) as batch_op:
@@ -65,6 +68,8 @@ def downgrade() -> None:
         batch_op.drop_column("team_wake")
     with op.batch_alter_table("event", schema=None) as batch_op:
         batch_op.drop_column("wakes")
+    with op.batch_alter_table("card", schema=None) as batch_op:
+        batch_op.drop_column("reported_instances")
     with op.batch_alter_table("membership", schema=None) as batch_op:
         batch_op.drop_column("round_robin_last")
     with op.batch_alter_table("credential", schema=None) as batch_op:

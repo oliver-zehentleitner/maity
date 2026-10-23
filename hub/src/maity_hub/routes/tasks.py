@@ -612,6 +612,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
+        assigned_instance = _assigned_instance(conn, assigned)
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         now = clock.now()
         card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
@@ -632,6 +633,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
                         area=body.area,
                         created_by=mine.id,
                         assigned_to=assigned,
+                        assigned_instance=assigned_instance,
                         ktw_ref=body.ktw_ref,
                         changed_by_credential=caller.credential_id,
                         changed_via=caller.via,
@@ -722,7 +724,8 @@ def patch_task(
                 else None
             )
             if values["assigned_to"] != card.assigned_to:
-                values["assigned_instance"] = None  # an instance of the old assignee no more
+                # The new team's distribution decides, as on every assignment (§6.18).
+                values["assigned_instance"] = _assigned_instance(conn, values["assigned_to"])
         if body.release is not None:
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
@@ -1111,27 +1114,39 @@ def assign(
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
-        if not _leads_within_team(mine, card, body.assignee):
-            mine.require("tasks:admin")
+        if not mine.may("tasks:admin"):
+            if not _leads_within_team(mine, card, body.assignee):
+                mine.require("tasks:admin")
+            # The lead hands out its team's cards nobody holds; a held card moves only
+            # through a takeover (§6.18, §6.19), a human's never (§2.3).
+            if card.claim_holder is not None:
+                raise _held(conn, card)
         assignee = _member_id(conn, mine, body.assignee, "assignee")
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
-        chosen: str | None = body.instance
-        if chosen is not None:
-            instances.require_active(conn, assignee_row, chosen, "instance")
-        elif assignee_row.distribution == "round_robin":
-            chosen = instances.round_robin(conn, assignee_row)
-        else:
-            chosen = None  # the team's: any instance may claim it, or the lead chooses
+        takes = card.claim_holder is not None and card.claim_holder != assignee
+        if body.instance is not None:
+            instances.require_active(conn, assignee_row, body.instance, "instance")
+            if assignee_row.distribution == "free" and not takes:
+                # Under `free` any instance claims and none is assigned (§6.18); the
+                # instance only names where an expired claim lands.
+                raise invalid(
+                    {"instance": "distribution_free"},
+                    "the team's distribution is free: no instance is assigned",
+                )
+        chosen = instances.assigned_for(conn, assignee_row, body.instance)
         now = clock.now()
         values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": chosen}
         old_holder = (card.claim_holder, card.claim_instance)
         old_assignee = (card.assigned_to, card.assigned_instance)
-        moves_to_sibling = (
+        if (
             card.claim_holder == assignee
             and chosen is not None
             and card.claim_instance not in (None, chosen)
-        )
-        if card.claim_holder is not None and (card.claim_holder != assignee or moves_to_sibling):
+        ):
+            # Moving `assigned_instance` away from the holding instance is a takeover
+            # (§6.18), which this hub does not offer yet.
+            raise _held(conn, card)
+        if takes:
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -1142,7 +1157,7 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
-            instance = chosen or instances.resolve(conn, assignee_row, None, "instance")
+            instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
             _refuse_paused(conn, assignee, instance)
             values.update(
                 claim_holder=assignee,
@@ -1193,6 +1208,33 @@ def assign(
 
 
 # --- checkpoint and report (§6.4, §6.6) -------------------------------------------------
+
+
+def _assigned_instance(conn: Connection, membership_id: int | None) -> str | None:
+    """`assigned_instance` for a card assigned to a member without naming one (§6.18)."""
+    if membership_id is None:
+        return None
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    return instances.assigned_for(conn, row, None)
+
+
+def _held(conn: Connection, card: Any) -> ApiError:
+    """A held card that would move by `assign`: a human's never moves (§2.3), another's
+    only through a takeover (§6.19)."""
+    holder = conn.execute(select(t.membership).where(t.membership.c.id == card.claim_holder)).one()
+    if holder.agent_id is None:
+        return ApiError(
+            403,
+            "forbidden",
+            "a card a human holds moves only by that human",
+            {"reason": "humans_only"},
+        )
+    return ApiError(
+        409,
+        "takeover_required",
+        "the card is held: it moves only through a takeover",
+        {"holder": holder.agent_id, "instance": card.claim_instance},
+    )
 
 
 def _leads_within_team(mine: Membership, card: Any, assignee: str) -> bool:
@@ -1307,7 +1349,12 @@ def report(
             # A report without code is never probed: nothing to compare (§6.6).
             "mismatch": None if body.code else False,
         }
-        values: dict[str, Any] = {"report": stored}
+        values: dict[str, Any] = {
+            "report": stored,
+            # Every instance that ever reported the card: one that reports again does not
+            # clear another's work for its own review (§6.18).
+            "reported_instances": _reporters(card, mine),
+        }
         if body.done:
             values.update({**_closing(card), "status": "done", "closed_at": now})
         elif card.status == "blocked":
@@ -1353,6 +1400,19 @@ def report(
 
 
 GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_reason")
+
+
+def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
+    earlier: list[dict[str, Any]] = list(card.reported_instances or [])
+    if not earlier and card.report:  # a report from before the list was kept
+        earlier = [
+            {
+                "member_id": card.report.get("reported_by"),
+                "instance": card.report.get("reported_instance"),
+            }
+        ]
+    me = {"member_id": mine.principal_id, "instance": mine.instance}
+    return [*(r for r in earlier if r != me), me]
 
 
 def _check_report(body: ReportIn) -> None:

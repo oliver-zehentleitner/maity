@@ -436,6 +436,7 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             .values(reports_to=None)
         )
         placements.forget_boss(conn, mine.project.id, target.id)
+        instances.refresh_team_wake(conn, mine.project.id)  # it may have been the last team
         # The answer goes to the admin who removed it, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 

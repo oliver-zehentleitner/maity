@@ -539,6 +539,9 @@ card = Table(
     # The holding instance of an agent holder (§6.17); null for a human holder and,
     # until an instance of the team calls, for a claim made on a team's behalf.
     Column("claim_instance", String(INSTANCE)),
+    # Every agent instance that reported the card (§6.18 `review_within_team`): a list of
+    # `{member_id, instance}`; the report itself names only the latest.
+    Column("reported_instances", JSON_VALUE),
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
