@@ -520,3 +520,21 @@ def test_files_get_refuses_a_size_beyond_the_ceiling(joined: Path, fake: fakehub
         200, attachment(size=10**12))  # fmt: skip
     assert cli.main(["files", "get", "att-0042", "-o", "-"]) == cli.EXIT_ERROR
     assert not [s for s in fake.signed() if s.path.endswith("/content")]
+
+
+@pytest.mark.parametrize(
+    ("paths", "said"),
+    [
+        ({}, "this hub does not have group chats yet"),
+        ({"/api/v1/projects/{slug}/conversations": {"get": {}, "post": {}}},
+         "cnv-0009 is not in your conversations"),
+    ],
+)  # fmt: skip
+def test_chat_with_a_group_id_says_when_the_hub_has_no_group_chats(
+    paths: dict[str, Any], said: str, joined: Path, fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    fake.openapi = {"paths": paths}
+    fake.routes[("GET", f"{P}/conversations")] = listing()
+    assert cli.main(["chat", "cnv-0009"]) == cli.EXIT_ERROR
+    assert said in capsys.readouterr().err
