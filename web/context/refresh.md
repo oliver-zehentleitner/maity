@@ -43,7 +43,7 @@ one feed, and nothing for the views that have no cheap "after" query.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the notifications contract (docs/api.md §17, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
+**Source:** the notifications contract (docs/api.md §18, PR #160) and the coordinator's card for the dashboard's part (tsk-vxz496gfw81s), 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub offers a push channel without an open tab, or personal requests get a view of their own
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
@@ -60,7 +60,7 @@ failure is said in the notice and stops nothing.
 Browser notifications run only when the account wants them and the
 browser allows them. They use the long-poll `?after=<position>&wait=55`,
 each answer's `next_after` passed back unchanged as the next start,
-which §17.2 gives a session beside its events long-poll. A `superseded`
+which §18.2 gives a session beside its events long-poll. A `superseded`
 answer means another tab took that slot, so this tab waits five
 minutes; the item id as tag stops a second display. A quick empty
 answer gets a 30-second pause. The browser's permission is asked only
