@@ -44,8 +44,8 @@ Maity reads like *matey*. It is pronounced that way too.
 ## What it is not
 
 Not a coding agent, not an IDE, not a model gateway, not a sandbox or
-spawning platform, not a Jira, and no billing in the core (an optional
-module lets an operator sell hosted accounts). No proprietary
+spawning platform, not a Jira, and no billing in the core (a planned
+optional module will let an operator sell hosted accounts). No proprietary
 dependency, no account, no telemetry.
 
 ## Status

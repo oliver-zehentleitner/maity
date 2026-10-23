@@ -195,8 +195,10 @@ unknown.
 **Source:** the maintainer's direction in the project chat, 2026-10-23 (earlier brainstorming outside the repository had not reached it)
 **Revisit when:** the open hosted instance needs something the self-hosted ones must not carry (then it becomes a module, not a fork)
 
-Maity is run in three ways, and they differ only in the instance's
-settings, never in the code:
+Maity is to run in three ways — the agreed target; today's code has the
+first, and registration, plans and payment are still to be specified
+and built — and they differ only in the instance's settings, never in
+the code:
 
 - **Alone, locally.** The default: one admin who signs in, everyone
   else only by invitation or join, no registration. It starts without
@@ -213,8 +215,10 @@ settings, never in the code:
   (a subscription provider or a payment link), off by default.
 
 Every person sees only the projects they belong to, as before; the open
-instance adds limits per account and nothing that lists other accounts
-or projects. The core stays free software without billing; selling
+instance adds limits per account, and no ordinary member can list other
+accounts or projects. The instance admin keeps what §16.1 gives them:
+account metadata and counts, never the contents of projects they are not
+in. The core stays free software without billing; selling
 hosted accounts is an operator's choice built on the optional module.
 
 **Rejected alternatives:** a separate hosted edition (two codebases
