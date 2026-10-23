@@ -93,6 +93,11 @@ human = Table(
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
+    # The human's declared limit (§6.12): it applies to every membership of the account.
+    Column("limit_until", UtcDateTime),
+    Column("limit_since", UtcDateTime),
+    Column("limit_reason", MARKDOWN_TEXT),
+    Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
     **MYSQL_TABLE,
 )
 
@@ -156,6 +161,10 @@ project = Table(
     Column("max_placements", Integer, nullable=False, server_default="8"),
     # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
+    # Whose outage gates new assignments by agents, and who stands in for that role
+    # alone (§6.1, §6.12); the defaults fill projects made before 0020.
+    Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
+    Column("coordinator_substitute", String(ID)),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -202,6 +211,19 @@ membership = Table(
     # whether this agent membership is given its owner's text.
     Column("preferences_include", Boolean, nullable=False, server_default=true()),
     Column("owner_preferences", Boolean, nullable=False, server_default=false()),
+    # Availability (§6.12): the policy (null reads as the default), an agent's stored
+    # limit, the state the hub last announced and since when, and when the current
+    # outage began (null while available).
+    Column("availability_policy", JSON_VALUE),
+    Column("limit_until", UtcDateTime),
+    Column("limit_since", UtcDateTime),
+    Column("limit_source", String(16)),
+    Column("limit_harness", String(TITLE)),
+    Column("limit_reason", MARKDOWN_TEXT),
+    Column("limit_placement_id", String(ID)),
+    Column("availability_state", String(16)),
+    Column("availability_since", UtcDateTime),
+    Column("outage_since", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(

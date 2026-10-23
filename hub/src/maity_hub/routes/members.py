@@ -14,6 +14,7 @@ from sqlalchemy import Connection, case, select, update
 
 from maity_hub import (
     admin_agents,
+    availability,
     clock,
     group_chats,
     idempotency,
@@ -50,9 +51,18 @@ class PausedIn(Strict):
     reason: str = markdown(min_length=1)
 
 
+class AvailabilityPolicyIn(Strict):
+    """Fields not named keep their current value (§6.12)."""
+
+    on_unavailable: str | None = None
+    substitutes: list[str] | None = Field(default=None, max_length=availability.MAX_SUBSTITUTES)
+    grace_minutes: int | None = None
+
+
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
+    availability_policy: AvailabilityPolicyIn | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -261,6 +271,8 @@ def apply_patch(
         )
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
         view = member_view(conn, row)  # to everyone: never the briefing
+        if "availability_policy" in changed:
+            view["changed"] = sorted(changed)
         if {"role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(
@@ -320,7 +332,12 @@ def patch_member(
         target = member_row(conn, mine.project.id, member_id)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never changes a human's membership")
-        if not agent_admin:
+        new_policy = None
+        if "availability_policy" in given:
+            new_policy = _availability_policy(conn, mine, caller, target, body.availability_policy)
+        own_policy = given == {"availability_policy"} and target.id == mine.id
+        if not agent_admin and not (own_policy and mine.kind == "human"):
+            # A human sets their own policy without members:admin (§6.12).
             mine.require("members:admin")
         if agent_admin:
             admin_agents.check_patch(mine, target, body, given)
@@ -342,6 +359,8 @@ def patch_member(
             values["reports_to"] = None
         if "briefing" in given:
             values["briefing"] = body.briefing or None
+        if new_policy is not None and new_policy != availability.policy_of(target):
+            values["availability_policy"] = new_policy
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
@@ -384,6 +403,50 @@ def _owner_preferences(
     return idempotency.Outcome(200, "member_team", str(row.id), view)
 
 
+def _availability_policy(
+    conn: Connection, mine: Membership, caller: Caller, target: Any, change: Any
+) -> dict[str, Any]:
+    """The policy as it will be stored, `invalid` naming every bad field (§6.12). An agent
+    never decides that a human takes over work, nor what happens to a human's."""
+    if caller.kind != "human" and target.agent_id is None:
+        raise humans_only("a human's availability_policy is set by humans only")
+    if change is None:
+        return dict(availability.DEFAULT_POLICY)
+    policy = availability.policy_of(target)
+    errors: dict[str, str] = {}
+    if change.on_unavailable is not None:
+        if change.on_unavailable not in availability.ON_UNAVAILABLE:
+            errors["availability_policy.on_unavailable"] = "unknown"
+        policy["on_unavailable"] = change.on_unavailable
+    if change.grace_minutes is not None:
+        if not 0 <= change.grace_minutes <= availability.GRACE_MAX:
+            errors["availability_policy.grace_minutes"] = "out_of_range"
+        policy["grace_minutes"] = change.grace_minutes
+    if change.substitutes is not None:
+        entries = list(dict.fromkeys(change.substitutes))
+        for entry in entries:
+            if entry.startswith("role:"):
+                if entry.removeprefix("role:") not in ROLES:
+                    errors["availability_policy.substitutes"] = "unknown_role"
+                continue
+            if entry == (target.agent_id or target.human_id):
+                errors["availability_policy.substitutes"] = "self"
+                continue
+            try:
+                named = member_row(conn, mine.project.id, entry)
+            except ApiError:
+                errors["availability_policy.substitutes"] = "not_a_member"
+                continue
+            if named.agent_id is None and caller.kind != "human":
+                raise humans_only("only a human names a human as a substitute")
+        policy["substitutes"] = entries
+    if policy["on_unavailable"] == "substitute" and not policy["substitutes"]:
+        errors.setdefault("availability_policy.substitutes", "required")
+    if errors:
+        raise invalid(errors)
+    return policy
+
+
 def set_paused(conn: Connection, change: Change, target: Any, reason: str | None) -> None:
     """Set or clear `paused` (§5.3), naming `change.by`. Setting it tells the member
     itself (its long-poll wakes), `reports_to` and the admins; lifting a pause someone
@@ -399,6 +462,7 @@ def set_paused(conn: Connection, change: Change, target: Any, reason: str | None
             paused_by=change.by if reason else None,
         )
     )
+    availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
@@ -497,6 +561,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    availability.member_removed(conn, change.project.id, target, change.actor)
 
 
 @router.delete("/projects/{slug}/members/{member_id}")
