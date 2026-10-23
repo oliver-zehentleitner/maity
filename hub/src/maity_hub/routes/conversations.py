@@ -24,7 +24,13 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
-from maity_hub.routes.events import MessageIn, chat_parties, post_message, remember_read
+from maity_hub.routes.events import (
+    MessageIn,
+    chat_parties,
+    post_message,
+    remember_read,
+    writer,
+)
 from maity_hub.views import principal_id, sees_chat_reasons, ts
 
 router = APIRouter()
@@ -259,6 +265,20 @@ def _direct_item(
     }
 
 
+def _direct_items(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
+    """The caller's direct conversations: each needs both parties active in the project
+    (§9.1), so an agent whose owner is no member has none, and its list and packet carry
+    only its group chats."""
+    items = []
+    for agent_id in _owned_agents(conn, mine, caller):
+        try:
+            items.append(_direct_item(conn, mine, caller, agent_id))
+        except ApiError as gone:
+            if gone.status != 404:
+                raise
+    return items
+
+
 def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id: str) -> int:
     """The other party's messages after what this reader has seen (§9.1)."""
     if caller.kind == "human":
@@ -403,7 +423,7 @@ def list_conversations(
         mine = _reader(conn, caller, slug)
         items = []
         if isinstance(mine, Membership):
-            items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
+            items = _direct_items(conn, mine, caller)
             items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
         elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
             items = [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, True)]
@@ -430,7 +450,7 @@ PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_messa
 def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
     """`conversations` of the resume packet: the agent's direct one and its group chats,
     newest activity first, at most 50, with the list's counts (§5.2, §9.3)."""
-    items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
+    items = _direct_items(conn, mine, caller)
     items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, False)]
     items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
     return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
@@ -464,12 +484,7 @@ def _locked(conn: Connection, caller: Caller, slug: str) -> Membership:
     """The caller's membership read after the project lock: a write to a chat decides on
     the membership, the chat, the caller's access and the audience as of the lock, so a
     leave, a close or a removal that commits first is never overtaken (§9.2)."""
-    try:
-        first = membership(conn, caller, slug)
-    except ApiError:
-        if outsider(conn, caller, slug) is not None:
-            raise _observer() from None  # it reads along and writes nothing (§9.2)
-        raise
+    first = writer(conn, caller, slug)  # an owner outside: observer (§9.2)
     events.lock_project(conn, first.project.id)
     return membership(conn, caller, slug)
 

@@ -87,3 +87,50 @@ def test_the_packet_counts_chats_and_carries_only_mentions(
         "closed_at": None,
     }
     assert any(c["kind"] == "direct" and c["id"] == agent.id for c in packet["conversations"])
+
+
+def test_an_agent_whose_owner_is_outside_resumes_with_its_chats(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's probe: no direct conversation without its human party, so the
+    packet and the list carry the group chats only, never a 404."""
+    _, agent = outside_owner(make_client, migrated)
+    chat = create(owner, agent.id).json()
+    resumed = agent.resume()
+    assert resumed.status_code == 200, resumed.text
+    assert [c["id"] for c in resumed.json()["conversations"]] == [chat["id"]]
+    listed = agent.get(BASE)
+    assert listed.status_code == 200, listed.text
+    assert [c["id"] for c in listed.json()["items"]] == [chat["id"]]
+
+
+def test_an_outsider_posting_through_events_is_an_observer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    outside, agent = outside_owner(make_client, migrated)
+    chat = create(owner, agent.id).json()
+    posted = outside.post(
+        "/projects/maity/events",
+        {"kind": "message", "type": "chat", "body": "hi", "conversation_id": chat["id"]},
+    )
+    assert (posted.status_code, reason(posted)) == (403, "observer")
+
+
+def test_the_packet_keeps_only_the_current_stays_mentions(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's probe: mentioned, removed, added again, resumed from an old cursor;
+    the old mention is outside the window and stays out, as in `unread`."""
+    agent = flow.agent(make_client, owner)
+    guest = other_human(make_client, migrated, "guest")
+    chat = create(owner, agent.id, guest.id).json()
+    old = say(guest, chat["id"], f"@{handle(migrated, agent.id)} first").json()["seq"]
+    url = f"{BASE}/{chat['id']}/participants"
+    assert owner.delete(f"{url}/{agent.id}").status_code == 200
+    assert owner.post(url, {"member_id": agent.id}).status_code == 200
+    new = say(guest, chat["id"], f"@{handle(migrated, agent.id)} again").json()["seq"]
+    packet = agent.resume(cursor=old - 1).json()
+    seqs = [e["seq"] for e in packet["events"]["items"]]
+    assert new in seqs and old not in seqs
+    [group] = [c for c in packet["conversations"] if c["id"] == chat["id"]]
+    assert (group["unread"], group["mentions_unread"]) == (1, 1)

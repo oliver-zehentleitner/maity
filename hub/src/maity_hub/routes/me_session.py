@@ -16,6 +16,7 @@ from maity_hub import (
     clock,
     environment,
     events,
+    group_chats,
     idempotency,
     instances,
     memory,
@@ -271,7 +272,7 @@ def _packet(
         caller.principal_id,
         cursor,
         PACKET_EVENTS,
-        unmentioned_chat=False,
+        chat_windows=group_chats.windows(conn, mine.id),
     )
     events_cursor = rows[-1].seq if truncated else max(examined, started_seq, cursor)
     rows = [r for r in rows if r.seq != started_seq]  # never the session's own start
