@@ -623,11 +623,10 @@ conversation_read = Table(
 
 # --- probe --------------------------------------------------------------------------------
 
-# A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
-# the forge's image as the hub last read it. A forge row without `data` records that
-# the forge had none at `checked_at`; an upload always has data.
 # A member's picture (§6.10): keyed by the account or profile id (`hum-`/`agt-`), the
-# same in every project, and by source. Only the re-encoded PNG is stored.
+# same in every project, and by source. Only the re-encoded PNG is stored. No foreign
+# key: the id names a human or an agent profile; deleting either (#154) must delete its
+# rows here as well.
 avatar_image = Table(
     "avatar_image",
     metadata,
@@ -641,6 +640,9 @@ avatar_image = Table(
     **MYSQL_TABLE,
 )
 
+# A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
+# the forge's image as the hub last read it. A forge row without `data` records that
+# the forge had none at `checked_at`; an upload always has data.
 project_image = Table(
     "project_image",
     metadata,

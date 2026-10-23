@@ -56,6 +56,9 @@ def _change(
 ) -> JSONResponse:
     """A `PUT` (with a body) or `DELETE` of `owner_id`'s upload."""
     engine = engine_of(request)
+    replayed = idempotency.replay_first(engine, request, caller)
+    if replayed is not None:  # a repeat is the stored answer: no decode, no count (§6.10)
+        return replayed
     png = None
     if request.method == "PUT":
         data: bytes = request.scope["state"].get("body", b"")
@@ -70,13 +73,13 @@ def _change(
             png = avatars.decode(settings_of(request), data, sniffed)
         except ApiError as refused:
             if refused.status == 400:  # a refused image counts as a change tried
-                avatars.count_change(owner_id)
+                avatars.count_change(None, owner_id)
             raise
 
     def action(conn: Connection) -> idempotency.Outcome:
         if check is not None:
             check(conn)
-        avatars.count_change(owner_id)  # a replay never gets here and counts nothing
+        avatars.count_change(conn, owner_id)  # given back if this transaction rolls back
         avatars.lock_owner(conn, owner_id)
         before = avatars.state(conn, owner_id)
         if png is None:

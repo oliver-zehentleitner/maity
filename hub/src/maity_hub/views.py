@@ -397,7 +397,11 @@ def human_paused(row: Any) -> bool:
     return row.paused_since is not None and row.paused_by != (row.agent_id or row.human_id)
 
 
-def agent_view(conn: Connection, row: Any) -> dict[str, Any]:
+def agent_view(
+    conn: Connection, row: Any, picture: dict[str, str | None] | None = None
+) -> dict[str, Any]:
+    """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
+    list has looked them up together."""
     memberships = conn.execute(
         select(t.project.c.slug, t.membership.c.role)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
@@ -408,7 +412,8 @@ def agent_view(conn: Connection, row: Any) -> dict[str, Any]:
         "id": row.id,
         "handle": row.handle,
         "display_name": row.display_name,
-        **avatars.state(conn, row.id),  # avatar_url and avatar_source: only its owner reads this
+        # avatar_url and avatar_source: only its owner reads this
+        **(picture if picture is not None else avatars.state(conn, row.id)),
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "memberships": [{"project": m.slug, "role": m.role} for m in memberships],

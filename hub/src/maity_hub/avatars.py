@@ -14,21 +14,26 @@ credential makes them.
 
 from __future__ import annotations
 
+import logging
 import math
 import subprocess
 import sys
 import threading
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, images
+from maity_hub import avatar_decode, clock, images
 from maity_hub import tables as t
 from maity_hub.avatar_decode import REFUSED
 from maity_hub.config import Settings
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.ratelimit import Limiter
+from maity_hub.scopes import has_scope
+
+log = logging.getLogger(__name__)
 
 SOURCES = ("uploaded", "forge")  # the first with an image wins
 HEADERS = {**images.HEADERS, "Cache-Control": "private, no-cache"}
@@ -46,39 +51,62 @@ def _slots_for(count: int) -> threading.BoundedSemaphore:
         return _slots[count]
 
 
+DECODER = Path(avatar_decode.__file__)
+REASONS = ("dimensions", "undecodable")  # what the decoder may answer (§6.10)
+
+
 def decode(settings: Settings, data: bytes, content_type: str) -> bytes:
     """The PNG to store, or `invalid` (`details.fields.body`) for an image that is not
-    accepted, or `rate_limited` when every decode slot is taken (§6.10)."""
+    accepted, or `rate_limited` when every decode slot is taken (§6.10).
+
+    The child runs the decoder file by path under `python -I` with an empty
+    environment: neither the hub's settings (the database URL, the forge token) nor its
+    `sys.path` reach the process that parses untrusted bytes. It keeps the hub's user,
+    so this narrows what an exploited decoder holds; it is not a sandbox."""
     slots = _slots_for(settings.avatar_decodes)
     if not slots.acquire(blocking=False):
         raise rate_limited(max(1, math.ceil(settings.avatar_decode_seconds)))
+    seconds = max(1, math.ceil(settings.avatar_decode_seconds))
+    command = [
+        sys.executable,
+        "-I",
+        str(DECODER),
+        content_type,
+        str(settings.avatar_decode_memory_mb * 1024 * 1024),
+        str(seconds),
+    ]
     try:
-        command = [
-            sys.executable,
-            "-m",
-            "maity_hub.avatar_decode",
-            content_type,
-            str(settings.avatar_decode_memory_mb * 1024 * 1024),
-        ]
-        try:
-            done = subprocess.run(
-                command,
-                input=data,
-                capture_output=True,
-                timeout=settings.avatar_decode_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:  # run() has killed it
-            raise invalid({"body": "over_budget"}, "the image took too long to decode") from None
+        done = subprocess.run(
+            command,
+            input=data,
+            capture_output=True,
+            timeout=settings.avatar_decode_seconds,
+            check=False,
+            env={},
+        )
+    except subprocess.TimeoutExpired:  # run() has killed it
+        log.warning("avatar decode killed after %ss", settings.avatar_decode_seconds)
+        raise invalid({"body": "undecodable"}, "the image did not decode in time") from None
     finally:
         slots.release()
     if done.returncode == 0 and done.stdout:
         return done.stdout
+    detail = done.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
     if done.returncode == REFUSED:
-        reason = done.stdout.decode("ascii", "replace")[:32] or "undecodable"
+        reason = done.stdout.decode("ascii", "replace")
+        log.info("avatar refused: %s (%s)", reason, detail[0][:200])
+        reason = reason if reason in REASONS else "undecodable"
         raise invalid({"body": reason}, "the image was not accepted")
-    # Killed past its memory limit, or crashed: refused, and nothing stored.
-    raise invalid({"body": "over_budget"}, "the image could not be decoded within its budget")
+    # Killed by a signal (past its memory or CPU limit, or a crash) or failed otherwise:
+    # refused, nothing stored, and the operator can tell it from a plain refusal.
+    signal = -done.returncode if done.returncode < 0 else None
+    log.warning(
+        "avatar decoder exited %s%s: %s",
+        done.returncode,
+        f" (signal {signal})" if signal else "",
+        detail[0][:200],
+    )
+    raise invalid({"body": "undecodable"}, "the image could not be decoded")
 
 
 def check_rate(owner_id: str) -> None:
@@ -88,11 +116,16 @@ def check_rate(owner_id: str) -> None:
         raise rate_limited(wait)
 
 
-def count_change(owner_id: str) -> None:
-    """Count one `PUT` or `DELETE` of this avatar, or refuse it."""
+def count_change(conn: Connection | None, owner_id: str) -> None:
+    """Count one `PUT` or `DELETE` of this avatar, or refuse it. Inside a transaction
+    (`conn`), a rollback or a retry of it gives the count back."""
     wait = CHANGES.hit(owner_id)
     if wait:
         raise rate_limited(wait)
+    if conn is not None:
+        from maity_hub.events import on_rollback
+
+        on_rollback(conn, lambda: CHANGES.give_back(owner_id, 1))
 
 
 def _rows(conn: Connection, owner_ids: Iterable[str]) -> dict[str, Any]:
@@ -120,6 +153,20 @@ def urls(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str | None]:
     ids = [i for i in owner_ids if i]
     rows = _rows(conn, ids)
     return {i: (url_of(i, rows[i].etag) if i in rows else None) for i in ids}
+
+
+def states(conn: Connection, owner_ids: Iterable[str]) -> dict[str, dict[str, str | None]]:
+    """`state` of several owners in one query."""
+    ids = list(owner_ids)
+    rows = _rows(conn, ids)
+    return {
+        i: (
+            {"avatar_url": url_of(i, rows[i].etag), "avatar_source": rows[i].source}
+            if i in rows
+            else {"avatar_url": None, "avatar_source": None}
+        )
+        for i in ids
+    }
 
 
 def state(conn: Connection, owner_id: str) -> dict[str, str | None]:
@@ -231,7 +278,9 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
         return True
     if owner_id.startswith("hum-"):
         # The owner of an agent is shown to admins only (§6.2), and so is their picture.
-        admin_of = {p for p, role in my_projects.items() if role in ("owner", "admin")}
+        admin_of = {
+            p for p, role in my_projects.items() if has_scope(role, "human", "members:admin")
+        }
         agents_in = set(
             conn.execute(
                 select(t.membership.c.project_id)

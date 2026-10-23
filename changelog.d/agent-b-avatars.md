@@ -2,7 +2,8 @@
 
 - hub: avatars (`docs/api.md` §6.10, #136) — `PUT`/`DELETE /me/avatar` (a human, or an agent
   credential for its profile) and `/agents/{id}/avatar` (the profile's owner) take the raw
-  PNG, JPEG or WebP image, at most 1 MiB and 4096 pixels on a side; the hub decodes it in
+  PNG, JPEG or WebP image, at most 1 MiB and 4096 pixels on a side (read from its header
+  before any decoding); the hub decodes it in
   a process of its own under a time and memory budget (`MAITY_AVATAR_DECODE_SECONDS`,
   `MAITY_AVATAR_DECODE_MEMORY_MB`, `MAITY_AVATAR_DECODES`), caps PNG text chunks, crops it
   to a centred square of at most 256 pixels and stores only a fresh PNG, no metadata;
@@ -13,4 +14,4 @@
   `/admin/users`), `avatar_source` on `/me` and the profile; `avatar_changed` (audience
   `all`, wakes nobody) in every project of the member when its picture's source or
   content changes, the member as actor only for its own change (migration `0013_avatars`)
-- hub: depends on Pillow (`>=12.3,<13`)
+- hub: depends on Pillow (`>=13.0,<14`)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import subprocess
+import typing
 from typing import Any
 
 import pytest
@@ -100,7 +101,7 @@ def test_avatar_url_follows_the_member_everywhere(
     [
         (b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml", "unsupported_type"),
         (image("PNG"), "image/jpeg", "unsupported_type"),
-        (image("PNG", (5000, 20)), "image/png", "too_many_pixels"),
+        (image("PNG", (5000, 20)), "image/png", "dimensions"),
         (b"\x89PNG\r\n\x1a\n" + b"x" * 100, "image/png", "undecodable"),
     ],
 )
@@ -118,7 +119,7 @@ def test_png_text_chunks_are_capped(owner: flow.Human) -> None:
     info = PngImagePlugin.PngInfo()
     info.add_text("big", "x" * (70 * 1024))
     answer = put_human(owner, "/me/avatar", image(pnginfo=info))
-    assert answer.json()["error"]["details"]["fields"] == {"body": "text_too_large"}
+    assert answer.json()["error"]["details"]["fields"] == {"body": "undecodable"}
     bomb = PngImagePlugin.PngInfo()
     bomb.add_text("bomb", "x" * (2 * 1024 * 1024), zip=True)
     answer = put_human(owner, "/me/avatar", image(pnginfo=bomb))
@@ -134,18 +135,18 @@ def test_over_the_memory_budget_is_refused(make_client: ClientFactory, migrated:
         content=image("PNG", (4096, 4096)),
         headers={"Content-Type": "image/png", "X-CSRF-Token": csrf},
     )
-    assert answer.json()["error"]["details"]["fields"] == {"body": "over_budget"}
+    assert answer.json()["error"]["details"]["fields"] == {"body": "undecodable"}
 
 
 def test_over_the_time_budget_is_refused(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def slow(command: list[str], **kwargs: Any) -> Any:
+    def slow(command: list[str], **kwargs: Any) -> Any:  # the deadline passed
         raise subprocess.TimeoutExpired(command, kwargs["timeout"])
 
     monkeypatch.setattr("maity_hub.avatars.subprocess.run", slow)
     answer = put_human(owner, "/me/avatar", image())
-    assert answer.json()["error"]["details"]["fields"] == {"body": "over_budget"}
+    assert answer.json()["error"]["details"]["fields"] == {"body": "undecodable"}
 
 
 def test_every_decode_slot_taken_is_rate_limited(
@@ -293,3 +294,152 @@ def test_avatar_changed_wakes_nobody(owner: flow.Human, make_client: ClientFacto
     from maity_hub import events
 
     assert "avatar_changed" in events.NON_WAKING
+
+
+# --- the decoder's own defences (review of #218) ---------------------------------------
+
+
+def _apng_claiming(width: int, height: int) -> bytes:
+    """A tiny APNG whose header claims a huge canvas (GHSA-5xm2)."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        crc = zlib.crc32(kind + body) & 0xFFFFFFFF
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    actl = struct.pack(">II", 1, 0)
+    fctl = struct.pack(">IIIIIHHBB", 0, 1, 1, 0, 0, 1, 1, 1, 0)
+    idat = zlib.compress(b"\x00\x00\x00\x00\x00")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"acTL", actl)
+        + chunk(b"fcTL", fctl)
+        + chunk(b"IDAT", idat)
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.mark.parametrize(
+    ("data", "content_type"),
+    [
+        (_apng_claiming(22000, 22000), "image/png"),
+        (image("JPEG", (4097, 8)), "image/jpeg"),
+        (image("WEBP", (8, 4097)), "image/webp"),
+        (image("WEBP", (4097, 8), lossless=True), "image/webp"),
+    ],
+)
+def test_a_size_past_4096_is_refused_from_the_header(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch, data: bytes, content_type: str
+) -> None:
+    from maity_hub import avatar_decode
+
+    with pytest.raises(avatar_decode.Refused) as refused:
+        avatar_decode.dimensions(data, content_type) and avatar_decode.process(data, content_type)
+    assert refused.value.reason == "dimensions"
+    answer = put_human(owner, "/me/avatar", data, content_type)
+    assert answer.json()["error"]["details"]["fields"] == {"body": "dimensions"}
+
+
+def test_the_decoder_runs_isolated(owner: flow.Human, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    real = subprocess.run
+
+    def spy(command: list[str], **kwargs: Any) -> Any:
+        seen.update(command=command, env=kwargs.get("env"))
+        return real(command, **kwargs)
+
+    monkeypatch.setattr("maity_hub.avatars.subprocess.run", spy)
+    assert put_human(owner, "/me/avatar", image()).status_code == 200
+    assert seen["env"] == {}  # no database URL, no forge token in the child
+    assert seen["command"][1] == "-I" and seen["command"][2].endswith("avatar_decode.py")
+
+
+def test_a_crash_is_undecodable_and_logged(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def crashed(command: list[str], **kwargs: Any) -> Any:
+        return subprocess.CompletedProcess(command, -11, b"", b"Segmentation fault")
+
+    monkeypatch.setattr("maity_hub.avatars.subprocess.run", crashed)
+    with caplog.at_level("WARNING", logger="maity_hub.avatars"):
+        answer = put_human(owner, "/me/avatar", image())
+    assert answer.json()["error"]["details"]["fields"] == {"body": "undecodable"}
+    assert any("signal 11" in r.getMessage() for r in caplog.records)
+
+
+def test_a_replay_past_the_limit_is_the_stored_answer(owner: flow.Human) -> None:
+    key = {"Idempotency-Key": "avatar-replay-limit-1"}
+    headers = {"Content-Type": "image/png", "X-CSRF-Token": owner.csrf}
+    first = owner.client.put("/api/v1/me/avatar", content=image(), headers={**headers, **key})
+    assert first.status_code == 200
+    for _ in range(9):
+        assert put_human(owner, "/me/avatar", image("PNG", (90, 90))).status_code == 200
+    replay = owner.client.put("/api/v1/me/avatar", content=image(), headers={**headers, **key})
+    assert replay.status_code == 200 and replay.headers["Idempotent-Replayed"] == "true"
+
+
+def test_a_jpegs_orientation_is_applied(owner: flow.Human) -> None:
+    picture = Image.new("RGB", (40, 20), (255, 0, 0))
+    picture.paste((0, 0, 255), (20, 0, 40, 20))  # left red, right blue
+    exif = Image.Exif()
+    exif[0x0112] = 6  # rotate 90° clockwise to view
+    out = io.BytesIO()
+    picture.save(out, format="JPEG", exif=exif.tobytes(), quality=95)
+    url = put_human(owner, "/me/avatar", out.getvalue(), "image/jpeg").json()["avatar_url"]
+    stored = Image.open(io.BytesIO(owner.client.get(url).content)).convert("RGB")
+    top = typing.cast(tuple[int, ...], stored.getpixel((10, 2)))
+    bottom = typing.cast(tuple[int, ...], stored.getpixel((10, 17)))
+    assert top[0] > 200 and bottom[2] > 200  # red on top once turned as seen
+
+
+def test_sixteen_bit_grey_is_scaled_not_clipped(owner: flow.Human) -> None:
+    grey = Image.new("I;16", (32, 32), 1000)
+    out = io.BytesIO()
+    grey.save(out, format="PNG")
+    url = put_human(owner, "/me/avatar", out.getvalue()).json()["avatar_url"]
+    stored = Image.open(io.BytesIO(owner.client.get(url).content))
+    assert typing.cast(tuple[int, ...], stored.getpixel((5, 5)))[0] < 10  # 1000/65535: near black
+
+
+def test_a_project_admin_sees_the_owner_of_an_agent_in_its_project(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    stranger = flow.human(make_client, migrated, "stranger")  # in no project of owner's
+    factory.agent(migrated, project_id, stranger.id)  # but its agent is
+    url = put_human(stranger, "/me/avatar", image()).json()["avatar_url"]
+    admin = flow.human(make_client, migrated, "project-admin")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    member = flow.human(make_client, migrated, "plain-member")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    assert admin.client.get(url).status_code == 200
+    assert member.client.get(url).status_code == 404
+
+
+def test_the_instance_admin_does_not_read_an_agents_picture_elsewhere(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    stranger = flow.human(make_client, migrated, "stranger")
+    flow.project(stranger, "elsewhere")
+    theirs = flow.agent(make_client, stranger, "elsewhere")
+    url = put_agent(theirs, image()).json()["avatar_url"]
+    assert owner.client.get(url).status_code == 404  # instance admin: humans' pictures only
+
+
+def test_a_runner_and_a_stranger_change_no_picture(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_runners import call, paired
+
+    runner = paired(make_client, owner)
+    refused = call(make_client(), runner, "PUT", "/api/v1/me/avatar")
+    assert refused.status_code == 403
+    agent = flow.agent(make_client, owner)
+    put_human(owner, f"/agents/{agent.id}/avatar", image())
+    stranger = flow.human(make_client, migrated, "stranger")
+    assert stranger.delete(f"/agents/{agent.id}/avatar").status_code == 404
+    assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "uploaded"
