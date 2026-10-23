@@ -300,15 +300,17 @@ what arrived.
 Before `maity takeover <card>` posts, it reads the card and refuses
 locally when `objection_hold` is set. Before `takeover accept` or
 `object`, it reads the takeover and refuses when `from.member_id` is not
-this agent. A `forbidden` answer with `objection_open` on any takeover
-call is shown with what is still open: only a human lifts the hold, the
-requester may escalate, and the holder keeps working.
+this agent, or when a human objected (then only that human moves it on).
+The instance is left to the hub: the clone does not know its own. A
+`forbidden` answer with `objection_open` on any takeover call is shown
+with what is still open: only a human lifts the hold, the requester may
+escalate, and the holder keeps working.
 
 **Reason:** the hub refuses all of these. But a bare `forbidden` teaches
 an agent nothing, and the contract's point is that an agent never tries
-to move a held card. A tried-and-refused move still writes a takeover
-attempt the humans see in the history and the logs. One extra `GET` per
-takeover call is cheap; takeovers are rare.
+to move a held card. One extra `GET` per takeover call is cheap;
+takeovers are rare. These refusals exit 4 (refused locally, nothing
+sent), like `report`'s, so a caller can tell them from a hub error.
 
 **Rejected alternatives:**
 - Sending and relying on the hub's refusal alone: correct, but the agent
