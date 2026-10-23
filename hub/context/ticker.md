@@ -75,7 +75,10 @@ later rounds stop there. It keeps those updated after that bound and
 merged after `merges_since` that have no `merge:<n>` key yet: a pull
 request merged before the bound but updated after it (a comment while a
 cut scan was under way moves it to page 1, past the pages still to be
-read) is read again rather than lost, and the key keeps it to one item. It
+read) is read again rather than lost, and the key keeps it to one item.
+The bound is floored to its second for both the admission and the
+early stop, since the forge's `updated_at` has whole seconds: an update
+in the bound's own second is read again, never lost. It
 reads each one's files (at most 300; a rename counts
 for its old and its new path, and a renamed contract file is a contract
 change), and for a contract file that file at the merge commit and at the
