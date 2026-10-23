@@ -2144,6 +2144,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gcConv() && text(gcConv()).includes("Release 0.2 go/no-go") && gcConv().querySelector(".count").textContent === "1"
     && gcConv().querySelector(".mention-count") && text(gcConv()).includes("Agent A, Agent B"),
     "group chat: listed with its title, its unread, that it mentions you, and who is in it");
+  // Both counters share one cell, side by side, and the @ is drawn light on its badge (not accent on accent).
+  const gcCounts = gcConv().querySelector(".conv-counts");
+  const gcCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  expect(gcCounts && gcCounts.querySelectorAll(".count").some((c) => !c.classList.contains("mention-count")) && gcCounts.querySelector(".mention-count")
+    && gcCss.indexOf(".conv .mention-count { color: var(--accent-text); }") > gcCss.indexOf(".conv .count { color: var(--accent); }")
+    && !/\.conv \.count \{[^}]*grid-area/.test(gcCss),
+    "chat list: the unread count and the @ sit together in one cell, the @ readable on its badge");
   expect(main.querySelector(".chat-list-pane a.new-group") && main.querySelector(".chat-list-pane a.new-group").getAttribute("href") === "#/p/maity/chat/new",
     "group chat: New group chat beside the list");
   const gcWrites = [];

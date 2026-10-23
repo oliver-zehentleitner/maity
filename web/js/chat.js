@@ -105,8 +105,10 @@ window.Maity = window.Maity || {};
     h("span", { class: "conv-title", title: chat.title }, chat.title),
     sub.presence ? apart(", " + sub.presence) : null,
     when ? [apart(", "), h("span", { class: "conv-time" }, when)] : null,
-    unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
-    !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: "mentions you" }, "@"), apart(" mentions you")] : null,
+    // Both counters in one cell, side by side: the unread count, then the @.
+    unread || (!current && chat.mentions) ? h("span", { class: "conv-counts" },
+      unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
+      !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: "mentions you" }, "@"), apart(" mentions you")] : null) : null,
     apart(", "), h("span", { class: "conv-sub" }, sub.who),
     sub.line ? [apart(": "), h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line)] : null));
   }
