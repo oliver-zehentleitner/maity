@@ -561,8 +561,9 @@ include the scope. No call made with an agent credential may:
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
   lease or no lease: `PATCH assigned_to` away from the human, and a
-  status change that ends the claim or the card (`cancelled`, `done`,
-  back to `open`) are refused the same way, whatever the agent's role
+  status change that drops the human's claim (`cancelled`, back to
+  `open`) are refused the same way — `done` through the project's done
+  authority (§6.5) stays as it is, whatever the agent's role
   or scopes, before any scope check;
 - override a takeover in which any agent involved is not owned by the
   overriding agent's own owner (§6.19);
