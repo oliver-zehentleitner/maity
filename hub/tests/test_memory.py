@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import events, memory
+from maity_hub import clock, events, memory
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -90,6 +91,7 @@ def test_the_owner_writes_the_soul_and_every_project_hears_of_it_without_the_tex
     changed = _events(migrated, "soul_changed")
     assert len(changed) == 2
     assert changed[-1].audience == [f"member:{agent.id}", f"member:{owner.id}"]
+    assert changed[-1].actor_membership is not None  # the owner acted through its membership
     assert "markdown" not in changed[-1].payload and changed[-1].payload["version"] == 2
 
 
@@ -143,8 +145,9 @@ def test_a_team_is_read_by_the_team_its_owner_and_members_admin_only(
     assert [e["id"] for e in owner.get(M).json()["items"]] == [entry["id"]]
     assert other.get(M).json()["items"] == []
     assert member.get(M).json()["items"] == []
-    assert other.get(M, params={"member_id": agent.id}).status_code == 403
-    assert member.get(M, params={"member_id": agent.id}).status_code == 403
+    # A team the caller cannot read does not exist for it (§1.3).
+    assert other.get(M, params={"member_id": agent.id}).status_code == 404
+    assert member.get(M, params={"member_id": agent.id}).status_code == 404
     assert owner.get(M, params={"member_id": agent.id}).json()["items"][0]["id"] == entry["id"]
 
 
@@ -276,3 +279,133 @@ def test_the_packet_reads_many_tiny_entries_in_batches(
     team = agent.resume().json()["memory"]["team"]
     assert team["total"] == memory.PACKET_BATCH + 10 and team["truncated"] is False
     assert len(team["items"]) == team["total"] and team["items"][0]["text"] == "e59"
+
+
+def test_soul_changed_reaches_every_project_and_the_owner_outside_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    flow.project(owner, "second")
+    flow.agent(make_client, owner, "second", agent={"id": agent.id})
+    with migrated.begin() as conn:  # the owner leaves the first project
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id, t.membership.c.role == "owner")
+            .where(
+                t.membership.c.project_id
+                == select(t.project.c.id).where(t.project.c.slug == "maity").scalar_subquery()
+            )
+            .values(active=None, removed_at=clock.now())
+        )
+    assert put_soul(owner, agent.id, "two projects").status_code == 200
+    changed = _events(migrated, "soul_changed")
+    with migrated.connect() as conn:
+        slugs = dict(conn.execute(select(t.project.c.id, t.project.c.slug)).all())
+    assert sorted(slugs[e.project_id] for e in changed) == ["maity", "second"]
+    for event in changed:
+        assert event.audience == [f"member:{agent.id}", f"member:{owner.id}"]
+    first = next(e for e in changed if slugs[e.project_id] == "maity")
+    assert first.actor_membership is None  # no membership there to act through
+
+
+def test_concurrent_first_soul_writes_both_count(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    with ThreadPoolExecutor(2) as pool:
+        answers = list(pool.map(lambda n: put_soul(owner, agent.id, f"soul {n}"), range(2)))
+    assert sorted(a.status_code for a in answers) == [200, 200], [a.text for a in answers]
+    assert sorted(a.json()["version"] for a in answers) == [1, 2]
+    versions = owner.get(f"/agents/{agent.id}/soul/versions").json()["items"]
+    assert [v["version"] for v in versions] == [2, 1]
+
+
+def test_a_replayed_soul_write_answers_the_version_it_wrote(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    key = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "soul-replay-key-0001"}
+    url = f"/api/v1/agents/{agent.id}/soul"
+    first = owner.client.put(url, json={"markdown": "one"}, headers=key)
+    put_soul(owner, agent.id, "two")
+    again = owner.client.put(url, json={"markdown": "one"}, headers=key)
+    assert again.json() == first.json() and again.json()["version"] == 1
+
+
+def test_a_member_human_reads_and_deletes_its_own_agents_team(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    member = _second_human(make_client, migrated, "member")
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    profile = factory.agent(migrated, project_id, member.id)  # the member's own agent
+    agent = flow.agent(make_client, owner)
+    others = added(agent)
+    mine = _insert_entry(migrated, project_id, profile.membership_id)
+    listed = [e["id"] for e in member.get(M).json()["items"]]
+    assert listed == [mine]  # its agent's team, not another owner's
+    assert remove(member, others["id"]).status_code == 404
+    assert remove(member, mine).status_code == 200
+
+
+def test_an_admin_human_reads_and_deletes_any_team(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    entry = added(agent)
+    admin = _second_human(make_client, migrated, "admin")
+    assert [e["id"] for e in admin.get(M).json()["items"]] == [entry["id"]]
+    assert admin.get(M, params={"member_id": agent.id}).status_code == 200
+    assert remove(admin, entry["id"]).status_code == 200
+
+
+def test_a_member_human_does_not_delete_community_memory(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    entry = owner.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    member = _second_human(make_client, migrated, "member")
+    refused = remove(member, entry["id"])
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"] == {"scope": "project:admin"}
+
+
+def test_community_changes_count_in_changed_since_cursor(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    cursor = agent.resume().json()["events"]["cursor"]
+    owner.post(M, {"store": "community", "text": "Never on a Friday."})
+    assert agent.resume(cursor=cursor).json()["memory"]["changed_since_cursor"] is True
+
+
+@pytest.mark.parametrize("text", ["   ", "\n\t"])
+def test_blank_text_is_refused(owner: flow.Human, make_client: ClientFactory, text: str) -> None:
+    agent = flow.agent(make_client, owner)
+    refused = add(agent, text)
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"text": "blank"}
+
+
+def test_two_concurrent_adds_at_the_cap_leave_one_out(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    second = flow.Agent(make_client(), agent.credential, agent.credential_id, agent.id)
+    for n in range(memory.STORE_MAX // memory.ENTRY_MAX - 1):
+        added(agent, f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4))
+    full = "y" * memory.ENTRY_MAX
+    with ThreadPoolExecutor(2) as pool:
+        codes = sorted(pool.map(lambda who: add(who, full).status_code, [agent, second]))
+    assert codes == [201, 409]
+
+
+def _insert_entry(engine: Engine, project_id: str, team: int) -> str:
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.memory_entry).values(
+                id="mem-direct00001", project_id=project_id, store="team",
+                team_membership=team, text="written directly", tags=[], by_kind="agent",
+                by_membership=team, created_at=clock.now(),
+            )
+        )  # fmt: skip
+    return "mem-direct00001"
