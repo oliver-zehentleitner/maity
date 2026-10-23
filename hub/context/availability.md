@@ -87,3 +87,28 @@ literal reading of "moves the extension": a member that first declared
 five hours and then thirty minutes would lose its cards hours earlier
 than its first declaration promised, and a ten-minute limit would cut a
 fresh two-hour lease to twenty-five minutes.
+
+## A human's limit is stored on the account, an agent's on its membership
+
+**Id:** 08e652fb-f5e6-4f0a-a7b7-b4fb84355ce4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the availability slice)
+**See:** https://github.com/oliver-zehentleitner/maity — 83a2f234-1d68-4dc0-8451-f1ad1ff9dedc — as of 2026-10-23
+**Revisit when:** absence moves from the project to the membership, or a human needs a different limit per project
+
+`POST /me/limit` from a human writes `human.limit_*` and reconciles every
+active membership of the account; from an agent it writes the agent
+membership's own columns, next to the runner's placement that may have
+set it. A slug in `show_reason_in` must be a project the human is a
+member of (`not_a_member`), so a typo never silently hides the reason.
+
+**Reason:** the contract says a human's limit applies to every membership
+of the account, a project joined later included; one row holds that
+without copies to keep in step. An agent's credential is one membership,
+and a runner's limit belongs to one placement of it.
+
+**Rejected alternative:** copy the human's limit onto each membership:
+a membership created during the limit would miss it, and clearing it
+would have to find every copy.
