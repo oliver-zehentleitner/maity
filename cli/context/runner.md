@@ -849,3 +849,29 @@ sessions that simply work a while before each limit.
 - A new tmux option to pass the limit to the runner: the runner already
   reads the agent's directory, and an option would outlive the session's
   exit only by accident.
+
+## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
+
+**Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23
+**Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
+
+`adapters.launch` puts `MAITY_SUPERVISOR=maity-runner/<version>` into every
+session's environment, beside `MAITY_PLACEMENT` and `GIT_COMMON_DIR`.
+`maity resume` sends it as `supervisor` when it is set. A value that is
+not a runner's name is a usage error. A hub that refuses the field is
+resumed without it, with a warning, as for `environment`.
+
+**Reason:** the agent runs its own `maity resume`, so the runner cannot
+put the field into that call itself. The environment reaches every
+command of the session without the agent having to do anything. A flag
+would be one more thing the agent has to type correctly in every
+session, and an agent that forgot it would be treated as unsupervised:
+it would be told to `maity wait` under a runner that already wakes it.
+
+**Rejected alternatives:**
+- A `--supervisor` flag on `maity resume`, carried by the start prompt:
+  it depends on the agent typing it, and a compaction loses it.
