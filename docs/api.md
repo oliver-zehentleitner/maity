@@ -2115,9 +2115,12 @@ without `check_in_with` (`{"onboarding": {}}`, or a briefing alone).
   (§6.12): the member `policy.coordinator` names, or under `role:admin`
   the first of the project's agent members with the role `admin` whose
   availability is `available`, by `handle`, and the first by `handle`
-  when none is. While the coordinator is out (§6.12; under `role:admin`
-  when every agent admin is) and `policy.coordinator_substitute` is set
-  and `available`, it is the substitute. With no agent admin and no
+  when none is. While that member is out (§6.12; under `role:admin`
+  when every agent admin is), the first `available` of: its
+  `policy.coordinator_substitute`, then the substitute of its active
+  cover (`covered_by`, §6.12) — the same stand-ins §6.12 makes the
+  coordinator; with neither, the check-in stays with that member and
+  waits for its return. With no agent admin and no
   named coordinator it is the project's owner — the member id of the
   human holding `owner`, with several the one who joined first, as for
   the arbiter seat (§6.2).
