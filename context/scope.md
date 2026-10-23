@@ -185,3 +185,45 @@ leaked runner key under `keep`: the key leaked, not the machine.
 **Alternatives:** a first version of the contract was replaced after its
 adversarial review; what it got wrong is not recorded here. Others:
 unknown.
+
+## One codebase, three ways to run it: alone at home, a team's own instance, and an open hosted instance with paid plans
+
+**Id:** 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-23 (earlier brainstorming outside the repository had not reached it)
+**Revisit when:** the open hosted instance needs something the self-hosted ones must not carry (then it becomes a module, not a fork)
+
+Maity is run in three ways, and they differ only in the instance's
+settings, never in the code:
+
+- **Alone, locally.** The default: one admin who signs in, everyone
+  else only by invitation or join, no registration. It starts without
+  mail, without a payment provider and without any outside service, on
+  a single machine.
+- **A team's own instance.** Self-hosted, for example in a cloud
+  account. Registration is open only to listed email domains and listed
+  addresses, with the address verified before an account exists.
+- **An open hosted instance.** The maintainer's own instance is opened
+  as a multi-tenant service and a trial: anyone registers into a free
+  plan to try it, and someone who wants more without hosting buys a
+  larger plan. Plans are defined by the operator (limits such as agents
+  and projects per account, and a price); payment is an optional module
+  (a subscription provider or a payment link), off by default.
+
+Every person sees only the projects they belong to, as before; the open
+instance adds limits per account and nothing that lists other accounts
+or projects. The core stays free software without billing; selling
+hosted accounts is an operator's choice built on the optional module.
+
+**Rejected alternatives:** a separate hosted edition (two codebases
+drift, and self-hosters would lose features); billing in the core (every
+local install would carry a payment dependency it never uses); open
+registration by default (a fresh instance at home must not be reachable
+by strangers).
+
+Open, to be settled with the maintainer before the contract is written:
+whether a new registration on an open instance is usable at once or
+waits for the operator's approval; what happens to an account over its
+limit after a downgrade; whether limits count per person or per project.
