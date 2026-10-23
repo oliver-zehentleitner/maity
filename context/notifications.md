@@ -140,9 +140,13 @@ order is guaranteed per project, by the project lock held until commit
 while a `seq` is allocated, and per account, by a lock on the account
 row; `at` is monotonic along the same lines, not globally. A project
 joined later starts at its position at join time, a project left drops
-out. The token is sealed with authenticated encryption under the
-instance key, bound to the human's account id and the purpose
-`notifications.position`, and names projects by id; the normal form is
+out. The token is sealed with AES-256-GCM under a position key,
+bound to the human's account id and the purpose
+`notifications.position`, and names projects by id. The position key
+is derived from `MAITY_SECRET_KEY` (HKDF) when that is set, and
+otherwise is a random key the hub creates at first use and keeps in
+its own database, so positions never depend on the instance key being
+set; changing that setting invalidates every position; the normal form is
 the sealed vector inline, and when that would exceed the length cap
 the hub stores the vector (immutable, kept at least 30 days after last
 use) and hands out a sealed handle instead. A position that does not
@@ -162,7 +166,11 @@ delete), so a global lock taken next to the project locks deadlocks
 against ordinary writes. Per-project positions need only the locks
 the hub already takes. A plain encoded token cannot tell another
 human's token apart and shows the projects it names to whoever holds
-it; sealing it under the instance key and the human's id does both.
+it; sealing it, bound to the human's id, does both. The seal guards
+against a client forging, altering or reusing another human's token;
+whoever can read the database can read every notification anyway, so
+a key held in that database is adequate where no instance key is set,
+and the bell keeps working on an install without one.
 Reading a bad position as the head would silently skip items, and an
 automatic retry of "mark all read" with a fresh position would mark
 items the human never saw, so only the long-poll restarts on its own.
@@ -179,3 +187,5 @@ cap would skip items too, hence the stored overflow form.
 - The position as plain base64url JSON with project slugs (the first
   draft of this change): no binding to the human and readable by
   anyone who holds it.
+- Sealing only under `MAITY_SECRET_KEY` itself: the key is optional,
+  and the bell would not work on an instance without it.
