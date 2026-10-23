@@ -21,6 +21,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
+from maity_hub.notifications import records
 from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
 
@@ -900,7 +901,9 @@ def close_request(
     _unblock(conn, row)
     if not unknown:
         proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
-    view = request_view(conn, _row(conn, row.id))
+    closed = _row(conn, row.id)
+    records.personal_request(conn, closed)
+    view = request_view(conn, closed)
     emit(
         conn,
         row.project_id,
@@ -1021,6 +1024,7 @@ def file_personal(
         )
     )
     row = _row(conn, request_id)
+    records.personal_request(conn, row)
     emit(
         conn,
         mine.project.id,
@@ -1116,7 +1120,9 @@ def answer_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             row.project_id,
@@ -1156,7 +1162,9 @@ def withdraw_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             row.project_id,
