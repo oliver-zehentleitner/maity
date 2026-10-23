@@ -11,7 +11,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import events
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_placements import REPOSITORY, Setup, events_of, placed
 from tests.test_runner_stream import attach, hello, send
@@ -128,6 +128,15 @@ def test_a_rejoin_replaces_the_revoked_instance(setup: Setup, make_client: Clien
     placement = placed(setup)
     first = exchange(make_client(), pick_up(setup, placement).json())
     old_instance = first.headers["Maity-Instance"]
+    with setup.engine.begin() as conn:  # the old instance holds one card and is assigned one
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == setup.agent.id)
+        ).scalar_one()
+    held = factory.card(setup.engine, project_id, member, status="in_progress",
+                        claim_holder=member, claim_instance=old_instance)  # fmt: skip
+    assigned = factory.card(setup.engine, project_id, member,
+                            assigned_to=member, assigned_instance=old_instance)  # fmt: skip
     revoked = setup.owner.post(
         f"/projects/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
     )
@@ -150,6 +159,10 @@ def test_a_rejoin_replaces_the_revoked_instance(setup: Setup, make_client: Clien
         ).all()
     assert credential.replaces == old_instance
     assert len(revocations) == 1  # the owner's; the rejoin revokes nothing again
+    with setup.engine.connect() as conn:  # the revoked instance's work moved over
+        cards = {c.id: c for c in conn.execute(select(t.card)).all()}
+    assert cards[held].claim_instance == credential.instance
+    assert cards[assigned].assigned_instance == credential.instance
     row = placement_row(setup, placement["id"])
     assert row.credential_id == credential.id and row.rejoin is False
 
