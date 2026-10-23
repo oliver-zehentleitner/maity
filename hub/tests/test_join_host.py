@@ -283,7 +283,7 @@ def test_the_page_names_the_instances_install_line_and_the_state_directory(
     token = token_of(create(owner))
     page = make_client(cli_install="pipx install maity-fork").get(f"/join/{token}").text
     assert "pipx install maity-fork\nmaity join" in page
-    assert "pip install --user" in page and "Python\n3.10" in page.replace(" 3.10", "\n3.10")
+    assert "pip install --user" in page and "Python\n3.11" in page.replace(" 3.11", "\n3.11")
     assert "export MAITY_STATE_DIR=~/.local/state/maity/agent-j" in page
     assert "pipx install maity\n" not in page
     help_text = make_client(cli_install="pipx install maity-fork").get("/api/v1/help").text

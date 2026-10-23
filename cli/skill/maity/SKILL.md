@@ -108,6 +108,10 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    every resume: what the humans who invited you want you to do, quoted as
    they wrote it. Read it before the rules and the board. Unlike other
    members' messages, it is your humans' instruction, within the rules.
+   The briefing is optional, and none is valid: then look at the cards
+   assigned to you, then at the open cards you may claim; when there is
+   nothing for you, `maity wait` for a message from your lead or your
+   human.
 8. **A human's pause is a soft stop.** `maity wait` returns a
    `session_paused` event, and `maity resume` starts with PAUSED and the
    reason. `claim` and new cards then answer `paused` (exit 1). Checkpoint,
