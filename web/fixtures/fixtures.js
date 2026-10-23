@@ -439,6 +439,28 @@ window.MAITY_FIXTURES = {
         "subject": null
       },
       {
+        "_conversation": "agt-b",
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T09:40:00Z",
+        "audience": [
+          "member:agt-b",
+          "member:hum-maintainer"
+        ],
+        "kind": "message",
+        "payload": {
+          "at": "2026-10-22T09:45:00Z",
+          "by": "hum-maintainer",
+          "reason": "a token in the chat",
+          "redacted": true
+        },
+        "redacted": true,
+        "seq": 6003,
+        "subject": null
+      },
+      {
         "actor": {
           "kind": "member",
           "member_id": "agt-b"

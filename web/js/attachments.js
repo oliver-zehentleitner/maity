@@ -187,13 +187,20 @@ window.Maity = window.Maity || {};
     const box = h("ul", { class: "attach-list" });
     atts.forEach((a) => {
       const li = h("li", { class: "attach-item", "data-attachment": a.id });
-      // Deleted here: said, and focus kept on the note.
+      // Deleted here: said, and focus kept on the note. Marked on the
+      // attachment itself, so a later redraw from the same data says it too.
       const gone = () => {
+        a.removed = true;
         clear(li);
         const note = h("span", { class: "muted", tabindex: "-1" }, a.name + ": removed.");
         append(li, note);
         note.focus();
       };
+      if (a.removed) {
+        append(li, h("span", { class: "muted" }, a.name + ": removed."));
+        append(box, li);
+        return;
+      }
       let shown = null;
       const url = M.api.attachmentUrl(ctx.slug, a.id, false);
       if (a.kind === "image" && INLINE_TYPES.includes(a.type) && url) {

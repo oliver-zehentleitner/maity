@@ -368,12 +368,16 @@ Inside a project, in the order of their importance; see
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
-    - An owner or admin removes a message with a reason (§8.5); a removed
-      one says by whom and why, and shows only without a type filter.
+    - An owner or admin removes a message with a reason (§8.5); it leaves
+      the list. No removed message is shown while the view reads the
+      events: there a removed chat message cannot be told from a removed
+      project message.
     - The hub has no message listing yet (§8.8 is in the contract): the
-      view reads the project's events from the start with `wait=0`, page
-      by page, and keeps the messages. New messages, removals and deleted files arrive with the
-      project's feed.
+      view reads the project's latest 5000 events with `wait=0`, page by
+      page, and keeps the messages; when the log is longer it says older
+      ones are not read. A cursor that does not move stops the read with
+      an error. New messages, removals and deleted files arrive with the
+      project's feed and change the list in place.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
