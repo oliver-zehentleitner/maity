@@ -290,3 +290,41 @@ def test_the_humans_proxy_proposes_for_the_owner_only(
     assert propose(proxy, owner.id, "Be brief.").status_code == 202
     refused = propose(proxy, other.id, "Be brief.")  # not the project's owner
     assert refused.json()["error"]["details"]["reason"] == "may_not_propose"
+
+
+# --- review of #286 -------------------------------------------------------------------------
+
+
+def test_the_proposer_never_reads_the_current_text_through_its_request(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    put(owner, "private: do not share")
+    owner.client.put(
+        "/api/v1/me/preferences/projects/maity",
+        json={"include": False},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    request = propose(admin, owner.id, "Be brief.", base=1).json()
+    seen = admin.get(f"/projects/maity/requests/{request['id']}").json()
+    assert "private" not in str(seen)
+    assert "current" not in seen["memory_proposal"]
+    mine = owner.get(f"/requests/{request['id']}").json()["memory_proposal"]
+    assert mine["current"]["markdown"] == "private: do not share"
+
+
+def test_an_open_proposal_older_than_a_day_is_superseded_too(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from maity_hub import clock
+
+    admin = flow.agent(make_client, owner, role="admin")
+    start = datetime.now(UTC)
+    clock.set_source(lambda: start)
+    old = propose(admin, owner.id, "old").json()
+    clock.set_source(lambda: start + timedelta(days=2))
+    propose(admin, owner.id, "new")
+    statuses = {r["id"]: r["status"] for r in owner.get("/requests?status=all").json()["items"]}
+    assert statuses[old["id"]] == "withdrawn"

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, idempotency, preferences
+from maity_hub import clock, events, idempotency, preferences
 from maity_hub import tables as t
 from maity_hub.access import member_row, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -162,6 +162,8 @@ def propose(
                 "an admin agent or the human's proxy proposes preferences",
                 {"reason": "may_not_propose"},
             )
+        # Under the project lock: two proposals at once cannot both pass the caps.
+        events.lock_project(conn, mine.project.id)
         recent = preferences.recent_proposals(conn, mine.id, member_id)
         if len(recent) >= preferences.PROPOSALS_PER_DAY:
             oldest = min(r.created_at for r in recent)
@@ -169,11 +171,9 @@ def propose(
             raise rate_limited(max(wait, 1))
         from maity_hub.routes.requests import close_request
 
-        for older in recent:
-            if older.status == "open":  # one open proposal per membership and human
-                close_request(
-                    conn, older.id, "withdrawn", caller.actor(mine.id), reason="superseded"
-                )
+        for older in preferences.open_proposals(conn, mine.id, member_id):
+            # One open proposal per membership and human, however old the open one is.
+            close_request(conn, older.id, "withdrawn", caller.actor(mine.id), reason="superseded")
         handle = conn.execute(
             select(t.human.c.handle).where(t.human.c.id == member_id)
         ).scalar_one()
