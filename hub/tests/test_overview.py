@@ -260,3 +260,48 @@ def test_an_import_is_a_create(
         created = conn.execute(select(t.event).where(t.event.c.kind == "task_created")).one()
     assert created.payload["reason"] == "the release needs it"
     assert created.payload["imported_from"] == card["imported_from"]
+
+
+# --- review of #271 -------------------------------------------------------------------------
+
+FAKE = "mty1.crd-0000000fake0.not-a-real-secret-but-the-shape"
+
+
+@pytest.mark.parametrize("where", ["title", "body", "author_login"])
+def test_a_credential_in_the_forges_text_is_refused_and_nothing_stored(
+    owner: flow.Human, forged: list[IssueForge], migrated: Engine, where: str
+) -> None:
+    forged[0] = IssueForge(issue(**{where: f"see {FAKE} here"}))
+    refused = imported(owner)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "credential_in_payload"
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.card)).first() is None
+
+
+def test_a_replayed_import_answers_without_reading_the_forge(
+    owner: flow.Human, make_client: ClientFactory, forged: list[IssueForge]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    keyed = agent.auth | {"Idempotency-Key": "replayed-import-0001"}
+    path = "/api/v1/projects/maity/tasks/import"
+    first = agent.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
+    assert first.status_code == 201, first.text
+    forged[0] = IssueForge(None, fail=True)  # the forge is down now
+    again = agent.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
+    assert again.status_code == 201, again.text
+    assert again.headers.get("Idempotent-Replayed") == "true"
+    assert again.json()["id"] == first.json()["id"]
+    assert forged[0].asked == []
+
+
+def test_the_same_issue_in_another_case_is_already_linked(
+    owner: flow.Human, forged: list[IssueForge]
+) -> None:
+    assert imported(owner).status_code == 201
+    shouted = owner.post(
+        "/projects/maity/tasks/import",
+        {"issue_url": "https://github.com/Oliver-Zehentleitner/MAITY/issues/41"},
+    )
+    assert shouted.status_code == 409, shouted.text
+    assert shouted.json()["error"]["code"] == "already_linked"
