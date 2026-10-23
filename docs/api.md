@@ -8203,7 +8203,7 @@ member and in their audience, so each personal request is one item.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
@@ -8382,8 +8382,9 @@ builds one itself. The rules that make a position safe to resume from:
   `true` (§18.4), else absent. `reason` (on `card`) says which relation qualified:
   `creator`, `assignee`, `holder`, `agent_holder`, `agent_assignee`,
   `watcher` — the first that applies in this order. `target` is the object the
-  item links to — `request`, `task`, `conversation`, `placement`, and
-  for account records `session` or `settings`, `project` `null` on
+  item links to — `request`, `task`, `conversation`, `placement`,
+  `ticker` (a ticker item, by its `seq`), `project` (a mention in a
+  project message), and for account records `session` or `settings`, `project` `null` on
   those (a personal request's record targets its `request`, above) — and
   `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
   dashboard owns its routes, the hub builds the URL from the target.
