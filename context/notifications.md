@@ -128,7 +128,7 @@ anyone noticing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** decision by the contract owner, 2026-10-23; contract in `docs/api.md` §1.4, §1.7, §18.2, §18.3, §18.8
+**Source:** decision by the contract owner, 2026-10-23, and the owner's rulings on the review of that change, 2026-10-23; contract in `docs/api.md` §1.4, §1.7, §18.2, §18.3, §18.8
 **See:** notifications.md#a-mail-from-the-hub-carries-only-the-hubs-links-security-mail-has-its-own-budget-and-a-watch-is-never-visible-to-others — 0f0fb324-e995-42b3-88d3-33063e32918c — as of 2026-10-23
 **Revisit when:** the hub gains a hub-wide write order that every supported database provides, or the per-project lock (`lock_project`) changes
 
@@ -140,8 +140,18 @@ order is guaranteed per project, by the project lock held until commit
 while a `seq` is allocated, and per account, by a lock on the account
 row; `at` is monotonic along the same lines, not globally. A project
 joined later starts at its position at join time, a project left drops
-out, and a position in the earlier two-part form is `invalid`, never
-read as the head. This replaces the two-part position `a.b` and its
+out. The token is sealed with authenticated encryption under the
+instance key, bound to the human's account id and the purpose
+`notifications.position`, and names projects by id; the normal form is
+the sealed vector inline, and when that would exceed the length cap
+the hub stores the vector (immutable, kept at least 30 days after last
+use) and hands out a sealed handle instead. A position that does not
+open for the human (forged, altered, another human's, expired, the
+earlier two-part form) is `invalid` with one answer for every case,
+never read as the head. Recovery is split: an invalid `after` lets the
+client restart at the head, giving up the browser notifications of the
+items in between; an invalid `up_to` marks nothing and is not retried
+on its own. This replaces the two-part position `a.b` and its
 promise that numbers become visible in global order, recorded in the
 entry above.
 
@@ -150,10 +160,14 @@ Transactions that emit in several projects exist (runner revoke and
 remove, leak revocation, avatar change, `soul_changed`, profile
 delete), so a global lock taken next to the project locks deadlocks
 against ordinary writes. Per-project positions need only the locks
-the hub already takes. How an old token is treated was left to the
-contract's author and stands with the review of that change: read as
-the head, it would silently skip items and mark unseen ones read
-through "mark all read".
+the hub already takes. A plain encoded token cannot tell another
+human's token apart and shows the projects it names to whoever holds
+it; sealing it under the instance key and the human's id does both.
+Reading a bad position as the head would silently skip items, and an
+automatic retry of "mark all read" with a fresh position would mark
+items the human never saw, so only the long-poll restarts on its own.
+Dropping components or resetting to the head to stay under the length
+cap would skip items too, hence the stored overflow form.
 
 **Rejected alternatives:**
 - A global sequence lock held until commit: deadlocks on multi-project
@@ -162,3 +176,6 @@ through "mark all read".
   transaction finishing within the horizon.
 - A database-specific safe-snapshot sequence (`pg_snapshot_xmin`): no
   MariaDB or SQLite equivalent.
+- The position as plain base64url JSON with project slugs (the first
+  draft of this change): no binding to the human and readable by
+  anyone who holds it.
