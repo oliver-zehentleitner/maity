@@ -275,14 +275,47 @@ def test_bad_requests_to_a_known_slug_rate_limit_unknown_ones_alike(owner: flow.
         assert response.status_code == 429 and response.json()["error"]["code"] == "rate_limited"
 
 
-def test_a_verified_delivery_is_never_refused_for_what_others_sent_from_its_address(
+def test_bad_requests_from_an_address_delay_a_verified_delivery_from_it_too(
     owner: flow.Human,
 ) -> None:
+    # The accepted cost of treating every slug alike before the body (A's ruling on
+    # #235): the probe catches such a delivery up on its interval.
     key = secret(owner)
     for _ in range(60):
         deliver(owner.client, {}, "x", path=UNKNOWN)
-    assert deliver(owner.client, {}, "x", path=UNKNOWN).status_code == 429
-    assert deliver(owner.client, {}, key).status_code == 202
+    response = deliver(owner.client, {}, key)
+    assert (response.status_code, response.json()["error"]["code"]) == (429, "rate_limited")
+
+
+def test_a_verified_delivery_gives_its_places_back(owner: flow.Human) -> None:
+    key = secret(owner)
+    for _ in range(59):
+        deliver(owner.client, {}, "wrong")
+    for _ in range(3):  # each takes the 60th place and gives it back
+        assert deliver(owner.client, {}, key).status_code == 202
+    assert deliver(owner.client, {}, "wrong").status_code == 401
+    assert deliver(owner.client, {}, "wrong").status_code == 429
+
+
+@pytest.mark.parametrize("known", [True, False])
+def test_after_sixty_bad_requests_a_held_body_is_refused_at_once_for_every_slug(
+    owner: flow.Human, migrated: Engine, known: bool
+) -> None:
+    # Oracle 1 of the re-check: known slugs used to hang, unknown ones to answer 429.
+    secret(owner)
+    forge_webhook.NOBODY.take("192.0.2.7", 60)  # held()'s address: sixty refused already
+    assert held(migrated, [HOOK if known else UNKNOWN]) == ([429], 0)
+
+
+@pytest.mark.parametrize("known", [True, False])
+def test_sixty_held_bodies_on_one_slug_refuse_any_other_alike(
+    owner: flow.Human, migrated: Engine, known: bool
+) -> None:
+    # Oracle 2 of the re-check: whether the held slug exists changed the 61st answer.
+    secret(owner)
+    slug_path = HOOK if known else UNKNOWN
+    early, read = held(migrated, [slug_path] * 60 + ["/api/v1/projects/random-one/forge/webhook"])
+    assert (early, read) == ([429], 60)
 
 
 def test_sixty_verified_deliveries_a_minute_per_project(owner: flow.Human) -> None:
@@ -312,9 +345,10 @@ def test_a_body_declared_too_large_or_of_no_length_is_refused_alike(owner: flow.
         )
 
 
-def held(migrated: Engine, path: str, n: int) -> tuple[list[int], int]:
-    """`n` requests to `path` from one address whose bodies are held back: which were
-    answered before any body came, and how many began to read theirs."""
+def held(migrated: Engine, paths: list[str]) -> tuple[list[int], int]:
+    """One request to each of `paths`, in order, from one address, their bodies held
+    back: the statuses of those answered before any body came, and how many began to
+    read theirs."""
     read = 0
 
     async def run() -> list[int]:
@@ -329,7 +363,7 @@ def held(migrated: Engine, path: str, n: int) -> tuple[list[int], int]:
         async def send(_message: Any) -> None:
             return None
 
-        def scope() -> dict[str, Any]:
+        def scope(path: str) -> dict[str, Any]:
             return {
                 "type": "http",
                 "method": "POST",
@@ -338,12 +372,14 @@ def held(migrated: Engine, path: str, n: int) -> tuple[list[int], int]:
                 "state": {"origin": SimpleNamespace(address="192.0.2.7")},
             }
 
-        tasks = [
-            asyncio.create_task(forge_webhook.handle(scope(), receive, send, migrated, KEY))
-            for _ in range(n)
-        ]
+        tasks = []
+        for path in paths:  # one after the other, so the buckets fill in this order
+            tasks.append(
+                asyncio.create_task(forge_webhook.handle(scope(path), receive, send, migrated, KEY))
+            )
+            await asyncio.sleep(0)
         for _ in range(500):  # every task at its body or answered, at most five seconds
-            if read + sum(task.done() for task in tasks) >= n:
+            if read + sum(task.done() for task in tasks) >= len(paths):
                 break
             await asyncio.sleep(0.01)
         early = [task.result() for task in tasks if task.done()]
@@ -358,22 +394,20 @@ def test_parallel_requests_read_at_most_sixty_bodies_per_project_and_address(
     owner: flow.Human, migrated: Engine
 ) -> None:
     secret(owner)
-    assert held(migrated, HOOK, 61) == ([429], 60), "the 61st is refused before its body"
+    assert held(migrated, [HOOK] * 61) == ([429], 60), "the 61st is refused before its body"
 
 
 def test_a_held_back_body_hangs_alike_for_every_slug(owner: flow.Human, migrated: Engine) -> None:
     # One request each: neither is answered before its body comes (A's ruling on #235).
     secret(owner)
-    assert held(migrated, HOOK, 1) == ([], 1)
-    forge_webhook.NOBODY.reset()
-    forge_webhook.UNVERIFIED.reset()
-    assert held(migrated, UNKNOWN, 1) == ([], 1)
+    assert held(migrated, [HOOK]) == ([], 1)
+    assert held(migrated, [UNKNOWN]) == ([], 1)
 
 
 def test_parallel_requests_to_unknown_slugs_read_at_most_sixty_bodies_per_address(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    assert held(migrated, UNKNOWN, 61) == ([429], 60)
+    assert held(migrated, [UNKNOWN] * 61) == ([429], 60)
 
 
 def test_a_body_nested_too_deep_is_invalid(owner: flow.Human) -> None:

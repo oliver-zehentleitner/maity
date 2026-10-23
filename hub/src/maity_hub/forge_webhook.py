@@ -49,8 +49,8 @@ def field(project_id: str) -> str:
 # is a UUID. Anything else is stored as null: the header is the sender's to fill.
 DELIVERY = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 # §17.4: 60 verified deliveries a minute per project; 60 unverified requests a minute
-# per project and source address; 60 a minute per source address for every request
-# that does not verify, whatever slug it names (`NOBODY`, one bucket per address).
+# per slug and source address (`UNVERIFIED`) and per source address (`NOBODY`), taken
+# by every request before its body and given back only once it verifies.
 VERIFIED = Limiter(60, 60)
 UNVERIFIED = Limiter(60, 60)
 NOBODY = Limiter(60, 60)
@@ -152,59 +152,46 @@ async def handle(
 ) -> int:
     """Answer one delivery; returns the status for the request log.
 
-    Every request that does not verify counts against its source address (`NOBODY`),
-    whether the slug exists or not, and is answered `rate_limited` past that limit, so
-    neither the answer nor the limit tells a known slug from an unknown one. Every
-    request reads its declared body (at most 1 MiB) before it is answered, so a body
-    held back hangs alike for every slug: an unknown slug's after taking its place in
-    `NOBODY`, a known slug's after taking one in the bucket of its project and address
-    (`UNVERIFIED`), given back once the signature verifies. Either way the bodies read
-    at once are bounded per address, and a verified delivery is never refused for what
-    others sent from the same forge address."""
+    Every slug is treated the same until the signature verifies, so neither an answer,
+    a limit nor a held-back body tells a project that exists from one that does not.
+    Every request first takes a place in the bucket of its source address (`NOBODY`)
+    and in the bucket of its slug and address (`UNVERIFIED`), answered `rate_limited`
+    at once when either is full; then reads its declared body (at most 1 MiB); then is
+    refused, or verified. Only a verified delivery gets both places back, so the bodies
+    read at once stay bounded per address and per slug and address. The accepted cost:
+    failing deliveries from one forge address can delay a verified one from the same
+    address, which the probe then catches up on its interval."""
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
     source = scope["state"]["origin"].address
-
-    async def refuse(response: Any) -> int:
-        wait = NOBODY.hit(source)
-        return await _answer(_limited(wait) if wait else response, scope, receive, send)
-
+    bucket = f"{slug}|{source}"
+    wait = NOBODY.hit(source) or UNVERIFIED.hit(bucket)
+    if wait:
+        return await _answer(_limited(wait), scope, receive, send)
     declared = _declared(scope)
     if declared is None or declared > BODY_CAP:
-        return await refuse(_too_large())
+        return await _answer(_too_large(), scope, receive, send)
     found = await run_in_threadpool(_lookup, engine, slug, key) if key is not None else None
-    if found is None:
-        # Nothing to check against, yet the body is read as for a known slug, so a
-        # body held back does not tell the two apart; counted before, not again after.
-        wait = NOBODY.hit(source)
-        if wait:
-            return await _answer(_limited(wait), scope, receive, send)
-        read = await _read(receive)
-        if read is None:
-            return 499
-        response = _too_large() if isinstance(read, _TooLarge) else _refused()
-        return await _answer(response, scope, receive, send)
-    project, secret = found
-    bucket = f"{project.id}|{source}"
-    wait = UNVERIFIED.hit(bucket)
-    if wait:
-        return await refuse(_limited(wait))
     read = await _read(receive)
     if read is None:
         return 499
     if isinstance(read, _TooLarge):
-        return await refuse(_too_large())
-    body = read
+        return await _answer(_too_large(), scope, receive, send)
+    if found is None:
+        # Nothing to check against: refused like a wrong signature, after the body.
+        return await _answer(_refused(), scope, receive, send)
+    project, secret = found
     given = _headers(scope, b"x-hub-signature-256")
-    expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+    expected = "sha256=" + hmac.new(secret, read, hashlib.sha256).hexdigest()
     # One signature or none: with two, which one the forge meant is anyone's guess.
     if len(given) != 1 or not hmac.compare_digest(given[0].encode(), expected.encode()):
-        return await refuse(_refused())
+        return await _answer(_refused(), scope, receive, send)
+    NOBODY.give_back(source, 1)
     UNVERIFIED.give_back(bucket, 1)
     wait = VERIFIED.hit(project.id)
     if wait:
         await run_in_threadpool(_record, engine, project.id, "rate_limited")
         return await _answer(_limited(wait), scope, receive, send)
-    result = _dispatch(scope, project, body)
+    result = _dispatch(scope, project, read)
     if result == "invalid":
         await run_in_threadpool(_record, engine, project.id, "ignored")
         return await _answer(

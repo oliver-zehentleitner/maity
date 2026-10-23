@@ -266,7 +266,7 @@ the hub records it on the session.
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
 | Ticker items inside the resume packet | 20, then `truncated: true` (§17.9) |
-| Forge webhook body | 1 MiB, declared by one `Content-Length` (missing, repeated or larger: `payload_too_large` for every slug); 60 verified deliveries per minute per project, 60 unverified requests per minute per project and source address, and 60 unverified requests per minute per source address whatever the slug, one bucket shared by all of them (§17.4) |
+| Forge webhook body | 1 MiB, declared by one `Content-Length` (missing, repeated or larger: `payload_too_large` for every slug); 60 verified deliveries per minute per project; 60 requests per minute per slug and source address and 60 per source address, taken before the body by every request and given back only by one that verifies (§17.4) |
 | Ticker subscription | 20 areas per list (§17.8) |
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
@@ -7717,23 +7717,22 @@ POST /api/v1/projects/{slug}/forge/webhook
   declared body before it is answered, for a project that does not exist
   or has no webhook secret too, so a body held back hangs alike whatever
   the slug.
-- Every request that does not verify — no or a wrong signature, more
-  than one signature header, a body over the cap, a project that does not
-  exist or has no webhook secret — counts against one bucket per source
-  address (the client address of §2.5), shared by all slugs, at most 60
-  per minute; past it the hub answers `rate_limited` with `Retry-After`.
-  For a project with a webhook secret the hub also takes a place in a
-  bucket per project and source address (60 per minute) before it reads
-  the body, and gives it back once the signature verifies: at most 60
-  bodies per project and address are read at once, and a verified
-  delivery never counts against the per-address bucket, so one project's
-  failing deliveries cannot refuse another project's verified ones from
-  a forge's shared address pool. A request for a project without a secret
-  takes its place in the per-address bucket before its body, which bounds
-  those reads the same way. Refusal and limit answer alike: the 61st bad
-  request in a minute is `rate_limited` whether the slug exists and has a
-  secret or not, so neither the answer nor the limit tells anyone whether
-  a project exists or has a webhook secret. A request that does not
+- Every slug is treated the same until a signature verifies. Every
+  request first takes a place in a bucket per source address (the
+  client address of §2.5) and in a bucket per slug and source address,
+  60 per minute each; when either is full the hub answers
+  `rate_limited` with `Retry-After` at once, before the body. Then it
+  reads the declared body, and only then refuses — no or a wrong
+  signature, more than one signature header, a body over the cap, a
+  project that does not exist or has no webhook secret — or verifies.
+  Only a verified delivery gives both places back. So at most 60 bodies
+  per slug and address, and 60 per address, are read at once, and
+  neither the answer, the limit nor a body held back tells anyone
+  whether a project exists or has a webhook secret. The cost, accepted:
+  failing requests from one forge address can delay a verified delivery
+  from the same address, since it takes its place before it verifies;
+  the probe catches it up on its interval.
+- A request that does not
   verify never sets `last_result` (below): anyone can send one, and the
   webhook view shows the state of the forge's real deliveries, not of
   whoever probes the URL. The answer is `202` with `{}` once the

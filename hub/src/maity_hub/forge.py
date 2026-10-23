@@ -262,7 +262,9 @@ class Forge:
         The forge's `updated_at` has whole seconds and `since` has microseconds: the bound
         is floored to its second and only what is older is left out, so an update in the
         bound's own second is read again rather than lost."""
-        floor = merged_after if merged_after is not None else since
+        # Both to the forge's whole second: the switch-on second counts, and so does
+        # the bound's.
+        floor = (merged_after if merged_after is not None else since).replace(microsecond=0)
         bound = since.replace(microsecond=0)
         found: list[dict[str, Any]] = []
         for page in range(start, start + pages):
@@ -283,7 +285,7 @@ class Forge:
                 if updated is not None and updated < bound:
                     reached = True
                 merged = _moment(pr.get("merged_at"))
-                if merged is None or merged <= floor or (updated is not None and updated < bound):
+                if merged is None or merged < floor or (updated is not None and updated < bound):
                     continue
                 found.append(
                     {
