@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -66,6 +67,38 @@ def test_a_body_over_64_kib_is_refused(make_client: ClientFactory) -> None:
     )
     assert response.status_code == 413
     assert response.headers["Maity-Error"] == "payload_too_large"
+
+
+def test_a_body_to_an_api_path_nothing_serves_is_404_unread(make_client: ClientFactory) -> None:
+    client = make_client()
+    big = client.post(
+        "/api/v1/projects/maity/attachments",
+        content=b"x" * (64 * 1024 + 1),
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert (big.status_code, big.headers["Maity-Error"]) == (404, "not_found")
+    # The known path with another method stays routed: the cap answers first (405 after).
+    wrong_method = client.put(
+        "/api/v1/auth/login", content=b"x" * (64 * 1024 + 1), headers={"Content-Type": "x/y"}
+    )
+    assert wrong_method.status_code == 413
+
+    async def never_read() -> dict[str, object]:
+        raise AssertionError("the body of an unrouted path was read")
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": "/api/v1/nowhere", "raw_path": b"/api/v1/nowhere", "root_path": "",
+        "query_string": b"", "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
+        "headers": [(b"host", b"hub.example"), (b"content-length", b"1000000000")],
+    }  # fmt: skip
+    asyncio.run(client.app(scope, never_read, send))  # type: ignore[arg-type]
+    assert sent[0]["status"] == 404
 
 
 def test_a_body_at_the_cap_passes_the_cap(make_client: ClientFactory) -> None:

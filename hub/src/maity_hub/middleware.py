@@ -18,6 +18,7 @@ from urllib.parse import unquote_to_bytes
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.concurrency import run_in_threadpool
+from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from maity_hub import clock, events, join_host, net
@@ -60,6 +61,10 @@ class HubMiddleware:
         scope["state"]["on_join_host"] = on_join_host
         send = _with_headers(send)
 
+        if not on_join_host and _unrouted(scope):
+            # Nothing here would read it: 404 before the cap, and the body is never read.
+            await _not_found(scope, receive, send)
+            return
         image = scope.get("method") == "PUT" and bool(_IMAGE_UPLOAD.match(scope.get("path", "")))
         cap = IMAGE_CAP if image else BODY_CAP
         refuse = _image_too_large if image else _too_large
@@ -183,6 +188,26 @@ def _content_length(scope: Scope) -> int | None:
             except ValueError:
                 return None
     return None
+
+
+def _unrouted(scope: Scope) -> bool:
+    """An API path no route of this hub serves, whatever the method (a route with the
+    path but not the method is routed: it answers 405). The dashboard's files, mounted
+    at `/`, never answer for `/api/`."""
+    path = str(scope.get("path", ""))
+    router = getattr(scope.get("app"), "router", None)
+    if not path.startswith("/api/") or router is None:
+        return False
+    return all(
+        getattr(route, "name", None) == "web" or route.matches(scope)[0] == Match.NONE
+        for route in router.routes
+    )
+
+
+async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
+    response = error_response(404, "not_found", "no such resource")
+    await response(scope, receive, send)
+    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 404)
 
 
 async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
