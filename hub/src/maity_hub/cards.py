@@ -220,3 +220,13 @@ def _contains(owned: str, area: str) -> bool:
         return True
     owned_dir = owned if owned.endswith("/") else owned + "/"
     return area == owned or area.startswith(owned_dir) or area + "/" == owned_dir
+
+
+def edges(conn: Connection, card_id: str) -> dict[str, list[str]]:
+    """A card's `depends_on` and `ships_with`, sorted as the card view shows them."""
+    found: dict[str, list[str]] = {"depends_on": [], "ships_with": []}
+    for to_card, kind in conn.execute(
+        select(t.card_edge.c.to_card, t.card_edge.c.kind).where(t.card_edge.c.from_card == card_id)
+    ):
+        found.setdefault(kind, []).append(to_card)
+    return {kind: sorted(ids) for kind, ids in found.items()}

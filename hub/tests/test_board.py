@@ -524,3 +524,12 @@ def test_the_probe_reads_own_repository_links_in_one_batch(
     probe.observe_links(migrated, fg, project_id)
     probe.observe_links(migrated, fg, project_id)
     assert len(fg.reads) == 3
+
+
+def test_a_link_job_is_per_project_and_waits_once(migrated: Engine) -> None:
+    worker = probe.Worker(migrated, FakeForge({}))  # never started: only the queue is read
+    worker.links_added("prj-a")
+    worker.links_added("prj-a")
+    worker.links_added("prj-b")
+    jobs = [worker.jobs.get_nowait() for _ in range(worker.jobs.qsize())]
+    assert jobs == [(probe.LINKS, "prj-a"), (probe.LINKS, "prj-b")]
