@@ -45,6 +45,11 @@ class Settings:
     # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
     # agent how to get it (§3.2).
     cli_install: str = DEFAULT_CLI_INSTALL
+    # The avatar decoder's budgets (§6.10): seconds and MiB per decode, and how many
+    # decodes run at once.
+    avatar_decode_seconds: float = 5.0
+    avatar_decode_memory_mb: int = 512
+    avatar_decodes: int = 2
 
     @property
     def join_host(self) -> str | None:
@@ -77,7 +82,31 @@ class Settings:
             ),
             join_url=parse_join_url(env.get("MAITY_JOIN_URL", ""), public),
             cli_install=parse_cli_install(env.get("MAITY_CLI_INSTALL", "")),
+            avatar_decode_seconds=parse_number(
+                env, "MAITY_AVATAR_DECODE_SECONDS", 5.0, minimum=0.5, maximum=120
+            ),
+            avatar_decode_memory_mb=int(
+                parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
+            ),
+            avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
         )
+
+
+def parse_number(
+    env: dict[str, str], name: str, default: float, *, minimum: float, maximum: float
+) -> float:
+    """A numeric setting within its range; unset is the default, anything else stops
+    the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    try:
+        number = float(value)
+    except ValueError:
+        raise ConfigError(f"{name} is not a number: {value!r}") from None
+    if not minimum <= number <= maximum:
+        raise ConfigError(f"{name} must be between {minimum:g} and {maximum:g}")
+    return number
 
 
 def parse_cli_install(value: str) -> str:

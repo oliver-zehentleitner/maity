@@ -225,6 +225,7 @@ def test_admins_and_owners_see_owner_and_credentials(
         "id": owner.id,
         "handle": "maintainer",
         "display_name": "Human maintainer",
+        "avatar_url": None,
     }
     assert view["credentials"]["active"] == 1 and view["credentials"]["never_resumed"] == 1
     agent.resume()

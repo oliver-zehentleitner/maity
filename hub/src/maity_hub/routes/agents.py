@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, idempotency
+from maity_hub import avatars, clock, idempotency
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of
 from maity_hub.errors import invalid, not_found
@@ -86,7 +86,9 @@ def list_agents(request: Request, caller: HumanCaller) -> JSONResponse:
             .where(t.agent_profile.c.owner_id == caller.human_id)
             .order_by(t.agent_profile.c.handle)
         ).all()
-        return JSONResponse({"items": [agent_view(conn, r) for r in rows], "next_cursor": None})
+        pictures = avatars.states(conn, [r.id for r in rows])  # one query for the list
+        items = [agent_view(conn, r, pictures[r.id]) for r in rows]
+        return JSONResponse({"items": items, "next_cursor": None})
 
 
 @router.post("/agents")

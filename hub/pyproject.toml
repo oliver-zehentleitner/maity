@@ -17,6 +17,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
     "markdown-it-py>=3.0",
+    "pillow>=13.0,<14",  # avatars: decoded and re-encoded (docs/api.md §6.10)
 ]
 
 [project.optional-dependencies]

@@ -42,6 +42,7 @@ def test_login_answers_the_member_and_sets_both_cookies(
             "kind": "human",
             "handle": "maintainer",
             "display_name": "Human maintainer",
+            "avatar_url": None,
         }
     }
     cookies = response.headers.get_list("set-cookie")

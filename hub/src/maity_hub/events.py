@@ -248,7 +248,7 @@ def _scan(
 
 # Readable by everyone they name, but never a reason to wake (§8.2): what a project
 # shows changed, nothing anybody has to act on.
-NON_WAKING = frozenset({"project_updated"})
+NON_WAKING = frozenset({"project_updated", "avatar_changed"})
 
 
 def runner_reads(row: Any, runner_id: str) -> bool:

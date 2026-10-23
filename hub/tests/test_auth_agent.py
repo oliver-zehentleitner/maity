@@ -81,7 +81,9 @@ def test_bearer_over_tls_answers_the_agents_me(
         "kind": "agent",
         "handle": agent.agent_id,
         "display_name": f"Agent {agent.agent_id}",
+        "avatar_url": None,  # no upload: the client draws the generated one (§6.10)
         "owner_id": agent.owner_id,
+        "avatar_source": None,
     }
     assert body["projects"] == [
         {

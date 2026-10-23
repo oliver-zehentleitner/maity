@@ -220,7 +220,12 @@ def test_a_new_profile_is_held_by_its_handle(setup: Setup) -> None:
         role="member",
         briefing="You own the Runners view.",
     )
-    assert body["agent"] == {"id": None, "handle": "agent-f", "display_name": "Agent F"}
+    assert body["agent"] == {
+        "id": None,
+        "handle": "agent-f",
+        "display_name": "Agent F",
+        "avatar_url": None,  # no profile yet (§6.10)
+    }
     assert body["briefing"] == "You own the Runners view."
     assert body["workspace"]["clone"] == "agent-f"
     twice = place(

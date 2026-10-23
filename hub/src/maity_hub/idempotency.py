@@ -115,6 +115,18 @@ class _KeyTaken(Exception):
     pass
 
 
+def replay_first(engine: Engine, request: Request, caller: Caller) -> JSONResponse | None:
+    """The stored answer when this request repeats a stored one, before a route does
+    work a repeat must not do again (an avatar's decode, its rate, §6.10): `None` when
+    there is no key or nothing stored, `idempotency_mismatch` for another body."""
+    key = key_for(request, caller)
+    if key is None:
+        return None
+    body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
+    with engine.begin() as conn:
+        return _replay(conn, caller.idempotency_caller, key, body_hash, request)
+
+
 def _replay(
     conn: Connection, who: str, key: str, body_hash: str, request: Request
 ) -> JSONResponse | None:

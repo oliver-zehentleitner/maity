@@ -31,13 +31,16 @@ log = logging.getLogger(__name__)
 access = logging.getLogger("maity_hub.access")
 
 BODY_CAP = 64 * 1024
-# An uploaded logo or banner may be up to 1 MiB (docs/api.md §1.7, §11.2); past it the
-# answer is `invalid` with `fields.body: too_large`, as §11.2 says, not 413.
+# An uploaded logo, banner or avatar may be up to 1 MiB (docs/api.md §1.7, §11.2,
+# §6.10); past it the answer is `invalid` with `fields.body: too_large`, not 413.
 IMAGE_CAP = 1024 * 1024
-_IMAGE_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/(logo|banner)$")
+_IMAGE_UPLOAD = re.compile(
+    r"^/api/v1/(projects/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
+)
 CSP = "default-src 'self'"
-# The only Cache-Control a route may set instead of no-store (images.HEADERS).
-ROUTE_CACHE = frozenset({b"private, max-age=21600"})
+# The only Cache-Control a route may set instead of no-store: the project images
+# (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
+ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache"})
 
 
 class HubMiddleware:
@@ -203,7 +206,8 @@ def _with_headers(send: Send) -> Send:
             headers = [(k, v) for k, v in given if k.lower() not in _SET]
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
-            # ROUTE_CACHE: the logo and banner, revalidated by ETag (§1.1, §11.2).
+            # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
+            # §6.10).
             chosen = next((v for k, v in given if k.lower() == b"cache-control"), None)
             cache = chosen if chosen in ROUTE_CACHE else b"no-store"
             headers += [

@@ -98,3 +98,58 @@ file per interpreter.
 - pip-tools' `pip-compile`: produces the same file format, but resolves
   for the running interpreter only, so 3.12 and 3.13 would need separate
   files.
+
+## Pillow is held below 13 for now
+
+**Id:** df3c7ee6-6fd3-4350-8d03-aad7d3011a66
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 5e7e2eb3-d38f-4810-b43b-4ae477d62798
+**Evidence:** inferred
+**Source:** adding the avatar decoder (contract #136), 2026-10-22
+**Revisit when:** Pillow 13 has been out for some weeks, or a security release reaches only 13
+
+`pillow>=12.3,<13`: the avatar decoder reads bytes from any agent
+credential, so the first release taken is one that has been out for
+months (12.3.0, July 2026) rather than the major release of the week
+(13.0.0, 2026-10-16).
+
+**Reason:** a new major version of the hub's most exposed parser
+deserves its own change, tested on its own, not one folded into the
+feature that introduced the dependency.
+
+**Alternatives:** the newest release, 13.0.0. It brings whatever it
+fixes, but it is six days old and a major version.
+
+## Pillow 13 for the avatar decoder, and the size read before Pillow
+
+**Id:** 5e7e2eb3-d38f-4810-b43b-4ae477d62798
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of PR #218 and the contract owner's ruling, 2026-10-23
+
+`pillow>=13.0,<14`. The `Revisit when` of the 12.x pin fired within a
+week: advisories published 2026-10-20 to 22 are fixed only in 13.0.0, and
+12.3.0 got no patch release. One of them, GHSA-5xm2-6676-qcp9, is
+reachable from the decoder. An APNG claiming a huge canvas makes 12.x
+allocate it inside `Image.open`, before any size check. Others need code
+the decoder does not run:
+- `draft()`/`thumbnail()` for the JPEG heap overflow GHSA-8g5g-8vmr-9782;
+- `seek()` past the first frame for GHSA-v9pv-5gc8-w2m6;
+- `getexif()` on a PNG for GHSA-g4qv. The EXIF orientation is applied to
+  JPEGs only.
+
+Independently of the version, the decoder now reads width and height from
+the file's header itself and refuses past 4096 before Pillow opens the
+bytes.
+
+**Reason:** the most exposed parser of the hub does not stay on a version
+with a known, reachable flaw because the fix came in a new major. The
+header check is the control that does not depend on the library's own
+order of checks, now or in a later version.
+
+**Rejected alternative:** staying on 12.3 with the header check as the
+only control for GHSA-5xm2. It closes the reachable flaw, but leaves the
+others one code change away.
+

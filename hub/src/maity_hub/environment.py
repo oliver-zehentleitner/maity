@@ -20,6 +20,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.scopes import has_scope
 
 ID = re.compile(r"^[hw]-[0-9a-f]{12}$")  # anchored: pydantic searches, it does not match
 LEVELS = ("home", "workspace")  # weakest first
@@ -175,14 +176,17 @@ def _announce(conn: Connection, project_id: str, pair: tuple[int, int], level: s
         else ()
     )
     owners |= {m.human_id for m in members if m.human_id is not None}
-    admins = conn.execute(
-        select(t.membership.c.human_id).where(
-            t.membership.c.project_id == project_id,
-            t.membership.c.active.is_(True),
-            t.membership.c.human_id.isnot(None),
-            t.membership.c.role.in_(("owner", "admin")),  # members:admin, humans only
+    admins = (
+        row.human_id
+        for row in conn.execute(
+            select(t.membership.c.human_id, t.membership.c.role).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.human_id.isnot(None),
+            )
         )
-    ).scalars()
+        if has_scope(row.role, "human", "members:admin")
+    )
     audience = [f"member:{h}" for h in sorted(owners | set(admins))]
     emit(
         conn,

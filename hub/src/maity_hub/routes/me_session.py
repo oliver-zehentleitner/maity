@@ -9,7 +9,16 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import API_VERSION, __version__, clock, environment, events, idempotency, rules
+from maity_hub import (
+    API_VERSION,
+    __version__,
+    avatars,
+    clock,
+    environment,
+    events,
+    idempotency,
+    rules,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
@@ -298,6 +307,7 @@ def _packet(
             "member_id": agent.id,
             "handle": agent.handle,
             "display_name": agent.display_name,
+            "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "owner": {"id": owner.id, "handle": owner.handle},
             "git_identity": git_identity(agent),
         },

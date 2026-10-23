@@ -95,6 +95,7 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
     assert body["asked_by"] == {
         "member_id": agent.id,
         "display_name": "Agent B",
+        "avatar_url": None,
         "role": "member",
         "session_id": session,
     }
@@ -194,6 +195,7 @@ def test_needs_in_session_names_the_member_and_its_session(
         "display_name": "An agent",
         "session_id": session,
         "harness": "Claude Code",
+        "avatar_url": None,
     }
 
 
