@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 HOSTS = {"github.com": "github"}  # host -> forge kind
@@ -239,9 +240,13 @@ class Forge:
 
     # --- merges for the change ticker (docs/api.md §17.4) ------------------------------------
 
-    def merged_pulls(self, repository: str, base: str, pages: int = 3) -> list[dict[str, Any]]:
-        """The pull requests closed against `base` and merged, most recently updated first,
-        at most `pages` pages of 50: what the ticker may not have announced yet."""
+    def merged_pulls(
+        self, repository: str, base: str, since: datetime, pages: int = 20
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """The pull requests closed against `base` and merged after `since`, read most
+        recently updated first page by page until a page reaches back before `since` (a
+        merge also updates its pull request, so nothing older can follow), at most `pages`
+        pages of 50. The second value says whether that bound cut the backlog short."""
         found: list[dict[str, Any]] = []
         for page in range(1, pages + 1):
             batch = self._get(
@@ -250,11 +255,18 @@ class Forge:
             )
             if batch is None:
                 self._missing(repository)
-                return found
+                return found, False
             if not isinstance(batch, list):
                 raise ForgeUnavailableError("the forge answered a list with no list")
+            reached = False
             for pr in batch:
-                if not isinstance(pr, dict) or pr.get("merged_at") is None:
+                if not isinstance(pr, dict):
+                    continue
+                updated = _moment(pr.get("updated_at"))
+                if updated is not None and updated < since:
+                    reached = True
+                merged = _moment(pr.get("merged_at"))
+                if merged is None or merged <= since:
                     continue
                 found.append(
                     {
@@ -269,9 +281,9 @@ class Forge:
                         "author": (pr.get("user") or {}).get("login"),
                     }
                 )
-            if len(batch) < 50:
-                return found
-        return found
+            if len(batch) < 50 or reached:
+                return found, False
+        return found, True
 
     def pull_files(
         self, repository: str, number: int, cap: int = 300
@@ -354,6 +366,16 @@ class Forge:
         A file over `cap` bytes, or an answer that is not a file, is `ValueError`."""
         found = self._call(f"/repos/{repository}/contents/{urllib.parse.quote(path)}")
         return _decoded(found, cap)
+
+
+def _moment(value: Any) -> datetime | None:
+    """A forge timestamp (`2026-10-22T15:02:11Z`) as an aware datetime, or None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _decoded(found: Any, cap: int) -> bytes | None:

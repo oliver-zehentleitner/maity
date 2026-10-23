@@ -312,7 +312,9 @@ def patch_project(
                 values["settings"] = merged
             was_on = ticker.settings(project)["enabled"]
             now_on = bool((merged.get("ticker") or {}).get("enabled"))
-            if now_on and not was_on:
+            # Switched on now, or on from before the merges were announced (an install
+            # upgraded with the ticker on has no start yet): merges count from now.
+            if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
                 ticker.switched_on(conn, project.id)
         new_policy = None
         if "policy" in given and body.policy is not None:

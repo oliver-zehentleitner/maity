@@ -13,6 +13,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import clock, forge, probe, ticker
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.db import downgrade, migrate
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_probe import READER, REPO, TOKEN, FakeGitHub
@@ -264,3 +265,114 @@ def test_switching_on_again_starts_again_from_then(owner: flow.Human, migrated: 
     with migrated.connect() as conn:
         assert ticker.merges_since(conn, project_id(migrated)) >= first
     assert first <= clock.now()
+
+
+# --- review: the backlog, renames, stale rounds, upgraded installs -------------------
+
+
+def closed(github: FakeGitHub, page: int, items: list[dict[str, Any]]) -> None:
+    github.answers[
+        f"/repos/acme/maity/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50&page={page}"
+    ] = items
+
+
+def test_a_merge_behind_many_closed_pull_requests_is_still_announced(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    unmerged = [
+        {
+            "number": 1000 + n,
+            "merged_at": None,
+            "updated_at": "2099-01-02T00:00:00Z",
+            "base": {"ref": "main"},
+        }
+        for n in range(50)
+    ]
+    for page in (1, 2, 3):
+        closed(github, page, unmerged)
+    closed(
+        github,
+        4,
+        [
+            {
+                "number": 9,
+                "title": "far back",
+                "merged_at": "2099-01-01T10:00:00Z",
+                "updated_at": "2099-01-01T10:00:00Z",
+                "merge_commit_sha": MERGE_SHA,
+                "base": {"ref": "main", "sha": BASE_SHA},
+                "head": {"ref": "x"},
+            }
+        ],
+    )
+    github.answers["/repos/acme/maity/pulls/9/files?per_page=100&page=1"] = [
+        {"filename": "hub/a.py", "patch": ""}
+    ]
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+
+
+def test_the_scan_stops_where_it_reaches_back_before_the_switch(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    closed(github, 1, [{"number": 1, "merged_at": None, "updated_at": "2001-01-01T00:00:00Z"}] * 50)
+    probe.announce_merges(migrated, READER, project_id(migrated))
+    assert not any("page=2" in c for c in github.calls), "nothing older can follow"
+
+
+def test_a_renamed_contract_file_is_a_contract_change_and_reaches_both_places(
+    owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    merged(github, 11, [{"filename": "cli/api.md", "previous_filename": "docs/api.md"}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert item["payload"]["contract"] == {"sections": [], "sections_unknown": True}
+    by = reasons(item)
+    assert "area_owner:docs/" in by[team["docs"].id] and "area_owner:cli/" in by[team["cli"].id]
+    assert by[team["admin"].id] == ["role:admin"]
+
+
+def test_a_round_that_outlived_a_switch_off_and_on_writes_nothing(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enable(owner)
+    merged(github, 12, [{"filename": "hub/a.py", "patch": ""}])
+    real = forge.Forge.pull_files
+
+    def meanwhile(self: forge.Forge, repository: str, number: int, cap: int = 300) -> Any:
+        owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
+        owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+        return real(self, repository, number, cap)
+
+    monkeypatch.setattr(forge.Forge, "pull_files", meanwhile)
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 0
+    assert items(owner) == []
+
+
+def test_a_project_on_before_the_upgrade_starts_at_the_upgrade(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    enable(owner)
+    with migrated.begin() as conn:
+        conn.execute(t.ticker_source.delete())
+    downgrade(migrated, "0015")
+    migrate(migrated)
+    with migrated.connect() as conn:
+        assert ticker.merges_since(conn, project_id(migrated)) is not None
+
+
+def test_switching_on_again_starts_a_project_without_a_start(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    enable(owner)
+    with migrated.begin() as conn:
+        conn.execute(t.ticker_source.delete())
+    enable(owner)
+    with migrated.connect() as conn:
+        assert ticker.merges_since(conn, project_id(migrated)) is not None

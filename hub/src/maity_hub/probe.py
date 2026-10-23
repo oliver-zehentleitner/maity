@@ -331,7 +331,9 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     """§17.4: the pull requests merged into the default branch since the ticker was
     switched on and not announced yet, each with its files and, for a contract file
     among them, that file at the merge commit and at the base; one item each. The
-    forge is read with no connection held. Returns how many were announced."""
+    forge is read with no connection held, and each item is written only if the
+    ticker, its switch-on moment and the repository are still what was read. Returns
+    how many were announced."""
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
         since = ticker.merges_since(conn, project_id)
@@ -340,13 +342,19 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
         return 0
     repository = forge.repository_of(project.repository_url)
     base = project.repository_default_branch or "main"
-    pulls = [
-        p
-        for p in fg.merged_pulls(repository, base)
-        if p["base"] == base
-        and datetime.fromisoformat(p["merged_at"].replace("Z", "+00:00")) > since
-    ]
-    pulls.sort(key=lambda p: (p["merged_at"], p["number"]))
+    found, cut = fg.merged_pulls(repository, base, since)
+    if cut:
+        # Never dropped quietly: more closed pull requests since the switch-on than one
+        # round reads; the oldest merges among them are not announced.
+        log.warning(
+            "ticker: %s has more closed pull requests since %s than one round reads;"
+            " older merges among them are not announced",
+            project.slug,
+            since.isoformat(),
+        )
+    pulls = sorted(
+        (p for p in found if p["base"] == base), key=lambda p: (p["merged_at"], p["number"])
+    )
     written = 0
     for pr in pulls:
         with engine.connect() as conn:
@@ -355,9 +363,10 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
         files, truncated = fg.pull_files(repository, pr["number"])
         contract: dict[str, set[str] | None] = {}
         for f in files:
-            if f["path"] not in conf["contract_files"]:
-                continue
-            contract[f["path"]] = _contract_sections(fg, repository, pr, f)
+            # A renamed contract file is still a change of the contract (§17.3).
+            named = [n for n in (f["path"], f["previous"]) if n in conf["contract_files"]]
+            if named:
+                contract[named[0]] = _contract_sections(fg, repository, pr, f)
         merge = ticker.Merge(
             number=pr["number"],
             title=pr["title"],
@@ -367,15 +376,25 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
             merged_at=pr["merged_at"],
             author=pr["author"],
             head=pr["head"],
-            paths=[f["path"] for f in files],
+            # A rename touches both places: the old path's owner hears of it too.
+            paths=list(dict.fromkeys(p for f in files for p in (f["path"], f["previous"]) if p)),
             paths_truncated=truncated,
             contract=contract,
         )
         with transaction(engine) as conn:
             lock_project(conn, project_id)
-            # Switched off, or announced by another reader while the forge was asked.
             current = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-            if ticker.settings(current)["enabled"] and ticker.write_merge(conn, current, merge):
+            stale = (
+                not ticker.settings(current)["enabled"]
+                or ticker.merges_since(conn, project_id) != since
+                or current.repository_url != project.repository_url
+                or (current.repository_default_branch or "main") != base
+            )
+            if stale:
+                # Switched off and on, or another repository or branch, while the forge
+                # was asked: this round's reads answer for nothing any more.
+                return written
+            if ticker.write_merge(conn, current, merge):
                 written += 1
     return written
 
