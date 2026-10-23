@@ -8,8 +8,8 @@ that has the
 ticker on already gets the moment of this upgrade: merges from before it are not
 announced, as for a project switched on today.
 
-Revision ID: 0016
-Revises: 0015
+Revision ID: 0018
+Revises: 0017
 Create Date: 2026-10-23
 """
 
@@ -22,8 +22,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0016"
-down_revision: str | None = "0015"
+revision: str = "0018"
+down_revision: str | None = "0017"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

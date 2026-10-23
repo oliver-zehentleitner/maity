@@ -362,7 +362,7 @@ def test_a_project_on_before_the_upgrade_starts_at_the_upgrade(
     enable(owner)
     with migrated.begin() as conn:
         conn.execute(t.ticker_source.delete())
-    downgrade(migrated, "0015")
+    downgrade(migrated, "0017")
     migrate(migrated)
     with migrated.connect() as conn:
         assert ticker.merges_since(conn, project_id(migrated)) is not None
