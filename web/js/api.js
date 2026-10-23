@@ -270,6 +270,23 @@ window.Maity = window.Maity || {};
     return all[slug + "/events.json"].items;
   }
   const nextLogSeq = (log) => Math.max(9000, ...log.map((e) => e.seq)) + 1;
+  // §17 in fixture mode: fixtures/<slug>/ticker.json, the items as events and
+  // the reader's subscription; a project without the file has no ticker.
+  function tickerOf(slug, path) {
+    const t = fixtures()[slug + "/ticker.json"];
+    if (!t) fail(404, "not_found", "Not found", path);
+    return t;
+  }
+  // A decision only to who may read its request (§17.5): here, its audience.
+  const tickerReadable = (e) => e.payload.type !== "decision" || (e.audience || []).includes("member:" + me().member.id);
+  // The listing's compact form (§17.9), with the reader's own why and muted.
+  function tickerItem(e) {
+    const p = e.payload;
+    const mine = (p.reasons || []).find((r) => r.member_id === me().member.id);
+    return { id: "tck-" + e.seq, seq: e.seq, at: e.at, type: p.type, text: p.text, url: p.url, actor: e.actor, subject: e.subject,
+      areas: p.areas || [], contract: p.contract, tasks: p.tasks || [], for_me: !!mine, why: mine ? mine.why : [], muted: mine ? mine.muted : false,
+      detail: p.type === "decision" ? p.detail : null, redacted: !!e.redacted, _paths: p.paths || [] };
+  }
   // §8.2's readable set: the audience by all, member or role, one's own
   // events; owners and admins every event but a conversation's, which only
   // its audience reads. "_conversation" is the fixture's note of what the
@@ -857,6 +874,101 @@ window.Maity = window.Maity || {};
       const limit = Math.min(200, Number(query.get("limit") || 50));
       const items = log.filter((e) => e.seq > Number(after || 0) && readable(m[1], e)).slice(0, limit).map(served);
       return { items, cursor: items.length ? items[items.length - 1].seq : Math.max(head, Number(after || 0)), server_time: nowIso(), superseded: false };
+    }],
+    // §17.9: the ticker in its compact form, per reader, newest first, paged.
+    ["GET", /^\/projects\/([^/]+)\/ticker$/, (m, body, path, query) => {
+      project(m[1], path);
+      const t = tickerOf(m[1], path);
+      const types = query.get("type") ? query.get("type").split(",") : null;
+      const area = query.get("area");
+      const under = (p) => area && (p === area || p.startsWith(area.endsWith("/") ? area : area + "/") || area === "/");
+      let items = t.items.filter((e) => tickerReadable(e)).map(tickerItem)
+        .filter((x) => (!types || types.includes(x.type) || (types.includes("contract") && x.type === "merge" && x.contract))
+          && (!area || x.areas.some(under) || (x._paths || []).some(under))
+          && (query.get("for") !== "me" || x.for_me));
+      const after = query.get("after");
+      if (after !== null) items = items.filter((x) => x.seq > Number(after)).sort((a, b) => a.seq - b.seq);
+      else items.sort((a, b) => b.seq - a.seq);
+      const limit = Math.min(200, Number(query.get("limit") || 50));
+      const from = Number(query.get("cursor") || 0);
+      const page = items.slice(from, from + limit).map((x) => { const y = Object.assign({}, x); delete y._paths; return y; });
+      return { items: page, next_cursor: from + limit < items.length ? String(from + limit) : null };
+    }],
+    // §17.6: a manual post by an owner or admin.
+    ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
+      project(m[1], path);
+      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "ticker:post needed", path, { scope: "ticker:post" });
+      const errors = {};
+      const type = body.type;
+      if (["merge", "decision"].includes(type)) errors.type = "not_for_type";
+      else if (!["note", "deploy", "release"].includes(type)) errors.type = "required";
+      const text = typeof body.text === "string" ? body.text : "";
+      if (!text || Array.from(text).length > 280) errors.text = text ? "too_long" : "required";
+      const https = (u) => typeof u === "string" && /^https:\/\/[^\s]+$/.test(u) && u.length <= 2048;
+      if (body.url !== undefined && body.url !== null && !https(body.url)) errors.url = "invalid";
+      const to = body.to === undefined ? "computed" : body.to;
+      const members = file(m[1], "members.json", path).items;
+      if (!(to === "computed" || to === "all" || (Array.isArray(to) && to.length >= 1 && to.length <= 20
+        && to.every((x) => /^role:[a-z]+$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
+      if ("areas" in body && type !== "note") errors.areas = "not_for_type";
+      if (type === "note" && to === "computed" && !(Array.isArray(body.areas) && body.areas.length)) errors.areas = "required";
+      if ("release_task_id" in body && type !== "release") errors.release_task_id = "not_for_type";
+      if (type === "release") {
+        const card = (file(m[1], "tasks.json", path).items || []).find((x) => x.id === body.release_task_id);
+        if (!body.release_task_id) errors.release_task_id = "required";
+        else if (!card || card.status !== "done") errors.release_task_id = "not_done";
+      }
+      if ("deploy" in body && type !== "deploy") errors.deploy = "not_for_type";
+      if (type === "deploy") {
+        const d = body.deploy || {};
+        if (!d.environment || !(d.sha || d.version)) errors.deploy = "required";
+        else if (d.log_url && !https(d.log_url)) errors["deploy.log_url"] = "invalid";
+      }
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      const t = tickerOf(m[1], path);
+      const key = type === "deploy" ? "deploy:" + body.deploy.environment + ":" + (body.deploy.sha || body.deploy.version)
+        : type === "release" ? "release:" + body.release_task_id : null;
+      const dup = key && t.items.find((e) => e.payload.dedupe_key === key);
+      if (dup) fail(409, "ticker_duplicate", "already posted", path, { seq: dup.seq });
+      const log = eventsOf(m[1]);
+      const seq = nextLogSeq(log.concat(t.items));
+      const meId = me().member.id;
+      const reached = to === "all" ? members.map((x) => x.id) : Array.isArray(to)
+        ? [...new Set(to.flatMap((x) => (x.startsWith("member:") ? [x.slice(7)] : x.startsWith("role:") ? members.filter((mm) => mm.role === x.slice(5)).map((mm) => mm.id) : [])))]
+        : [];
+      const event = { seq, kind: "ticker", at: nowIso(), actor: { kind: "member", member_id: meId }, subject: null,
+        audience: ["all"].concat(reached.map((id) => "member:" + id)), redacted: false,
+        payload: { type, text, url: body.url || null, dedupe_key: key, origin: { via: "manual", delivery: null }, merge: null, paths: [], paths_total: 0, paths_truncated: false,
+          areas: type === "note" ? body.areas || [] : [], contract: null, tasks: body.release_task_id ? [body.release_task_id] : [], request: null,
+          release: type === "release" ? { task_id: body.release_task_id, version: null } : null, deploy: type === "deploy" ? body.deploy : null, detail: null,
+          reasons: reached.map((id) => ({ member_id: id, why: [to === "all" ? "posted_to_all" : "addressed"], wake: true, muted: false })) } };
+      t.items.push(event);
+      log.push(event);
+      return served(event);
+    }],
+    // §17.8: one's own subscription, changed by what it adds and removes.
+    ["GET", /^\/projects\/([^/]+)\/ticker\/subscription$/, (m, body, path) => Object.assign({}, tickerOf(m[1], path).subscription)],
+    ["PATCH", /^\/projects\/([^/]+)\/ticker\/subscription$/, (m, body, path) => {
+      const sub = tickerOf(m[1], path).subscription;
+      const TYPES = ["merge", "contract", "decision", "deploy", "release", "note"];
+      const errors = {};
+      ["follow", "mute"].forEach((list) => ["areas", "types"].forEach((kind) => {
+        const add = ((body.add || {})[list] || {})[kind] || [];
+        const rem = ((body.remove || {})[list] || {})[kind] || [];
+        if (add.some((v) => rem.includes(v))) errors[list + "." + kind] = "invalid";
+        if (kind === "types" && add.concat(rem).some((v) => !TYPES.includes(v))) errors[list + ".types"] = "unknown";
+        if (kind === "areas" && add.some((v) => !/^(\/|[^/\s][^\s]*)$/.test(v))) errors[list + ".areas"] = "invalid";
+        const after = sub[list][kind].filter((v) => !rem.includes(v)).concat(add.filter((v) => !sub[list][kind].includes(v)));
+        if (kind === "areas" && after.length > 20) errors[list + ".areas"] = "too_many";
+      }));
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      ["follow", "mute"].forEach((list) => ["areas", "types"].forEach((kind) => {
+        const add = ((body.add || {})[list] || {})[kind] || [];
+        const rem = ((body.remove || {})[list] || {})[kind] || [];
+        sub[list][kind] = sub[list][kind].filter((v) => !rem.includes(v)).concat(add.filter((v) => !sub[list][kind].includes(v)));
+      }));
+      sub.updated_at = nowIso();
+      return Object.assign({}, sub);
     }],
     // §8.4: a message. The fixture resolves mentions as §8.6 says (a word
     // boundary, members only, never in code, no group mentions) and keeps

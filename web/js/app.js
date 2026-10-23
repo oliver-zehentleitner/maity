@@ -30,6 +30,8 @@ window.Maity = window.Maity || {};
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", label: "Messages" },
+    // The change feed (js/ticker.js); new items from the feed, in place.
+    { route: "ticker", label: "Ticker" },
     // No tab: opened from the inbox and from a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     { route: "join", label: "Join an agent", admin: true },

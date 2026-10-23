@@ -1387,6 +1387,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     no_problems(run, "board cards")
     board_order_step(run, page)
     overview_step(run, page)
+    ticker_step(run, page)
     notifications_step(run, page)
 
 
@@ -1434,6 +1435,25 @@ def board_order_step(run: Run, page: Page) -> None:
     expect(titles).to_have_text([upper, lower])
     run.a11y(page, "board, order")
     no_problems(run, "board order")
+
+
+def ticker_step(run: Run, page: Page) -> None:
+    """The change ticker (docs/api.md §17): its tab; a hub without it says so."""
+    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.locator("nav.views").get_by_role("link", name="Ticker", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/ticker$"))
+    main = page.locator("main section.view-ticker")
+    expect(main.locator("h2")).to_have_text("Ticker")
+    if "This hub has no ticker yet." in main.inner_text():
+        # Only a hub without the endpoint is skipped, and the page has to say so.
+        run.step("ticker: this hub has no ticker yet; the view says so")
+        run.problems = [p for p in run.problems if not re.match(r"GET /api/v1/projects/e2e-alpha/ticker\?\S* answered 404$", p)]
+        no_problems(run, "ticker")
+        return
+    run.step("ticker: the owner sees the change feed and their own follow and mute")
+    expect(main.locator("section.ticker-sub")).to_be_visible()
+    run.a11y(page, "ticker")
+    no_problems(run, "ticker")
 
 
 def overview_step(run: Run, page: Page) -> None:

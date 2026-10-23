@@ -2534,6 +2534,87 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = pmGet;
   await go("#/p/maity/inbox");
 
+  // Ticker (docs/api.md §17): for me / everything, filters, why in words, follow and mute, a manual post.
+  await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  const tkItems = () => main.querySelectorAll("ol.ticker-list li.ticker-item");
+  const tkSeq = (seq) => tkItems().find((li) => li.attrs["data-seq"] === String(seq));
+  const tkTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Ticker");
+  expect(tkTab && tkTab.getAttribute("aria-current") === "page" && tkItems().map((li) => li.attrs["data-seq"]).join() === "4330,4310",
+    "ticker: a tab; For me lists the items with a reason for the viewer, newest first");
+  expect(text(tkSeq(4310)).includes("For you: you own /, you follow web/.") && text(tkSeq(4310)).includes("Contract change")
+    && tkSeq(4310).querySelector("a").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214",
+    "ticker: why in words, a contract change marked, its link");
+  expect(text(tkSeq(4330)).includes("(muted: it woke no one here)"), "ticker: a muted one says so");
+  btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkSeq(4315)).includes("Decided: Yes, in that order — Dashboard view order") && !text(tkSeq(4315)).includes("For you"),
+    "ticker: a decision with its reply and request, for a reader of the request");
+  expect(tkItems().length === 5 && !text(tkSeq(4320)).includes("For you") && btn(main.querySelector(".ticker-tabs"), "Everything").getAttribute("aria-pressed") === "true",
+    "ticker: Everything lists every item one may read");
+  byId("ticker-type").value = "contract"; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(tkItems().map((li) => li.attrs["data-seq"]).join() === "4310,4302", "ticker: by type, contract meaning a merge that touched the contract");
+  byId("ticker-type").value = ""; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  byId("ticker-area").value = "hub/"; main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(tkItems().map((li) => li.attrs["data-seq"]).join() === "4302", "ticker: by area");
+  byId("ticker-area").value = ""; main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  // Text only, and a link only when it is https.
+  const tkGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/ticker?") ? tkGet(p).then((r) => (p.includes("cursor=") ? { items: [Object.assign({}, r.items[0], { seq: 1, text: "older one" })], next_cursor: null }
+    : { items: [Object.assign({}, r.items[0], { seq: 9998, text: "<b>bold</b>", url: "javascript:alert(1)" })].concat(r.items), next_cursor: "50" })) : tkGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkSeq(9998)).includes("<b>bold</b>") && !tkSeq(9998).querySelector("a") && !tkSeq(9998).querySelector("b"), "ticker: text as text, no link that is not https");
+  btn(main, "Older").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkSeq(1)).includes("older one") && !btn(main, "Older"), "ticker: Older follows the hub's cursor");
+  win.Maity.api.get = tkGet;
+  // Follow and mute (§17.8): what is added or removed, nothing replaced.
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  const tkSub = () => main.querySelector("section.ticker-sub");
+  expect(text(tkSub()).includes("web/") && text(tkSub()).includes("Releases") && text(tkSub()).includes("Notes"), "ticker: one's own follow and mute");
+  const tkPatches = [];
+  const tkPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { tkPatches.push([p, b]); return tkPatch(p, b); };
+  btn(tkSub(), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(tkPatches[0]) === JSON.stringify(["/projects/maity/ticker/subscription", { remove: { follow: { areas: ["web/"] } } }]) && text(tkSub()).includes("No longer following web/."),
+    "ticker: stop following an area");
+  byId("ticker-sub-list").value = "mute"; byId("ticker-sub-kind").value = "areas"; byId("ticker-sub-value").value = "cli/";
+  tkSub().querySelector("form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(tkPatches[1][1]) === JSON.stringify({ add: { mute: { areas: ["cli/"] } } }) && text(tkSub()).includes("Muting cli/."), "ticker: mute an area");
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/x", "invalid", { fields: { "follow.areas": "too_many" } }));
+  byId("ticker-sub-list").value = "follow"; byId("ticker-sub-value").value = "docs/"; tkSub().querySelector("form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkSub()).includes("Not saved: follow.areas may hold at most 20"), "ticker: the hub's refusal in words");
+  win.Maity.api.patch = tkPatch;
+  // A manual post (§17.6), owners and admins: never a merge or a decision.
+  const tkPost = () => main.querySelector("form.ticker-post");
+  expect(tkPost() && Array.from(byId("ticker-post-type").childNodes).map((o) => o.attrs.value).join() === "note,deploy,release", "ticker: an admin posts a note, a deploy or a release");
+  byId("ticker-post-text").value = "Staging is down for an hour.";
+  tkPost().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkPost()).includes("Not posted: areas is required"), "ticker: a note to whom it concerns needs its areas, said");
+  byId("ticker-post-areas").value = "hub/ cli/";
+  tkPost().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkPost()).includes("Posted.") && text(tkItems()[0]).includes("Staging is down for an hour."), "ticker: posted, and listed");
+  byId("ticker-post-type").value = "deploy"; byId("ticker-post-type").dispatch("change");
+  byId("ticker-post-text").value = "Deployed 1cddc4d to production"; byId("ticker-post-env").value = "production"; byId("ticker-post-version").value = "1cddc4d";
+  tkPost().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkPost()).includes("this was posted already (item 4320)"), "ticker: a deploy already announced is a duplicate, said");
+  // From the feed: a new item goes on top, in place.
+  const tkKeep = tkSeq(4320);
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "from the feed", to: "all" });
+  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(tkItems()[0]).includes("from the feed") && tkSeq(4320) === tkKeep && text(main.querySelector(".view-ticker .send-status")).includes("1 new item."),
+    "ticker: a new item arrives with the feed, on top, the rest kept");
+  // A member: no post form.
+  win.Maity.api.get = (p) => (p === "/me" ? tkGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").role = "member"; return x; }) : tkGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  expect(!tkPost() && tkSub(), "ticker: a member follows and mutes, and posts nothing");
+  win.Maity.api.get = tkGet;
+  // A hub without the ticker: said, asked once per page load.
+  let tkAsked = 0;
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/ticker?") ? (tkAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : tkGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  expect(tkAsked === 1 && text(main).includes("This hub has no ticker yet."), "ticker: a hub without it is asked once, and that is said");
+  win.Maity.api.get = tkGet;
+  await go("#/p/maity/inbox");
+
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.
   const ovGets = [];
   const ovGet = win.Maity.api.get;

@@ -1916,6 +1916,349 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/ticker.json": {
+    "items": [
+      {
+        "actor": null,
+        "at": "2026-10-22T15:02:40Z",
+        "audience": [
+          "all",
+          "member:agt-b",
+          "member:agt-a"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [
+            "hub/",
+            "/"
+          ],
+          "contract": {
+            "sections": [
+              "6.5",
+              "13"
+            ],
+            "sections_unknown": false
+          },
+          "dedupe_key": "merge:212",
+          "deploy": null,
+          "detail": null,
+          "merge": {
+            "author": "agent-b",
+            "base": "main",
+            "pr": 212,
+            "title": "hub: the claim lease survives a restart"
+          },
+          "origin": {
+            "delivery": null,
+            "via": "probe"
+          },
+          "paths": [
+            "docs/api.md",
+            "hub/maity_hub/claims.py"
+          ],
+          "paths_total": 2,
+          "paths_truncated": false,
+          "reasons": [
+            {
+              "member_id": "agt-b",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "area_owner:hub/",
+                "card_holder:tsk-0031"
+              ]
+            },
+            {
+              "member_id": "agt-a",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "contract_implementer:13",
+                "role:admin"
+              ]
+            }
+          ],
+          "release": null,
+          "request": null,
+          "tasks": [
+            "tsk-0031"
+          ],
+          "text": "#212 hub: the claim lease survives a restart — merged into main; touches hub/, docs/api.md (§6.5, §13)",
+          "type": "merge",
+          "url": "https://github.com/oliver-zehentleitner/maity/pull/212"
+        },
+        "redacted": false,
+        "seq": 4302,
+        "subject": {
+          "id": "212",
+          "type": "pull_request"
+        }
+      },
+      {
+        "actor": null,
+        "at": "2026-10-22T16:10:00Z",
+        "audience": [
+          "all",
+          "member:agt-d",
+          "member:hum-maintainer"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [
+            "web/",
+            "/"
+          ],
+          "contract": {
+            "sections": [
+              "8.8"
+            ],
+            "sections_unknown": false
+          },
+          "dedupe_key": "merge:214",
+          "deploy": null,
+          "detail": null,
+          "merge": {
+            "author": "agent-d",
+            "base": "main",
+            "pr": 214,
+            "title": "web: Messages tab"
+          },
+          "origin": {
+            "delivery": null,
+            "via": "probe"
+          },
+          "paths": [
+            "web/js/messages.js",
+            "docs/api.md"
+          ],
+          "paths_total": 2,
+          "paths_truncated": false,
+          "reasons": [
+            {
+              "member_id": "agt-d",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "area_owner:web/",
+                "card_holder:tsk-0044"
+              ]
+            },
+            {
+              "member_id": "hum-maintainer",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "area_owner:/",
+                "follow:web/"
+              ]
+            }
+          ],
+          "release": null,
+          "request": null,
+          "tasks": [
+            "tsk-0044"
+          ],
+          "text": "#214 web: Messages tab — merged into main; touches web/, docs/api.md (§8.8)",
+          "type": "merge",
+          "url": "https://github.com/oliver-zehentleitner/maity/pull/214"
+        },
+        "redacted": false,
+        "seq": 4310,
+        "subject": {
+          "id": "214",
+          "type": "pull_request"
+        }
+      },
+      {
+        "actor": null,
+        "at": "2026-10-22T16:30:00Z",
+        "audience": [
+          "member:hum-maintainer",
+          "member:agt-b"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [],
+          "contract": null,
+          "dedupe_key": "decision:req-0009",
+          "deploy": null,
+          "detail": {
+            "reply_label": "Yes, in that order",
+            "request_title": "Dashboard view order: inbox, board, agents, organisation, chat?"
+          },
+          "merge": null,
+          "origin": {
+            "delivery": null,
+            "via": "hub"
+          },
+          "paths": [],
+          "paths_total": 0,
+          "paths_truncated": false,
+          "reasons": [
+            {
+              "member_id": "agt-b",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "decision_asker",
+                "card_holder:tsk-0007"
+              ]
+            }
+          ],
+          "release": null,
+          "request": {
+            "class": "decision",
+            "id": "req-0009",
+            "task_id": "tsk-0007"
+          },
+          "tasks": [
+            "tsk-0007"
+          ],
+          "text": "Decided: tsk-0007 Dashboard view order (req-0009)",
+          "type": "decision",
+          "url": null
+        },
+        "redacted": false,
+        "seq": 4315,
+        "subject": {
+          "id": "req-0009",
+          "type": "request"
+        }
+      },
+      {
+        "actor": null,
+        "at": "2026-10-22T17:00:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [],
+          "contract": null,
+          "dedupe_key": "deploy:production:1cddc4d",
+          "deploy": {
+            "environment": "production",
+            "log_url": "https://github.com/oliver-zehentleitner/maity/actions/runs/123",
+            "sha": "1cddc4d",
+            "version": null
+          },
+          "detail": null,
+          "merge": null,
+          "origin": {
+            "delivery": "d-77",
+            "via": "webhook"
+          },
+          "paths": [],
+          "paths_total": 0,
+          "paths_truncated": false,
+          "reasons": [],
+          "release": null,
+          "request": null,
+          "tasks": [],
+          "text": "Deployed 1cddc4d to production",
+          "type": "deploy",
+          "url": "https://github.com/oliver-zehentleitner/maity/actions/runs/123"
+        },
+        "redacted": false,
+        "seq": 4320,
+        "subject": {
+          "id": "production@1cddc4d",
+          "type": "deploy"
+        }
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-a"
+        },
+        "at": "2026-10-22T17:20:00Z",
+        "audience": [
+          "all",
+          "member:agt-b",
+          "member:agt-c",
+          "member:agt-d"
+        ],
+        "kind": "ticker",
+        "payload": {
+          "areas": [],
+          "contract": null,
+          "dedupe_key": null,
+          "deploy": null,
+          "detail": null,
+          "merge": null,
+          "origin": {
+            "delivery": null,
+            "via": "manual"
+          },
+          "paths": [],
+          "paths_total": 0,
+          "paths_truncated": false,
+          "reasons": [
+            {
+              "member_id": "agt-b",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "posted_to_all"
+              ]
+            },
+            {
+              "member_id": "agt-c",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "posted_to_all"
+              ]
+            },
+            {
+              "member_id": "agt-d",
+              "muted": false,
+              "wake": true,
+              "why": [
+                "posted_to_all"
+              ]
+            },
+            {
+              "member_id": "hum-maintainer",
+              "muted": true,
+              "wake": false,
+              "why": [
+                "posted_to_all",
+                "follow:type:note"
+              ]
+            }
+          ],
+          "release": null,
+          "request": null,
+          "tasks": [],
+          "text": "Staging runs 0.3.0-rc.2 from now on; the old database is gone.",
+          "type": "note",
+          "url": null
+        },
+        "redacted": false,
+        "seq": 4330,
+        "subject": null
+      }
+    ],
+    "subscription": {
+      "follow": {
+        "areas": [
+          "web/"
+        ],
+        "types": [
+          "release",
+          "note"
+        ]
+      },
+      "mute": {
+        "areas": [],
+        "types": [
+          "note"
+        ]
+      },
+      "updated_at": "2026-10-22T16:00:00Z"
+    }
+  },
   "me.json": {
     "member": {
       "display_name": "Maintainer",
