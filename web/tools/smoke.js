@@ -2775,6 +2775,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
   expect(tkReads.length >= 1 && tkReads.every((p) => !p.includes("after=")) && text(main).includes("after a failed page") && tkItems().length > 1,
     "ticker: the next signal reads the first page again, not after=0");
+  expect(!text(tkStatus()).includes("Could not read the ticker"), "ticker: the page read again clears the failure");
+  // After that, signals read after= again, and the new item goes on top.
+  tkReads.length = 0;
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "after the re-read", to: ["role:admin"] });
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(tkReads.some((p) => /after=\d+/.test(p) && !/after=0(&|$)/.test(p)) && text(tkItems()[0]).includes("after the re-read"),
+    "ticker: once the page is in, a signal reads after= and puts the item on top");
   win.Maity.api.get = tkGet;
   // A live read with nothing new ends a failure said before.
   byId("ticker-type").value = "deploy"; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();

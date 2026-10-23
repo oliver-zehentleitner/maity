@@ -95,7 +95,8 @@ window.Maity = window.Maity || {};
     let busy = false;
     // A first page of a filter set still on its way: no live read until it is
     // in, since `top` is not known yet; a signal meanwhile is kept for after.
-    let resetting = false;
+    // True from the start: a signal before the first page is in waits for it.
+    let resetting = true;
     let liveAgain = false;
     // Whether the first page of this filter set is in; after a failed one a
     // signal reads that page again rather than everything from the start.
@@ -161,6 +162,8 @@ window.Maity = window.Maity || {};
       if (reset) {
         resetting = false;
         loaded = true;
+        // The page is in: a failure said before is over.
+        status.done();
         if (liveAgain) live();
       }
     }
