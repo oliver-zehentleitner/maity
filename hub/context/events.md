@@ -131,7 +131,12 @@ is refused to agents the same way, decided per batch of the scan with one
 query for the redacted events' kinds, so the payload stays `{seq, reason}`.
 A redaction's `reason` is shown only to the human owners and admins and to
 the redactor; every other reader gets `reason: null`, in the notice and in
-the tombstone.
+the tombstone. Without a known reader (a runner's or a placement's list, a
+replay that cannot place its caller) the reason is hidden: forgetting the
+reader shows less, never more. A chat message's notice carries the chat's
+`conversation_id`, so see-all does not reach it, as it does not reach the
+message; and a redaction first checks that the caller can read the event at
+all, so no answer but `not_found` tells anyone else that it exists.
 
 **Accepted:** the `seq` an agent sees has a gap where such an event is,
 right after the resume that caused it, so an admin agent can tell that a
