@@ -27,6 +27,7 @@ PACKET = {
     "requests",
     "ticker",
     "events",
+    "conversations",  # §5.2, §9.2
     "peers",
     "operations",
     "team",

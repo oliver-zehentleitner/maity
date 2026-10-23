@@ -259,17 +259,27 @@ def readable_by(
 
 
 def read(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    *,
+    unmentioned_chat: bool = True,
 ) -> tuple[list[Any], int, bool]:
-    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated)."""
-    return _scan(
-        conn,
-        t.event.c.project_id == project_id,
-        lambda row, hidden: readable_by(row, membership, principal, hidden),
-        after,
-        limit,
-        membership,
-    )
+    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
+    Without `unmentioned_chat`, a group chat's message that does not mention `principal`
+    is passed over and does not count against `limit` (the resume packet, §5.2)."""
+
+    def wanted(row: Any, hidden: frozenset[str]) -> bool:
+        if not unmentioned_chat and _group_chat(row) and row.kind == "message":
+            mentioned = (row.payload or {}).get("mentions") or []
+            if not any(m.get("member_id") == principal for m in mentioned):
+                return False
+        return readable_by(row, membership, principal, hidden)
+
+    return _scan(conn, t.event.c.project_id == project_id, wanted, after, limit, membership)
 
 
 def _scan(

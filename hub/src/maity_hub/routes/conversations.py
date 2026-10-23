@@ -9,6 +9,7 @@ the hub tells them apart by the id, a client by `kind`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -50,6 +51,54 @@ class GroupPatch(Strict):
 
 class ParticipantIn(Strict):
     member_id: str
+
+
+@dataclass(frozen=True)
+class Outsider:
+    """A human who is no member of the project but owns an agent that is one: it reads
+    along in exactly the chats its agents are in, and nothing else of the project
+    (§9.2). Shaped like a `Membership` where the chat code reads one."""
+
+    project: Any
+    principal_id: str
+    kind: str = "human"
+    id: int = -1  # names no membership row
+
+    def may(self, scope: str) -> bool:
+        del scope
+        return False
+
+
+def outsider(conn: Connection, caller: Caller, slug: str) -> Outsider | None:
+    """The caller as an owner outside the project, or None."""
+    if caller.kind != "human" or caller.human_id is None:
+        return None
+    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    if project is None:
+        return None
+    agent = conn.execute(
+        select(t.membership.c.id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.active.is_(True),
+            t.agent_profile.c.owner_id == caller.human_id,
+        )
+        .limit(1)
+    ).first()
+    return Outsider(project, caller.human_id) if agent is not None else None
+
+
+def _reader(conn: Connection, caller: Caller, slug: str) -> Any:
+    """A member, or an owner outside the project, who may read chats; `not_found` for
+    anyone else, so the route says nothing of the project to an outsider (§9.2)."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError:
+        found = outsider(conn, caller, slug)
+        if found is None:
+            raise
+        return found
 
 
 def _observer() -> ApiError:
@@ -351,9 +400,13 @@ def list_conversations(
 ) -> JSONResponse:
     """Every conversation the caller is in, both kinds, newest activity first (§9.3)."""
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
-        items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
+        mine = _reader(conn, caller, slug)
+        items = []
+        if isinstance(mine, Membership):
+            items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
+            items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
+        elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
+            items = [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, True)]
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         bound = paging.scope(observed=observed)
         if cursor is not None:
@@ -368,6 +421,19 @@ def list_conversations(
         for item in page:
             del item["_activity"]
         return JSONResponse({"items": page, "next_cursor": next_cursor})
+
+
+PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
+PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_message_at", "closed_at")
+
+
+def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
+    """`conversations` of the resume packet: the agent's direct one and its group chats,
+    newest activity first, at most 50, with the list's counts (§5.2, §9.3)."""
+    items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
+    items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, False)]
+    items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
+    return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
 
 
 # --- group chats (§9.2) --------------------------------------------------------------------
@@ -398,7 +464,12 @@ def _locked(conn: Connection, caller: Caller, slug: str) -> Membership:
     """The caller's membership read after the project lock: a write to a chat decides on
     the membership, the chat, the caller's access and the audience as of the lock, so a
     leave, a close or a removal that commits first is never overtaken (§9.2)."""
-    first = membership(conn, caller, slug)
+    try:
+        first = membership(conn, caller, slug)
+    except ApiError:
+        if outsider(conn, caller, slug) is not None:
+            raise _observer() from None  # it reads along and writes nothing (§9.2)
+        raise
     events.lock_project(conn, first.project.id)
     return membership(conn, caller, slug)
 
@@ -427,7 +498,7 @@ def get_conversation(
     slug: str, conversation_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = _reader(conn, caller, slug)
         if group_chats.is_group(conversation_id):
             return JSONResponse(_load(conn, mine, conversation_id))
         # A direct one answers its list item, so any item opens by its id (§9.1).
@@ -552,13 +623,15 @@ def read_messages(
     if after is not None and before is not None:
         raise invalid({"before": "with_after"}, "after or before, not both")
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = _reader(conn, caller, slug)
         group = None
         found = "party"
         window = 0
         if group_chats.is_group(conversation_id):
             group, found = _group(conn, mine, conversation_id)
             window = _window(conn, group, mine, found)
+        elif isinstance(mine, Outsider):  # an outsider reads group chats only
+            raise not_found()
         else:
             _party(conn, mine, conversation_id, hidden=False)
         query = _messages(mine.project.id, conversation_id)
