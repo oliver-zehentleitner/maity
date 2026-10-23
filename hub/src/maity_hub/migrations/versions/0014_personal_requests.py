@@ -70,8 +70,9 @@ def downgrade() -> None:
         batch_op.drop_constraint(batch_op.f("ck_request_personal_shape"), type_="check")
         batch_op.drop_constraint(batch_op.f("ck_request_to_shape"), type_="check")
         batch_op.create_check_constraint(batch_op.f("ck_request_to_shape"), TO_SHAPE_BEFORE)
-        batch_op.drop_index("ix_request_to_human_status")
+        # The foreign key first: MariaDB refuses to drop an index a foreign key needs.
         batch_op.drop_constraint(batch_op.f("fk_request_to_human_human"), type_="foreignkey")
+        batch_op.drop_index("ix_request_to_human_status")
         batch_op.drop_constraint(
             batch_op.f("fk_request_to_profile_agent_profile"), type_="foreignkey"
         )

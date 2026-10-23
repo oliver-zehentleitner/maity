@@ -36,6 +36,7 @@ REQUEST_KEYS = {
     "answered_at",
     "placement",
     "mentions",
+    "personal",
 }
 
 
