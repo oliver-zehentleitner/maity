@@ -25,3 +25,12 @@
   the deciding agent's owner, version 0 meaning none written. Caps
   (§1.7), `conflict` and `may_not_propose` (§1.3), §12 and §13
   (`maity preferences show` / `propose`, contract only).
+
+### Changed
+
+- docs: the jour fixe moderator's own decisions (§20.6) rest on the
+  rules version plus the preferences of the moderating agent's owner,
+  `basis: {rules_version, human_id, preferences_version}` checked as
+  §19.4 says (`not_owner_preferences`, `unknown_version`; version 0
+  valid), in place of the owner's memory entry ids and
+  `not_owner_memory`.
