@@ -71,14 +71,14 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     return shown
 
 
-def _available(conn: Connection, project: Any, rows: list[Any], now: datetime) -> list[Any]:
+def available(conn: Connection, project: Any, rows: list[Any], now: datetime) -> list[Any]:
     """Those of `rows` that are `available` and not themselves covered."""
     from maity_hub import availability
 
     if not rows:
         return []
-    presences = availability._presences(conn, rows)
-    humans = availability._humans(conn, rows)
+    presences = availability.presences_of(conn, rows)
+    humans = availability.humans_of(conn, rows)
     return [
         r
         for r in rows
@@ -91,7 +91,7 @@ def _available(conn: Connection, project: Any, rows: list[Any], now: datetime) -
 # --- who may take what -----------------------------------------------------------------------
 
 
-def may_take_card(project: Any, card: Any, covered: Any, sub: Any) -> bool:
+def may_take_card(project: Any, card: Any, sub: Any) -> bool:
     """Never its own review: a `review` card moves to the substitute as its author, and
     under reviewer or admin done authority never to one that holds that authority."""
     if card.status != "review" or project.done_authority == "holder":
@@ -100,15 +100,19 @@ def may_take_card(project: Any, card: Any, covered: Any, sub: Any) -> bool:
     return not has_scope(sub.role, _kind(sub), scope)
 
 
-def may_take_request(conn: Connection, project: Any, request: Any, covered: Any, sub: Any) -> bool:
+def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool:
     """A substitute answers as the addressee would, with its own role (§6.12, §2.3)."""
     from maity_hub import inbox
 
     if sub.id in (request.asked_by, request.on_behalf_of):
         return False  # never its own question
     klass = getattr(request, "class")
-    to_owner = request.to_kind == "owner" or (
-        request.to_kind == "role" and request.to_role == "owner"
+    # Every request to the project's owner — `owner`, `role:owner` or their member id —
+    # is an owner decision and moves only to a human (§6.12).
+    to_owner = (
+        request.to_kind == "owner"
+        or (request.to_kind == "role" and request.to_role == "owner")
+        or (covered.role == "owner" and covered.human_id is not None)
     )
     if (to_owner or covered.agent_id is None and klass in ("consent", "contract")) and sub.agent_id:
         return False  # an owner decision, or what only a human may do
@@ -177,8 +181,8 @@ def start(conn: Connection, row: Any, actor: Actor | None) -> str:
     `cover`: `substitute`, or `none_available` (retried when a listed member returns)."""
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     now = clock.now()
-    available = _available(conn, project, cover_order(conn, project, row), now)
-    if not available:
+    ready = available(conn, project, cover_order(conn, project, row), now)
+    if not ready:
         _set_state(conn, row, "none_available", None, None)
         return "none_available"
     for_id = _principal(row)
@@ -188,8 +192,8 @@ def start(conn: Connection, row: Any, actor: Actor | None) -> str:
     cards, requests = _cover_set(conn, project, row)
     for card in cards:
         holds = card.claim_holder == row.id
-        for sub in available:
-            if not may_take_card(project, card, row, sub):
+        for sub in ready:
+            if not may_take_card(project, card, sub):
                 continue
             try:
                 instance = _instance(conn, sub) if holds else None
@@ -201,8 +205,8 @@ def start(conn: Connection, row: Any, actor: Actor | None) -> str:
         else:
             left.append(card.id)
     for request in requests:
-        for sub in available:
-            if may_take_request(conn, project, request, row, sub):
+        for sub in ready:
+            if may_take_request(project, request, row, sub):
                 cover = {"for": for_id, "by": _principal(sub), "since": since}
                 conn.execute(
                     update(t.request).where(t.request.c.id == request.id).values(cover=cover)
@@ -213,9 +217,9 @@ def start(conn: Connection, row: Any, actor: Actor | None) -> str:
                 break
         else:
             left.append(request.id)
-    first = next((s for s in available if s.id in moved), available[0])
+    first = next((s for s in ready if s.id in moved), ready[0])
     _set_state(conn, row, "covered", first.id, now)
-    subs = {s.id: s for s in available}
+    subs = {s.id: s for s in ready}
     for sub_id in moved or {first.id: {"tasks": [], "requests": []}}:
         items = moved.get(sub_id, {"tasks": [], "requests": []})
         emit(
