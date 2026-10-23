@@ -43,18 +43,40 @@ def uncursor(text: str, bound: str | None = None) -> tuple[datetime, str]:
         raise invalid({"cursor": "invalid"}) from None
 
 
-def key_cursor(anchor: str, following: str, key: Sequence[Any], bound: str) -> str:
+def key_cursor(
+    anchor: tuple[str, Sequence[Any]],
+    following: tuple[str, Sequence[Any]],
+    shown: Sequence[str],
+    bound: str,
+) -> str:
     """A cursor for a list in an order the database does not keep (§6.4's card order):
-    the last item's id, the next item's id and the last item's sort key, so the next page
-    goes on after the one or from the other."""
-    return _encode(["key", anchor, following, list(key), bound])
+    the last item shown and the first one not shown, each with its sort key, and the ids
+    the page showed in the last item's column, so the next page can go on after the one,
+    from the other, or from the column's top without what it showed."""
+    return _encode(
+        [
+            "key",
+            [anchor[0], list(anchor[1])],
+            [following[0], list(following[1])],
+            list(shown),
+            bound,
+        ]
+    )
 
 
-def unkey(text: str, bound: str) -> tuple[str, str | None, tuple[Any, ...]]:
+def unkey(
+    text: str, bound: str
+) -> tuple[tuple[str, tuple[Any, ...]], tuple[str, tuple[Any, ...]], frozenset[str]]:
     try:
-        tag, anchor, following, key, given = _decode(text)
-        if tag != "key" or given != bound or not isinstance(key, list):
+        tag, (anchor, was), (following, next_was), shown, given = _decode(text)
+        if tag != "key" or given != bound or not isinstance(was, list):
             raise ValueError
-        return str(anchor), (str(following) if following is not None else None), tuple(key)
+        if not isinstance(next_was, list) or not isinstance(shown, list):
+            raise ValueError
+        return (
+            (str(anchor), tuple(was)),
+            (str(following), tuple(next_was)),
+            frozenset(str(i) for i in shown),
+        )
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None
