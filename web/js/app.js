@@ -971,6 +971,10 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
+    // A mail sign-in in another session: said on every page while its alert is unread (§2.6.5).
+    if (M.sessions && M.notify.state.available && M.notify.state.counts && M.notify.state.counts.security) {
+      M.sessions.banner(ctx, () => render()).then((b) => { if (b && seq === renderSeq) main.insertBefore(b, main.firstChild); });
+    }
     watch(ctx, where, known ? item : null, main);
     let label = "No such view";
     if (empty) label = "No projects yet";

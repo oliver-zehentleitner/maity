@@ -27,14 +27,16 @@ window.Maity = window.Maity || {};
   // available: null until read, false when the hub has no notifications.
   const state = { available: null, counts: null, byProject: {}, settings: null };
 
-  // The page's address for an item, from its target. Account records
-  // (a sign-in, the settings) lead to the account, until it has a session
-  // list (§2.6.5 names Profile → Sessions); a personal request of a
-  // project one is no member of, to everything waiting, until the page
-  // has the personal inbox (§18.2 names #/requests/<id>).
+  // The page's address for an item, from its target. Account records lead
+  // to the account: a sign-in to its sessions, the settings to the
+  // notification settings; a personal request of a project one is no
+  // member of, to everything waiting, until the page has the personal
+  // inbox (§18.2 names #/requests/<id>). A security item of another target
+  // goes to the sessions too, where it is confirmed.
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || t0.type === "settings") return "#/account/notifications";
+    if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
+    if (t0.type === "settings") return "#/account/notifications";
     const slug = item.project && item.project.slug;
     if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
@@ -121,7 +123,7 @@ window.Maity = window.Maity || {};
             },
           }, "Mark all read") : null),
         h("p", { class: "muted bell-counts" }, Object.keys(KIND_WORDS).filter((k) => counts[k]).map((k) => KIND_WORDS[k] + " " + counts[k]).join(" · ") || "Nothing new."),
-        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays unread: opening it here does not confirm it, and Mark all read leaves it. It can be confirmed once the page has a sessions view.") : null,
+        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays unread: opening it here does not confirm it, and Mark all read leaves it. Confirm it with This was me under Sessions in your account.") : null,
         items.length
           ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
             h("a", {

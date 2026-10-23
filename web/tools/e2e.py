@@ -354,6 +354,10 @@ def watch_page(run: Run, page: Page) -> None:
         if resp.status == 404 and (path.startswith("/api/v1/me/notifications?") or path == "/api/v1/me/notification-settings"):
             run.no_notifications = True
             return
+        # A hub without the session list (docs/api.md §2.6.5) answers it 404,
+        # once per page load; the account page says so.
+        if resp.status == 404 and path == "/api/v1/auth/sessions?ended=true":
+            return
         # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
         # uploads waiting to be sent (§8.7); a hub without attachments answers 404.
@@ -1961,6 +1965,9 @@ def change_password(run: Run, page: Page) -> None:
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Change password", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/account$"))
+    # The sessions (§2.6.5): the list where the hub has it, else said so.
+    sessions = page.locator("section.sessions")
+    expect(sessions.locator("li.session.current").or_(sessions.get_by_text("This hub lists no sessions yet."))).to_be_visible()
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
     page.locator("#password-repeat").fill(new_password)

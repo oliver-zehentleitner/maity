@@ -387,6 +387,40 @@ window.Maity = window.Maity || {};
     Object.values(byProject).forEach((c) => { c.total = c.inbox + c.chat + c.mention; });
     return { counts, by_project: byProject };
   }
+  // §2.6.5 in fixture mode: fixtures/sessions.json, its "current" the session of this tab.
+  const activeSessions = () => fixtures()["sessions.json"].items.filter((s) => !s.ended_at);
+  const currentSession = () => fixtures()["sessions.json"].items.find((s) => s.id === fixtures()["sessions.json"].current);
+  const youngerThanHour = (s) => Date.now() - Date.parse(s.created_at) < 3600 * 1000;
+  function sessionOf(id, path) {
+    const s = fixtures()["sessions.json"].items.find((x) => x.id === id);
+    if (!s) fail(404, "not_found", "Not found", path);
+    return s;
+  }
+  // Who may end which (§2.6.5): good standing ends any; otherwise never one
+  // in good standing, and while under an hour old no older one; itself always.
+  function mayEnd(s, path) {
+    const cur = currentSession();
+    if (s.id === cur.id || cur.good_standing) return;
+    if (s.good_standing) fail(403, "forbidden", "not in good standing", path, { reason: "not_in_good_standing" });
+    if (youngerThanHour(cur) && s.created_at < cur.created_at) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
+  }
+  // Ending one ends the sessions it approved by device code, and theirs.
+  function endSession(s, by) {
+    Object.assign(s, { ended_at: nowIso(), ended_by: by });
+    activeSessions().filter((x) => x.approved_by === s.id).forEach((x) => endSession(x, by));
+  }
+  // A security item is marked read only from a session in good standing that
+  // existed before what it reports, never from the reported session (§18.3).
+  function mayMarkSecurity(x) {
+    const cur = currentSession();
+    if (!cur || !cur.good_standing) return false;
+    if (x.target && x.target.type === "session") {
+      const reported = fixtures()["sessions.json"].items.find((s) => s.id === x.target.id);
+      return !!reported && reported.id !== cur.id && cur.created_at < reported.created_at;
+    }
+    return cur.created_at < x.at;
+  }
+
   // A position's two parts, and whether an item lies past one (§18.2).
   const parts = (pos) => String(pos).split(".").map(Number);
   const recordNo = (x) => (x.record ? Number(x.record.slice(4)) : null);
@@ -441,7 +475,41 @@ window.Maity = window.Maity || {};
   const routes = [
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
-      return fixtures()["auth-session.json"];
+      return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"]);
+    }],
+    // §2.6.5: the human's sessions, newest first; ended ones of 30 days on ask.
+    ["GET", /^\/auth\/sessions$/, (m, body, path, query) => {
+      const all = fixtures()["sessions.json"];
+      const items = all.items.filter((s) => query.get("ended") === "true" || !s.ended_at)
+        .slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+        .map((s) => Object.assign({ current: s.id === all.current }, s));
+      return { items, next_cursor: null };
+    }],
+    ["DELETE", /^\/auth\/sessions\/([^/]+)$/, (m, body, path) => {
+      const s = sessionOf(m[1], path);
+      if (s.ended_at) return { ended: true };
+      mayEnd(s, path);
+      endSession(s, s.id === fixtures()["sessions.json"].current ? "logout" : "revoked");
+      return { ended: true };
+    }],
+    ["POST", /^\/auth\/sessions\/end-others$/, (m, body, path) => {
+      const cur = currentSession();
+      if (!cur.good_standing && youngerThanHour(cur)) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
+      const ended = activeSessions().filter((s) => s.id !== cur.id && (cur.good_standing || !s.good_standing));
+      ended.forEach((s) => endSession(s, "end_others"));
+      return { ended: ended.length };
+    }],
+    // §2.6.3: a held address change, approved or rejected by what it names.
+    ["POST", /^\/me\/notification-settings\/email\/address-change\/(approve|reject)$/, (m, body, path) => {
+      const email = fixtures()["notifications.json"].settings.email;
+      const held = email && email.address_change;
+      const cur = currentSession();
+      if (!cur.good_standing) fail(403, "forbidden", "not in good standing", path, { reason: "not_in_good_standing" });
+      if (m[1] === "approve" && Date.now() - Date.parse(cur.created_at) < 24 * 3600 * 1000) fail(403, "forbidden", "this session is too new", path, { reason: "session_too_new" });
+      if (!held || held.id !== body.id || held.address !== body.address) fail(409, "conflict", "not the held change", path);
+      if (m[1] === "approve") Object.assign(email, { pending_address: held.address });
+      email.address_change = null;
+      return fixtures()["notifications.json"].settings;
     }],
     ["POST", /^\/auth\/login$/, (m, body, path) => {
       if (body.handle !== me().member.handle || !body.password
@@ -521,8 +589,16 @@ window.Maity = window.Maity || {};
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
-      // up_to never reaches a security item: those only by id (§18.3).
+      // up_to never reaches a security item: those only by id, from a
+      // session allowed to (§18.3); a confirmed sign-in is in good standing.
       n.items.forEach((x) => {
+        if (body.ids && body.ids.includes(x.id) && x.kind === "security") {
+          if (!mayMarkSecurity(x)) return;
+          const reported = x.target && x.target.type === "session" && fixtures()["sessions.json"].items.find((s) => s.id === x.target.id);
+          if (reported) reported.good_standing = true;
+          x.read = true;
+          return;
+        }
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
             && (!body.project || (x.project && x.project.slug === body.project))) x.read = true;
