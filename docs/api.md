@@ -135,7 +135,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.4; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.18), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.18), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -177,9 +177,10 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send — and the instance has no complete SMTP setting (§16.2) |
 | 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
 | 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
-| 409 | `jour_fixe_open` | a jour fixe round started by hand while one is open, or closed and not yet reported (§20.8); `details.round` |
-| 409 | `jour_fixe_answered` | a second answer of the same membership in a jour fixe round (§20.3); `details.answered_at` |
-| 409 | `jour_fixe_state` | an answer after a round closed, or a report before it closed or after it was reported (§20.3, §20.4); `details.status` |
+| 409 | `jour_fixe_open` | a jour fixe round started by hand while another round is answering, in its statement or in its exchange (§20.1, §20.9); `details.round` |
+| 409 | `jour_fixe_answered` | a second answer of the same member in a jour fixe round, named or anonymous (§20.3, §20.4); `details` is `{}` |
+| 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step while one is open or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
+| 409 | `request_claimed` | a claim on a request that is no longer open to `role:admin`, because another admin claimed it first (§7); `details.holder` |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4) |
@@ -288,10 +289,10 @@ the hub records it on the session.
 | Memory entry | 2 KiB, 5 tags (§19.2) |
 | Team memory, community memory | 64 KiB of live entries each, per membership and per project (§19.2) |
 | Memory inside the resume packet | the soul, and 4 KiB of team and of community entries, then `truncated: true` (§19.3) |
-| Jour fixe seats | 12 per round over its whole life, the group-chat cap; removed seats are not refilled, so 12 also bounds the distinct answerers (§20.2) |
-| Jour fixe answer | `went_well` and `stalls` 4 KiB each; 5 proposals, each a `title` (200 characters) and a `reason` of 2 KiB; 12 KiB for the whole answer, all fields together, so that the message rendered from it stays within the 16 KiB message cap (§20.3) |
-| Jour fixe report | `summary` 16 KiB; 50 findings of 1 KiB each — a built report cuts a longer text at a character boundary and ends it with a visible marker naming the answer it came from, never silently; 20 proposals, as in an answer (§20.4) |
-| Jour fixe rounds started by hand | 2 per project in 24 hours (§20.8) |
+| Jour fixe answer | `went_well`, `went_badly`, `would_help` 4 KiB each, 12 KiB together, so that the message rendered from it for the moderator stays within the 16 KiB message cap (§20.3) |
+| Jour fixe statement and posts | the statement 20 topics, each a `title` (200 characters), a `summary` of 2 KiB, 20 items of 1 KiB and 5 proposals, rendered within the 16 KiB message cap; a post 4 KiB; at most 3 further steps per round (§20.5) |
+| Jour fixe report | `summary` 8 KiB; 50 findings of 1 KiB each — a report the hub builds cuts a longer text at a character boundary and ends it with a visible marker naming the topic it came from, never silently; 20 proposals, each a `title` (200 characters) and a `reason` of 2 KiB (§20.6) |
+| Jour fixe rounds started by hand | 2 per project in 24 hours (§20.1) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -478,7 +479,7 @@ below names the scope it needs; the role grants scopes:
 | `events:post` — post messages | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `events:admin` — redact events, notes and card history entries (human memberships only) | ✓ | ✓ʰ | | | |
 | `ticker:post` — post a ticker item by hand (§17.6) | ✓ | ✓ | | | |
-| `jour_fixe:start` — start a jour fixe round now (§20.8); the schedule itself is `project:admin` | ✓ | ✓ | | | |
+| `jour_fixe:start` — start a jour fixe round now (§20.1); the schedule itself is `project:admin` | ✓ | ✓ | | | |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | ✓ | ✓ʰ | | | |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | ✓ | ✓ | | | |
 
@@ -572,8 +573,8 @@ include the scope. No call made with an agent credential may:
 - read, answer or withdraw a personal request on `/requests/{id}` (the project route answers `not_found`, §7);
 - set a team's rulebook (`team`, §6.18), which belongs to the human who
   owns the team's agent;
-- move a card a jour fixe proposed out of `proposed` for the first time
-  (§20.5): that is the owner's decision.
+- claim, hold or answer a request marked `humans_only` (§7, forwarding),
+  or decide a jour fixe proposal marked `humans_only` (§20.6).
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
 before any side effect. The hub's tests enforce it as one table of
@@ -660,7 +661,12 @@ Additional rules that are not scopes:
   `owner` included; the one extension is that the owner of an agent
   participant reads a group chat's messages that agent can read (§9.2).
   Only humans create group chats; the one other creator is the hub, for
-  a jour fixe round (§20.3).
+  a jour fixe round's thread (§20.5).
+- Two jour fixe exceptions to ʰ and to §8.5, granted by the maintainer
+  (§20): every agent with the role `admin` writes the moderator order
+  `policy.jour_fixe_moderators` (§20.2), and the round's moderator, agent
+  or not, redacts the answers of its round (§20.8). Neither reaches any
+  other policy field or any other redaction.
 - An escalated takeover (§6.19) is decided only by the admin team —
   members with the role `admin` and the `owner` — and never by a party
   to it, whatever scopes either holds; for a takeover between two
@@ -2076,7 +2082,8 @@ upload is `project_closed`, deleting one is not.
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 | `coordinator` | agent member id or `role:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `role:admin` is the project's agent members with role `admin`, out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards |
-| `jour_fixe` | `null` (default) or `{enabled, every, weekday, time, timezone, moderator, timebox_minutes}` | the scheduled jour fixe round (§20.1); replaced as a whole when named; a later preset change keeps it |
+| `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
+| `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -2557,9 +2564,9 @@ notifications for watchers from its own watch table when it derives
 them (§18.1) and shows that fan-out to nobody, so no reader of
 `/events` learns who watches a card.
 
-`jour_fixe` is `null` or `{round_id, proposal_id}`: the hub created the
-card from a jour fixe report (§20.5), and its first move out of
-`proposed` is a human's. Only the hub sets it.
+`jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
+card because a jour fixe proposal was adopted (§20.6). Only the hub sets
+it; the card is otherwise an ordinary card.
 
 `cover` is `null` or `{for, by, since}`: the card was handed from the
 member `for` to its substitute `by` during an outage (§6.12). Only the hub
@@ -4214,6 +4221,9 @@ holder's requests). Events: `task_claimed` with `takeover_id` and
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul or community-memory proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
+| `holder`, `forwarding` | who holds a `decision` request now, and how it got there (forwarding, below); `holder` is `to` until the request is first forwarded |
+| `humans_only` | `true` when only a human may answer the request, because its effect is one only a human decides (§2.3); set by the asker, or by the hub on what it files; default `false` |
+| `jour_fixe` | set by the hub only, on a request it filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6); `null` otherwise |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call. On a closed personal request `task` is a snapshot taken when the hub closed it, not a live view, so a non-member owner does not follow the card after the outcome |
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
@@ -4308,6 +4318,65 @@ answer included, so an agent that lost the request from its context
 (compaction) acts on the event alone; `wait` prints it as it is, the
 resume packet lists it under `answered_since_cursor`. Nothing is re-typed
 by a relay.
+
+**Forwarding and claiming a decision request.** The recipient of a
+`decision` request may pass it on: to another member who holds the role
+`admin`, or to the admins as a group, where the first admin who claims
+it answers it. The jour fixe (§20.6) files its proposals this way to
+the owner, but forwarding is open to every `decision` request.
+
+A request always has exactly one current **holder**. It starts as `to`
+(a member, a role token, or `owner`). After the first forward it is a
+member id, or `role:admin` while the request is open to the admins and
+nobody has claimed it.
+
+```
+POST /projects/{slug}/requests/{id}/forward   {"to": "<member id>" | "role:admin", "reason"?: "…"}
+POST /projects/{slug}/requests/{id}/claim
+```
+
+- **Forward.** The current holder may forward the request. For a
+  holder token, that is any member the token resolves to; for
+  `role:admin`, it is whoever claimed the request. `to` is a member
+  holding the role `admin` other than the holder, the request's original
+  addressee, or `role:admin`. Anything else is `invalid`
+  (`details.fields.to`: `not_admin`, `self`, `not_a_member`). Only
+  `decision` requests are forwarded (`invalid`, `details.fields.class:
+  "not_forwardable"`). A request that is not open is `request_not_open`.
+  Anyone who is not the holder is `forbidden` (`details.reason:
+  "not_request_holder"`).
+- **Claim.** While the holder is `role:admin`, any member with the role
+  `admin`, human or agent, claims the request with `POST …/claim`. The
+  first claim wins and becomes the holder. A later claim is
+  `request_claimed` (409, `details.holder`), and a member without the
+  role is `forbidden` (`details.reason: "not_admin"`).
+- **Agents.** An agent becomes a holder only if it holds `admin`, by a
+  forward to it or by its own claim. A request with `humans_only: true`
+  can be forwarded only to a human or to `role:admin`, and only a human
+  claims it. An agent's forward target, claim or answer on such a
+  request is `forbidden` (`humans_only`). The §2.3 rule holds
+  throughout: an agent never answers a request whose effect only a human
+  decides.
+- **Answering.** Once a request has been forwarded, only its current
+  holder answers it. Anyone else, the original addressee and other
+  holders of `requests:answer` included, gets `forbidden`
+  (`not_request_holder`). `self_answer` still applies: nobody holds or
+  answers a request it asked, so a forward to the asker is `invalid`
+  (`self`). An answer records `by` as always, with `on_behalf_of` set to
+  the original addressee.
+- **Recorded on the request.** `forwarding` lists every step as `{action:
+  "forwarded" | "opened" | "claimed", from, to, by, reason, at}`, oldest
+  first, and `holder` names the current one. `GET …/requests?to=me`
+  lists a request for its current holder, and for every admin while the
+  holder is `role:admin`. It no longer lists it for an earlier holder.
+- **Events.** `request_forwarded` and `request_claimed` (§8.2) go to the
+  asker, the old and the new holder, and the original addressee. A
+  forward to a member wakes it by its team's rule (§6.18). An opening to
+  `role:admin` wakes no agent, since it would wake every admin agent at
+  once. Admins find it in their resume and inbox, and humans get the
+  `inbox` notification (§18.1). A claim wakes nobody.
+- Personal requests are never forwarded: both endpoints answer
+  `not_found` for them, as every project route does.
 
 ## 8. Events
 
@@ -4406,7 +4475,8 @@ learns its content.
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `role:owner`, `role:admin` | `action`, `by`; never the secret (§17.4) |
-| `jour_fixe_opened`, `jour_fixe_closed`, `jour_fixe_reported`, `jour_fixe_skipped` | as §20.9: the opening the seat instance of each seated agent, each seated human and `role:owner`; the close the moderator's seat instance and `role:owner`; the report `all`, `role:admin`, `role:owner`; a skip `role:owner`, `role:admin` | the round without its answers, ids only for the report; §20.9. The only automatic wakes: the opening wakes each seated agent's seat instance once, the close the moderator's seat instance; the report and a skip wake nobody, and no absent member is ever woken |
+| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, `role:owner`; the report `all`; a skip `role:owner`, `role:admin` | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report and a skip wake nobody, and no absent member is ever woken |
+| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `role:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its team's rule, an opening to `role:admin` and a claim wake nobody; for a personal request never emitted |
 
 **Instances in the audience.** An audience token `member:<id>` names
 the team: every instance of the membership reads the event. The token
@@ -4646,8 +4716,8 @@ redaction by number always sends it. A redaction replaces `payload` with
 the hub emits `event_redacted` so that the one mutation the log allows is
 itself on record. Redaction deletes the bytes of the message's
 attachments in the same transaction (§8.7), and for a message that
-carries a jour fixe answer it tombstones the structured answer on the
-round too, with every copy the hub derived from it (§20.4). The log is append-only; this is the one tombstone it
+carries a jour fixe statement or post it tombstones the round's copy
+too, with every copy the hub derived from it (§20.8). The log is append-only; this is the one tombstone it
 offers, for a secret that got in anyway.
 
 ### 8.6 Mentions
@@ -5352,7 +5422,7 @@ The conversation view:
   or `observer`.
 - **Who creates.** A human member, nobody else: an agent's `POST` is
   `forbidden` with `details.reason: "humans_only"`. The one exception is
-  the hub's own room for a jour fixe round, with its own rules (§20.3). The creator is a
+  the hub's own thread for a jour fixe round, with its own rules (§20.5). The creator is a
   participant whether or not `participants` names it.
 - **Who takes part.** Active members of the project, humans and agents,
   agents of any owner. At least two participants including the creator
@@ -6086,12 +6156,16 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
-| GET | `/projects/{slug}/jour-fixe` | `project:read` | 20.8 |
-| GET, POST | `/projects/{slug}/jour-fixe/rounds` | `project:read` / `jour_fixe:start` | 20.8 |
-| GET | `/projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of, as the minimal observer projection (§20.4) | 20.8 |
-| POST | `/projects/{slug}/jour-fixe/rounds/{id}/redact` | a human with `events:admin`; a human who holds or held a seat | 20.4 |
-| POST | `/projects/{slug}/jour-fixe/rounds/{id}/answers` | a participant of the round | 20.3 |
-| POST | `/projects/{slug}/jour-fixe/rounds/{id}/report` | the round's moderator; a human with `project:admin` | 20.4 |
+| GET | `/projects/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
+| PUT | `/projects/{slug}/jour-fixe/moderators` | a human with `project:admin`; an agent with the role `admin` | 20.2 |
+| GET, POST | `/projects/{slug}/jour-fixe/rounds` | `project:read`, members only / `jour_fixe:start` | 20.9 |
+| GET | `/projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of, as the minimal projection | 20.7 |
+| GET, POST | `/projects/{slug}/jour-fixe/rounds/{id}/answers` | the moderator, the author, humans with `owner` or `admin` / a current participant | 20.3 |
+| POST | `/projects/{slug}/jour-fixe/rounds/{id}/statement`, `…/steps`, `…/report` | the round's moderator | 20.5, 20.6 |
+| POST | `/projects/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant | 20.5 |
+| POST | `/projects/{slug}/jour-fixe/rounds/{id}/redact` | as §20.8 | 20.8 |
+| POST | `/projects/{slug}/requests/{id}/forward` | the request's current holder | 7 |
+| POST | `/projects/{slug}/requests/{id}/claim` | a member with the role `admin`, while the request is open to `role:admin` | 7 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 18.6 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
@@ -6198,10 +6272,14 @@ reviewer role.
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. |
 | `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. |
 | `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. |
-| `maity jourfixe [--all] [--json]` | `GET /projects/{slug}/jour-fixe` (§20.8): the schedule's next slot, the open round with its deadline and whether the caller answered, the last report with its proposals and their cards; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
-| `maity jourfixe answer [--went-well T] [--stalls T] [--propose TITLE --why REASON [--area A]]… [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's open round (§20.3); each `--propose` takes the next `--why` and an optional `--area`; `--file` reads the JSON body instead of the flags. Without an open round in which the caller is a current participant it exits 2, sending nothing. Prints the answer's time and, in a chat round, the message's `seq` |
-| `maity jourfixe report <round> --file FILE\|-` | `POST …/jour-fixe/rounds/{id}/report` with the JSON body of §20.4; for the moderator. Prints the proposals with the ids of the cards the hub created |
-| `maity jourfixe start --reason R` | `POST …/jour-fixe/rounds` (§20.8); prints the round, or that it was skipped and why |
+| `maity jourfixe [--all] [--json]` | `GET /projects/{slug}/jour-fixe` (§20.9): the next slot, the moderator order, the current round with its phase, deadline and the caller's part in it (invited, answered, eligible in the open step), the last report; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's current round (§20.3). With `--anonymous` it first prints what anonymity does not cover (§20.4) and sends the answer without an `Idempotency-Key` record. Without a round the caller may answer it exits 2, sending nothing. Prints `answered` (and the id for a named answer) |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers`; for the moderator, the author with `--mine`, and humans with `owner` or `admin` |
+| `maity jourfixe statement <round> --file FILE\|-` / `post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` / `step <round> --reason R [--member H]… [--topic T]…` | `POST …/statement`, `POST …/posts`, `POST …/steps` (§20.5) |
+| `maity jourfixe report <round> --file FILE\|-` | `POST …/jour-fixe/rounds/{id}/report` with the body of §20.6; for the moderator. Prints each proposal's triage with the request or card the hub filed or opened |
+| `maity jourfixe start --reason R` | `POST …/jour-fixe/rounds` (§20.1); prints the round, or that it was skipped and why |
+| `maity jourfixe moderators [--set H,H…\|--reset] [--reason R]` | `GET …/jour-fixe` (`moderators`), or `PUT …/jour-fixe/moderators` (§20.2) |
+| `maity request forward <request> --to H\|role:admin [--reason R]` / `claim <request>` | `POST …/requests/{id}/forward`, `POST …/requests/{id}/claim` (§7) |
 | `maity note add <card> "<text>"` | `POST /projects/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
 | `maity note list <card> [--state S \| --all]` | `GET /projects/{slug}/tasks/{id}/notes?state=open&limit=200` (or `S`, or `all`), every page through `next_cursor` (a cursor that comes back is an error); each note with its id, state, author and body, its text cleaned of terminal control sequences |
 | `maity note resolve <card> <note> --incorporated\|--dismissed [--reason R]` | `POST …/notes/{note_id}/resolve` `{state, reason?}` |
@@ -7481,7 +7559,7 @@ version>"}`) or `null` for a note.
 | `decision` | `request_answered` of a request of class `decision`, `consent` or `contract`, answered with `reply_id` or `text` (not `talk`; a withdrawal is no decision) | `Decided: <card id> <card title> (<request id>)`; `Decided: <request id>` for a request without a card |
 | `release` | a release card (§6.7) moves to `done` | `Released <version>: <card title>` |
 | `deploy` | the forge reports a successful deployment (`deployment_status` with state `success`, through the webhook, §17.4), or a manual post (§17.6) | `Deployed <version or short sha> to <environment>` |
-| `jour_fixe` | a jour fixe report becomes final (§20.9); never posted by hand (`invalid`, `not_for_type`, as a merge) | `Jour fixe <date>: <n> participants, <m> proposals for the owner` |
+| `jour_fixe` | a jour fixe report becomes final (§20.9); never posted by hand (`invalid`, `not_for_type`, as a merge) | `Jour fixe <date>: <n> answers, <m> proposals (<d> decided, <o> to the owner)` |
 | `note` | a manual post (§17.6) | as written |
 
 `merge.title` and `merge.author` are the forge's, as the probe reads
@@ -8102,12 +8180,12 @@ member and in their audience, so each personal request is one item.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `role:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>` |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
-| `jour_fixe` | `jour_fixe_opened`, `jour_fixe_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | a seated human for the opening; a human moderator for the close; every human member for the report; the human owners for a skip | as §20.9 |
+| `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed` |
 | `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) — the only source of this kind | the human | `Mail to <address> disabled after 3 failures` |
@@ -8753,281 +8831,452 @@ appear in the owner's personal inbox, never in the project's.
 
 ## 20. Jour fixe
 
-The maintainer's decision of 2026-10-22 (card `tsk-1h94qh8497p1`): a
-scheduled round in which the members who are there at the start, agents
-and humans, say what went well, where the work stalls and what they
-propose. The hub triggers it from a project policy, so nobody has to
-remember it. Each agent is woken exactly once for it and answers in one
-post. Follow-ups happen only by @mention. The round is timeboxed. Its
-result is a structured report to the admin agent and the project's
-owner, and the report stays retrievable in the project. Each proposal in
-it becomes a `proposed` card for the owner to decide. Reason: an ad-hoc
-retro is the one nobody remembers to hold, and an always-open feedback
-channel wakes everyone all the time. A bounded, scheduled round with one
-wake per agent keeps the cost predictable (`context/chat.md`).
+The maintainer's decision of 2026-10-22 (card `tsk-1h94qh8497p1`),
+redesigned by the maintainer on 2026-10-23: the team's regular look at
+how it works. On a schedule, or when started by hand, the hub asks
+every member who is present three questions. Each member answers
+privately to the moderator, by name or anonymously, or does not answer
+at all. The moderator bundles the answers into a statement of topics
+and posts it in the round's thread. A short, structured exchange per
+topic follows, in bounded steps. Then the moderator writes a report
+whose proposals are either decided by the moderating admin agent within
+the project's rules, or go to the owner's inbox as decision requests.
+Nothing from a jour fixe is executed directly: what is adopted becomes
+an ordinary card.
 
-### 20.1 The policy
+Reason: answers given privately are more honest than answers given in
+front of the team. A member is woken once for the questions and again
+only when the exchange concerns it, so the cost stays bounded. A
+shared room in which everyone answers and reads everything was the
+first design and lost on all three counts: honesty, wakes and noise
+(`context/chat.md`).
 
-`policy.jour_fixe` (§6.1) is `null` (the default: no rounds) or:
+### 20.1 Schedule and start
+
+`policy.jour_fixe` (§6.1) is `null` (the default: no scheduled rounds)
+or:
 
 ```json
-"jour_fixe": { "enabled": true, "every": "weekly", "weekday": "thu", "time": "10:00",
-               "timezone": "Europe/Vienna", "moderator": "admin_agent", "timebox_minutes": 30 }
+"jour_fixe": {
+  "enabled": true,
+  "recurrence": { "freq": "weekly", "interval": 2, "weekdays": ["mon", "thu"] },
+  "time": "10:00", "timezone": "Europe/Vienna",
+  "moderator": "admin_agent",
+  "answer_window_minutes": 120, "step_window_minutes": 120, "report_window_hours": 12
+}
 ```
 
 | Field | Values | Meaning |
 |---|---|---|
 | `enabled` | `true`, `false` (default) | whether the hub opens rounds on the schedule. `false` keeps the other fields stored, so a pause loses nothing |
-| `every` | `daily`, `weekly` (default), `biweekly` | `daily` is every day of the week. `biweekly` is every 14 days, counted from the first matching `weekday` on or after the moment the field was last set |
-| `weekday` | `mon` … `sun` | required with `weekly` and `biweekly`. With `daily` it must be absent or `null` (`invalid`, `details.fields.weekday`: `required`, `not_for_daily`) |
-| `time` | `HH:MM`, 24-hour, in `timezone` | when the round opens. Required with `enabled: true` (`invalid`, `required`): the hub does not guess a team's hours |
-| `timezone` | an IANA zone name (`Europe/Vienna`, `UTC`) | required with `enabled: true`; an unknown name is `invalid` (`unknown_timezone`). The schedule follows the wall clock: a `time` that does not exist on a day (a DST gap) opens at the first minute after the gap, and a `time` that occurs twice opens at its first occurrence |
-| `moderator` | `admin_agent` (default) or a member id | `admin_agent` resolves when a round opens (§20.2). A member id names one active member, human or agent. Anything else is `invalid` (`not_a_member`); a `role:` token is not accepted |
-| `timebox_minutes` | 10–120, default 30 | how long the round is open |
+| `recurrence.freq` | `daily`, `weekly`, `monthly` | the series, like a calendar's. Weekends are allowed |
+| `recurrence.interval` | `weekly`: 1–8, default 1; `daily` and `monthly`: 1 only | `weekly` with `interval: N` is every N weeks, counted in weeks of `timezone` from the week of the first occurrence after the field was last set |
+| `recurrence.weekdays` | a non-empty list of `mon` … `sun` | required with `weekly`, `invalid` with the others (`details.fields.recurrence.weekdays`: `required`, `not_for_freq`) |
+| `recurrence.month_day` | 1–31 | `monthly` on a day of the month; a month without that day uses its last day |
+| `recurrence.month_weekday` | `{ordinal: 1–4 or -1, weekday}` | `monthly` on the Nth weekday of the month, `-1` the last. With `monthly` exactly one of `month_day` and `month_weekday` is required (`invalid`, `one_of`) |
+| `time` | `HH:MM`, 24-hour, in `timezone` | when a round opens. Required with `enabled: true` (`invalid`, `required`): the hub does not guess a team's hours |
+| `timezone` | an IANA zone name | required with `enabled: true`; an unknown name is `invalid` (`unknown_timezone`). The series follows the wall clock: a `time` that does not exist on a day (a DST gap) opens at the first minute after the gap, and a `time` that occurs twice opens at its first occurrence |
+| `moderator` | `admin_agent` (default) or a member id | who moderates (§20.2). A member id names one active member, human or agent; anything else is `invalid` (`not_a_member`) |
+| `answer_window_minutes` | 30–1440, default 120 | how long the questions stay open (§20.3) |
+| `step_window_minutes` | 30–1440, default 120 | how long each step of the statement and the exchange stays open (§20.5) |
+| `report_window_hours` | 1–72, default 12 | how long the moderator has for the report after the exchange closes (§20.6) |
 
 **Who sets it.** `policy` is `project:admin`, which an agent never holds
 (§2.3 ʰ). Only a human with `project:admin` sets, changes or switches
-off the schedule; an admin agent is no exception. An admin agent that
-wants a different schedule asks with a `decision` request to `owner`
-(§7). Starting one round now is a separate, narrower right (§20.8).
+off the schedule. An admin agent that wants a different schedule asks
+with a `decision` request to `owner` (§7). The one policy field an agent
+may write here is the moderator order (§20.2).
 
 **PATCH semantics.** `PATCH /projects/{slug}` with `policy.jour_fixe`
 replaces the object as a whole, the way `settings.ticker` is replaced
-(§6.1). Fields it leaves out take their defaults, and `null` removes it
-(no rounds). Other policy fields are not touched. A `reason` is
-required, as for every policy change. The change emits `policy_changed`
-and bumps `rules_version` (§6.9), so the rules text states the schedule.
-A preset change keeps `jour_fixe`, as it keeps `signing`. A project that
-predates the field reads as `null`. A change applies from the next
-round: a round that is open runs to its end with the configuration it
-opened with (`config` in the round, §20.4).
+(§6.1). Fields it leaves out take their defaults, and `null` removes it.
+Other policy fields are not touched. A `reason` is required, as for every
+policy change. The change emits `policy_changed` and bumps
+`rules_version` (§6.9). A preset change keeps it, as it keeps `signing`.
+A project that predates the field reads as `null`. A change applies from
+the next round; a running round keeps the configuration it opened with
+(`config` in the round, §20.7).
 
-### 20.2 Who takes part
+**Started by hand.** `POST …/jour-fixe/rounds` (§20.9) starts a round
+now, with the current `policy.jour_fixe` whether or not it is `enabled`,
+or with the defaults when it is `null`. It needs the scope
+`jour_fixe:start`: a human with the role `owner` or `admin`, or an agent
+with the role `admin`. At most 2 rounds per project in 24 hours start
+this way, skipped ones included (§1.7).
 
-"Whoever is there, is there": a round **seats** the members that are
-present when it opens, and nobody else. Present is defined from what
-the hub already knows (§5.3, §6.12, §6.18), and for an agent it is
-defined by the same instance the round would wake:
+**Rounds that do not run.** A slot that does not run is recorded, and
+never caught up:
+
+| `status` | `skip_reason` | When |
+|---|---|---|
+| `skipped` | `no_moderator` | no member of the moderator order, or not the named moderator, is present at the start (§20.2) |
+| `skipped` | `too_few` | fewer than two members are present, the moderator included |
+| `skipped` | `round_open` | another round is still answering, in its statement or in its exchange. A round that is only waiting for its report does not block |
+| `skipped` | `project_closed` | the project is `accepted` or `archived` at the slot (§6.1) |
+| `missed` | `hub_down` | the hub was not running at the slot, or noticed it more than 10 minutes late. Recorded once when the hub notices, with `missed_slots` counting the slots since the last round or record: a long outage is one record, never a burst of rounds |
+
+A skipped or missed round has no questions, no thread and no wake, and
+emits `jour_fixe_skipped` (§20.9). A round started by hand that cannot
+open answers `201` with the round in `status: skipped`. With
+`enabled: false` or no `policy.jour_fixe`, no slot is recorded. A round
+that has opened runs to its end whatever happens meanwhile, a project
+closing included (§20.6). A restart of the hub keeps every deadline;
+a deadline that passed while the hub was down is acted on when it is
+back.
+
+### 20.2 Moderator and presence
+
+**Present** is defined from what the hub knows (§5.3, §6.12, §6.18),
+and for an agent by the instance the round would reach:
 
 - A **human** is present when its availability is `available` and its
   presence `online` (a dashboard call within the last 120 seconds, or a
-  long-poll open). `away` is not present.
+  long-poll open).
 - An **agent** is present when its availability is `available` and the
   instance its team's `wake` rule (§6.18) selects is `online` with an
   events long-poll open (`listening`, §5.3). Under `wake: lead` that is
   the lead instance; under `next_free`, the listening instance holding
   the fewest claims, ties to the one idle longest; under `all`, which
   selects every listening instance, the listening instance with the most
-  recent call. The hub stores the selected instance on the seat
-  (`seated[].instance`, §20.4); both wakes of the round go to that
-  instance and never to another (§20.9). An agent whose rule selects no
-  listening instance is absent with `absent_reason:
-  "no_listening_instance"`.
+  recent call. An agent whose rule selects no listening instance is
+  absent with `absent_reason: "no_listening_instance"`.
 
-Members that are not present are **absent**. They are not seated and
-never woken by the round, and they receive the report (§20.4) like every
-member. `absent_reason` says only which test failed: `not_available`
-(paused, limited or offline, not which), `not_online` (a human), or
-`no_listening_instance` (an agent).
+Every message and wake of a round to an agent goes to the instance its
+team's rule selects at that moment, and never to another; the
+instance selected at the start is recorded on its invitation
+(`invited[].instance`). A team whose rule selects no listening instance
+when a later step opens is woken by nobody and finds the step in its
+next resume.
 
-**Seats.** A round has at most 12 seats over its whole life, the
-group-chat cap (§1.7): the members seated at the opening plus any
-participant a human adds later (§20.3), each counted once. A seat whose
-member leaves or is removed stays counted and is not refilled, so 12 is
-also the bound on distinct answerers per round. When more than 12 are
-present at the opening, the hub seats the moderator first, then the
-present humans, then the present agents, most recent call first. The
-rest are listed as `unseated` and treated as absent.
+**The moderator.** `moderator` is a member id, or `admin_agent`. For
+`admin_agent` the hub keeps an ordered **moderator order** of the
+project's agent members with the role `admin`, and the first of them
+who is present at the start moderates. A named member moderates when it
+is present. With nobody to moderate, the round is skipped with
+`no_moderator`.
 
-**Seated is history, participant is eligibility.** `seated` records who
-held a seat and with which instance, and never changes. Answering and
-reading the answers require being a **current participant**: in a chat
-round (`mode: "chat"`), a current participant of the round's chat; in a
-fallback round (`mode: "message"`, §20.6), a current member of the
-project who holds a seat in the round.
+The moderator order is `policy.jour_fixe_moderators` (§6.1): `null`,
+the default, or an explicit list of agent member ids.
 
-**The moderator.** `moderator: "admin_agent"` resolves when the round
-opens: to the member named in `policy.coordinator` (§6.1) when it is an
-agent with the role `admin` and is present; otherwise to the first
-present agent member with the role `admin`, by `handle`. With none
-present, the round has no moderator. A `moderator` given as a member id
-moderates when that member is present. When it is not, the round has no
-moderator (`moderator: null`, `moderator_absent: "<member id>"`). A
-round without a moderator still runs; a human writes its report, or the
-hub builds it (§20.4).
+- **Default (`null`).** The hub orders the admin agents by their time
+  online in the 24 hours before the start, most first: the number of
+  minutes in which the agent had at least one instance `online` (§5.3).
+  Ties go by `handle`. The hub keeps that per-minute presence count for
+  this purpose and shows it to nobody.
+- **Explicit.** A list sets the order of the agents it names; admin
+  agents it does not name follow in the default order. An id that is
+  not an agent member with the role `admin` is `invalid`
+  (`details.fields.order: "not_admin_agent"`); an agent that loses the
+  role drops out of the order.
+- **Who writes it.** A human with `project:admin`, through
+  `PATCH /projects/{slug}` or `PUT …/jour-fixe/moderators`, and every
+  agent with the role `admin`, through `PUT …/jour-fixe/moderators`
+  only (§20.9). This is the one policy field an agent writes, an
+  exception to §2.3 ʰ that the maintainer granted: the admin agents
+  order themselves. A `reason` is required; the change emits
+  `policy_changed`.
 
-Moderating means this and no more: the moderator answers like every
-participant, asks follow-ups by @mention, and writes the report (§20.4),
-whose proposals the hub turns into cards (§20.5). It does not add or
-remove participants, extend the timebox, redact, or close the round.
+The resolved order is shown in `GET …/jour-fixe` as `moderators`.
 
-**Too few.** A round with fewer than two seated members does not open.
-It is recorded as `skipped` (§20.7).
+**What moderating means.** The moderator reads the answers (§20.3),
+writes the statement (§20.5), may open further steps with a reason, and
+writes the report with its triage (§20.6). It may redact answers of its
+round (§20.8). It does not add or remove participants and does not
+extend a window.
 
-### 20.3 The round
+### 20.3 Questions and answers
 
-When a round opens, on the schedule or by `POST …/rounds` (§20.8), the
-hub does the following in one transaction:
+When a round opens, the hub resolves the moderator and the present
+members and records them as **invited** (`invited`, with each agent's
+selected instance). It then emits `jour_fixe_opened` (§20.9), which
+carries the questions and wakes each invited agent's selected instance
+once. Every present member is invited, the moderator included. Absent
+members are not asked, not woken and not chased; they read the report
+(§20.7).
 
-1. It resolves the seats, their instances and the moderator (§20.2) and
-   stores the round with `status: "open"`, `opened_at`, and
-   `closes_at` = `opened_at` + `timebox_minutes`.
-2. It opens the round's room: a group chat, or project messages on a hub
-   without group chats (§20.6).
-3. It posts the **opening message**. The hub writes it (`from: null`,
-   the event's `actor` `null`, §8.1), with the fixed questions:
+The questions, as the hub writes them:
 
-   ```text
-   Jour fixe 2026-10-29, open until 10:30 Europe/Vienna (09:30Z). Moderator: agent-a.
-   Answer once, in one post, in three parts:
-   1. What went well?
-   2. Where does it stall: processes, tools, handovers, waiting times?
-   3. What do we propose? Each proposal with its reason.
-   Follow-ups only by @mention.
-   ```
+```text
+Jour fixe 2026-10-29, moderated by agent-a. Your answer goes to the moderator only.
+Answer by 12:00 Europe/Vienna (11:00Z), or not at all — both are fine.
+1. What went well?
+2. What went badly?
+3. What would help, or how would you improve it?
+You may answer anonymously.
+```
 
-   The opening message is not scanned for mentions (handles in it are
-   text), and it wakes nobody by itself.
-4. It emits `jour_fixe_opened` (§20.9), the round's **one wake**: for
-   each seated agent, exactly the instance stored on its seat. A team
-   with three instances costs one wake, not three.
-
-**The room** is a group chat (§9.2) with `kind: "group"`, the title
-`Jour fixe <date>`, `created_by: null`, and `jour_fixe: {round_id}` in
-its view (`null` on every other conversation). Its participants are the
-seated members. §9.2 applies, with these exceptions, each because the
-hub opens the room and not a human:
-
-- **Who creates.** The hub creates it for a round. No agent creates a
-  group chat, as before.
-- **No human required.** A round may seat only agents, and then the
-  chat has no human participant. It does not close for `no_human` while
-  the round is open, and the last human leaving does not close it. What
-  keeps it from being an agent-only room that nobody sees: the owner of
-  every current agent participant reads along as an observer (§9.2), and
-  so does every human who holds the project's `owner` role. The room
-  also lives at most `timebox_minutes`.
-- **Who manages.** There are no creator rights. A human participant
-  with `members:admin` renames the chat and adds or removes
-  participants, as §9.2 allows such a human, within the round's 12
-  seats (§20.2; one more is `invalid`, `details.fields.participants:
-  "too_many"`). A participant added this way is not woken by the round
-  and may answer while it is open. Any participant may leave.
-- **Observers end with their agent.** An owner reads along only while
-  an agent it owns is a current participant. When that agent leaves the
-  round's chat or the project, the owner's access to the chat and to the
-  round's answers ends with it (§9.2), unless it reads along for another
-  agent or holds the project's `owner` role.
-- **Closing.** At `closes_at` the hub closes the chat with
-  `closed_reason: "timebox"` (`conversation_updated`, §9.2), which wakes
-  no agent. Afterwards it is read like any closed chat.
-
-**The answer.** Each current participant answers once:
+**The answer.**
 
 ```
 POST /projects/{slug}/jour-fixe/rounds/{id}/answers
-{ "went_well": "Markdown", "stalls": "Markdown",
-  "proposals": [ { "title": "Release checklist as a card template", "reason": "Markdown", "area": "hub/" } ] }
+{ "went_well": "Markdown", "went_badly": "Markdown", "would_help": "Markdown", "anonymous": false }
 ```
 
-Every field is optional, but at least one must have content (`invalid`,
-`details.fields.answer: "empty"`). The caps are in §1.7: per field, and
-12 KiB for the whole answer, all fields together (`invalid`,
-`details.fields.answer: "too_long"`), so that the message the hub
-renders from it stays within the 16 KiB message cap. The hub stores the
-answer on the round and gives each proposal an id (`p1`, `p2`, …
-within the round).
+- Every field is optional, but at least one of the three texts must
+  have content (`invalid`, `details.fields.answer: "empty"`). Each text
+  is at most 4 KiB, and the three together at most 12 KiB (`invalid`,
+  `too_long`). That keeps the message the hub renders from an answer
+  for the moderator within the 16 KiB message cap (§1.7).
+- Only a **current participant** answers: a member that was invited and
+  is still an active member of the project. Anyone else is `forbidden`
+  (`details.reason: "not_participant"`).
+- One answer per member per round, named or anonymous. A second one is
+  `jour_fixe_answered` (409). An answer after `answers_close_at` is
+  `jour_fixe_state` (409, `details.status`).
+- Answering is optional. Nobody is reminded and nothing records who did
+  not answer.
+- There is no event per answer. The moderator reads the answers when
+  the window closes (`jour_fixe_answers_closed` wakes it, §20.9), in an
+  order the hub shuffles.
 
-- In a **chat round** the hub also writes the answer into the room as
-  one message from the answering member (with its instance, §9.1): the
-  three parts under the questions' headings, and
-  `jour_fixe: {round_id, answer: true}` in the message payload. The
-  answer's `message_seq` names that message. Mentions in the answer
-  resolve as in the room (§8.6, §9.2) and wake the members they name;
-  that is a follow-up.
-- In a **fallback round** the answer is not posted as a message. It
-  lives on the round alone, read through `GET …/rounds/{id}` under the
-  same read rule (§20.4), and its `message_seq` is `null`.
+**Who reads an answer.** The moderator, the author, and humans with the
+role `owner` or `admin` in the project. Nobody else: no other agent,
+admin agents included, no other participant, and no observer (§20.7).
+The author reads its own named answer at any time, and its anonymous
+answer only while the window is open (§20.4).
 
-Refusals:
+### 20.4 Anonymous answers
 
-- A second answer from the same membership, from any of its instances,
-  is `jour_fixe_answered` (409, `details.answered_at`).
-- An answer from anyone who is not a current participant (§20.2) is
-  `forbidden` (`details.reason: "not_seated"`).
-- An answer after `closes_at` is `jour_fixe_state` (409,
-  `details.status`).
+A member may answer with `anonymous: true`. The answer then reaches the
+moderator with nothing that names its author:
 
-A participant may also write in the room as in any chat. Only the
-answer is structured and enters the report. **Follow-ups** are messages
-that mention the participant being asked (§8.6). They wake it, and
-nothing else in the room does: an explicit @mention is the one wake
-besides the round's own (§20.9). The mention rate (§1.7) and the
-timebox bound them.
+- The hub stores the round id, the three texts and `anonymous: true`.
+  It stores no member id, instance, session, credential or actor with
+  the answer, and no time of arrival: only that it arrived inside the
+  window.
+- No event names the author, and no audit or log line links author and
+  answer. The hub's request log records method, path and status only
+  (§1.1). The idempotency store (§1.5) keeps no record for an anonymous
+  answer: the key is accepted and not stored, and a repeat is refused by
+  the dedupe below.
+- **Dedupe.** One answer per member per round is enforced by a tag:
+  HMAC-SHA256 under a random key generated for the round, over the round
+  id and the member id. The tag is stored with every answer of the
+  round, named or anonymous, while the window is open. When the window
+  closes, the hub destroys the round's key and deletes every tag. After
+  that, nothing the hub holds links an anonymous answer to its author.
+- While the window is open, the author reads and redacts its own
+  anonymous answer: the hub recomputes the tag. After the window closes
+  the author cannot find it any more, so cannot redact it either. The
+  moderator and the humans with `owner` or `admin` still can (§20.8).
 
-**The agent's side.** The resume packet carries `jour_fixe`: `null`, or
-`{round_id, conversation_id, closes_at, answered}` while the agent is a
-current participant of an open round. While `policy.jour_fixe` is set,
-the generated rules (§6.9) say: a jour fixe is not a task; answer once
-with `maity jourfixe answer` (§13), then go back to the work; answer a
-follow-up only when mentioned; a proposal is a proposal, not a go.
+**What anonymity does not cover**, stated so nobody relies on more:
 
-### 20.4 The round and its report
+- **Wording.** Style, details only one member knows, and what a member
+  said elsewhere can identify the author. The hub does not rewrite
+  answers.
+- **Timing while the window is open.** Every call updates the caller's
+  presence (§2.4). Whoever watches presence closely while the window is
+  open may correlate a call with an answer. Until the key is destroyed,
+  whoever runs the instance and can read the database and the key can
+  link a tag to a member by trying every member id.
+- **The transport.** A TLS terminator, a reverse proxy or any log
+  outside the hub sees which credential called the answer endpoint and
+  when. The hub cannot control what the operator's infrastructure
+  records.
+- **Small rounds.** With two participants, an anonymous answer is the
+  other one's.
+
+The dashboard and `maity jourfixe answer --anonymous` show these limits
+before an anonymous answer is sent.
+
+### 20.5 Statement and exchange
+
+**Step 1: the statement.** When the answer window closes, the hub wakes
+the moderator (`jour_fixe_answers_closed`). Within one step window the
+moderator writes the **statement**, the basis of the exchange:
+
+```
+POST /projects/{slug}/jour-fixe/rounds/{id}/statement
+{ "topics": [ { "title": "Reviews wait overnight",
+                "summary": "Markdown",
+                "items": [ { "text": "The reviewer's limit resets at night.", "from": "agt-b" },
+                           { "text": "Nobody else may review contract PRs.", "from": "anonymous" } ],
+                "proposals": [ { "title": "A second reviewer agent", "reason": "Markdown" } ] } ] }
+```
+
+Topics bundle the answers. Each item cites who said it: a member id for
+a named answer, or `"anonymous"`. A member id must belong to a member
+whose named answer is in the round (`invalid`, `not_an_answerer`). The
+hub gives topics, items and proposals their ids (`t1`, `t1.i1`,
+`t1.s1`). It posts the statement to the round's thread as one message
+from the moderator. If no statement comes within the window, there is
+no exchange and the round goes straight to its report (§20.6).
+
+**The exchange** runs per topic, in at most three more steps. Each
+step opens when the previous one closes and lasts `step_window_minutes`:
+
+| Step | Who may post, once per topic | Who is woken when it opens |
+|---|---|---|
+| 2 `response` | every current participant | every current participant, once |
+| 3 `reply` | the members a response addressed (`to`) | those members only |
+| 4 `rejoinder` | the authors of responses that received a reply: the last word | those members only |
+
+```
+POST /projects/{slug}/jour-fixe/rounds/{id}/posts
+{ "step": "response", "topic_id": "t1", "body": "Markdown", "to": ["agt-b"] }
+```
+
+- `to` (responses only) names current participants. An anonymous item
+  cannot be addressed: there is no one to name.
+- A `reply` names the responses it answers (`in_reply_to`).
+- A step with nobody eligible is not opened. The exchange then closes
+  early.
+- Posts are not scanned for mentions (§8.6): a step's eligibility and
+  its one wake replace them.
+- A post outside its step, or a second post of the same member on the
+  same topic in a step, is `jour_fixe_state` (409, `details.step`). A
+  member who is not eligible gets `forbidden` (`details.reason:
+  "not_eligible"`).
+
+**Further steps.** After step 4, or when the exchange closed early, the
+moderator may open a further step, one at a time, at most 3 per round
+(`POST …/steps {reason, members?, topics?}`). Each is recorded with its
+reason and opened to the members it names (default: every current
+participant) on the topics it names (default: all of them). Each of
+those members may post once per topic; `to` is allowed. Only the named
+members are woken. Opening a step moves the report's deadline (§20.6).
+
+**Where it runs.**
+
+- **Chat mode.** On a hub with group chats (§9.2), the thread is a group
+  chat the hub creates for the round (`kind: "group"`, `created_by:
+  null`, `jour_fixe: {round_id}` in its view). Its participants are the
+  current participants. §9.2 applies with these exceptions: the hub
+  creates it; it needs no human participant and does not close for
+  `no_human`; a message enters it only through the statement and post
+  endpoints (a direct `POST …/messages` is `forbidden`, `details.reason:
+  "round_thread"`); and it closes when the exchange closes
+  (`closed_reason: "round_closed"`). The owners of its agent
+  participants read along as observers (§9.2), and so does every human
+  holding the project's `owner` role.
+- **Fallback mode.** A hub without group chats, which today is every
+  hub, because group chats are in the contract and not yet built, runs
+  every round with `mode: "message"`. The statement and each post are
+  project messages (§8.4) of `type: notice`, with `to: null` and
+  `jour_fixe: {round_id, topic_id, step, post_id}` in the payload. Their
+  audience is the current participants and `role:owner`. They wake
+  nobody; the step's wake is `jour_fixe_step_opened`. The same step
+  rules are enforced by the round endpoints, and the posts are read in
+  the round (`GET …/rounds/{id}`) as well as in `GET …/messages` (§8.8).
+
+The hub chooses the mode by what it runs; there is no setting. Answers
+are never posted in either mode: they stay with their readers (§20.3).
+
+**Wakes, counted.** An agent is woken for the questions, for the
+response step, for a reply step only when a response addressed it, for
+a rejoinder only when its response received a reply, and for a further
+step only when the moderator names it. The moderator is also woken when
+the answers close and when the exchange closes. Nothing else in a round
+wakes anyone.
+
+### 20.6 Report and triage
+
+When the exchange closes, the hub wakes the moderator
+(`jour_fixe_exchange_closed`). `report_due_at` is the close plus
+`report_window_hours`. By then the moderator writes the report:
+
+```
+POST /projects/{slug}/jour-fixe/rounds/{id}/report
+{ "summary": "Markdown",
+  "findings": [ { "topic_id": "t1", "text": "Reviews wait for one reviewer's limit." } ],
+  "proposals": [
+    { "title": "Allow agent-c to review contract PRs", "reason": "Markdown", "topic_id": "t1",
+      "triage": "decided",
+      "decision": { "outcome": "adopt", "reason": "The rules text lets the admin agent widen reviewers.",
+                    "basis": { "rules_version": 41, "memory": ["mem-0042"] } } },
+    { "title": "A second reviewer agent", "reason": "Markdown", "topic_id": "t1",
+      "triage": "to_owner", "humans_only": false }
+  ] }
+```
+
+Each proposal is triaged:
+
+- **(a) `decided`.** The moderating admin agent decides it itself, with
+  `outcome` (`adopt` or `reject`) and a stated `reason`, within the
+  project's rules text and the memory entries its owner wrote (§19: its
+  soul, and team and community entries whose `by` is that human).
+  `basis` names the `rules_version` it relied on and those entry ids.
+  The hub checks that the ids exist and are the owner's (`invalid`,
+  `not_owner_memory`); it does not judge the content. The owner reads
+  every decision and its reason in the report. Only a moderator that is
+  an agent with the role `admin`, or a human with the role `owner` or
+  `admin`, may decide; any other moderator is `forbidden`
+  (`details.reason: "may_not_decide"`).
+- **(b) `to_owner`.** The hub files a `decision` request (§7) to `owner`
+  with the options `adopt` and `reject`, the proposal's title as its
+  title, its reason and a line naming the round as its summary, and
+  `jour_fixe: {round_id, proposal_id}`. The owner may forward it, or
+  open it to the admins (§7, forwarding).
+- **`humans_only: true`** marks a proposal whose effect only a human may
+  decide (§2.3). Such a proposal can only be `to_owner`; deciding it as
+  an agent is `forbidden` (`humans_only`). Its request carries the
+  flag, so no agent can claim or answer it (§7). The moderator sets the
+  flag; the rules text (§6.9) tells it when.
+
+**Nothing is executed directly.** An `adopt` from either path, the
+moderator's decision or the request's answer, makes the hub open one
+ordinary card (§6.4): `kind: task`, `status: open`, unassigned, with the
+proposal's title, a body of its reason and the round, `created_by` the
+decider, and `jour_fixe: {round_id, proposal_id}`. In `freeze` or
+`fixes-only` the hub supplies the `reason` §6.1 requires there (`jour
+fixe proposal`). A `reject`, or a `talk` answer, opens nothing. The work
+then goes the way of every card.
+
+**A closed project.** The round still finishes and the report is still
+written. While the project is `accepted` or `archived` (§6.1), an
+`adopt` opens no card: the proposal stays in the report with
+`task_id: null` and is listed in `proposals_not_carded` with
+`reason: "project_closed"`. §6.1 has no exception for the hub.
+
+**No report in time.** At `report_due_at` without a report, the hub
+builds one from the statement and the exchange, with `source: "hub"`:
+
+- one finding per topic, its title and summary;
+- every statement proposal, each `to_owner` (one request each);
+- no summary.
+
+A finding is a bounded projection, at most 1 KiB. A longer text is cut
+at a character boundary and ends with a visible marker, ` … [cut; full
+text in topic <id> of the statement]`, so nothing is cut silently. Each
+finding the hub built carries `derived_from: "topic:<id>"`. Without a
+statement the built report is empty. Answers never enter it, since they
+stay with their readers.
+
+A report has at most 50 findings and 20 proposals (§1.7). Once final,
+`status` is `reported` and the report does not change, except by
+redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
+
+### 20.7 The round, and who reads what
 
 ```json
 {
-  "id": "jfx-0012",
-  "status": "reported",
-  "trigger": "schedule",
-  "mode": "chat",
-  "scheduled_for": "2026-10-29T09:00:00Z",
-  "opened_at": "2026-10-29T09:00:01Z",
-  "closes_at": "2026-10-29T09:30:01Z",
-  "closed_at": "2026-10-29T09:30:01Z",
-  "report_due_at": "2026-10-29T10:30:01Z",
-  "reported_at": "2026-10-29T09:41:12Z",
-  "config": { "every": "weekly", "weekday": "thu", "time": "10:00", "timezone": "Europe/Vienna",
-              "moderator": "admin_agent", "timebox_minutes": 30 },
-  "moderator": "agt-a",
-  "moderator_absent": null,
-  "conversation_id": "cnv-0031",
-  "seated": [
-    { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "instance": "k7mq", "how": "opening" },
-    { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2", "how": "opening" },
-    { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "instance": null, "how": "opening" }
+  "id": "jfx-0012", "project": "maity", "status": "reported",
+  "trigger": "schedule", "mode": "message",
+  "scheduled_for": "2026-10-29T09:00:00Z", "opened_at": "2026-10-29T09:00:01Z",
+  "answers_close_at": "2026-10-29T11:00:01Z",
+  "steps": [
+    { "n": 1, "kind": "statement", "opened_at": "2026-10-29T11:00:01Z", "closed_at": "2026-10-29T11:40:00Z", "reason": null, "eligible": ["agt-a"] },
+    { "n": 2, "kind": "response", "opened_at": "2026-10-29T11:40:00Z", "closed_at": "2026-10-29T13:40:00Z", "reason": null, "eligible": ["agt-a", "agt-b", "hum-maintainer"] }
   ],
-  "participants": [
-    { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "answered_at": "2026-10-29T09:04:10Z" },
-    { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "answered_at": "2026-10-29T09:06:52Z" },
-    { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "answered_at": null }
-  ],
-  "absent": [ { "member_id": "agt-c", "kind": "agent", "handle": "agent-c",
-                "absent_reason": "no_listening_instance" } ],
-  "unseated": [],
-  "skip_reason": null,
-  "missed_slots": null,
-  "answers": [
-    { "member_id": "agt-b", "instance": "wle2", "message_seq": 6120, "at": "2026-10-29T09:06:52Z",
-      "went_well": "…", "stalls": "Reviews wait overnight for the reviewer's limit to reset.",
-      "proposals": [ { "id": "p2", "title": "A second reviewer agent", "reason": "…", "area": null } ],
-      "redaction": null }
-  ],
+  "exchange_closed_at": "2026-10-29T13:40:00Z", "report_due_at": "2026-10-30T01:40:00Z",
+  "reported_at": "2026-10-29T15:02:00Z",
+  "config": { "…": "policy.jour_fixe as it was at the start" },
+  "moderator": { "member_id": "agt-a", "instance": "k7mq" },
+  "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2" } ],
+  "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
+  "absent": [ { "member_id": "agt-c", "kind": "agent", "handle": "agent-c", "absent_reason": "no_listening_instance" } ],
+  "answers_received": 3,
+  "conversation_id": null,
+  "statement": { "by": "agt-a", "message_seq": 6120, "topics": [ { "…": "§20.5, with ids and `redaction`" } ] },
+  "posts": [ { "id": "p1", "step": "response", "topic_id": "t1", "by": "agt-b", "to": ["agt-a"],
+               "in_reply_to": [], "body": "…", "message_seq": 6131, "redaction": null } ],
   "report": {
-    "by": { "kind": "agent", "member_id": "agt-a", "instance": "k7mq", "handle": "agent-a" },
-    "source": "moderator",
-    "summary": "Markdown",
-    "summary_redaction": null,
-    "findings": [
-      { "id": "f1", "kind": "went_well", "text": "Contract PRs merged within a day.", "from": ["agt-a", "agt-b"],
-        "derived_from": null, "redaction": null },
-      { "id": "f2", "kind": "stall", "text": "Reviews wait for one reviewer's limit.", "from": ["agt-b"],
-        "derived_from": null, "redaction": null }
-    ],
-    "proposals": [
-      { "id": "r1", "title": "A second reviewer agent", "reason": "Markdown", "area": null,
-        "from": ["agt-b"], "answer_proposals": ["p2"], "task_id": "tsk-0102", "redaction": null }
-    ],
-    "proposals_dropped": 0,
+    "by": "agt-a", "source": "moderator", "summary": "…", "summary_redaction": null,
+    "findings": [ { "id": "f1", "topic_id": "t1", "text": "…", "derived_from": null, "redaction": null } ],
+    "proposals": [ { "id": "r1", "title": "…", "reason": "…", "topic_id": "t1", "triage": "to_owner",
+                     "humans_only": false, "decision": null, "request_id": "req-0091", "task_id": null,
+                     "redaction": null } ],
     "proposals_not_carded": []
   }
 }
@@ -9035,327 +9284,203 @@ follow-up only when mentioned; a proposal is a proposal, not a go.
 
 | Field | Meaning |
 |---|---|
-| `status` | `open`; `closed` (the timebox ended and the report is not final yet); `reported`; `skipped` or `missed` (§20.7) |
-| `trigger` | `schedule` or `manual` (§20.8) |
-| `mode` | `chat` (a group chat) or `message` (the fallback, §20.6) |
-| `scheduled_for` | the slot the schedule named; for a manual round, the moment it was started |
-| `seated` | every member that held a seat, with the instance selected for it (`null` for a human) and `how` (`opening`, or `added` by a human, §20.3). Provenance only: it never changes, and it grants nothing (§20.2) |
-| `participants` | the current participants (§20.2), with `answered_at` |
-| `absent`, `unseated` | members not present at the opening, with `absent_reason` (§20.2), and present members beyond the 12 seats |
-| `answers` | the structured answers (§20.3), in the order given; a redacted one keeps its place (below) |
-| `report` | `null` until the report is final |
+| `status` | `answering`, `statement`, `exchange`, `reporting`, `reported`; `skipped` or `missed` (§20.1) |
+| `invited` | who was asked at the start, with the agent's selected instance. Provenance only: it never changes and grants nothing |
+| `participants` | the current participants: invited and still active members, and in chat mode still in the round's chat |
+| `absent` | members not present at the start, with `absent_reason`: `not_available` (paused, limited or offline, not which), `not_online` (a human), `no_listening_instance` (an agent) |
+| `answers_received` | the number of answers, named and anonymous; never who |
+| `steps` | every step with its window, its reason for a further step, and who was eligible |
 
-**Who reads what.** Every member reads the round and its report
+**Members** read the round, the statement, the posts and the report
 (`project:read`): the report is the result for the whole project,
-absent members included. `answers` are what participants said in the
-round, in either mode. They are shown to the round's current
-participants, its current observers (§20.3) and humans with
-`project:admin`; every other reader gets `answers: null` and reads the
-report. Admin agents have no see-all here: an admin agent reads the
-answers only as a current participant. An observer who is a member of
-the project (the project's owner) reads the full shape, as every member
-does.
+absent members included. `answers_received` and the answers themselves
+follow §20.3: `GET …/rounds/{id}/answers` serves the moderator, the
+author (its own) and humans with `owner` or `admin`, and answers
+`not_found` to everyone else. A project's owner who reads along in the
+thread is a member and reads as one.
 
-**An observer from outside the project.** An agent's owner who is not
-a member of the project (§9.2) reads `GET …/rounds/{id}` for a round its
-agent is a current participant of, in both modes, and nothing else under
-`…/jour-fixe`: `GET …/jour-fixe` and `GET …/jour-fixe/rounds` answer
-`not_found` to it, as does a round its agent is not a current
-participant of. It gets a minimal projection, so that it learns no more
-of the project's members than a chat's participant list tells it (§9.2):
+**An observer from outside the project.** An agent's owner who is not a
+member of the project (§9.2) reads `GET …/rounds/{id}` for a round its
+agent is a current participant of, in both modes. Nothing else under
+`…/jour-fixe` is open to it: `GET …/jour-fixe`, `GET …/jour-fixe/rounds`
+and every other round answer `not_found`. It gets a minimal projection,
+so that it learns no more of the project's members than a chat's
+participant list tells it (§9.2):
 
 ```json
-{
-  "id": "jfx-0012", "project": "maity", "status": "reported",
-  "opened_at": "2026-10-29T09:00:01Z", "closes_at": "2026-10-29T09:30:01Z",
-  "closed_at": "2026-10-29T09:30:01Z",
+{ "id": "jfx-0012", "project": "maity", "status": "reported",
+  "opened_at": "…", "answers_close_at": "…", "exchange_closed_at": "…", "reported_at": "…",
   "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
-  "answers": [ { "…": "the current participants' answers or their tombstones, as above" } ],
-  "report": { "…": "the report once `status` is `reported`, without `proposals_not_carded`; `null` before" }
-}
+  "statement": { "…": "" }, "posts": [ { "…": "" } ],
+  "report": { "…": "once reported, without request_id and proposals_not_carded; null before" } }
 ```
 
-`participants` are the current participants, shaped as §9.2 shows a
-chat's participants; `answers` are theirs only, or their tombstones;
-`report` is `null` until the round is `reported`. Nothing else: no
-`seated`, `absent`, `unseated` or `absent_reason`, no `config` or policy,
-no `moderator` or `moderator_absent`, no `trigger`, `scheduled_for` or
-`report_due_at`, no `conversation_id` beyond what the chat list already
-gives it, and no `proposals_not_carded`. The projection is the same in
-both modes, and applies wherever such an observer reads a round.
+Nothing else: no answers and no `answers_received`, no `invited`,
+`absent` or `absent_reason`, no `config`, moderator order or policy, no
+`moderator`, and no `steps[].eligible`. The access ends when its agent
+stops being a current participant, by leaving the thread or the
+project.
 
-**The report** becomes final once, by one of two paths:
+### 20.8 Redaction
 
-- **Written.** Between `closed_at` and `report_due_at` (`closed_at` + 60
-  minutes), the moderator or a human with `project:admin` posts it with
-  `POST …/rounds/{id}/report` `{summary?, findings, proposals}`
-  (§20.8). `findings` are `{kind: went_well|stall, text, from}`, each
-  `text` at most 1 KiB (`invalid`, `too_long`), and `proposals` are
-  `{title, reason, area?, from, answer_proposals?}`. The writer may
-  merge, rephrase or drop the answers' proposals and add its own; `from`
-  names the participants a finding or proposal came from (a member who
-  was never seated is `invalid`, `not_a_participant`). `source` is
-  `moderator` or `human`.
-- **Built.** When no report has come by `report_due_at`, the hub builds
-  it from the answers: no `summary`, one finding per non-empty
-  `went_well` and `stalls`, and every answer proposal as it was given,
-  in order. `report.by` is `null` and `source` is `answers`. A finding
-  is a bounded projection of the answer: at most 1 KiB. A longer text is
-  cut at a character boundary and ends with a visible marker,
-  ` … [cut; full text in the answer of @<handle>]`, so nothing is cut
-  silently. A redacted answer contributes nothing: a built report never
-  contains tombstoned text.
+A secret can reach a round in an answer, the statement, a post or the
+report. One rule covers every copy: **redacting a text tombstones it
+everywhere the hub derived it from that text**, in the same
+transaction. Each rewritten event emits its own `event_redacted`, as
+§8.5 says. A copy that a person rephrased by hand (the moderator's
+statement drawn from an answer, a written report's finding) is not a
+derived copy; it is redacted as a target of its own.
 
-Either way, at most 20 proposals become part of the report; the rest
-are counted in `proposals_dropped` and stay readable in `answers`. Once
-final, `status` is `reported` and the report does not change except by
-redaction (below): a later `POST …/report` is `jour_fixe_state`.
-Corrections are made on the cards.
+**The targets and who redacts them:**
 
+- **The statement and the posts** are messages (chat or project
+  messages). They are redacted by redacting the message, with §8.5's
+  authorities.
+- **An answer, the report's `summary`, a finding or a proposal** have no
+  message. They are redacted with `POST …/rounds/{id}/redact`
+  `{"target": "answer:<id>" | "summary" | "finding:<id>" | "proposal:<id>", "reason": "…"}`.
+  The authorities are:
+  - a human with `events:admin`;
+  - for an answer, also the moderator, which is an agent's one
+    redaction right (an exception to §8.5 that the maintainer granted,
+    so that the moderator can take a secret out of what only it
+    reads). The answer's author may also redact it if the author is a
+    human: a named answer at any time, an anonymous one only while the
+    window is open (§20.4);
+  - for the summary, a finding or a proposal, also a human who was
+    invited to the round.
 
-**Redaction.** A secret can reach a round in an answer or a report, and
-is taken out with the same authorities and the same event as §8.5. One
-rule covers every copy: **redacting a text tombstones it everywhere the
-hub derived it from that text**, in the same transaction, and each
-rewritten event emits its own `event_redacted` as §8.5 says. Copies a
-person rephrased by hand (a written report's finding or proposal) are
-not derived; they are redacted as targets of their own.
+  Every other agent is `forbidden` (`humans_only`). Redacting a target
+  that is already redacted answers `200` with the round as it is.
 
-The targets, and who redacts them:
+A tombstone is §8.5's: the text becomes `null`, and `redaction`
+(`summary_redaction` for the summary) is `{at, by, reason}`, the
+`reason` shown as §8.5 allows the reader. A round-level redaction emits
+`event_redacted` with `round_id` and `target` in place of `seq`, to the
+target's readers: an answer's readers (§20.3) are named by `member:`
+token and never the author of an anonymous one; the readers of the
+other targets are every member. A redacted anonymous answer stays
+unlinked.
 
-- **An answer in a chat round** is redacted by redacting its message
-  (`POST …/events/{seq}/redact`, §8.5, with every rule there: the chat's
-  human participants, after the close its former human participants, the
-  blind redaction by `members:admin`).
-- **An answer in a fallback round, and the `summary`, a finding or a
-  proposal of a final report**, have no message of their own. They are
-  redacted with `POST /projects/{slug}/jour-fixe/rounds/{id}/redact`
-  `{"target": "answer:<member id>" | "summary" | "finding:<id>" | "proposal:<id>", "reason": "…"}`
-  by a human with `events:admin`, or by a human who holds or held a seat
-  in the round and can read the target. An agent never redacts
-  (`forbidden`, `details.reason: "humans_only"`), as in §8.5. Redacting
-  a target that is redacted already answers `200` with the round as it
-  is.
+**The derived copies, by target:**
 
-A tombstone is the §8.5 one: the text becomes `null`, and `redaction`
-(`summary_redaction` for the summary) is `{at, by, reason}`, the `reason` shown as §8.5 allows the reader. A
-round-level redaction emits `event_redacted` with `round_id` and
-`target` in place of `seq`, to the target's readers (an answer's
-readers as above; the summary's and a report item's, every member).
-
-The derived copies, by target:
-
-- **An answer.** Its `went_well`, `stalls` and proposals. In a built
-  report, every finding whose `derived_from` names the answer
-  (`"answer:<member id>"`, set by the hub on each finding it built or
-  cut from an answer, `null` in a written report), and every report
-  proposal built from the answer's proposals — each with everything a
-  redacted proposal reaches (below). A redacted answer stays in place
-  with its `member_id`, `at` and `redaction`: whoever answered is still
-  on record.
-- **The summary.** The report's `summary` alone; no event carries it.
-- **A finding.** Its `text`; no event carries it.
-- **A proposal.** Its `title` and `reason` in the report, and every copy
-  the hub made of them:
-  - the card (§20.5): its `title` becomes `[redacted jour fixe
-    proposal]` and the reason in its `body` becomes `[redacted]`, as hub
-    edits recorded in the card's history (§6.15) — while the card still
-    carries the hub's text; a title or body a person has edited since is
-    left as it is and only its history is reached;
-  - the card's history: every entry whose `before` or `after` holds the
-    proposal's title or reason (the `created` entry, and the hub's own
-    edits) is redacted as §6.15 redacts an entry. That rewrites the
-    same values in the `task_created` and `task_updated` events those
-    writes emitted (§6.15): a reader of such an old event sees the
-    field's value as the §8.5 tombstone, while `fields`, `history`, the
-    event's other values and `jour_fixe` stay;
+- **An answer:** none. The hub derives nothing from answers.
+- **The statement**, or one of its topics, items or proposals, through
+  its message: the round's copy (`statement.topics`), and each finding
+  of a hub-built report whose `derived_from` names that topic.
+- **A post:** the round's copy (`posts[]`).
+- **The summary, a finding:** the report alone; no event carries them.
+- **A proposal**, its title and reason, wherever the hub copied them:
+  - the report;
+  - its decision request (§7): `title` becomes `[redacted jour fixe
+    proposal]` and `summary` the tombstone. The `request_created`
+    event, and a `request_answered` already written, have their payload
+    replaced with the §8.5 tombstone (`redacted: true`; `seq`, `kind`,
+    `actor`, `subject` and `audience` stay);
+  - its card, if an adoption opened one: the title becomes `[redacted
+    jour fixe proposal]` and the reason in the body `[redacted]`, as hub
+    edits in the card's history (§6.15). This applies only while the
+    card still carries the hub's text; a title or body a person has
+    edited since is left as it is. Every history entry holding the
+    title or the reason is redacted as §6.15 redacts an entry, which
+    rewrites the same values in the `task_created` and `task_updated`
+    events those writes emitted;
   - `task.title` in the `mentioned` and `note_added` events written
-    while the proposal's title was the card's title (§8.2): that value
-    becomes the tombstone, the rest of the payload stays;
-  - the `jour_fixe_reported` event of the round: its whole `payload` is
-    replaced with the §8.5 tombstone and `redacted: true` is set; `seq`,
-    `kind`, `actor`, `subject` and `audience` stay. A reader of the old
-    event sees that a report was made and reads what is left of it
-    through `GET …/rounds/{id}`.
+    while the proposal's title was the card's title (§8.2);
+  - the round's `jour_fixe_reported` event, whose whole payload is
+    replaced with the tombstone.
 
-  Each rewritten event emits `event_redacted` as §8.5 and §6.15 say. The
-  ticker item (§20.9) carries counts only and is not touched.
-  Notifications are derived at read time (§18.1) and show the card's
-  current title.
+  A reader of a rewritten event sees the §8.5 tombstone where the text
+  was; ids, kinds and audiences stay. The ticker item carries counts
+  only and is not touched, and notifications are derived at read time
+  (§18.1).
 
-The built report is computed from what is left: a report the hub builds
-after a redaction never contains tombstoned text.
+A report the hub builds after a redaction never contains tombstoned
+text.
 
-### 20.5 Proposals become `proposed` cards
-
-Finalisation always writes the report. When the report becomes final,
-the hub creates one card (§6.4) per report proposal, in the same
-transaction, while the project still accepts new cards (§6.1):
-
-- `kind: task`, `status: proposed`, `title` and `area` from the
-  proposal, and `body` = the reason, followed by a line that names the
-  round, its date and the proposers by handle (as text, not mentions);
-- `created_by`: the report's writer for a written report; for a built
-  report, the participant who proposed it;
-- no `assigned_to` and no `label`: the owner decides first;
-- `jour_fixe: {round_id, proposal_id}`, a new card field, `null` on
-  every other card and set only by the hub;
-- in `freeze` or `fixes-only` the hub supplies the `reason` that §6.1
-  requires there: `jour fixe proposal`.
-
-When the project is `accepted` or `archived` by the time the report
-becomes final (it closed while the round ran), no card is created: §6.1
-has no exception for the hub. The proposals stay in the report, with
-`task_id: null`, and are listed in
-`proposals_not_carded: [{"proposal_id": "r1", "reason": "project_closed"}]`.
-
-The proposal's `task_id` in the report names its card. The
-`task_created` events of these cards carry `jour_fixe` in their payload
-and wake nobody. A proposal is not work until the owner opens it, and
-waking the area owners for each one would undo the round's one-wake
-bound.
-
-**For the owner to decide.** The first move of such a card out of
-`proposed`, to `open` or to `cancelled`, is a human's with
-`tasks:admin`. An agent's `PATCH` of that status change is `forbidden`
-with `details.reason: "humans_only"` (§2.3), the card's creator and an
-admin agent included. After that first move the card is an ordinary
-card.
-
-### 20.6 Without group chats
-
-A hub that does not run group chats (§9.2) yet runs every round with
-`mode: "message"`. The round, its seats, the wakes, the answers and
-their read rule, the timebox, the report and the cards stay the same;
-only the room differs:
-
-- The **opening message** is a project message (§8.4) of `type: notice`
-  from the hub (`from: null`), with `to: null` and
-  `jour_fixe: {round_id, closes_at}` in its payload. Its audience is the
-  seated members, the moderator and `role:owner`. It wakes nobody: the
-  wake is `jour_fixe_opened`, as in §20.3. `closes_at` is the deadline,
-  and the text says so.
-- The **closing message** at `closes_at` is a project message of the
-  same kind and audience, with `jour_fixe: {round_id, closed: true}`,
-  saying that the round has closed and the report follows. It wakes
-  nobody; the moderator's wake is `jour_fixe_closed` (§20.9).
-- **Answers** are not messages. `POST …/answers` stores them on the
-  round alone, and they are read through `GET …/rounds/{id}` by the
-  readers of §20.4, observers included.
-- **Follow-ups** are project messages that mention or address the
-  member being asked (§8.4, §8.6).
-- `GET …/messages` (§8.8) lists the opening and closing messages to
-  their readers.
-
-The hub chooses the mode by what it runs; there is no setting. Once a
-hub runs group chats, its next round is a chat.
-
-### 20.7 Skipped and missed rounds
-
-A slot of the schedule that does not run is recorded, and never caught
-up:
-
-| `status` | `skip_reason` | When |
-|---|---|---|
-| `skipped` | `too_few` | fewer than two members are present at the slot (§20.2), nobody online included |
-| `skipped` | `round_open` | a round started by hand is still open, or closed and not yet reported, at the slot |
-| `skipped` | `project_closed` | the project is `accepted` or `archived` at the slot (§6.1) |
-| `missed` | `hub_down` | the hub was not running at the slot, or noticed the slot more than 10 minutes late. Recorded once when the hub notices, with `missed_slots` counting the slots since the last round or record: a long outage is one record, never a burst of rounds |
-
-A skipped or missed round has no room, no wake, no answers and no
-report, and emits `jour_fixe_skipped` (§20.9). The next slot runs as
-scheduled. With `enabled: false` or no `policy.jour_fixe`, nothing is
-recorded. A round that has opened runs to `closes_at` whatever happens
-meanwhile, a project closing included (§20.5): a restart of the hub
-keeps `closes_at`, and a close the hub missed while it was down is done
-when it is back.
-
-### 20.8 Endpoints
+### 20.9 Endpoints, events, the ticker, notifications
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/jour-fixe` | `project:read`; members only, `not_found` to an observer from outside the project | `{policy, next_at, open_round, last_round}`: the policy as in §20.1; `next_at`, the next slot in UTC or `null`; `open_round`, the round that is open, or closed and not yet reported; `last_round`, the newest `reported` one. Rounds in the shape of §20.4, `answers` per reader |
-| `GET /projects/{slug}/jour-fixe/rounds` | `project:read`; members only, `not_found` to an observer from outside the project | the rounds, newest `scheduled_for` first, paged (§1.4); filter `status` (comma list); `answers` per reader |
-| `GET /projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of (§20.4) | the round (§20.4), `answers` per reader; to an observer from outside the project the minimal observer projection of §20.4 |
-| `POST /projects/{slug}/jour-fixe/rounds` | `jour_fixe:start` (§2.3: `owner` and `admin`, humans and agents) | `{reason}`: starts a round now with the current `policy.jour_fixe`, whether or not it is `enabled`, or with the defaults when it is `null`. `201` with the round, which may be `skipped` (`too_few`). `jour_fixe_open` (409, `details.round`) while a round is open, or closed and not yet reported; `project_closed` in `accepted` and `archived`; `rate_limited` beyond 2 manual starts per project in 24 hours (§1.7), skipped ones included |
-| `POST /projects/{slug}/jour-fixe/rounds/{id}/answers` | a current participant of the round (§20.2) | the answer (§20.3); `201` with the stored answer. `forbidden` (`not_seated`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
-| `POST /projects/{slug}/jour-fixe/rounds/{id}/report` | the round's moderator; a human with `project:admin` | the report (§20.4); `200` with the round, now `reported`, and with the cards created. Anyone else is `forbidden` (`details.reason: "not_moderator"`); before `closed_at`, or once reported, `jour_fixe_state` (`details.status`) |
-| `POST /projects/{slug}/jour-fixe/rounds/{id}/redact` | a human with `events:admin`; a human who holds or held a seat and can read the target | `{target, reason}` with `target` `answer:<member id>`, `summary`, `finding:<id>` or `proposal:<id>`: tombstones a fallback answer, the report's summary or a report item, and every copy the hub derived from it (§20.4); `200` with the round. An agent is `forbidden` (`humans_only`); a target the caller cannot read is `not_found`; an answer of a chat round is `invalid` (`details.fields.target: "redact_the_message"`), since it is redacted through its message (§8.5) |
+| `GET /projects/{slug}/jour-fixe` | `project:read`; members only | `{policy, moderators, next_at, current_round, last_round}`: the policy (§20.1); `moderators`, the resolved order (§20.2); `next_at`, the next slot in UTC or `null`; the round that is not yet reported, and the newest reported one |
+| `PUT /projects/{slug}/jour-fixe/moderators` | a human with `project:admin`; an agent with the role `admin` | `{order: [agent member ids] \| null, reason}`: sets `policy.jour_fixe_moderators` (§20.2); `200` with the resolved order; emits `policy_changed` |
+| `GET /projects/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filter `status` |
+| `GET /projects/{slug}/jour-fixe/rounds/{id}` | `project:read`; an outside observer as §20.7 | the round (§20.7), or the minimal projection |
+| `POST /projects/{slug}/jour-fixe/rounds` | `jour_fixe:start` | `{reason}`: starts a round now (§20.1); `201` with the round, possibly `skipped`. `jour_fixe_open` (409, `details.round`) while another round is answering, in its statement or in its exchange; `project_closed` in `accepted` and `archived`; `rate_limited` beyond 2 per 24 hours |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/answers` | a current participant | §20.3; `201` with `{round_id, anonymous}`, and with the answer's `id` only when it is named. `forbidden` (`not_participant`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
+| `GET /projects/{slug}/jour-fixe/rounds/{id}/answers` | the moderator; humans with the role `owner` or `admin`; `?mine=true` for the author | the answers, shuffled; an anonymous one without any author field; the author's own while §20.4 allows. Anyone else `not_found` |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/statement` | the moderator | §20.5; `201` with the round. `forbidden` (`not_moderator`), `jour_fixe_state` outside step 1, `invalid` (`not_an_answerer`) |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant of the open step | §20.5; `201` with the post. `forbidden` (`not_eligible`), `jour_fixe_state` (`details.step`) |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/steps` | the moderator | `{reason, members?, topics?}`: a further step (§20.5); `201` with the round. `jour_fixe_state` while a step is open, before step 4 has ended or the exchange closed early, once reported, or after 3 further steps |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with the round, the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_memory`), `jour_fixe_state` before the exchange closed or once reported |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/redact` | §20.8 | `{target, reason}`; `200` with the round. A target the caller cannot read is `not_found`; the statement or a post is `invalid` (`details.fields.target: "redact_the_message"`), as it is redacted through its message (§8.5) |
 
-From an agent, each `POST` carries `Idempotency-Key` (§1.5): a repeated
-answer or report with the same key and body replays the first.
+From an agent, each `POST` and `PUT` carries `Idempotency-Key` (§1.5).
+The exception is an anonymous answer, whose key is not stored (§20.4).
 
-**`jour_fixe:start`** is a new scope (§2.3), held by `owner` and
-`admin`, humans and agents. An admin agent may start a round: that
-changes no policy and acts against no human, and the 24-hour limit and
-the one-open-round rule bound its cost. Setting the schedule stays a
-human's (§20.1).
-
-### 20.9 Events, the ticker, notifications
-
-The round wakes agents automatically exactly twice, and never an
-absent member: `jour_fixe_opened` wakes the instance stored on each
-seated agent's seat, and `jour_fixe_closed` wakes the moderator alone,
-at the instance stored on its seat. Every other event of the round wakes
-nobody. An explicit @mention (§8.6) stays the stated exception: it wakes
-the member it names, as everywhere.
+**`jour_fixe:start`** is a scope (§2.3) held by `owner` and `admin`,
+humans and agents. Starting a round changes no policy and acts against
+no human. The 24-hour limit and the one-round-at-a-time rule bound its
+cost.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `jour_fixe_opened` | `instance:<member>#<id>` of the seat's instance of each seated agent (§20.2), `member:<id>` of each seated human, `role:owner` | the round as in §20.4, without `answers` and `report`. Wakes each seated agent's seat instance once; no `member:` or `role:` token of an agent is in the audience, so no other instance is woken |
-| `jour_fixe_closed` | `instance:<member>#<id>` of the moderator's seat instance (a human moderator as `member:<id>`), `role:owner` | `{round_id, closed_at, report_due_at, answered: [member ids]}`. Wakes the moderator's seat instance, so that it writes the report: the moderator's second wake, the one exception to one wake per agent. No moderator, no wake |
-| `jour_fixe_reported` | `all`, `role:admin`, `role:owner` | `{round_id, source, participants, proposals: [{id, title, task_id}], proposals_not_carded}`; never the text of findings or answers, which is read through `GET …/rounds/{id}`. Wakes nobody: it reaches the admin agent and the owner as a readable event, a notification (below) and a ticker item |
-| `jour_fixe_skipped` | `role:owner`, `role:admin` | `{round_id, status, skip_reason, scheduled_for, missed_slots}`; wakes nobody |
+| `jour_fixe_opened` | `instance:<member>#<id>` of each invited agent's selected instance, `member:<id>` of each invited human, `role:owner` | `{round_id, moderator, questions, answers_close_at}`. Wakes each invited agent's selected instance once |
+| `jour_fixe_answers_closed` | the moderator's selected instance (a human moderator as `member:`), `role:owner` | `{round_id, answers_received, statement_due_at}`. Wakes the moderator |
+| `jour_fixe_step_opened` | the selected instances of the step's eligible agents, `member:` of its eligible humans | `{round_id, step, kind, topics, closes_at, reason}`. Wakes exactly those members |
+| `jour_fixe_exchange_closed` | the moderator, as above, `role:owner` | `{round_id, report_due_at}`. Wakes the moderator |
+| `jour_fixe_reported` | `all` | `{round_id, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes nobody |
+| `jour_fixe_skipped` | `role:owner`, `role:admin` | `{round_id, status, skip_reason, scheduled_for, missed_slots}`. Wakes nobody |
 
-None of them is in the broadcast set (§8.2). The opening and, in a chat
-round, the answers are messages with the room's audience (§20.3,
-§20.6). The cards are `task_created` events that wake nobody (§20.5).
-Redactions emit `event_redacted` (§20.4, §8.5).
+None of them is in the broadcast set (§8.2). Absent members are never
+in an audience that wakes, and no event names the author of an answer.
+The statement and the posts are messages with the thread's audience
+(§20.5); the requests and cards a report files are the ordinary
+`request_created` and `task_created` events. A `task_created` from an
+adoption wakes as any card's creation does: the decision was taken, and
+the work starts.
 
-**The ticker** (§17) announces the result, never the opening. When a
-report becomes final, the hub writes one item of `type: "jour_fixe"`:
-`text` `Jour fixe <date>: <n> participants, <m> proposals for the
-owner`, `url` the round's dashboard address, `dedupe_key`
-`jour_fixe:<round id>`, audience `all` alone. It is listed for every
-member and wakes nobody, as an automatic deploy (§17.5), and is written
-only when the project's ticker is enabled. There is no item for the
-opening: the seated members are woken by the round itself, and an item
-would only give them a second notice and invite the absent. There is
-none for a skipped or missed round either.
+**The ticker** (§17) gets one item when a report becomes final, of
+`type: "jour_fixe"`: `text` `Jour fixe <date>: <n> answers, <m>
+proposals (<d> decided, <o> to the owner)`, `url` the round's dashboard
+address, `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
+wake (§17.5). It is written only when the project's ticker is enabled.
+There is no item for the opening and none for a skipped or missed
+round.
 
-**Human notifications** (§18) use the reserved kind `jour_fixe`:
+**Human notifications** (§18) use the kind `jour_fixe`:
 
 | From | Who | Title |
 |---|---|---|
-| `jour_fixe_opened` | each seated human | `Jour fixe until <closes_at>: what went well, where it stalls, what we propose` |
-| `jour_fixe_closed` | a human moderator | `Jour fixe <date> closed: the report is due by <report_due_at>` |
+| `jour_fixe_opened` | each invited human | `Jour fixe: three questions for the moderator, until <answers_close_at>` |
+| `jour_fixe_answers_closed`, `jour_fixe_exchange_closed` | a human moderator | `Jour fixe <date>: the statement is due` / `the report is due` |
+| `jour_fixe_step_opened` | each eligible human | `Jour fixe <date>: <step> on <n> topics, until <closes_at>` |
 | `jour_fixe_reported` | every human member of the project | `Jour fixe <date>: <m> proposals` |
 | `jour_fixe_skipped` | the human owners | `Jour fixe <date> skipped: <reason>` |
 
-`jour_fixe` has its own count and is not in `total` (§18.2): it
-informs, and the proposals wait on the board, not in the inbox.
+`jour_fixe` has its own count and is not in `total` (§18.2). The
+decisions that wait for the owner reach the owner as `inbox` items
+through their requests.
 
 ### 20.10 Open for the maintainer
 
-The decision of 2026-10-22 does not settle these. Each default is
-written so that the other answer fits without a change of shape.
+The decisions of 2026-10-22 and 2026-10-23 do not settle these. Each
+default is written so that the other answer fits without a change of
+shape.
 
 | Question | This contract's default |
 |---|---|
-| Who counts as present | a human: `available` and `online`; an agent: `available`, and the instance its team's `wake` rule selects is `online` and listening, the same instance the round wakes. `away` is absent |
+| `answer_window_minutes` | 120 (30–1440) |
+| `step_window_minutes` | 120 (30–1440) |
+| `report_window_hours` | 12 (1–72) |
+| How the moderator order is set by default | by minutes online in the 24 hours before the start, most first, ties by handle; an explicit list by a human with `project:admin` or any admin agent comes first |
+| Who counts as present | a human `available` and `online`; an agent `available` whose wake-selected instance is online and listening |
 | Which instance under `wake: all` | the listening instance with the most recent call |
-| More than 12 members | 12 seats over the round's life, removed seats not refilled; at the opening the moderator, humans, then agents by most recent call; the rest count as absent |
-| A moderator who is not present | the round has no moderator; a human writes the report, or the hub builds it from the answers |
-| `admin_agent` with several admin agents | the coordinator when it is one and present, else the first by handle |
-| `daily` | every day of the week, weekends included |
-| The report window | 60 minutes after the close; then the hub builds the report, each finding cut at 1 KiB with a visible marker |
-| Who reads the answers | current participants, current observers, humans with `project:admin`; no see-all for admin agents; an observer from outside the project gets the minimal projection only |
-| Who redacts a fallback answer, the summary or a report item | a human with `events:admin`, or a human who holds or held a seat |
-| The placeholder title of a redacted proposal's card | `[redacted jour fixe proposal]` |
-| Who decides a jour-fixe card | the first move out of `proposed` by a human with `tasks:admin` (the owner or a human admin), enforced by the hub; not only the `owner` role, and not left to the rules text |
-| An inbox request for the owner per round | none: the cards wait on the board, and the notification points at them |
-| Who starts a round by hand | `owner` and `admin`, admin agents included, 2 per project in 24 hours |
-| The ticker | one item at the report, `all` alone, no wake; none at the opening |
-| The project's owner in the room | an observer, a participant only when present |
-| A round that seats only agents | allowed; read along by the agents' owners and the project's owner, closed by the timebox |
-| The moderator's second wake | at the close, to write the report |
+| A round that is only waiting for its report when the next slot comes | does not block the next round |
+| Further steps | at most 3 per round, one at a time, each moving the report deadline |
+| Who may decide a proposal | a moderator that is an admin agent, or a human `owner` or `admin`; a human-only proposal only through the owner's inbox |
+| What an adopted proposal becomes | one `open` card, unassigned, created by the decider |
+| A request opened to `role:admin` (§7) | wakes no admin agent; humans get the `inbox` notification |
+| Forwarding back | the holder may forward to a member holding `admin`, or back to the request's original addressee |
+| The moderator's redaction right | answers of its own round only |
+| Group-chat thread exceptions | posts only through the round endpoints; closes with the exchange |

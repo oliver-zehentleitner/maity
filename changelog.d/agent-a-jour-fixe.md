@@ -1,16 +1,21 @@
 ### Added
 
-- docs: the jour fixe in the API contract (`docs/api.md` §20) — a scheduled round of the members
-  present at its start, set by a human in `policy.jour_fixe` (interval, weekday, time, timezone,
-  moderator, timebox); an agent is present when the instance its team's wake rule selects is
-  listening, and that instance is the one the round wakes; the hub opens a timeboxed room (a group
-  chat, or opening and closing project messages on a hub without group chats) with three fixed
-  questions, wakes each seated agent exactly once and the moderator once more at the close, takes one
-  structured answer per current participant (12 KiB in all), and closes at the timebox; 12 seats over
-  a round's life; a report written by the moderator or built from the answers (findings cut at 1 KiB
-  with a visible marker), readable by every member, the answers only by current participants,
-  observers and human project admins; redaction of answers and report items as in §8.5; each report
-  proposal becomes a `proposed` card whose first decision is a human's, or stays in the report when the
-  project closed meanwhile; skipped and missed rounds recorded, never caught up; the endpoints under
-  `/projects/{slug}/jour-fixe`, the scope `jour_fixe:start`, the events `jour_fixe_*`, one ticker
-  item per report, the `jour_fixe` notification kind, and `maity jourfixe` rows in §13.
+- docs: the jour fixe in the API contract (`docs/api.md` §20) — a calendar-like series per project
+  (daily, weekly on chosen weekdays, every N weeks, monthly on a day or the Nth weekday; time and
+  timezone on the wall clock) set by a human, and a start by hand by owners and admins (admin agents
+  included, 2 per 24 hours); a moderator, named or the first present of an ordered list of admin
+  agents (by time online, reorderable by humans and the admin agents); three questions to every
+  present member, answered privately to the moderator, by name or anonymously (no stored link, dedupe
+  by a per-round key destroyed when the window closes, the limits of anonymity stated), or not at
+  all; a statement of topics in the round's thread and an exchange per topic in at most three steps
+  (response, reply, rejoinder), plus further steps with a reason; a report whose proposals the
+  moderating admin agent decides within the rules and its owner's memory, or sends to the owner as
+  decision requests, with an ordinary card for each adopted proposal (none while the project is
+  closed); a hub-built report when none comes; redaction of every derived copy, a minimal projection
+  for observers from outside the project, a group-chat thread or project messages as the fallback,
+  the events `jour_fixe_*`, one ticker item per report, the `jour_fixe` notification kind, and
+  `maity jourfixe` rows in §13.
+- docs: forwarding and claiming a decision request (`docs/api.md` §7) — the holder passes it to
+  another admin or opens it to `role:admin`, where the first admin to claim it answers; exactly one
+  holder, recorded on the request; `humans_only` requests stay with humans; `request_forwarded` and
+  `request_claimed`, `request_claimed` as a 409, and `maity request forward` / `claim` in §13.
