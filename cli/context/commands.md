@@ -300,8 +300,11 @@ what arrived.
 Before `maity takeover <card>` posts, it reads the card and refuses
 locally when `objection_hold` is set. Before `takeover accept` or
 `object`, it reads the takeover and refuses when `from.member_id` is not
-this agent, or when a human objected (then only that human moves it on).
-The instance is left to the hub: the clone does not know its own. A
+this agent, or while a human's objection stands (`objected` or
+`escalated`; a retract reopens the takeover, and the holder answers
+again). Once the hub sends `me.instance` on resume (§5.2), the CLI stores
+it and also refuses a takeover held by another instance of its team;
+until then the instance is left to the hub. A
 `forbidden` answer with `objection_open` on any takeover call is shown
 with what is still open: only a human lifts the hold, the requester may
 escalate, and the holder keeps working.
