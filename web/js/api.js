@@ -264,6 +264,25 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  function eventsOf(slug) {
+    const all = fixtures();
+    if (!all[slug + "/events.json"]) all[slug + "/events.json"] = { items: [] };
+    return all[slug + "/events.json"].items;
+  }
+  const nextLogSeq = (log) => Math.max(9000, ...log.map((e) => e.seq)) + 1;
+  // §8.2's readable set: the audience by all, member or role, one's own
+  // events; owners and admins every event but a conversation's, which only
+  // its audience reads. "_conversation" is the fixture's note of what the
+  // hub stores and the event no longer shows once redacted; never served.
+  function readable(slug, e) {
+    const meId = me().member.id;
+    const role = roleIn(slug);
+    if (e.actor && e.actor.member_id === meId) return true;
+    const named = (e.audience || []).some((t) => t === "all" || t === "member:" + meId || t === "role:" + role);
+    if (e._conversation) return (e.audience || []).includes("member:" + meId);
+    return named || ["owner", "admin"].includes(role);
+  }
+  const served = (e) => JSON.parse(JSON.stringify(e, (k, v) => (k.startsWith("_") ? undefined : v)));
   // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
   const ATTACHMENT_MAX = 10 * 1024 * 1024;
   function attachmentsOf(slug) {
@@ -650,12 +669,17 @@ window.Maity = window.Maity || {};
       }
       return p;
     }],
-    // Fixture mode has no other writers: the log stays empty and the head
-    // is 0.
+    // The log in fixture mode: fixtures/<slug>/events.json, the project
+    // messages there and the ones posted in this tab (§8.3, oldest first).
     ["GET", /^\/projects\/([^/]+)\/events$/, (m, body, path, query) => {
       project(m[1], path);
+      const log = eventsOf(m[1]);
+      const head = log.length ? log[log.length - 1].seq : 0;
       const after = query.get("after");
-      return { items: [], cursor: after === "latest" ? 0 : Number(after || 0), server_time: nowIso(), superseded: false };
+      if (after === "latest") return { items: [], cursor: head, server_time: nowIso(), superseded: false };
+      const limit = Math.min(200, Number(query.get("limit") || 50));
+      const items = log.filter((e) => e.seq > Number(after || 0) && readable(m[1], e)).slice(0, limit).map(served);
+      return { items, cursor: items.length ? items[items.length - 1].seq : Math.max(head, Number(after || 0)), server_time: nowIso(), superseded: false };
     }],
     // §8.4: a message. The fixture resolves mentions as §8.6 says (a word
     // boundary, members only, never in code, no group mentions) and keeps
@@ -686,9 +710,15 @@ window.Maity = window.Maity || {};
         mentions.push({ member_id: hits[0].id, handle: x[2], field: "body", offset: Array.from(text.slice(0, at)).length, length: x[2].length + 1 });
       }
       if (new Set(mentions.map((x) => x.member_id)).size > 10 || mentions.length > 50) fail(400, "invalid", "too many mentions", path, { fields: { body: "too_many_mentions" } });
-      const files = bindAttachments(m[1], body.attachments, 9000, path);
-      return { seq: 9000, kind: "message", at: nowIso(), actor: { member_id: me().member.id },
+      const log = eventsOf(m[1]);
+      const seq = nextLogSeq(log);
+      const files = bindAttachments(m[1], body.attachments, seq, path);
+      const event = { seq, kind: "message", at: nowIso(), actor: { kind: "member", member_id: me().member.id }, subject: body.task_id ? { type: "task", id: body.task_id } : null,
+        audience: [body.to === "all" ? "all" : body.to.startsWith("role:") ? body.to : "member:" + body.to], redacted: false,
         payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
+      // A chat lives in its conversation; a project message in the log.
+      if (body.type !== "chat") log.push(event);
+      return event;
     }],
     ["GET", /^\/projects\/([^/]+)\/requests$/, (m, body, path, query) => {
       const keep = statusFilter(query, "open");
@@ -1139,6 +1169,13 @@ window.Maity = window.Maity || {};
       if (!allowed) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       Object.assign(a, { deleted_at: nowIso(), deleted_by: meId, deleted_reason: "deleted" });
       delete attachmentBlobs[m[1] + "/" + a.id];
+      // A project message's file: the log says so to the message's audience (§8.2).
+      const log = eventsOf(m[1]);
+      const owner = log.find((e) => e.seq === a.message_seq);
+      if (owner) {
+        log.push({ seq: nextLogSeq(log), kind: "attachment_deleted", at: nowIso(), actor: { kind: "member", member_id: meId }, subject: null,
+          audience: owner.audience.slice(), redacted: false, payload: { attachment_id: a.id, message_seq: a.message_seq, reason: "deleted", by: meId } });
+      }
       return Object.assign({}, a);
     }],
     // §9.3: the direct conversations and the group chats, newest first; with
@@ -1303,6 +1340,19 @@ window.Maity = window.Maity || {};
       let direct = null;
       Object.values(chats).forEach((c) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; chat = c; } });
       if (!msg) Object.entries(file(m[1], "conversations.json", path)).forEach(([agentId, c]) => { const x = c.items.find((y) => y.seq === seq); if (x) { msg = x; direct = agentId; } });
+      // A project message (§8.4): events:admin, owner or admin; the payload becomes the tombstone.
+      const logged = !msg && body.expect === undefined ? eventsOf(m[1]).find((e) => e.seq === seq) : null;
+      if (logged) {
+        if (!admin) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
+        if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+        attachmentsOf(m[1]).filter((a) => a.message_seq === seq && !a.deleted_at)
+          .forEach((a) => Object.assign(a, { deleted_at: nowIso(), deleted_by: meId, deleted_reason: "redacted" }));
+        Object.assign(logged, { redacted: true, payload: { redacted: true, reason: body.reason, by: meId, at: nowIso() } });
+        const log = eventsOf(m[1]);
+        log.push({ seq: nextLogSeq(log), kind: "event_redacted", at: nowIso(), actor: { kind: "member", member_id: meId }, subject: null,
+          audience: ["role:owner", "role:admin"], redacted: false, payload: { seq, reason: body.reason } });
+        return served(logged);
+      }
       // expect (#206): only a closed group chat's message, else nothing changes.
       if (body.expect !== undefined && !(chat && chat.view.closed_at)) fail(400, "invalid", "not a closed group chat's message", path, { fields: { expect: "mismatch" } });
       if (!msg) fail(404, "not_found", "Not found", path);

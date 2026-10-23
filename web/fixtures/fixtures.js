@@ -239,6 +239,27 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/attachments.json": {
+    "items": [
+      {
+        "deleted_at": null,
+        "deleted_by": null,
+        "deleted_reason": null,
+        "expires_at": null,
+        "height": null,
+        "id": "att-0901",
+        "kind": "file",
+        "message_seq": 6005,
+        "name": "exchange.log",
+        "sha256": "fixture",
+        "size": 4210,
+        "type": "text/plain",
+        "uploaded_at": "2026-10-22T10:29:00Z",
+        "uploaded_by": "agt-b",
+        "width": null
+      }
+    ]
+  },
   "maity/conversations.json": {
     "agt-a": {
       "cursor": 4202,
@@ -383,6 +404,142 @@ window.MAITY_FIXTURES = {
       "items": [],
       "next_cursor": null
     }
+  },
+  "maity/events.json": {
+    "items": [
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-a"
+        },
+        "at": "2026-10-22T09:00:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "message",
+        "payload": {
+          "attachments": [],
+          "body": "Contract §8.7 is merged. @maintainer the dashboard part is next.",
+          "conversation_id": null,
+          "mentions": [
+            {
+              "field": "body",
+              "handle": "maintainer",
+              "length": 11,
+              "member_id": "hum-maintainer",
+              "offset": 30
+            }
+          ],
+          "task_id": null,
+          "to": "all",
+          "type": "notice"
+        },
+        "redacted": false,
+        "seq": 6001,
+        "subject": null
+      },
+      {
+        "_conversation": "agt-b",
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T09:40:00Z",
+        "audience": [
+          "member:agt-b",
+          "member:hum-maintainer"
+        ],
+        "kind": "message",
+        "payload": {
+          "at": "2026-10-22T09:45:00Z",
+          "by": "hum-maintainer",
+          "reason": "a token in the chat",
+          "redacted": true
+        },
+        "redacted": true,
+        "seq": 6003,
+        "subject": null
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T10:30:00Z",
+        "audience": [
+          "member:hum-maintainer"
+        ],
+        "kind": "message",
+        "payload": {
+          "attachments": [
+            {
+              "height": null,
+              "id": "att-0901",
+              "kind": "file",
+              "name": "exchange.log",
+              "size": 4210,
+              "type": "text/plain",
+              "width": null
+            }
+          ],
+          "body": "Handing the credential exchange over; the log is attached.",
+          "conversation_id": null,
+          "mentions": [],
+          "task_id": "tsk-0004",
+          "to": "hum-maintainer",
+          "type": "handover"
+        },
+        "redacted": false,
+        "seq": 6005,
+        "subject": {
+          "id": "tsk-0004",
+          "type": "task"
+        }
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-c"
+        },
+        "at": "2026-10-22T11:15:00Z",
+        "audience": [
+          "role:owner"
+        ],
+        "kind": "message",
+        "payload": {
+          "attachments": [],
+          "body": "The CLI release waits for the PyPI token.",
+          "conversation_id": null,
+          "mentions": [],
+          "task_id": null,
+          "to": "role:owner",
+          "type": "blocker"
+        },
+        "redacted": false,
+        "seq": 6009,
+        "subject": null
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T12:00:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "message",
+        "payload": {
+          "at": "2026-10-22T12:05:00Z",
+          "by": "hum-maintainer",
+          "reason": "pasted a token",
+          "redacted": true
+        },
+        "redacted": true,
+        "seq": 6012,
+        "subject": null
+      }
+    ]
   },
   "maity/group-chats.json": {
     "cnv-0007": {

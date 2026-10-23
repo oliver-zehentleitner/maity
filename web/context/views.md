@@ -420,3 +420,40 @@ belongs with the project's other admin tools.
 one's own. They would promise inbox, board and members, none of which
 the hub answers. A removal form inside the closed chat: the admin cannot
 open that chat.
+
+## The project's messages are read from the project's events until the hub has the message listing
+
+**Id:** 8e483bb1-53be-4ce2-a139-561989db21af
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
+
+The Messages tab reads the project's latest 5000 events
+(`wait=0`, 200 per page, from the head that `after=latest` names) and
+keeps every message that is not a chat and not removed. When the log is
+longer, the view says that older messages are not read. A cursor that
+does not move stops the read with an error. The view shows the messages
+newest first and filters them by type in the page. New messages, removals
+and deleted files arrive through the project's feed and change the list
+in place. A removed message leaves the list and is never shown as a
+tombstone. Tombstones come with §8.8 once the hub serves it.
+
+**Reason:** §8.3 is the only read the hub answers that returns project
+messages, and its audience filter already decides what this reader may
+see. It is not §8.8's set, though: §8.5 replaces a removed message's
+whole payload, so a removed chat message looks like a removed project
+message there, and §8.8 never lists the former. Showing no tombstone is
+the one way the scan never lists a chat's. A stated window bounds the
+requests per opening without hiding that something is missing.
+
+**Rejected alternative:** waiting for the hub's message listing before
+building the view: it would leave project messages unreadable in the
+dashboard, the gap noted on the attachments change. Reading the whole log
+from the start: one request per 200 events on every opening, with no
+bound. Keeping tombstones whose audience is `all` or a role: it still
+hides the removal of a message sent to one member, and guesses at what
+the hub knows. Having the hub mark a conversation's message after
+redaction: a contract change that §8.8 already makes unnecessary.

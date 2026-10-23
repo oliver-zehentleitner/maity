@@ -754,8 +754,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .attach-button { cursor: pointer; }
 /* The file input is hidden; its label is the button, and shows the input's focus. */
 .attach:has(input[type="file"]:focus-visible) .attach-button { outline: 2px solid var(--accent); outline-offset: 2px; }
-.attach-pending, .attach-list, .attach-admin { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.attach-pending li { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
+.attach-pending, .attach-earlier, .attach-list, .attach-admin { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.attach-earlier-box p { margin: 6px 0 4px; font-size: 0.85rem; }
+.attach-pending li, .attach-earlier li { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
 .attach-list { margin-top: 4px; flex-direction: column; }
 .attach-item { display: grid; gap: 2px; }
 .attach-image { max-width: min(360px, 100%); height: auto; border-radius: 4px; border: 1px solid var(--border); }

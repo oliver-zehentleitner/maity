@@ -109,9 +109,10 @@ window.Maity = window.Maity || {};
       try {
         earlier = (await M.api.getAll(ctx.base + "/attachments?status=pending&uploaded_by=" + encodeURIComponent(ctx.me.id))).items;
       } catch (err) {
-        // A hub without attachments, or none to read: nothing to offer.
         earlier = [];
+        // A hub without attachments has nothing to offer; any other failure is said.
         if (err.status === 404 || err.status === 405) hubWithout = true;
+        else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
     };
@@ -131,6 +132,8 @@ window.Maity = window.Maity || {};
               return;
             }
             pending.splice(pending.indexOf(p), 1);
+            // Deleted on the hub: no longer waiting from before either.
+            earlier = earlier.filter((a) => a.id !== p.att.id);
             draw();
             input.focus();
           },
@@ -184,13 +187,20 @@ window.Maity = window.Maity || {};
     const box = h("ul", { class: "attach-list" });
     atts.forEach((a) => {
       const li = h("li", { class: "attach-item", "data-attachment": a.id });
-      // Deleted here: said, and focus kept on the note.
+      // Deleted here: said, and focus kept on the note. Marked on the
+      // attachment itself, so a later redraw from the same data says it too.
       const gone = () => {
+        a.removed = true;
         clear(li);
         const note = h("span", { class: "muted", tabindex: "-1" }, a.name + ": removed.");
         append(li, note);
         note.focus();
       };
+      if (a.removed) {
+        append(li, h("span", { class: "muted" }, a.name + ": removed."));
+        append(box, li);
+        return;
+      }
       let shown = null;
       const url = M.api.attachmentUrl(ctx.slug, a.id, false);
       if (a.kind === "image" && INLINE_TYPES.includes(a.type) && url) {

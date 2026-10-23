@@ -1526,7 +1526,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   feed = [chatEvent];
   await fireIntervals(); await tick();
   expect(main.querySelectorAll(".msg").length === 4 && text(main).includes("On it."), "a chat event in the feed shows the agent's reply");
-  expect(feedPaths[0] && /after=0&wait=0&limit=200$/.test(feedPaths[0]), "the feed reads from the head with wait=0");
+  expect(feedPaths[0] && /after=\d+&wait=0&limit=200$/.test(feedPaths[0]), "the feed reads from the head with wait=0");
   feed = [chatEvent];
   await fireIntervals(); await tick();
   expect(main.querySelectorAll(".msg").length === 4, "a message seen twice is shown once");
@@ -2424,10 +2424,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(atCalls.slice(-1)[0][0] === "DELETE" && atCalls.slice(-1)[0][1].endsWith("/" + atZ.id) && !atEarlierItem("z.txt"), "attachments: one waiting from before removed");
   btn(atEarlierItem("y.txt"), "Attach").click(); await tick();
   expect(text(main.querySelector(".attach-pending")).includes("y.txt") && !atEarlierItem("y.txt"), "attachments: one waiting from before attached");
+  // Attached, then removed: deleted on the hub, so no longer offered as waiting.
+  btn(atEarlierItem("draft.png"), "Attach").click(); await tick();
+  btn(main.querySelectorAll(".attach-pending li").find((li) => text(li).includes("draft.png")), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!atEarlierItem("draft.png") && !text(main.querySelector(".attach-pending")).includes("draft.png"), "attachments: one attached from before and removed is gone from both lists");
   byId("chat-text").value = "the rest"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   const atRest = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maity/conversations/agt-b/messages").pop();
-  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && atEarlierItem("draft.png") && !main.querySelectorAll(".attach-pending li").length,
-    "attachments: it is sent with the message, the others still wait");
+  expect(atRest[2].attachments.length === 1 && atRest[2].attachments[0] === atY.id && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: it is sent with the message");
   // An image that fails to load: said, its download link kept.
   const atImg = main.querySelectorAll("li.msg").find((li) => li.querySelector("img.attach-image"));
   atImg.querySelector("img.attach-image").dispatch("error");
@@ -2462,6 +2466,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
+  await go("#/p/maity/inbox");
+
+  // Messages (§8.4): the project's messages, newest first, by type, with mentions, files and removal.
+  await go("#/p/maity/messages");
+  const pmTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Messages");
+  const pmItems = () => main.querySelectorAll("ol.project-messages li.pmsg");
+  const pmSeq = (seq) => pmItems().find((li) => li.attrs["data-seq"] === String(seq));
+  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6009,6005,6001"
+    && Number(pmItems()[0].attrs["data-seq"]) > 9000, "messages: a tab with the project's messages, newest first");
+  // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
+  expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
+  const pmHand = pmSeq(6005);
+  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelector("a").getAttribute("href") === "#/p/maity/board"
+    && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
+    "messages: type, sender, addressee, card and its file; an admin deletes the file");
+  expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/p/maity/members/hum-maintainer", "messages: the members it mentions, as links");
+  byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change");
+  expect(pmItems().length === 1 && text(pmItems()[0]).includes("waits for the PyPI token"), "messages: filtered by type");
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change");
+  // A file deleted by someone else arrives with the feed and stays removed on a redraw.
+  await win.Maity.api.del("/projects/maity/attachments/att-0901");
+  await fireIntervals(); await tick(); await tick();
+  expect(text(pmSeq(6005)).includes("exchange.log: removed.") && !pmSeq(6005).querySelector(".attach-meta"), "messages: a file deleted elsewhere is said removed");
+  byId("messages-type").value = "handover"; byId("messages-type").dispatch("change");
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change");
+  expect(text(pmSeq(6005)).includes("exchange.log: removed.") && !btn(pmSeq(6005), "Delete"), "messages: a deleted file does not come back on a redraw");
+  // A new message arrives in place, at the top; the list is not rebuilt.
+  const pmKeep = pmSeq(6001);
+  await win.Maity.api.post("/projects/maity/events", { kind: "message", type: "notice", to: "all", body: "new from the composer" });
+  await fireIntervals(); await tick(); await tick();
+  expect(text(pmItems()[0]).includes("new from the composer") && pmSeq(6001) === pmKeep && text(main.querySelector(".send-status")).includes("1 new message."),
+    "messages: a new message arrives with the feed, at the top, the rest kept in place");
+  // Removing one (§8.5, events:admin): it leaves the list.
+  const pmPrompt = win.prompt;
+  win.prompt = () => "wrong project";
+  btn(pmSeq(6009), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!pmSeq(6009) && text(main.querySelector(".send-status")).includes("Removed.") && pmSeq(6001) === pmKeep, "messages: an admin removes a message with a reason; it leaves the list");
+  win.prompt = pmPrompt;
+  // A removal elsewhere arrives with the feed (event_redacted) and takes the message out.
+  await win.Maity.api.post("/projects/maity/events/6001/redact", { reason: "outdated" });
+  await fireIntervals(); await tick(); await tick();
+  expect(!pmSeq(6001) && pmSeq(6005), "messages: a removal elsewhere takes it out");
+  // The scan reads the latest window and says so; a cursor that does not move fails loud.
+  const pmGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/messages");
+  expect(text(main).includes("Only the messages among the project's latest 5000 events are shown") && text(main).includes("No project messages yet."),
+    "messages: a long log is read from its latest events, and that is said");
+  let pmCalls = 0;
+  win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
+    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 5, kind: "member_joined", payload: {} })), cursor: 5 })) : pmGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/messages"); for (let k = 0; k < 4; k++) await tick();
+  expect(pmCalls === 1 && text(main).includes("did not move"), "messages: a cursor that does not move stops the scan, said");
+  // A member without events:admin: only what it may read, no Remove, Delete only on what it sent.
+  win.Maity.api.get = (p) => (p === "/me" ? pmGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").role = "member"; return x; }) : pmGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/messages");
+  expect(!pmSeq(6009) && pmSeq(6005) && !main.querySelectorAll("ol.project-messages button").some((b) => b.textContent === "Remove"),
+    "messages: a member reads only what is addressed to it, and removes nothing");
+  win.Maity.api.get = pmGet;
   await go("#/p/maity/inbox");
 
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.

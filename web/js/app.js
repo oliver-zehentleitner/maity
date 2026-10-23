@@ -28,6 +28,8 @@ window.Maity = window.Maity || {};
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
+    // Redrawn in place from the feed (js/messages.js).
+    { route: "messages", label: "Messages" },
     // No tab: opened from the inbox and from a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     { route: "join", label: "Join an agent", admin: true },

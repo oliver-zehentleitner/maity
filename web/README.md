@@ -360,6 +360,24 @@ Inside a project, in the order of their importance; see
     link comes from. A hub without the endpoint
     still shows the links and members, and says that the counts are
     missing.
+11. **Messages** (`#/p/<slug>/messages`, `docs/api.md` §8.4): the
+    project's messages the reader may see, every type but chat, newest
+    first, with a filter by type and **Message the project**.
+    - Each says its type, who wrote to whom, the card it is about (linking
+      to the board) and when; the text as Markdown, the members it
+      mentions as links to them, and its files (§8.7: images inline,
+      everything else as a download). The sender or an admin deletes a
+      file.
+    - An owner or admin removes a message with a reason (§8.5); it leaves
+      the list. No removed message is shown while the view reads the
+      events: there a removed chat message cannot be told from a removed
+      project message.
+    - The hub has no message listing yet (§8.8 is in the contract): the
+      view reads the project's latest 5000 events with `wait=0`, page by
+      page, and keeps the messages; when the log is longer it says older
+      ones are not read. A cursor that does not move stops the read with
+      an error. New messages, removals and deleted files arrive with the
+      project's feed and change the list in place.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -795,6 +813,7 @@ web/
 ├── js/join.js        (7) join an agent
 ├── js/why.js         (8) why: the Keep the Why export
 ├── js/overview.js    (10) overview: the project at a glance
+├── js/messages.js    (11) the project's messages, by type
 ├── js/new-project.js create a project; the empty state
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
