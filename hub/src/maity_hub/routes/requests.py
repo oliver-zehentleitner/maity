@@ -10,7 +10,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, and_, insert, or_, select, update
 
 from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
 from maity_hub import tables as t
@@ -415,6 +415,13 @@ def _locked(conn: Connection, mine: Membership) -> Membership:
     from dataclasses import replace
 
     return replace(mine, project=lock_project(conn, mine.project.id))
+
+
+def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
+    """The caller's membership read again after the project lock: a demotion or a removal
+    that commits first is never overtaken (as #271 and #283)."""
+    lock_project(conn, membership(conn, caller, slug).project.id)
+    return membership(conn, caller, slug)
 
 
 def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
@@ -876,6 +883,30 @@ def _step(
     ]
 
 
+def _originally_for(row: Any, member: Any) -> bool:
+    """Whether `to` as filed names this membership row: its member id, `owner` for an
+    owner, a role it holds."""
+    if row.to_kind == "member":
+        return bool(row.to_member == member.id)
+    if row.to_kind == "owner":
+        return bool(member.role == "owner")
+    return bool(row.to_kind == "role" and row.to_role == member.role)
+
+
+def _pool_open() -> Any:
+    """The request is open to the admins: opened by a forward, or filed `to: role:admin`
+    and not yet forwarded or claimed (§7)."""
+    return or_(
+        t.request.c.holder_pool.is_(True),
+        and_(
+            t.request.c.holder_member.is_(None),
+            t.request.c.holder_pool.is_(None),
+            t.request.c.to_kind == "role",
+            t.request.c.to_role == "admin",
+        ),
+    )
+
+
 def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     """The request as forward and claim see it: readable by the caller, never a personal
     one (`not_found`), a `decision`, and open."""
@@ -893,7 +924,7 @@ def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, membership(conn, caller, slug))
+        mine = _locked_member(conn, caller, slug)
         row = _open_decision(conn, mine, request_id)
         if not _holds(conn, row, mine):
             raise _not_holder()
@@ -911,7 +942,7 @@ def forward(
                 row.on_behalf_of,
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
-            original = row.to_kind == "member" and row.to_member == target.id
+            original = _originally_for(row, target)
             if target.role != "admin" and not original:
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
@@ -949,7 +980,7 @@ def forward(
 @router.post("/projects/{slug}/requests/{request_id}/claim")
 def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, membership(conn, caller, slug))
+        mine = _locked_member(conn, caller, slug)
         row = _open_decision(conn, mine, request_id)
         if mine.role != "admin":
             raise ApiError(
@@ -961,7 +992,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
             raise invalid({"to": "self"}, "nobody holds a request it asked")
         won = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id, t.request.c.holder_pool.is_(True))
+            .where(t.request.c.id == row.id, _pool_open())
             .values(
                 holder_member=mine.id,
                 holder_pool=None,

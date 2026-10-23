@@ -160,3 +160,58 @@ def test_a_personal_request_is_never_forwarded(
     request = {"id": _file(migrated, agent.id)}
     assert forward(owner, request, "role:admin").status_code == 404
     assert claim(owner, request).status_code == 404
+
+
+def test_a_request_filed_to_the_admins_is_claimed_from_the_start(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's first probe: `to: role:admin` is the open pool before any forward."""
+    agent = flow.agent(make_client, owner)
+    admin = admin_human(make_client, migrated, "admin")
+    request = asked(agent, to="role:admin")
+    assert request["holder"] == "role:admin"
+    claimed = claim(admin, request)
+    assert claimed.status_code == 200, claimed.text
+    assert claimed.json()["holder"] == admin.id
+    assert claimed.json()["forwarding"][0]["from"] == "role:admin"
+
+
+def test_a_forward_back_to_the_owner_named_by_its_token(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's second probe: `to: owner`, to an admin, and back to the owner."""
+    agent = flow.agent(make_client, owner)
+    admin = admin_human(make_client, migrated, "admin")
+    request = asked(agent, to="owner")
+    assert forward(owner, request, admin.id).status_code == 200
+    back = forward(admin, request, owner.id)
+    assert back.status_code == 200, back.text
+    assert back.json()["holder"] == owner.id
+
+
+def test_a_demotion_that_commits_first_ends_the_claim(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reviewer's third probe: the admin is demoted right before the lock returns."""
+    agent = flow.agent(make_client, owner)
+    admin = admin_human(make_client, migrated, "admin")
+    request = asked(agent, to="role:admin")
+    real = events.lock_project
+
+    def demoted_meanwhile(conn: Any, project: str) -> Any:
+        conn.execute(
+            t.membership.update().where(t.membership.c.human_id == admin.id).values(role="member")
+        )
+        return real(conn, project)
+
+    monkeypatch.setattr("maity_hub.routes.requests.lock_project", demoted_meanwhile)
+    # A member no longer reads a request to the admins at all: it does not exist for it.
+    assert claim(admin, request).status_code == 404
+    with migrated.connect() as conn:
+        holder = conn.execute(
+            select(t.request.c.holder_member).where(t.request.c.id == request["id"])
+        ).scalar()
+    assert holder is None
