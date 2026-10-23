@@ -24,7 +24,9 @@ manual post, dedupe, the listing, the shaping per reader on every read
 path, the resume packet's `ticker`, `settings.ticker`, and the hub's own
 decision and release items are in, and merges through the probe (every
 2 minutes: the changed paths' area owners, the linked cards, the contract
-sections from the diff); the forge webhook with deploys follows.
+sections from the diff); the forge webhook with deploys follows. The
+instance's mail settings and the admin's test send (`docs/api.md` §16.2,
+§16.3) are in; the notifications and sign-in mails that use them follow.
 
 ## Run it locally with plain Python
 
@@ -43,8 +45,9 @@ maity-hub serve       # http://127.0.0.1:8080
 `owner create` makes the first human account; it reads the password from
 the terminal (asked twice) or from the first line of standard input,
 never from the command line. The earliest human account is the instance
-admin (`docs/api.md` §16): it sees `GET /admin/users` and nothing of a
-project it is not a member of.
+admin (`docs/api.md` §16): it sees `GET /admin/users` and the mail
+settings (`/admin/settings/mail`), and nothing of a project it is not a
+member of.
 
 ```sh
 curl http://127.0.0.1:8080/api/v1/health
@@ -137,6 +140,15 @@ All settings come from the environment.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. |
+| `MAITY_SMTP_HOST`, `MAITY_SMTP_PORT` | unset; port 587, 465 or 25 by `MAITY_SMTP_TLS` | The one SMTP server the hub sends through (`docs/api.md` §16.2). Every mail setting may instead be set by the instance admin in the dashboard; a value set here wins and cannot be changed there. |
+| `MAITY_SMTP_TLS` | `starttls` | `starttls`, `implicit` or `none`. Under `starttls` a server without STARTTLS fails the send; nothing goes out in clear. `none` only for `localhost` or a loopback address; any other host stops the hub at startup. |
+| `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
+| `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
+| `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `500`, `100`, `60` | The three hourly budgets: notification, security and sign-in mail, each counted on its own. |
+| `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
+| `MAITY_SECRET_KEY` | unset | 32 bytes, base64; encrypts the SMTP password when the admin sets it in the dashboard (AES-256-GCM). Without it the dashboard cannot store a password. In Kubernetes a password from the database is flagged: put it in a Secret. |
+| `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 The hub logs each request as method, path and status on the

@@ -7396,7 +7396,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
 | `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
-| `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:` |
+| `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
 | `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
@@ -7465,7 +7465,11 @@ Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
-`secret_key` in the body is `invalid` with `environment_only`. A value
+`secret_key` in the body is `invalid` with `environment_only`, any
+other field with `extra_forbidden`. A `tls` of `none` with a `host` that
+is not a loopback address or `localhost` — whichever of the two the body
+changes — is `invalid` with `loopback_host_only` on the field the body
+changed. The body is applied whole or not at all. A value
 in the body is never echoed and never logged. Answers the `GET` shape. A change
 of `host`, `port`, `tls`, `username`, `password` or `from` clears
 `last_test`. The
