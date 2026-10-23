@@ -43,7 +43,7 @@ def patch_mail(
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        settings.patch(conn, hub.mail, hub.secret_key, body)
+        settings.patch(conn, hub.mail, hub.secret_key, body, caller.principal_id)
         return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 
 
@@ -61,10 +61,10 @@ def test_mail(
         if extra:
             raise invalid(extra)
         to = body.get("to")
-        # Without `to`, the admin's own verified address (§18.4), which the hub does not
-        # hold until notification settings exist.
         if to is None:
-            raise invalid({"to": "required"})
+            # The admin's own verified address (§18.4); the hub holds none until the
+            # notification settings store addresses.
+            raise invalid({"to": "no_verified_address"})
         if not address.valid(to):
             raise invalid({"to": "invalid"})
         resolved = settings.resolve(conn, hub.mail, hub.secret_key)
@@ -92,5 +92,5 @@ def test_mail(
     outcome = smtp.send(resolved, mail)
     with engine_of(request).begin() as conn:
         answer = outcome.view()
-        settings.record_test(conn, answer)
+        settings.record_test(conn, answer, caller.principal_id)
     return JSONResponse(answer)

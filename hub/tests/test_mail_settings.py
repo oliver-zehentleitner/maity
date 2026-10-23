@@ -5,18 +5,19 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from email import message_from_bytes
 from email.policy import default
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select
 
-from maity_hub import secretbox
+from maity_hub import clock, secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
-from maity_hub.mail import address, headers
+from maity_hub.mail import address, headers, settings, smtp
 from maity_hub.mail.environment import Sender
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -133,12 +134,14 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         {"MAITY_SMTP_ALLOW_PLAINTEXT": "maybe"},
         {"MAITY_SMTP_CA_FILE": "/nonexistent/ca.pem"},
         {"MAITY_MAIL_MAX_PER_HOUR": "-1"},
+        {"MAITY_SMTP_PASSWORD": "pässword"},
+        {"MAITY_SMTP_USERNAME": "mäity"},
     ],
 )
 def test_an_unusable_value_in_the_environment_stops_the_hub(values: dict[str, str]) -> None:
     with pytest.raises(ConfigError) as raised:
         env_of(**values)
-    assert "line\nbreak" not in str(raised.value)
+    assert "line\nbreak" not in str(raised.value) and "pässword" not in str(raised.value)
 
 
 def test_tls_none_is_allowed_for_a_loopback_host() -> None:
@@ -236,6 +239,8 @@ def test_the_admin_sets_values_and_the_environment_wins(
         ({"max_per_hour": 0}, {"max_per_hour": "invalid"}),
         ({"enabled": "yes"}, {"enabled": "invalid"}),
         ({"tls": "none", "host": "smtp.example.org"}, {"tls": "loopback_host_only"}),
+        ({"username": "mäity"}, {"username": "invalid"}),
+        ({"password": "pässword"}, {"password": "secret_key_missing"}),
     ],
 )
 def test_a_refused_patch_names_each_field_and_changes_nothing(
@@ -246,7 +251,8 @@ def test_a_refused_patch_names_each_field_and_changes_nothing(
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == fields
     with migrated.begin() as conn:
-        assert conn.execute(select(t.mail_setting)).all() == []
+        assert conn.execute(select(t.instance_setting)).all() == []
+        assert conn.execute(select(t.instance_secret)).all() == []
 
 
 def test_tls_none_stays_tied_to_a_loopback_host(
@@ -275,12 +281,13 @@ def test_the_password_is_stored_encrypted_and_never_returned(
     assert got["password"] == {"set": True, "source": "admin"}
     assert got["secret_key"] == {"set": True}
     with migrated.begin() as conn:
-        stored = conn.execute(
-            select(t.mail_setting.c.value).where(t.mail_setting.c.field == "password")
-        ).scalar_one()
-    assert PASSWORD not in json.dumps(stored)
-    assert set(stored) == {"sealed"}
-    sealed = base64.b64decode(stored["sealed"])
+        secrets_row = conn.execute(select(t.instance_secret)).one()
+        settings_rows = conn.execute(select(t.instance_setting)).all()
+    assert (secrets_row.name, secrets_row.updated_by) == ("mail.smtp_password", keyed.id)
+    assert PASSWORD not in secrets_row.sealed
+    assert PASSWORD not in json.dumps([r.value for r in settings_rows])
+    assert [r.name for r in settings_rows] == ["mail.username"]
+    sealed = base64.b64decode(secrets_row.sealed)
     assert secretbox.open_sealed(b"k" * 32, "mail.smtp_password", sealed).decode() == PASSWORD
     with pytest.raises(secretbox.SealedError):  # bound to its field
         secretbox.open_sealed(b"k" * 32, "forge.webhook_secret", sealed)
@@ -353,8 +360,8 @@ def test_the_test_send_refuses_before_it_connects(
 ) -> None:
     owner = admin(make_client, migrated, env_of())
     for body, fields in [
-        ({}, {"to": "required"}),
-        (None, {"to": "required"}),
+        ({}, {"to": "no_verified_address"}),
+        (None, {"to": "no_verified_address"}),
         ({"to": "a@b.co, c@d.co"}, {"to": "invalid"}),
         ({"to": "a@example.org", "host": "evil.example"}, {"host": "extra_forbidden"}),
     ]:
@@ -519,6 +526,93 @@ def test_the_detail_never_carries_the_username_or_the_password(
     for secret_form in forms:
         assert secret_form not in response.text
     assert len(outcome["detail"]) <= 200
+
+
+def test_a_non_ascii_password_or_username_is_refused(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    keyed = admin(make_client, migrated, env_of(MAITY_SECRET_KEY=KEY))
+    refused = keyed.patch(PATH, {"password": "pässword long enough"})
+    assert refused.json()["error"]["details"]["fields"] == {"password": "invalid"}
+    assert "pässword" not in refused.text
+
+
+def test_an_encoding_error_at_auth_is_a_stage_and_leaks_nothing(
+    smtp_server: list[FakeSmtp],
+    migrated: Engine,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ca_file, context = certificate(tmp_path)
+    server = serve(smtp_server, Script(starttls=True, tls=context))
+    hub = local_env(
+        server.port,
+        MAITY_SMTP_TLS="starttls",
+        MAITY_SMTP_CA_FILE=str(ca_file),
+        MAITY_SMTP_USERNAME="maity",
+        MAITY_SMTP_PASSWORD="ascii-for-now",
+    )
+    with migrated.begin() as conn:
+        resolved = settings.resolve(conn, hub.mail, hub.secret_key)
+    # Whatever let it through, a password SMTP cannot encode stops at `auth`, quietly.
+    resolved = replace(resolved, password="pässword-Ä")
+    mail = headers.message(
+        sender="maity@example.org", sender_name=None, to="a@example.org", subject="s", body="b"
+    )
+    with caplog.at_level("DEBUG"):
+        outcome = smtp.send(resolved, mail)
+    assert (outcome.ok, outcome.stage, outcome.detail) == (False, "auth", None)
+    assert all("Ä" not in r.getMessage() and "ä" not in r.getMessage() for r in caplog.records)
+
+
+def test_tls_none_with_a_remote_host_from_two_sources_stops_and_never_sends(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = admin(make_client, migrated, env_of())
+    assert owner.patch(PATH, {"tls": "none", "host": "127.0.0.1"}).status_code == 200
+    remote = env_of(
+        MAITY_SMTP_HOST="10.0.0.200",
+        MAITY_SMTP_FROM="maity@example.org",
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+    )
+    with pytest.raises(ConfigError, match="loopback"):
+        make_client(mail=remote.mail)
+    with migrated.begin() as conn:
+        resolved = settings.resolve(conn, remote.mail, None)
+    mail = headers.message(
+        sender="maity@example.org", sender_name=None, to="a@example.org", subject="s", body="b"
+    )
+    outcome = smtp.send(resolved, mail)
+    assert (outcome.ok, outcome.stage) == (False, "tls")
+
+
+def test_a_certificate_for_another_name_is_refused(
+    make_client: ClientFactory, migrated: Engine, smtp_server: list[FakeSmtp], tmp_path: Path
+) -> None:
+    ca_file, context = certificate(tmp_path)  # names 127.0.0.1 only
+    server = serve(smtp_server, Script(starttls=True, tls=context))
+    hub = local_env(server.port, MAITY_SMTP_TLS="starttls", MAITY_SMTP_CA_FILE=str(ca_file))
+    hub = replace(hub, mail=replace(hub.mail, host="localhost"))
+    owner = admin(make_client, migrated, hub)
+    outcome = owner.post(f"{PATH}/test", {"to": "a@example.org"}).json()
+    assert (outcome["ok"], outcome["stage"]) == (False, "tls")
+    assert "MAIL" not in server.record.commands
+
+
+def test_a_stored_name_without_a_registry_entry_is_ignored(
+    make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    owner = admin(make_client, migrated, env_of())
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.instance_setting).values(
+                name="mail.retired", value="x", updated_at=clock.now(), updated_by=None
+            )
+        )
+    with caplog.at_level("WARNING"):
+        got = owner.get(PATH)
+    assert got.status_code == 200 and "retired" not in got.text
+    assert any("mail.retired" in r.getMessage() for r in caplog.records)
 
 
 # --- addresses and header values ----------------------------------------------------

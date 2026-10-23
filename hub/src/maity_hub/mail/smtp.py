@@ -26,7 +26,7 @@ from typing import Any
 
 from maity_hub import clock
 from maity_hub.mail import headers
-from maity_hub.mail.settings import Resolved
+from maity_hub.mail.settings import Resolved, tls_refusal
 from maity_hub.views import ts
 
 log = logging.getLogger(__name__)
@@ -90,6 +90,8 @@ def _converse(
             raise _Stop("timeout")
         return left
 
+    if tls_refusal(resolved):
+        raise _Stop("tls")  # never in clear to a host that is not loopback (§16.2)
     try:
         socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except (OSError, UnicodeError):
@@ -151,7 +153,8 @@ def _converse(
                 code, reply = client.login(username, resolved.password)
             except smtplib.SMTPAuthenticationError as error:
                 raise _Stop(stage, error.smtp_code, error.smtp_error) from None
-            except smtplib.SMTPException:
+            except (smtplib.SMTPException, UnicodeError):
+                # Never the exception's text: an encoding error quotes the password.
                 raise _Stop(stage) from None
         stage = "mail_from"
         _step(client, remaining)
@@ -175,7 +178,7 @@ def _converse(
         raise _Stop("timeout") from None
     except smtplib.SMTPResponseException as error:
         raise _Stop(stage, error.smtp_code, error.smtp_error) from None
-    except (smtplib.SMTPException, OSError):
+    except (smtplib.SMTPException, OSError, UnicodeError):
         raise _Stop(stage) from None
     finally:
         with contextlib.suppress(OSError):

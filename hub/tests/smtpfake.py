@@ -89,8 +89,8 @@ class FakeSmtp:
                 lines = ["fake"]
                 if self.script.starttls and not secure:
                     lines.append("STARTTLS")
-                if secure:
-                    lines.append("AUTH PLAIN LOGIN")
+                # Offered in clear too: the hub must refuse it there, not the server.
+                lines.append("AUTH PLAIN LOGIN")
                 for i, text in enumerate(lines):
                     say(("250 " if i == len(lines) - 1 else "250-") + text)
             elif verb == "STARTTLS":

@@ -30,6 +30,7 @@ from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
 from maity_hub.mail import settings as mail
+from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
 from maity_hub.routes import (
     admin,
@@ -72,7 +73,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
         with engine.connect() as conn:
-            mail.log_warnings(conn, settings.mail, settings.secret_key)
+            try:
+                mail.check_at_startup(conn, settings.mail, settings.secret_key)
+            except MailConfigError as error:
+                raise ConfigError(str(error)) from None
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker

@@ -114,8 +114,10 @@ def parse(env: dict[str, str]) -> MailEnvironment:
             "(localhost or a loopback address)"
         )
     username = get("MAITY_SMTP_USERNAME") or None
-    if username is not None and not headers.printable(username, MAX_USERNAME):
-        raise MailConfigError("MAITY_SMTP_USERNAME must be printable, at most 254 characters")
+    if username is not None and not (
+        headers.printable(username, MAX_USERNAME) and username.isascii()
+    ):
+        raise MailConfigError("MAITY_SMTP_USERNAME must be printable ASCII, at most 254 characters")
     sender = None
     if get("MAITY_SMTP_FROM"):
         sender = parse_sender(get("MAITY_SMTP_FROM"))
@@ -178,9 +180,9 @@ def _password(env: dict[str, str]) -> str | None:
             raise MailConfigError("MAITY_SMTP_PASSWORD_FILE cannot be read as UTF-8") from None
     if not inline:
         return None
-    if not headers.printable(inline, MAX_PASSWORD):
-        # Never the value, nor where it went wrong.
-        raise MailConfigError("the SMTP password must be printable, at most 1024 characters")
+    if not (headers.printable(inline, MAX_PASSWORD) and inline.isascii()):
+        # Never the value, nor where it went wrong. SMTP AUTH takes ASCII only.
+        raise MailConfigError("the SMTP password must be printable ASCII, at most 1024 characters")
     return inline
 
 

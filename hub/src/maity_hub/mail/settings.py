@@ -8,15 +8,15 @@ current instance key cannot decrypt counts as not set.
 
 from __future__ import annotations
 
-import base64
 import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, delete, func, insert, select
+from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, secretbox
+from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.mail import address, headers
@@ -26,6 +26,7 @@ from maity_hub.mail.environment import (
     MAX_PER_HOUR,
     MAX_USERNAME,
     TLS_MODES,
+    MailConfigError,
     MailEnvironment,
     Sender,
     is_loopback,
@@ -60,9 +61,10 @@ WRITABLE = (*DEFAULTS, "password")
 ENVIRONMENT_ONLY = ("signing_key", "secret_key")
 # A change of one of these makes the last test say nothing about the settings (§16.2).
 CONNECTION_FIELDS = ("host", "port", "tls", "username", "password", "from")
-LAST_TEST = "last_test"
-# The associated data of the sealed SMTP password (`maity_hub.secretbox`).
-PASSWORD_FIELD = "mail.smtp_password"
+# The SMTP password's name in `instance_secret`, and the associated data it is sealed
+# with (`maity_hub.secretbox`).
+PASSWORD_SECRET = "mail.smtp_password"
+LAST_TEST = "mail.last_test"
 
 log = logging.getLogger(__name__)
 
@@ -119,16 +121,13 @@ class Resolved:
 
 
 def resolve(conn: Connection, env: MailEnvironment, secret_key: bytes | None) -> Resolved:
-    stored = {row.field: row.value for row in conn.execute(select(t.mail_setting)).all()}
+    stored = store.stored(conn, "mail")
     values: dict[str, tuple[Any, str]] = {}
-    for name, default in DEFAULTS.items():
+    for name in DEFAULTS:
         from_env = env.value(name) if name != "enabled" else None
-        if from_env is not None:
-            values[name] = (from_env.view() if isinstance(from_env, Sender) else from_env, "env")
-        elif name in stored:
-            values[name] = (stored[name], "admin")
-        else:
-            values[name] = (default, "default")
+        if isinstance(from_env, Sender):
+            from_env = from_env.view()
+        values[name] = store.effective(f"mail.{name}", from_env, stored)
     if values["port"][0] is None:
         values["port"] = (DEFAULT_PORTS[values["tls"][0]], "default")
     password: str | None
@@ -136,7 +135,7 @@ def resolve(conn: Connection, env: MailEnvironment, secret_key: bytes | None) ->
     if env.password is not None:
         password, source = env.password, "env"
     else:
-        password = _unseal(secret_key, stored.get("password"))
+        password = _unseal(secret_key, store.sealed(conn, PASSWORD_SECRET))
         source = "admin" if password is not None else None
     return Resolved(env, secret_key is not None, values, password, source, stored.get(LAST_TEST))
 
@@ -189,9 +188,11 @@ def counters(conn: Connection) -> dict[str, int]:
     }
 
 
-def patch(conn: Connection, env: MailEnvironment, secret_key: bytes | None, body: object) -> None:
-    """Apply a `PATCH` body, all of it or nothing; `invalid` names each refused field.
-    A value is never echoed in an error."""
+def patch(
+    conn: Connection, env: MailEnvironment, secret_key: bytes | None, body: object, by: str
+) -> None:
+    """Apply the instance admin `by`'s `PATCH` body, all of it or nothing; `invalid`
+    names each refused field. A value is never echoed in an error."""
     if not isinstance(body, dict):
         raise invalid({"body": "not_an_object"})
     errors: dict[str, str] = {}
@@ -208,12 +209,12 @@ def patch(conn: Connection, env: MailEnvironment, secret_key: bytes | None, body
         elif name == "password":
             if secret_key is None:
                 errors[name] = "secret_key_missing"
-            elif not headers.printable(value, MAX_PASSWORD):
+            elif not _ascii(value, MAX_PASSWORD):
                 errors[name] = "invalid"
             else:
                 changes[name] = value
         else:
-            checked = _check(name, value)
+            checked = store.SETTINGS[f"mail.{name}"].check(value)
             if checked is None:
                 errors[name] = "invalid"
             else:
@@ -225,15 +226,15 @@ def patch(conn: Connection, env: MailEnvironment, secret_key: bytes | None, body
     tls = changes["tls"] if "tls" in changes else before.value("tls")
     if (tls or DEFAULTS["tls"]) == "none" and host is not None and not is_loopback(str(host)):
         raise invalid({"tls" if "tls" in changes else "host": "loopback_host_only"})
-    now = clock.now()
     for name, value in changes.items():
-        conn.execute(delete(t.mail_setting).where(t.mail_setting.c.field == name))
-        if value is None:
-            continue
-        if name == "password":
+        if name != "password":
+            store.put(conn, f"mail.{name}", value, by)
+        elif value is None:
+            store.put_sealed(conn, PASSWORD_SECRET, None, by)
+        else:
             assert secret_key is not None  # checked above: secret_key_missing
-            value = _seal(secret_key, str(value))
-        conn.execute(insert(t.mail_setting).values(field=name, value=value, updated_at=now))
+            sealed = secretbox.seal(secret_key, PASSWORD_SECRET, str(value).encode())
+            store.put_sealed(conn, PASSWORD_SECRET, sealed, by)
     after = resolve(conn, env, secret_key)
     changed = any(
         (
@@ -245,48 +246,68 @@ def patch(conn: Connection, env: MailEnvironment, secret_key: bytes | None, body
         if name in changes
     )
     if changed:
-        conn.execute(delete(t.mail_setting).where(t.mail_setting.c.field == LAST_TEST))
+        store.put(conn, LAST_TEST, None, by)
 
 
-def record_test(conn: Connection, outcome: dict[str, Any]) -> None:
-    conn.execute(delete(t.mail_setting).where(t.mail_setting.c.field == LAST_TEST))
-    conn.execute(
-        insert(t.mail_setting).values(
-            field=LAST_TEST,
-            value={key: outcome[key] for key in ("at", "ok", "stage", "smtp_code")},
-            updated_at=clock.now(),
-        )
-    )
+def record_test(conn: Connection, outcome: dict[str, Any], by: str) -> None:
+    kept = {key: outcome[key] for key in ("at", "ok", "stage", "smtp_code")}
+    store.put(conn, LAST_TEST, kept, by)
 
 
-def _check(name: str, value: object) -> object | None:
-    """The value to store, or None when it does not validate."""
-    if name == "enabled":
-        return value if isinstance(value, bool) else None
-    if name == "host":
-        return value if valid_host(value) else None
-    if name == "port":
-        return value if _whole(value, 1, 65535) else None
-    if name == "tls":
-        return value if value in TLS_MODES else None
-    if name == "username":
-        return value if headers.printable(value, MAX_USERNAME) else None
-    if name == "from":
-        if not isinstance(value, dict) or not set(value) <= {"address", "name"}:
-            return None
-        name_value = value.get("name")
-        if not address.valid(value.get("address")):
-            return None
-        if name_value is not None and not headers.valid_name(name_value):
-            return None
-        return {"address": value["address"], **({"name": name_value} if name_value else {})}
-    if name == "reply_to":
-        return value if address.valid(value) else None
-    return value if _whole(value, 1, MAX_PER_HOUR) else None  # the three budgets
+def tls_refusal(resolved: Resolved) -> str | None:
+    """`loopback_host_only` when the settings in effect pair `tls: none` with a host that
+    is not loopback, wherever each value came from (§16.2)."""
+    host, tls = resolved.value("host"), resolved.value("tls")
+    if tls == "none" and host is not None and not is_loopback(str(host)):
+        return "loopback_host_only"
+    return None
 
 
-def _whole(value: object, minimum: int, maximum: int) -> bool:
-    return type(value) is int and minimum <= value <= maximum
+def _ascii(value: object, maximum: int) -> bool:
+    """SMTP `AUTH` takes the username and the password as ASCII only."""
+    return headers.printable(value, maximum) and isinstance(value, str) and value.isascii()
+
+
+def _sender(value: object) -> object | None:
+    if not isinstance(value, dict) or not set(value) <= {"address", "name"}:
+        return None
+    name = value.get("name")
+    if not address.valid(value.get("address")):
+        return None
+    if name is not None and not headers.valid_name(name):
+        return None
+    return {"address": value["address"], **({"name": name} if name else {})}
+
+
+def _whole(minimum: int, maximum: int) -> Any:
+    return lambda value: value if type(value) is int and minimum <= value <= maximum else None
+
+
+def _when(test: Any) -> Any:
+    return lambda value: value if test(value) else None
+
+
+store.register(
+    store.Setting("mail.enabled", _when(lambda v: isinstance(v, bool)), DEFAULTS["enabled"]),
+    store.Setting("mail.host", _when(valid_host)),
+    store.Setting("mail.port", _whole(1, 65535)),
+    store.Setting("mail.tls", _when(lambda v: v in TLS_MODES), DEFAULTS["tls"]),
+    store.Setting("mail.username", _when(lambda v: _ascii(v, MAX_USERNAME))),
+    store.Setting("mail.from", _sender),
+    store.Setting("mail.reply_to", _when(address.valid)),
+    store.Setting("mail.max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["max_per_hour"]),
+    store.Setting(
+        "mail.security_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["security_max_per_hour"],
+    ),
+    store.Setting(
+        "mail.sign_in_max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["sign_in_max_per_hour"]
+    ),
+    # Written by the test send only, never by a PATCH (§16.3).
+    store.Setting(LAST_TEST, _when(lambda v: isinstance(v, dict))),
+)
+store.register_secret(PASSWORD_SECRET)
 
 
 _WARNINGS = {
@@ -301,25 +322,26 @@ _WARNINGS = {
 }
 
 
-def log_warnings(conn: Connection, env: MailEnvironment, secret_key: bytes | None) -> None:
-    """At startup: the warnings the admin view carries, in the log as well (§16.2)."""
-    for warning in resolve(conn, env, secret_key).warnings:
+def check_at_startup(conn: Connection, env: MailEnvironment, secret_key: bytes | None) -> None:
+    """Stops the hub on `tls: none` with a host that is not loopback, also when one of
+    the two came from the environment and the other from the admin (§16.2); logs the
+    warnings the admin view carries."""
+    resolved = resolve(conn, env, secret_key)
+    if tls_refusal(resolved):
+        raise MailConfigError(
+            "MAITY_SMTP_TLS=none (or the admin's tls: none) is only allowed for a loopback "
+            "SMTP host, and the host in effect is not one"
+        )
+    for warning in resolved.warnings:
         log.warning(_WARNINGS[warning])
 
 
-def _seal(key: bytes, password: str) -> dict[str, str]:
-    """The stored form: the sealed bytes, base64, in the JSON column."""
-    sealed = secretbox.seal(key, PASSWORD_FIELD, password.encode())
-    return {"sealed": base64.b64encode(sealed).decode()}
-
-
-def _unseal(key: bytes | None, stored: object) -> str | None:
+def _unseal(key: bytes | None, sealed: bytes | None) -> str | None:
     """The password, or None when there is none, no key, or the key cannot open it (the
     key was changed or lost): such a password counts as not set (§16.2)."""
-    if key is None or not isinstance(stored, dict) or not isinstance(stored.get("sealed"), str):
+    if key is None or sealed is None:
         return None
     try:
-        sealed = base64.b64decode(stored["sealed"], validate=True)
-        return secretbox.open_sealed(key, PASSWORD_FIELD, sealed).decode()
-    except (secretbox.SealedError, ValueError):
+        return secretbox.open_sealed(key, PASSWORD_SECRET, sealed).decode()
+    except (secretbox.SealedError, UnicodeError):
         return None
