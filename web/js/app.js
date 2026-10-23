@@ -659,6 +659,7 @@ window.Maity = window.Maity || {};
     const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
     const theme = M.theme ? M.menuButton({
       label: "Theme: " + THEME_WORDS[M.theme.get()],
+      listLabel: "Theme",
       class: "theme-menu",
       face: M.icons.theme(M.theme.get(), 18),
       items: () => M.theme.THEMES.map((t) => ({
