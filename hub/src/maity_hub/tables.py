@@ -119,7 +119,18 @@ human_session = Table(
     Column("last_seen_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("ended_at", UtcDateTime),
-    Column("source", String(64)),
+    Column("source", String(64)),  # the address the session started from
+    # The session list (docs/api.md §2.6.5): a public id that is never the cookie's
+    # value, how it was made, what the browser said about itself at the sign-in, the
+    # address of the latest call, the session that approved a device code, and why it
+    # ended (logout, revoked, end_others, password_change).
+    Column("public_id", String(ID), nullable=False, unique=True),
+    Column("method", String(16), nullable=False),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("ip", String(64)),
+    Column("approved_by", String(ID)),
+    Column("ended_by", String(16)),
     **MYSQL_TABLE,
 )
 
@@ -841,5 +852,48 @@ memory_entry = Table(
     ),
     Index("ix_memory_entry_project_store", "project_id", "store", "created_at"),
     Index("ix_memory_entry_team", "team_membership", "created_at"),
+    **MYSQL_TABLE,
+)
+
+# --- instance settings (docs/api.md §2.6.6, §16.2) ---------------------------------
+#
+# What the instance admin set, one row per name from the registry in
+# `maity_hub.instance_settings`; no row means the environment's value or the default.
+# Never a secret: an admin-set secret (the SMTP password) lives sealed in
+# `instance_secret`, base64 of what `maity_hub.secretbox` sealed.
+instance_setting = Table(
+    "instance_setting",
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("value", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    **MYSQL_TABLE,
+)
+
+instance_secret = Table(
+    "instance_secret",
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("sealed", Text, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    **MYSQL_TABLE,
+)
+
+# --- mail (docs/api.md §16.2) ---------------------------------------------------------
+#
+# One row per mail the hub handed to SMTP or held back, by budget kind (notification,
+# security, sign_in) and outcome (sent, queued, dropped, failed): what the counters of
+# §16.2 count over the last hour. No address and no content.
+mail_delivery = Table(
+    "mail_delivery",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    Column("outcome", String(16), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_mail_delivery_at", "at"),
+    sqlite_autoincrement=True,
     **MYSQL_TABLE,
 )

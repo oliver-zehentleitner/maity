@@ -12,6 +12,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from maity_hub import secretbox
+from maity_hub.mail import environment as mail_environment
+from maity_hub.mail.environment import MailEnvironment
 
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
@@ -55,6 +57,13 @@ class Settings:
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
+    # password and the signing key never appear in a repr.
+    mail: MailEnvironment = field(default_factory=MailEnvironment)
+    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK: the sign-in methods when the
+    # environment switches them (§2.6.6); None leaves them to the instance admin.
+    sign_in_device_code: bool | None = None
+    sign_in_email_link: bool | None = None
 
     @property
     def join_host(self) -> str | None:
@@ -95,6 +104,9 @@ class Settings:
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
+            mail=parse_mail(env),
+            sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
+            sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
         )
 
 
@@ -103,6 +115,13 @@ def parse_secret_key(value: str) -> bytes | None:
     try:
         return secretbox.parse_key(value)
     except ValueError as error:
+        raise ConfigError(str(error)) from None
+
+
+def parse_mail(env: dict[str, str]) -> MailEnvironment:
+    try:
+        return mail_environment.parse(env)
+    except mail_environment.MailConfigError as error:
         raise ConfigError(str(error)) from None
 
 
@@ -177,6 +196,12 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
                 f"MAITY_TRUSTED_PROXIES: {part!r} is not an address or CIDR"
             ) from None
     return tuple(networks)
+
+
+def parse_switch(env: dict[str, str], name: str) -> bool | None:
+    """A switch the environment may leave unset (None) for the instance admin."""
+    value = env.get(name, "")
+    return parse_flag(value, name) if value.strip() else None
 
 
 def parse_flag(value: str, name: str) -> bool:
