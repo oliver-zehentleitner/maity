@@ -37,7 +37,7 @@ from maity_hub.views import principal_id
 log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
-LINKS = ""  # a job that is no card id: read the card links
+LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
@@ -499,23 +499,6 @@ def observe_links(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     return links.observe(engine, fg, project_id)
 
 
-def links_due(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
-    """A round over the links of every observable project: after links were added."""
-    with engine.connect() as conn:
-        projects = conn.execute(
-            select(t.project.c.id, t.project.c.repository_url).where(
-                t.project.c.repository_url.is_not(None)
-            )
-        ).all()
-    for project in sorted(projects, key=lambda p: p.id):
-        if stop is not None and stop.is_set():
-            return
-        if fg.configured_for(project.repository_url) and not _guarded(
-            observe_links, engine, fg, project.id
-        ):
-            return
-
-
 def _guarded(work: Callable[..., Any], *args: Any) -> bool:
     """Run one piece of work; False when the forge did not answer."""
     try:
@@ -536,6 +519,8 @@ class Worker:
         # A card id to probe, or ("merges"|"deploy", …) from a verified webhook delivery.
         self.jobs: queue.Queue[str | tuple[Any, ...] | None] = queue.Queue()
         self.stopping = threading.Event()
+        self._pending_links: set[str] = set()
+        self._pending_lock = threading.Lock()
         self.thread = threading.Thread(target=self._run, name="maity-probe", daemon=True)
 
     def start(self) -> None:
@@ -560,9 +545,14 @@ class Worker:
         """A verified `deployment_status` delivery: read that deployment now (§17.4)."""
         self.jobs.put(("deploy", project_id, deployment_id, delivery))
 
-    def links_added(self) -> None:
-        """Called after a link was added and committed: read the links soon (§6.13)."""
-        self.jobs.put(LINKS)
+    def links_added(self, project_id: str) -> None:
+        """Called after a link was added and committed: read that project's links soon
+        (§6.13). One job per project waits at a time, however many links were added."""
+        with self._pending_lock:
+            if project_id in self._pending_links:
+                return
+            self._pending_links.add(project_id)
+        self.jobs.put((LINKS, project_id))
 
     def _run(self) -> None:
         next_sweep = clock.now()
@@ -583,12 +573,13 @@ class Worker:
             if job is None:
                 return
             if isinstance(job, tuple):
-                if job[0] == "merges":
+                if job[0] == LINKS:
+                    with self._pending_lock:
+                        self._pending_links.discard(job[1])
+                    _guarded(observe_links, self.engine, self.fg, job[1])
+                elif job[0] == "merges":
                     _guarded(announce_merges, self.engine, self.fg, job[1], job[2], job[3])
                 else:
                     _guarded(announce_deploy, self.engine, self.fg, job[1], job[2], job[3])
-                continue
-            if job == LINKS:
-                _guarded(links_due, self.engine, self.fg, self.stopping)
                 continue
             _guarded(observe_report, self.engine, self.fg, job, 0)
