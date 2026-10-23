@@ -9668,7 +9668,7 @@ briefing per project. The maintainer's decision of 2026-10-23
 (`context/memory.md`).
 
 ```json
-{ "human_id": "hum-maintainer", "markdown": "German in chat, English in code. Propose, don't push …",
+{ "human_id": "hum-maintainer", "markdown": "Direct and short. Propose, don't push …",
   "version": 3,
   "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
   "proposed_by": { "kind": "agent", "member_id": "agt-a", "instance": "k2pq", "handle": "agent-a",
