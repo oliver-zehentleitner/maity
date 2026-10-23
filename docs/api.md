@@ -7146,7 +7146,8 @@ owner choose):
   those placements named are revoked `stop_grace_seconds` later
   (`revoked_reason: runner_revoked`, `revoked_by` the human), so an
   agent can park its work first; with `agents: "stop"` they are revoked
-  at once. Each revocation emits `credential_revoked` (§15.10, `reason:
+  at once, and so are those an earlier `stop` of this runner left to
+  their grace (never another agent's). Each revocation emits `credential_revoked` (§15.10, `reason:
   runner_revoked`, to the agent and the owners), once, however many
   calls find it due. After that the agent has lost the hub: every call
   answers `credential_revoked`. The hub cannot end its process or its access to
