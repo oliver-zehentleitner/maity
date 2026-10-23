@@ -32,7 +32,9 @@ The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
 and `GET /auth/methods` are in; the sign-in link follows. Notifications
 (`docs/api.md` §18.1–§18.3): account records, `GET /me/notifications` with
 sealed positions and its long-poll, `POST /me/notifications/read`, and
-watches on cards (§6.4) are in; notification settings and mail follow.
+watches on cards (§6.4) are in, and so are the notification settings with
+verified addresses, held address changes and the mail link pages (§18.4,
+§18.6), sent through the mail outbox; notification mail itself follows.
 
 ## Run it locally with plain Python
 
