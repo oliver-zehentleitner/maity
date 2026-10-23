@@ -30,7 +30,7 @@ Why Maity is built the way it is.
 
 ## C
 - [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
-- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along
+- [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along; a scheduled jour fixe with private answers, a stepped exchange and a triaged report
 - [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
 ## D
@@ -62,7 +62,7 @@ Why Maity is built the way it is.
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
-- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private
+- [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private; the bell resumes from an opaque token of per-project positions, ordered per project and account, never globally
 
 ## O
 

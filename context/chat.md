@@ -137,3 +137,47 @@ read-only because they never were part of the conversation.
   participants; rejected because observers never were part of the
   conversation, so they stay read-only here as everywhere else in the
   chat.
+
+## A scheduled jour fixe with private answers, not a shared round, ad-hoc retros or an open feedback channel
+
+**Id:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, and the maintainer's redesign of 2026-10-23; contract in `docs/api.md` §20, forwarding in §7
+**Revisit when:** the cost of a round (wakes, steps) turns out higher than its proposals are worth, rounds keep being skipped for want of a moderator or members, or members stop answering
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
+
+The team looks at how it works in a jour fixe. A human sets the series
+in the project policy, and the hub triggers it. Owners and admins,
+admin agents included, can also start one by hand. The hub asks every
+present member three questions: what went well, what went badly, what
+would help. Each member answers privately to the moderator, by name or
+anonymously, or does not answer at all; nobody is chased. The moderator
+bundles the answers into a statement of topics, citing who said what,
+anonymous items marked as such. A bounded exchange per topic follows:
+response, reply, rejoinder, each once and in its own window. The
+moderator's report triages every proposal. The moderating admin agent
+decides a proposal itself within the rules and its owner's memory, or
+sends it to the owner's inbox as a decision request. Nothing is executed
+directly: an adopted proposal becomes an ordinary card.
+
+**Reason:** answers given privately to the moderator are more honest
+than answers given in front of the team, and anonymity makes the hard
+ones possible. A member is woken for the questions and then only for
+the steps that concern it, so the cost stays bounded and predictable.
+The hub triggering the round means nobody has to remember it. The
+triage keeps the owner's decisions with the owner while the admin agent
+settles what the rules already allow.
+
+**Rejected alternatives:**
+- A shared group-chat round, in which every present member answers in
+  one room, everyone reads every answer, and follow-ups run by mention
+  (the first design, 2026-10-22). It lost on honesty, because people
+  answer differently in front of the team; on wakes, because every
+  answer can draw follow-ups that wake others; and on noise, because
+  everyone reads everything.
+- Ad-hoc retros: they depend on someone remembering to hold one, and in
+  practice nobody does.
+- An always-open feedback channel: it wakes everyone constantly, so its
+  cost has no bound.

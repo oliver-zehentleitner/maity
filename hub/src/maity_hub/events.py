@@ -127,11 +127,21 @@ def emit(
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
     lock_project(conn, project_id)
+    # Under the project's lock `seq` follows commit order; `at` must not run backwards
+    # against it (a clock step back, replicas whose clocks differ): never before the
+    # project's last event (§18.2, "at is monotonic per project").
+    last = conn.execute(
+        select(t.event.c.at)
+        .where(t.event.c.project_id == project_id)
+        .order_by(t.event.c.seq.desc())
+        .limit(1)
+    ).scalar()
+    now = clock.now()
     result = conn.execute(
         insert(t.event).values(
             project_id=project_id,
             kind=kind,
-            at=clock.now(),
+            at=now if last is None or now >= last else last,
             actor_membership=actor.membership_id if actor else None,
             actor_session_id=actor.session_id if actor else None,
             actor_credential_id=actor.credential_id if actor else None,

@@ -9,15 +9,7 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, safeUrl, formatAgo, formatTime } = M.dom;
 
-  const COLUMNS = [
-    ["proposed", "Proposed"],
-    ["open", "Open"],
-    ["in_progress", "In progress"],
-    ["blocked", "Blocked"],
-    ["review", "Review"],
-    ["done", "Done"],
-    ["cancelled", "Cancelled"],
-  ];
+  const COLUMNS = M.boardEdit.COLUMNS;
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
@@ -54,17 +46,37 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // A member as the board names them: @handle, the full name as tooltip.
+  const handleOf = (ctx, id) => {
+    const m = (ctx.memberById || {})[id];
+    return m && m.handle ? "@" + m.handle : ctx.nameOf(id);
+  };
+
+  // Who works on it, led by a dot: claimed (live), the lease run out, or
+  // nobody yet. The dot is decoration; the words say it.
   function claimLine(ctx, c) {
     const claim = c.claim;
+    const dot = (kind) => h("span", { class: "claim-dot " + kind, "aria-hidden": "true" });
     if (!claim) {
-      return h("p", { class: "claim unclaimed" },
-        c.assigned_to ? "Assigned to " + ctx.nameOf(c.assigned_to) + ", not claimed" : "Unclaimed");
+      return h("p", { class: "claim unclaimed" }, dot("none"), c.assigned_to ? "Assigned, not claimed" : "Unclaimed");
     }
-    return h("p", { class: "claim" },
-      "Claimed by ", h("strong", null, ctx.nameOf(claim.holder)), " · " + formatAgo(claim.since),
-      claim.expired
-        ? h("span", { class: "expired" }, " · lease expired " + formatTime(claim.lease_until))
-        : (claim.lease_until ? h("span", { class: "lease" }, " · lease until " + formatTime(claim.lease_until)) : null));
+    const who = h("strong", { title: ctx.nameOf(claim.holder) }, handleOf(ctx, claim.holder));
+    if (claim.expired) {
+      return h("p", { class: "claim expired" }, dot("expired"), who, " · lease expired " + formatTime(claim.lease_until));
+    }
+    return h("p", { class: "claim live" }, dot("live"), "Claimed by ", who, " · " + formatAgo(claim.since),
+      claim.lease_until ? h("span", { class: "lease" }, " · lease until " + formatTime(claim.lease_until)) : null);
+  }
+
+  // Whose card it is, in its header: a small picture and the handle, the
+  // full name as tooltip and as what a screen reader says.
+  function assignee(ctx, c) {
+    if (!c.assigned_to) return null;
+    const m = (ctx.memberById || {})[c.assigned_to];
+    const name = ctx.nameOf(c.assigned_to);
+    return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("members", c.assigned_to),
+      title: name, "aria-label": "Assigned to " + name },
+      m ? M.avatar(m, 16) : null, h("span", { "aria-hidden": "true" }, handleOf(ctx, c.assigned_to)));
   }
 
   function edges(label, ids, byId, frozen) {
@@ -83,9 +95,11 @@ window.Maity = window.Maity || {};
   function checkpoint(c) {
     const cp = c.checkpoint;
     if (!cp) return null;
+    // Two lines at most on the card; the whole text as its tooltip.
+    const said = "Done: " + cp.last_step + "\nNext: " + cp.next_step;
     return h("div", { class: "checkpoint" },
       h("span", { class: "label" }, "Checkpoint " + formatAgo(cp.updated_at) + " (" + cp.verification + ")"),
-      h("p", { class: "pre" }, "Done: " + cp.last_step + "\nNext: " + cp.next_step),
+      h("p", { class: "pre clamp", title: said }, said),
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
 
@@ -351,6 +365,11 @@ window.Maity = window.Maity || {};
   const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : ctx.nameOf(a));
 
   // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
+  function actions(...controls) {
+    const shown = controls.filter(Boolean);
+    return shown.length ? h("div", { class: "card-actions" }, shown) : null;
+  }
+
   function card(ctx, c, byId, manage) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
@@ -383,7 +402,8 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "badge " + c.kind }, KIND_LABELS[c.kind] + (c.kind === "release" ? " " + c.release.version : ""))
           : null,
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
-        c.area ? h("span", { class: "area" }, c.area) : null),
+        c.area ? h("span", { class: "area" }, c.area) : null,
+        assignee(ctx, c)),
       h("h3", null, c.title),
       claimLine(ctx, c),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
@@ -399,8 +419,9 @@ window.Maity = window.Maity || {};
       checkpoint(c),
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
-      manage ? h("div", { class: "card-actions" }, E.moveControl(ctx, c, manage.move),
-        E.orderControl(ctx, c, manage.columnOf(c), manage.place), E.assignControl(ctx, c, manage.assign)) : null);
+      // One row of controls: the column, the assignee, the place in the column.
+      manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
+        E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null);
     return el;
   }
 
@@ -420,9 +441,17 @@ window.Maity = window.Maity || {};
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
     // takes no focus with it: the status line that says what happened does.
+    // A Place arrow the new spot disables (to the top, then at the top) hands
+    // the focus to the card's next arrow that still works.
     function refocus(key) {
       if (!key) return;
-      const again = Array.from(columnsBox.querySelectorAll("select, button")).find((e) => e.getAttribute("data-focus") === key);
+      const all = Array.from(columnsBox.querySelectorAll("select, button"));
+      const usable = (e) => !e.disabled && e.getAttribute("disabled") == null;
+      let again = all.find((e) => e.getAttribute("data-focus") === key);
+      if (again && !usable(again) && key.startsWith("order:")) {
+        const card = key.split(":").slice(0, 2).join(":") + ":";
+        again = all.find((e) => (e.getAttribute("data-focus") || "").startsWith(card) && usable(e)) || again;
+      }
       (again || status.el).focus();
     }
 
