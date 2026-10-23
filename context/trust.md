@@ -316,6 +316,35 @@ not measured.
   extended (proposed in the review): not chosen; why a bound was
   preferred over an override is not recorded (unknown).
 
+## Under the wait policy a limit stretches a member's leases for at most 24 hours per outage
+
+**Id:** 42d8258e-7dd7-4c6f-96e4-61926576d299
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to request req-g6xacn2qq2wh, 2026-10-23; `docs/api.md` §6.12 Availability and cover, "Leases under a limit"
+**Revisit when:** typical provider limits last longer than 24 hours, so a normal limit no longer keeps the agent's card; or the cap is used to hold cards against a human
+**See:** trust.md#a-members-outage-is-handled-by-its-own-policy-wait-for-it-or-hand-its-open-work-to-a-named-substitute — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
+**See:** trust.md#a-declared-limit-holds-a-members-cards-for-at-most-24-hours-and-an-absence-ends-within-90-days — f24d2d25-9d94-49cc-89b6-1f2388baad66 — as of 2026-10-23
+
+When a member under the `wait` policy declares a limit, the hub
+stretches its leases to the end of the limit plus the grace, but never
+past 24 hours after the outage started; a new limit in the same outage
+does not move that bound. This replaces the original rule of stretching
+to the end of the limit, and makes the 24-hour cap the contract already
+carried a maintainer decision.
+
+**Reason:** typical 5-hour limits stay fully covered, so the agent keeps
+its card through a normal reset. Multi-day weekly limits would otherwise
+hold a card for days against a human.
+
+**Rejected alternatives:**
+- o1, stretch to the end of the limit (the original rule): a multi-day
+  weekly limit holds the card for days against a human.
+- o3, at most one `lease_seconds` (default 2 hours) per limit: shorter
+  than a normal 5-hour limit, so cards would change hands on every
+  ordinary reset and churn.
+
 ## A human's away reason is shown only in projects they choose
 
 **Id:** 83a2f234-1d68-4dc0-8451-f1ad1ff9dedc
