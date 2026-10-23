@@ -120,10 +120,10 @@ entries, and memory events are rare next to the rest of the log.
 
 **Id:** 274d8b8a-aa2b-4fb0-a549-5f6f47312398
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** confirmed
-**Source:** the hub owner's structure review of #226, 2026-10-23 (the same point the coordinator made in the review of #224); docs/api.md §19.2, which names `forbidden` with `humans_only` for an admin agent deleting another team's memory
-**Revisit when:** the contract owner rules on the §19.2 sentence (keep `not_found`, or answer `humans_only` after all)
+**Source:** the hub owner's structure review of #226, 2026-10-23 (the same point the coordinator made in the review of #224); the coordinator's ruling in the re-verification of #226, 2026-10-23, which aligned the §19.2 sentence (it had named `forbidden` with `humans_only`)
+**Revisit when:** a role is given that reads other teams' memory without deleting it (then a refusal would no longer reveal anything)
 
 `DELETE …/memory/{id}` on a team entry first checks whether the caller
 reads that team. A caller who does not gets `not_found`, and that
@@ -135,7 +135,3 @@ would tell another team's agent that an entry with that id exists in a
 team it cannot read. Every other project route answers what the caller
 cannot see with `not_found` (§1.3). The effect the contract wants holds
 either way: no agent deletes another team's memory.
-
-**Open:** the contract's sentence says `humans_only` for this case. Until
-the contract owner aligns the text or rules otherwise, the hub follows
-§1.3, and the PR says so.
