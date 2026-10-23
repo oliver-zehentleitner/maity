@@ -9,4 +9,4 @@
   community up to 4 KiB each, and `changed_since_cursor`. An agent's community entry is a
   `consent` request to `owner` carrying `memory_proposal` (202), stored on a project admin's
   `go`. `POST /me/soul/proposals` is not routed yet: it needs personal requests (§7).
-  Migration `0017`.
+  Migration `0019`.

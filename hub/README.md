@@ -284,7 +284,7 @@ foreign keys and unique constraints in code; the CHECK constraints, which
 that comparison does not see, have tests of their own.
 
 Memory (`docs/api.md` §19) is `soul` and `soul_version` per agent profile
-and `memory_entry` per project (migration `0017`). A team's entries hang
+and `memory_entry` per project (migration `0019`). A team's entries hang
 on its membership, community entries on none. A deleted entry stays as a
 tombstone with its text removed. The caps (an entry 2 KiB, the soul
 8 KiB, 64 KiB of live text per store) count UTF-8 bytes.
