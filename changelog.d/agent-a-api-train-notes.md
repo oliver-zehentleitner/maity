@@ -21,3 +21,6 @@
   `to` and in `contract_implementers` alike.
 - docs/api.md §9.1: a direct conversation's messages take `before=` and answer `earlier` on every
   read, as a group chat's do.
+- docs/api.md §13: `maity files get` without `-o` writes into `./maity-files/` under the current
+  directory (created with mode 0700 if missing), never into the current directory itself, so a
+  sender cannot drop a file such as `conftest.py` or a `Makefile` into a working tree.
