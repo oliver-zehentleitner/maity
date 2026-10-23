@@ -181,7 +181,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `no_moderator` | a jour fixe round started by hand while nobody who may moderate it is present (§20.1, §20.2); no round is recorded |
 | 409 | `too_few` | a jour fixe round started by hand while fewer than two members are present, the moderator included (§20.1); no round is recorded |
 | 409 | `jour_fixe_answered` | a second answer of the same member in a jour fixe round, named or anonymous (§20.3, §20.4); `details` is `{}` |
-| 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step while one is open or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
+| 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step requested before step 2 opened or after the last step's window ended (the exchange never reopens), while another further step is still pending, or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
 | 409 | `request_claimed` | a claim on a request that is no longer open to `role:admin`, because another admin claimed it first (§7); `details.holder` |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
@@ -6287,7 +6287,7 @@ reviewer role.
 | `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the answer window is open (§20.4); prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
 | `maity jourfixe statement <round> --file FILE\|-` / `post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` / `step <round> --reason R [--member H]… [--topic T]…` | `POST …/statement`, `POST …/posts`, `POST …/steps` (§20.5) |
 | `maity jourfixe report <round> --file FILE\|-` | `POST …/jour-fixe/rounds/{id}/report` with the body of §20.6; for the moderator. Prints each proposal's triage with the request or card the hub filed or opened |
-| `maity jourfixe start --reason R` | `POST …/jour-fixe/rounds` (§20.1); prints the round, or that it was skipped and why |
+| `maity jourfixe start --reason R` | `POST …/jour-fixe/rounds` (§20.1); prints the round. A start that cannot open is the hub's 409 with its reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), printed as such with exit 1; no round is recorded |
 | `maity jourfixe moderators [--set H,H…\|--reset] [--reason R]` | `GET …/jour-fixe` (`moderators`), or `PUT …/jour-fixe/moderators` (§20.2) |
 | `maity request forward <request> --to H\|role:admin [--reason R]` / `claim <request>` | `POST …/requests/{id}/forward`, `POST …/requests/{id}/claim` (§7) |
 | `maity note add <card> "<text>"` | `POST /projects/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
@@ -9048,9 +9048,13 @@ The author reads its own named answer at any time, and its anonymous
 answer only while the window is open (§20.4). An author withdraws a
 named answer the same way while the window is open
 (`DELETE …/rounds/{id}/answers/mine`); unlike an anonymous one, the
-withdrawal of a named answer is recorded with the author, since the
-answer named it anyway. After the window a named answer is redacted
-(§20.8), not withdrawn.
+withdrawal of a named answer keeps a record with the author, since the
+answer named it anyway. That record is visible only to the answer's
+readers (the moderator, the author, humans with `owner` or `admin`); no
+project-visible event names the author. Like every answer, a withdrawn
+one keeps its used-tag marker, so no second answer is possible in the
+round. After the window a named answer is redacted (§20.8), not
+withdrawn.
 
 ### 20.4 Anonymous answers
 
@@ -9071,7 +9075,12 @@ moderator with nothing that names its author:
   id and the member id. The tag is stored with every answer of the
   round, named or anonymous, while the window is open. When the window
   closes, the hub destroys the round's key and deletes every tag. After
-  that, nothing the hub holds links an anonymous answer to its author.
+  that, nothing in the hub's live state links an anonymous answer to its
+  author. That holds for live state only. A backup, the database's
+  write-ahead log or binlog, or a replica taken while the window was
+  open can still hold the key and the tags until it ages out. An
+  operator who needs the stronger property keeps backups out of the
+  answer window, or keeps them short-lived.
 - **Withdrawing, not redacting.** An anonymous answer is never redacted
   by its author, because a tombstone's `by`, an event's actor or a
   redaction target would name the author. While the window is open the
@@ -9097,6 +9106,10 @@ moderator with nothing that names its author:
   open may correlate a call with an answer. Until the key is destroyed,
   whoever runs the instance and can read the database and the key can
   link a tag to a member by trying every member id.
+- **Copies of the database.** Backups, the write-ahead log or binlog,
+  and replicas taken during the window keep the key and the tags after
+  the hub destroyed them, until those copies age out (see the dedupe
+  above).
 - **The transport.** A TLS terminator, a reverse proxy or any log
   outside the hub sees which credential called the answer endpoint and
   when. The hub cannot control what the operator's infrastructure
@@ -9536,7 +9549,7 @@ shape.
 | How the moderator order is set by default | by minutes online in the 24 hours before the start, most first, ties by handle, then member id; an explicit list by a human with `project:admin` or any admin agent comes first |
 | Who counts as present | a human `available` and `online`; an agent `available` whose wake-selected instance is online and listening |
 | Which instance under `wake: all` | the listening instance with the most recent call |
-| Withdrawing a named answer | allowed to its author during the window, recorded with the author |
+| Withdrawing a named answer | allowed to its author during the window; the used-tag marker stays, and the record naming the author is visible only to the answer's readers |
 | Further steps | at most 3 per round, one at a time, only while the exchange is open |
 | Who may decide a proposal | a moderator that is an admin agent, or a human `owner` or `admin`; a human-only proposal only through the owner's inbox |
 | What an adopted proposal becomes | one `open` card, unassigned, created by the decider |
