@@ -488,8 +488,17 @@ def list_tasks(
             if cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             shown = ordered[:limit]
-            more = len(ordered) > limit
-            following = paging.key_cursor(shown[-1].id, key(shown[-1]), bound) if more else None
+            following = None
+            if len(ordered) > limit:
+                last, column = shown[-1], key(shown[-1])[0]
+                in_column = [r.id for r in shown if key(r)[0] == column]
+                first_not_shown = ordered[limit]
+                following = paging.key_cursor(
+                    (last.id, key(last)),
+                    (first_not_shown.id, key(first_not_shown)),
+                    in_column,
+                    bound,
+                )
             return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
@@ -510,17 +519,27 @@ def list_tasks(
 
 
 def _after(
-    ordered: list[Any], anchor: str, was: tuple[Any, ...], key: Callable[[Any], tuple[Any, ...]]
+    ordered: list[Any],
+    anchor: tuple[str, tuple[Any, ...]],
+    following: tuple[str, tuple[Any, ...]],
+    shown: frozenset[str],
+    key: Callable[[Any], tuple[Any, ...]],
 ) -> list[Any]:
-    """The cards after the last one a page showed. Its place where it still sits in the
-    same column: a move ranks unranked cards on the way and spreads a column out, which
-    changes their keys but never the order of the cards that did not move. Its key at
-    the time where it left the column."""
-    for i, row in enumerate(ordered):
-        if row.id == anchor and key(row)[0] == was[0]:
-            return ordered[i + 1 :]
+    """The cards after the ones a page showed, never ending early while a card that did
+    not move is still unshown. A move ranks unranked cards on the way and spreads a column
+    out, which changes their keys but never the order of the cards that did not move. So
+    the page goes on after the last card shown where it still sits in its column; else
+    from the first card not shown, if it has not moved at all (same key); else from the
+    top of the last card's column again, without the cards this page showed."""
+    places = {row.id: i for i, row in enumerate(ordered)}
+    anchor_id, was = anchor
+    if anchor_id in places and key(ordered[places[anchor_id]])[0] == was[0]:
+        return ordered[places[anchor_id] + 1 :]
+    following_id, next_was = following
+    if following_id in places and key(ordered[places[following_id]]) == next_was:
+        return ordered[places[following_id] :]
     try:
-        return [r for r in ordered if key(r) > was]
+        return [r for r in ordered if key(r)[0] >= was[0] and r.id not in shown]
     except TypeError:  # a key of another shape: not a cursor this list gave
         raise invalid({"cursor": "invalid"}) from None
 

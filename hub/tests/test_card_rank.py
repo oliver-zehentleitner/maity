@@ -204,6 +204,62 @@ def test_paging_after_the_last_card_shown_left(owner: flow.Human) -> None:
     assert second == c[3:6]
 
 
+def test_paging_when_the_last_card_shown_left_and_the_rest_were_ranked(
+    owner: flow.Human,
+) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    _, cursor = pages(owner, "status=open&limit=3")
+    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    move(owner, c[5], before=c[4])  # ranks c0, c1, c3 on the way: their keys change kind
+    second, _ = pages(owner, "status=open&limit=3", cursor)
+    assert second == [c[3], c[5], c[4]]  # from the first card not shown, where it now sits
+
+
+def test_paging_when_both_cards_at_the_edge_left_the_column(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    _, cursor = pages(owner, "status=all&limit=3")
+    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maity/tasks/{c[3]}", {"status": "cancelled"})
+    rest: list[str] = []
+    while cursor is not None:
+        page, cursor = pages(owner, "status=all&limit=3", cursor)
+        rest += page
+    assert {c[4], c[5]} <= set(rest)  # unmoved cards are never lost
+    assert rest.index(c[4]) < rest.index(c[5])
+
+
+def test_paging_when_the_first_card_not_shown_moved_to_the_bottom(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    _, cursor = pages(owner, "status=open&limit=3")
+    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    move(owner, c[3], to="bottom")
+    second, _ = pages(owner, "status=open&limit=3", cursor)
+    assert second == [c[4], c[5], c[3]]
+
+
+def test_paging_when_both_left_and_the_rest_were_ranked(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    _, cursor = pages(owner, "status=open&limit=3")
+    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maity/tasks/{c[3]}", {"status": "proposed"})
+    move(owner, c[0], to="bottom")  # ranks every card left in the column
+    second, _ = pages(owner, "status=open&limit=3", cursor)
+    assert second == [c[4], c[5]]
+
+
+def test_equal_ranks_and_times_order_by_id(owner: flow.Human, migrated: Engine) -> None:
+    a, b, c = (task(owner)["id"] for _ in range(3))
+    same = datetime(2026, 5, 1, tzinfo=UTC)
+    with migrated.begin() as conn:
+        for card_id in (a, b, c):
+            conn.execute(
+                t.card.update().where(t.card.c.id == card_id).values(rank="i", created_at=same)
+            )
+    assert column(owner) == sorted([a, b, c])
+    ranked = [card(x, "i", 0) for x in (c, a, b)]
+    assert [r.id for r in sorted(ranked, key=ranks.column_key)] == sorted([a, b, c])
+
+
 @pytest.mark.parametrize("order", ["board", "updated"])
 def test_a_cursor_holds_for_its_filters_only(owner: flow.Human, order: str) -> None:
     for _ in range(3):

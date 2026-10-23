@@ -2471,9 +2471,12 @@ next card on its own takes the first claimable one, by
 dependencies and assignment apply as before. The resume packet lists the
 agent's assigned cards in this order, and `GET …/tasks` lists in it by
 default (`order=board`). A page of it goes on after the last card it
-showed: a card that moves while a client pages may show twice or not at
-all, and when the last card shown moves itself, so may the cards it
-passed. `label` is optional: `fix`, `feature`,
+showed; when that card has left its column, from the first card it did
+not show if that card has not moved, and otherwise from the top of that
+column again, without the cards the page showed. A card that moves while
+a client pages may show twice or not at all, and when the last card
+shown moves itself, so may the cards it passed; a card that did not move
+is never skipped, though one from an earlier page may show again. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `status`:
 
