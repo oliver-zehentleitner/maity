@@ -428,13 +428,24 @@ def test_a_cut_round_goes_on_from_where_it_stopped_and_then_moves_the_bound(
     )
 
 
-def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
-    owner: flow.Human, github: FakeGitHub, migrated: Engine
-) -> None:
+def moved_during_a_cut_scan(
+    owner: flow.Human,
+    github: FakeGitHub,
+    migrated: Engine,
+    started: timedelta,
+    moved: timedelta,
+) -> int:
+    """A merge on unread page 21 moves to page 1 between the rounds of a cut scan; the
+    round began `started` after the switch-on, the move came `moved` after it. Returns
+    what the interval after the cut scan announces."""
     enable(owner)
     pid = project_id(migrated)
     with migrated.connect() as conn:
-        epoch = ticker.merges_since(conn, pid)
+        switched = ticker.merges_since(conn, pid)
+    # Times from a whole second on; the hub's clock stands after all of them, so the
+    # interval after the cut scan begins where that scan began, as in the field.
+    epoch = switched.replace(microsecond=0) + timedelta(seconds=1)
+    clock.set_source(lambda: epoch + timedelta(hours=3))
     old = {
         "number": 13,
         "title": "merged before the round began",
@@ -461,24 +472,83 @@ def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
     ]
     assert probe.announce_merges(migrated, READER, pid) == 0, "cut at 20 pages, before page 21"
     with migrated.begin() as conn:
-        # The round began an hour after the merge.
         conn.execute(
             update(t.ticker_source)
             .where(t.ticker_source.c.project_id == pid)
-            .values(round_started=epoch + timedelta(hours=1))
+            .values(round_started=epoch + started)
         )
     # A comment between the rounds: the pull request moves to page 1, page 21 is empty.
+    moved_at = clock.rfc3339(epoch + moved)  # whole seconds, as the forge has them
+    closed(github, 1, [{**old, "updated_at": moved_at}] + unmerged[:49])
+    closed(github, 21, [])
+    assert probe.announce_merges(migrated, READER, pid) == 0, "the continuation reads page 21"
+    found = probe.announce_merges(migrated, READER, pid)
+    assert probe.announce_merges(migrated, READER, pid) == 0, "and only once"
+    return found
+
+
+def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    found = moved_during_a_cut_scan(owner, github, migrated, timedelta(hours=1), timedelta(hours=2))
+    assert found == 1, "the next interval admits it by its update"
+    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [13]
+
+
+@pytest.mark.parametrize("micro", [0, 500_000, 999_999])
+def test_a_move_in_the_second_the_scan_began_is_still_announced(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine, micro: int
+) -> None:
+    # The round began at hh:mm:ss.micro; the forge says the update was at hh:mm:ss.
+    started = timedelta(hours=1, microseconds=micro)
+    assert moved_during_a_cut_scan(owner, github, migrated, started, timedelta(hours=1)) == 1
+
+
+def test_a_move_a_second_before_the_scan_began_is_the_earlier_scan_s(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    # Older than the bound's second: what the scan that began then already covered.
+    started = timedelta(hours=1)
+    assert (
+        moved_during_a_cut_scan(owner, github, migrated, started, timedelta(minutes=59, seconds=59))
+        == 0
+    )
+
+
+def test_a_page_in_the_bound_s_second_does_not_stop_the_scan(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.connect() as conn:
+        epoch = ticker.merges_since(conn, pid).replace(microsecond=0) + timedelta(seconds=1)
+    clock.set_source(lambda: epoch + timedelta(hours=3))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.ticker_source)
+            .where(t.ticker_source.c.project_id == pid)
+            .values(scanned_until=epoch + timedelta(hours=1, microseconds=250_000))
+        )
+    second = clock.rfc3339(epoch + timedelta(hours=1))
+    same_second = [
+        {"number": 3000 + n, "merged_at": None, "updated_at": second, "base": {"ref": "main"}}
+        for n in range(50)
+    ]
+    closed(github, 1, same_second)
     closed(
         github,
-        1,
-        [{**old, "updated_at": clock.rfc3339(epoch + timedelta(hours=2))}] + unmerged[:49],
+        2,
+        [
+            {
+                "number": 14,
+                "title": "in the bound's second",
+                "merged_at": clock.rfc3339(epoch + timedelta(minutes=5)),
+                "updated_at": second,
+                "merge_commit_sha": MERGE_SHA,
+                "base": {"ref": "main", "sha": BASE_SHA},
+                "head": {"ref": "x"},
+            }
+        ],
     )
-    closed(github, 21, [])
-    assert (
-        probe.announce_merges(migrated, READER, pid) == 0
-    ), "the continuation reads page 21, now empty"
-    assert (
-        probe.announce_merges(migrated, READER, pid) == 1
-    ), "the next interval admits it by its update"
-    assert probe.announce_merges(migrated, READER, pid) == 0, "and only once"
-    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [13]
+    github.answers["/repos/acme/maity/pulls/14/files?per_page=100&page=1"] = []
+    assert probe.announce_merges(migrated, READER, pid) == 1, "page 2 is read, its merge announced"

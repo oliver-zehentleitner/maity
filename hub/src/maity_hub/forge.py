@@ -257,8 +257,13 @@ class Forge:
 
         Admitting by the update, not the merge: a pull request merged before `since` but
         updated after it may have moved past a scan's pages while that scan was cut, and
-        would otherwise never be read again. The caller's dedupe keeps it to one item."""
+        would otherwise never be read again. The caller's dedupe keeps it to one item.
+
+        The forge's `updated_at` has whole seconds and `since` has microseconds: the bound
+        is floored to its second and only what is older is left out, so an update in the
+        bound's own second is read again rather than lost."""
         floor = merged_after if merged_after is not None else since
+        bound = since.replace(microsecond=0)
         found: list[dict[str, Any]] = []
         for page in range(start, start + pages):
             batch = self._get(
@@ -275,10 +280,10 @@ class Forge:
                 if not isinstance(pr, dict):
                     continue
                 updated = _moment(pr.get("updated_at"))
-                if updated is not None and updated < since:
+                if updated is not None and updated < bound:
                     reached = True
                 merged = _moment(pr.get("merged_at"))
-                if merged is None or merged <= floor or (updated is not None and updated <= since):
+                if merged is None or merged <= floor or (updated is not None and updated < bound):
                     continue
                 found.append(
                     {
