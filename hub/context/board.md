@@ -180,3 +180,26 @@ the contract owner accepted the conditional shape for compatibility.
 **Rejected alternative:** always include `children: []`, then revise the
 old clients and contract sample. It changes a previously valid response
 without giving dependency-only callers any new information.
+
+## The import is a create: it goes through the same path as POST …/tasks
+
+**Id:** 2802d542-243d-4dc1-a24e-941a34b50117
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the card import)
+**Revisit when:** the import needs a rule the create does not have, beyond the forge read and `imported_from`
+
+`POST …/tasks/import` reads the issue first, outside any transaction, then
+builds the request a member would have sent (title, quoted body, the one
+issue link) and runs it through `create_card`, the body of `POST …/tasks`,
+which also takes `imported_from` and the link's observation from that
+read. A body over the cap is cut at a line boundary.
+
+**Reason:** the contract makes the import a create in every respect: the
+project state and its reason rule, a paused member, the assignment, the
+history entry, `task_created`. One path keeps them from drifting apart
+when the create changes.
+
+**Rejected alternative:** an import route with its own insert: every rule
+of the create copied, and a later change to the create missed there.
