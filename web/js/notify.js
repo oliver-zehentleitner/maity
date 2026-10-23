@@ -1,4 +1,4 @@
-// Notifications for the human (docs/api.md §17, stage 1 and the browser
+// Notifications for the human (docs/api.md §18, stage 1 and the browser
 // part): the counts behind the badges and the tab title, the bell with the
 // latest items, and browser notifications while a tab is open. Everything
 // comes from GET /me/notifications; a hub without it leaves the page as it
@@ -16,7 +16,7 @@ window.Maity = window.Maity || {};
     ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
   };
   // How long a browser long-poll may hold, and how long to stay away after
-  // another tab took the long-poll over (§17.2: one per session).
+  // another tab took the long-poll over (§18.2: one per session).
   const WAIT_S = 55;
   const SUPERSEDED_MS = 5 * 60 * 1000;
   // An answer back faster than this with nothing in it (a hub or mock that
@@ -25,7 +25,7 @@ window.Maity = window.Maity || {};
   const PAUSE_MS = 30 * 1000;
 
   // available: null until read, false when the hub has no notifications.
-  // head: the position (§17.2, "a.b", never built here) the browser's
+  // head: the position (§18.2, "a.b", never built here) the browser's
   // long-poll starts from.
   const state = { available: null, counts: null, byProject: {}, head: null, settings: null };
 
@@ -46,7 +46,7 @@ window.Maity = window.Maity || {};
   }
 
   // The counts, per project too (by_project, computed by the hub over
-  // every unread item, §17.2), and the head for the long-poll; no items.
+  // every unread item, §18.2), and the head for the long-poll; no items.
   async function read() {
     try {
       const answer = await M.api.get("/me/notifications?limit=0");
@@ -158,7 +158,7 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  // ---- browser notifications (§17.8 stage 2) ---------------------------
+  // ---- browser notifications (§18.8 stage 2) ---------------------------
 
   let browserLoop = null;
   const shown = new Set();
@@ -191,7 +191,7 @@ window.Maity = window.Maity || {};
         if (loop.stopped) return;
         if (answer.superseded) { await pause(SUPERSEDED_MS); continue; }
         const items = answer.items || [];
-        // The hub's next position, passed back unchanged (§17.2).
+        // The hub's next position, passed back unchanged (§18.2).
         if (answer.next_after) after = answer.next_after;
         items.forEach((x) => {
           if (x.read || shown.has(x.id) || !b.kinds[x.kind]) return;

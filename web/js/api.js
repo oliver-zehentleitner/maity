@@ -344,7 +344,7 @@ window.Maity = window.Maity || {};
     if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
-  // §17.2 counts, overall and per project. The fixtures have events only,
+  // §18.2 counts, overall and per project. The fixtures have events only,
   // so a position is "<seq>.0".
   const KINDS = ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security", "system"];
   function notificationCounts() {
@@ -447,7 +447,7 @@ window.Maity = window.Maity || {};
       data.server_time = nowIso();
       return data;
     }],
-    // §17.2: the human's notifications. inbox counts the open requests as
+    // §18.2: the human's notifications. inbox counts the open requests as
     // /me does; chat and the rest count the unread items of their kind
     // (the hub's chat count is the conversations' unread, which the
     // fixtures do not keep apart).
@@ -472,7 +472,7 @@ window.Maity = window.Maity || {};
       listed = items.slice().sort((a, b) => b.seq - a.seq).slice(0, limit);
       return { counts, by_project: byProject, items: listed, next_cursor: null, next_after: head + ".0", server_time: nowIso() };
     }],
-    // §17.3: by ids, or everything up to a seq (of one kind or project).
+    // §18.3: by ids, or everything up to a seq (of one kind or project).
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
@@ -482,7 +482,7 @@ window.Maity = window.Maity || {};
       });
       return notificationCounts();
     }],
-    // §17.4: the account's settings; a PATCH merges what it names.
+    // §18.4: the account's settings; a PATCH merges what it names.
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;

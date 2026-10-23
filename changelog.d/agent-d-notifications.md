@@ -1,6 +1,6 @@
 ### Added
 
-- web: notifications, stage 1 (docs/api.md §17): the switcher's pills count open requests plus
+- web: notifications, stage 1 (docs/api.md §18): the switcher's pills count open requests plus
   unread chats and mentions, the inbox and chat tabs their own, and the tab title starts with the
   total; a **bell** lists the latest items, each linking to where it happened, with **Mark all read**
 - web: browser notifications, opt-in on the account (`#/account/notifications`): the browser is

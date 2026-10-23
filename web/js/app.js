@@ -520,7 +520,7 @@ window.Maity = window.Maity || {};
   function switcher(ctx) {
     const N = M.notify.state;
     // With the hub's notifications: what asks for the human, requests,
-    // unread chats and mentions (docs/api.md §17.2); else the open requests.
+    // unread chats and mentions (docs/api.md §18.2); else the open requests.
     const total = N.available ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
     const pill = (p) => {
@@ -568,7 +568,7 @@ window.Maity = window.Maity || {};
   }
 
   // The inbox tab says the project's open requests, the chat tab its unread
-  // chats (docs/api.md §17.2), where the hub has notifications.
+  // chats (docs/api.md §18.2), where the hub has notifications.
   function tabCount(ctx, route) {
     if (!M.notify.state.available || (route !== "inbox" && route !== "chat")) return null;
     const c = M.notify.projectCount(ctx.projects.find((p) => p.slug === ctx.slug) || { slug: ctx.slug });

@@ -89,7 +89,7 @@ class Run:
         self.problems: list[str] = []
         self.axe = ""
         self.a11y_findings: list[dict] = []
-        # Set when the hub answers the notifications read with 404 (§17).
+        # Set when the hub answers the notifications read with 404 (§18).
         self.no_notifications = False
 
     def a11y(self, page: Page, view: str) -> None:
@@ -347,7 +347,7 @@ def watch_page(run: Run, page: Page) -> None:
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
-        # A hub without notifications (docs/api.md §17) answers their read with
+        # A hub without notifications (docs/api.md §18) answers their read with
         # 404 on every page; the page goes on without them, and the
         # notifications step checks that.
         if resp.status == 404 and path.startswith("/api/v1/me/notifications?"):
@@ -1533,7 +1533,7 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
 
 
 def notifications_step(run: Run, page: Page) -> None:
-    """Notifications, stage 1 (docs/api.md §17.2): the bell, its list, its keyboard."""
+    """Notifications, stage 1 (docs/api.md §18.2): the bell, its list, its keyboard."""
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     bell = page.locator("header button.bell")

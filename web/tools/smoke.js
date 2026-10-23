@@ -157,7 +157,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".error"), "cross-project inbox renders");
   expect(gets.some((p) => p.startsWith("/requests")) && !gets.some((p) => p.includes("/members")), "#/all renders from the requests alone");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
-  // With notifications (docs/api.md §17.2): requests plus unread chats and mentions; Maity has one of each unread.
+  // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
   expect(chipCount("All projects") === "6" && chipCount("Maity") === "5" && chipCount("Sample shop") === "1", "switcher counts 6 / 5 / 1");
   expect(document.title.startsWith("(6) "), "the tab title starts with what asks for the human");
   expect(main.querySelectorAll(".project-label").length === 4, "every entry labelled with its project");
@@ -593,7 +593,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = (p) => { prWrites.push(["DELETE", p]); return prDel(p); };
   await go("#/p/maity/runners"); await tick();
   const prCard = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
-  expect(document.title === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
+  expect(plainTitle() === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
     "project runners: the attached runners, by name");
   const prLaptop = text(prCard("home-laptop"));
   expect(prLaptop.includes("online") && prLaptop.includes("1 agent running here") && prLaptop.includes("Claude Code 2.1.308")
@@ -2626,7 +2626,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   win.location.search = "";
 
-  // Notifications (docs/api.md §17): the bell, the counts, browser notifications.
+  // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };

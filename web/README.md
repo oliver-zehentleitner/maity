@@ -39,7 +39,7 @@ menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen.
 
-**Notifications** (`docs/api.md` §17, `js/notify.js`). Where the hub has
+**Notifications** (`docs/api.md` §18, `js/notify.js`). Where the hub has
 them, `GET /me/notifications?limit=0` gives the counts, per project too
 (`by_project`, computed by the hub):
 - **Switcher pill.** A project's pill counts its open requests plus its
