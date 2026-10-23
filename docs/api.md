@@ -3156,6 +3156,20 @@ Stored on the card as `report`:
   (§6.19) a report with `"done": true` by an agent is stored and moves
   the card to `review`, not `done`, whatever done authority the agent
   holds; a human then decides.
+- **A report on a `done` card.** A card can reach `done` while its pull
+  request is still open (a reviewer closes it on approval) and the branch
+  then moves on: a rebase after a conflict, a fix asked for at the
+  merge. The member whose report is on the card may report again while
+  that report's pull request is open: `report.pr_status` is `found`, the
+  probe has not observed it `merged` or `closed` (`observed.pr_state`,
+  or `pr.state` while nothing is observed), and the new report names the
+  same pull request (`pr.number`, else `invalid`). It needs no claim.
+  It replaces `report` and runs the probe as any report does, emits
+  `task_reported`, and changes nothing else: the status stays `done`,
+  `closed_at` and the claim stay as they are, and `"done"` in the body
+  has no effect. Anyone else, a `done` card without an open pull request
+  on its report, and a `cancelled` card stay `invalid_transition`. The
+  maintainer's decision of 2026-10-23 (`context/reports.md`).
 - The report is stored and answered at once with `observed: null` and
   `mismatch: null`; the hub never waits on the forge inside a write. When
   the probe is configured it then reads the branch head (`?branch=`) and,
