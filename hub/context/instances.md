@@ -210,6 +210,12 @@ the card is assigned to its own team. It is refused when
 `assigned_instance` names another instance, and under
 `distribution: lead` while it is unset unless the caller is the lead. An
 admin's claim on a team's behalf names its instance and is not checked.
+Under `free` no card gets an `assigned_instance`: an explicit `instance`
+on `assign` is refused (`invalid`, `details.fields.instance:
+"distribution_free"`) unless the assign moves an expired claim of another
+holder, where it only names the instance the claim lands on. Every path
+that assigns a card — create, `PATCH assigned_to`, the area-owner default
+and `assign` — sets `assigned_instance` by the team's distribution.
 
 **Reason:** the error table refuses an unset instance under `lead` only;
 §6.5 says that under `lead` and `round_robin` an instance claims only
@@ -222,3 +228,6 @@ assigned elsewhere or to nobody is claimed as before.
 **Rejected alternatives:**
 - Refusing an unset instance under `round_robin` too, as §6.5 reads —
   open until the contract says which text wins.
+- Honouring an explicit instance under `free` — §6.18 says under `free`
+  `assigned_instance` stays null; the coordinator ruled the explicit one
+  is refused, not silently kept (review of the team rules, 2026-10-23).
