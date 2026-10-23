@@ -692,6 +692,9 @@ card_history = Table(
     _membership_ref("actor_membership"),
     Column("actor_session_id", String(ID)),
     Column("field", String(32), nullable=False),
+    # The link a `links` entry adds or removes: what a replayed add or a repeated
+    # removal finds it by, even once the entry is redacted.
+    Column("link_id", String(ID)),
     Column("before", JSON_VALUE),
     Column("after", JSON_VALUE),
     Column("diff", MARKDOWN_TEXT),
@@ -701,6 +704,7 @@ card_history = Table(
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),  # the tombstone of §8.5 once redacted
     Index("ix_card_history_card_at", "card_id", "at", "id"),
+    Index("ix_card_history_link", "link_id"),
     **MYSQL_TABLE,
 )
 

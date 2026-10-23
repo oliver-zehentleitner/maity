@@ -135,14 +135,23 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
 
 
 def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
-    row = conn.execute(select(t.card_link).where(t.card_link.c.id == link_id)).one()
-    return links.link_view(conn, row)
+    """A replayed add: the link as it is, or once removed as its add entry holds it."""
+    row = conn.execute(select(t.card_link).where(t.card_link.c.id == link_id)).first()
+    if row is not None:
+        return links.link_view(conn, row)
+    entry = conn.execute(
+        select(t.card_history)
+        .where(t.card_history.c.link_id == link_id, t.card_history.c.field == "links")
+        .order_by(t.card_history.c.at, t.card_history.c.id)
+    ).first()
+    if entry is None:
+        raise not_found()
+    return history.link_shown(entry)
 
 
 def load_removed_link(conn: Connection, entry_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    removed: dict[str, Any] = row.redaction if row.redacted else row.before
-    return removed
+    return history.link_shown(row)
 
 
 idempotency.LOADERS["link"] = idempotency.plain(load_link)
@@ -161,7 +170,12 @@ def delete_link(
             select(t.card_link).where(t.card_link.c.id == link_id, t.card_link.c.card_id == card.id)
         ).first()
         if row is None:
-            raise not_found()
+            # Removed already: a DELETE is idempotent (§1.5) and answers with what it
+            # removed, from the removal's entry; a link that never was is not_found.
+            removal = history.link_entry(conn, card.id, link_id, removed=True)
+            if removal is None:
+                raise not_found()
+            return idempotency.Outcome(200, "removed_link", removal.id, history.link_shown(removal))
         holder = card.claim_holder == mine.id
         if not (row.added_by == mine.id or holder or card.created_by == mine.id):
             mine.require("tasks:admin")
