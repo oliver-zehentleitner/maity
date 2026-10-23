@@ -16,9 +16,11 @@ A consent request that applies a change on `go` carries it as JSON in
 function, its answerer rule (a scope, humans only or not) and optionally
 its own view fields. The request routes call `proposals.settle` on every
 close and ask the rule before they accept or offer an answer. A kind the
-hub does not know is never filed. When a stored one is unknown, only that
-request fails (`proposal_kind_unknown`); lists and resume packets leave
-it out.
+hub does not know is never filed. When a stored one is unknown, an answer
+to that request fails (`proposal_kind_unknown`), and lists and resume
+packets leave it out. A close the hub makes itself, such as the
+proposer's removal, withdraws it without its settle hook and says so in
+the reason, so the removal does not roll back.
 
 **Reason:** two slices needed the same thing in the same week, an admin
 agent's membership change and a memory proposal, and more kinds are in
