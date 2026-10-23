@@ -533,3 +533,72 @@ def test_a_link_job_is_per_project_and_waits_once(migrated: Engine) -> None:
     worker.links_added("prj-b")
     jobs = [worker.jobs.get_nowait() for _ in range(worker.jobs.qsize())]
     assert jobs == [(probe.LINKS, "prj-a"), (probe.LINKS, "prj-b")]
+
+
+# --- review of #267 -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        (
+            {"kind": "issue", "forge_url": "https://github.com:bad/o/r/issues/1"},
+            {"forge_url": "not_a_forge_url"},
+        ),
+        (
+            {"kind": "issue", "forge_url": "https://[broken/o/r/issues/1"},
+            {"forge_url": "not_a_forge_url"},
+        ),
+        ({"kind": "url", "url": "https://example.com:port/x"}, {"url": "not_a_url"}),
+        ({"kind": "url", "url": "https://[broken"}, {"url": "not_a_url"}),
+    ],
+)
+def test_a_malformed_url_is_invalid_not_a_crash(
+    owner: flow.Human, body: dict[str, Any], fields: dict[str, str]
+) -> None:
+    assert fields_of(link(owner, task(owner), **body)) == fields
+
+
+def test_the_diff_keeps_lines_that_start_like_its_headers() -> None:
+    from maity_hub.board.history import diff
+
+    shown = diff("-- old\n++ kept", "++ new\n++ kept")
+    assert shown.splitlines() == ["@@ -1,2 +1,2 @@", "--- old", "+++ new", " ++ kept"]
+
+
+def test_a_replayed_add_and_a_repeated_removal_answer_as_the_first(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    path = f"/api/v1/projects/maity/tasks/{card['id']}/links"
+    keyed = agent.auth | {"Idempotency-Key": "replay-of-a-link-0001"}
+    body = {"kind": "url", "url": "https://example.com/a"}
+    added = agent.client.post(path, json=body, headers=keyed)
+    assert added.status_code == 201, added.text
+    gone = agent.client.delete(f"{path}/{added.json()['id']}", headers=agent.auth)
+    assert gone.status_code == 200
+    replayed = agent.client.post(path, json=body, headers=keyed)
+    assert replayed.status_code == 201, replayed.text
+    assert replayed.headers.get("Idempotent-Replayed") == "true"
+    assert replayed.json() == added.json()
+    again = agent.client.delete(f"{path}/{added.json()['id']}", headers=agent.auth)
+    assert (again.status_code, again.json()) == (200, added.json())
+    nothing = agent.client.delete(f"{path}/lnk-000000000000", headers=agent.auth)
+    assert nothing.status_code == 404
+
+
+def test_a_repeated_removal_shows_the_tombstone_once_its_entry_is_redacted(
+    owner: flow.Human,
+) -> None:
+    card = task(owner)
+    added = link(owner, card, kind="url", url="https://example.com/secret").json()
+    path = f"/projects/maity/tasks/{card['id']}/links/{added['id']}"
+    assert owner.delete(path).status_code == 200
+    removal = next(e for e in history(owner, card) if e["field"] == "links" and e["after"] is None)
+    owner.post(
+        f"/projects/maity/tasks/{card['id']}/history/{removal['id']}/redact", {"reason": "leak"}
+    )
+    again = owner.delete(path)
+    assert again.status_code == 200 and again.json()["redacted"] is True
+    assert "url" not in again.json()

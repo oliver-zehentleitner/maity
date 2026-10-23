@@ -61,6 +61,7 @@ def upgrade() -> None:
         sa.Column("actor_membership", sa.Integer(), nullable=True),
         sa.Column("actor_session_id", sa.String(length=40), nullable=True),
         sa.Column("field", sa.String(length=32), nullable=False),
+        sa.Column("link_id", sa.String(length=40), nullable=True),
         sa.Column("before", JSON_VALUE, nullable=True),
         sa.Column("after", JSON_VALUE, nullable=True),
         sa.Column("diff", MARKDOWN_TEXT, nullable=True),
@@ -81,6 +82,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_card_history_card_at", "card_history", ["card_id", "at", "id"], unique=False
     )
+    op.create_index("ix_card_history_link", "card_history", ["link_id"], unique=False)
     op.create_table(
         "card_note",
         sa.Column("id", sa.String(length=40), nullable=False),
@@ -114,6 +116,7 @@ def downgrade() -> None:
     op.drop_index("ix_card_note_author_created", table_name="card_note")
     op.drop_index("ix_card_note_card_created", table_name="card_note")
     op.drop_table("card_note")
+    op.drop_index("ix_card_history_link", table_name="card_history")
     op.drop_index("ix_card_history_card_at", table_name="card_history")
     op.drop_table("card_history")
     op.drop_index(op.f("ix_card_link_card_id"), table_name="card_link")
