@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -462,19 +463,25 @@ def list_tasks(
             query = query.where(
                 or_(t.card.c.closed_at.is_(None), t.card.c.closed_at > closed_after)
             )
+        bound = paging.scope(
+            status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
+            area=area, closed_after=closed_after, order=order,
+        )  # fmt: skip
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: sorted here, a
-            # project's cards at a time, and paged by position.
-            start = paging.unposition(cursor) if cursor is not None else 0
-            ordered = sorted(
-                conn.execute(query).all(), key=lambda r: ranks.board_key(cards.STATUSES, r)
-            )
-            shown = ordered[start : start + limit]
-            more = len(ordered) > start + limit
-            following = paging.position_cursor(start + limit) if more else None
+            # project's cards at a time, and paged after the last item shown.
+            def key(row: Any) -> tuple[Any, ...]:
+                return ranks.board_key(cards.STATUSES, row)
+
+            ordered = sorted(conn.execute(query).all(), key=key)
+            if cursor is not None:
+                ordered = _after(ordered, *paging.unkey(cursor, bound), key)
+            shown = ordered[:limit]
+            more = len(ordered) > limit
+            following = paging.key_cursor(shown[-1].id, key(shown[-1]), bound) if more else None
             return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
         if cursor is not None:
-            after_at, after_id = paging.uncursor(cursor)
+            after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
                 or_(
                     t.card.c.updated_at < after_at,
@@ -485,8 +492,26 @@ def list_tasks(
             query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc()).limit(limit + 1)
         ).all()
         page = rows[:limit]
-        next_cursor = paging.cursor(page[-1].updated_at, page[-1].id) if len(rows) > limit else None
+        next_cursor = (
+            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
+        )
         return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
+
+
+def _after(
+    ordered: list[Any], anchor: str, was: tuple[Any, ...], key: Callable[[Any], tuple[Any, ...]]
+) -> list[Any]:
+    """The cards after the last one a page showed. Its place where it still sits in the
+    same column: a move ranks unranked cards on the way and spreads a column out, which
+    changes their keys but never the order of the cards that did not move. Its key at
+    the time where it left the column."""
+    for i, row in enumerate(ordered):
+        if row.id == anchor and key(row)[0] == was[0]:
+            return ordered[i + 1 :]
+    try:
+        return [r for r in ordered if key(r) > was]
+    except TypeError:  # a key of another shape: not a cursor this list gave
+        raise invalid({"cursor": "invalid"}) from None
 
 
 @router.get("/projects/{slug}/tasks/{card_id}")

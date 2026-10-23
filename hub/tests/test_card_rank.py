@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import clock, ranks
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -113,14 +116,126 @@ def test_the_resume_packet_lists_assigned_cards_in_order(
     assert assigned == [second, first]
 
 
-def test_many_moves_keep_the_order_and_short_ranks(owner: flow.Human) -> None:
+def test_many_moves_keep_the_order(owner: flow.Human) -> None:
     cards = [task(owner, title=str(i))["id"] for i in range(6)]
     expected = list(cards)
-    for step in range(40):  # always between the same two: the keys grow until spread out
+    for step in range(40):
         card = expected[-1]
         move(owner, card, after=expected[0])
         expected.remove(card)
         expected.insert(1, card)
         assert column(owner) == expected, step
-    ranks = [c["rank"] for c in owner.get("/projects/maity/tasks?status=open").json()["items"]]
-    assert all(r is None or len(r) <= 25 for r in ranks)
+
+
+def card(card_id: str, rank: str | None, n: int) -> SimpleNamespace:
+    created = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=n)
+    return SimpleNamespace(id=card_id, rank=rank, created_at=created)
+
+
+def test_keys_that_grow_too_long_spread_the_column_out() -> None:
+    column_ = [card(f"c{i}", None, i) for i in range(6)]
+    longest, spreads = 0, 0
+    for _ in range(150):  # always between the same two: past ~116 a key passes 24
+        column_.sort(key=ranks.column_key)
+        last = column_[-1]
+        changed = ranks.place(column_, last.id, 1)
+        for c in column_:
+            c.rank = changed.get(c.id, c.rank)
+        longest = max([longest, *(len(k) for k in changed.values())])
+        spreads += len(changed) == len(column_)
+        order = [c.id for c in sorted(column_, key=ranks.column_key)]
+        assert order[1] == last.id
+    assert longest <= ranks.LONGEST
+    assert spreads >= 1  # the keys did grow that far: the spread is what kept them short
+
+
+def test_equal_ranks_are_spread_out_rather_than_refused() -> None:
+    a, b, x = card("a", "i", 0), card("b", "i", 1), card("x", None, 2)
+    changed = ranks.place([a, b, x], "x", 1)
+    assert set(changed) == {"a", "b", "x"}
+    assert changed["a"] < changed["x"] < changed["b"]
+
+
+def test_a_move_between_equal_ranks(owner: flow.Human) -> None:
+    a = task(owner)["id"]
+    b = task(owner, status="proposed")["id"]
+    x = task(owner)["id"]
+    move(owner, a, to="top")
+    move(owner, b, to="top")  # the first key of an empty column: the same as a's
+    owner.patch(f"/projects/maity/tasks/{b}", {"status": "open"})  # the rank goes along
+    assert column(owner) == [a, b, x]  # equal ranks: by creation
+    moved = move(owner, x, after=a)
+    assert moved.status_code == 200, moved.text
+    assert column(owner) == [a, x, b]
+    listed = owner.get("/projects/maity/tasks?status=open").json()["items"]
+    assert len({c["rank"] for c in listed}) == 3
+
+
+def pages(who: Any, query: str, cursor: str | None = None) -> tuple[list[str], str | None]:
+    url = f"/projects/maity/tasks?{query}" + (f"&cursor={cursor}" if cursor else "")
+    body = who.get(url).json()
+    return [c["id"] for c in body["items"]], body["next_cursor"]
+
+
+def test_paging_goes_on_after_the_last_card_shown(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    first, cursor = pages(owner, "status=open&limit=3")
+    assert first == c[:3]
+    move(owner, c[0], to="bottom")  # ranks every card: the keys change, not the order
+    second, cursor = pages(owner, "status=open&limit=3", cursor)
+    assert second == c[3:6]
+    third, cursor = pages(owner, "status=open&limit=3", cursor)
+    assert (third, cursor) == ([c[0]], None)  # the moved card shows again, nothing is lost
+
+
+def test_paging_after_a_move_ranks_the_last_card_shown(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    first, cursor = pages(owner, "status=open&limit=3")
+    move(owner, c[5], before=c[3])  # c0–c2 take ranks on the way
+    second, _ = pages(owner, "status=open&limit=3", cursor)
+    assert second == [c[5], c[3], c[4]]
+
+
+def test_paging_after_the_last_card_shown_left(owner: flow.Human) -> None:
+    c = [task(owner, title=str(i))["id"] for i in range(6)]
+    _, cursor = pages(owner, "status=open&limit=3")
+    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    second, _ = pages(owner, "status=open&limit=3", cursor)
+    assert second == c[3:6]
+
+
+@pytest.mark.parametrize("order", ["board", "updated"])
+def test_a_cursor_holds_for_its_filters_only(owner: flow.Human, order: str) -> None:
+    for _ in range(3):
+        task(owner)
+    _, cursor = pages(owner, f"order={order}&limit=1")
+    assert cursor is not None
+    assert (
+        owner.get(f"/projects/maity/tasks?order={order}&limit=1&cursor={cursor}").status_code == 200
+    )
+    for other in (f"order={order}&limit=1&label=fix", f"order={order}&status=open&limit=1"):
+        refused = owner.get(f"/projects/maity/tasks?{other}&cursor={cursor}")
+        assert refused.json()["error"]["details"]["fields"] == {"cursor": "invalid"}, other
+    swapped = "updated" if order == "board" else "board"
+    assert owner.get(f"/projects/maity/tasks?order={swapped}&cursor={cursor}").status_code == 400
+
+
+def test_closed_cards_list_newest_first(owner: flow.Human) -> None:
+    start = datetime(2026, 5, 1, tzinfo=UTC)
+    a, b, c = (task(owner)["id"] for _ in range(3))
+    for n, card_id in enumerate((a, b, c)):
+
+        def now(at: datetime = start + timedelta(minutes=n)) -> datetime:
+            return at
+
+        clock.set_source(now)
+        owner.patch(f"/projects/maity/tasks/{card_id}", {"status": "cancelled"})
+    assert column(owner, "cancelled") == [c, b, a]
+
+
+def test_a_neighbour_from_another_project_is_not_found(owner: flow.Human) -> None:
+    a = task(owner)["id"]
+    flow.project(owner, "other")
+    other = owner.post("/projects/other/tasks", {"title": "elsewhere"}).json()["id"]
+    refused = move(owner, a, before=other)
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")
