@@ -63,10 +63,15 @@ def owner_membership(conn: Connection, project_id: str) -> Any:
 
 
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
-    """`to=me`: the caller's member id, `owner` for the owner, a role the caller holds.
-    A personal request is addressed to a human, never through a project (§7)."""
+    """`to=me`: the caller's member id, `owner` for the owner, a role the caller holds,
+    or the substitute covering the addressee (§6.12). A personal request is addressed to
+    a human, never through a project (§7)."""
     if request.personal:
         return False
+    return covers(request, mine) or _in_own_right(request, mine)
+
+
+def _in_own_right(request: Any, mine: Membership) -> bool:
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
@@ -120,8 +125,16 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     return getattr(request, "class") != "consent" and addressed_to(conn, request, mine)
 
 
+def covers(request: Any, mine: Membership) -> bool:
+    """The caller is the substitute answering for the addressee (§6.12): it reads the
+    request, finds it under `to=me` and answers as the addressee would."""
+    cover: dict[str, Any] | None = getattr(request, "cover", None)
+    return cover is not None and cover.get("by") == mine.principal_id
+
+
 def answered_in_own_right(conn: Connection, request: Any, mine: Membership) -> bool:
-    return addressed_to(conn, request, mine)
+    """Addressed to the caller itself, not only through a cover it holds."""
+    return not request.personal and _in_own_right(request, mine)
 
 
 def consent_target_ok(conn: Connection, project_id: str, to: Addressee) -> bool:

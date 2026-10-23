@@ -187,6 +187,70 @@ def changed_audience(conn: Connection, row: Any, project: Any) -> list[str]:
     return list(dict.fromkeys(audience))
 
 
+# --- the coordinator gate ------------------------------------------------------------------
+
+
+def _out_beyond_grace(row: Any, found: dict[str, Any], now: datetime) -> bool:
+    """Not `available` (a human only when limited), for longer than the member's grace."""
+    if not in_outage(row, found["state"]):
+        return False
+    start: datetime = row.outage_since or now
+    return now - start >= timedelta(minutes=policy_of(row)["grace_minutes"])
+
+
+def _any_available(
+    conn: Connection, project: Any, membership_ids: list[int], now: datetime
+) -> bool:
+    rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(membership_ids))).all()
+    presences = _presences(conn, rows)
+    humans = _humans(conn, rows)
+    return any(
+        computed(r, presences[r.id], humans.get(r.human_id), project, now)["state"] == "available"
+        for r in rows
+    )
+
+
+def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
+    """`{coordinator, until}` while new assignments by agents are held (§6.12): the
+    coordinator — under `role:admin` every agent admin — is out beyond its grace, and
+    its `coordinator_substitute` is unset or not `available` either. None otherwise,
+    and always for a project with no coordinator."""
+    ids = coordinator_ids(conn, project)
+    if not ids:
+        return None
+    now = clock.now()
+    rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(ids))).all()
+    presences = _presences(conn, rows)
+    found = {r.id: computed(r, presences[r.id], None, project, now) for r in rows}
+    if not all(_out_beyond_grace(r, found[r.id], now) for r in rows):
+        return None
+    # A coordinator under cover: its substitute is the coordinator for the gate too.
+    stand_ins = [r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by]
+    if stand_ins and _any_available(conn, project, stand_ins, now):
+        return None
+    if project.coordinator_substitute is not None:
+        stand_in = conn.execute(
+            select(t.membership).where(
+                t.membership.c.project_id == project.id,
+                t.membership.c.agent_id == project.coordinator_substitute,
+                t.membership.c.active.is_(True),
+            )
+        ).first()
+        if stand_in is not None:
+            shown = computed(
+                stand_in, _presences(conn, [stand_in])[stand_in.id], None, project, now
+            )
+            if shown["state"] == "available":
+                return None
+    # The gate lifts when the first of them returns; unknown when one has no `until`.
+    untils = [f.get("until") for f in found.values()]
+    known = None if None in untils else min(u for u in untils if u is not None)
+    return {
+        "coordinator": project.coordinator,
+        "until": clock.rfc3339(known) if known is not None else None,
+    }
+
+
 # --- announcing ---------------------------------------------------------------------------
 
 
@@ -203,15 +267,61 @@ def _humans(conn: Connection, rows: Sequence[Any]) -> dict[str, Any]:
     return {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(ids)))}
 
 
-def _cover(row: Any, outage_since: datetime | None, now: datetime) -> str | None:
-    """`cover` of the event: null while within the grace; past it what the policy does.
-    Cover by a substitute is not built yet (§6.12): `substitute` reads as waiting."""
-    if outage_since is None:
-        return None
+# The event's `cover` for a membership's stored cover state (§8.2).
+COVER_SHOWN = {"wait": "wait", "covered": "substitute", "none_available": "none_available"}
+
+
+def policy_due(row: Any, found: dict[str, Any], now: datetime) -> bool:
+    """Whether the outage has lasted the grace, so that the policy acts; never for a
+    limit whose `until` falls within the grace (§6.12)."""
+    if row.outage_since is None:
+        return False
     grace = timedelta(minutes=policy_of(row)["grace_minutes"])
-    if now - outage_since < grace:
-        return None
-    return "wait"
+    if now - row.outage_since < grace:
+        return False
+    until = found.get("until") if found["state"] == "limited" else None
+    return not (until is not None and until <= row.outage_since + grace)
+
+
+def act_due(conn: Connection, project_id: str, actor: Actor | None = None) -> None:
+    """Every outage of the project whose grace has passed gets its policy, and a cover
+    that found nobody tries again (§6.12): from the sweep, and when a member returns."""
+    rows = conn.execute(
+        select(t.membership)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.outage_since.isnot(None),
+            or_(
+                t.membership.c.cover_state.is_(None),
+                t.membership.c.cover_state == "none_available",
+            ),
+        )
+        .order_by(t.membership.c.id)
+    ).all()
+    if not rows:
+        return
+    now = clock.now()
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    presences = _presences(conn, rows)
+    humans = _humans(conn, rows)
+    for row in rows:
+        found = computed(row, presences[row.id], humans.get(row.human_id), project, now)
+        if not in_outage(row, found["state"]) or not policy_due(row, found, now):
+            continue
+        if row.cover_state == "none_available" and policy_of(row)["on_unavailable"] != "substitute":
+            continue
+        act(conn, row, actor)
+
+
+def act(conn: Connection, row: Any, actor: Actor | None) -> str:
+    """The policy acts on an outage past its grace: `wait`, `substitute` or
+    `none_available`."""
+    from maity_hub import cover
+
+    if policy_of(row)["on_unavailable"] == "wait":
+        return cover.wait(conn, row)
+    return cover.start(conn, row, actor)
 
 
 def reconcile(
@@ -239,6 +349,7 @@ def reconcile(
     humans = _humans(conn, rows)
     projects: dict[str, Any] = {}
     announced = []
+    returned: set[str] = set()
     for row in rows:
         project = projects.get(row.project_id)
         if project is None:
@@ -267,13 +378,20 @@ def reconcile(
         was_out = row.outage_since is not None
         is_out = in_outage(row, state)
         payload = None
+        shown_cover: str | None = None
         if is_out and not was_out:
             values["outage_since"] = now
-            payload = _payload(row, found, since, _cover(row, now, now))
         elif was_out and not is_out:
             values["outage_since"] = None
-            payload = _payload(row, found, since, _cover(row, row.outage_since, now))
+            shown_cover = COVER_SHOWN.get(row.cover_state or "")
         conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(**values))
+        if is_out and not was_out:
+            fresh = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+            if policy_due(fresh, found, now):  # a grace of 0: the policy acts at once
+                shown_cover = act(conn, fresh, actor)
+            payload = _payload(row, found, since, shown_cover)
+        elif was_out and not is_out:
+            payload = _payload(row, found, since, shown_cover)
         if payload is not None:
             emit(
                 conn,
@@ -285,6 +403,14 @@ def reconcile(
                 subject=("member", payload["member_id"]),
             )
             announced.append(payload)
+        if was_out and not is_out and row.cover_state is not None:
+            from maity_hub import cover
+
+            cover.end(conn, row, actor)  # after the return is announced (§6.12)
+        if was_out and not is_out:
+            returned.add(row.project_id)
+    for project_id in sorted(returned):
+        act_due(conn, project_id, actor)  # a cover that found nobody may find this one
     return announced
 
 
@@ -630,6 +756,7 @@ def sweep(engine: Engine) -> None:
                     .order_by(t.membership.c.id)
                 ).all()
                 reconcile(conn, rows)
+                act_due(conn, project_id)
         except Exception:  # one project's failure must not stop the others
             log.exception("the availability sweep of %s failed", project_id)
 
