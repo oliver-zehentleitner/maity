@@ -8907,6 +8907,37 @@ mail.
   third-party push service, which this stage does not add.
 - **Stage 3 — mail.** The settings page edits §18.4; the admin area of
   the instance admin edits §16.2 and offers the test send (§16.3).
+- **"Waiting for you" is where everything meets.** The all-projects
+  start page (and a project's own view, filtered to it with `project`)
+  is built from the same two sources as the bell, not from the inbox
+  alone, and shows every unread item of every kind in §18.1:
+  - **Requests** first, because they ask for an answer: the open
+    requests addressed to the human (§7), each as one row until it is
+    answered or withdrawn. An unread `inbox` item about such a request
+    (`request_created`) is folded into that row, never shown twice; the
+    other `inbox` items — an answer to or a withdrawal of a request the
+    human asked — are rows of their own in this group, read like any
+    item.
+  - **Conversations**: `chat` items as one row per conversation or
+    group-chat thread, with its unread count and the newest item's
+    title (§18.1 composes titles; a message's text appears only where
+    the human enabled content for browser notifications, §18.4, and
+    never here otherwise).
+  - **Mentions**, **cards**, **agents** (outages and limits), **jour
+    fixe** and **ticker** items, each as its own group, newest first.
+  - **Account**: the `security` and `system` items.
+
+  Each row links to its `url`; opening a conversation marks its items
+  read (§18.3). The page loads `GET /me/notifications?unread=true`,
+  paging with `cursor` until no unread item is left (at most 200 rows
+  shown, then a "more" link to the bell's full list), and then follows
+  the same single notifications long-poll that stage 2 holds for the
+  tab: it never opens a second one, since a second supersedes the first
+  (§18.2). A kind the human switched off in §18.4 still shows here; the
+  switches govern browser notifications and mail, not this page.
+  Without the notifications endpoint (a hub that has not reached stage
+  1) the page shows the open requests alone, as today, and says nothing
+  about the rest.
 - **Per-project badges** come from `by_project` (§18.2), never from
   counting listed items.
 
