@@ -276,6 +276,8 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
     if (ctx.canAdmin) append(panel, blindRemoveForm(ctx));
+    // §8.7: everyone's pending uploads, for freeing the quota.
+    if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
     // Offered where the hub knows the field (docs/api.md §6.1).
     if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
     if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
