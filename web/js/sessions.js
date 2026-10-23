@@ -102,9 +102,12 @@ window.Maity = window.Maity || {};
     await M.api.del("/auth/sessions/" + encodeURIComponent(s.id));
   }
   // The hub answers 200 even when it skipped the id (§18.3): confirmed only
-  // when the alert is no longer unread.
-  const confirmedWords = (alert, words) => (data) => (data && data.alerts.some((a) => a.id === alert.id)
-    ? "The hub did not confirm it from this session." : words);
+  // when the alert is no longer unread; unknown when the list could not be
+  // read again.
+  const confirmedWords = (alert, words) => (data) => {
+    if (!data) return "Sent, but the list could not be read again: whether it was confirmed is not known.";
+    return data.alerts.some((a) => a.id === alert.id) ? "The hub did not confirm it from this session." : words;
+  };
 
   // The account's section; it redraws in place after each change.
   async function section(ctx) {
@@ -200,7 +203,16 @@ window.Maity = window.Maity || {};
         await addressChange(ctx, cur, sessions, act));
       return data;
     }
-    await draw();
+    // Crossing an hour or a day of age changes what this session may do
+    // (§2.6.5, §2.6.3): checked each minute, drawn again when it did.
+    const ageOf = (data) => (data && data.current ? [young(data.current, 1), young(data.current, 24)].join() : "");
+    let last = await draw();
+    let lastAge = ageOf(last);
+    ctx.every(60 * 1000, async () => {
+      if (!last || ageOf(last) === lastAge) return;
+      last = await draw();
+      lastAge = ageOf(last);
+    });
     return { el: box, heading };
   }
 

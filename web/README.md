@@ -506,7 +506,8 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   never on the session itself. An alert with no session (an address
   change) has its own **This was me**. The hub answers 200 even when it
   skipped the id, so "Confirmed" is said only when the alert is gone
-  from the unread ones afterwards.
+  from the unread ones afterwards, and when the list cannot be read
+  again the result is said to be unknown.
 - **End** per session and **End all other sessions**. From a session that
   is not confirmed, **End** on a confirmed one is disabled ("Confirm this
   session's sign-in from another session first"), and while it is under
@@ -528,9 +529,13 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   approved session is still active. **End this session** (one click)
   ends those that are, under the same rules as the list (disabled with
   the reason where the hub would refuse); **This was me** where allowed.
-  It comes and goes with the 15-second count of unread sign-in alerts,
-  without navigating.
+  It is built again on every 15-second round while a sign-in alert is
+  unread (and once more when the last one went), so a new alert, a swap
+  of alerts or an approved session ending elsewhere shows without
+  navigating.
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
+  A check each minute draws the section again when this session crosses
+  an hour or a day of age, which changes what it may do.
 - A hub without the list says so, and is asked once per page load.
 
 **Change password** (`#/account`) sends `POST /auth/password {current,
