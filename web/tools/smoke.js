@@ -1684,6 +1684,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const longList = main.querySelector("ol.messages");
   // Scrolled up, two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
   Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 100 });
+  longList.dispatch("scroll");
   arriving = [longMsg(204), longMsg(205)];
   feed = [{ seq: 204, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
@@ -1696,6 +1697,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jumpBtn.click(); await tick();
   expect(jumpBtn.hidden && longList.scrollTop === 5000 && document.activeElement === byId("chat-text"), "chat: Newest goes to the end and puts the focus in the composer");
   jProto.focus = jFocus; document.activeElement = undefined;
+  // At the end, a message that arrives is followed, and so is content that grows after it was drawn (an image loading).
+  Object.assign(longList, { scrollHeight: 5200, scrollTop: 4800 }); longList.dispatch("scroll");
+  arriving = [longMsg(206)];
+  feed = [{ seq: 206, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(longList.scrollTop === 5200 && main.querySelector(".jump-latest").hidden, "chat: at the end, an arriving message is followed, no pill");
+  longList.scrollHeight = 5600; longList.dispatch("load");
+  expect(longList.scrollTop === 5600, "chat: at the end, content that grows after it was drawn keeps the reader at the end");
   win.Maity.api.get = nGet2;
 
   // The feed in other views: someone else's card event offers a reload,
@@ -2240,6 +2249,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => { gcWrites.push(["PATCH", p, b]); return gcPatch(p, b); };
   win.Maity.api.del = (p) => { gcWrites.push(["DELETE", p]); return gcDel(p); };
   await go("#/p/maity/chat/cnv-0007");
+  expect(main.querySelector(".group-chat ol.messages") && main.querySelector(".group-chat .jump-latest") && main.querySelector(".group-chat .jump-latest").hidden,
+    "group chat: it has the same Newest pill, hidden at the end");
   const gcList = () => main.querySelector(".group-chat ol.messages");
   expect(main.querySelector(".group-chat") && text(main.querySelector(".group-chat .group-title")) === "Release 0.2 go/no-go"
     && text(main.querySelector(".group-people-line")) === "In it: Maintainer, Agent A (agent), Agent B (agent)" && !main.querySelector(".group-observers")

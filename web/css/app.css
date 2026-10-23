@@ -626,7 +626,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
 .chat-layout.open .chat-pane { display: flex; flex-direction: column; height: var(--chat-h); min-height: 0; }
-.chat-layout.open .chat-pane .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
+.chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
 .chat-back { display: none; }

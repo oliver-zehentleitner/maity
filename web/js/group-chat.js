@@ -169,6 +169,8 @@ window.Maity = window.Maity || {};
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
     const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
+    // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
+    const follow = parts.follower(messages, null);
     let draw = null;
     // Drawn as one timeline (days, groups, the unread line); the earlier part
     // put before it means drawing it again.
@@ -216,11 +218,10 @@ window.Maity = window.Maity || {};
 
     function add(msg) {
       if (all.some((m) => m.seq === msg.seq)) return;
-      const follow = msg.from === ctx.me.id || parts.atBottom(messages);
       all.push(msg);
       const empty = messages.querySelector(".empty");
       if (empty) { redraw(); } else { append(messages, draw(msg)); }
-      if (follow) messages.scrollTop = messages.scrollHeight;
+      follow.added(msg.from === ctx.me.id);
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
@@ -419,12 +420,13 @@ window.Maity = window.Maity || {};
       head,
       earlierBox,
       messages,
+      follow.pill,
       pollStatus.el,
       compose,
       status.el);
     window.setTimeout(() => {
       parts.fitToScreen(layout);
-      messages.scrollTop = messages.scrollHeight;
+      follow.open(null);
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
