@@ -669,6 +669,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .project-form button { justify-self: end; margin-top: 6px; }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
 .field-error:empty { display: none; }
+/* The join's handle, free or taken while typed (js/join.js). */
+.handle-state:empty { display: none; }
+.handle-state.ok { color: var(--ok); }
 .me .small-link { font-size: 0.82rem; margin: 0 4px; }
 /* The header's two menus (js/menu.js): settings behind a gear, the profile behind the avatar. */
 .menu-box { position: relative; }
