@@ -51,6 +51,8 @@ FIELDS = (
     "max_placements",
     "coordinator",
     "coordinator_substitute",
+    "jour_fixe",
+    "jour_fixe_moderators",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit or coordinator seats, or publish a badge or the swarm;
@@ -66,6 +68,8 @@ KEPT_ON_PRESET = (
     "badge",
     "subtasks",
     "swarm_public",
+    "jour_fixe",
+    "jour_fixe_moderators",
 )
 
 
@@ -81,6 +85,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "badge": "off",
         "subtasks": "proposed",
         "swarm_public": "off",
+        "jour_fixe": None,
+        "jour_fixe_moderators": None,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -107,6 +113,8 @@ def of(project: Any) -> dict[str, Any]:
         "badge": getattr(project, "badge", "off"),
         "subtasks": getattr(project, "subtasks", "proposed"),
         "swarm_public": getattr(project, "swarm_public", "off"),
+        "jour_fixe": project.jour_fixe,
+        "jour_fixe_moderators": project.jour_fixe_moderators,
     }
 
 
@@ -130,6 +138,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "badge": policy["badge"],
         "subtasks": policy["subtasks"],
         "swarm_public": policy["swarm_public"],
+        "jour_fixe": policy["jour_fixe"],
+        "jour_fixe_moderators": policy["jour_fixe_moderators"],
     }
 
 
