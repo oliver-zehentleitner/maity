@@ -3,7 +3,7 @@ membership, the agent membership that is given its owner's text, and personal re
 addressed to a human in person (`to_kind = 'human'`).
 
 Revision ID: 0037
-Revises: 0021
+Revises: 0026
 Create Date: 2026-10-23
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0037"
-down_revision: str | None = "0021"
+down_revision: str | None = "0026"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
