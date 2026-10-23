@@ -13,10 +13,11 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
-from maity_hub.mail import address, headers, secret
-from maity_hub.mail.environment import MailEnvironment, Sender
+from maity_hub.mail import address, headers
+from maity_hub.mail.environment import Sender
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script, certificate
@@ -29,11 +30,11 @@ PASSWORD = "smtp secret 9Xq!"
 PATH = "/admin/settings/mail"
 
 
-def env_of(**values: str) -> MailEnvironment:
-    return Settings.from_env({"MAITY_DATABASE_URL": "sqlite://", **values}).mail
+def env_of(**values: str) -> Settings:
+    return Settings.from_env({"MAITY_DATABASE_URL": "sqlite://", **values})
 
 
-def admin(make_client: ClientFactory, engine: Engine, mail: MailEnvironment) -> flow.Human:
+def admin(make_client: ClientFactory, engine: Engine, hub: Settings) -> flow.Human:
     """The instance admin (the first human, made on first use), signed in to a hub with
     these mail settings."""
     with engine.begin() as conn:
@@ -41,7 +42,7 @@ def admin(make_client: ClientFactory, engine: Engine, mail: MailEnvironment) -> 
         human_id = found.scalar() or None
     if human_id is None:
         human_id = factory.human(engine, "maintainer")
-    client = make_client(mail=mail)
+    client = make_client(mail=hub.mail, secret_key=hub.secret_key)
     response = client.post(
         "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
     )
@@ -64,7 +65,7 @@ def serve(started: list[FakeSmtp], script: Script) -> FakeSmtp:
     return server
 
 
-def local_env(port: int, **more: str) -> MailEnvironment:
+def local_env(port: int, **more: str) -> Settings:
     return env_of(
         MAITY_SMTP_HOST="127.0.0.1",
         MAITY_SMTP_PORT=str(port),
@@ -80,7 +81,7 @@ def local_env(port: int, **more: str) -> MailEnvironment:
 def test_the_environment_sets_every_value(tmp_path: Path) -> None:
     secret_file = tmp_path / "pw"
     secret_file.write_text(PASSWORD + "\n")
-    mail = env_of(
+    hub = env_of(
         MAITY_SMTP_HOST="smtp.example.org",
         MAITY_SMTP_PORT="2525",
         MAITY_SMTP_TLS="implicit",
@@ -95,6 +96,7 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         MAITY_MAIL_SIGNING_KEY=SIGNING,
         KUBERNETES_SERVICE_HOST="10.0.0.1",
     )
+    mail = hub.mail
     assert (mail.host, mail.port, mail.tls, mail.password) == (
         "smtp.example.org",
         2525,
@@ -107,8 +109,8 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         20,
         30,
     )
-    assert mail.in_kubernetes and mail.secret_key == b"k" * 32
-    assert PASSWORD not in repr(mail) and KEY not in repr(mail) and "kkkk" not in repr(mail)
+    assert mail.in_kubernetes and hub.secret_key == b"k" * 32
+    assert PASSWORD not in repr(hub) and KEY not in repr(hub) and "kkkk" not in repr(hub)
 
 
 @pytest.mark.parametrize(
@@ -141,14 +143,14 @@ def test_an_unusable_value_in_the_environment_stops_the_hub(values: dict[str, st
 
 def test_tls_none_is_allowed_for_a_loopback_host() -> None:
     for host in ("localhost", "LOCALHOST.", "127.0.0.1", "::1"):
-        assert env_of(MAITY_SMTP_TLS="none", MAITY_SMTP_HOST=host).tls == "none"
+        assert env_of(MAITY_SMTP_TLS="none", MAITY_SMTP_HOST=host).mail.tls == "none"
 
 
 # --- reading and changing the settings ----------------------------------------------
 
 
 def test_the_defaults_and_who_may_read_them(make_client: ClientFactory, migrated: Engine) -> None:
-    owner = admin(make_client, migrated, MailEnvironment())
+    owner = admin(make_client, migrated, env_of())
     flow.project(owner)
     got = owner.get(PATH).json()
     assert (got["enabled"], got["complete"], got["missing"]) == (
@@ -239,7 +241,7 @@ def test_the_admin_sets_values_and_the_environment_wins(
 def test_a_refused_patch_names_each_field_and_changes_nothing(
     make_client: ClientFactory, migrated: Engine, body: dict[str, Any], fields: dict[str, str]
 ) -> None:
-    owner = admin(make_client, migrated, MailEnvironment())
+    owner = admin(make_client, migrated, env_of())
     response = owner.patch(PATH, body)
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == fields
@@ -250,7 +252,7 @@ def test_a_refused_patch_names_each_field_and_changes_nothing(
 def test_tls_none_stays_tied_to_a_loopback_host(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    owner = admin(make_client, migrated, MailEnvironment())
+    owner = admin(make_client, migrated, env_of())
     assert owner.patch(PATH, {"tls": "none", "host": "localhost"}).status_code == 200
     assert owner.get(PATH).json()["port"] == {"value": 25, "source": "default"}
     moved = owner.patch(PATH, {"host": "smtp.example.org"})
@@ -260,7 +262,7 @@ def test_tls_none_stays_tied_to_a_loopback_host(
 def test_the_password_is_stored_encrypted_and_never_returned(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    owner = admin(make_client, migrated, MailEnvironment())
+    owner = admin(make_client, migrated, env_of())
     refused = owner.patch(PATH, {"password": PASSWORD})
     assert refused.json()["error"]["details"]["fields"] == {"password": "secret_key_missing"}
     assert PASSWORD not in refused.text
@@ -277,10 +279,11 @@ def test_the_password_is_stored_encrypted_and_never_returned(
             select(t.mail_setting.c.value).where(t.mail_setting.c.field == "password")
         ).scalar_one()
     assert PASSWORD not in json.dumps(stored)
-    assert set(stored) == {"nonce", "ciphertext"}
-    assert len(base64.b64decode(stored["nonce"])) == 12
-    assert secret.open_sealed(b"k" * 32, "password", stored) == PASSWORD
-    assert secret.open_sealed(b"k" * 32, "username", stored) is None  # bound to its field
+    assert set(stored) == {"sealed"}
+    sealed = base64.b64decode(stored["sealed"])
+    assert secretbox.open_sealed(b"k" * 32, "mail.smtp_password", sealed).decode() == PASSWORD
+    with pytest.raises(secretbox.SealedError):  # bound to its field
+        secretbox.open_sealed(b"k" * 32, "forge.webhook_secret", sealed)
 
     # Another instance key cannot decrypt it: not set, and missing while a username is.
     rekeyed = admin(make_client, migrated, env_of(MAITY_SECRET_KEY=OTHER_KEY)).get(PATH).json()
@@ -348,7 +351,7 @@ def test_the_test_send_delivers_one_fixed_mail(
 def test_the_test_send_refuses_before_it_connects(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    owner = admin(make_client, migrated, MailEnvironment())
+    owner = admin(make_client, migrated, env_of())
     for body, fields in [
         ({}, {"to": "required"}),
         (None, {"to": "required"}),

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from maity_hub import secretbox
 from maity_hub.mail import environment as mail_environment
 from maity_hub.mail.environment import MailEnvironment
 
@@ -53,8 +54,11 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
-    # MAITY_SMTP_*, MAITY_MAIL_*, MAITY_SECRET_KEY: the mail settings the environment
-    # sets (§16.2); the password and the keys never appear in a repr.
+    # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
+    # never logged, never in a response, never in the database.
+    secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
+    # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
 
     @property
@@ -95,8 +99,17 @@ class Settings:
                 parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
+            secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
         )
+
+
+def parse_secret_key(value: str) -> bytes | None:
+    """Unset is None; anything but 32 base64 bytes stops the hub."""
+    try:
+        return secretbox.parse_key(value)
+    except ValueError as error:
+        raise ConfigError(str(error)) from None
 
 
 def parse_mail(env: dict[str, str]) -> MailEnvironment:

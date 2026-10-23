@@ -30,21 +30,21 @@ def _require_admin(conn: Connection, caller: HumanCaller) -> None:
 
 @router.get("/admin/settings/mail")
 def get_mail(request: Request, caller: HumanCaller) -> JSONResponse:
-    env = settings_of(request).mail
+    hub = settings_of(request)
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        return JSONResponse(settings.view(conn, settings.resolve(conn, env)))
+        return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 
 
 @router.patch("/admin/settings/mail")
 def patch_mail(
     request: Request, caller: HumanCaller, body: Annotated[dict[str, Any], Body()]
 ) -> JSONResponse:
-    env = settings_of(request).mail
+    hub = settings_of(request)
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        settings.patch(conn, env, body)
-        return JSONResponse(settings.view(conn, settings.resolve(conn, env)))
+        settings.patch(conn, hub.mail, hub.secret_key, body)
+        return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 
 
 @router.post("/admin/settings/mail/test")
@@ -67,7 +67,7 @@ def test_mail(
             raise invalid({"to": "required"})
         if not address.valid(to):
             raise invalid({"to": "invalid"})
-        resolved = settings.resolve(conn, hub.mail)
+        resolved = settings.resolve(conn, hub.mail, hub.secret_key)
     if not resolved.complete:
         raise ApiError(
             409,

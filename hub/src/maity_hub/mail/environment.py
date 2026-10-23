@@ -1,7 +1,8 @@
 """The mail settings the operator puts in the environment (docs/api.md §16.2). A value set
 here wins over the instance admin's and cannot be changed through the API; a value that
-is set but unusable stops the hub at startup. The password and the keys never appear in
-a repr, a log line or a message."""
+is set but unusable stops the hub at startup. The password and the signing key never
+appear in a repr, a log line or a message. The instance key `MAITY_SECRET_KEY` is the
+hub's (`Settings.secret_key`, `maity_hub.secretbox`), not mail's own."""
 
 from __future__ import annotations
 
@@ -20,7 +21,6 @@ MAX_USERNAME = 254
 MAX_PASSWORD = 1024
 MAX_PER_HOUR = 1_000_000
 SIGNING_KEY_MIN_BYTES = 32
-SECRET_KEY_BYTES = 32
 
 
 class MailConfigError(ValueError):
@@ -50,7 +50,6 @@ class MailEnvironment:
     max_per_hour: int | None = None
     security_max_per_hour: int | None = None
     sign_in_max_per_hour: int | None = None
-    secret_key: bytes | None = field(default=None, repr=False)
     signing_key: bytes | None = field(default=None, repr=False)
     # MAITY_SMTP_ALLOW_PLAINTEXT: insecure, for a test bench only (§16.2).
     allow_plaintext: bool = False
@@ -141,8 +140,7 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         max_per_hour=_number(env, "MAITY_MAIL_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         security_max_per_hour=_number(env, "MAITY_MAIL_SECURITY_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         sign_in_max_per_hour=_number(env, "MAITY_MAIL_SIGN_IN_MAX_PER_HOUR", 1, MAX_PER_HOUR),
-        secret_key=_key(env, "MAITY_SECRET_KEY", exact=SECRET_KEY_BYTES),
-        signing_key=_key(env, "MAITY_MAIL_SIGNING_KEY", minimum=SIGNING_KEY_MIN_BYTES),
+        signing_key=_signing_key(env),
         allow_plaintext=_flag(env, "MAITY_SMTP_ALLOW_PLAINTEXT"),
         ca_file=ca_file,
         in_kubernetes=bool(get("KUBERNETES_SERVICE_HOST")),
@@ -186,18 +184,17 @@ def _password(env: dict[str, str]) -> str | None:
     return inline
 
 
-def _key(
-    env: dict[str, str], name: str, *, exact: int | None = None, minimum: int | None = None
-) -> bytes | None:
-    value = env.get(name, "").strip()
+def _signing_key(env: dict[str, str]) -> bytes | None:
+    """`MAITY_MAIL_SIGNING_KEY`: 32 bytes or more, base64; never quoted in a message."""
+    value = env.get("MAITY_MAIL_SIGNING_KEY", "").strip()
     if not value:
         return None
     try:
         key = base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError):
-        raise MailConfigError(f"{name} is not base64") from None
-    if exact is not None and len(key) != exact:
-        raise MailConfigError(f"{name} must be {exact} bytes, base64-encoded")
-    if minimum is not None and len(key) < minimum:
-        raise MailConfigError(f"{name} must be at least {minimum} bytes, base64-encoded")
+        raise MailConfigError("MAITY_MAIL_SIGNING_KEY is not base64") from None
+    if len(key) < SIGNING_KEY_MIN_BYTES:
+        raise MailConfigError(
+            f"MAITY_MAIL_SIGNING_KEY must be at least {SIGNING_KEY_MIN_BYTES} bytes, base64"
+        )
     return key

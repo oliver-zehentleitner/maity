@@ -72,7 +72,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
         with engine.connect() as conn:
-            mail.log_warnings(conn, settings.mail)
+            mail.log_warnings(conn, settings.mail, settings.secret_key)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker

@@ -8,6 +8,7 @@ current instance key cannot decrypt counts as not set.
 
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -15,10 +16,10 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, secretbox
 from maity_hub import tables as t
 from maity_hub.errors import invalid
-from maity_hub.mail import address, headers, secret
+from maity_hub.mail import address, headers
 from maity_hub.mail.environment import (
     DEFAULT_PORTS,
     MAX_PASSWORD,
@@ -60,6 +61,8 @@ ENVIRONMENT_ONLY = ("signing_key", "secret_key")
 # A change of one of these makes the last test say nothing about the settings (§16.2).
 CONNECTION_FIELDS = ("host", "port", "tls", "username", "password", "from")
 LAST_TEST = "last_test"
+# The associated data of the sealed SMTP password (`maity_hub.secretbox`).
+PASSWORD_FIELD = "mail.smtp_password"
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +73,7 @@ class Resolved:
     only; it is never in a view, a repr or a log line."""
 
     env: MailEnvironment
+    secret_key_set: bool
     values: dict[str, tuple[Any, str]]
     password: str | None = field(repr=False)
     password_source: str | None
@@ -114,7 +118,7 @@ class Resolved:
         return found
 
 
-def resolve(conn: Connection, env: MailEnvironment) -> Resolved:
+def resolve(conn: Connection, env: MailEnvironment, secret_key: bytes | None) -> Resolved:
     stored = {row.field: row.value for row in conn.execute(select(t.mail_setting)).all()}
     values: dict[str, tuple[Any, str]] = {}
     for name, default in DEFAULTS.items():
@@ -132,9 +136,9 @@ def resolve(conn: Connection, env: MailEnvironment) -> Resolved:
     if env.password is not None:
         password, source = env.password, "env"
     else:
-        password = secret.open_sealed(env.secret_key, "password", stored.get("password"))
+        password = _unseal(secret_key, stored.get("password"))
         source = "admin" if password is not None else None
-    return Resolved(env, values, password, source, stored.get(LAST_TEST))
+    return Resolved(env, secret_key is not None, values, password, source, stored.get(LAST_TEST))
 
 
 def view(conn: Connection, resolved: Resolved) -> dict[str, Any]:
@@ -153,7 +157,7 @@ def view(conn: Connection, resolved: Resolved) -> dict[str, Any]:
                 "source": resolved.password_source,
             }
     answer["signing_key"] = {"set": resolved.env.signing_key is not None}
-    answer["secret_key"] = {"set": resolved.env.secret_key is not None}
+    answer["secret_key"] = {"set": resolved.secret_key_set}
     answer["warnings"] = resolved.warnings
     answer["last_test"] = resolved.last_test
     answer.update(counters(conn))
@@ -185,7 +189,7 @@ def counters(conn: Connection) -> dict[str, int]:
     }
 
 
-def patch(conn: Connection, env: MailEnvironment, body: object) -> None:
+def patch(conn: Connection, env: MailEnvironment, secret_key: bytes | None, body: object) -> None:
     """Apply a `PATCH` body, all of it or nothing; `invalid` names each refused field.
     A value is never echoed in an error."""
     if not isinstance(body, dict):
@@ -202,7 +206,7 @@ def patch(conn: Connection, env: MailEnvironment, body: object) -> None:
         elif value is None:
             changes[name] = None
         elif name == "password":
-            if env.secret_key is None:
+            if secret_key is None:
                 errors[name] = "secret_key_missing"
             elif not headers.printable(value, MAX_PASSWORD):
                 errors[name] = "invalid"
@@ -216,7 +220,7 @@ def patch(conn: Connection, env: MailEnvironment, body: object) -> None:
                 changes[name] = checked
     if errors:
         raise invalid(errors)
-    before = resolve(conn, env)
+    before = resolve(conn, env, secret_key)
     host = changes["host"] if "host" in changes else before.value("host")
     tls = changes["tls"] if "tls" in changes else before.value("tls")
     if (tls or DEFAULTS["tls"]) == "none" and host is not None and not is_loopback(str(host)):
@@ -227,10 +231,10 @@ def patch(conn: Connection, env: MailEnvironment, body: object) -> None:
         if value is None:
             continue
         if name == "password":
-            assert env.secret_key is not None  # checked above: secret_key_missing
-            value = secret.seal(env.secret_key, name, str(value))
+            assert secret_key is not None  # checked above: secret_key_missing
+            value = _seal(secret_key, str(value))
         conn.execute(insert(t.mail_setting).values(field=name, value=value, updated_at=now))
-    after = resolve(conn, env)
+    after = resolve(conn, env, secret_key)
     changed = any(
         (
             (before.password != after.password)
@@ -297,7 +301,25 @@ _WARNINGS = {
 }
 
 
-def log_warnings(conn: Connection, env: MailEnvironment) -> None:
+def log_warnings(conn: Connection, env: MailEnvironment, secret_key: bytes | None) -> None:
     """At startup: the warnings the admin view carries, in the log as well (§16.2)."""
-    for warning in resolve(conn, env).warnings:
+    for warning in resolve(conn, env, secret_key).warnings:
         log.warning(_WARNINGS[warning])
+
+
+def _seal(key: bytes, password: str) -> dict[str, str]:
+    """The stored form: the sealed bytes, base64, in the JSON column."""
+    sealed = secretbox.seal(key, PASSWORD_FIELD, password.encode())
+    return {"sealed": base64.b64encode(sealed).decode()}
+
+
+def _unseal(key: bytes | None, stored: object) -> str | None:
+    """The password, or None when there is none, no key, or the key cannot open it (the
+    key was changed or lost): such a password counts as not set (§16.2)."""
+    if key is None or not isinstance(stored, dict) or not isinstance(stored.get("sealed"), str):
+        return None
+    try:
+        sealed = base64.b64decode(stored["sealed"], validate=True)
+        return secretbox.open_sealed(key, PASSWORD_FIELD, sealed).decode()
+    except (secretbox.SealedError, ValueError):
+        return None
