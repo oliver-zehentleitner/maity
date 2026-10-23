@@ -78,10 +78,6 @@ def is_asker(request: Any, mine: Membership) -> bool:
 
 
 def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
-    """Through a project: the asker, the addressee or an answerer; a personal request the
-    asker only (§7) — its addressee reads it through `GET /requests/{id}`."""
-    if request.personal:
-        return is_asker(request, mine)
     return (
         is_asker(request, mine) or addressed_to(conn, request, mine) or mine.may("requests:answer")
     )

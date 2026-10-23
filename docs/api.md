@@ -561,7 +561,7 @@ include the scope. No call made with an agent credential may:
   (refused, as the one exception to the reason below, with
   `details.reason: objection_open`, §6.19); the requester's `escalate`
   stays open;
-- withdraw a personal request (§7);
+- withdraw a personal request (§7) (on `/requests/{id}`; the project route answers `not_found`, §7);
 - set a team's rulebook (`team`, §6.18), which belongs to the human who
   owns the team's agent.
 
@@ -4256,7 +4256,7 @@ is a member of the project. A personal request is in the owner's
   asker and `not_found` to everyone else in the project, owner, admins
   and proxies included. `POST …/requests/{id}/answer` on the project
   route is the same: `not_found` for everyone but the asker, and for
-  the asker `forbidden` with `self_answer`, so the project route never
+  the asker `self_answer` (409), so the project route never
   tells anyone else that a personal request exists.
 - The owner reads it in `GET /requests` (the cross-project inbox, with
   `personal: true`) and by `GET /requests/{id}`, and answers it with

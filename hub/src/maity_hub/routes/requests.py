@@ -530,6 +530,13 @@ def _with_handle(conn: Connection, row: Any, view: dict[str, Any]) -> dict[str, 
     return view
 
 
+def _check_status(status: str) -> None:
+    """Checked before any project is read: a caller without memberships gets the same
+    answer for a bad filter as a member does."""
+    if status != "all" and any(s not in inbox.STATUSES for s in status.split(",") if s):
+        raise invalid({"status": "unknown"})
+
+
 def _check_sort(sort: str) -> None:
     if sort not in SORTS:
         raise invalid({"sort": "unknown"})
@@ -572,6 +579,7 @@ def list_all_requests(
 ) -> JSONResponse:
     """The cross-project inbox (§7): every membership of the human, `project` inline."""
     _check_sort(sort)
+    _check_status(status)
     with engine_of(request).begin() as conn:
         projects = conn.execute(
             select(t.project)
@@ -634,6 +642,7 @@ def _unblock(conn: Connection, row: Any) -> None:
             t.request.c.task_id == card.id,
             t.request.c.status == "open",
             t.request.c.while_open == "wait",
+            t.request.c.personal.is_(False),  # never a card's blocker: its id stays hidden (§7)
             t.request.c.id != row.id,
             (t.request.c.asked_by == holder) | (t.request.c.on_behalf_of == holder),
         )
@@ -683,6 +692,8 @@ def answer(
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
+            # TODO(§6.17): the asking instance, once instances exist; same-team instances
+            # share the member id until then.
             if inbox.is_asker(row, mine):
                 raise _self_answer()
             raise not_found()
@@ -988,6 +999,19 @@ def file_personal(
     return request_id
 
 
+def _human(caller: Caller) -> None:
+    """§2.3: no agent reads, answers or withdraws a personal request on these routes."""
+    if caller.kind != "human":
+        raise humans_only("a personal request is its human's alone")
+
+
+def _locked_personal(conn: Connection, caller: Caller, request_id: str) -> Any:
+    """`_personal` under its project's lock, read again after locking, as the project
+    routes do: an answer and a withdrawal at once cannot both change it."""
+    lock_project(conn, _personal(conn, caller, request_id).project_id)
+    return _personal(conn, caller, request_id)
+
+
 def _personal(conn: Connection, caller: Caller, request_id: str) -> Any:
     """A personal request addressed to the calling human; any other id is `not_found`."""
     row = conn.execute(
@@ -1008,7 +1032,8 @@ def _project_inline(conn: Connection, project_id: str) -> dict[str, Any]:
 
 
 @router.get("/requests/{request_id}")
-def get_personal(request_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    _human(caller)
     with engine_of(request).begin() as conn:
         row = _personal(conn, caller, request_id)
         view = request_view(conn, row)
@@ -1017,11 +1042,12 @@ def get_personal(request_id: str, request: Request, caller: HumanCaller) -> JSON
 
 @router.post("/requests/{request_id}/answer")
 def answer_personal(
-    request_id: str, body: AnswerIn, request: Request, caller: HumanCaller
+    request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    _human(caller)
+
     def action(conn: Connection) -> idempotency.Outcome:
-        row = _personal(conn, caller, request_id)
-        lock_project(conn, row.project_id)
+        row = _locked_personal(conn, caller, request_id)
         _refuse_unless_open(row)
         _check_answer(row, body)
         conversation_id = _talk_allowed(conn, row, caller) if body.talk else None
@@ -1035,7 +1061,10 @@ def answer_personal(
             "on_behalf_of": None,
             "at": clock.rfc3339(now),
             "conversation_id": conversation_id,
-            "mentions": mentions.resolve(conn, row.project_id, body.text, "text"),
+            # Resolved for a member only: a non-member learns nobody's id through it (§6.2).
+            "mentions": (
+                mentions.resolve(conn, row.project_id, body.text, "text") if member else []
+            ),
         }
         done = conn.execute(
             update(t.request)
@@ -1070,16 +1099,17 @@ def answer_personal(
 
 @router.post("/requests/{request_id}/withdraw")
 def withdraw_personal(
-    request_id: str, body: WithdrawIn, request: Request, caller: HumanCaller
+    request_id: str, body: WithdrawIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    _human(caller)
+
     def action(conn: Connection) -> idempotency.Outcome:
-        row = _personal(conn, caller, request_id)
-        lock_project(conn, row.project_id)
+        row = _locked_personal(conn, caller, request_id)
         _refuse_unless_open(row)
         member = _member_of(conn, row.project_id, caller.human_id)
-        conn.execute(
+        done = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
             .values(
                 status="withdrawn",
                 withdrawn_at=clock.now(),
@@ -1088,7 +1118,9 @@ def withdraw_personal(
                 changed_via=caller.via,
                 **_snapshot(conn, row),
             )
-        )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
         view = request_view(conn, _row(conn, row.id))
         emit(

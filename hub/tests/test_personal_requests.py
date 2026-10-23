@@ -15,6 +15,8 @@ from maity_hub.events import transaction
 from maity_hub.routes.requests import close_request, file_personal
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_claims import _claim
+from tests.test_tasks import task
 
 R = "/projects/maity/requests"
 
@@ -173,3 +175,152 @@ def test_the_asker_finds_the_answer_in_its_resume(
     owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
     answered = agent.resume(cursor=cursor).json()["requests"]["answered_since_cursor"]
     assert [(r["id"], r["answer"]["reply_id"]) for r in answered] == [(request_id, "go")]
+
+
+def test_it_never_blocks_a_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    _claim(agent, card)
+    normal = agent.post(R, {"class": "decision", "title": "Which?", "task_id": card["id"]}).json()
+    personal = _file(migrated, agent.id, task_id=card["id"])
+    owner.post(f"{R}/{normal['id']}/answer", {"text": "go ahead"})
+    view = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    assert (view["status"], view["blocked_by_request"]) == ("in_progress", None)
+    assert personal not in str(view)
+
+
+def test_an_agent_gets_humans_only_on_the_humans_routes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request_id = _file(migrated, agent.id)
+    for response in (
+        agent.get(f"/requests/{request_id}"),
+        agent.post(f"/requests/{request_id}/answer", {"reply_id": "go"}),
+        agent.post(f"/requests/{request_id}/withdraw", {}),
+    ):
+        assert response.status_code == 403
+        assert response.json()["error"]["details"] == {"reason": "humans_only"}
+
+
+def test_a_closed_one_answers_and_withdraws_no_more(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    first = _file(migrated, agent.id)
+    assert owner.post(f"/requests/{first}/withdraw", {}).status_code == 200
+    again = owner.post(f"/requests/{first}/withdraw", {})
+    assert again.json()["error"]["code"] == "request_not_open"
+    second = _file(migrated, agent.id)
+    owner.post(f"/requests/{second}/answer", {"reply_id": "go"})
+    late = owner.post(f"/requests/{second}/withdraw", {})
+    assert late.json()["error"]["code"] == "request_not_open"
+    assert owner.get(f"/requests/{second}").json()["status"] == "answered"
+
+
+def test_a_non_member_learns_no_ids_through_mentions(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    outside, agent_id = _outside_owner(make_client, migrated)
+    request_id = _file(migrated, agent_id)
+    answered = outside.post(f"/requests/{request_id}/answer", {"text": "ask @maintainer"})
+    assert answered.json()["answer"]["mentions"] == []
+    agent = flow.agent(make_client, owner)
+    mine = _file(migrated, agent.id)
+    as_member = owner.post(f"/requests/{mine}/answer", {"text": "ask @maintainer"})
+    assert [m["member_id"] for m in as_member.json()["answer"]["mentions"]] == [owner.id]
+
+
+@pytest.mark.parametrize("close", ["answer", "withdraw", "hub_answer"])
+def test_every_close_keeps_the_card_as_it_was(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, close: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner, title="Before")
+    request_id = _file(migrated, agent.id, task_id=card["id"])
+    if close == "answer":
+        owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
+    elif close == "withdraw":
+        owner.post(f"/requests/{request_id}/withdraw", {})
+    else:
+        with transaction(migrated) as conn:
+            close_request(conn, request_id, "go", None, by=owner.id)
+    owner.patch(f"/projects/maity/tasks/{card['id']}", {"title": "After"})
+    assert owner.get(f"/requests/{request_id}").json()["task"]["title"] == "Before"
+
+
+@pytest.mark.parametrize(
+    "body, field",
+    [({"reply_id": "maybe"}, "reply_id"), ({"reply_id": "go", "talk": True}, "answer"),
+     ({}, "answer")],
+)  # fmt: skip
+def test_the_answer_is_checked_on_the_humans_route(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    body: dict[str, Any],
+    field: str,
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request_id = _file(migrated, agent.id)
+    refused = owner.post(f"/requests/{request_id}/answer", body)
+    assert refused.status_code == 400
+    assert field in refused.json()["error"]["details"]["fields"]
+
+
+def test_talk_opens_the_agents_conversation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    request_id = _file(migrated, agent.id)
+    talked = owner.post(f"/requests/{request_id}/answer", {"talk": True})
+    assert talked.json()["answer"]["conversation_id"] == agent.id
+
+
+def test_the_inbox_filters_apply_to_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    outside, agent_id = _outside_owner(make_client, migrated)
+    request_id = _file(migrated, agent_id)
+
+    def ids(**params: str) -> list[str]:
+        return [i["id"] for i in outside.get("/requests", params=params).json()["items"]]
+
+    assert ids() == ids(to="all") == ids(**{"class": "consent"}) == [request_id]
+    assert ids(to="owner") == ids(to="role:admin") == ids(**{"class": "decision"}) == []
+    assert ids(asked_by=agent_id) == [request_id] and ids(asked_by="me") == []
+    assert ids(status="answered") == []
+
+
+def test_other_roles_see_nothing_of_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    proxy = flow.human(make_client, migrated, "a-proxy")
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "proxy", human_id=proxy.id)
+    request_id = _file(migrated, agent.id)
+    assert proxy.get(f"{R}/{request_id}").status_code == 404
+    assert proxy.post(f"{R}/{request_id}/answer", {"reply_id": "go"}).status_code == 404
+    assert agent.get(R, params={"asked_by": "me", "status": "all"}).json()["items"] == []
+    events = owner.get("/projects/maity/events", params={"after": 0, "limit": 200}).json()
+    created = [e for e in events["items"] if e["kind"] == "request_created"]
+    assert [e["payload"] for e in created] == [
+        {"id": request_id, "personal": True, "status": "open"}]  # fmt: skip
+    me = owner.get("/me").json()
+    assert [p["open_requests"] for p in me["projects"]] == [0]  # not the owner's project inbox
+
+
+@pytest.mark.parametrize("member", [True, False])
+def test_a_bad_status_is_refused_with_or_without_memberships(
+    make_client: ClientFactory, migrated: Engine, member: bool
+) -> None:
+    human = flow.human(make_client, migrated, "someone")
+    if member:
+        flow.project(human, "theirs")
+    refused = human.get("/requests", params={"status": "bogus"})
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"status": "unknown"}
