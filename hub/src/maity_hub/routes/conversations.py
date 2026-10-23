@@ -462,7 +462,9 @@ def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> l
 @router.post("/projects/{slug}/conversations")
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        # No chat to read along in yet: an owner outside gets not_found here (§9.2).
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
         conversation_id = group_chats.create(

@@ -54,7 +54,11 @@ def test_an_owner_outside_reads_its_agents_chats_and_nothing_else(
     renamed = outside.patch(f"{BASE}/{with_agent['id']}", {"title": "x"})
     assert reason(renamed) == "observer"
     assert reason(redact(outside, said["seq"])) == "observer"
-    assert reason(outside.post(BASE, {"participants": [agent.id]})) == "observer"
+    # Outside a chat it reads along, a write stays not_found, like every other read.
+    assert outside.post(BASE, {"participants": [agent.id]}).status_code == 404
+    notice = {"kind": "message", "type": "notice", "to": "all", "body": "hi"}
+    assert outside.post("/projects/maity/events", notice).status_code == 404
+    assert outside.post("/projects/maity/tasks", {"title": "x"}).status_code == 404
 
 
 def test_an_outsider_without_an_agent_learns_nothing(

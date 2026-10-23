@@ -389,9 +389,10 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
 
 
 def writer(conn: Connection, caller: Caller, slug: str) -> Membership:
-    """The caller's membership for a write; an owner outside the project, who reads along
-    in its agents' chats, gets `forbidden` with `reason: observer` for every write of it
-    (§9.2), anyone else without a membership `not_found`."""
+    """The caller's membership for a write in a chat (a post, a change to the chat, a
+    redaction): an owner outside the project, who reads along in its agents' chats, gets
+    `forbidden` with `reason: observer` (§9.2), anyone else without a membership
+    `not_found`. Every other write uses `membership`, so it stays `not_found` for it."""
     try:
         return membership(conn, caller, slug)
     except ApiError:
@@ -407,7 +408,9 @@ def writer(conn: Connection, caller: Caller, slug: str) -> Membership:
 @router.post("/projects/{slug}/events")
 def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = writer(conn, caller, slug)
+        # A chat post is a write in a chat an owner outside may read along; any other
+        # message is not, and stays `not_found` for it (§9.2).
+        mine = writer(conn, caller, slug) if body.type == "chat" else membership(conn, caller, slug)
         mine.require("events:post")
         view = post_message(conn, mine, caller, body)
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
