@@ -140,6 +140,24 @@ def _applied(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
     return applied or []
 
 
+def _record_applied(conn: Connection, runner_id: str, applied: list[dict[str, Any]]) -> None:
+    """Add a later stop to the latest revoked key's record: the answer, its replay and
+    the runner's `details.stop` read it from there."""
+    latest = conn.execute(
+        select(t.runner_credential.c.id, t.runner_credential.c.stopped)
+        .where(t.runner_credential.c.runner_id == runner_id)
+        .order_by(t.runner_credential.c.created_at.desc())
+        .limit(1)
+    ).first()
+    if latest is None:
+        return
+    conn.execute(
+        update(t.runner_credential)
+        .where(t.runner_credential.c.id == latest.id)
+        .values(stopped=runner_revoke.merge(latest.stopped, applied))
+    )
+
+
 def _load_revoked(conn: Connection, runner_id: str, request: Request) -> dict[str, Any]:
     """The runner after a revoke, with what it did to the agents (§15.3)."""
     viewer = _viewer(request)
@@ -586,7 +604,7 @@ def revoke_runner(
         _own_runner(conn, caller, runner_id, lock=True)
         live = live_credential_id(conn, runner_id)
         applied: list[dict[str, Any]] = []
-        if live is not None:  # none live: answered as it is
+        if live is not None:
             applied = runner_revoke.apply(
                 conn,
                 runner_id,
@@ -597,9 +615,21 @@ def revoke_runner(
             )
             revoke_runner_credential(conn, live, reason, by=caller.principal_id, applied=applied)
             placements.runner_credential_gone(conn, runner_id, caller.principal_id)
-        view = load_runner(conn, runner_id, caller.principal_id)
-        view["on_runner_revoke"] = runner_revoke.answer(conn, applied, caller.principal_id)
-        return idempotency.Outcome(200, "runner_revoked", runner_id, view)
+        elif agents == "stop":
+            # A key revoked already (by a `keep`, or for a leak): the owner's stop still
+            # stops its agents, added to what that revocation applied (§15.3).
+            applied = runner_revoke.apply(
+                conn,
+                runner_id,
+                agents="stop",
+                instance_rule=instance_rule,
+                removing=False,
+                by=caller.principal_id,
+            )
+            _record_applied(conn, runner_id, applied)
+        return idempotency.Outcome(
+            200, "runner_revoked", runner_id, _load_revoked(conn, runner_id, request)
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)
 

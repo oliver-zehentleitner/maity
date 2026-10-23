@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, placements, policy
+from maity_hub import clock, events, placements, policy
 from maity_hub import tables as t
 from maity_hub.runners import attached_project_ids, human_actor
 
@@ -39,12 +39,35 @@ def due(row: Any) -> bool:
     return row.revoked_at is None and when is not None and when <= clock.now()
 
 
-def revoke_due(conn: Connection, credential_id: str, by: str | None) -> None:
+def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
+    """Revoke an agent credential a runner's stop names, and say so to the agent and the
+    owners (`credential_revoked`, §15.10), once: only the revocation that wins says it."""
     from maity_hub.auth.leaks import revoke
+    from maity_hub.runners import human_actor
 
+    if not revoke(conn, credential_id, REASON, by):
+        return
+    member = conn.execute(
+        select(t.membership.c.project_id, t.membership.c.agent_id)
+        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .where(t.credential.c.id == credential_id)
+    ).one()
+    events.emit(
+        conn,
+        member.project_id,
+        "credential_revoked",
+        [f"member:{member.agent_id}", "role:owner"],
+        {"credential_id": credential_id, "reason": REASON},
+        actor=human_actor(conn, member.project_id, by),
+        subject=("credential", credential_id),
+    )
+
+
+def revoke_due(conn: Connection, credential_id: str, by: str | None) -> None:
+    """In `events.transaction`: the revocation may announce (a lead instance's too)."""
     row = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
     if due(row):
-        revoke(conn, credential_id, REASON, by)
+        revoke_agent(conn, credential_id, by)
 
 
 def apply(
@@ -59,8 +82,6 @@ def apply(
     """Apply each attached project's rule; returns `[{project_id, rule, stopped}]`.
     Under `DELETE` the placements close as `runner_removed`, under a revoke as
     `runner_revoked`; under `keep` nothing here changes."""
-    from maity_hub.auth.leaks import revoke
-
     now = clock.now()
     reason = "runner_removed" if removing else REASON
     results = []
@@ -81,7 +102,7 @@ def apply(
                 if placement.credential_id is None:
                     continue
                 if agents == "stop":  # the machine is in doubt: no grace (§15.3)
-                    revoke(conn, placement.credential_id, REASON, by)
+                    revoke_agent(conn, placement.credential_id, by)
                 else:
                     grace = timedelta(seconds=placement.stop_grace_seconds)
                     conn.execute(
@@ -116,3 +137,15 @@ def answer(
         for r in results
         if r["project_id"] in member_of
     ]
+
+
+def merge(before: list[dict[str, Any]] | None, after: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What a runner's revocations applied, per project: a later owner's stop on a key
+    revoked already adds its placements to what the first one stopped (§15.3)."""
+    merged = {a["project_id"]: dict(a, stopped=list(a["stopped"])) for a in before or []}
+    for applied in after:
+        found = merged.setdefault(applied["project_id"], dict(applied, stopped=[]))
+        if applied["rule"] == "stop":
+            found["rule"] = "stop"
+        found["stopped"] += [p for p in applied["stopped"] if p not in found["stopped"]]
+    return [merged[k] for k in sorted(merged)]
