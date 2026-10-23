@@ -68,7 +68,9 @@ packet="$(curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: applicatio
     -d '{"harness":"smoke","harness_version":"1","model":"none","client":"curl"}' \
     "$hub/api/v1/me/resume")"
 printf '%s' "$packet" | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"] + ", rules v" + str(d["rules"]["version"])'
-curl -sS --fail "$hub/api/v1/help" | grep -q '^# Maity hub API'
+# Read whole first: a `grep -q` in a pipe closes it early and curl fails writing (23).
+help_text="$(curl -sS --fail "$hub/api/v1/help")"
+grep -q '^# Maity hub API' <<<"$help_text"
 again="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
     -d "{\"code\":\"$code\",\"client\":\"curl\"}" "$hub/api/v1/join/$token")"
 [ "$again" = 404 ]   # single use
