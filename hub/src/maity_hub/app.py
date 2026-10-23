@@ -20,6 +20,7 @@ from starlette.types import Scope
 from maity_hub import (
     API_VERSION,
     __version__,
+    availability,
     errors,
     forge,
     images,
@@ -39,6 +40,7 @@ from maity_hub.routes import (
     forge_webhook,
     joins,
     keep_the_why,
+    limit,
     me_session,
     members,
     memory,
@@ -81,7 +83,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # runs whether or not the hub holds a token (docs/api.md §11.2).
         image_worker = images.Worker(engine, reader)
         image_worker.start()
+        # Limits end and sessions go away without a request to notice it (§6.12).
+        availability_worker = availability.Worker(engine)
+        availability_worker.start()
         yield
+        availability_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -106,6 +112,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
+    app.include_router(limit.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)

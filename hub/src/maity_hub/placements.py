@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import avatars, clock, events
+from maity_hub import availability, avatars, clock, events
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -33,7 +33,16 @@ from maity_hub.views import principal_id, ts
 
 HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
 MODES = ("interactive", "supervised")
-STATES = ("pending", "starting", "running", "stopping", "stopped", "exited", "failed")
+STATES = (
+    "pending",
+    "starting",
+    "running",
+    "stopping",
+    "stopped",
+    "exited",
+    "failed",
+    "rate_limited",
+)
 # reason -> the states it comes with (§15.7)
 REASONS: dict[str, tuple[str, ...]] = {
     "capacity": ("pending",),
@@ -46,7 +55,7 @@ REASONS: dict[str, tuple[str, ...]] = {
     "workspace_in_use": ("failed",),
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
-    "quota": ("exited", "failed"),
+    "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
     "evicted": ("failed", "exited"),
@@ -80,6 +89,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "hot_loop": ("reason", "crash_loop"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "reset_unknown": ("state", "rate_limited"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
@@ -613,6 +623,7 @@ def close_now(
         closing=None,
     )
     announce(conn, placement.id, "placement_updated", actor)
+    availability.placement_closed(conn, closed, actor)
     return closed
 
 
@@ -889,6 +900,9 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         actor=actor,
         subject=("placement", placement.id),
     )
+    if current:
+        # A rate limit is the agent's limit (§6.12, §15.7); the next other report ends it.
+        availability.runner_reported(conn, placement, body["state"], body.get("retry_at"), actor)
     after = row(conn, placement.id)
     if current and after.closing is not None and terminal(fields):
         return close_now(conn, after, after.closing, actor, None)

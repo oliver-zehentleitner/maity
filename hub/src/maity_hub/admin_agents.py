@@ -2,11 +2,11 @@
 
 An agent with the `admin` role holds `members:admin` only here: `PATCH` and `DELETE` of
 an agent membership whose role is `member` or `reviewer` and that is not its own, and
-in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused` and `role` between
-`member` and `reviewer`. Everything a human decides stays a human's: a human's
+in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`, `availability_policy`
+(§6.12) and `role` between `member` and `reviewer`. Everything a human decides stays a human's: a human's
 membership, `capabilities`, the `proxy`, `admin` and `owner` roles, a pause a human set
-(`humans_only`). A removal, and a change of the role or the pause of a reviewer or of
-the contract arbiter, waits for the owner's go: it is filed as a `member_change`
+(`humans_only`). A removal, and a change of the role, the pause or the availability policy of a reviewer,
+of the contract arbiter or of the coordinator, waits for the owner's go: it is filed as a `member_change`
 proposal (`proposals`), which only a human with `members:admin` answers, and applied
 on `go` with the agent as actor and the human as approver, when the change is still
 allowed then. Every other use of `members:admin` stays
@@ -80,6 +80,11 @@ def _is_arbiter(project: Any, target: Any) -> bool:
     return bool(arbiter == target.agent_id)
 
 
+def _is_coordinator(project: Any, target: Any) -> bool:
+    coordinator: str = project.coordinator
+    return bool(coordinator == target.agent_id)
+
+
 def needs_consent(
     conn: Connection,
     mine: Membership,
@@ -87,11 +92,15 @@ def needs_consent(
     values: dict[str, Any],
     pause: tuple[bool, str | None],
 ) -> bool:
-    """A role change or a pause of a reviewer or of the contract arbiter (§2.3 ᵃ)."""
+    """A role change or a pause of a reviewer or of the contract arbiter (§2.3 ᵃ), and a
+    change of the availability policy of a reviewer, the arbiter or the coordinator,
+    as for a role change (§6.12)."""
     del conn
-    sensitive = target.role == "reviewer" or _is_arbiter(mine.project, target)
+    project = mine.project
+    sensitive = target.role == "reviewer" or _is_arbiter(project, target)
     touches = ("role" in values and values["role"] != target.role) or pause[0]
-    return bool(sensitive and touches)
+    cover_seat = sensitive or _is_coordinator(project, target)
+    return bool((sensitive and touches) or (cover_seat and "availability_policy" in values))
 
 
 def _handle(conn: Connection, target: Any) -> str:
@@ -112,6 +121,8 @@ def propose(
         title = f"Remove {handle}"
     elif "role" in change.get("values", {}):
         title = f"Change {handle} to {change['values']['role']}"
+    elif "availability_policy" in change.get("values", {}):
+        title = f"Change cover for {handle}"
     else:
         title = f"Pause {handle}"
     summary = f"{principal_id(conn, mine.id)} asks for this change of {handle}'s membership."

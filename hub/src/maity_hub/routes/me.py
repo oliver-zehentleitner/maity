@@ -22,15 +22,8 @@ router = APIRouter()
 def me(request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         if caller.kind == "human":
-            human = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
-            body: dict[str, Any] = {
-                "member": {
-                    **human_member(human, avatar_url=None),
-                    **avatars.state(conn, human.id),
-                    "instance_admin": is_instance_admin(conn, human.id),
-                },
-                "projects": _human_projects(conn, human.id),
-            }
+            assert caller.human_id is not None
+            body = human_body(conn, caller.human_id)
         else:
             agent = conn.execute(
                 select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
@@ -41,6 +34,32 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
             }
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
+
+
+def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
+    """A human's `/me` without `server_time`; also the answer of `POST /me/limit`."""
+    human = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
+    return {
+        "member": {
+            **human_member(human, avatar_url=None),
+            **avatars.state(conn, human.id),
+            "instance_admin": is_instance_admin(conn, human.id),
+            # The human's own limit, with the reason other readers may not see (§6.12).
+            "limit": limit_view(human),
+        },
+        "projects": _human_projects(conn, human.id),
+    }
+
+
+def limit_view(human: Any) -> dict[str, Any] | None:
+    if human.limit_until is None or human.limit_until <= clock.now():
+        return None
+    return {
+        "until": clock.rfc3339(human.limit_until),
+        "since": clock.rfc3339(human.limit_since),
+        "reason": human.limit_reason,
+        "show_reason_in": list(human.limit_show_reason_in or []),
+    }
 
 
 def _project_row(project: Any, role: str, shown: dict[str, Any]) -> dict[str, Any]:
