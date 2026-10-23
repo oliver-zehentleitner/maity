@@ -75,7 +75,11 @@ def _plain_https(url: str, field: str) -> urllib.parse.SplitResult:
     """`https`, a host, no user info; what every link URL must be."""
     if len(url) > URL_MAX or any(c.isspace() or ord(c) < 0x20 for c in url):
         raise LinkError(field, "not_a_url")
-    parts = urllib.parse.urlsplit(url)
+    try:
+        parts = urllib.parse.urlsplit(url)
+        parts.port  # noqa: B018  # a port that is no number raises here, not later
+    except ValueError:  # a broken host ("[x"), a port that is no number
+        raise LinkError(field, "not_a_url") from None
     if parts.scheme != "https" or not parts.hostname:
         raise LinkError(field, "not_https")
     if "@" in parts.netloc:

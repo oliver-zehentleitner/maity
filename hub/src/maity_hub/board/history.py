@@ -28,16 +28,21 @@ DIFFED = ("title", "body")
 
 def diff(before: str | None, after: str | None) -> str:
     """A unified diff without file headers."""
-    lines = difflib.unified_diff(
-        (before or "").splitlines(), (after or "").splitlines(), lineterm="", n=1
+    lines = list(
+        difflib.unified_diff(
+            (before or "").splitlines(), (after or "").splitlines(), lineterm="", n=1
+        )
     )
-    return "\n".join(line for line in lines if not line.startswith(("---", "+++")))
+    # The two file headers come first, by position; a content line may start with
+    # "--" or "++" itself and stays.
+    return "\n".join(lines[2:])
 
 
 def _entry(
     conn: Connection, card_id: str, field: str, before: Any, after: Any, actor: Actor, at: Any
 ) -> str:
     entry_id = new_id("history")
+    link = (after or before) if field == "links" else None
     conn.execute(
         insert(t.card_history).values(
             id=entry_id,
@@ -46,6 +51,7 @@ def _entry(
             actor_membership=actor.membership_id,
             actor_session_id=actor.session_id,
             field=field,
+            link_id=link["id"] if link else None,
             before=before,
             after=after,
             diff=diff(before, after) if field in DIFFED else None,
@@ -188,3 +194,23 @@ def redact(conn: Connection, row: Any, mark: dict[str, Any]) -> bool:
             payload[name] = mark
     conn.execute(update(t.event).where(t.event.c.seq == event.seq).values(payload=payload))
     return True
+
+
+def link_entry(conn: Connection, card_id: str, link_id: str, removed: bool) -> Any | None:
+    """The entry that added a link of the card, or with `removed` the one that removed
+    it. A link is added once and removed at most once, so the first entry is the add and
+    the second the removal, redacted or not."""
+    c = t.card_history.c
+    rows = conn.execute(
+        select(t.card_history)
+        .where(c.card_id == card_id, c.field == "links", c.link_id == link_id)
+        .order_by(c.at, c.id)
+    ).all()
+    wanted = 1 if removed else 0
+    return rows[wanted] if len(rows) > wanted else None
+
+
+def link_shown(row: Any) -> dict[str, Any]:
+    """The link as its entry holds it, or the tombstone once the entry is redacted."""
+    shown: dict[str, Any] = row.redaction if row.redacted else (row.after or row.before)
+    return shown
