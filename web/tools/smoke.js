@@ -2248,7 +2248,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { gcWrites.push(["POST", p, b]); return gcPost(p, b); };
   win.Maity.api.patch = (p, b) => { gcWrites.push(["PATCH", p, b]); return gcPatch(p, b); };
   win.Maity.api.del = (p) => { gcWrites.push(["DELETE", p]); return gcDel(p); };
+  // It opens at the first unread message, as a direct chat does.
+  const gfReal = win.Maity.chatParts.follower;
+  const gfOpened = [];
+  win.Maity.chatParts.follower = (m, onEnd) => {
+    const f = gfReal(m, onEnd);
+    const o = f.open;
+    f.open = (marker) => { gfOpened.push(marker); o(marker); };
+    return f;
+  };
   await go("#/p/maity/chat/cnv-0007");
+  win.Maity.chatParts.follower = gfReal;
+  expect(gfOpened.length === 1 && gfOpened[0] && gfOpened[0].className === "new-line", "group chat: it opens at the first unread message");
+  // Newest puts the focus in the composer, not on the page.
+  const gfProto = Object.getPrototypeOf(main);
+  const gfFocus = gfProto.focus;
+  gfProto.focus = function () { document.activeElement = this; };
+  main.querySelector(".group-chat .jump-latest").click(); await tick();
+  expect(document.activeElement === byId("chat-text"), "group chat: Newest leaves the focus in the composer");
+  gfProto.focus = gfFocus; document.activeElement = undefined;
   expect(main.querySelector(".group-chat ol.messages") && main.querySelector(".group-chat .jump-latest") && main.querySelector(".group-chat .jump-latest").hidden,
     "group chat: it has the same Newest pill, hidden at the end");
   const gcList = () => main.querySelector(".group-chat ol.messages");

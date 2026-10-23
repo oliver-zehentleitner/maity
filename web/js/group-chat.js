@@ -170,7 +170,8 @@ window.Maity = window.Maity || {};
     const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
-    const follow = parts.follower(messages, null);
+    // Newest leaves the focus in the composer, or on the title where there is none.
+    const follow = parts.follower(messages, () => (text || heading).focus());
     let draw = null;
     // Drawn as one timeline (days, groups, the unread line); the earlier part
     // put before it means drawing it again.
@@ -426,7 +427,7 @@ window.Maity = window.Maity || {};
       status.el);
     window.setTimeout(() => {
       parts.fitToScreen(layout);
-      follow.open(null);
+      follow.open(messages.querySelector(".new-line"));
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
