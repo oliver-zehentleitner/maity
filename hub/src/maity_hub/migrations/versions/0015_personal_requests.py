@@ -4,8 +4,8 @@ the project or not (docs/api.md §7).
 `to_kind` gains `profile_owner` with `to_profile` and `to_human`; `personal` marks them
 and `task_snapshot` keeps a closed one's card as it was.
 
-Revision ID: 0014
-Revises: 0013
+Revision ID: 0015
+Revises: 0014
 Create Date: 2026-10-23
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0014"
-down_revision: str | None = "0013"
+revision: str = "0015"
+down_revision: str | None = "0014"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
