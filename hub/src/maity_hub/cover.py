@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import Connection, and_, or_, select, update
 
-from maity_hub import clock
+from maity_hub import clock, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError
@@ -116,7 +116,13 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
     )
     if (to_owner or covered.agent_id is None and klass in ("consent", "contract")) and sub.agent_id:
         return False  # an owner decision, or what only a human may do
-    if klass == "consent" and not has_scope(sub.role, _kind(sub), "requests:answer"):
+    # The scope an answer needs: a proposal's kind may ask for more than requests:answer
+    # (`proposals.Answerer`), and a substitute who could not answer is skipped.
+    rule = proposals.answerer(request)
+    scope = rule.scope if rule is not None else "requests:answer"
+    if (klass == "consent" or rule is not None) and not has_scope(sub.role, _kind(sub), scope):
+        return False
+    if rule is not None and rule.humans_only and sub.agent_id:
         return False
     return inbox.needs_a_human(request, Membership(project, sub, _kind(sub))) is None
 
@@ -339,6 +345,10 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     for_id, this_cover = _principal(row), clock.rfc3339(since)
     now = clock.now()
+    members_by_principal = {
+        _principal(m): m.id
+        for m in conn.execute(select(t.membership).where(t.membership.c.project_id == project.id))
+    }
     # per substitute: (kept, returned) card ids and request ids
     cards_of: dict[str, tuple[list[str], list[str]]] = {}
     requests_of: dict[str, tuple[list[str], list[str]]] = {}
@@ -352,6 +362,16 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             continue
         kept, returned = cards_of.setdefault(cover["by"], ([], []))
         values: dict[str, Any] = {"cover": None}
+        sub_id = members_by_principal.get(cover["by"])
+        moved = cover.get("moved")
+        still_with_sub = (
+            card.claim_holder == sub_id if moved == "claim" else card.assigned_to == sub_id
+        )
+        if not still_with_sub:
+            # Reassigned or taken over since: the cover relation ended there, and a third
+            # party's claim or assignment is never overwritten.
+            conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
+            continue
         if cover.get("touched") or card.status in ("done", "cancelled"):
             kept.append(card.id)
         else:
