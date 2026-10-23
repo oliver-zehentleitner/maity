@@ -241,10 +241,14 @@ class Forge:
 
     def owner_avatar(self, repository: str) -> str | None:
         """The owner's avatar URL (GitHub has no repository avatar), read with the token
-        where the hub holds one and without it for a public repository; None when the
-        repository or the avatar is not there."""
+        where the hub holds one and without it for a public repository; only for an
+        organization: a person's photo is not a project's logo. None when the owner is
+        a user, or the repository or the avatar is not there."""
         found = self._call(f"/repos/{repository}")
-        url = ((found or {}).get("owner") or {}).get("avatar_url")
+        owner = (found or {}).get("owner") or {}
+        if owner.get("type") != "Organization":
+            return None
+        url = owner.get("avatar_url")
         return url if isinstance(url, str) else None
 
     def social_preview(self, repository: str) -> str | None:
