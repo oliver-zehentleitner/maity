@@ -8,4 +8,4 @@
   `deleted_at` (handle and name kept, the uploaded avatar dropped), a second `DELETE`
   answers it as it is, `GET /agents` leaves it out, and `PATCH`, the avatar and a join or
   placement naming it answer `not_found`; its handle is free for a new profile at once
-  (migration `0019_agent_profile_delete`)
+  (migration `0032_agent_profile_delete`)
