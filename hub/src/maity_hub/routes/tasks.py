@@ -116,6 +116,7 @@ class ClaimIn(Strict):
 
 class AssignIn(Strict):
     assignee: str
+    instance: str | None = Field(default=None, max_length=5)  # sets assigned_instance (§6.18)
 
 
 class CheckpointIn(Strict):
@@ -674,6 +675,8 @@ def patch_task(
                 if body.assigned_to
                 else None
             )
+            if values["assigned_to"] != card.assigned_to:
+                values["assigned_instance"] = None  # an instance of the old assignee no more
         if body.release is not None:
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
@@ -1042,8 +1045,11 @@ def assign(
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
         assignee = _member_id(conn, mine, body.assignee, "assignee")
+        assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        if body.instance is not None:
+            instances.require_active(conn, assignee_row, body.instance, "instance")
         now = clock.now()
-        values: dict[str, Any] = {"assigned_to": assignee}
+        values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": body.instance}
         old_holder = card.claim_holder
         if card.claim_holder is not None and card.claim_holder != assignee:
             if not _lease_expired(card):
@@ -1055,12 +1061,11 @@ def assign(
                 )
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             _refuse_paused(conn, assignee)
-            assignee_row = conn.execute(
-                select(t.membership).where(t.membership.c.id == assignee)
-            ).one()
             values.update(
                 claim_holder=assignee,
-                claim_instance=_one_instance(conn, assignee_row),
+                # Held by exactly one instance: named, or the one the team's rules give,
+                # else `instance_required` as on a claim (§6.17, §6.5).
+                claim_instance=instances.resolve(conn, assignee_row, body.instance, "instance"),
                 claim_session_id=None,
                 claim_since=now,
                 lease_until=now + timedelta(seconds=mine.project.lease_seconds),
@@ -1092,7 +1097,9 @@ def assign(
             audience(conn, card, old_holder, old_assignee),
             {
                 "assignee": principal_id(conn, assignee),
+                "assigned_instance": card.assigned_instance,
                 "holder": principal_id(conn, card.claim_holder),
+                "instance": card.claim_instance,
                 "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
                 "project_state": mine.project.state,
                 "reason": None,
@@ -1106,15 +1113,6 @@ def assign(
 
 
 # --- checkpoint and report (§6.4, §6.6) -------------------------------------------------
-
-
-def _one_instance(conn: Connection, member: Any) -> str | None:
-    """The instance a claim moved to a member lands on, when the team's rules name one;
-    otherwise the first of its instances to call takes it (§6.5)."""
-    try:
-        return instances.resolve(conn, member, None, "assignee")
-    except ApiError:
-        return None
 
 
 def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:

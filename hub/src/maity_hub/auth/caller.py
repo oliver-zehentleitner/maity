@@ -343,17 +343,7 @@ def _agent(
             .values(last_seen_at=now)
         )
     instance: str = row.instance
-    # The claim is the instance's (§6.5): a sibling's call renews nothing of it. A claim
-    # made for the team before any instance could be named is taken by the first one.
-    conn.execute(
-        update(t.card)
-        .where(
-            t.card.c.claim_holder == membership_id,
-            t.card.c.claim_instance.is_(None),
-            t.card.c.status.notin_(CLOSED_STATUSES),
-        )
-        .values(claim_instance=instance)
-    )
+    # The claim is the instance's (§6.5): a sibling's call renews nothing of it.
     held = and_(
         t.card.c.claim_holder == membership_id,
         t.card.c.claim_instance == instance,

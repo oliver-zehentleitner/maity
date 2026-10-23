@@ -18,7 +18,7 @@ from sqlalchemy import Connection, func, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.access import member_row, membership
+from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor, emit
@@ -126,8 +126,9 @@ def require_active(conn: Connection, member: Any, instance: str, field: str) -> 
 def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> str | None:
     """The one instance a member id or an address comes down to (§6.5, §6.19): the
     named one; else the team's only active instance, or its lead under `distribution:
-    lead`. A human member, or a team with no active instance, has none (`None`). A
-    member id that leaves the choice open is `invalid` (`instance_required`)."""
+    lead`. A human member has none (`None`). A member id that leaves the choice open,
+    or names a team with no active instance, is `invalid` (`instance_required`): an
+    agent's claim always names its instance (§6.17)."""
     if member.agent_id is None:
         if instance is not None:
             raise invalid({field: "not_an_instance"})
@@ -137,7 +138,7 @@ def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> 
         return instance
     instances = active(conn, member.id)
     if not instances:
-        return None
+        raise invalid({field: "instance_required"}, "the team has no active instance")
     if len(instances) == 1:
         only: str = instances[0].instance
         return only
@@ -282,22 +283,35 @@ class TeamIn(Strict):
     review_within_team: bool | None = None
 
 
+def humans_only() -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "only the human who owns the agent sets its team's rules",
+        {"reason": "humans_only"},
+    )
+
+
 def patch_team(
     conn: Connection, caller: Caller, slug: str, member_id: str, team: TeamIn | None
-) -> Any:
+) -> tuple[Any, Membership | None]:
     """`PATCH …/members/{id}` with `team` alone (§6.18): the membership row after the
-    change. Only the human who owns the agent profile, also when not a member."""
+    change, and the caller's own membership, `None` for an owner outside the project.
+    Only the human who owns the agent profile, also when not a member."""
     if team is None:
         raise invalid({"team": "required"})
-    target = _team_target(conn, caller, slug, member_id)
+    target, reader = _team_target(conn, caller, slug, member_id)
     _set_team(conn, target, team, caller)
-    return conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    return row, reader
 
 
-def _team_target(conn: Connection, caller: Caller, slug: str, member_id: str) -> Any:
-    """The membership whose rulebook a team-only PATCH changes: its agent's owner may
-    call without being a member (§6.18); to anyone else who is no member the project
-    does not exist (§2.3)."""
+def _team_target(
+    conn: Connection, caller: Caller, slug: str, member_id: str
+) -> tuple[Any, Membership | None]:
+    """The membership whose rulebook a team-only PATCH changes, with the caller's own:
+    its agent's owner may call without being a member (§6.18); to anyone else who is no
+    member the project does not exist (§2.3)."""
     project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
     if project is None or caller.kind == "runner":
         raise not_found()
@@ -306,12 +320,15 @@ def _team_target(conn: Connection, caller: Caller, slug: str, member_id: str) ->
     except ApiError:
         target = None
     if target is not None and _owns_agent(conn, caller, target):
-        return target
-    membership(conn, caller, slug)  # not_found for a stranger
+        try:
+            return target, membership(conn, caller, slug)
+        except ApiError:
+            return target, None
+    mine = membership(conn, caller, slug)  # not_found for a stranger
     if target is None:
         raise not_found()
     _require_profile_owner(conn, caller, target)
-    return target
+    return target, mine
 
 
 def _owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
@@ -326,22 +343,19 @@ def _owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
 def _require_profile_owner(conn: Connection, caller: Caller, target: Any) -> None:
     """Only the human who owns the agent profile sets its team's rulebook: not an admin
     who is not that owner, and no agent (§6.18, §2.3)."""
+    if caller.kind != "human":
+        raise humans_only()
     if target.agent_id is None:
         raise invalid({"team": "agents_only"}, "a team is an agent membership's")
     if not _owns_agent(conn, caller, target):
-        raise ApiError(
-            403,
-            "forbidden",
-            "only the human who owns the agent sets its team's rules",
-            {"reason": "humans_only"},
-        )
+        raise humans_only()
 
 
 def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> None:
-    from maity_hub import views  # views builds the instance views from this module
-
     """Apply a subset of the rulebook and emit `member_updated` with `changed: ["team"]`.
     Lowering `max_instances` below the count revokes nothing (§6.18)."""
+    from maity_hub import views  # views builds the instance views from this module
+
     given = team.model_fields_set
     values: dict[str, Any] = {}
     for field in ("max_instances", "distribution", "wake", "review_within_team"):
@@ -400,5 +414,5 @@ def _human_actor(conn: Connection, caller: Caller, project_id: str) -> Actor:
         )
     ).scalar()
     return (
-        Actor(membership_id=own, via=caller.via) if own is not None else Actor(None, via="cookie")
+        Actor(membership_id=own, via=caller.via) if own is not None else Actor(None, via=caller.via)
     )

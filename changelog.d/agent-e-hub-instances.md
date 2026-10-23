@@ -9,6 +9,8 @@
   `already_claimed` naming the instance), checkpoints, reports and event actors
   name the instance, and the member view and the resume packet carry `team`,
   `instances` and the caller's `instance`; existing credentials become instances
-  and a membership with several becomes a team of that many
+  and a membership with several becomes a team of that many; `assign` takes
+  `instance`, and a claim moved to a team without one is `instance_required`
 - hub: the team rulebook through `PATCH …/members/{id}` with `team`, by the
-  human who owns the agent only, also when not a member (§6.18)
+  human who owns the agent only, also when not a member, who gets `204`
+  (§6.18)

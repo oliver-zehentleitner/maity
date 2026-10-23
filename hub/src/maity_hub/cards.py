@@ -31,10 +31,13 @@ def invalid_transition(current: str, wanted: str) -> ApiError:
 
 
 def holds(mine: Membership, card: Any) -> bool:
-    """The holder is the holding instance (§6.4): a sibling of the team does not hold."""
+    """The holder is the holding instance (§6.4): a sibling of the team does not hold,
+    and an agent's claim that names no instance is held by nobody (fails closed)."""
     if card.claim_holder != mine.id:
         return False
-    return mine.instance is None or card.claim_instance in (None, mine.instance)
+    if mine.kind != "agent":
+        return True
+    return mine.instance is not None and card.claim_instance == mine.instance
 
 
 def sibling_holds(mine: Membership, card: Any) -> bool:

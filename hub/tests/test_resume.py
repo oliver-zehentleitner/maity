@@ -251,7 +251,12 @@ def test_claims_and_assignments_come_with_the_packet(
         ).scalar_one()
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     held = factory.card(
-        migrated, project_id, membership_id, status="in_progress", claim_holder=membership_id
+        migrated,
+        project_id,
+        membership_id,
+        status="in_progress",
+        claim_holder=membership_id,
+        claim_instance=agent.instance,
     )
     assigned = factory.card(migrated, project_id, membership_id, assigned_to=membership_id)
     packet = agent.resume().json()

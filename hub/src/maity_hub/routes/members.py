@@ -56,6 +56,20 @@ def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
     return member_view(conn, row, briefing=True)
 
 
+def load_member_for_team(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed rulebook change: the briefing only for a reader with `members:admin`,
+    as on the first answer (§6.2, §6.18)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
+    slug = conn.execute(
+        select(t.project.c.slug).where(t.project.c.id == row.project_id)
+    ).scalar_one()
+    reader = membership(conn, request.state.caller, slug)
+    return member_view(conn, row, briefing=reader.may("members:admin"))
+
+
+idempotency.LOADERS["member_team"] = load_member_for_team
+
+
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.credential).where(t.credential.c.id == credential_id)).one()
     return credential_view(conn, row)
@@ -188,13 +202,18 @@ def patch_member(
     def action(conn: Connection) -> idempotency.Outcome:
         if "team" in given:
             # The rulebook is the agent's owner's alone, member or not (§6.18): its own
-            # path, before the member check, and never mixed with an admin's fields.
+            # path, before the member check, and never mixed with an admin's fields. An
+            # agent learns it is a human's call before anything else (§2.3).
+            if caller.kind != "human":
+                raise instances.humans_only()
             if given != {"team"}:
                 raise invalid({"team": "alone"}, "set team on its own")
-            target = instances.patch_team(conn, caller, slug, member_id, body.team)
-            return idempotency.Outcome(
-                200, "member", str(target.id), load_member(conn, str(target.id))
-            )
+            target, reader = instances.patch_team(conn, caller, slug, member_id, body.team)
+            if reader is None:
+                # An owner outside the project sees nothing of it (§1.3): no body.
+                return idempotency.Outcome(204, None, None, {})
+            view = member_view(conn, target, briefing=reader.may("members:admin"))
+            return idempotency.Outcome(200, "member_team", str(target.id), view)
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
         target = member_row(conn, mine.project.id, member_id)
