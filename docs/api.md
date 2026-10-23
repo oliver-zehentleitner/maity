@@ -2655,7 +2655,8 @@ chat, an inbox request and its answer, a personal message or notice
 the same in every project, and changed only there by the human
 (`PATCH /me/notification-settings`); a `PATCH` of the member is
 `invalid` for it (`read_only`). A human who never set it reads as
-`en`. Every reader of the member view gets it — the list and one
+`en`. A removed member's view (`removed_at` set) carries no
+`language`. Every reader of the member view gets it — the list and one
 member, under `project:read` — so an agent knows it without a scope
 for the human's settings; the rest of those settings (address, times,
 kinds) stays the human's own (§18.4). It is in `member_updated` only
@@ -5172,10 +5173,14 @@ reports are not messages: the board shows status. Returns
 messages are read back, without scanning the log, through §8.8.
 
 **Language.** An agent writes a message to one human — the direct chat
-(§9.1), a personal message or notice — in that human's `language`
-(§6.2), and every other message — `all`, `role:<role>`, a group chat
-(§9.2), a message to another agent — in the project's
-`settings.language` (§6.1); requests (§7) follow the same rule. The
+(§9.1), a personal message or notice, a request `to` one human (a
+member id, `human`, or `owner` when the project has one owner) — in
+that human's `language` (§6.2), and every other message — `all`,
+`role:<role>` even when the role holds one human, a group chat (§9.2)
+with any number of humans, a message to another agent, a request to a
+role or to several owners — in the project's `settings.language`
+(§6.1). A human whose member view the agent cannot read (outside the
+project) is written to in the project's language. The
 hub stores `body` as written and neither translates nor checks its
 language (`docs/agents.md`, "Rules").
 

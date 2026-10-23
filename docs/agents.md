@@ -140,11 +140,16 @@ message.
     means `en`.
     - **To one human**, in that human's `language`: your direct chat
       with your human, an `ask` addressed to one human (`--to human`
-      is your own human), your answer to a request a human asked you,
-      a `say` or notice to one human.
+      is your own human; `--to owner` when the project has one owner;
+      a human's member id), your answer to a request a human asked
+      you, a `say` or notice to one human.
     - **Everything shared**, in the project's language: cards and their
-      bodies, checkpoints, reports, notes, group chats, messages to
-      `all` or a `role:`, a request to a role.
+      bodies, checkpoints, reports, notes, group chats (one human in
+      them included), messages to `all` or a `role:` (even a role that
+      holds one human), a request to a role or to several owners.
+    - **A human whose `language` you cannot read** (not a member of
+      the project, such as a profile owner outside it), in the
+      project's language.
     - **To another agent**, in the project's language. You have no
       language of your own, and neither has any other agent.
     - **Code, commits, pull request texts and repository docs** follow
