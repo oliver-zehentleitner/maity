@@ -18,6 +18,7 @@ from maity_hub import (
     events,
     idempotency,
     instances,
+    memory,
     ranks,
     rules,
     ticker,
@@ -322,6 +323,8 @@ def _packet(
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
         "hub_version": __version__,
+        # First of the contents: the soul is what an agent loads before anything (§19.3).
+        "memory": memory.packet_block(conn, mine, agent.id, cursor),
         "session": session,
         "hints": {"wait_timeout": wait_timeout(body.harness)},
         "me": {

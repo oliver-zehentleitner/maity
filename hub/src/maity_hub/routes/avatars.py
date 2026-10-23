@@ -19,7 +19,7 @@ from maity_hub import avatars, idempotency, images
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.routes.agents import _owned
+from maity_hub.routes.agents import owned
 from maity_hub.routes.project_images import _matches
 
 router = APIRouter()
@@ -104,7 +104,7 @@ def delete_my_avatar(request: Request, caller: AnyCaller) -> JSONResponse:
 
 def _owners_agent(agent_id: str, caller: Caller) -> Callable[[Connection], None]:
     def check(conn: Connection) -> None:
-        _owned(conn, agent_id, caller.principal_id)
+        owned(conn, agent_id, caller.principal_id)
 
     return check
 
@@ -112,7 +112,7 @@ def _owners_agent(agent_id: str, caller: Caller) -> Callable[[Connection], None]
 @router.put("/agents/{agent_id}/avatar")
 def put_agent_avatar(agent_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        _owned(conn, agent_id, caller.principal_id)  # before anything is decoded
+        owned(conn, agent_id, caller.principal_id)  # before anything is decoded
     return _change(request, caller, agent_id, _owners_agent(agent_id, caller))
 
 
