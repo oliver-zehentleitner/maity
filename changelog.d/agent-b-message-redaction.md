@@ -8,7 +8,7 @@
 ### Added
 
 - hub: `POST …/events/{seq}/redact` takes `expect: "closed_chat_message"`, and then redacts
-  only a message of a closed group chat; anything else it could redact is `invalid`
-  (`details.fields.expect: mismatch`) and nothing changes, any other `expect` value, `null`
-  included, is `unknown`, and an event it could not redact answers as without `expect`. Until the hub has group chats, that is every event
-  (`docs/api.md` §8.5)
+  only a message of a closed group chat (`docs/api.md` §8.5); anything else it could
+  redact is `invalid` (`details.fields.expect: mismatch`) and nothing changes, which until
+  the hub has group chats is every event; any other `expect` value, `null` included, is
+  `unknown`, and an event it could not redact answers as without `expect`

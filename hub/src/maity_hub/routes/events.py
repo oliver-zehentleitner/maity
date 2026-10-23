@@ -388,20 +388,26 @@ def redact(
                 "by": mine.principal_id,
                 "at": clock.rfc3339(clock.now()),
             }
-            conn.execute(
-                update(t.event).where(t.event.c.seq == seq).values(payload=tombstone, redacted=True)
-            )
-            events.emit(
-                conn,
-                mine.project.id,
-                "event_redacted",
-                audience,
-                {"seq": seq, "reason": body.reason},
-                actor=caller.actor(mine.id),
-                subject=("event", str(seq)),
-                # A chat's notice is the chat's, as the message was: no see-all reaches it.
-                conversation_id=row.conversation_id,
-            )
+            # Only the first of two concurrent redactions writes and is announced; the
+            # other answers with the tombstone that stands, as a repeat does.
+            won = conn.execute(
+                update(t.event)
+                .where(t.event.c.seq == seq, t.event.c.redacted.is_(False))
+                .values(payload=tombstone, redacted=True)
+            ).rowcount
+            if won == 1:
+                events.emit(
+                    conn,
+                    mine.project.id,
+                    "event_redacted",
+                    audience,
+                    {"seq": seq, "reason": body.reason},
+                    actor=caller.actor(mine.id),
+                    subject=("event", str(seq)),
+                    # A chat's notice is the chat's, as the message was: no see-all
+                    # reaches it.
+                    conversation_id=row.conversation_id,
+                )
         return idempotency.Outcome(200, "event", str(seq), load_event(conn, str(seq), mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
