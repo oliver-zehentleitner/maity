@@ -27,6 +27,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
 ## B
+- [board.md](board.md) — card links read in one GraphQL query per repository by the probe's worker only
 
 ## C
 
