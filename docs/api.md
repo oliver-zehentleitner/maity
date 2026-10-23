@@ -4519,7 +4519,9 @@ included. For an event that is not a chat message, the `reason` reaches
 the human owners and admins and the redactor; every other reader gets the
 notice, and the tombstone, with `reason: null`. A chat message's notice
 carries the chat's `conversation_id`, so it is read only where the
-message was, and who sees its reason is said below. An `event_redacted`
+message was. In a direct chat its reason reaches the redactor, the human
+party, and the agent party gets `reason: null`, as every agent does; a
+group chat's is said below. An `event_redacted`
 is not itself redacted: redacting one is `invalid` with `details.reason:
 already_redacted`; an event the caller cannot read stays `not_found`,
 before any other answer. A group-chat message is
