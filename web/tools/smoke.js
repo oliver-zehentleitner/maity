@@ -982,8 +982,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: dropped on an allowed column, moved");
   // The hub's refusal, in words.
   win.Maity.api.patch = (p) => Promise.reject(new win.Maity.api.ApiError("no", 409, p, "dependencies_open", { open: ["tsk-0001"] }));
+  bProto.focus = function () { document.activeElement = this; };
   await bPick("tsk-0005", "card-move", "Move to Done");
   expect(text(main).includes("Moving failed: Not done yet: a card it depends on is still open."), "board: the hub's refusal is said in words");
+  expect(document.activeElement && document.activeElement === bMenu("tsk-0005", "card-move") && bCard("tsk-0005").querySelector(".card-move .menu").hidden,
+    "board: after a refused move the focus is back on the card's status menu button, the menu closed");
+  bProto.focus = bFocus; document.activeElement = undefined;
   win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };
   // Assign, and the live lease refused.
   await bPick("tsk-0006", "card-assign", "@agent-d");
