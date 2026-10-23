@@ -783,3 +783,15 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 @media (max-width: 720px) {
   .bell-panel { position: fixed; inset-inline: 16px; top: 56px; width: auto; }
 }
+
+/* Sessions and the mail sign-in banner (js/sessions.js). */
+.session-list, .session-alerts { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.session { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; overflow-wrap: anywhere; }
+.session.current { border-color: var(--accent); }
+.session-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.session p { margin: 4px 0; }
+.badge.ok { color: var(--ok); }
+.badge.warn { color: var(--warn); }
+.sessions-ended { margin-top: 8px; }
+.address-change { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius); }
+.signin-banner { margin: 0 0 12px; }

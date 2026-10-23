@@ -96,14 +96,17 @@ prompt nobody asked for is what people learn to deny.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §2.6.5 and §18.3 (marking a `session_created` item read gives the reported session good standing); the coordinator's ruling on the review of the dashboard's notifications (PR #194), 2026-10-23
-**Revisit when:** the page has a session list or the "This was me" control of §2.6.5
+**Revisit when:** the hub lets the bell confirm a sign-in itself, or §2.6.5 changes who may mark a security item
+**See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-10-23
 **See:** refresh.md#notification-counts-ride-on-the-15-second-me-read-browser-notifications-long-poll-their-own-endpoint-and-only-after-the-human-turned-them-on — e849f49d-bbdf-462c-972d-a67e7f6740e6 — as of 2026-10-23
 
 In the bell, opening an item marks it read, except an item of kind
 `security`: a new sign-in or an address change. It stays unread and
-links to the account. **Mark all read** leaves it too, as the hub does
-for `up_to`, and is not offered when such alerts are all that is unread.
-Until the page has a sessions view, the panel says they stay unread.
+links to the account's sessions, where **This was me** confirms it.
+**Mark all read** leaves it too, as the hub does for `up_to`, and is not
+offered when such alerts are all that is unread; the panel says where
+they are confirmed. Re-checked when the sessions view came (2026-10-23):
+the rule stands, the bell only links to it.
 
 **Reason:** marking a sign-in alert read from an allowed session is what
 gives the reported session good standing (§2.6.5): it may then end the

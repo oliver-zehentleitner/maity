@@ -457,3 +457,45 @@ bound. Keeping tombstones whose audience is `all` or a role: it still
 hides the removal of a message sent to one member, and guesses at what
 the hub knows. Having the hub mark a conversation's message after
 redaction: a contract change that §8.8 already makes unnecessary.
+
+## Sessions say what this session may not do before it is tried, and This was me is the only way a sign-in is confirmed
+
+**Id:** 561b77f6-2a12-4352-aa50-36a8aa773fbe
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5 (good standing, who may end which, the banner), §2.6.3 (a held address change), §2.6.7 (the dashboard's part) and §18.3; the coordinator's card for the sessions view (tsk-s5yq94v758g4), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub serves the session list (the view is built against the mock), or the session view gains a field that says what a session may do
+**See:** refresh.md#a-sign-in-or-address-alert-is-never-marked-read-by-opening-it-or-by-mark-all-read — 4c95abfb-95af-4c4d-85e0-6fb1cddfd79f — as of 2026-10-23
+
+The account's Sessions section works out from the list itself what this
+session may do: whether it is confirmed (`good_standing`), how old it is,
+and how old the other session is. From that it disables **End**, **End
+all other sessions**, **Approve** and **Reject** with the reason next to
+them, and offers **This was me** only from a confirmed session older than
+the sign-in it confirms. The hub's refusals are still said in words when
+they come. **This was me** marks the alert read by its id, the one way
+§18.3 confirms a sign-in. The held address change sits in the same
+section, and the mail sign-in banner is shown at the top of every page of
+every other session. The banner stays while the reported session or one
+it approved is active, applies the list's rules to its End, and follows
+the 15-second count of unread sign-in alerts. "Confirmed" is said only
+when the alert is no longer unread afterwards, because the hub answers
+200 for an id it skipped.
+
+**Reason:** the rules are the hub's, but a button that can only fail
+teaches the human nothing about why, and §2.6.7 asks for the disabled
+buttons and their words. The list carries everything the rules need. A
+sign-in is confirmed by an explicit act or not at all, so the alert's id
+is sent only from that button. The address change and the sign-ins are
+decided by the same standing and the same age, so they are read in one
+place.
+
+**Rejected alternative:** offering every button and showing the hub's
+refusal afterwards: it works, but it makes the human try in order to
+learn the rule. Confirming a sign-in by opening its alert: rejected in
+the entry linked above. Putting the held address change under the
+notification settings, where the address lives: those settings carry
+the mail, and the decision needs the standing that the sessions section
+shows.
+

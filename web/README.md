@@ -61,10 +61,9 @@ confirmed only explicitly, so opening it to look never gives the
 reported session good standing (§2.6.5, §18.3). **Mark all read** marks
 everything up to that answer's position (`next_after`, passed back
 unchanged) and leaves those alerts; it is not offered when they are all
-that is unread. The panel says they stay unread until the page has a
-sessions view to confirm them in. A sign-in or an address change
-leads to the account for now (there is no session list in the page yet),
-a personal request of a project one is not in to everything waiting (the
+that is unread. The panel says they stay unread until **This was me**
+under Sessions. A sign-in or an address change leads to the account's
+sessions (`#/account/sessions`), a personal request of a project one is not in to everything waiting (the
 personal inbox, `#/requests/<id>`, is not in the page yet). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
 
@@ -97,7 +96,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -496,6 +495,44 @@ picture follows at once. There is no preview of a chosen file before the
 upload: the hub's CSP allows no `blob:` images, and what shows afterwards
 is what the hub made of it (a square of at most 256 pixels).
 
+**Sessions** (`#/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
+where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
+- Each says the browser and system it claimed, how it signed in, where
+  from and when, which session approved a device code, and whether it is
+  confirmed (`good_standing`). The current one is marked.
+- **This was me** on a session whose sign-in alert is unread, ended
+  sessions included, marks that alert read by its id (§18.3); it is
+  offered only from a confirmed session older than the one it confirms,
+  never on the session itself. An alert with no session (an address
+  change) has its own **This was me**. The hub answers 200 even when it
+  skipped the id, so "Confirmed" is said only when the alert is gone
+  from the unread ones afterwards.
+- **End** per session and **End all other sessions**. From a session that
+  is not confirmed, **End** on a confirmed one is disabled ("Confirm this
+  session's sign-in from another session first"), and while it is under
+  an hour old **End** on an older one and **End all other sessions** too
+  ("This session is too new to end older ones"); End all other sessions
+  from it ends only the unconfirmed ones, and says so. The hub's
+  refusals (`not_in_good_standing`, `session_too_new`) are said in words.
+- The ended sessions of the last 30 days, folded (open when one of them
+  has an unconfirmed alert).
+- **A held address change** (§2.6.3) with **Approve** (a confirmed
+  session at least a day old) and **Reject** (a confirmed session), each
+  naming the change's id and address, and saying which session asked for
+  it and whether that one is confirmed; one replaced meanwhile
+  (`conflict`) is said, not approved, and the change that replaced it is
+  shown.
+- **The mail sign-in banner**: while a sign-in by mail is unconfirmed and
+  its session, or a session it approved by device code, is active, every
+  other session shows it at the top of every page, and says which
+  approved session is still active. **End this session** (one click)
+  ends those that are, under the same rules as the list (disabled with
+  the reason where the hub would refuse); **This was me** where allowed.
+  It comes and goes with the 15-second count of unread sign-in alerts,
+  without navigating.
+- Times are compared as instants on the hub's clock (`Maity-Server-Time`).
+- A hub without the list says so, and is asked once per page load.
+
 **Change password** (`#/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
 characters (counted as the hub counts them), checked before sending; a
@@ -869,6 +906,7 @@ web/
 ├── js/messages.js    (11) the project's messages, by type
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
+├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/account.js     the account: pictures and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove

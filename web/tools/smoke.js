@@ -2503,13 +2503,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pmKeep = pmSeq(6001);
   await win.Maity.api.post("/projects/maity/events", { kind: "message", type: "notice", to: "all", body: "new from the composer" });
   await fireIntervals(); await tick(); await tick();
-  expect(text(pmItems()[0]).includes("new from the composer") && pmSeq(6001) === pmKeep && text(main.querySelector(".send-status")).includes("1 new message."),
+  expect(text(pmItems()[0]).includes("new from the composer") && pmSeq(6001) === pmKeep && text(main.querySelector(".view-messages .send-status")).includes("1 new message."),
     "messages: a new message arrives with the feed, at the top, the rest kept in place");
   // Removing one (§8.5, events:admin): it leaves the list.
   const pmPrompt = win.prompt;
   win.prompt = () => "wrong project";
   btn(pmSeq(6009), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(!pmSeq(6009) && text(main.querySelector(".send-status")).includes("Removed.") && pmSeq(6001) === pmKeep, "messages: an admin removes a message with a reason; it leaves the list");
+  expect(!pmSeq(6009) && text(main.querySelector(".view-messages .send-status")).includes("Removed.") && pmSeq(6001) === pmKeep, "messages: an admin removes a message with a reason; it leaves the list");
   win.prompt = pmPrompt;
   // A removal elsewhere arrives with the feed (event_redacted) and takes the message out.
   await win.Maity.api.post("/projects/maity/events/6001/redact", { reason: "outdated" });
@@ -2712,7 +2712,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellItem = (title) => bellPanel().querySelectorAll(".bell-items li").find((li) => text(li).includes(title));
   const bellLinks = bellPanel().querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
   expect(!bellPanel().hidden && bellBtn().getAttribute("aria-expanded") === "true"
-    && JSON.stringify(bellLinks) === JSON.stringify(["#/p/maity/agents", "#/account/notifications", "#/p/maity/board", "#/p/maity/chat/agt-a", "#/all", "#/p/sample/inbox", "#/p/maity/board"])
+    && JSON.stringify(bellLinks) === JSON.stringify(["#/p/maity/agents", "#/account/sessions", "#/p/maity/board", "#/p/maity/chat/agt-a", "#/all", "#/p/sample/inbox", "#/p/maity/board"])
     && bellPanel().querySelectorAll(".bell-items li.unread").length === 6 && text(bellPanel()).includes("Mentions 1"),
     "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked");
   // Escape closes it with the focus still on the bell.
@@ -2725,8 +2725,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
   // A sign-in alert is never confirmed by opening it (§2.6.5, §18.3).
   bellBtn().click(); await tick(); await tick();
-  expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("once the page has a sessions view"),
-    "notifications: the panel says a sign-in alert stays unread until the sessions view exists");
+  expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("This was me under Sessions"),
+    "notifications: the panel says a sign-in alert stays unread until This was me under Sessions");
   bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
   expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread", "notifications: opening a sign-in alert marks nothing");
   bellBtn().click(); await tick(); await tick();
@@ -2797,6 +2797,123 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!win.Maity.notify.running() && text(main).includes("Browser notifications are off."), "notifications: turned off, nothing is polled any more");
   win.Maity.api.get = nGet;
   delete win.Notification;
+
+  // Sessions (docs/api.md §2.6.5, §2.6.7): where one is signed in, This was me, End, a held address change.
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  const sesRow = (id) => main.querySelectorAll("li.session").find((li) => li.getAttribute("data-session") === id);
+  const sesBox = () => main.querySelector("section.sessions");
+  expect(main.querySelectorAll("li.session").map((li) => li.getAttribute("data-session")).join() === "hss-41d2,hss-41c7,hss-41c0"
+    && text(sesRow("hss-41c0")).includes("this browser") && !btn(sesRow("hss-41c0"), "End")
+    && text(sesRow("hss-41d2")).includes("not confirmed") && text(sesRow("hss-41d2")).includes("a link by mail")
+    && text(sesRow("hss-41c7")).includes("approved from Firefox on Linux"),
+    "sessions: the active ones, newest first, this browser marked, how each signed in");
+  expect(text(sesBox().querySelector("details.sessions-ended")).includes("Chrome on Windows, signed out"), "sessions: the ended ones of the last 30 days");
+  expect(text(sesRow("hss-41d2")).includes("Its sign-in alert is not confirmed.") && btn(sesRow("hss-41d2"), "This was me") && !btn(sesRow("hss-41c7"), "This was me"),
+    "sessions: This was me on the sign-in whose alert is unread");
+  expect(text(main.querySelector(".address-change")).includes("from Firefox on Linux, 192.0.2.80, not confirmed"), "sessions: the held change says which session asked for it");
+  // The banner of a mail sign-in, on every page of another session (§2.6.5).
+  await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const sesBanner = () => main.querySelector(".signin-banner");
+  expect(sesBanner() && text(sesBanner()).includes("New sign-in by mail: Firefox on Linux, 192.0.2.80") && btn(sesBanner(), "End this session") && btn(sesBanner(), "This was me"),
+    "sessions: a mail sign-in is a banner on every page, with End this session and This was me");
+  const sesDel = win.Maity.api.del;
+  const sesDels = [];
+  win.Maity.api.del = (p) => { sesDels.push(p); return Promise.resolve({ ended: true }); };
+  btn(sesBanner(), "End this session").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(sesDels[0] === "/auth/sessions/hss-41d2" , "sessions: End this session ends it with one click");
+  win.Maity.api.del = sesDel;
+  // From a session that is not confirmed and under an hour old: what it may not do is said, not tried (§2.6.5).
+  const sesGet = win.Maity.api.get;
+  const weak = { id: "hss-new", current: true, method: "email_code", created_at: new Date(Date.now() - 10 * 60000).toISOString(), last_seen_at: new Date().toISOString(),
+    browser: "Chrome", os: "Android", ip: "192.0.2.99", approved_by: null, good_standing: false, created: { record: "acr-9", ip: "192.0.2.99", browser: "Chrome", os: "Android" }, ended_at: null, ended_by: null };
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false }))) })) : sesGet(p));
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(sesRow("hss-41c0"), "End").attrs.disabled !== undefined && text(sesRow("hss-41c0")).includes("Confirm this session's sign-in from another session first.")
+    && btn(sesRow("hss-41d2"), "End").attrs.disabled !== undefined && text(sesRow("hss-41d2")).includes("This session is too new to end older ones.")
+    && btn(sesBox(), "End all other sessions").attrs.disabled !== undefined && !btn(sesRow("hss-41d2"), "This was me"),
+    "sessions: a new session not confirmed may end no confirmed one, no older one, and confirms nothing");
+  const sesApprove = btn(main.querySelector(".address-change"), "Approve");
+  expect(sesApprove && sesApprove.attrs.disabled !== undefined && btn(main.querySelector(".address-change"), "Reject").attrs.disabled !== undefined
+    && text(main.querySelector(".address-change")).includes("Only a confirmed session can decide it."), "sessions: a held address change, not decided from such a session");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(sesBanner(), "End this session").attrs.disabled !== undefined && text(sesBanner()).includes("This session is too new to end older ones."),
+    "sessions: the banner's End follows the same rules as the list");
+  win.Maity.api.get = sesGet;
+  // The banner stays while a session the mail sign-in approved is active, though the sign-in itself ended (§2.6.5).
+  const approved = { id: "hss-41e0", method: "device_code", created_at: "2026-10-22T13:30:00Z", last_seen_at: "2026-10-22T13:31:00Z", browser: "Edge", os: "Windows",
+    ip: "192.0.2.81", approved_by: "hss-41d2", good_standing: false, created: { record: "acr-8", ip: "192.0.2.81", browser: "Edge", os: "Windows" }, ended_at: null, ended_by: null };
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [approved].concat(r.items.map((x) => (x.id === "hss-41d2"
+    ? Object.assign({}, x, { ended_at: "2026-10-22T13:40:00Z", ended_by: "logout" }) : x))) })) : sesGet(p));
+  await go("#/p/maity/board"); await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(sesBanner() && text(sesBanner()).includes("It has ended, but a session it approved is still active: Edge on Windows"), "sessions: the banner stays while a session it approved is active");
+  sesDels.length = 0;
+  win.Maity.api.del = (p) => { sesDels.push(p); return Promise.resolve({ ended: true }); };
+  btn(sesBanner(), "End this session").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(sesDels) === JSON.stringify(["/auth/sessions/hss-41e0"]), "sessions: End this session ends the one still active");
+  win.Maity.api.del = sesDel;
+  // An ended session's unread alert is still confirmed from the list.
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  const sesEnded = sesBox().querySelector("details.sessions-ended");
+  const sesEndedRow = sesEnded.querySelectorAll("li").find((li) => li.getAttribute("data-session") === "hss-41d2");
+  expect(sesEnded.attrs.open !== undefined && sesEndedRow && btn(sesEndedRow, "This was me"), "sessions: an ended session whose alert is unread keeps This was me");
+  win.Maity.api.get = sesGet;
+  // The banner follows the counts at once, without navigating.
+  await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(sesBanner(), "sessions: the banner is there");
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? sesGet(p).then((r) => Object.assign({}, r, { counts: Object.assign({}, r.counts, { security: 0 }) })) : sesGet(p));
+  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  expect(!sesBanner(), "sessions: no alert left in the counts, the banner goes at once");
+  win.Maity.api.get = sesGet;
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(sesBanner(), "sessions: an alert in the counts, the banner comes at once");
+  // A confirmation the hub skipped (§18.3 answers 200 anyway) is not called confirmed.
+  const loose = { id: "ntf-acr-8", record: "acr-8", kind: "security", at: new Date().toISOString(), project: null, actor: null,
+    title: "Sign-in address changed", target: { type: "settings", id: "email" }, read: false, redacted: false };
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?kind=security") ? sesGet(p).then((r) => Object.assign({}, r, { items: r.items.concat([loose]) })) : sesGet(p));
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  const sesLoose = sesBox().querySelectorAll(".session-alerts li").find((li) => li.getAttribute("data-alert") === "ntf-acr-8");
+  btn(sesLoose, "This was me").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(sesBox()).includes("The hub did not confirm it from this session.") && !text(sesBox()).includes("Confirmed: Sign-in"), "sessions: a skipped confirmation is said, not claimed");
+  win.Maity.api.get = sesGet;
+  // The hub's refusals in words.
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.del = () => Promise.reject(new win.Maity.api.ApiError("f", 403, "/x", "forbidden", { reason: "not_in_good_standing" }));
+  btn(sesRow("hss-41c7"), "End").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(sesBox()).includes("Not done: this session's own sign-in is not confirmed yet"), "sessions: not in good standing, in words");
+  win.Maity.api.del = sesDel;
+  const sesPost = win.Maity.api.post;
+  let replaced = false;
+  win.Maity.api.post = (p, b) => (p.includes("address-change") ? (replaced = true, Promise.reject(new win.Maity.api.ApiError("c", 409, p, "conflict", {}))) : sesPost(p, b));
+  win.Maity.api.get = (p) => (p === "/me/notification-settings" && replaced ? sesGet(p).then((r) => JSON.parse(JSON.stringify(r, (k, v) => (k === "address_change"
+    ? { id: "adc-9b1c", address: "other@example.net", requested_at: "2026-10-22T14:00:00Z", session_id: "hss-41d2" } : v)))) : sesGet(p));
+  btn(main.querySelector(".address-change"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(sesBox()).includes("replaced by a newer change") && text(main.querySelector(".address-change")).includes("other@example.net"),
+    "sessions: a change replaced meanwhile is not approved; the one that replaced it is shown");
+  win.Maity.api.post = sesPost;
+  win.Maity.api.get = sesGet;
+  await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
+  // This was me, from a confirmed older session: the mock confirms the sign-in.
+  const sesPosts = [];
+  win.Maity.api.post = (p, b) => { sesPosts.push([p, b]); return sesPost(p, b); };
+  btn(sesRow("hss-41d2"), "This was me").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(sesPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-acr-7"] }])
+    && text(sesRow("hss-41d2")).includes("confirmed") && !text(sesRow("hss-41d2")).includes("not confirmed") && text(sesBox()).includes("Confirmed: Firefox on Linux is yours."),
+    "sessions: This was me marks the alert read by its id; the session is confirmed");
+  btn(main.querySelector(".address-change"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(sesPosts[1]) === JSON.stringify(["/me/notification-settings/email/address-change/approve", { id: "adc-7f2a", address: "maint@example.net" }])
+    && !main.querySelector(".address-change") && text(sesBox()).includes("Approved."), "sessions: the held change approved by its id and address");
+  btn(sesRow("hss-41c7"), "End").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(!sesRow("hss-41c7") && text(sesBox().querySelector("details.sessions-ended")).includes("Safari on iOS, ended"), "sessions: End ends it; it moves to the ended ones");
+  win.Maity.api.post = sesPost;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".signin-banner"), "sessions: no banner once its alert is confirmed");
+  // A hub without the session list: said, and asked once per page load.
+  let sesAsked = 0;
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? (sesAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : sesGet(p));
+  await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(sesAsked === 1 && text(main.querySelector("section.sessions")).includes("This hub lists no sessions yet."), "sessions: a hub without them is asked once, and that is said");
+  win.Maity.api.get = sesGet;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

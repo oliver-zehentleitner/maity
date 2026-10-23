@@ -753,6 +753,8 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
+        // A new sign-in alert, or one gone: the banner follows at once (§2.6.5).
+        if (securityCount() !== bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -877,6 +879,25 @@ window.Maity = window.Maity || {};
   }
 
   let renderSeq = 0;
+  // The mail sign-in banner (§2.6.5) at the top of the page: built when the
+  // page renders and again when the count of unread sign-in alerts changes.
+  let bannerFor = 0;
+  let bannerSeq = 0;
+  const securityCount = () => (M.notify.state.available && M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
+  function renderBanner(ctx) {
+    if (!M.sessions) return;
+    const main = document.getElementById("main");
+    const seq = ++bannerSeq;
+    bannerFor = securityCount();
+    const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
+    if (!bannerFor) { drop(); return; }
+    M.sessions.banner(ctx, () => render()).then((b) => {
+      if (seq !== bannerSeq) return;
+      drop();
+      if (b) main.insertBefore(b, main.firstChild);
+    });
+  }
+
   // The tab title without its count, and a failed notifications read to say.
   let baseTitle = "Maity";
   let notifyError = null;
@@ -971,6 +992,7 @@ window.Maity = window.Maity || {};
     }
     if (seq !== renderSeq) return;
     append(clear(main), root);
+    renderBanner(ctx);
     watch(ctx, where, known ? item : null, main);
     let label = "No such view";
     if (empty) label = "No projects yet";

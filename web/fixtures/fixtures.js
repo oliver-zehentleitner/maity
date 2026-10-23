@@ -1973,11 +1973,11 @@ window.MAITY_FIXTURES = {
         "record": "acr-7",
         "redacted": false,
         "target": {
-          "id": "ses-x9",
+          "id": "hss-41d2",
           "type": "session"
         },
         "title": "New sign-in: Firefox on Linux (email_link)",
-        "url": "https://maity.team/#/account"
+        "url": "https://maity.team/#/account/sessions"
       },
       {
         "actor": {
@@ -2116,7 +2116,18 @@ window.MAITY_FIXTURES = {
           "ticker": false
         }
       },
-      "email": null,
+      "email": {
+        "address": "maintainer@example.org",
+        "address_change": {
+          "address": "maint@example.net",
+          "id": "adc-7f2a",
+          "requested_at": "2026-10-22T13:20:00Z",
+          "session_id": "hss-41d2"
+        },
+        "address_status": "verified",
+        "pending_address": null,
+        "verified_at": "2026-10-01T09:12:00Z"
+      },
       "kinds": [
         "inbox",
         "chat",
@@ -2794,5 +2805,90 @@ window.MAITY_FIXTURES = {
       }
     ],
     "next_cursor": null
+  },
+  "sessions.json": {
+    "current": "hss-41c0",
+    "items": [
+      {
+        "approved_by": null,
+        "browser": "Firefox",
+        "created": {
+          "browser": "Firefox",
+          "ip": "198.51.100.7",
+          "os": "Linux",
+          "record": "acr-101"
+        },
+        "created_at": "2026-10-20T08:02:11Z",
+        "ended_at": null,
+        "ended_by": null,
+        "expires_at": "2026-11-05T14:01:30Z",
+        "good_standing": true,
+        "id": "hss-41c0",
+        "ip": "198.51.100.7",
+        "last_seen_at": "2026-10-22T14:01:30Z",
+        "method": "password",
+        "os": "Linux"
+      },
+      {
+        "approved_by": "hss-41c0",
+        "browser": "Safari",
+        "created": {
+          "browser": "Safari",
+          "ip": "203.0.113.24",
+          "os": "iOS",
+          "record": "acr-5"
+        },
+        "created_at": "2026-10-22T11:01:40Z",
+        "ended_at": null,
+        "ended_by": null,
+        "expires_at": "2026-11-05T14:01:40Z",
+        "good_standing": true,
+        "id": "hss-41c7",
+        "ip": "203.0.113.24",
+        "last_seen_at": "2026-10-22T13:40:00Z",
+        "method": "device_code",
+        "os": "iOS"
+      },
+      {
+        "approved_by": null,
+        "browser": "Firefox",
+        "created": {
+          "browser": "Firefox",
+          "ip": "192.0.2.80",
+          "os": "Linux",
+          "record": "acr-7"
+        },
+        "created_at": "2026-10-22T13:18:00Z",
+        "ended_at": null,
+        "ended_by": null,
+        "expires_at": "2026-11-05T13:18:00Z",
+        "good_standing": false,
+        "id": "hss-41d2",
+        "ip": "192.0.2.80",
+        "last_seen_at": "2026-10-22T13:19:10Z",
+        "method": "email_link",
+        "os": "Linux"
+      },
+      {
+        "approved_by": null,
+        "browser": "Chrome",
+        "created": {
+          "browser": "Chrome",
+          "ip": "198.51.100.40",
+          "os": "Windows",
+          "record": "acr-2"
+        },
+        "created_at": "2026-10-10T07:00:00Z",
+        "ended_at": "2026-10-15T18:21:00Z",
+        "ended_by": "logout",
+        "expires_at": "2026-10-24T07:00:00Z",
+        "good_standing": true,
+        "id": "hss-3f90",
+        "ip": "198.51.100.40",
+        "last_seen_at": "2026-10-15T18:20:00Z",
+        "method": "password",
+        "os": "Windows"
+      }
+    ]
   }
 };
