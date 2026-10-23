@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -11,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, ticker
+from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -23,6 +24,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
@@ -113,13 +115,15 @@ def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
     return {"id": card.id, "title": card.title, "status": card.status}
 
 
-def request_view(conn: Connection, row: Any) -> dict[str, Any]:
+def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> dict[str, Any]:
     """A request as §7 shows it; also the payload of its events (a personal request's
-    events excepted: `_payload`)."""
+    events excepted: `_payload`). `with_proposal` adds the fields a proposal's kind shows
+    (`proposals.view`): only `GET …/requests/{id}` asks for them, never an event, a list
+    or a resume packet (§19.1, §19.3)."""
     task = _task(conn, row.task_id)
     if row.personal and row.status != "open" and row.task_snapshot is not None:
         task = row.task_snapshot  # the card as it was when the request closed (§7)
-    return {
+    view = {
         "id": row.id,
         "class": klass(row),
         "title": row.title,
@@ -144,6 +148,10 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
     }
+    shown = proposals.view(conn, row) if with_proposal else {}
+    if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
+        raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
+    return view | shown
 
 
 def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
@@ -620,7 +628,7 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
             raise forbidden(
                 "requests:answer", "only the asker, the addressee or an answerer reads this"
             )
-        return JSONResponse(request_view(conn, row))
+        return JSONResponse(request_view(conn, row, with_proposal=True))
 
 
 # --- answering and withdrawing --------------------------------------------------------------
@@ -698,10 +706,12 @@ def answer(
                 raise _self_answer()
             raise not_found()
         _refuse_unless_open(row)
-        if inbox.needs_a_human(row, mine):
-            raise humans_only("under spawn_consent_by: human only a human answers this")
+        proposals.require_known(row)
+        refusal = inbox.needs_a_human(row, mine)
+        if refusal is not None:
+            raise humans_only(refusal)
         if not inbox.may_answer(conn, row, mine):
-            raise forbidden("requests:answer")
+            raise forbidden(inbox.answer_scope(row))
         if inbox.is_asker(row, mine):
             raise _self_answer()
         _check_answer(row, body)
@@ -746,6 +756,7 @@ def answer(
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, outcome, mine.principal_id, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -787,6 +798,7 @@ def withdraw(
         if not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
         _refuse_unless_open(row)
+        proposals.require_known(row)
         now = clock.now()
         conn.execute(
             update(t.request)
@@ -801,6 +813,7 @@ def withdraw(
         )
         _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -826,11 +839,22 @@ def close_request(
     reason: str | None = None,
 ) -> None:
     """Answer (`go`, in `by`'s name) or withdraw an open request from inside the hub, as
-    the routes above would, without settling a placement again: the placement code that
-    calls this settles its own side (§15.6)."""
+    the routes above would. A proposal it carries is settled here, like every other
+    close; a placement is not settled again: the placement code that calls this settles
+    its own side (§15.6). A proposal of a kind this hub does not know is withdrawn
+    without its settle hook, and the reason and the log say so: a close the hub makes
+    itself (the proposer's removal) must not fail on it, while an explicit answer still
+    does (`proposals.require_known`)."""
     row = _row(conn, request_id)
     if row.status != "open":
         return
+    unknown = not proposals.known(row)
+    if unknown:
+        outcome = "withdrawn"
+        kind = (proposals.of(row) or {}).get("kind")
+        note = f"its proposal's kind {kind!r} is unknown to this hub, so it was not settled"
+        reason = f"{reason}; {note}" if reason else note
+        log.warning("request %s withdrawn by the hub: %s", row.id, note)
     now = clock.now()
     audit = {
         "changed_by_credential": actor.credential_id if actor else None,
@@ -874,6 +898,8 @@ def close_request(
         )
         kind, extra = "request_answered", {}
     _unblock(conn, row)
+    if not unknown:
+        proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
     view = request_view(conn, _row(conn, row.id))
     emit(
         conn,
@@ -893,12 +919,19 @@ def file_consent(
     conn: Connection,
     mine: Membership,
     caller: Caller,
-    placement_id: str,
     title_text: str,
     summary: str,
+    *,
+    placement_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
 ) -> str:
-    """The consent request for an agent's placement proposal (§15.6): to the owner,
-    go/no, waiting, and linked to the placement; returns its id."""
+    """A consent request to the owner, go/no, waiting, linked to the placement it
+    settles (§15.6) or carrying the proposal it applies (`proposals`, §2.3 ᵃ), never
+    both; returns its id."""
+    if placement_id is not None and proposal is not None:
+        raise ValueError("a consent settles a placement or carries a proposal, not both")
+    if proposal is not None:
+        proposals.check_kind(proposal)
     request_id = new_id("request")
     to = inbox.Addressee("owner")
     conn.execute(
@@ -915,6 +948,7 @@ def file_consent(
                 "asked_by": mine.id,
                 "asked_session_id": caller.session_id,
                 "placement_id": placement_id,
+                "proposal": proposal,
                 "while_open": "wait",
                 "status": "open",
                 "changed_by_credential": caller.credential_id,

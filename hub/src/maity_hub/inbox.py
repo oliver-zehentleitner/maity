@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.scopes import ROLES, has_scope
@@ -83,22 +84,37 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
     )
 
 
-def needs_a_human(request: Any, mine: Membership) -> bool:
-    """A placement's consent request under `spawn_consent_by: human` (§6.1, §15.6):
-    starting an agent spends compute and model budget, so no agent gives the go."""
-    return (
-        mine.kind == "agent"
-        and request.placement_id is not None
-        and mine.project.spawn_consent_by == "human"
-    )
+def needs_a_human(request: Any, mine: Membership) -> str | None:
+    """Why no agent answers this, or None: a placement's consent request under
+    `spawn_consent_by: human` (§6.1, §15.6) — starting an agent spends compute and model
+    budget, so no agent gives the go — and a proposal whose kind only a human answers
+    (`proposals.Answerer`)."""
+    if mine.kind != "agent":
+        return None
+    if request.placement_id is not None and mine.project.spawn_consent_by == "human":
+        return "under spawn_consent_by: human only a human answers this"
+    rule = proposals.answerer(request)
+    return rule.refusal if rule is not None and rule.humans_only else None
+
+
+def answer_scope(request: Any) -> str:
+    """The scope an answer needs: a proposal's kind may ask for more (§19.2)."""
+    rule = proposals.answerer(request)
+    return rule.scope if rule is not None else "requests:answer"
 
 
 def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
-    """`requests:answer` for every class; the addressee in its own right for the others.
-    Never an agent where the request needs a human, and nobody through a project for a
-    personal request: its human answers it through `POST /requests/{id}/answer` (§7)."""
-    if request.personal or needs_a_human(request, mine):
+    """`requests:answer` for every class (or the scope a proposal's kind asks for); the
+    addressee in its own right for the others. Never an agent where the request needs a
+    human, nobody where it carries a proposal of a kind the hub does not know, and nobody
+    through a project for a personal request: its human answers it through
+    `POST /requests/{id}/answer` (§7)."""
+    if request.personal or not proposals.known(request):
         return False
+    if needs_a_human(request, mine) is not None:
+        return False
+    if proposals.of(request) is not None:
+        return mine.may(answer_scope(request))
     if mine.may("requests:answer"):
         return True
     return getattr(request, "class") != "consent" and addressed_to(conn, request, mine)

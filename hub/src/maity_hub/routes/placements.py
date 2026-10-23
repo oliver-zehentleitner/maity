@@ -424,7 +424,9 @@ def _file(
             "reason": reason,
         }
     )
-    file_consent(conn, mine, caller, placement.id, f"{verb} {handle} on {runner.name}", summary)
+    file_consent(
+        conn, mine, caller, f"{verb} {handle} on {runner.name}", summary, placement_id=placement.id
+    )
 
 
 # --- changing -------------------------------------------------------------------------------
