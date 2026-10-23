@@ -13,11 +13,68 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run still in the queue or running;
+# main keeps one run per merge (its group is the commit), never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 defaults:
   run:
     working-directory: hub
 
 jobs:
+  # Which parts a pull request touches, from its merge commit against the base it
+  # merges into: a suite runs only when its part changed. A push to main, or a
+  # change to this workflow, runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      hub: ${{ steps.paths.outputs.hub }}
+      image: ${{ steps.paths.outputs.image }}
+      join: ${{ steps.paths.outputs.join }}
+      web: ${{ steps.paths.outputs.web }}
+      e2e: ${{ steps.paths.outputs.e2e }}
+      cli: ${{ steps.paths.outputs.cli }}
+      helm: ${{ steps.paths.outputs.helm }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: paths
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          parts="hub image join web e2e cli helm"
+          if [ "$EVENT" != pull_request ]; then
+            for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^1 HEAD)"
+          printf '%s\n' "$changed"
+          for part in $parts; do
+            hit=false
+            while IFS= read -r file; do
+              [ -n "$file" ] || continue
+              case "$part:$file" in
+                *:.github/workflows/ci.yml) hit=true ;;
+                hub:hub/*|hub:docs/join-page.md) hit=true ;;
+                image:hub/*|image:docs/join-page.md|image:deploy/Dockerfile*) hit=true ;;
+                join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
+                web:web/*) hit=true ;;
+                e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
+                cli:cli/*) hit=true ;;
+                helm:deploy/*) hit=true ;;
+              esac
+            done <<< "$changed"
+            echo "$part=$hit" >> "$GITHUB_OUTPUT"
+          done
+
   # The changelog fragments in changelog.d/ (one per pull request, folded into
   # CHANGELOG.md at release) and the tool's own tests; standard library only,
   # on the oldest Python the tool supports.
@@ -39,6 +96,8 @@ jobs:
   # The dashboard (web/, owned by Agent D): structure checks on the Python
   # standard library, the behaviour smoke test on the runner's node binary.
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,6 +112,8 @@ jobs:
   # maity CLI as the agent (web/tools/e2e.py). The screenshots of every step
   # and the hub's log are uploaded, also when a step fails.
   web-e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -96,6 +157,8 @@ jobs:
           if-no-files-found: ignore
 
   hub-sqlite:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,6 +171,8 @@ jobs:
   # What ships: the wheel, installed non-editable, so a file missing from it
   # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer".
   hub-wheel:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +187,8 @@ jobs:
   # The locks in hub/requirements/ follow pyproject.toml: recompiled with the
   # pinned uv, they must come out unchanged (`make lock` was run).
   hub-lock:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +199,8 @@ jobs:
       - run: make lock-check
 
   hub-image:
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -148,6 +217,8 @@ jobs:
   # upgrade on a throwaway kind cluster. helm, kind and kubectl come with the
   # runner image; the first step prints their versions.
   helm:
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -161,6 +232,8 @@ jobs:
   # The paste line end to end, both ways a joining agent can take it (docs/api.md §3):
   # plain curl as the join page says, and the maity CLI.
   join-smoke:
+    needs: changes
+    if: needs.changes.outputs.join == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -176,6 +249,8 @@ jobs:
       - run: hub/scripts/smoke_join.sh
 
   hub-postgresql:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -199,6 +274,8 @@ jobs:
       - run: make test
 
   hub-mariadb:
+    needs: changes
+    if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
     services:
       mariadb:
@@ -225,6 +302,8 @@ jobs:
   # The agent-side command: lint, types and tests on the oldest and the newest
   # Python it supports. Standard library only, so nothing else is installed.
   cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -239,3 +318,22 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
       - run: make check
+
+  # The one check to require: green when every suite either passed or was not
+  # needed (skipped by `changes`), red when one failed or was cancelled.
+  ci-ok:
+    if: always()
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, hub-mariadb, cli]
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
