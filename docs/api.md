@@ -266,7 +266,7 @@ the hub records it on the session.
 | Ticker item `text` | 280 code points; `url` 2048 characters (§17.1) |
 | Manual ticker posts | 20 per membership per hour, of them 5 with `to: all` (§17.6) |
 | Ticker items inside the resume packet | 20, then `truncated: true` (§17.9) |
-| Forge webhook body | 1 MiB; 60 verified deliveries per minute per project, 60 unverified requests per minute per project and source address (§17.4) |
+| Forge webhook body | 1 MiB; 60 verified deliveries per minute per project, 60 unverified requests per minute per project and source address, and 60 requests per minute per source address for a project that does not exist or has no webhook secret, one bucket shared by all such requests (§17.4) |
 | Ticker subscription | 20 areas per list (§17.8) |
 | Attachments per message | 10 (§8.7) |
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
@@ -8087,8 +8087,7 @@ watchers of the human's own watch: they are found through the watch
 table when the notification is derived, never through the event's
 audience (§6.4), and the fan-out is not shown to anyone, not even to
 the card's other watchers. A place in `contract.watchers` is part of
-the card and stays an audience token, as before. The `ticker` kind arrives with the change ticker (#180);
-until that lands it exists in the settings and produces nothing.
+the card and stays an audience token, as before. The `ticker` kind comes from the change ticker (§17).
 
 `security` items are always listed and counted, whatever the browser
 and mail settings say; they count in `counts.security` and never in
