@@ -28,10 +28,14 @@ def planted(tmp_path: Path) -> tuple[Path, Path]:
     clone = tmp_path / "ws" / "maity" / "agent-3"
     clone.mkdir(parents=True)
     git(clone, "init", "-q")
+    # No background maintenance or auto-gc: a detached `git maintenance run --auto` after the
+    # commit would add and remove lock files while the copy below reads the directory.
+    git(clone, "config", "maintenance.auto", "false")
+    git(clone, "config", "gc.auto", "0")
     git(clone, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty",
         "-m", "one")  # fmt: skip
     evil = tmp_path / "evil"
-    shutil.copytree(clone / ".git", evil)
+    shutil.copytree(clone / ".git", evil, ignore=shutil.ignore_patterns("*.lock"))
     marker = tmp_path / "ran"
     with (evil / "config").open("a") as fh:
         fh.write(f"[core]\n\tfsmonitor = touch {marker}\n")
