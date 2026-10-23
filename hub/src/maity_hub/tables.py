@@ -312,6 +312,8 @@ project = Table(
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
+    # How long a holder has to answer a takeover (§6.1, §6.19); older rows read the default.
+    Column("takeover_window_minutes", Integer, nullable=False, server_default="60"),
     # optional or required (§2.2); the default fills projects made before 0004.
     Column("signing", String(16), nullable=False, server_default="optional"),
     # What an agent's placement proposal does, and how many placements may be active
@@ -978,6 +980,8 @@ request = Table(
     # What a `consent` request applies on its go: `{"kind": …}`, settled by the kind
     # registered in `proposals` (§2.3 ᵃ); null for every other request.
     Column("proposal", JSON_VALUE),
+    # The takeover an escalation or a takeover notice belongs to (§6.19); hub only.
+    _ref("takeover_id", "takeover.id", index=True),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),
@@ -1093,6 +1097,34 @@ presence_minute = Table(
     _membership_ref("membership_id", nullable=False),
     Column("minute", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("membership_id", "minute"),
+# A takeover of a held card (§6.19): who takes it from whom, the window the holder has
+# to answer, and how it ended. `request_id` names the escalation's decision request; no
+# foreign key, as the request names the takeover back.
+takeover = Table(
+    "takeover",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _ref("task_id", "card.id", nullable=False, index=True),
+    _membership_ref("from_member", nullable=False),
+    Column("from_instance", String(INSTANCE)),
+    _membership_ref("to_member", nullable=False),
+    Column("to_instance", String(INSTANCE)),
+    _membership_ref("requested_by"),
+    Column("requested_instance", String(INSTANCE)),
+    Column("reason", MARKDOWN_TEXT, nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("window_minutes", Integer, nullable=False),
+    Column("window_ends_at", UtcDateTime, nullable=False),
+    # The second window of a disputed takeover: past it the hub escalates (§6.19).
+    Column("escalate_at", UtcDateTime),
+    Column("objection", JSON_VALUE),
+    Column("override", JSON_VALUE),
+    Column("outcome", JSON_VALUE),
+    Column("request_id", String(ID)),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Index("ix_takeover_project_status", "project_id", "status"),
     **MYSQL_TABLE,
 )
 
