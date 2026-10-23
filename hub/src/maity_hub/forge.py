@@ -720,6 +720,28 @@ class Forge:
         url = repo.get("openGraphImageUrl")
         return url if isinstance(url, str) else None
 
+    def issue(self, repository: str, number: int) -> dict[str, Any] | None:
+        """One issue for an import (§6.14): `{number, title, body, author_login, created_at,
+        is_pull_request, state}`, or None when the forge has no such item."""
+        found = self._get(f"/repos/{repository}/issues/{number}")
+        if found is None:
+            self._missing(repository)
+            return None
+        title, body, created = found.get("title"), found.get("body"), found.get("created_at")
+        login = (found.get("user") or {}).get("login")
+        if not isinstance(title, str) or not isinstance(created, str):
+            raise ForgeUnavailableError("the forge answered in an unexpected shape")
+        return {
+            "number": number,
+            "title": title,
+            "body": body if isinstance(body, str) else "",
+            "author_login": login if isinstance(login, str) else None,
+            "created_at": created,
+            "state": str(found.get("state", "")).lower(),
+            # GitHub's issue endpoint answers for pull requests too, with this key.
+            "is_pull_request": "pull_request" in found,
+        }
+
     def items(
         self, repository: str, numbers: list[int]
     ) -> tuple[dict[int, dict[str, Any] | None], bool]:

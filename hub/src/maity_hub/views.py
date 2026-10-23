@@ -790,6 +790,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": view_contract(row.contract) if row.contract is not None else None,
+                "imported_from": row.imported_from,
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
