@@ -20,9 +20,14 @@ from maity_hub.views import ts
 def record(
     conn: Connection, membership_id: int, text: str | None, by: str | None, at: datetime
 ) -> int:
-    """Write a new version of the membership's briefing; returns its number."""
+    """Write a new version of the membership's briefing; returns its number. The version
+    is read with a lock on the membership row: a plain read sees the transaction's
+    snapshot under MariaDB's repeatable read, so two admins editing one member at once
+    would both write the same number."""
     current: int = conn.execute(
-        select(t.membership.c.briefing_version).where(t.membership.c.id == membership_id)
+        select(t.membership.c.briefing_version)
+        .where(t.membership.c.id == membership_id)
+        .with_for_update()
     ).scalar_one()
     version = current + 1
     conn.execute(

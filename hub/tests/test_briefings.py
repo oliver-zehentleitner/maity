@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
+from maity_hub import briefings
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -97,3 +101,35 @@ def test_its_owner_reads_them_without_being_a_member(
     theirs = factory.agent(migrated, project_id, outside.id)  # its owner is no member
     found = history(outside, theirs.agent_id)
     assert found.status_code == 200, found.text
+
+
+def test_two_admins_at_once_get_two_versions(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both edits land, each its own version: neither reads the version the other is
+    about to write (on MariaDB the second one failed as a 500). Each write waits after
+    its read for the other to read too; under the lock the other cannot, and the wait
+    gives up."""
+    agent = flow.agent(make_client, owner, briefing="v1")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    admin = flow.human(make_client, migrated, "co-admin")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    both_read = threading.Barrier(2)
+    real_update = update
+
+    def after_both_read(*args: Any) -> Any:
+        with contextlib.suppress(threading.BrokenBarrierError):
+            both_read.wait(timeout=2)
+        return real_update(*args)
+
+    monkeypatch.setattr(briefings, "update", after_both_read)
+    url = f"/projects/maity/members/{agent.id}"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        answers = list(pool.map(lambda who: who.patch(url, {"briefing": who.id}), [owner, admin]))
+    assert [a.status_code for a in answers] == [200, 200], [a.text for a in answers]
+    versions = [i["version"] for i in history(owner, agent.id).json()["items"]]
+    assert versions == [3, 2, 1]
