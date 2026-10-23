@@ -302,9 +302,12 @@ def _packet(
     ).all()
     peers = []
     areas = []
+    own_view: dict[str, Any] = {"covering": []}
     for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
-        if row.id != mine.id:
+        if row.id == mine.id:
+            own_view = view
+        else:
             peers.append(
                 {
                     "member_id": view["id"],
@@ -386,7 +389,7 @@ def _packet(
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
-            "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "covering": own_view["covering"],  # whom it covers (§6.12)
         },
         "team": siblings,
         "project": {

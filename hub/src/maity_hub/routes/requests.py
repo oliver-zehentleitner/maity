@@ -12,7 +12,17 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
+from maity_hub import (
+    avatars,
+    clock,
+    cover,
+    idempotency,
+    inbox,
+    mentions,
+    placements,
+    proposals,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -159,6 +169,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "holder": _holder(conn, row),
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
+        "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -771,6 +782,8 @@ def answer(
         on_behalf = None
         if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
             on_behalf = addressee.text(conn)
+        elif not in_own_right and inbox.covers(row, mine):
+            on_behalf = row.cover["for"]  # the covered addressee (§6.12)
         elif not in_own_right and addressee.kind != "role":
             on_behalf = (
                 inbox.owner_membership(conn, mine.project.id).human_id

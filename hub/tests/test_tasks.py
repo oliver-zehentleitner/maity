@@ -33,6 +33,7 @@ TASK_KEYS = {
     "release",
     "contract",
     "imported_from",  # §6.14: null unless imported
+    "cover",  # §6.12: null unless a substitute holds it for someone
     "links",  # §6.13
     "notes",  # §6.16: the counts
     "created_at",

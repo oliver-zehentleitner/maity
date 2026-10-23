@@ -14,6 +14,7 @@ from tests.test_claims import _claim
 from tests.test_tasks import _report, task
 
 REQUEST_KEYS = {
+    "cover",  # §6.12: null unless a substitute covers it
     "id",
     "class",
     "title",
