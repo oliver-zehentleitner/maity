@@ -8778,6 +8778,21 @@ mail.
   third-party push service, which this stage does not add.
 - **Stage 3 — mail.** The settings page edits §18.4; the admin area of
   the instance admin edits §16.2 and offers the test send (§16.3).
+- **"Waiting for you" is where everything meets.** The all-projects
+  start page (and a project's own view, filtered to it) is built from
+  the same two sources as the bell, not from the inbox alone:
+  open requests addressed to the human (§7) first, because they ask
+  for an answer; then the unread items of `GET /me/notifications`
+  (§18.2), grouped for reading — chats and group-chat threads as one
+  row per conversation with its unread count and newest line, then
+  mentions, the human's cards, agent outages and ticker items. Each row
+  links to its `url`; opening a conversation marks its items read
+  (§18.3), a request stays until it is answered or withdrawn. The page
+  long-polls as stage 2 does and updates in place. A kind the human
+  switched off in §18.4 still shows here; the switch governs browser
+  notifications and mail, not this page. Without the notifications
+  endpoint (a hub that has not reached stage 1) the page shows the
+  requests alone, as today, and says nothing about the rest.
 - **Per-project badges** come from `by_project` (§18.2), never from
   counting listed items.
 
