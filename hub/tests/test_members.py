@@ -165,9 +165,14 @@ def test_the_agent_declares_its_own_pause(owner: flow.Human, make_client: Client
     no_key = agent.client.patch("/api/v1/me", json={"paused": {"reason": "x"}}, headers=agent.auth)
     assert no_key.json()["error"]["details"]["fields"] == {"Idempotency-Key": "required"}
     response = agent.patch("/me", {"paused": {"reason": "waiting for the contract"}})
-    assert response.json()["paused"]["by"] == agent.id
-    agent.resume()  # its own pause ends with its next session
-    assert owner.get(f"/projects/maity/members/{agent.id}").json()["paused"] is None
+    # The calling instance's pause, not the membership's (§5.3).
+    assert response.json()["paused"] is None
+    (mine,) = response.json()["instances"]
+    assert mine["paused"]["by"] == agent.id and mine["presence"] == "paused"
+    assert response.json()["presence"] == "paused"
+    assert agent.resume().json()["membership"]["paused"] is None  # it ends with its next session
+    (mine,) = owner.get(f"/projects/maity/members/{agent.id}").json()["instances"]
+    assert mine["paused"] is None
 
 
 def test_removing_a_member_revokes_releases_and_allows_a_rejoin(

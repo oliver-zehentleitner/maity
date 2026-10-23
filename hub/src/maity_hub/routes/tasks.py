@@ -185,15 +185,27 @@ def _member(row: Any) -> list[str]:
     return [f"member:{row}"] if row else []
 
 
-def audience(conn: Connection, card: Any, *extra: int | None) -> list[str]:
-    """creator, assignee, area owner, holder, and whoever else the event concerns (§8.2)."""
-    ids = [card.created_by, card.assigned_to, cards.area_owner(conn, card.project_id, card.area)]
-    ids += [card.claim_holder, *extra]
+Party = int | tuple[int | None, str | None] | None  # a membership, or one with its instance
+
+
+def audience(conn: Connection, card: Any, *extra: Party) -> list[str]:
+    """creator, assignee, area owner, holder, and whoever else the event concerns (§8.2).
+    The holder is its holding instance's token, an assignee with `assigned_instance`
+    that instance's; the team still reads them, only the waking narrows."""
+    parties: list[Party] = [
+        card.created_by,
+        (card.assigned_to, card.assigned_instance),
+        cards.area_owner(conn, card.project_id, card.area),
+        (card.claim_holder, card.claim_instance),
+        *extra,
+    ]
     members: list[str] = []
-    for membership_id in ids:
+    for party in parties:
+        membership_id, instance = party if isinstance(party, tuple) else (party, None)
         principal = principal_id(conn, membership_id)
-        if principal and f"member:{principal}" not in members:
-            members.append(f"member:{principal}")
+        token = instances.token(principal, instance) if principal else None
+        if token and token not in members:
+            members.append(token)
     for watcher in (card.contract or {}).get("watchers", []):  # contract cards (§6.8)
         if f"member:{watcher}" not in members:
             members.append(f"member:{watcher}")
@@ -285,9 +297,10 @@ def _closing(card: Any) -> dict[str, Any]:
     return values
 
 
-def _refuse_paused(conn: Connection, membership_id: int) -> None:
-    """A member a human paused takes no new work: no claims, no new cards (§5.3).
-    Its own pause is a declaration and refuses nothing."""
+def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = None) -> None:
+    """A member a human paused takes no new work: no claims, no new cards (§5.3); nor
+    does an instance a human paused, while its siblings carry on. An agent's own pause
+    is a declaration and refuses nothing."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
     if human_paused(row):
         raise ApiError(
@@ -295,6 +308,20 @@ def _refuse_paused(conn: Connection, membership_id: int) -> None:
             "paused",
             "this member is paused; it takes no new work until the pause is lifted",
             {"paused": paused(row)},
+        )
+    if instance is None:
+        return
+    held = conn.execute(
+        select(t.credential).where(
+            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        )
+    ).first()
+    if held is not None and instances.human_paused(row, held):
+        raise ApiError(
+            409,
+            "paused",
+            "this instance is paused; it takes no new work until the pause is lifted",
+            {"paused": instances.paused_view(held), "instance": instance},
         )
 
 
@@ -572,7 +599,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         _check_area(body.area)
         mine = _locked(conn, mine)
         state = _require_open_project(mine, body.reason)
-        _refuse_paused(conn, mine.id)  # a paused agent opens no new work
+        _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
         extra: dict[str, Any] = {}
         if body.kind == "release":
             extra = _new_release(conn, mine, body.release)
@@ -585,6 +612,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
+        assigned_instance = _assigned_instance(conn, assigned)
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         now = clock.now()
         card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
@@ -605,6 +633,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
                         area=body.area,
                         created_by=mine.id,
                         assigned_to=assigned,
+                        assigned_instance=assigned_instance,
                         ktw_ref=body.ktw_ref,
                         changed_by_credential=caller.credential_id,
                         changed_via=caller.via,
@@ -695,7 +724,8 @@ def patch_task(
                 else None
             )
             if values["assigned_to"] != card.assigned_to:
-                values["assigned_instance"] = None  # an instance of the old assignee no more
+                # The new team's distribution decides, as on every assignment (§6.18).
+                values["assigned_instance"] = _assigned_instance(conn, values["assigned_to"])
         if body.release is not None:
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
@@ -830,9 +860,11 @@ def claim(
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
-        _refuse_paused(conn, holder_id)  # also when an admin claims on its behalf
+        _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
+        if holder_id == mine.id and card.assigned_to == mine.id:
+            _refuse_other_instance(mine, card)
         if card.status != "open":
             raise cards.invalid_transition(card.status, "in_progress")
         if mine.project.claim_policy == "assign-only" and card.assigned_to != holder_id:
@@ -877,6 +909,26 @@ def claim(
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _refuse_other_instance(mine: Membership, card: Any) -> None:
+    """A card assigned to the caller's team goes to the instance the team's
+    distribution chose: another instance gets `instance_assigned`, and so does any
+    instance but the lead under `lead` while none is chosen yet (§6.18)."""
+    if mine.instance is None:
+        return
+    chosen = card.assigned_instance
+    if chosen is None and mine.row.distribution == "lead":
+        if mine.row.lead_instance == mine.instance:
+            return
+    elif chosen is None or chosen == mine.instance:
+        return
+    raise ApiError(
+        409,
+        "instance_assigned",
+        "this card is meant for another instance of your team",
+        {"assigned_instance": chosen},
+    )
 
 
 def _already_claimed(conn: Connection, card: Any) -> ApiError:
@@ -941,10 +993,10 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
                     "the holder's lease has not expired",
                     {"lease_until": clock.rfc3339(card.lease_until)},
                 )
-        old_holder = card.claim_holder
+        old_holder = (card.claim_holder, card.claim_instance)
         now = clock.now()
         # Conditional: a renewal by the holder a moment ago must not be wiped.
-        still = [t.card.c.claim_holder == old_holder]
+        still = [t.card.c.claim_holder == old_holder[0]]
         if not cards.holds(mine, card):
             still.append(t.card.c.lease_until <= now)
         released = conn.execute(
@@ -1060,17 +1112,41 @@ def assign(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:admin")
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
+        if not mine.may("tasks:admin"):
+            if not _leads_within_team(mine, card, body.assignee):
+                mine.require("tasks:admin")
+            # The lead hands out its team's cards nobody holds; a held card moves only
+            # through a takeover (§6.18, §6.19), a human's never (§2.3).
+            if card.claim_holder is not None:
+                raise _held(conn, card)
         assignee = _member_id(conn, mine, body.assignee, "assignee")
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")
+            if assignee_row.distribution == "free" and not takes:
+                # Under `free` any instance claims and none is assigned (§6.18); the
+                # instance only names where an expired claim lands.
+                raise invalid(
+                    {"instance": "distribution_free"},
+                    "the team's distribution is free: no instance is assigned",
+                )
+        chosen = instances.assigned_for(conn, assignee_row, body.instance)
         now = clock.now()
-        values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": body.instance}
-        old_holder = card.claim_holder
-        if card.claim_holder is not None and card.claim_holder != assignee:
+        values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": chosen}
+        old_holder = (card.claim_holder, card.claim_instance)
+        old_assignee = (card.assigned_to, card.assigned_instance)
+        if (
+            card.claim_holder == assignee
+            and chosen is not None
+            and card.claim_instance not in (None, chosen)
+        ):
+            # Moving `assigned_instance` away from the holding instance is a takeover
+            # (§6.18), which this hub does not offer yet.
+            raise _held(conn, card)
+        if takes:
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -1079,19 +1155,20 @@ def assign(
                     {"lease_until": clock.rfc3339(card.lease_until)},
                 )
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
-            _refuse_paused(conn, assignee)
+            # Held by exactly one instance: named, or the one the team's rules give,
+            # else `instance_required` as on a claim (§6.17, §6.5).
+            instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
+            _refuse_paused(conn, assignee, instance)
             values.update(
                 claim_holder=assignee,
-                # Held by exactly one instance: named, or the one the team's rules give,
-                # else `instance_required` as on a claim (§6.17, §6.5).
-                claim_instance=instances.resolve(conn, assignee_row, body.instance, "instance"),
+                claim_instance=instance,
                 claim_session_id=None,
                 claim_since=now,
                 lease_until=now + timedelta(seconds=mine.project.lease_seconds),
             )
         moves_claim = "claim_holder" in values
         still = (
-            [t.card.c.claim_holder == old_holder, t.card.c.lease_until <= now]
+            [t.card.c.claim_holder == old_holder[0], t.card.c.lease_until <= now]
             if moves_claim
             else []
         )
@@ -1107,7 +1184,6 @@ def assign(
         )
         if assigned.rowcount != 1:  # the holder renewed in the meantime
             raise _lease_active(_card(conn, card.id))
-        old_assignee = card.assigned_to
         card = _card(conn, card.id)
         emit(
             conn,
@@ -1132,6 +1208,45 @@ def assign(
 
 
 # --- checkpoint and report (§6.4, §6.6) -------------------------------------------------
+
+
+def _assigned_instance(conn: Connection, membership_id: int | None) -> str | None:
+    """`assigned_instance` for a card assigned to a member without naming one (§6.18)."""
+    if membership_id is None:
+        return None
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    return instances.assigned_for(conn, row, None)
+
+
+def _held(conn: Connection, card: Any) -> ApiError:
+    """A held card that would move by `assign`: a human's never moves (§2.3), another's
+    only through a takeover (§6.19)."""
+    holder = conn.execute(select(t.membership).where(t.membership.c.id == card.claim_holder)).one()
+    if holder.agent_id is None:
+        return ApiError(
+            403,
+            "forbidden",
+            "a card a human holds moves only by that human",
+            {"reason": "humans_only"},
+        )
+    return ApiError(
+        409,
+        "takeover_required",
+        "the card is held: it moves only through a takeover",
+        {"holder": holder.agent_id, "instance": card.claim_instance},
+    )
+
+
+def _leads_within_team(mine: Membership, card: Any, assignee: str) -> bool:
+    """The lead instance of a team under `distribution: lead` hands out the cards
+    assigned to its own team, among its own instances (§6.18)."""
+    return (
+        mine.instance is not None
+        and mine.row.distribution == "lead"
+        and mine.row.lead_instance == mine.instance
+        and card.assigned_to == mine.id
+        and assignee == mine.principal_id
+    )
 
 
 def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
@@ -1234,7 +1349,12 @@ def report(
             # A report without code is never probed: nothing to compare (§6.6).
             "mismatch": None if body.code else False,
         }
-        values: dict[str, Any] = {"report": stored}
+        values: dict[str, Any] = {
+            "report": stored,
+            # Every instance that ever reported the card: one that reports again does not
+            # clear another's work for its own review (§6.18).
+            "reported_instances": _reporters(card, mine),
+        }
         if body.done:
             values.update({**_closing(card), "status": "done", "closed_at": now})
         elif card.status == "blocked":
@@ -1280,6 +1400,19 @@ def report(
 
 
 GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_reason")
+
+
+def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
+    earlier: list[dict[str, Any]] = list(card.reported_instances or [])
+    if not earlier and card.report:  # a report from before the list was kept
+        earlier = [
+            {
+                "member_id": card.report.get("reported_by"),
+                "instance": card.report.get("reported_instance"),
+            }
+        ]
+    me = {"member_id": mine.principal_id, "instance": mine.instance}
+    return [*(r for r in earlier if r != me), me]
 
 
 def _check_report(body: ReportIn) -> None:

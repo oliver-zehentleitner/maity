@@ -126,7 +126,12 @@ def emit(
     conversation_id: str | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
-    lock_project(conn, project_id)
+    project = lock_project(conn, project_id)
+    wakes = None
+    if project.team_wake:  # only a project with a narrowing team pays the lookup
+        from maity_hub.instances import team_wakes  # instances writes events itself
+
+        wakes = team_wakes(conn, project_id, audience, actor.membership_id if actor else None)
     result = conn.execute(
         insert(t.event).values(
             project_id=project_id,
@@ -145,6 +150,7 @@ def emit(
             conversation_id=conversation_id,
             payload=payload,
             redacted=False,
+            wakes=wakes,
         )
     )
     key = result.inserted_primary_key
@@ -188,11 +194,20 @@ def hidden_redactions(
     return frozenset(hidden)
 
 
+def _names_team(audience: list[str], principal: str) -> bool:
+    """`member:<id>`, or `instance:<id>#…`: one instance's token is readable by its whole
+    team (§8.2)."""
+    team = f"instance:{principal}#"
+    return f"member:{principal}" in audience or any(
+        isinstance(token, str) and token.startswith(team) for token in audience
+    )
+
+
 def readable_by(
     row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
 ) -> bool:
-    """§8.2: audience `all`, `member:<id>`, `role:<role>`, or one's own; owners and
-    admins read every event of the project."""
+    """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
+    own; owners and admins read every event of the project."""
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -212,12 +227,12 @@ def readable_by(
         return True
     if row.conversation_id is not None:
         # A conversation is its two parties' alone, admins included (§9).
-        return f"member:{principal}" in audience
+        return _names_team(audience, principal)
     if membership.role in SEE_ALL_ROLES:
         return True
     return (
         "all" in audience
-        or f"member:{principal}" in audience
+        or _names_team(audience, principal)
         or f"role:{membership.role}" in audience
     )
 
@@ -293,25 +308,47 @@ def read_for_runner(
     return rows, examined
 
 
-def wakes(row: Any, membership: Any, principal: str) -> bool:
+def wakes(
+    row: Any,
+    membership: Any,
+    principal: str,
+    instance: str | None = None,
+    credential_id: str | None = None,
+) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
-    admin never wakes, and neither does a kind in NON_WAKING."""
-    if row.actor_membership == membership.id or row.kind in NON_WAKING:
+    admin never wakes, and neither does a kind in NON_WAKING.
+
+    For an agent instance: its own `instance:` token wakes it, also when a sibling of its
+    team caused the event, never when it did itself. A team addressed by `member:` or
+    `role:` whose wake rule narrowed the event (`row.wakes`) wakes only the chosen
+    instances; `all` and a conversation are never narrowed."""
+    if row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     audience = row.audience or []
-    return (
-        "all" in audience
-        or f"member:{principal}" in audience
-        or f"role:{membership.role}" in audience
-        or row.conversation_id == principal
-    )
+    own = instance is not None and f"instance:{principal}#{instance}" in audience
+    if row.actor_membership == membership.id:
+        return own and row.actor_credential_id != credential_id
+    if own or "all" in audience or row.conversation_id == principal:
+        return True
+    if f"member:{principal}" not in audience and f"role:{membership.role}" not in audience:
+        return False
+    chosen = (row.wakes or {}).get(principal)
+    return chosen is None or instance is None or instance in chosen
 
 
 def read_waking(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    *,
+    instance: str | None = None,
+    credential_id: str | None = None,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
@@ -320,7 +357,7 @@ def read_waking(
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal)
+        if wakes(r, membership, principal, instance, credential_id)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

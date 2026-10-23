@@ -71,6 +71,7 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
         return
     if (current, wanted) in {("review", "done"), ("review", "in_progress")}:
         if has_done_authority(mine, card):
+            refuse_same_team_review(mine, card)
             return
         raise ApiError(
             403, "forbidden", "this needs done authority", {"scope": authority_scope(mine)}
@@ -80,6 +81,32 @@ def check_transition(mine: Membership, card: Any, wanted: str) -> None:
             return
         raise ApiError(409, "not_holder", "only the holder moves this card to done")
     raise invalid_transition(current, wanted)
+
+
+def refuse_same_team_review(mine: Membership, card: Any) -> None:
+    """Under `review_within_team: false` one instance does not judge another's work:
+    the reporting team's other instances do not move it out of review (§6.18)."""
+    if mine.instance is None or mine.row.review_within_team:
+        return
+    report = card.report or {}
+    reporters = card.reported_instances or [
+        {"member_id": report.get("reported_by"), "instance": report.get("reported_instance")}
+    ]
+    # Any other instance of the caller's team that ever reported the card (§6.18).
+    others = [
+        r["instance"]
+        for r in reporters
+        if r.get("member_id") == mine.principal_id
+        and r.get("instance") not in (None, mine.instance)
+    ]
+    if not others:
+        return
+    raise ApiError(
+        403,
+        "forbidden",
+        "another instance of your team reported this card; it is not yours to review",
+        {"reason": "same_team_review", "instance": others[-1]},
+    )
 
 
 def authority_scope(mine: Membership) -> str:
