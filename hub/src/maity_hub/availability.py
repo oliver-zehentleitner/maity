@@ -347,9 +347,14 @@ def hold_cap(conn: Connection, membership_id: int, now: datetime) -> datetime | 
     if row.human_id is not None:
         human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    # Presence decides nothing here: only a pause comes before a limit, and a pause
-    # holds no lease.
-    if computed(row, "online", human, project, now)["state"] != "limited":
+    # A limit that exists holds, whether or not a pause shows first; a pause alone
+    # holds nothing. Presence decides nothing here.
+    held = _live(row.limit_until, now) if row.agent_id is not None else False
+    if row.agent_id is None and human is not None:
+        held = _live(human.limit_until, now) or (
+            row.role == "owner" and _live(project.absence_until, now)
+        )
+    if not held:
         return None
     start: datetime = row.outage_since or now
     return start + LEASE_HOLD
