@@ -43,7 +43,6 @@ def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
     """Revoke an agent credential a runner's stop names, and say so to the agent and the
     owners (`credential_revoked`, §15.10), once: only the revocation that wins says it."""
     from maity_hub.auth.leaks import revoke
-    from maity_hub.runners import human_actor
 
     if not revoke(conn, credential_id, REASON, by):
         return
@@ -113,8 +112,31 @@ def apply(
                         )
                         .values(revoke_due_at=now + grace, revoke_due_by=by)
                     )
+        if agents == "stop":
+            _due_now(conn, runner_id, project_id, by)
         results.append({"project_id": project_id, "rule": rule, "stopped": stopped})
     return results
+
+
+def _due_now(conn: Connection, runner_id: str, project_id: str, by: str) -> None:
+    """The owner's override revokes at once what an earlier `stop` left to its grace:
+    the credentials named by this runner's placements in the project, closed by that
+    revocation, and still waiting (§15.3) — never another agent's."""
+    waiting = conn.execute(
+        select(t.credential.c.id)
+        .join(t.placement, t.placement.c.credential_id == t.credential.c.id)
+        .where(
+            t.placement.c.runner_id == runner_id,
+            t.placement.c.project_id == project_id,
+            t.placement.c.closed_reason.in_((REASON, "runner_removed")),
+            t.credential.c.revoked_at.is_(None),
+            t.credential.c.revoke_due_at.is_not(None),
+        )
+        .distinct()
+        .order_by(t.credential.c.id)
+    ).scalars()
+    for credential_id in list(waiting):
+        revoke_agent(conn, credential_id, by)
 
 
 def answer(

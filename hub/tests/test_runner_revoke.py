@@ -263,3 +263,20 @@ def test_a_runner_revocation_is_announced_once(setup: Setup, due: bool) -> None:
     [(payload, audience)] = _announced(setup)
     assert payload == {"credential_id": setup.agent.credential_id, "reason": "runner_revoked"}
     assert set(audience) >= {f"member:{setup.agent.id}", "role:owner"}
+
+
+def test_the_override_inside_a_policy_stops_grace_revokes_at_once(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """The reviewer's probe: a policy stop leaves the agent its grace; the owner's
+    override then finds no active placement, yet revokes that agent at once."""
+    assert set_policy(setup, "stop").status_code == 200
+    first = running(setup)
+    bystander = flow.agent(make_client, setup.owner)  # on no placement of this runner
+    assert revoke(setup).json()["on_runner_revoke"][0]["stopped"] == [first["id"]]
+    assert setup.agent.get("/me").status_code == 200  # within its grace
+    assert revoke(setup, agents="stop").status_code == 200
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    assert bystander.get("/me").status_code == 200
+    [(payload, _)] = _announced(setup)
+    assert payload["credential_id"] == setup.agent.credential_id
