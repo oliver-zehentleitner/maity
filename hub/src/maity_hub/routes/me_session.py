@@ -19,6 +19,7 @@ from maity_hub import (
     idempotency,
     instances,
     memory,
+    preferences,
     ranks,
     rules,
     ticker,
@@ -322,6 +323,8 @@ def _packet(
         if view["id"] != caller.instance
     ]
     scopes = listed_scopes(mine.role, "agent")
+    # Below the rules, never a permission (§19.4); the owner's text once, here or there.
+    preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -349,6 +352,7 @@ def _packet(
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
             "team": instances.team(conn, mine.row),
+            "owner_preferences": owner_preferences,
         },
         "team": siblings,
         "project": {
@@ -364,6 +368,7 @@ def _packet(
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
+        "preferences": preferences_block,
         "areas": areas,
         "keep_the_why": {
             "enabled": project.keep_the_why,

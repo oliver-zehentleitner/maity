@@ -340,6 +340,8 @@ def member_views(
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
             # Never in an event: views built for events pass no `details` (§5.3).
             view["shared_environment"] = sharing.get(row.id, [])
+            if row.agent_id is not None:  # given its owner's preferences (§19.4)
+                view["owner_preferences"] = bool(row.owner_preferences)
         views.append(view)
     return views
 
