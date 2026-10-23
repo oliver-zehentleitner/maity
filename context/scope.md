@@ -215,7 +215,7 @@ the code:
   (a subscription provider or a payment link), off by default.
 
 Every person sees only the projects they belong to, as before; the open
-instance adds plan limits, and no ordinary member can list other
+instance adds plan limits per person, and no ordinary member can list other
 accounts or projects. The instance admin keeps what §16.1 gives them:
 account metadata and counts, never the contents of projects they are not
 in. The core stays free software without billing; selling
@@ -234,5 +234,9 @@ and creates nothing new (the tolerant default), and the operator has an
 emergency brake per account or for all — pausing the agents over the
 limit or making an account read-only — which is logged and told to the
 person affected. Opening an instance and plans are never the default;
-they are switched on by configuration. Still open: whether limits count
-per person or per project.
+they are switched on by configuration. Limits count per person: each
+pays for their own agents and projects, with a small free plan (for
+example up to 3 agents). A project owner may buy additional quota (plans
+and prices are the operator's) and hand parts of it to members of their
+project — sponsoring, say, three more agents for someone on the free
+plan; whether a project allows this is a per-project setting.
