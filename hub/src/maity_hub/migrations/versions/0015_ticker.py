@@ -5,8 +5,8 @@ item's `dedupe_key` under a unique (project, key) so that two sources observing 
 same merge, deploy or release write one item (§17.7). `ticker_subscription` holds one
 membership's follow and mute lists (§17.8); no row means both empty.
 
-Revision ID: 0014
-Revises: 0013
+Revision ID: 0015
+Revises: 0014
 Create Date: 2026-10-23
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0014"
-down_revision: str | None = "0013"
+revision: str = "0015"
+down_revision: str | None = "0014"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

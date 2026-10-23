@@ -845,3 +845,24 @@ def test_settings_empty_changes_nothing(owner: flow.Human) -> None:
     before = owner.get("/projects/maity").json()["settings"]
     assert owner.patch("/projects/maity", {"settings": {}}).status_code == 200
     assert owner.get("/projects/maity").json()["settings"] == before
+
+
+def test_a_reader_who_lost_access_loses_the_item_the_notice_and_its_shape(
+    owner: flow.Human, team: dict[str, flow.Agent], make_client: ClientFactory
+) -> None:
+    enable(owner)
+    proxy = flow.agent(make_client, owner, role="proxy")
+    request = asked(team["hub"], to="owner")
+    answer(owner, request, text="Yes.")
+    [item] = listed(proxy)
+    owner.post(f"/projects/maity/events/{item['seq']}/redact", {"reason": "x"})
+    seen = proxy.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    [notice] = [e for e in seen if e["kind"] == "event_redacted"]
+    assert notice["audience"] == [
+        f"member:{proxy.id}"
+    ], "a decision's notice: its own token, no all"
+    owner.patch(f"/projects/maity/members/{proxy.id}", {"role": "member"})
+    after = proxy.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    assert not any(e["seq"] == item["seq"] for e in after), "no item"
+    assert not any(e["kind"] == "event_redacted" for e in after), "no notice"
+    assert listed(proxy) == []
