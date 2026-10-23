@@ -7,8 +7,8 @@ rotated, and the time and result of the last verified delivery.
 `event.subject_id` widens from 40 to 255 characters: an automatic deploy's subject is
 `<environment>@<sha>` (§17.1), up to 64 + 1 + 64 characters, more than an id.
 
-Revision ID: 0017
-Revises: 0016
+Revision ID: 0021
+Revises: 0020
 Create Date: 2026-10-23
 """
 
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0021"
+down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -10,5 +10,5 @@
 
 ### Changed
 
-- hub: `event.subject_id` holds up to 255 characters (migration 0017): an automatic deploy's
+- hub: `event.subject_id` holds up to 255 characters (migration 0021): an automatic deploy's
   subject is `<environment>@<sha>`, longer than an id
