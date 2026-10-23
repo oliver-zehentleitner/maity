@@ -89,9 +89,12 @@ member reports before it takes work. A membership without a briefing of
 its own gets the project's in its resume packet, marked as the project
 default and not copied onto the membership, so a later change reaches
 every such member; its own briefing, once set, wins. Until the member
-has posted a message or held a claim, its packet names whom to check in
-with. A human with `project:admin` sets it, and so does an admin agent —
-the one project setting an agent may change.
+has written to its check-in target or held a claim, its packet names whom
+to check in with. Every project starts with a check-in with the
+coordinator and no briefing text, and a project without the setting
+behaves the same, because absent means that default. A human with
+`project:admin` sets it, and so does an admin agent; it is the one
+project setting an agent may change.
 
 **Reason:** three agents joined without a briefing, their resume told
 them nothing, and they idled for two hours; the coordinator's welcome
