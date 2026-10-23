@@ -1124,8 +1124,8 @@ and is never affected by mail limits; the password is not either.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
-| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
-| `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
+| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code; the current one is a logout; idempotent; answers the session as it is now |
+| `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
 
 **Good standing.** A session is **in good standing** when it was
 signed in by password, or when its own `session_created` item has been
@@ -1172,7 +1172,8 @@ session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
-`password_change`) are set on an ended session. A session of another
+`password_change`) are set on an ended session; an ended session shows
+no `ip`, and the hub keeps none for it. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -1291,8 +1292,11 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
   "email_link_available": false, "missing": ["mail"] }
 ```
 
-`password` cannot be turned off. `email_link_available` says whether the
-login page offers it right now, `missing` why not. A change is not an
+`password` cannot be turned off (a `PATCH` of it is `invalid` with
+`fixed`). `email_link_available` says whether the login page offers it
+right now, `missing` why not: `switched_off` (the setting is `false`),
+`mail` (the mail settings are not complete and enabled), and
+`not_implemented` while the hub does not serve the sign-in link yet. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
