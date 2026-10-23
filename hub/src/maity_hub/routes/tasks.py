@@ -148,7 +148,16 @@ class ReportIn(Written):
 
 
 def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any]:
-    return task_view(conn, _card(conn, card_id), reader_of(request))
+    """The card for a replayed write, with the replaying caller's own `watching`."""
+    card = _card(conn, card_id)
+    caller = getattr(request.state, "caller", None)
+    viewer = None
+    if caller is not None:
+        slug = conn.execute(
+            select(t.project.c.slug).where(t.project.c.id == card.project_id)
+        ).scalar_one()
+        viewer = membership(conn, caller, slug)
+    return task_view(conn, card, reader_of(request), viewer)
 
 
 idempotency.LOADERS["task"] = load_task
