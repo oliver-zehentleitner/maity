@@ -95,8 +95,12 @@ window.Maity = window.Maity || {};
     let busy = false;
     // A first page of a filter set still on its way: no live read until it is
     // in, since `top` is not known yet; a signal meanwhile is kept for after.
-    let resetting = false;
+    // True from the start: a signal before the first page is in waits for it.
+    let resetting = true;
     let liveAgain = false;
+    // Whether the first page of this filter set is in; after a failed one a
+    // signal reads that page again rather than everything from the start.
+    let loaded = false;
     const shown = new Set();
     let top = 0;
     const list = h("ol", { class: "ticker-list" });
@@ -135,7 +139,7 @@ window.Maity = window.Maity || {};
     async function load(reset, given) {
       if (!reset && busy) return;
       const mine = reset ? ++gen : gen;
-      if (reset) { clear(list); clear(more); shown.clear(); top = 0; cursor = null; resetting = true; }
+      if (reset) { clear(list); clear(more); shown.clear(); top = 0; cursor = null; resetting = true; loaded = false; }
       busy = true;
       drawMore();
       let page = given;
@@ -157,6 +161,9 @@ window.Maity = window.Maity || {};
       drawMore();
       if (reset) {
         resetting = false;
+        loaded = true;
+        // The page is in: a failure said before is over.
+        status.done();
         if (liveAgain) live();
       }
     }
@@ -169,6 +176,7 @@ window.Maity = window.Maity || {};
     let liveBusy = false;
     async function live() {
       if (liveBusy || resetting) { liveAgain = true; return; }
+      if (!loaded) { load(true); return; }
       liveBusy = true;
       liveAgain = false;
       const mine = gen;
@@ -187,7 +195,8 @@ window.Maity = window.Maity || {};
         liveBusy = false;
         if (liveAgain && !resetting) live();
       }
-      if (!added) return;
+      // Nothing new: a failure said earlier is over.
+      if (!added) { status.done(); return; }
       fillEmpty();
       status.done();
       append(status.el, h("span", null, added === 1 ? "1 new item." : added + " new items."));
