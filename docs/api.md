@@ -201,6 +201,10 @@ List endpoints take `limit` (default 50, maximum 200) and `cursor`
 `next_cursor` is `null` on the last page. Lists are ordered as stated per
 endpoint; a cursor is valid for one ordering and one filter set. The
 events endpoint uses `after=<seq>` instead of a cursor (§8).
+`GET /me/notifications` takes, beside `cursor`, an `after` position
+(§18.2) that is as opaque as a cursor: passed back unchanged, never
+parsed, compared or built by a client; one the hub cannot read is
+`invalid`.
 
 ### 1.5 Idempotency
 
@@ -274,7 +278,7 @@ the hub records it on the session.
 | Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
-| `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days (§18.2) |
+| `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters (§18.2) |
 | `POST /me/notifications/read` | 200 `ids` (§18.3) |
 | Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§18.5) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
@@ -8244,8 +8248,8 @@ no membership.
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists |
-| `after` | a position (below), normally the `next_after` of an earlier answer: only items past it, oldest first — for the browser notifications (§18.8) |
-| `wait` | 0–55 with `after`: hold the request until an item newer than `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+| `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
+| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
 ```json
 {
@@ -8273,53 +8277,95 @@ no membership.
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
-  "next_after": "4237.118",
+  "next_after": "eyJ2IjoxLCJwIjp7Im1haXR5Ijo0MjM3fSwiciI6MTE4fQ",
   "server_time": "2026-10-22T13:10:05Z"
 }
 ```
 
-**Positions.** Events and account records have two sequences (§18.1),
-so a place in the list is a **position** `a.b`: every event with
-`seq ≤ a` and every account record with number `≤ b` lies behind it,
-and an item is past it when its `seq` is above `a` or its record number
-above `b`. The dashboard passes positions back unchanged and never
-builds one itself. The rules that make a position safe to resume from:
+**Positions.** A place in the list is a **position**: an opaque
+string the hub hands out as `next_after` and takes back as `after` and
+`up_to` (§18.3). Clients pass it back unchanged; they never build,
+parse or compare one, and never derive one from an item's `seq` or
+record number. A position is valid only for the human it was issued
+to.
 
-- **One snapshot.** Each answer reads both sequences, the read flags
-  and the counts in one database transaction at `REPEATABLE READ`
-  isolation (PostgreSQL, MySQL/MariaDB; a SQLite transaction is
-  serializable), so items, counts and `next_after` describe one moment.
-- **Numbers become visible in order.** The hub allocates an event's
-  `seq` and a record's number in the transaction that writes the row,
-  under a lock on that sequence held until commit, and takes `at` under
-  the same lock. Both come from the database, never from a hub process:
-  the number from the database's sequence (or the locked counter row),
-  `at` from the database's clock in that transaction, raised to the
-  previous row's `at` should that clock ever step back. So with several
-  hub replicas writing at once, neither sequence shows a number before
-  every lower one is visible, and `at` never decreases along either
-  sequence. A position therefore never skips an item that
-  commits later.
+What a position holds, for implementers: one component per project the
+human is a member of — the highest `seq` of that project it covers —
+and one for the human's account records — the highest record number
+it covers. An event lies behind the position when its `seq` is at or
+below its own project's component, a record when its number is at or
+below the account component; an item is past the position otherwise.
+The encoding is the hub's choice; it is versioned, so the hub can tell
+an encoding it no longer issues apart, and it stays within the cap of
+§1.7. Recommended: base64url without padding of a small JSON object,
+`{"v":1,"p":{"<project>":<seq>,…},"r":<record number>}`. The rules
+that make a position safe to resume from:
+
+- **One snapshot.** Each answer reads the events, the account records,
+  the read flags and the counts in one database transaction at
+  `REPEATABLE READ` isolation (PostgreSQL, MySQL/MariaDB; a SQLite
+  transaction is serializable), so items, counts and `next_after`
+  describe one moment.
+- **Numbers become visible in order per project and per account.** The
+  hub allocates an event's `seq` in the transaction that writes the
+  row, under the lock on its project (`lock_project`, the project row)
+  held until commit, and a record's number under a lock on the human's
+  account row, held until commit. Both numbers come from the database,
+  never from a hub process: from the database's sequence (or a locked
+  counter row). `at` comes from the database's clock in that
+  transaction, raised to the previous row's `at` in the same project
+  (for an event) or the same account (for a record) should that clock
+  ever step back. So with several hub replicas writing at once, a
+  project never shows a `seq` before every lower `seq` of that project
+  is visible, an account never shows a record number before every lower
+  one of that account, and `at` never decreases along one project's
+  events or one account's records. There is no hub-wide lock and no
+  global visibility order: the `seq` sequence is instance-wide (§8.1),
+  and events of different projects may become visible out of `seq`
+  order and out of `at` order. A transaction that emits in several
+  projects (a runner revoked or removed, a leaked credential revoked,
+  an avatar change, `soul_changed`, a profile deleted) takes each
+  project's lock as any other write does. Since a position holds one
+  component per project and one for the account, it never skips an
+  item that commits later.
 - **One order.** Items are ordered by `at`, then events before records,
-  then by number — the same order in both directions, and consistent
-  with each sequence's own order.
+  then by number — the same order in both directions. Within one
+  project, and within the account's records, this is the order of the
+  numbers, since `at` and number agree there.
 - **`next_after` moves forward component by component.** With `after`,
   the answer lists the items past it, oldest first, up to `limit`.
-  When `limit` cut the list, `next_after` is `a'.b'` with `a'` the
-  highest listed `seq` (or `a` when none is listed) and `b'` the highest
-  listed record number (or `b`); since the list is a prefix of one
-  order, no item past `next_after` precedes a listed one, and nothing
-  omitted is skipped. When nothing was cut, `next_after` is the
-  snapshot's head (the highest visible `seq` and record number), or
-  `after` itself where that is higher. Either way neither component
-  is ever lower than in `after`.
+  When `limit` cut the list, each component of `next_after` is the
+  highest number listed for that project (or for the account), or the
+  component of `after` when nothing of it is listed. Since `at` and
+  number agree within one project and within the account, the listed
+  part of each is a prefix of that project's (or the account's) items
+  past `after`, so nothing omitted is skipped. When nothing was cut,
+  `next_after` is the snapshot's head: per project its highest visible
+  `seq`, for the account its highest visible record number. No
+  component is ever lower than in `after`.
+- **Membership changes.** A project the human joined after `after` was
+  issued has no component in it; it starts at that project's position
+  when the membership began (its highest `seq` then), never earlier, so
+  joining never replays a project's history. A component that is in
+  `after` but lower than the position at which the current membership
+  began (the human left and joined again) is raised to that position. A
+  project the human has left drops out of `next_after`. The account
+  component needs no such rule.
+- **Positions the hub cannot read.** An `after` or `up_to` that does not
+  decode, has an encoding version the hub does not accept, was issued
+  to another human, or is in the two-part form `<seq>.<record>` the hub
+  issued before this rule, is `invalid` with `details.fields.after` (or
+  `details.fields.up_to`) `"position"`. It is never read as the head:
+  that would drop unseen items from the long-poll and mark them read
+  through `up_to`. The dashboard then reads `?limit=0` for a fresh
+  position and continues from it.
 - **Without `after`** (newest first, older ones through `cursor`),
   `next_after` is the snapshot's head: everything not listed is older
   and reached through `cursor`, and a long-poll from `next_after`
   receives only what came later.
 - **`limit=0`** lists nothing and moves nothing: `next_after` is
-  `after` when given, else the snapshot's head — the starting point for
-  a long-poll.
+  `after` when given, with the membership changes above applied, else
+  the snapshot's head — the starting point for a long-poll.
 
 - **Counts.** `inbox` is the number of open requests addressed to the
   human across projects — the sum of `open_requests` in `/me` (§5.1),
@@ -8388,10 +8434,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "4237.118", "kind"?: "card", "project"?: "maity"}` —
+- `{"up_to": "<position>", "kind"?: "card", "project"?: "maity"}` —
   every item not past that position (§18.2; for "mark all read" the
-  `next_after` of the answer the bell shows), optionally of one kind or
-  one project.
+  `next_after` of the answer the bell shows, passed back unchanged),
+  optionally of one kind or one project. A position the hub cannot read
+  is `invalid` (§18.2).
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
@@ -8670,7 +8717,10 @@ mail.
   title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
   each linking to its `url`, unread ones marked, with "mark all read".
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
-  also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`
+  also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,
+  `<position>` being the `next_after` of the previous answer as an
+  opaque string (§18.2); on `invalid` it starts again from a
+  `?limit=0` read,
   and shows each new item of a kind the human switched on through the
   Notification API, with the item's `id` as `tag` so that two open tabs
   show it once; a click focuses the tab and opens the `url`. There is no
