@@ -1,7 +1,7 @@
 """Cover by a substitute (docs/api.md §6.12): what moved for whom, on cards and requests,
 and the cover a membership is under.
 
-Revision ID: 0029
+Revision ID: 0033
 Revises: 0028
 Create Date: 2026-10-23
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0029"
+revision: str = "0033"
 down_revision: str | None = "0028"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
