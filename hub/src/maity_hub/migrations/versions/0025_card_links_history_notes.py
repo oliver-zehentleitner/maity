@@ -62,6 +62,7 @@ def upgrade() -> None:
         sa.Column("actor_session_id", sa.String(length=40), nullable=True),
         sa.Column("field", sa.String(length=32), nullable=False),
         sa.Column("link_id", sa.String(length=40), nullable=True),
+        sa.Column("link_change", sa.String(length=8), nullable=True),
         sa.Column("before", JSON_VALUE, nullable=True),
         sa.Column("after", JSON_VALUE, nullable=True),
         sa.Column("diff", MARKDOWN_TEXT, nullable=True),
