@@ -4,7 +4,8 @@ A deleted profile keeps its row as a tombstone (`deleted_at`), so that every eve
 report and removed member that names it still resolves. Its handle is free for a new
 profile of the same owner at once: the handle is unique per owner among the profiles
 that are not deleted, through the hub's at-most-one marker (`live`, true or NULL; NULL
-never collides), which every engine enforces the same way.
+never collides), which every engine enforces the same way. An event the owner causes in
+a project they are no member of names them as a human actor (`event.actor_human_id`).
 
 Revision ID: 0032
 Revises: 0020
@@ -26,6 +27,8 @@ TIMESTAMP = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb"
 
 
 def upgrade() -> None:
+    with op.batch_alter_table("event", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("actor_human_id", sa.String(length=40), nullable=True))
     with op.batch_alter_table("agent_profile", schema=None) as batch_op:
         batch_op.add_column(sa.Column("deleted_at", TIMESTAMP, nullable=True))
         batch_op.add_column(
@@ -82,3 +85,5 @@ def downgrade() -> None:
     with op.batch_alter_table("agent_profile", schema=None) as batch_op:
         batch_op.drop_column("live")
         batch_op.drop_column("deleted_at")
+    with op.batch_alter_table("event", schema=None) as batch_op:
+        batch_op.drop_column("actor_human_id")

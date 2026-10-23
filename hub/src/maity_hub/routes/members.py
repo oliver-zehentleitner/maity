@@ -22,6 +22,7 @@ from maity_hub import (
     instances,
     placements,
     rules,
+    seats,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
@@ -593,7 +594,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
-    availability.member_removed(conn, change.project.id, target, change.actor)
+    seats.reset(conn, change.project.id, removed, change.actor)
 
 
 @router.delete("/projects/{slug}/members/{member_id}")
