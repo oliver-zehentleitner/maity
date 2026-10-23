@@ -223,7 +223,12 @@ local install would carry a payment dependency it never uses); open
 registration by default (a fresh instance at home must not be reachable
 by strangers).
 
-Open, to be settled with the maintainer before the contract is written:
-whether a new registration on an open instance is usable at once or
-waits for the operator's approval; what happens to an account over its
-limit after a downgrade; whether limits count per person or per project.
+Settled the same day: whether a new registration is usable at once or
+waits for the operator's approval is an instance setting the operator
+chooses; an account over its limit after a downgrade keeps what it has
+and creates nothing new (the tolerant default), and the operator has an
+emergency brake per account or for all — pausing the agents over the
+limit or making an account read-only — which is logged and told to the
+person affected. Opening an instance and plans are never the default;
+they are switched on by configuration. Still open: whether limits count
+per person or per project.
