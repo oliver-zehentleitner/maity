@@ -2700,6 +2700,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(text(tkStatus()).includes("Could not read the new items: down"), "ticker: a failed live read is said");
   win.Maity.api.get = tkGet;
+  // An item that comes twice in a page is shown once; a reason by role reads with its article.
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/ticker?") && !p.includes("after=") ? tkGet(p).then((r) => {
+    const x = Object.assign({}, r.items[0], { seq: 9980, for_me: true, why: ["role:owner", "role:admin"] });
+    return { items: [x, x], next_cursor: null };
+  }) : tkGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  expect(tkItems().length === 1 && text(tkSeq(9980)).includes("you are an owner, you are an admin"), "ticker: one item once; role reasons with their article");
+  win.Maity.api.get = tkGet;
+  await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
+  btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
+  // The hub's other refusals of a post, in words.
+  win.Maity.api.post = (p, b) => (p.endsWith("/ticker") ? Promise.reject(new win.Maity.api.ApiError("f", 403, p, "forbidden", {})) : tkPostFn(p, b));
+  byId("ticker-post-text").value = "x"; byId("ticker-post-areas").value = "/"; tkPost().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkPost()).includes("only an owner or admin may post to the ticker"), "ticker: forbidden, in words");
+  win.Maity.api.post = (p, b) => (p.endsWith("/ticker") ? Promise.reject(new win.Maity.api.ApiError("d", 409, p, "ticker_duplicate", {})) : tkPostFn(p, b));
+  tkPost().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(tkPost()).includes("this was posted already") && !text(tkPost()).includes("(item"), "ticker: a duplicate without its item number, in words");
+  win.Maity.api.post = tkPostFn;
+  // A live answer that comes after the filters changed is dropped.
+  let tkRelease = null;
+  win.Maity.api.get = (p) => (p.includes("/ticker?") && p.includes("after=") && !tkRelease
+    ? new Promise((done) => { tkRelease = () => tkGet(p).then(done); }) : tkGet(p));
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "late live", to: ["role:admin"] });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  byId("ticker-type").value = "deploy"; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  tkRelease(); for (let k = 0; k < 6; k++) await tick();
+  expect(!text(main).includes("late live") && tkItems().every((li) => li.className.includes("type-deploy")), "ticker: a live answer for the previous filters is dropped");
+  win.Maity.api.get = tkGet;
+  byId("ticker-type").value = ""; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  // A signal while the first page of a filter set is on its way: no read from the start, one read after it.
+  let tkFirst = null;
+  const tkAfters = [];
+  win.Maity.api.get = (p) => {
+    if (p.includes("/ticker?") && p.includes("after=")) { tkAfters.push(p); return tkGet(p); }
+    if (p.startsWith("/projects/maity/ticker?") && tkFirst === true) return new Promise((done) => { tkFirst = () => tkGet(p).then(done); });
+    return tkGet(p);
+  };
+  tkFirst = true;
+  byId("ticker-type").value = "note"; byId("ticker-type").dispatch("change"); for (let k = 0; k < 2; k++) await tick();
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "during the reset", to: ["role:admin"] });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(!tkAfters.length, "ticker: no live read while the first page is on its way");
+  const tkRun = tkFirst; tkFirst = null; tkRun(); for (let k = 0; k < 8; k++) await tick();
+  expect(tkAfters.length >= 1 && tkAfters.every((p) => !/after=0(&|$)/.test(p)) && tkItems().filter((li) => text(li).includes("during the reset")).length === 1,
+    "ticker: after it, one live read from its newest item; the item once");
+  win.Maity.api.get = tkGet;
+  // A signal while a live read runs is kept: the read runs once more.
+  let tkHeld = null;
+  win.Maity.api.get = (p) => (p.includes("/ticker?") && p.includes("after=") && tkHeld === true
+    ? (() => { const r = tkGet(p); return new Promise((done) => { tkHeld = () => r.then(done); }); })() : tkGet(p));
+  tkHeld = true;
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "first signal", to: ["role:admin"] });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const tkGo = tkHeld; tkHeld = null;
+  await win.Maity.api.post("/projects/maity/ticker", { type: "note", text: "second signal", to: ["role:admin"] });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  tkGo(); for (let k = 0; k < 10; k++) await tick();
+  expect(text(main).includes("first signal") && text(main).includes("second signal"), "ticker: a signal during a live read is not lost");
+  win.Maity.api.get = tkGet;
+  byId("ticker-type").value = ""; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   // A member: no post form.
   win.Maity.api.get = (p) => (p === "/me" ? tkGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").role = "member"; return x; }) : tkGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();

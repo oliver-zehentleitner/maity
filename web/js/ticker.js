@@ -74,7 +74,9 @@ window.Maity = window.Maity || {};
   async function hubHasTicker() {
     if (hubHas === false) return false;
     const doc = await M.api.get("/openapi.json");
-    hubHas = !!(doc && doc.paths && doc.paths["/projects/{slug}/ticker"]);
+    // The hub lists its paths under its prefix (/api/v1/…); either form counts, as in the CLI.
+    const paths = (doc && doc.paths) || {};
+    hubHas = !!(paths["/projects/{slug}/ticker"] || paths["/api/v1/projects/{slug}/ticker"]);
     return hubHas;
   }
 
@@ -91,6 +93,10 @@ window.Maity = window.Maity || {};
     // Each read belongs to one filter set; an answer of an older one is dropped.
     let gen = 0;
     let busy = false;
+    // A first page of a filter set still on its way: no live read until it is
+    // in, since `top` is not known yet; a signal meanwhile is kept for after.
+    let resetting = false;
+    let liveAgain = false;
     const shown = new Set();
     let top = 0;
     const list = h("ol", { class: "ticker-list" });
@@ -111,8 +117,8 @@ window.Maity = window.Maity || {};
         decided && !x.redacted ? h("p", { class: "muted" }, decided) : null,
         x.for_me ? h("p", { class: "ticker-why" }, "For you: " + x.why.map(whyWords).join(", ") + (x.muted ? " (muted: it woke no one here)" : "") + ".") : null);
     }
-    // Items of one answer, each once.
-    const fresh = (items) => items.filter((x) => !shown.has(x.seq));
+    // Items of one answer not shown yet, each once, also within the answer.
+    const fresh = (items) => items.filter((x, i) => !shown.has(x.seq) && items.findIndex((y) => y.seq === x.seq) === i);
     const mark = (x) => { shown.add(x.seq); if (x.seq > top) top = x.seq; };
     const fillEmpty = () => {
       const blank = list.querySelector("li.empty");
@@ -129,7 +135,7 @@ window.Maity = window.Maity || {};
     async function load(reset, given) {
       if (!reset && busy) return;
       const mine = reset ? ++gen : gen;
-      if (reset) { clear(list); clear(more); shown.clear(); top = 0; cursor = null; }
+      if (reset) { clear(list); clear(more); shown.clear(); top = 0; cursor = null; resetting = true; }
       busy = true;
       drawMore();
       let page = given;
@@ -138,6 +144,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         if (mine !== gen) return;
         busy = false;
+        resetting = false;
         drawMore();
         status.fail("Could not read the ticker: ", err);
         return;
@@ -148,14 +155,22 @@ window.Maity = window.Maity || {};
       cursor = page.next_cursor;
       fillEmpty();
       drawMore();
+      if (reset) {
+        resetting = false;
+        if (liveAgain) live();
+      }
     }
 
     // New items with the feed: read from the newest one shown, oldest first,
     // page by page with after= (§17.9), in this view's filters.
+    // A signal while a read runs (or while a first page is on its way) is
+    // kept: the read runs once more afterwards, so nothing waits for the
+    // next event.
     let liveBusy = false;
     async function live() {
-      if (liveBusy) return;
+      if (liveBusy || resetting) { liveAgain = true; return; }
       liveBusy = true;
+      liveAgain = false;
       const mine = gen;
       let added = 0;
       try {
@@ -170,6 +185,7 @@ window.Maity = window.Maity || {};
         return;
       } finally {
         liveBusy = false;
+        if (liveAgain && !resetting) live();
       }
       if (!added) return;
       fillEmpty();

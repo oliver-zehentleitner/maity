@@ -934,7 +934,7 @@ window.Maity = window.Maity || {};
       return { items: page.map(clean), next_cursor: next };
     }],
     // The hub's machine form (§4): here only what the views ask of it.
-    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: { "/projects/{slug}/ticker": { get: {}, post: {} }, "/projects/{slug}/ticker/subscription": { get: {}, patch: {} } } })],
+    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: { "/api/v1/projects/{slug}/ticker": { get: {}, post: {} }, "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);

@@ -1440,7 +1440,8 @@ def board_order_step(run: Run, page: Page) -> None:
 def ticker_step(run: Run, page: Page) -> None:
     """The change ticker (docs/api.md §17): whether the hub has it comes from its machine form, not from a 404."""
     paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
-    has_ticker = "/projects/{slug}/ticker" in paths
+    # FastAPI lists the paths under the router prefix; either form counts, as in the CLI.
+    has_ticker = "/projects/{slug}/ticker" in paths or "/api/v1/projects/{slug}/ticker" in paths
     page.goto(f"{run.base}/#/p/e2e-alpha/agents")
     page.locator("nav.views").get_by_role("link", name="Ticker", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/ticker$"))
