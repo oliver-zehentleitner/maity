@@ -643,6 +643,14 @@ request = Table(
     Column("answered_at", UtcDateTime),
     Column("withdrawn_at", UtcDateTime),
     Column("withdraw_reason", MARKDOWN_TEXT),
+    # Only a human answers it (§2.3, §7): the asker's flag, or the hub's on what it files.
+    Column("humans_only", Boolean, nullable=False, server_default=false()),
+    # Who holds a `decision` request after its first forward (§7): a member, or the
+    # admins as a pool (`holder_pool`, true until one claims it); both null while `to`
+    # still holds it. `forwarding` lists every step, oldest first.
+    _membership_ref("holder_member"),
+    Column("holder_pool", Boolean),
+    Column("forwarding", JSON_VALUE),
     *_audit(),
     Column("created_at", UtcDateTime, nullable=False),
     CheckConstraint(

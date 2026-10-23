@@ -277,7 +277,14 @@ def _scan(
 # Readable by everyone they name, but never a reason to wake (§8.2): what a project
 # shows changed, nothing anybody has to act on. Memory is read on the next resume (§19.3).
 NON_WAKING = frozenset(
-    {"project_updated", "avatar_changed", "memory_added", "memory_deleted", "soul_changed"}
+    {
+        "project_updated",
+        "avatar_changed",
+        "memory_added",
+        "memory_deleted",
+        "soul_changed",
+        "request_claimed",  # a claim wakes nobody (§7)
+    }
 )
 
 
@@ -311,6 +318,14 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
+    if row.kind == "request_forwarded":
+        # Only a forward to a member wakes, and only that member; an opening to the
+        # admins wakes no agent, it would wake every admin agent at once (§7).
+        payload = row.payload or {}
+        return (
+            payload.get("holder") == principal
+            and payload.get("step", {}).get("action") == "forwarded"
+        )
     audience = row.audience or []
     return (
         "all" in audience
