@@ -834,9 +834,28 @@ def scenario(run: Run, page: Page) -> None:
     picture_step(run, page)
 
 
+def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:
+    """Whether the hub's openapi.json lists `method path`, as the dashboard decides it
+    (js/api.js hubHas): with or without the /api/v1 prefix, parameter names not compared."""
+    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
+
+    def key(p: str) -> str:
+        return re.sub(r"\{[^}]*\}", "{}", re.sub(r"^/api/v1(?=/)", "", p))
+
+    return any(key(p) == key(path) and method.lower() in ops for p, ops in paths.items())
+
+
 def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
     page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    if not hub_serves(run, page, "POST", "/projects/{slug}/attachments"):
+        # A hub without attachments: the composer offers no chooser at all.
+        run.step("attachments: the hub's openapi.json has no uploads; the composer offers no Attach files")
+        expect(page.locator("form.compose")).to_be_visible()
+        expect(page.locator("label.attach-button")).to_be_hidden()
+        expect(page.locator("#chat-files")).to_be_disabled()
+        no_problems(run, "attachments")
+        return
     page.locator("#chat-files").set_input_files(
         files=[{"name": "e2e-shot.png", "mimeType": "image/png", "buffer": tiny_png(32, 32, (40, 160, 90))}]
     )
@@ -883,8 +902,17 @@ def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
 
 def group_chat_form_step(run: Run, page: Page) -> None:
     """Group chats (docs/api.md §9.2): the create form, and one's own agent alone pointed to the direct chat."""
-    run.step("group chat: the owner opens New group chat; their own agent alone is the direct chat, said before anything is sent")
     page.goto(f"{run.base}/#/p/e2e-alpha/chat")
+    if not hub_serves(run, page, "POST", "/projects/{slug}/conversations"):
+        # A hub without group chats: no link to create one, and the list says why it has none.
+        run.step("group chat: the hub's openapi.json has no group chats; the list says so and offers none")
+        pane = page.locator(".chat-list-pane")
+        expect(pane).to_contain_text("This hub has no group chats yet.")
+        expect(pane.get_by_role("link", name="New group chat", exact=True)).to_have_count(0)
+        run.a11y(page, "chat without group chats")
+        no_problems(run, "group chat form")
+        return
+    run.step("group chat: the owner opens New group chat; their own agent alone is the direct chat, said before anything is sent")
     page.locator(".chat-list-pane").get_by_role("link", name="New group chat", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/chat/new$"))
     form = page.locator("form.group-form")
