@@ -62,6 +62,8 @@ class PolicyIn(Strict):
     coordinator: str | None = None
     coordinator_substitute: str | None = None
     on_runner_revoke: str | None = None
+    jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
+    jour_fixe_moderators: list[str] | None = None
 
 
 class AbsenceIn(Strict):
@@ -195,6 +197,20 @@ def _apply_policy(
         ):
             errors["policy.coordinator"] = "not_an_agent_member"
         proposed["coordinator"] = change.coordinator
+    if "jour_fixe" in change.model_fields_set:
+        from maity_hub.jourfixe import schedule
+
+        stored = None if change.jour_fixe is None else schedule.filled(change.jour_fixe)
+        if stored is not None:
+            errors.update(schedule.errors(stored, lambda m: _is_member(conn, project_id, m)))
+        proposed["jour_fixe"] = stored
+    if "jour_fixe_moderators" in change.model_fields_set:
+        from maity_hub.jourfixe import rounds
+
+        order = change.jour_fixe_moderators
+        if order is not None and not rounds.admin_agents_only(conn, project_id, order):
+            errors["policy.jour_fixe_moderators"] = "not_admin_agent"
+        proposed["jour_fixe_moderators"] = order
     if "coordinator_substitute" in change.model_fields_set:
         stand_in = change.coordinator_substitute
         if stand_in is not None and _agent_role(conn, project_id, stand_in) != "admin":
@@ -478,6 +494,15 @@ def patch_project(
                 .where(t.project.c.id == project.id)
                 .values(**policy.columns(new_policy))
             )
+            if new_policy["jour_fixe"] != policy.of(project)["jour_fixe"]:
+                # A changed schedule counts its weeks from now and catches up on no slot
+                # before it (§20.1).
+                now = clock.now()
+                conn.execute(
+                    update(t.project)
+                    .where(t.project.c.id == project.id)
+                    .values(jour_fixe_anchor=now, jour_fixe_last_slot=now)
+                )
             rules.bump(
                 conn,
                 project,

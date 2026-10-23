@@ -48,6 +48,8 @@ FIELDS = (
     "max_placements",
     "coordinator",
     "coordinator_substitute",
+    "jour_fixe",
+    "jour_fixe_moderators",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, nor reset the placement limit or the coordinator seats; only the field itself
@@ -60,6 +62,8 @@ KEPT_ON_PRESET = (
     "coordinator",
     "coordinator_substitute",
     "on_runner_revoke",
+    "jour_fixe",
+    "jour_fixe_moderators",
 )
 
 
@@ -72,6 +76,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "coordinator": "role:admin",
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",
+        "jour_fixe": None,
+        "jour_fixe_moderators": None,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -95,6 +101,8 @@ def of(project: Any) -> dict[str, Any]:
         "coordinator": project.coordinator,
         "coordinator_substitute": project.coordinator_substitute,
         "on_runner_revoke": project.on_runner_revoke,
+        "jour_fixe": project.jour_fixe,
+        "jour_fixe_moderators": project.jour_fixe_moderators,
     }
 
 
@@ -115,6 +123,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "coordinator": policy["coordinator"],
         "coordinator_substitute": policy["coordinator_substitute"],
         "on_runner_revoke": policy["on_runner_revoke"],
+        "jour_fixe": policy["jour_fixe"],
+        "jour_fixe_moderators": policy["jour_fixe_moderators"],
     }
 
 

@@ -262,10 +262,13 @@ def readable_by(
         )
     if membership.role in SEE_ALL_ROLES:
         return True
+    # `instance:<member id>#<id>` names one instance, and the whole team reads it (§8.2).
+    own_instance = f"instance:{principal}#"
     return (
         "all" in audience
         or f"member:{principal}" in audience
         or f"role:{membership.role}" in audience
+        or any(token.startswith(own_instance) for token in audience)
     )
 
 

@@ -33,6 +33,8 @@ PREFIXES = {
     "link": "lnk",
     "history": "hst",
     "note": "nte",
+    "jour_fixe": "jfx",
+    "jour_fixe_answer": "jfa",
 }
 
 
