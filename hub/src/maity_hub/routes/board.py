@@ -520,14 +520,14 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     without its title. The read runs before the transaction; nothing is stored when
     it fails."""
     fg = reader_of(request)
-    # A repeat answers from the first call's result and never reads the forge again
-    # (§1.5): the forge may be down by now.
-    replayed = idempotency.replay_first(engine_of(request), request, caller)
-    if replayed is not None:
-        return replayed
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
+    # Only then a repeat answers from the first call's result, without reading the forge
+    # again (§1.5): a replay is never a way around membership or scope.
+    replayed = idempotency.replay_first(engine_of(request), request, caller)
+    if replayed is not None:
+        return replayed
     project = mine.project
     try:
         ref = links.parse_forge(body.issue_url, "issue", project.repository_url)

@@ -10,7 +10,7 @@ from sqlalchemy import Engine, select
 from maity_hub import forge
 from maity_hub import tables as t
 from maity_hub.board import importing
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_tasks import task
 
@@ -305,3 +305,19 @@ def test_the_same_issue_in_another_case_is_already_linked(
     )
     assert shouted.status_code == 409, shouted.text
     assert shouted.json()["error"]["code"] == "already_linked"
+
+
+def test_a_removed_human_cannot_replay_an_import(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, forged: list[IssueForge]
+) -> None:
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    second = flow.human(make_client, migrated, handle="second")
+    factory.membership(migrated, project_id, role="member", human_id=second.id)
+    keyed = {"X-CSRF-Token": second.csrf, "Idempotency-Key": "replay-after-removal-01"}
+    path = "/api/v1/projects/maity/tasks/import"
+    first = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
+    assert first.status_code == 201, first.text
+    assert owner.delete(f"/projects/maity/members/{second.id}").status_code == 200
+    again = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
+    assert again.status_code == 404, again.text  # never the card as it is now
