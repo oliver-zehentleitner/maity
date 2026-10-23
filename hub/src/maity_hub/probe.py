@@ -327,7 +327,9 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
             return
 
 
-def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
+def announce_merges(
+    engine: Engine, fg: forge.Forge, project_id: str, delivery: str | None = None
+) -> int:
     """§17.4: the pull requests merged into the default branch since the ticker was
     switched on and not announced yet, each with its files and, for a contract file
     among them, that file at the merge commit and at the base; one item each. The
@@ -403,7 +405,7 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                 # Switched off and on, or another repository or branch, while the forge
                 # was asked: this round's reads answer for nothing any more.
                 return written
-            if ticker.write_merge(conn, current, merge):
+            if ticker.write_merge(conn, current, merge, delivery):
                 written += 1
     with transaction(engine) as conn:
         lock_project(conn, project_id)
@@ -411,6 +413,25 @@ def announce_merges(engine: Engine, fg: forge.Forge, project_id: str) -> int:
         if ticker.merges_since(conn, project_id) == since:
             ticker.scan_done(conn, project_id, next_page, started)
     return written
+
+
+def announce_deploy(
+    engine: Engine, fg: forge.Forge, project_id: str, deployment_id: int, delivery: str | None
+) -> bool:
+    """§17.4: a `deployment_status` delivery is a trigger, never a fact: the deployment and
+    its latest status are read from the forge, and only a successful one is announced."""
+    with engine.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    if not ticker.settings(project)["enabled"] or not fg.configured_for(project.repository_url):
+        return False
+    found = fg.deployment(forge.repository_of(project.repository_url), deployment_id)
+    if found is None or found["state"] != "success" or not found["environment"] or not found["sha"]:
+        return False
+    with transaction(engine) as conn:
+        current = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        if not ticker.settings(current)["enabled"]:
+            return False
+        return ticker.write_deploy(conn, current, found, delivery) is not None
 
 
 def _contract_sections(
@@ -478,7 +499,8 @@ class Worker:
 
     def __init__(self, engine: Engine, fg: forge.Forge, interval: float = INTERVAL) -> None:
         self.engine, self.fg, self.interval = engine, fg, interval
-        self.jobs: queue.Queue[str | None] = queue.Queue()
+        # A card id to probe, or ("merges"|"deploy", …) from a verified webhook delivery.
+        self.jobs: queue.Queue[str | tuple[Any, ...] | None] = queue.Queue()
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._run, name="maity-probe", daemon=True)
 
@@ -494,6 +516,14 @@ class Worker:
     def report_stored(self, card_id: str) -> None:
         """Called after a report's transaction committed; never waits on the forge."""
         self.jobs.put(card_id)
+
+    def merges_now(self, project_id: str, delivery: str | None) -> None:
+        """A verified `pull_request` delivery: look for merges now (§17.4)."""
+        self.jobs.put(("merges", project_id, delivery))
+
+    def deploy_now(self, project_id: str, deployment_id: int, delivery: str | None) -> None:
+        """A verified `deployment_status` delivery: read that deployment now (§17.4)."""
+        self.jobs.put(("deploy", project_id, deployment_id, delivery))
 
     def _run(self) -> None:
         next_sweep = clock.now()
@@ -513,4 +543,10 @@ class Worker:
                 continue
             if job is None:
                 return
+            if isinstance(job, tuple):
+                if job[0] == "merges":
+                    _guarded(announce_merges, self.engine, self.fg, job[1], job[2])
+                else:
+                    _guarded(announce_deploy, self.engine, self.fg, job[1], job[2], job[3])
+                continue
             _guarded(observe_report, self.engine, self.fg, job, 0)

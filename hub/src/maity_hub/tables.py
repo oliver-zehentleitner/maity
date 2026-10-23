@@ -27,6 +27,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     PrimaryKeyConstraint,
     String,
     Table,
@@ -340,6 +341,20 @@ ticker_source = Table(
     Column("scanned_until", UtcDateTime),
     Column("resume_page", Integer),
     Column("round_started", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# The forge webhook of a project (§17.4): its secret sealed with MAITY_SECRET_KEY
+# (`secretbox`), and the result of the last verified delivery.
+forge_webhook = Table(
+    "forge_webhook",
+    metadata,
+    _ref("project_id", "project.id", primary_key=True),
+    Column("secret_sealed", LargeBinary, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("rotated_at", UtcDateTime),
+    Column("last_delivery_at", UtcDateTime),
+    Column("last_result", String(16)),
     **MYSQL_TABLE,
 )
 

@@ -232,6 +232,7 @@ def write(
     url: str | None,
     audience: Audience,
     origin: str,
+    delivery: str | None = None,
     actor: events.Actor | None = None,
     actor_principal: str | None = None,
     subject: tuple[str, str] | None = None,
@@ -280,7 +281,7 @@ def write(
         "text": cut(text),
         "url": url,
         "dedupe_key": dedupe_key,
-        "origin": {"via": origin, "delivery": None},
+        "origin": {"via": origin, "delivery": delivery},
         **base,
         **(facts or {}),
         "reasons": [
@@ -762,7 +763,9 @@ class Merge:
     contract: dict[str, set[str] | None] = field(default_factory=dict)
 
 
-def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
+def write_merge(
+    conn: Connection, project: Any, merge: Merge, delivery: str | None = None
+) -> int | None:
     """The item of one merge (§17.2), its audience per §17.3; None when it was announced."""
     conf = settings(project)
     people = members(conn, project.id)
@@ -833,7 +836,8 @@ def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
         text=text,
         url=merge.url,
         audience=audience,
-        origin="probe",
+        origin="webhook" if delivery else "probe",
+        delivery=delivery,
         subject=("pull_request", str(merge.number)),
         dedupe_key=f"merge:{merge.number}",
         facts={
@@ -851,5 +855,43 @@ def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
             "areas": areas,
             "contract": contract,
             "tasks": [c.id for c in cards],
+        },
+    )
+
+
+def _https_or_none(value: Any) -> str | None:
+    """A forge's URL as an item's `url`: one absolute https URL of at most 2048 characters,
+    else none (§17.1)."""
+    if isinstance(value, str) and len(value) <= 2048 and re.fullmatch(r"https://\S+", value):
+        return value
+    return None
+
+
+def write_deploy(
+    conn: Connection, project: Any, deployment: dict[str, Any], delivery: str | None
+) -> int | None:
+    """An automatic deploy (§17.2–§17.4): what the forge reports as a successful
+    deployment, read through the probe. Listed for every member, waking no one: the
+    audience is `all` alone, no reasons, subscriptions included (§17.3)."""
+    environment = str(deployment["environment"])
+    sha = str(deployment["sha"])
+    return write(
+        conn,
+        project.id,
+        kind="deploy",
+        text=f"Deployed {sha[:7]} to {environment}",
+        url=_https_or_none(deployment.get("log_url")),
+        audience=Audience(),
+        origin="webhook",
+        delivery=delivery,
+        subject=("deploy", f"{environment}@{sha}"),
+        dedupe_key=f"deploy:{environment}:{sha}",
+        facts={
+            "deploy": {
+                "environment": environment,
+                "sha": sha,
+                "version": None,
+                "log_url": deployment.get("log_url"),
+            }
         },
     )

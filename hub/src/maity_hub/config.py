@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from maity_hub import secretbox
+
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
 
@@ -50,6 +52,9 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
+    # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
+    # never logged, never in a response, never in the database.
+    secret_key: bytes | None = field(default=None, repr=False)
 
     @property
     def join_host(self) -> str | None:
@@ -89,7 +94,16 @@ class Settings:
                 parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
+            secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
         )
+
+
+def parse_secret_key(value: str) -> bytes | None:
+    """Unset is None; anything but 32 base64 bytes stops the hub."""
+    try:
+        return secretbox.parse_key(value)
+    except ValueError as error:
+        raise ConfigError(str(error)) from None
 
 
 def parse_number(
