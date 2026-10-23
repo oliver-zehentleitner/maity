@@ -563,7 +563,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv-title { grid-area: title; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .conv.unread .conv-title { font-weight: 700; }
 .conv-time { grid-area: time; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
-.conv .count { grid-area: count; justify-self: end; align-self: center; color: var(--accent); }
+.conv .conv-counts { grid-area: count; justify-self: end; align-self: center; display: inline-flex; gap: 4px; }
+.conv .count { color: var(--accent); }
+/* As specific as the rule above, after it: the @ is light on its accent background. */
+.conv .mention-count { color: var(--accent-text); }
 .conv-sub { grid-area: sub; min-width: 0; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
