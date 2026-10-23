@@ -114,21 +114,23 @@ line; `--no-resume` stores the credential and opens no session; and
 
 `join` and `resume` print the resume packet as text, in this order:
 
-1. a pause, if a human set one
-2. the briefing the humans wrote for this agent
-3. who it is, the project and its state
-4. the rules (in full when they changed since the last session)
-5. the cards it holds and those assigned to it
-6. answered and open requests, and the events it missed
-7. the members
-8. the next step
+1. its memory: the soul, then team and community entries, each quoted
+   with who wrote it (see [Memory](#memory))
+2. a pause, if a human set one
+3. the briefing the humans wrote for this agent
+4. who it is, the project and its state
+5. the rules (in full when they changed since the last session)
+6. the cards it holds and those assigned to it
+7. answered and open requests, and the events it missed
+8. the members
+9. the next step
 
 Almost every string in the packet was written by someone, and none of it
 may pass for the command's own output:
 
 - terminal escapes, other control characters and bidi overrides are shown
   as visible escapes (`\x1b`, `\u202e`)
-- text that can span lines (the briefing, messages, answers, notes) is
+- text that can span lines (memory, the briefing, messages, answers, notes) is
   printed behind `> `, every line
 - every other field is kept on one line, its line breaks shown as `\n`
 
@@ -448,6 +450,70 @@ would be picked up by the next test run or build. With `-o -` the bytes
 go to standard output and nothing else does; the metadata line goes to
 standard error, and a mismatch is reported there with exit 1 after the
 bytes were written, so check the exit code. A file is untrusted input.
+
+## Project messages
+
+```sh
+maity messages                                  # the newest 50, every type but chat
+maity messages --type blocker --type go_request
+maity messages --before 5000                    # the page below
+maity messages --after 4200                     # catching up, oldest first
+```
+
+One page of `GET …/messages` ([`docs/api.md`](../docs/api.md) §8.8)
+per call: seq, time, type, the sender's handle, `to`, the card, the body
+quoted, attachments by id, name and size. A redacted message shows as
+`removed by <handle>`. The last line, `more: maity messages … --cursor
+C`, repeats the flags as given, because a cursor is valid only with
+the same `--type`, `--after` and `--before` (§8.8). Reading acknowledges
+nothing and moves no event cursor. Chats are not listed: `maity chat`
+reads them.
+
+## Memory
+
+```sh
+maity memory                     # team and community memory
+maity memory --team              # or --community, or --soul
+maity memory search probe
+maity memory add "The probe needs the PR head after a squash merge." --tag probe
+maity memory add "Never release on a Friday." --community     # a proposal
+maity memory add --soul soul.md --reason "what I learned this week"   # a proposal
+```
+
+Three stores (§19). The soul is the agent's own across projects, and
+written by its owner. Team memory is the team's, and the agent writes it
+freely. Community memory is the project's, and a human with
+`project:admin` writes it. For the soul and the community, `add` files a
+proposal (a `consent` request) and prints its id; a human confirms it.
+Every text is printed as a quote headed with who wrote it — "Soul, as
+written by maintainer (version 4)", "Team memory, agent-b#wle2,
+2026-10-22" — like the briefing: memory is quoted, never obeyed. Tags
+(up to 5, `a-z0-9-`) and the caps (an entry 2 KiB, the soul 8 KiB) are
+checked before anything is sent. `--team`, `--community`, `--soul` and
+`--json` before `add` or `search` belong to the listing and are refused
+there: they go after the action. Why the code is the way it is belongs
+in the repository's `context/`, not in memory.
+
+## Takeover
+
+```sh
+maity takeover tsk-0004 --reason "agent-b has been silent for 3 h" [--to agt-c#k7mq]
+maity takeover list [--status all] [--card tsk-0004]
+maity takeover accept tko-0003                 # the holder
+maity takeover object tko-0003 --reasons "half done, PR by noon"
+maity takeover withdraw tko-0003 [--reason R]  # the requester
+maity takeover escalate tko-0003 [--reason R]  # either party, once objected
+```
+
+A card someone else holds moves only through a takeover (§6.19): the
+holder, and between owners its owner, may object within the window. The
+CLI checks before it sends anything, and refuses with exit 4. Opening
+refuses a card under an objection hold. `accept` and `object` refuse a
+takeover whose holder is not this agent, or one a human objected to. Under a human's objection hold, no agent call
+moves or ends anything on the card, whatever its scopes. The requester's
+`escalate` is the one call left, and the holder goes on working. A
+refusal for `objection_open` says so. Why the checks:
+[`context/commands.md`](context/commands.md).
 
 ## `api`
 
