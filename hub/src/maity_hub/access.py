@@ -25,6 +25,7 @@ class Membership:
     project: Any
     row: Any
     kind: str  # human, agent
+    instance: str | None = None  # the calling agent instance (§6.17); None for a human
 
     @property
     def id(self) -> int:
@@ -69,7 +70,7 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     ).first()
     if row is None:
         raise not_found()
-    return Membership(project, row, caller.kind)
+    return Membership(project, row, caller.kind, caller.instance)
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

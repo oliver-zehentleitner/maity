@@ -99,9 +99,38 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
             .where(t.credential.c.id == credential_id)
         ).one()
         environment.refresh(conn, member.project_id, member.id)
+    _lead_revoked(conn, credential_id, announce=reason != "member_removed")
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
     placements.credential_revoked(conn, credential_id, by)
+
+
+def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> None:
+    """A revoked lead stops being lead: `lead_instance: null`, `member_updated` (§6.17).
+    Not announced when the whole member is being removed: `member_removed` says it."""
+    from maity_hub.views import member_view  # views reads the auth modules
+
+    row = conn.execute(
+        select(t.membership)
+        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .where(
+            t.credential.c.id == credential_id,
+            t.membership.c.lead_instance == t.credential.c.instance,
+        )
+    ).first()
+    if row is None:
+        return
+    conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(lead_instance=None))
+    if row.active and announce:
+        member = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+        emit(
+            conn,
+            row.project_id,
+            "member_updated",
+            ["all"],
+            {**member_view(conn, member), "changed": ["team"]},
+            subject=("member", row.agent_id),
+        )
 
 
 def _revoke_leaked_runners(

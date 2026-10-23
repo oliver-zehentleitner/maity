@@ -72,6 +72,9 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "burned",
         "revoked_at",
         "via",
+        "new_instance",
+        "replaces",
+        "instance",
     }
     assert body["code"] not in str(listed) and _token(body) not in str(listed)
 
@@ -127,7 +130,10 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
         "role": "differs_from_membership",
         "areas": "differs_from_membership",
     }
-    second_clone = flow.agent(make_client, owner, agent={"id": first.id}, areas=["hub/"])
+    owner.patch(f"/projects/maity/members/{first.id}", {"team": {"max_instances": 2}})
+    second_clone = flow.agent(
+        make_client, owner, agent={"id": first.id}, areas=["hub/"], new_instance=True
+    )
     assert second_clone.id == first.id
     assert second_clone.credential_id != first.credential_id
     with migrated.connect() as conn:

@@ -193,7 +193,10 @@ def test_a_join_for_a_member_cannot_change_its_briefing(
 ) -> None:
     agent = flow.agent(make_client, owner, briefing=BRIEFING)
     for same in ({"briefing": BRIEFING}, {}):
-        joined = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, **same})
+        joined = owner.post(
+            "/projects/maity/joins",
+            {"agent": {"id": agent.id}, "replaces": agent.instance, **same},
+        )
         assert joined.status_code == 201, joined.text
     other = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, "briefing": "else"})
     assert other.json()["error"]["details"]["fields"] == {"briefing": "differs_from_membership"}

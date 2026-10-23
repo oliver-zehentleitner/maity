@@ -39,6 +39,7 @@ class Agent:
     credential: str
     credential_id: str
     id: str
+    instance: str = ""
     key_counter: int = 0
 
     @property
@@ -115,4 +116,5 @@ def agent(make_client: ClientFactory, owner: Human, slug: str = "maity", **join_
         response.text,
         response.headers["Maity-Credential-Id"],
         response.headers["Maity-Member-Id"],
+        response.headers["Maity-Instance"],
     )

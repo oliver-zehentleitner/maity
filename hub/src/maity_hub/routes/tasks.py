@@ -15,7 +15,17 @@ from pydantic import Field
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import cards, clock, idempotency, mentions, paging, ranks, releases, ticker
+from maity_hub import (
+    cards,
+    clock,
+    idempotency,
+    instances,
+    mentions,
+    paging,
+    ranks,
+    releases,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -106,6 +116,7 @@ class ClaimIn(Strict):
 
 class AssignIn(Strict):
     assignee: str
+    instance: str | None = Field(default=None, max_length=5)  # sets assigned_instance (§6.18)
 
 
 class CheckpointIn(Strict):
@@ -664,6 +675,8 @@ def patch_task(
                 if body.assigned_to
                 else None
             )
+            if values["assigned_to"] != card.assigned_to:
+                values["assigned_instance"] = None  # an instance of the old assignee no more
         if body.release is not None:
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
@@ -783,10 +796,20 @@ def claim(
         state = _require_open_project(mine, body.reason)
         card = _project_card(conn, mine, card_id)
         holder_id = mine.id
+        instance = mine.instance
         session_id = caller.session_id
-        if body.holder is not None and body.holder != mine.principal_id:
+        if body.holder is not None and body.holder not in (
+            mine.principal_id,
+            instances.address(mine.principal_id, mine.instance or ""),
+        ):
             mine.require("tasks:admin")
-            holder_id = _member_id(conn, mine, body.holder, "holder")
+            principal, named = instances.split_address(body.holder)
+            holder_id = _member_id(conn, mine, principal, "holder")
+            holder_row = conn.execute(
+                select(t.membership).where(t.membership.c.id == holder_id)
+            ).one()
+            # An address names the instance; a member id must come down to one (§6.5).
+            instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
         _refuse_paused(conn, holder_id)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
@@ -805,6 +828,7 @@ def claim(
             )
             .values(
                 claim_holder=holder_id,
+                claim_instance=instance,
                 claim_session_id=session_id,
                 claim_since=now,
                 lease_until=lease_until,
@@ -824,6 +848,7 @@ def claim(
             audience(conn, card),
             {
                 "holder": principal_id(conn, holder_id),
+                "instance": instance,
                 "lease_until": clock.rfc3339(lease_until),
                 **state,
             },
@@ -844,7 +869,22 @@ def _already_claimed(conn: Connection, card: Any) -> ApiError:
         409,
         "already_claimed",
         f"{card.id} is claimed by {holder}",
-        {"holder": holder, "lease_until": clock.rfc3339(card.lease_until), "expired": expired},
+        {
+            "holder": holder,
+            "instance": card.claim_instance,
+            "lease_until": clock.rfc3339(card.lease_until),
+            "expired": expired,
+        },
+    )
+
+
+def _not_holder(card: Any) -> ApiError:
+    """The holding instance's siblings learn which instance holds it (§6.4)."""
+    return ApiError(
+        409,
+        "not_holder",
+        "only the holder of the card may do this",
+        {"instance": card.claim_instance},
     )
 
 
@@ -872,6 +912,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
         if card.claim_holder is None:
             raise ApiError(409, "not_holder", "the card is not claimed")
         if not cards.holds(mine, card):
+            if cards.sibling_holds(mine, card) and not mine.may("tasks:admin"):
+                raise _not_holder(card)
             mine.require("tasks:admin")
             if not _lease_expired(card):
                 raise ApiError(
@@ -891,6 +933,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             .where(t.card.c.id == card.id, *still)
             .values(
                 claim_holder=None,
+                claim_instance=None,
                 claim_session_id=None,
                 claim_since=None,
                 lease_until=None,
@@ -1002,8 +1045,11 @@ def assign(
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
         assignee = _member_id(conn, mine, body.assignee, "assignee")
+        assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        if body.instance is not None:
+            instances.require_active(conn, assignee_row, body.instance, "instance")
         now = clock.now()
-        values: dict[str, Any] = {"assigned_to": assignee}
+        values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": body.instance}
         old_holder = card.claim_holder
         if card.claim_holder is not None and card.claim_holder != assignee:
             if not _lease_expired(card):
@@ -1017,6 +1063,9 @@ def assign(
             _refuse_paused(conn, assignee)
             values.update(
                 claim_holder=assignee,
+                # Held by exactly one instance: named, or the one the team's rules give,
+                # else `instance_required` as on a claim (§6.17, §6.5).
+                claim_instance=instances.resolve(conn, assignee_row, body.instance, "instance"),
                 claim_session_id=None,
                 claim_since=now,
                 lease_until=now + timedelta(seconds=mine.project.lease_seconds),
@@ -1048,7 +1097,9 @@ def assign(
             audience(conn, card, old_holder, old_assignee),
             {
                 "assignee": principal_id(conn, assignee),
+                "assigned_instance": card.assigned_instance,
                 "holder": principal_id(conn, card.claim_holder),
+                "instance": card.claim_instance,
                 "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
                 "project_state": mine.project.state,
                 "reason": None,
@@ -1066,6 +1117,8 @@ def assign(
 
 def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
     card = _project_card(conn, mine, card_id)
+    if cards.sibling_holds(mine, card):
+        raise _not_holder(card)
     if not cards.holds(mine, card):
         raise ApiError(409, "not_holder", "only the holder of the card may do this")
     return card
@@ -1090,6 +1143,7 @@ def checkpoint(
             "branch": body.branch,
             "head": body.head,
             "verification": _verification(caller),
+            "instance": mine.instance,
             "updated_at": clock.rfc3339(now),
         }
         conn.execute(
@@ -1152,6 +1206,7 @@ def report(
             "pr_unknown_reason": body.pr_unknown_reason,
             "verification": _verification(caller),
             "reported_by": mine.principal_id,
+            "reported_instance": mine.instance,
             "session_id": caller.session_id,
             "reported_at": clock.rfc3339(now),
             # Filled by the probe in the background; never awaited inside a write.

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, case, select, update
 
-from maity_hub import clock, idempotency, placements, rules
+from maity_hub import clock, idempotency, instances, placements, rules
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
@@ -36,6 +36,7 @@ class PausedIn(Strict):
 
 
 class MemberPatch(Strict):
+    team: instances.TeamIn | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -53,6 +54,20 @@ def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
     and both may read the briefing (§6.2)."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
     return member_view(conn, row, briefing=True)
+
+
+def load_member_for_team(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed rulebook change: the briefing only for a reader with `members:admin`,
+    as on the first answer (§6.2, §6.18)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
+    slug = conn.execute(
+        select(t.project.c.slug).where(t.project.c.id == row.project_id)
+    ).scalar_one()
+    reader = membership(conn, request.state.caller, slug)
+    return member_view(conn, row, briefing=reader.may("members:admin"))
+
+
+idempotency.LOADERS["member_team"] = load_member_for_team
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
@@ -185,6 +200,20 @@ def patch_member(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "team" in given:
+            # The rulebook is the agent's owner's alone, member or not (§6.18): its own
+            # path, before the member check, and never mixed with an admin's fields. An
+            # agent learns it is a human's call before anything else (§2.3).
+            if caller.kind != "human":
+                raise instances.humans_only()
+            if given != {"team"}:
+                raise invalid({"team": "alone"}, "set team on its own")
+            target, reader = instances.patch_team(conn, caller, slug, member_id, body.team)
+            if reader is None:
+                # An owner outside the project sees nothing of it (§1.3): no body.
+                return idempotency.Outcome(204, None, None, {})
+            view = member_view(conn, target, briefing=reader.may("members:admin"))
+            return idempotency.Outcome(200, "member_team", str(target.id), view)
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
         target = member_row(conn, mine.project.id, member_id)
@@ -318,6 +347,7 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             )
             .values(
                 claim_holder=None,
+                claim_instance=None,
                 claim_session_id=None,
                 claim_since=None,
                 lease_until=None,

@@ -17,6 +17,7 @@ from maity_hub import (
     environment,
     events,
     idempotency,
+    instances,
     ranks,
     rules,
     ticker,
@@ -133,7 +134,7 @@ class MePatch(Strict):
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
     row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    return Membership(project, row, "agent")
+    return Membership(project, row, "agent", caller.instance)
 
 
 @router.post("/me/resume")
@@ -207,7 +208,11 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         environment.refresh(conn, mine.project.id, mine.id)
         conn.execute(
             update(t.card)
-            .where(t.card.c.claim_holder == mine.id, t.card.c.status.notin_(CLOSED_STATUSES))
+            .where(
+                t.card.c.claim_holder == mine.id,
+                t.card.c.claim_instance == caller.instance,
+                t.card.c.status.notin_(CLOSED_STATUSES),
+            )
             .values(claim_session_id=session_id)
         )
         session = {
@@ -284,19 +289,34 @@ def _packet(
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
     areas.sort(key=lambda a: (a["path"], a["owner"]))
+    # This instance's: the cards it holds, and those assigned to it or to the team
+    # with no instance chosen (§5.2).
     held = conn.execute(
         select(t.card)
-        .where(t.card.c.claim_holder == mine.id, t.card.c.status.notin_(CLOSED_STATUSES))
+        .where(
+            t.card.c.claim_holder == mine.id,
+            t.card.c.claim_instance == caller.instance,
+            t.card.c.status.notin_(CLOSED_STATUSES),
+        )
         .order_by(t.card.c.updated_at.desc())
     ).all()
     assigned = conn.execute(
         select(t.card).where(
             t.card.c.assigned_to == mine.id,
+            t.card.c.assigned_instance.is_(None) | (t.card.c.assigned_instance == caller.instance),
             t.card.c.claim_holder.is_(None),
             t.card.c.status == "open",
         )
     ).all()
     assigned = sorted(assigned, key=ranks.column_key)  # the card order, its priority (§6.4)
+    siblings = [
+        {
+            key: view[key]
+            for key in ("id", "address", "harness", "model", "presence", "paused", "lead", "claims")
+        }
+        for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
+        if view["id"] != caller.instance
+    ]
     scopes = scopes_for(mine.role, "agent")
     return {
         "server_time": clock.rfc3339(clock.now()),
@@ -309,6 +329,8 @@ def _packet(
             "handle": agent.handle,
             "display_name": agent.display_name,
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
+            "instance": caller.instance,
+            "address": instances.address(agent.id, caller.instance or ""),
             "owner": {"id": owner.id, "handle": owner.handle},
             "git_identity": git_identity(agent),
         },
@@ -320,7 +342,9 @@ def _packet(
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
+            "team": instances.team(conn, mine.row),
         },
+        "team": siblings,
         "project": {
             "slug": project.slug,
             "name": project.name,

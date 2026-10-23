@@ -46,6 +46,7 @@ from maity_hub.types import (
 )
 
 ID = 40  # length of a hub-generated id
+INSTANCE = 5  # an agent instance id, `[2-9a-hjkmnp-z]{4,5}` (§6.17)
 HANDLE = 64
 TITLE = 200  # characters, docs/api.md §1.7
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
@@ -185,6 +186,14 @@ membership = Table(
     # True while the membership exists, NULL once removed: a removed member
     # keeps its row (§6.2) and can join the project again.
     Column("active", Boolean, default=True),
+    # The team's rulebook (§6.18), for agent memberships; the hub's defaults for humans.
+    Column("max_instances", Integer, nullable=False, server_default="1"),
+    Column("distribution", String(16), nullable=False, server_default="free"),
+    Column("lead_instance", String(INSTANCE)),
+    Column("wake", String(16), nullable=False, server_default="all"),
+    Column("review_within_team", Boolean, nullable=False, server_default=false()),
+    Column("team_updated_by", String(ID)),
+    Column("team_updated_at", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(
@@ -217,6 +226,11 @@ join_link = Table(
     Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
+    # For a member's join, which instance it adds (§6.17); `instance` is what the
+    # exchange gave.
+    Column("new_instance", Boolean, nullable=False, server_default=false()),
+    Column("replaces", String(INSTANCE)),
+    Column("instance", String(INSTANCE)),
     _ref("created_by", "human.id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
@@ -235,6 +249,10 @@ credential = Table(
     _membership_ref("membership_id", nullable=False, index=True),
     # sha256 over the secret's text, hex; the HMAC key and the bearer verifier.
     Column("verifier", String(HEX_SHA256), nullable=False),
+    # The agent instance this credential is (§6.17): unique within the membership and
+    # never reused, also after revocation.
+    Column("instance", String(INSTANCE), nullable=False),
+    Column("replaces", String(INSTANCE)),  # the instance it took the place of
     _ref("join_id", "join_link.id"),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -244,6 +262,7 @@ credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
 
@@ -505,9 +524,13 @@ card = Table(
     Column("area", String(255)),
     _membership_ref("created_by", nullable=False),
     _membership_ref("assigned_to"),
+    Column("assigned_instance", String(INSTANCE)),  # an instance of `assigned_to` (§6.18)
     # The claim. One holder per card by construction; the claim is one
     # conditional UPDATE ... WHERE claim_holder IS NULL (docs/architecture.md §7).
     _membership_ref("claim_holder"),
+    # The holding instance of an agent holder (§6.17); null for a human holder and,
+    # until an instance of the team calls, for a claim made on a team's behalf.
+    Column("claim_instance", String(INSTANCE)),
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),

@@ -98,7 +98,7 @@ def run(
                             _store(conn, who, key, body_hash, outcome)
                     except IntegrityError:
                         raise _KeyTaken from None
-                return JSONResponse(outcome.body, status_code=outcome.status)
+                return respond(outcome.body, outcome.status)
         except _KeyTaken:
             # A concurrent call with the same key committed first: this one
             # rolled back entirely and replays that one.
@@ -146,7 +146,22 @@ def _replay(
     body: dict[str, Any] = {}
     if row.resource_type is not None and row.resource_id is not None:
         body = LOADERS[row.resource_type](conn, row.resource_id, request)
-    return JSONResponse(body, status_code=row.status_code, headers={"Idempotent-Replayed": "true"})
+    return respond(body, row.status_code, {"Idempotent-Replayed": "true"})
+
+
+class _NoContent(JSONResponse):
+    """A `204`: no body at all, a replay included."""
+
+    def render(self, content: Any) -> bytes:
+        return b""
+
+
+def respond(
+    body: dict[str, Any], status: int, headers: dict[str, str] | None = None
+) -> JSONResponse:
+    if status == 204:
+        return _NoContent(None, status_code=204, headers=headers)
+    return JSONResponse(body, status_code=status, headers=headers)
 
 
 def _store(conn: Connection, who: str, key: str, body_hash: str, outcome: Outcome) -> None:

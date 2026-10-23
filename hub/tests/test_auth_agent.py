@@ -365,6 +365,7 @@ def test_a_call_renews_presence_and_the_leases_of_the_holder(
         agent.membership_id,
         status="in_progress",
         claim_holder=agent.membership_id,
+        claim_instance=agent.instance,
         claim_since=start,
         lease_until=start + timedelta(minutes=5),
     )
@@ -374,6 +375,7 @@ def test_a_call_renews_presence_and_the_leases_of_the_holder(
         agent.membership_id,
         status="done",
         claim_holder=agent.membership_id,
+        claim_instance=agent.instance,
         lease_until=start,
     )
     later = start + timedelta(hours=1)
