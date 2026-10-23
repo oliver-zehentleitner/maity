@@ -1,19 +1,19 @@
-"""Human login, logout, password change and session (docs/api.md §2.1)."""
+"""Human login, logout, password change, the session and the session list (docs/api.md §2.1,
+§2.6.5)."""
 
 from __future__ import annotations
 
-import secrets
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import avatars, clock
 from maity_hub import tables as t
-from maity_hub.auth import passwords
+from maity_hub.auth import passwords, sessions
 from maity_hub.auth.caller import (
     CSRF_COOKIE,
     SESSION_ABSOLUTE,
@@ -23,8 +23,16 @@ from maity_hub.auth.caller import (
     session_expires_at,
     session_id_hash,
 )
-from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, rate_limited, unauthenticated
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
+from maity_hub.errors import (
+    ApiError,
+    forbidden,
+    humans_only,
+    invalid,
+    not_found,
+    rate_limited,
+    unauthenticated,
+)
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import human_member
 
@@ -41,6 +49,9 @@ class Strict(BaseModel):
 class Login(Strict):
     handle: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=1024)
+    # Where the dashboard goes afterwards; an unsafe value, of any length, becomes `/`
+    # silently (§2.6.5).
+    next: str | None = None
 
 
 class PasswordChange(Strict):
@@ -72,7 +83,7 @@ def _clear_cookies(response: JSONResponse, request: Request) -> None:
         response.delete_cookie(name, path="/", secure=secure, httponly=httponly, samesite="lax")
 
 
-def _member(conn: Connection, human_id: str) -> dict[str, Any]:
+def member_of(conn: Connection, human_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
     return human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id])
 
@@ -90,53 +101,65 @@ async def login(body: Login, request: Request) -> JSONResponse:
         if wait:
             raise rate_limited(wait)
     engine = engine_of(request)
+    presented = request.cookies.get(SESSION_COOKIE)
+    device = request.cookies.get(sessions.DEVICE_COOKIE)
+    user_agent = request.headers.get("user-agent")
 
-    def run() -> tuple[dict[str, Any], str, str]:
+    def run() -> tuple[dict[str, Any], str, str, str | None]:
         with engine.begin() as conn:
             row = conn.execute(select(t.human).where(t.human.c.handle == body.handle)).first()
             stored = row.password_hash if row is not None else passwords.DUMMY_HASH
             if not passwords.verify_password(body.password, stored) or row is None:
                 raise unauthenticated("handle or password is wrong")
-            now = clock.now()
-            session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
-            conn.execute(
-                insert(t.human_session).values(
-                    id_hash=session_id_hash(session_id),
-                    human_id=row.id,
-                    csrf_token=csrf,
-                    created_at=now,
-                    last_seen_at=now,
-                    expires_at=now + SESSION_ABSOLUTE,
-                    source=origin.address[:64],
-                )
-            )
-            conn.execute(
-                update(t.human)
-                .where(t.human.c.id == row.id)
-                .values(last_seen_at=now, last_login_at=now)
+            sessions.forget_expired_addresses(conn)
+            end_presented(conn, presented)
+            session_id, csrf, _ = sessions.create(
+                conn, row.id, method="password", address=origin.address, user_agent=user_agent
             )
             return (
                 human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id]),
                 session_id,
                 csrf,
+                sessions.remember_device(conn, row.id, device),
             )
 
-    member, session_id, csrf = await run_in_threadpool(run)
-    response = JSONResponse({"member": member})
-    _set_cookies(response, request, session_id, csrf)
+    member, session_id, csrf, device_value = await run_in_threadpool(run)
+    response = JSONResponse({"member": member, "next": sessions.safe_next(body.next)})
+    set_session_cookies(response, request, session_id, csrf, device_value)
     return response
+
+
+def end_presented(conn: Connection, presented: str | None) -> None:
+    """A browser that holds a session, of any human, has it ended before a new one is
+    made; the new one never takes over a presented id (§2.6.5, session fixation)."""
+    if presented:
+        sessions.end_where(conn, t.human_session.c.id_hash == session_id_hash(presented), "logout")
+
+
+def set_session_cookies(
+    response: JSONResponse, request: Request, session_id: str, csrf: str, device: str | None
+) -> None:
+    """The cookies of a completed sign-in: the session's, and the device cookie when this
+    browser held no value of the human yet (§2.6.5)."""
+    _set_cookies(response, request, session_id, csrf)
+    if device is not None:
+        response.set_cookie(
+            sessions.DEVICE_COOKIE,
+            device,
+            max_age=int(sessions.DEVICE_LIFETIME.total_seconds()),
+            path="/",
+            secure=origin_of(request).tls,
+            httponly=True,
+            samesite="lax",
+        )
 
 
 @router.post("/logout")
 def logout(request: Request, caller: HumanCaller) -> JSONResponse:
     _require_cookie(caller)
     with engine_of(request).begin() as conn:
-        conn.execute(
-            update(t.human_session)
-            .where(t.human_session.c.id_hash == caller.human_session)
-            .values(ended_at=clock.now())
-        )
-        member = _member(conn, caller.principal_id)
+        sessions.end_where(conn, t.human_session.c.id_hash == caller.human_session, "logout")
+        member = member_of(conn, caller.principal_id)
     response = JSONResponse({"member": member})
     _clear_cookies(response, request)
     return response
@@ -165,14 +188,11 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             .where(t.human.c.id == row.id)
             .values(password_hash=passwords.hash_password(body.new))
         )
-        conn.execute(
-            update(t.human_session)
-            .where(
-                t.human_session.c.human_id == row.id,
-                t.human_session.c.id_hash != caller.human_session,
-                t.human_session.c.ended_at.is_(None),
-            )
-            .values(ended_at=clock.now())
+        sessions.end_where(
+            conn,
+            (t.human_session.c.human_id == row.id)
+            & (t.human_session.c.id_hash != caller.human_session),
+            "password_change",
         )
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
@@ -187,15 +207,97 @@ def session(request: Request, caller: HumanCaller) -> JSONResponse:
         ).one()
         return JSONResponse(
             {
-                "member": _member(conn, caller.principal_id),
+                "member": member_of(conn, caller.principal_id),
                 "csrf_token": row.csrf_token,
                 "expires_at": clock.rfc3339(session_expires_at(row)),
+                "session_id": row.public_id,
                 # The dashboard offers "join link via <join host>" only when one is set.
                 "join_url": settings_of(request).join_url,
             }
         )
 
 
-def _require_cookie(caller: Caller) -> None:
+@router.get("/sessions")
+def list_sessions(
+    request: Request, caller: AnyCaller, ended: bool = Query(default=False)
+) -> JSONResponse:
+    current = _session_caller(caller)
+    with engine_of(request).begin() as conn:
+        return JSONResponse(_listing(conn, caller.principal_id, current, with_ended=ended))
+
+
+@router.delete("/sessions/{public_id}")
+def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Ends one of the caller's sessions, with every session it approved by device code;
+    the current one is a logout. Idempotent: an ended session answers as it is."""
+    current = _session_caller(caller)
+    now = clock.now()
+    with engine_of(request).begin() as conn:
+        mine = _session(conn, current)
+        target = conn.execute(
+            select(t.human_session).where(
+                t.human_session.c.public_id == public_id,
+                t.human_session.c.human_id == caller.principal_id,
+            )
+        ).first()
+        if target is None:
+            raise not_found()  # another human's session is not found either
+        skipped: list[str] = []
+        if sessions.ended(target, now) is None:
+            reason = sessions.refusal(mine, target, now)
+            if reason is not None:
+                raise sessions.forbidden_to_end(reason)
+            by = "logout" if target.id_hash == current else "revoked"
+            chain = sessions.approved_by_chain(conn, caller.principal_id, target.public_id)
+            live = [s for s in chain if sessions.ended(s, now) is None]
+            # The same refusal per session of the chain: what the caller may not end is
+            # skipped and named, never ended (§2.6.5).
+            allowed = [s for s in live if sessions.refusal(mine, s, now) is None]
+            skipped = [s.public_id for s in live if s not in allowed]
+            sessions.end(conn, [target], by)
+            sessions.end(conn, allowed, "revoked")
+        row = _session(conn, target.id_hash)
+        answer = {**sessions.view(row, current, clock.now()), "skipped": skipped}
+    response = JSONResponse(answer)
+    if target.id_hash == current:
+        _clear_cookies(response, request)
+    return response
+
+
+@router.post("/sessions/end-others")
+def end_others(request: Request, caller: AnyCaller) -> JSONResponse:
+    """Every live session of the caller but the current one; from a session not in good
+    standing only the others that are not in good standing either (§2.6.5)."""
+    current = _session_caller(caller)
+    now = clock.now()
+    with engine_of(request).begin() as conn:
+        mine = _session(conn, current)
+        live = sessions.listing(conn, caller.principal_id, current, with_ended=False)
+        others = [row for row in live if row.id_hash != current]
+        allowed = [row for row in others if sessions.refusal(mine, row, now) is None]
+        sessions.end(conn, allowed, "end_others")
+        return JSONResponse(_listing(conn, caller.principal_id, current, with_ended=False))
+
+
+def _session_caller(caller: Caller) -> str:
+    """The session list is a human's alone: no agent or runner credential lists or ends
+    a session, whatever it holds (§2.6.5)."""
+    if caller.kind != "human":
+        raise humans_only("the session list is for humans")
+    return _require_cookie(caller)
+
+
+def _session(conn: Connection, id_hash: str) -> Any:
+    return conn.execute(select(t.human_session).where(t.human_session.c.id_hash == id_hash)).one()
+
+
+def _listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) -> dict[str, Any]:
+    now = clock.now()
+    rows = sessions.listing(conn, human_id, current, with_ended=with_ended)
+    return {"items": [sessions.view(row, current, now) for row in rows]}
+
+
+def _require_cookie(caller: Caller) -> str:
     if caller.human_session is None:
         raise unauthenticated("this endpoint needs a dashboard session")
+    return caller.human_session
