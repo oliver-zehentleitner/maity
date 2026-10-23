@@ -327,7 +327,10 @@ def post_message(
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:
-    """The open group chat the caller takes part in (§9.2)."""
+    """The open group chat the caller takes part in (§9.2), read under the project lock:
+    a leave or a close that commits first is seen, so no stale post gets through and
+    the audience is the participants as of the write."""
+    events.lock_project(conn, mine.project.id)
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
     if found is None:
@@ -497,11 +500,18 @@ def _redact_in_group(
 ) -> idempotency.Outcome:
     """§8.5 in a group chat: any human participant now, no agent; once the chat closed,
     its former human participants, and a human with `members:admin` blind, by `seq`."""
+    events.lock_project(conn, mine.project.id)  # the chat and who is in it as of the lock
+    row = conn.execute(select(t.event).where(t.event.c.seq == row.seq)).one()
     group = group_chats.find(conn, mine.project.id, row.conversation_id)
     closed = group.closed_at is not None
     hidden = events.hidden_redactions(conn, [row], mine.row)
     blind = False
-    if not events.readable_by(row, mine.row, mine.principal_id, hidden):
+    # Readable through the log, or through the chat's history (`before`, §9.2): someone
+    # added later reads the earlier messages there, so may take a secret out of them.
+    readable = events.readable_by(row, mine.row, mine.principal_id, hidden) or (
+        group_chats.access(conn, group.id, mine) is not None
+    )
+    if not readable:
         if not (closed and mine.kind == "human" and mine.may("members:admin")):
             raise not_found()
         if row.kind != "message":  # only a message is redacted blind

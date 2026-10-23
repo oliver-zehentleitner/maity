@@ -397,3 +397,67 @@ def test_a_closed_room_is_redacted_by_its_former_humans_or_blind_by_an_admin(
     ).json()["seq"]
     mismatch = redact(owner, not_closed, expect="closed_chat_message")
     assert mismatch.json()["error"]["details"]["fields"] == {"expect": "mismatch"}
+
+
+# --- review fixes: replay, history redaction, the lock -----------------------------------
+
+
+def test_a_replayed_create_shows_nothing_the_caller_may_no_longer_read(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    guest = other_human(make_client, migrated, "guest", role="admin")
+    other = other_human(make_client, migrated, "other")
+    headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "create-replay-000001"}
+    body = {"title": "first", "participants": [guest.id, other.id]}
+    first = owner.client.post(f"/api/v1{BASE}", json=body, headers=headers)
+    assert first.status_code == 201, first.text
+    chat_id = first.json()["id"]
+    delete(owner, f"{BASE}/{chat_id}/participants/{owner.id}")
+    guest.patch(f"{BASE}/{chat_id}", {"title": "private now"})
+    again = owner.client.post(f"/api/v1{BASE}", json=body, headers=headers)
+    assert again.status_code == 404
+    assert "private now" not in again.text
+
+
+def test_someone_added_later_redacts_what_it_reads_in_the_history(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    late = other_human(make_client, migrated, "late")
+    chat = create(owner, agent.id, other_human(make_client, migrated, "guest").id).json()
+    secret = say(agent, chat["id"], "the token is abc").json()["seq"]
+    owner.post(f"{BASE}/{chat['id']}/participants", {"member_id": late.id})
+    assert [m["seq"] for m in read(late, chat["id"], f"?before={secret + 1}").json()["items"]] == [
+        secret
+    ]
+    done = redact(late, secret)
+    assert done.status_code == 200, done.text
+
+
+def test_a_close_that_commits_first_is_never_overtaken(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reviewer's stale-snapshot probe: the chat closes between the caller's first
+    read and its lock; the add and the post see the close."""
+    agent = flow.agent(make_client, owner)
+    guest = other_human(make_client, migrated, "guest")
+    chat = create(owner, agent.id, guest.id).json()
+    real = events.lock_project
+
+    def closed_meanwhile(conn: Any, project: str) -> Any:
+        conn.execute(
+            update(t.conversation)
+            .where(t.conversation.c.id == chat["id"])
+            .values(closed_at=t.conversation.c.created_at, closed_reason="no_human")
+        )
+        return real(conn, project)
+
+    monkeypatch.setattr(events, "lock_project", closed_meanwhile)
+    added = owner.post(f"{BASE}/{chat['id']}/participants", {"member_id": guest.id})
+    assert added.json()["error"]["code"] == "conversation_closed"
+    assert added.json()["error"]["details"] == {"closed_reason": "no_human"}
+    posted = say(owner, chat["id"], "still here?")
+    assert posted.json()["error"]["code"] == "conversation_closed"

@@ -376,7 +376,7 @@ def list_conversations(
 @router.post("/projects/{slug}/conversations")
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, caller, slug)
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
         conversation_id = group_chats.create(
@@ -394,6 +394,15 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _locked(conn: Connection, caller: Caller, slug: str) -> Membership:
+    """The caller's membership read after the project lock: a write to a chat decides on
+    the membership, the chat, the caller's access and the audience as of the lock, so a
+    leave, a close or a removal that commits first is never overtaken (§9.2)."""
+    first = membership(conn, caller, slug)
+    events.lock_project(conn, first.project.id)
+    return membership(conn, caller, slug)
+
+
 def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str, Any]:
     group, found = _group(conn, mine, conversation_id)
     return group_chats.view(conn, group, found)
@@ -404,7 +413,10 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     row = conn.execute(select(t.conversation).where(t.conversation.c.id == conversation_id)).one()
     slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
     mine = membership(conn, request.state.caller, str(slug))
-    return group_chats.view(conn, row, group_chats.access(conn, conversation_id, mine))
+    found = group_chats.access(conn, conversation_id, mine)
+    if found is None:  # a replay shows nothing the caller may no longer read (as #271)
+        raise not_found()
+    return group_chats.view(conn, row, found)
 
 
 idempotency.LOADERS["conversation"] = _load_for_caller
@@ -445,7 +457,7 @@ def patch_conversation(
     slug: str, conversation_id: str, body: GroupPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, caller, slug)
         group = _manager(conn, mine, conversation_id)
         group_chats.rename(conn, group, body.title, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -460,7 +472,7 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, caller, slug)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -475,7 +487,7 @@ def remove_participant(
     slug: str, conversation_id: str, member_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, caller, slug)
         leaving = member_id == mine.principal_id
         if leaving and group_chats.is_group(conversation_id):  # any participant leaves
             group, found = _group(conn, mine, conversation_id)
@@ -600,7 +612,7 @@ def send_message(
     slug: str, conversation_id: str, body: ChatIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = _locked(conn, caller, slug)
         if group_chats.is_group(conversation_id):
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:

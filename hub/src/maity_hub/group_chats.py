@@ -255,7 +255,12 @@ def refuse_closed_project(project: Any) -> None:
 
 def refuse_closed(conversation: Any) -> None:
     if conversation.closed_at is not None:
-        raise ApiError(409, "conversation_closed", "the chat has closed; start a new one")
+        raise ApiError(
+            409,
+            "conversation_closed",
+            "the chat has closed; start a new one",
+            {"closed_reason": conversation.closed_reason},
+        )
 
 
 def _join(
@@ -293,7 +298,7 @@ def create(
     """Create a group chat; returns its id. `creator` is the creating human's membership
     row (a participant whether or not `member_ids` names it), None for the hub's thread
     (§20.5), which skips the cap, `use_direct` and the quota."""
-    lock_project(conn, project.id)
+    project = lock_project(conn, project.id)  # its state as of the lock, not the read before
     refuse_closed_project(project)
     names = list(member_ids)
     if creator is not None and principal(creator) not in names:
@@ -350,6 +355,7 @@ def create(
 def add(conn: Connection, conversation: Any, member_id: str, by: str, actor: Actor | None) -> bool:
     """Add an active member; False when it is in the chat already (answered as it is)."""
     project = lock_project(conn, conversation.project_id)
+    conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
     refuse_closed(conversation)
     refuse_closed_project(project)
     row = _members(conn, conversation.project_id, [member_id])[member_id]
@@ -381,6 +387,7 @@ def remove(
     chat when no human is left in it; returns the ended stay. Allowed in a closed
     project, as everything that removes is (§9.2)."""
     lock_project(conn, conversation.project_id)
+    conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
     current = stay(conn, conversation.id, membership_id)
     if current is None:
         return None
@@ -417,6 +424,7 @@ def remove(
 
 def rename(conn: Connection, conversation: Any, title: str | None, actor: Actor | None) -> None:
     lock_project(conn, conversation.project_id)
+    conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
     refuse_closed(conversation)
     if title == conversation.title:
         return
