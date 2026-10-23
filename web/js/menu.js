@@ -79,7 +79,7 @@ window.Maity = window.Maity || {};
       items = [];
       spec.items().forEach((it) => {
         if (it.separator) { append(list, h("li", { role: "separator", class: "menu-sep" })); return; }
-        const attrs = { role: "menuitem", tabindex: "-1", class: "menu-item" };
+        const attrs = { role: "menuitem", tabindex: "-1", class: "menu-item", title: it.title || null };
         let el;
         if (it.disabled) {
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,

@@ -1385,12 +1385,12 @@ def board_cards_step(run: Run, page: Page) -> None:
     card = page.locator("article.card", has_text="E2E: a card from the board")
     proposed = page.locator('section.column[data-status="proposed"]')
     expect(proposed.locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
-    # The menu, the keyboard's way: proposed to open, the focus stays on the menu.
-    card.locator("form.card-move select").select_option("open")
-    card.locator("form.card-move").get_by_role("button", name="Move", exact=True).click()
+    # The status menu, the keyboard's way: proposed to open, the focus stays on the menu.
+    card.locator(".card-move .menu-button").click()
+    card.locator(".card-move").get_by_role("menuitem", name="Move to Open", exact=True).click()
     opened = page.locator('section.column[data-status="open"]').locator("article.card", has_text="E2E: a card from the board")
     expect(opened).to_be_visible()
-    expect(opened.locator("form.card-move select")).to_be_focused()
+    expect(opened.locator(".card-move .menu-button")).to_be_focused()
     # Dragging, as the browser's drag events: the page's handlers in a real
     # browser, without a mouse drag across columns that may lie off screen.
     def drag(target: str, drop: bool) -> None:
@@ -1436,10 +1436,8 @@ def board_order_step(run: Run, page: Page) -> None:
     expect(titles).to_have_count(2)
     upper, lower = titles.all_inner_texts()
     lower_card = column.locator("article.card", has_text=lower)
-    # The lower one goes up: "up" when it is right below, else "To the top".
-    ways = lower_card.locator("form.card-order select option").evaluate_all("(os) => os.map((o) => o.value)")
-    lower_card.locator("form.card-order select").select_option("up" if "top" not in ways else "top")
-    lower_card.locator("form.card-order").get_by_role("button", name="Place", exact=True).click()
+    # The lower one goes up, with its Move up arrow.
+    lower_card.locator(".card-order").get_by_role("button", name="Move up", exact=True).click()
     expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now (above|at the top)|does not order cards yet"))
     if "does not order cards yet" in view.locator(".send-status").first.inner_text():
         # Only a hub without the endpoint is skipped, and the board has to say so.
@@ -1447,10 +1445,12 @@ def board_order_step(run: Run, page: Page) -> None:
         run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/e2e-alpha/tasks/[^/]+/move answered 404$", p)]
         no_problems(run, "board order")
         return
-    run.step("board order: the owner moves a card up with Place, then drags it back below")
+    run.step("board order: the owner moves a card up with its arrow, then drags it back below")
     # The status line speaks before the board is read again: wait for the order itself.
     expect(titles).to_have_text([lower, upper])
-    expect(column.locator("article.card", has_text=lower).locator("form.card-order select")).to_be_focused()
+    # The focus stays on one of the moved card's arrows (Move up, or one still enabled at the top).
+    moved = column.locator("article.card", has_text=lower)
+    expect(moved.locator(".card-order button:focus")).to_have_count(1)
     dt = page.evaluate_handle("() => new DataTransfer()")
     moving = column.locator("article.card", has_text=lower)
     target = column.locator("article.card", has_text=upper)
