@@ -63,11 +63,12 @@ window.Maity = window.Maity || {};
   }
   M.icons = { gear, bell, theme: themeIcon };
 
-  // spec: { label (accessible name), face (nodes inside the button), items: [...] }
+  // spec: { label (accessible name), face (nodes inside the button), items: [...],
+  // listLabel (the list's name, when the button's label carries a state that changes) }
   M.menuButton = function (spec) {
     serial += 1;
     const id = "menu-" + serial;
-    const list = h("ul", { class: "menu", id, role: "menu", "aria-label": spec.label });
+    const list = h("ul", { class: "menu", id, role: "menu", "aria-label": spec.listLabel || spec.label });
     list.hidden = true;
     const button = h("button", {
       type: "button",

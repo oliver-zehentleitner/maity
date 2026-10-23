@@ -530,6 +530,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   thButton().click(); await tick();
   await thPick("Dark");
   expect(thHtml.attrs["data-theme"] === "dark" && thStore["maity.theme"] === "dark" && thButton().getAttribute("aria-label") === "Theme: Dark", "theme: Dark sets data-theme=dark and is kept");
+  expect(byId(thButton().getAttribute("aria-controls")).getAttribute("aria-label") === "Theme",
+    "theme: the menu's name stays Theme when the pick changes");
   await thPick("Light");
   expect(thHtml.attrs["data-theme"] === "light" && thStore["maity.theme"] === "light", "theme: Light sets data-theme=light");
   await thPick("System");
