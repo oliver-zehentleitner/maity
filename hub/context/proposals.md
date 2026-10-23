@@ -57,3 +57,26 @@ add a mechanism.
 **Rejected alternative:** register placements as a kind right away. The
 end state is cleaner, but a rework of the placement flow does not belong
 in this pull request.
+
+## A change that is no longer allowed refuses the go
+
+**Id:** b1d249de-833d-4b34-80b0-b18699f4b05a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the proposals scaffold (#230), 2026-10-23, following `placements._still_allowed`
+
+A kind's settle checks again on `go` whether the change is still allowed
+(the target is still there, the rules still permit it). When it is not,
+settle raises: the answer is refused and rolled back, and the request
+stays open, so the human sees why and can answer `no`. A settle that has
+nothing left to do, because the target was removed in the meantime,
+returns without an error.
+
+**Reason:** a request marked answered `go` whose change silently did not
+happen tells the human something false. Refusing keeps the request and
+the state in agreement, and placements already behave this way.
+
+**Rejected alternative:** record the outcome (the answer stands, the
+change is skipped, with a note). The human's answer would be kept, but
+the request would then say `go` for something that never happened.
