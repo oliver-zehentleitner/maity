@@ -11,7 +11,7 @@ A downgrade drops all three: the admin then sets the mail values and the SMTP pa
 again.
 
 Revision ID: 0026
-Revises: 0020
+Revises: 0021
 Create Date: 2026-10-23
 """
 
@@ -23,7 +23,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0026"
-down_revision: str | None = "0020"
+down_revision: str | None = "0021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, join_host, net
+from maity_hub import clock, events, forge_webhook, join_host, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -60,6 +60,21 @@ class HubMiddleware:
         on_join_host = join_host.is_join_host(scope, self.settings)
         scope["state"]["on_join_host"] = on_join_host
         send = _with_headers(send)
+
+        if not on_join_host and forge_webhook.matches(scope):
+            # Signed, not authenticated, and limited before its body is read (§17.4).
+            status = 500
+            try:
+                status = await forge_webhook.handle(
+                    scope, receive, send, self.engine, self.settings.secret_key
+                )
+            except Exception:
+                # In the envelope like any other route (§1.3); the body is not logged.
+                log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
+                await error_response(500, "internal", "an unexpected failure")(scope, receive, send)
+            finally:
+                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+            return
 
         if not on_join_host and _unrouted(scope):
             # Nothing here would read it: 404 before the cap, and the body is never read.

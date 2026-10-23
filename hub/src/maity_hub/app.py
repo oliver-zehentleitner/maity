@@ -31,6 +31,7 @@ from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
+from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
@@ -41,6 +42,7 @@ from maity_hub.routes import (
     avatars,
     conversations,
     device_codes,
+    forge_webhook,
     joins,
     keep_the_why,
     mail_settings,
@@ -84,6 +86,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+        check_secrets(engine, settings.secret_key)
         with engine.begin() as conn:
             # A method the environment switched off voids its open codes at once (§2.6.5).
             if not sign_in.device_code_enabled(conn, settings):
@@ -147,6 +150,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(placements.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
+    app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(notification_settings.page_router)  # /mail/*, likewise
     app.include_router(runners.page_router)  # /r/{token}, likewise

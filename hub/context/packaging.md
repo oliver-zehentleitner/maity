@@ -153,3 +153,29 @@ order of checks, now or in a later version.
 only control for GHSA-5xm2. It closes the reachable flaw, but leaves the
 others one code change away.
 
+
+## cryptography for the secrets the hub stores, held to one major release
+
+**Id:** 2ea5c41e-7128-4205-91dc-04ff6110b338
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.2 and §17.4 (AES-256-GCM with `MAITY_SECRET_KEY`); the coordinator's go for adding it with the webhook (tsk-0wtpcjkdhgq8), 2026-10-23
+**Revisit when:** cryptography 51 has been out for some weeks, or a security release reaches only a newer major release
+
+`cryptography>=50.0.2,<51`, with `cffi` and `pycparser` that it pulls in,
+in the runtime and dev locks. `maity_hub.secretbox` is the only module that uses it:
+`AESGCM` with a random 96-bit nonce per value and the field name as
+associated data. The forge webhook's secret uses it first; the mail
+settings' SMTP password reuses it. 50.0.2 is the newest release; the 50
+line has been out since July.
+
+**Reason:** the contract prescribes AES-256-GCM, which the standard
+library does not have; `cryptography` is the maintained, audited binding
+the Python world uses for it, with wheels for every platform the image
+builds. One major release at a time, as with Pillow, so an upgrade is a
+decision with its own review.
+
+**Rejected alternative:** PyNaCl (libsodium): a different cipher than the
+contract names. A pure-Python AES: slower and not audited. Deriving a key
+stream from HMAC in the standard library: a home-made cipher.
