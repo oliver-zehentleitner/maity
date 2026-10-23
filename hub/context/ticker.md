@@ -109,3 +109,42 @@ after the bound: a merge that moved up the list while a cut scan read
 on would fall between its pages and the next interval for good.
 Reading only the files' names and taking every section of a touched
 contract file: it would wake every implementer for a one-line change.
+
+## The forge webhook is answered in the middleware, limited and checked before its body is read, and only ever triggers the probe
+
+**Id:** e0fc2208-24e8-40f9-9042-293637043187
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23
+**Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
+**See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
+
+`POST /api/v1/projects/{slug}/forge/webhook` never reaches the API's
+routes: `maity_hub.forge_webhook.handle` answers it from the middleware,
+before the middleware would read the body. It looks up the project and
+its webhook first; without either (or without `MAITY_SECRET_KEY`) it
+answers `webhook_signature` from a bucket per source address. Otherwise
+it checks the per-project-and-address bucket of unverified requests,
+reads at most 1 MiB, opens the sealed secret, compares the HMAC-SHA256
+in constant time, and charges the project's bucket of verified
+deliveries. A verified delivery only queues work on the probe worker: a
+closed pull request makes it look for merges now, a deployment status
+makes it read that deployment. The delivery id is kept as
+`origin.delivery`. A sealed secret that the key cannot open is logged as
+an error and refused; it never reads as empty.
+
+**Reason:** §17.4 wants the limits and the existence check before any
+body is read, but the middleware reads every body first to scan it for
+credentials, so the route layer comes too late. A trigger that only
+queues a read keeps the forge's claims out of the item: the hub
+announces what its own read observed. Answering every refusal the same
+way, before the body, is what keeps the path from telling whether a
+project exists.
+
+**Rejected alternative:** a FastAPI route with a dependency for the
+limits: the body would already have been read by then. Writing the item
+from the delivery's body: a forged or replayed body could announce a
+merge that never happened, which §17.4 rules out. Skipping the
+credential scan for this path: chosen, since its body is the forge's,
+read only after the signature verifies.
