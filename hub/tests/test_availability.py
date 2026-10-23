@@ -564,3 +564,23 @@ def test_a_limit_renewed_after_the_expiry_read_it_is_not_cleared(
         ).scalar_one()
     assert stored == later
     assert events(migrated, "member_limit_ended") == []
+
+
+def test_a_pause_on_top_of_a_limit_keeps_its_cap_and_a_pause_alone_holds_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    start = now[0]
+    agent.post("/me/limit", {"until": z(start + timedelta(days=6))})
+    cap = start + availability.LEASE_HOLD
+    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "hold"}})
+    now[0] = start + timedelta(hours=23)
+    agent.post("/me/limit", {"until": z(now[0] + timedelta(days=6))})
+    assert _lease(migrated, card["id"]) == cap
+    # Without the limit, the pause alone: an ordinary renewal, no hold.
+    agent.post("/me/limit", {"until": None})
+    assert agent.get("/me").status_code == 200
+    assert _lease(migrated, card["id"]) == now[0] + timedelta(seconds=7200)
