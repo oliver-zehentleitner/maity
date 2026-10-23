@@ -725,8 +725,9 @@ def patch_task(
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
             releases.close(conn, card.id, fg)  # after the write's own event: release_ready last
         if card.kind == "release" and changed.get("status") == "done":
+            # The card as this write left it: its title and version as they are now.
             ticker.on_release_done(
-                conn, mine.project, card, caller.actor(mine.id), mine.principal_id
+                conn, mine.project, _card(conn, card.id), caller.actor(mine.id), mine.principal_id
             )
         releases.recheck(conn, mine.project.id, fg)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))

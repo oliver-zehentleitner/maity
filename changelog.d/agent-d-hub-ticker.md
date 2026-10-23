@@ -10,5 +10,5 @@
 
 ### Changed
 
-- hub: `PATCH /projects/{slug}` with `settings` replaces only the settings it names; the others
-  stay.
+- hub: `PATCH /projects/{slug}` merges `settings` by top-level key (docs/api.md §6.1): a key
+  named is replaced whole, `null` removes it, a key not named stays, `{}` changes nothing.

@@ -79,7 +79,9 @@ def _check_ticker(settings: TickerSettingsIn) -> None:
 
 
 class SettingsIn(Strict):
-    release_checklist: list[str] = Field(default_factory=list, max_length=50)
+    """Top-level keys (§6.1): a key named replaces its whole value, `null` removes it."""
+
+    release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
 
 
@@ -293,15 +295,21 @@ def patch_project(
         if "repository" in given:
             values.update(_repository_columns(body.repository))
         if "settings" in given and body.settings is not None:
-            # Each setting given replaces its own key; the others stay (§6.1).
+            # §6.1: merged by top-level key. A key named replaces its whole value (nested
+            # objects are not merged), `null` removes it so it reads as its default, and a
+            # key not named stays; `{}` changes nothing.
             named = body.settings.model_fields_set
             if body.settings.ticker is not None:
                 _check_ticker(body.settings.ticker)
-            dumped = body.settings.model_dump(exclude_none=True)
-            values["settings"] = {
-                **(project.settings or {}),
-                **{k: v for k, v in dumped.items() if k in named},
-            }
+            dumped = body.settings.model_dump()
+            merged = dict(project.settings or {})
+            for key in named:
+                if dumped[key] is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = dumped[key]
+            if merged != (project.settings or {}):
+                values["settings"] = merged
         new_policy = None
         if "policy" in given and body.policy is not None:
             new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)

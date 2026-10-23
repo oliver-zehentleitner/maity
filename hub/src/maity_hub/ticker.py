@@ -9,16 +9,17 @@ listing (§17.9) is the compact form of the same events.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, insert, select
+from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import events
 from maity_hub import tables as t
-from maity_hub.inbox import replies
-from maity_hub.scopes import has_scope
+from maity_hub.ticker_read import may_read_request, reason_of
+from maity_hub.views import event_views
 
 TYPES = ("merge", "decision", "deploy", "release", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
@@ -74,11 +75,12 @@ def members(conn: Connection, project_id: str) -> list[Member]:
 
 
 def contains(area: str, path: str) -> bool:
-    """An area is a path prefix (§6.2); `/` contains every path."""
+    """An area is a path prefix (§6.2); `/` contains every path. `hub` and `hub/` name the
+    same directory."""
     if area == "/":
         return True
-    prefix = area if area.endswith("/") else area + "/"
-    return path == area or path.startswith(prefix)
+    bare = area.rstrip("/")
+    return path == bare or path.rstrip("/") == bare or path.startswith(bare + "/")
 
 
 def area_owner(people: Sequence[Member], path: str) -> tuple[Member, str] | None:
@@ -192,8 +194,12 @@ def apply_subscriptions(
         follows = _matches(sub.follow, kind, contract, places)
         if kind == "decision" and may_read is not None and not may_read(m):
             follows = []
+        computed = m.principal in audience
         for why in follows:
             audience.add(m.principal, why)
+        if follows and kind == "decision" and not computed:
+            # A decision wakes only its computed audience; its followers list it (§17.5).
+            audience.entries[m.principal].wake = False
         mutes = _matches(sub.mute, kind, contract, places)
         if not mutes or m.principal not in audience or m.principal in protected:
             continue
@@ -242,6 +248,11 @@ def write(
     events.lock_project(conn, project_id)
     if dedupe_key is not None and existing(conn, project_id, dedupe_key) is not None:
         return None
+    # The hub wakes no human (§17.10): for a human the item is "for me", never a wake.
+    humans = {m.principal for m in members(conn, project_id) if m.kind == "human"}
+    for principal, entry in audience.entries.items():
+        if principal in humans:
+            entry.wake = False
     tokens = ["all"] if broadcast else []
     for principal, entry in audience.entries.items():
         if entry.wake or not broadcast:
@@ -307,26 +318,6 @@ def _principal_of(conn: Connection, membership_id: int | None) -> str | None:
     return (row.agent_id or row.human_id) if row else None
 
 
-def may_read_request(request: Any, member: Any) -> bool:
-    """§7's readers of a request, from a membership row or a `Member`: the asker and the
-    member asked for, the addressee (a member, the owner, every holder of the role), and
-    whoever holds `requests:answer`."""
-    membership_id = getattr(member, "membership_id", None) or member.id
-    role = member.role
-    kind = getattr(member, "kind", None)
-    if kind not in ("human", "agent"):
-        kind = "agent" if member.agent_id else "human"
-    if membership_id in (request.asked_by, request.on_behalf_of):
-        return True
-    if request.to_kind == "member" and request.to_member == membership_id:
-        return True
-    if request.to_kind == "owner" and role == "owner":
-        return True
-    if request.to_kind == "role" and request.to_role == role:
-        return True
-    return has_scope(role, kind, "requests:answer")
-
-
 def on_request_answered(
     conn: Connection, project: Any, request: Any, actor: events.Actor | None
 ) -> None:
@@ -351,9 +342,11 @@ def on_request_answered(
     if on_behalf and on_behalf in may:
         audience.add(on_behalf, "decision_on_behalf_of")
     if card is not None:
+        # The card's holder and its assignee, both (§17.3); "the assignee while nobody holds
+        # it" is the merge rule.
         if holder in may:
             audience.add(holder, f"card_holder:{card.id}")
-        elif holder is None and assignee in may:
+        if assignee in may:
             audience.add(assignee, f"card_assignee:{card.id}")
         if getattr(request, "class") == "contract":
             for watcher in (card.contract or {}).get("watchers", []):
@@ -406,7 +399,7 @@ def on_release_done(
     """A release card moved to `done` (§17.2): every active member; nothing while off."""
     if not settings(project)["enabled"] or card.kind != "release":
         return
-    version = card.release_version or ""
+    version = (card.release_data or {}).get("version") or card.release_version or ""
     people = members(conn, project.id)
     audience = Audience()
     for m in people:
@@ -428,93 +421,178 @@ def on_release_done(
     )
 
 
-# --- reading -----------------------------------------------------------------------------
+# --- the manual post's audience (§17.6) --------------------------------------------------
 
 
-def withheld(conn: Connection, rows: Sequence[Any], membership: Any) -> frozenset[int]:
-    """The `seq`s of the decision items among `rows` that `membership` may not read now:
-    the request's readers are checked again at read time (§17.5)."""
-    decisions = [
-        r
-        for r in rows
-        if r.kind == "ticker"
-        and not r.redacted
-        and isinstance(r.payload, dict)
-        and r.payload.get("type") == "decision"
-    ]
-    if not decisions or membership is None:
-        return frozenset()
-    ids = {(r.payload.get("request") or {}).get("id") for r in decisions}
-    requests = {
-        r.id: r for r in conn.execute(select(t.request).where(t.request.c.id.in_(ids))).all()
+def manual_audience(
+    conn: Connection, people: Sequence[Member], kind: str, to: Any, areas: Sequence[str]
+) -> Audience:
+    """`to: all` every member; a token list the members it resolves to; `computed` the
+    owners of a note's areas, every member for a release (`all_members`) or a deploy;
+    then the subscriptions."""
+    audience = Audience()
+    if to == "all":
+        for m in people:
+            audience.add(m.principal, "posted_to_all")
+    elif isinstance(to, list):
+        for token in to:
+            for m in resolve(people, token):
+                audience.add(m.principal, "addressed")
+    elif kind == "note":
+        for area in areas:
+            owner = area_owner(people, area)
+            if owner:
+                audience.add(owner[0].principal, f"area_owner:{owner[1]}")
+    elif kind == "release":
+        for m in people:
+            audience.add(m.principal, "all_members")
+    else:  # a deploy to whom it concerns: every member (§17.6)
+        for m in people:
+            audience.add(m.principal, "addressed")
+    apply_subscriptions(conn, people, audience, kind, False, areas)
+    return audience
+
+
+# --- the listing and the resume packet (§17.9) -----------------------------------------
+
+
+def compact(view: dict[str, Any], principal: str) -> dict[str, Any]:
+    """An item in the listing's form, with the caller's own `why` and `muted`."""
+    p = view["payload"] or {}
+    mine = reason_of(p, principal)
+    return {
+        "id": f"tck-{view['seq']}",
+        "seq": view["seq"],
+        "at": view["at"],
+        "type": p.get("type"),
+        "text": p.get("text"),
+        "url": p.get("url"),
+        "actor": view["actor"],
+        "subject": view["subject"],
+        "areas": p.get("areas", []),
+        "contract": p.get("contract"),
+        "tasks": p.get("tasks", []),
+        "for_me": mine is not None,
+        "why": mine["why"] if mine else [],
+        "muted": bool(mine and mine.get("muted")),
+        "detail": p.get("detail"),
+        "redacted": view["redacted"],
     }
-    hidden = set()
-    for row in decisions:
-        request = requests.get((row.payload.get("request") or {}).get("id"))
-        if request is None or not may_read_request(request, membership):
-            hidden.add(row.seq)
-    return frozenset(hidden)
 
 
-def sees_everyones(reader: Any) -> bool:
-    """Human owners and admins see every member's reasons and subscription (§17.5, §17.8)."""
-    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
+def _keep(
+    row: Any,
+    principal: str,
+    types: list[str] | None,
+    area: str | None,
+    for_me: bool,
+    since: datetime | None,
+) -> bool:
+    """The filters, on the stored row (the reader's own reason is in it either way)."""
+    p = row.payload or {}
+    if types is not None:
+        kind = p.get("type")
+        if not (kind in types or ("contract" in types and kind == "merge" and p.get("contract"))):
+            return False
+    if area is not None:
+        places = list(p.get("areas", [])) + list(p.get("paths", []))
+        if not any(contains(area, x) for x in places):
+            return False
+    if for_me and reason_of(p, principal) is None:
+        return False
+    return since is None or row.at >= since
 
 
-def details(conn: Connection, rows: Sequence[Any]) -> dict[int, dict[str, Any]]:
-    """`detail` of the decision items among `rows`, read now: the request's title and the
-    label of the chosen reply, `null` for an answer in words (§17.5)."""
-    wanted = {
-        r.seq: (r.payload.get("request") or {}).get("id")
-        for r in rows
-        if r.kind == "ticker"
-        and not r.redacted
-        and isinstance(r.payload, dict)
-        and r.payload.get("type") == "decision"
-    }
-    if not wanted:
-        return {}
-    requests = {
-        r.id: r
-        for r in conn.execute(
-            select(t.request).where(t.request.c.id.in_(set(wanted.values())))
-        ).all()
-    }
-    found: dict[int, dict[str, Any]] = {}
-    for seq, request_id in wanted.items():
-        request = requests.get(request_id)
-        if request is None:
-            continue
-        chosen = (request.answer or {}).get("reply_id")
-        label = next(
-            (
-                o["label"]
-                for o in replies(getattr(request, "class"), request.options or [])
-                if o["id"] == chosen
-            ),
-            None,
+def _readable(
+    conn: Connection, mine: Any, *, before: int | None, after: int | None
+) -> Iterator[Any]:
+    """The project's ticker events the caller may read, newest first below `before`, or
+    oldest first above `after`, in batches."""
+    edge = before if after is None else after
+    while True:
+        query = select(t.event).where(
+            t.event.c.project_id == mine.project.id, t.event.c.kind == "ticker"
         )
-        found[seq] = {"request_title": request.title, "reply_label": label}
-    return found
+        if after is not None:
+            query = query.where(t.event.c.seq > edge).order_by(t.event.c.seq)
+        else:
+            if edge is not None:
+                query = query.where(t.event.c.seq < edge)
+            query = query.order_by(t.event.c.seq.desc())
+        batch = conn.execute(query.limit(200)).all()
+        hidden = events.hidden_redactions(conn, batch, mine.row)
+        for row in batch:
+            if events.readable_by(row, mine.row, mine.principal_id, hidden):
+                yield row
+        if len(batch) < 200:
+            return
+        edge = batch[-1].seq
 
 
-def shaped(
-    payload: dict[str, Any], audience: list[str], reader: Any, detail: Any
-) -> tuple[dict[str, Any], list[str]]:
-    """A ticker item's payload and audience as `reader` sees them (§17.5)."""
-    out = {**payload, "detail": detail if payload.get("type") == "decision" else None}
-    if sees_everyones(reader):
-        return out, audience
-    principal = reader.principal_id if reader is not None else None
-    out["reasons"] = [r for r in payload.get("reasons", []) if r.get("member_id") == principal]
-    return out, [a for a in audience if a == "all" or a == f"member:{principal}"]
+def listing(
+    conn: Connection,
+    mine: Any,
+    *,
+    types: list[str] | None = None,
+    area: str | None = None,
+    for_me: bool = False,
+    since: datetime | None = None,
+    before: int | None = None,
+    after: int | None = None,
+    limit: int = 50,
+) -> tuple[list[dict[str, Any]], bool]:
+    """One page of the readable items matching the filters, in the listing's form, and
+    whether more follow. Every filter but the reader's shape works on the stored row, so
+    only the page itself is turned into views. `for=me`, `area` and `since` still scan the
+    project's ticker events (hub/context/ticker.md)."""
+    rows: list[Any] = []
+    more = False
+    for row in _readable(conn, mine, before=before, after=after):
+        if _keep(row, mine.principal_id, types, area, for_me, since):
+            if len(rows) == limit:
+                more = True
+                break
+            rows.append(row)
+    views = event_views(conn, rows, mine)
+    return [compact(v, mine.principal_id) for v in views], more
 
 
-def reason_of(payload: dict[str, Any], principal: str) -> dict[str, Any] | None:
-    return next((r for r in payload.get("reasons", []) if r.get("member_id") == principal), None)
+PACKET_ITEMS = 20
 
 
-def wakes(row: Any, principal: str) -> bool:
-    """§17.5: `all` never wakes; a member is woken only by a reason with `wake: true`."""
-    entry = reason_of(row.payload or {}, principal)
-    return bool(entry and entry.get("wake"))
+def packet(conn: Connection, mine: Any, cursor: int) -> dict[str, Any]:
+    """The resume packet's `ticker`: the items after the cursor the member may read, at most
+    20, those for it first, then the newest; `for_me` and `others` count every one of them."""
+    mine_rows: list[Any] = []
+    other_rows: list[Any] = []
+    for row in _readable(conn, mine, before=None, after=cursor):
+        (mine_rows if reason_of(row.payload or {}, mine.principal_id) else other_rows).append(row)
+    chosen = [*reversed(mine_rows), *reversed(other_rows)][:PACKET_ITEMS]
+    return {
+        "items": [compact(v, mine.principal_id) for v in event_views(conn, chosen, mine)],
+        "for_me": len(mine_rows),
+        "others": len(other_rows),
+        "truncated": len(mine_rows) + len(other_rows) > PACKET_ITEMS,
+    }
+
+
+# --- the subscription (§17.8) ----------------------------------------------------------
+
+
+def lock_subscription(conn: Connection, project_id: str, membership_id: int) -> dict[str, Any]:
+    """The member's subscription, read under the project lock: two changes of the same
+    member at once both land, one after the other (§17.8)."""
+    events.lock_project(conn, project_id)
+    return subscription_of(conn, membership_id)
+
+
+def store_subscription(conn: Connection, membership_id: int, lists: dict[str, Any]) -> None:
+    """Insert or update, under the lock `lock_subscription` took."""
+    values = {"follow": lists["follow"], "mute": lists["mute"], "updated_at": lists["updated_at"]}
+    done = conn.execute(
+        update(t.ticker_subscription)
+        .where(t.ticker_subscription.c.membership_id == membership_id)
+        .values(**values)
+    ).rowcount
+    if not done:
+        conn.execute(insert(t.ticker_subscription).values(membership_id=membership_id, **values))

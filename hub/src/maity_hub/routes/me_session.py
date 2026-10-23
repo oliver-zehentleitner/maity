@@ -19,6 +19,7 @@ from maity_hub import (
     idempotency,
     ranks,
     rules,
+    ticker,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -33,7 +34,6 @@ from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
 from maity_hub.routes.members import PausedIn, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
-from maity_hub.routes.ticker import packet as ticker_packet
 from maity_hub.scopes import has_scope, scopes_for
 from maity_hub.views import (
     absence,
@@ -342,7 +342,7 @@ def _packet(
         "claims": task_views(conn, held, fg),
         "assigned": task_views(conn, assigned, fg),
         "requests": _requests_block(conn, mine, cursor),
-        "ticker": ticker_packet(conn, mine, cursor),
+        "ticker": ticker.packet(conn, mine, cursor),
         "events": {
             "after": cursor,
             "items": event_views(conn, rows, mine),

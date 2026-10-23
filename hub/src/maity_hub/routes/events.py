@@ -372,6 +372,12 @@ def redact(
             if mine.id != human.id:
                 raise not_found()
             audience = [f"member:{row.conversation_id}", f"member:{human.human_id}"]
+        if row.kind == "ticker":
+            # A ticker item's audience names who it concerned, and `all` would wake every
+            # session on a notice that is no ticker item: the notice goes to nobody and
+            # is read by the human owners and admins; the item itself turns into its
+            # tombstone for everyone who listed it (§8.5, §17.5).
+            audience = []
         if row.kind == "event_redacted":  # a tombstone's record is not itself redacted
             raise ApiError(
                 400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}

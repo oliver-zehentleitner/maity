@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import avatars, clock, forge, policy
+from maity_hub import avatars, clock, forge, policy, ticker_read
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -583,9 +583,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if runner_ids
         else {}
     )
-    from maity_hub import ticker  # ticker reads views for its listing
-
-    decided = ticker.details(conn, rows)
+    decided = ticker_read.details(conn, rows)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -607,9 +605,14 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "via": row.actor_via,
             }
         payload, audience = _without_reason(row, reader), row.audience
-        if row.kind == "ticker" and not row.redacted:
-            # Shaped per reader on every path that returns it (§17.5).
-            payload, audience = ticker.shaped(payload, audience, reader, decided.get(row.seq))
+        if row.kind == "ticker":
+            # Shaped per reader on every path that returns it (§17.5), its tombstone too.
+            if row.redacted:
+                audience = ticker_read.shaped_audience(audience, reader)
+            else:
+                payload, audience = ticker_read.shaped(
+                    payload, audience, reader, decided.get(row.seq)
+                )
         views.append(
             {
                 "seq": row.seq,

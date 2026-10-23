@@ -20,7 +20,6 @@ PRIORITY_RANK = {p: i for i, p in enumerate(reversed(PRIORITIES))}  # urgent fir
 WHILE_OPEN = ("wait", "proceed_provisionally")
 STATUSES = ("open", "answered", "withdrawn")
 MAX_OPTIONS = 8
-CONSENT_REPLIES = [{"id": "go", "label": "go"}, {"id": "no", "label": "no"}]
 # `to` of a consent: a role or member that holds requests:answer (§7).
 CONSENT_ROLES = ("admin", "proxy")
 
@@ -45,13 +44,6 @@ class Addressee:
 
 def addressee_of(row: Any) -> Addressee:
     return Addressee(row.to_kind, row.to_member, row.to_role)
-
-
-def replies(class_: str, options: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """The answers the inbox renders as buttons: the options, or go/no for a bare consent."""
-    if class_ == "consent" and not options:
-        return list(CONSENT_REPLIES)
-    return [{"id": o["id"], "label": o["label"]} for o in options]
 
 
 def owner_membership(conn: Connection, project_id: str) -> Any:

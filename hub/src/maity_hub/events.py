@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, Connection, Engine, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, ticker_read
 from maity_hub import tables as t
 
 _PENDING = "maity_pending_events"
@@ -171,9 +171,7 @@ def hidden_redactions(
     humans-only kind: such a tombstone is as unreadable to agents as the event it
     redacts (§8.5). With `membership`, also `ticker:<seq>` for each decision item
     whose request it may not read now (§17.5). One query per batch at most."""
-    from maity_hub import ticker  # ticker writes through this module
-
-    hidden = {f"ticker:{seq}" for seq in ticker.withheld(conn, rows, membership)}
+    hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
         return frozenset(hidden)
@@ -298,9 +296,7 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
     if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
-        from maity_hub import ticker
-
-        return ticker.wakes(row, principal)
+        return ticker_read.wakes(row, principal)
     audience = row.audience or []
     return (
         "all" in audience

@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, select
 
 from maity_hub import clock, events, idempotency, ticker
 from maity_hub import tables as t
@@ -20,10 +20,11 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.models import Strict
 from maity_hub.ratelimit import Limiter
-from maity_hub.routes.events import PAGE_MAX, load_event
 from maity_hub.views import event_views
 
 router = APIRouter()
+
+PAGE_MAX = 200
 
 # §17.6: at most 20 manual posts per membership per hour, of them 5 to everyone.
 POSTS = Limiter(20, 3600)
@@ -169,13 +170,12 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
         to = body.to if "to" in body.model_fields_set else "computed"
         kind = body.type
         people = ticker.members(conn, mine.project.id)
-        audience = ticker.Audience()
         facts: dict[str, Any] = {}
         key: str | None = None
         if kind == "note":
             facts["areas"] = list(body.areas or [])
         if kind == "release":
-            version = card.release_version or ""
+            version = (card.release_data or {}).get("version") or card.release_version or ""
             key = f"release:{version}"
             facts["release"] = {"task_id": card.id, "version": version}
             facts["tasks"] = [card.id]
@@ -188,25 +188,7 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
                 "version": d.get("version"),
                 "log_url": d.get("log_url"),
             }
-        if to == "all":
-            for m in people:
-                audience.add(m.principal, "posted_to_all")
-        elif isinstance(to, list):
-            for token in to:
-                for m in ticker.resolve(people, token):
-                    audience.add(m.principal, "addressed")
-        elif kind == "note":
-            for area in facts["areas"]:
-                owner = ticker.area_owner(people, area)
-                if owner:
-                    audience.add(owner[0].principal, f"area_owner:{owner[1]}")
-        elif kind == "release":
-            for m in people:
-                audience.add(m.principal, "all_members")
-        else:  # a deploy to whom it concerns: every member (§17.6)
-            for m in people:
-                audience.add(m.principal, "addressed")
-        ticker.apply_subscriptions(conn, people, audience, kind, False, facts.get("areas", []))
+        audience = ticker.manual_audience(conn, people, kind, to, facts.get("areas", []))
         if key is not None:
             found = ticker.existing(conn, mine.project.id, key)
             if found is not None:
@@ -235,7 +217,8 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
                 "an item with this key exists",
                 {"seq": ticker.existing(conn, mine.project.id, key or "")},
             )
-        view = load_event(conn, str(seq), mine)
+        row = conn.execute(select(t.event).where(t.event.c.seq == seq)).one()
+        view = event_views(conn, [row], mine)[0]
         return idempotency.Outcome(201, "event", str(seq), view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -255,105 +238,20 @@ def _since(raw: str | None) -> datetime | None:
         raise invalid({"since": "invalid"}) from None
 
 
-def _cursor(seq: int, filters: str) -> str:
-    raw = json.dumps([seq, filters])
+def _cursor(seq: int, filters: str, ascending: bool) -> str:
+    raw = json.dumps([seq, filters, "asc" if ascending else "desc"])
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
 
-def _uncursor(text: str, filters: str) -> int:
+def _uncursor(text: str, filters: str) -> tuple[int, bool]:
+    """(seq, ascending): a cursor goes on in the order its page was in, for one filter set."""
     try:
-        seq, made_for = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+        seq, made_for, order = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None
-    if made_for != filters or not isinstance(seq, int):
+    if made_for != filters or not isinstance(seq, int) or order not in ("asc", "desc"):
         raise invalid({"cursor": "invalid"}, "a cursor is valid for one filter set")
-    return seq
-
-
-def compact(view: dict[str, Any], principal: str) -> dict[str, Any]:
-    """An item in the listing's form (§17.9), the caller's own `why` and `muted`."""
-    p = view["payload"] or {}
-    mine = ticker.reason_of(p, principal)
-    return {
-        "id": f"tck-{view['seq']}",
-        "seq": view["seq"],
-        "at": view["at"],
-        "type": p.get("type"),
-        "text": p.get("text"),
-        "url": p.get("url"),
-        "actor": view["actor"],
-        "subject": view["subject"],
-        "areas": p.get("areas", []),
-        "contract": p.get("contract"),
-        "tasks": p.get("tasks", []),
-        "for_me": mine is not None,
-        "why": mine["why"] if mine else [],
-        "muted": bool(mine and mine.get("muted")),
-        "detail": p.get("detail"),
-        "redacted": view["redacted"],
-    }
-
-
-def _keep(
-    item: dict[str, Any],
-    payload: dict[str, Any],
-    types: list[str] | None,
-    area: str | None,
-    for_me: bool,
-    since: datetime | None,
-    at: datetime,
-) -> bool:
-    if types is not None:
-        kind = item["type"]
-        if not (kind in types or ("contract" in types and kind == "merge" and item["contract"])):
-            return False
-    if area is not None:
-        places = list(item["areas"]) + list(payload.get("paths", []))
-        if not any(ticker.contains(area, p) for p in places):
-            return False
-    if for_me and not item["for_me"]:
-        return False
-    return since is None or at >= since
-
-
-def listing(
-    conn: Connection,
-    mine: Membership,
-    *,
-    types: list[str] | None = None,
-    area: str | None = None,
-    for_me: bool = False,
-    since: datetime | None = None,
-    before: int | None = None,
-    after: int | None = None,
-    limit: int = 50,
-) -> tuple[list[dict[str, Any]], bool]:
-    """The readable items matching the filters: newest first below `before`, or oldest
-    first above `after`. Returns (items, more)."""
-    found: list[dict[str, Any]] = []
-    edge = before if after is None else after
-    while True:
-        query = select(t.event).where(
-            t.event.c.project_id == mine.project.id, t.event.c.kind == "ticker"
-        )
-        if after is not None:
-            query = query.where(t.event.c.seq > edge).order_by(t.event.c.seq)
-        else:
-            if edge is not None:
-                query = query.where(t.event.c.seq < edge)
-            query = query.order_by(t.event.c.seq.desc())
-        batch = conn.execute(query.limit(200)).all()
-        hidden = events.hidden_redactions(conn, batch, mine.row)
-        readable = [r for r in batch if events.readable_by(r, mine.row, mine.principal_id, hidden)]
-        for row, view in zip(readable, event_views(conn, readable, mine), strict=True):
-            item = compact(view, mine.principal_id)
-            if _keep(item, row.payload or {}, types, area, for_me, since, row.at):
-                if len(found) == limit:
-                    return found, True
-                found.append(item)
-        if len(batch) < 200:
-            return found, False
-        edge = batch[-1].seq
+    return seq, order == "asc"
 
 
 @router.get("/projects/{slug}/ticker")
@@ -378,11 +276,18 @@ def get_listing(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     since = _since(q.get("since"))
     area = q.get("area")
     filters = json.dumps([q.get("type"), area, who, q.get("since")])
+    before: int | None = None
+    after = int(raw_after) if raw_after is not None else None
+    if q.get("cursor"):
+        seq, ascending = _uncursor(q["cursor"], filters)
+        if ascending:
+            after = seq
+        else:
+            before = seq
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        before = _uncursor(q["cursor"], filters) if q.get("cursor") else None
-        items, more = listing(
+        items, more = ticker.listing(
             conn,
             mine,
             types=types,
@@ -390,34 +295,12 @@ def get_listing(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             for_me=who == "me",
             since=since,
             before=before,
-            after=int(raw_after) if raw_after is not None else None,
+            after=after,
             limit=int(raw_limit),
         )
-    next_cursor = _cursor(items[-1]["seq"], filters) if more and raw_after is None else None
+    # null only on the last page (§1.4), in either order.
+    next_cursor = _cursor(items[-1]["seq"], filters, after is not None) if more else None
     return JSONResponse({"items": items, "next_cursor": next_cursor})
-
-
-PACKET_ITEMS = 20
-PACKET_SCAN = 10_000
-
-
-def packet(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
-    """The resume packet's `ticker` (§17.9): the items after the cursor, at most 20, those
-    for the member first, then the newest; counts of all of them."""
-    items, more = listing(conn, mine, after=cursor, limit=PACKET_SCAN)
-    mine_first = [i for i in reversed(items) if i["for_me"]] + [
-        i for i in reversed(items) if not i["for_me"]
-    ]
-    for_me = sum(1 for i in items if i["for_me"])
-    return {
-        "items": mine_first[:PACKET_ITEMS],
-        "for_me": for_me,
-        "others": len(items) - for_me,
-        "truncated": more or len(items) > PACKET_ITEMS,
-    }
-
-
-# --- follow and mute (§17.8) -------------------------------------------------------------
 
 
 def _subscription_view(sub: dict[str, Any]) -> dict[str, Any]:
@@ -426,6 +309,14 @@ def _subscription_view(sub: dict[str, Any]) -> dict[str, Any]:
         "mute": {"areas": list(sub["mute"]["areas"]), "types": list(sub["mute"]["types"])},
         "updated_at": clock.rfc3339(sub["updated_at"]) if sub["updated_at"] else None,
     }
+
+
+def _load_subscription(conn: Connection, membership_id: str, _request: Request) -> dict[str, Any]:
+    """A replay answers the subscription as it is now (§1.5)."""
+    return _subscription_view(ticker.subscription_of(conn, int(membership_id)))
+
+
+idempotency.LOADERS["ticker_subscription"] = _load_subscription
 
 
 @router.get("/projects/{slug}/ticker/subscription")
@@ -459,7 +350,8 @@ def patch_subscription(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        current = ticker.subscription_of(conn, mine.id)
+        # Read under the project lock: nothing is lost when one member changes it twice at once.
+        current = ticker.lock_subscription(conn, mine.project.id, mine.id)
         errors: dict[str, str] = {}
         changed = False
         result: dict[str, dict[str, list[str]]] = {}
@@ -498,19 +390,7 @@ def patch_subscription(
             return idempotency.Outcome(200, "ticker_subscription", str(mine.id), view)
         now = clock.now()
         values = {"follow": result["follow"], "mute": result["mute"], "updated_at": now}
-        exists = conn.execute(
-            select(t.ticker_subscription.c.membership_id).where(
-                t.ticker_subscription.c.membership_id == mine.id
-            )
-        ).first()
-        if exists:
-            conn.execute(
-                update(t.ticker_subscription)
-                .where(t.ticker_subscription.c.membership_id == mine.id)
-                .values(**values)
-            )
-        else:
-            conn.execute(insert(t.ticker_subscription).values(membership_id=mine.id, **values))
+        ticker.store_subscription(conn, mine.id, values)
         view = _subscription_view({**values})
         # Nobody's audience; the member itself and the human owners and admins read it (§17.12).
         events.emit(
