@@ -827,3 +827,33 @@ memory_entry = Table(
     Index("ix_memory_entry_team", "team_membership", "created_at"),
     **MYSQL_TABLE,
 )
+
+# --- mail (docs/api.md §16.2, §16.3) --------------------------------------------------
+#
+# The instance's mail settings as the instance admin set them: one row per field set
+# through `PATCH /admin/settings/mail`; no row means the environment's value or the
+# default (§16.2). `password` holds only the AES-256-GCM ciphertext and its nonce,
+# never the password; `last_test` is the last test send's outcome (§16.3).
+mail_setting = Table(
+    "mail_setting",
+    metadata,
+    Column("field", String(32), primary_key=True),
+    Column("value", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One row per mail the hub handed to SMTP or held back, by budget kind (notification,
+# security, sign_in) and outcome (sent, queued, dropped, failed): what the counters of
+# §16.2 count over the last hour. No address and no content.
+mail_delivery = Table(
+    "mail_delivery",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    Column("outcome", String(16), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_mail_delivery_at", "at"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)

@@ -29,6 +29,7 @@ from maity_hub import (
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
+from maity_hub.mail import settings as mail
 from maity_hub.middleware import HubMiddleware
 from maity_hub.routes import (
     admin,
@@ -37,6 +38,7 @@ from maity_hub.routes import (
     conversations,
     joins,
     keep_the_why,
+    mail_settings,
     me_session,
     members,
     memory,
@@ -69,6 +71,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
+        with engine.connect() as conn:
+            mail.log_warnings(conn, settings.mail)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
@@ -102,6 +106,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)

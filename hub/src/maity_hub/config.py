@@ -11,6 +11,9 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from maity_hub.mail import environment as mail_environment
+from maity_hub.mail.environment import MailEnvironment
+
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
 
@@ -50,6 +53,9 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
+    # MAITY_SMTP_*, MAITY_MAIL_*, MAITY_SECRET_KEY: the mail settings the environment
+    # sets (§16.2); the password and the keys never appear in a repr.
+    mail: MailEnvironment = field(default_factory=MailEnvironment)
 
     @property
     def join_host(self) -> str | None:
@@ -89,7 +95,15 @@ class Settings:
                 parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
+            mail=parse_mail(env),
         )
+
+
+def parse_mail(env: dict[str, str]) -> MailEnvironment:
+    try:
+        return mail_environment.parse(env)
+    except mail_environment.MailConfigError as error:
+        raise ConfigError(str(error)) from None
 
 
 def parse_number(
