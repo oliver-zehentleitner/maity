@@ -207,12 +207,14 @@ def _agent_for_join(conn: Connection, agent: JoinAgent, owner_id: str) -> str:
         if agent.handle is not None or agent.display_name is not None:
             raise invalid({"agent": "id_or_handle"}, "name an agent by id, or create one")
         owned = conn.execute(
-            select(t.agent_profile.c.id).where(
+            select(t.agent_profile.c.id, t.agent_profile.c.deleted_at).where(
                 t.agent_profile.c.id == agent.id, t.agent_profile.c.owner_id == owner_id
             )
         ).first()
         if owned is None:
             raise invalid({"agent.id": "not_yours"}, "a join names one of your own agents")
+        if owned.deleted_at is not None:  # a deleted profile never joins again (§6.3)
+            raise not_found()
         return agent.id
     if agent.handle is None or agent.display_name is None:
         raise invalid(

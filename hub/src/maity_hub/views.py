@@ -426,6 +426,7 @@ def agent_view(
         "git_identity": git_identity(row),
         "memberships": [{"project": m.slug, "role": m.role} for m in memberships],
         "created_at": ts(row.created_at),
+        "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
 
 
