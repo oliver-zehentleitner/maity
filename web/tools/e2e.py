@@ -944,6 +944,9 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(entry).to_have_attribute("aria-current", "page")
     run.maity(alpha, "say", "human", "Hello from the agent.")
     expect(page.locator("ol.messages li.msg.in")).to_contain_text("Hello from the agent.")
+    # A short message is as tall as its text, not a share of the pane's height.
+    first = page.locator("ol.messages li.msg.in").first.bounding_box()
+    assert first is not None and first["height"] < 160, first
     # Markdown as the agent writes it: strong, inline code, a fenced block with Copy; raw HTML as text.
     run.maity(alpha, "say", "human", "**Done**: see `make check`.\n\n```sh\nmake smoke\n```\n<b>not bold</b>")
     last = page.locator("ol.messages li.msg.in").last

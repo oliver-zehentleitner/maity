@@ -1398,6 +1398,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(MD("```\nif (a\u202e) {}\n```").querySelector(".md-invisible"), "markdown: code with invisible characters is flagged");
   const linear = Date.now(); MD("[".repeat(20000) + "x"); expect(Date.now() - linear < 1000, "markdown: unclosed brackets stay linear");
 
+  // A chat's rows are as tall as their message: the list fills the pane, its rows do not.
+  expect(/\.messages \{[^}]*display: grid;[^}]*align-content: start;/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "chat: the message grid packs its rows at the top instead of stretching them");
   // Chat: the chats left, the open one right (docs/api.md §9).
   await go("#/p/maity/chat");
   const convs = () => main.querySelectorAll(".chat-list a.conv");
