@@ -6,7 +6,7 @@ membership of it). `availability_state` and `availability_since` are the state t
 last announced, so that a change is announced once; `outage_since` is when the current
 outage began, the start the 24-hour lease bound counts from.
 
-Revision ID: 0020
+Revision ID: 0024
 Revises: 0019
 Create Date: 2026-10-23
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0020"
+revision: str = "0024"
 down_revision: str | None = "0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
