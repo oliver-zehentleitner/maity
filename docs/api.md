@@ -520,7 +520,9 @@ practical effect is that the admin crew asks for state and policy
 changes through requests instead of making them, and manages the agent
 memberships below it within ᵃ.
 
-One exception to ʰ, the maintainer's decision of 2026-10-23: an agent
+One exception to ʰ, from the maintainer's message of 2026-10-23 (the
+onboarding is set by "you or an admin", "you" being the coordinator, an
+admin agent): an agent
 with the `admin` role may set the project's onboarding,
 `settings.onboarding` (§6.1), with `PATCH /projects/{slug}` — that key
 and nothing else. A `PATCH` from an agent that names any other field,
@@ -2074,16 +2076,31 @@ nothing. `onboarding` (below) is sent whole like `ticker`. Every member
 reads `settings` with the project (`project:read`); agents get what
 concerns them of `onboarding` in the resume packet (§5.2).
 
+Every change of a `settings` key — by a `PATCH`, by a removal that
+resets a seat (§6.2), whoever made it — emits `project_updated` (§8.2)
+with `fields: {"settings.<key>": …}`, one entry per changed key: the
+key's new value without the fields that may hold free text, or `null`
+when the key was removed. A key whose value is free text as a whole
+(`release_checklist`) is announced as `true`; `onboarding` without its
+`briefing`; `ticker` as it is. The text is read with
+`GET /projects/{slug}`; the append-only log never keeps it (§8). The
+event wakes nobody (§8.2).
+
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
-2026-10-23 (`context/projects.md`). `settings.onboarding` is absent by
-default, which means no project briefing and no check-in.
+2026-10-23 (`context/projects.md`). Its default is
+`{"check_in_with": "coordinator"}` with no briefing: a new project is
+created without the key, and a project without the key — an existing one
+included — reads and behaves as that default (`GET` shows it, without
+`version` and `by`). `{"settings": {"onboarding": null}}` therefore
+restores the default; a project that wants no check-in sets the key
+without `check_in_with` (`{"onboarding": {}}`, or a briefing alone).
 
 | Field | Values | Meaning |
 |---|---|---|
 | `briefing` | Markdown, ≤ 16 KiB, optional | the briefing of every agent membership whose own `briefing` is `null` (§3.1, §6.2): how to start here and how work runs. Delivered in the resume packet as `membership.briefing` with `briefing_source: "project"` (§5.2), never copied onto the membership |
 | `check_in_with` | member id, `role:<role>`, or `coordinator`; optional | whom a new member reports to before it takes work (below) |
-| `version`, `by`, `updated_at` | set by the hub | `version` starts at 1 with the first write and grows by 1 with every change of the key, removal included, and is not reset by it; `by` is `{kind, id, handle}` of the writer (a human or the admin agent). Ignored in a `PATCH` body |
+| `version`, `by`, `updated_at` | set by the hub | `version` starts at 1 with the first write and grows by 1 with every change of the key, removal included, and is not reset by it; `by` is `{kind, id, handle}` of the writer (a human or the admin agent). Ignored in a `PATCH` body, never `invalid`, so a read, edited and sent back, is accepted. No endpoint lists past texts yet; the audit log records each change's actor |
 
 `check_in_with` is resolved on every resume, never stored resolved:
 
@@ -2091,36 +2108,46 @@ default, which means no project briefing and no check-in.
   the project is `invalid` on the `PATCH`
   (`details.fields["settings.onboarding.check_in_with"]: "not_a_member"`);
 - `role:<role>` is the first active member holding that role, by
-  `handle`; with none, it falls back as `coordinator` does;
-- `coordinator` is `policy.coordinator` (§6.1, §6.12): its member, or
-  under `role:admin` the first of the project's agent members with the
-  role `admin`, by `handle`. With no such member it is the project's
-  owner — the member id of the human holding `owner`, with several the
-  one who joined first, as for the arbiter seat (§6.2).
+  `handle`, humans included — a check-in only routes a message, it
+  hands no work over, so the agents-only rule of `substitutes` (§6.12)
+  does not apply; with none, it falls back as `coordinator` does;
+- `coordinator` is the member who holds the coordinator role now
+  (§6.12): the member `policy.coordinator` names, or under `role:admin`
+  the first of the project's agent members with the role `admin` whose
+  availability is `available`, by `handle`, and the first by `handle`
+  when none is. While the coordinator is out (§6.12; under `role:admin`
+  when every agent admin is) and `policy.coordinator_substitute` is set
+  and `available`, it is the substitute. With no agent admin and no
+  named coordinator it is the project's owner — the member id of the
+  human holding `owner`, with several the one who joined first, as for
+  the arbiter seat (§6.2).
 
 A member that resolves to itself gets no check-in hint. Removing the
 member a member id names resets `check_in_with` to `coordinator` (§6.2).
 
-**Checked in.** A membership has checked in once it has posted any
-`message` event (§8.4) — any `type`, any audience, a chat message
-included — or has held any claim (`task_claimed` with it as holder).
-The hub keeps this as `onboarded_at` on the membership, set by the first
-such event and never cleared; per membership, so a new instance of a
-team (§6.17) is not new to the project. Until then, while `check_in_with`
-is set, every resume of the membership carries `onboarding` (§5.2). A
-membership that existed before the setting and never posted or claimed
-gets the hint too: it is exactly the case the setting is for. Humans
-get no hint; the dashboard has no resume packet.
+**Checked in.** A membership has checked in once it has posted a
+`message` (§8.4) whose `to` reaches the check-in target as resolved at
+that moment — the target's member id, one of its instance addresses, a
+`role:<role>` the target holds, or a `chat` in the direct conversation
+with it; `all` and a group chat do not count — or once it has held any
+claim (`task_claimed` with it as holder): a claim means work has
+started. The hub keeps this as `onboarded_at` on the membership, set by
+the first such event and never cleared; per membership, so a new
+instance of a team (§6.17) is not new to the project. Until then, while
+`check_in_with` is set, every resume of the membership carries
+`onboarding` (§5.2). A membership that existed before the setting and
+has neither written to the target nor claimed gets the hint too: it is
+exactly the case the setting is for. Humans get no hint; the dashboard
+has no resume packet.
 
 Set with `PATCH /projects/{slug}`
 `{"settings": {"onboarding": {"briefing": "…", "check_in_with": "coordinator"}}}`
 by a human with `project:admin` or by an agent with the `admin` role
-(§2.3 ʰ); `{"settings": {"onboarding": null}}` removes it. A change emits
-`project_updated` (§8.2) with `fields: {"settings.onboarding": {version,
-by, check_in_with}}`, or `{"settings.onboarding": null}` on removal —
-never the text, as `member_updated` never carries a briefing's. It wakes
-nobody; members without a briefing of their own read the new text on
-their next resume.
+(§2.3 ʰ). A change emits `project_updated` as every settings change does
+(above), with `fields: {"settings.onboarding": {version, by,
+check_in_with}}` — never the text, as `member_updated` never carries a
+briefing's. It wakes nobody; members without a briefing of their own
+read the new text on their next resume.
 
 **Attachments**: the bytes of stored attachments and the instance's
 quota (§8.7); shown to `project:admin`, `null` for everyone else.
@@ -4464,7 +4491,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.onboarding` (`{version, by, check_in_with}` or `null`, §6.1); never image bytes, never the onboarding text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, check_in_with}`, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
@@ -8077,7 +8104,7 @@ written so that the other answer fits without a change of shape.
 | A direct push to the default branch without a pull request | no item |
 | Which answers are decisions | classes `decision`, `consent`, `contract`; not `info`, not `talk` |
 | Mute | allowed for every type and area, except a `decision` the member implements |
-| Where the contract mapping lives | `settings.ticker` in the hub, set by a human; not a file in the repository |
+| Where the contract mapping lives | `settings.ticker` in the hub, set by a human only; not a file in the repository. Of the settings, only `settings.onboarding` is open to an admin agent (§2.3 ʰ, §6.1) |
 | The ticker's default | `enabled: false` until a human switches it on |
 | The webhook secret without `MAITY_SECRET_KEY` | refused (`secret_key_missing`) |
 | Who may post a deploy | `ticker:post` (owner, admin); no `deploy` capability for members |
