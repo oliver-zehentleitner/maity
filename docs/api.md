@@ -9230,6 +9230,15 @@ a diff between them, with the proposal's `reason`. The human answers on
 | `{"reply_id": "go", "markdown": "…", "base_version": 3}` | the human's edit of the proposal becomes the next version, `by` the human, `confirmed_by: null`, `proposed_by` the agent; `markdown` ≤ 8 KiB, and `base_version` must be the current version |
 | `{"reply_id": "no", "text"?: "…"}` | nothing changes; `text` is the human's reason, read by the proposer |
 
+`markdown` and `base_version` belong only to a preference proposal's
+`go` and come together: on any other request they are `invalid`
+(`details.fields.markdown: "not_a_preference_proposal"`), and one
+without the other, or with another `reply_id`, is `invalid`
+(`"go_with_markdown_and_base_version"`). `GET /requests/{id}` shows the
+human, besides `memory_proposal` as filed, its `current: {markdown,
+version}` and `stale: true` when `base_version` is no longer current;
+`GET /me/preferences/versions` pages by `cursor`, the last version shown.
+
 `talk` follows §7. The answered request records `answer.reply_id`, and
 `memory_proposal.result: {version, edited}` (`edited: true` when the
 human's `markdown` was applied); `request_answered` reaches the
