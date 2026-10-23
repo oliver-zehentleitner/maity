@@ -852,7 +852,7 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
         # A hub without attachments: the composer offers no chooser at all.
         run.step("attachments: the hub's openapi.json has no uploads; the composer offers no Attach files")
         expect(page.locator("form.compose")).to_be_visible()
-        expect(page.locator("label.attach-button")).to_be_hidden()
+        expect(page.locator("form.compose .attach")).to_be_hidden()
         expect(page.locator("#chat-files")).to_be_disabled()
         no_problems(run, "attachments")
         return

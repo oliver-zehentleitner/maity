@@ -160,13 +160,14 @@ window.Maity = window.Maity || {};
         draw();
       }
     });
-    // Hidden until the hub is known to take files (§8.7): a chooser whose
-    // every file would be refused is not offered. An unreadable machine
-    // form offers it, and an upload's failure says itself.
-    const chooser = h("label", { for: id, class: "button small attach-button", hidden: true }, "Attach files");
-    const el = h("div", { class: "attach" }, chooser, input, list, earlierBox, status.el);
+    // Hidden, the whole part, until the hub is known to take files (§8.7):
+    // a chooser whose every file would be refused is not offered, and no
+    // file field is left in the page without its visible label. An
+    // unreadable machine form offers it, and an upload's failure says itself.
+    const chooser = h("label", { for: id, class: "button small attach-button" }, "Attach files");
+    const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
     function offer(yes) {
-      chooser.hidden = !yes;
+      el.hidden = !yes;
       input.disabled = !yes;
     }
     if (hubWithout) offer(false);

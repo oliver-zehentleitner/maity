@@ -2459,7 +2459,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/observe/guestlab"); await hgSettle();
   expect(text(main).includes("there is nothing to read along in") && !main.querySelector(".chat-list"), "hub without group chats: the read-along view says so");
   await go("#/p/maity/chat/agt-b"); await hgSettle();
-  const hgChooser = () => main.querySelector("label.attach-button");
+  // The whole attachments part is hidden, so no file field is left without its label.
+  const hgChooser = () => main.querySelector(".attach");
   expect(hgChooser() && hgChooser().hidden && byId("chat-files").disabled, "hub without attachments: no Attach files");
   // With both: offered (the route's parameter name and prefix do not matter).
   hgPaths({ "/projects/{slug}/conversations": { get: {}, post: {} }, "/api/v1/projects/{project}/attachments": { post: {} } });
@@ -2645,7 +2646,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
   await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector("label.attach-button") && main.querySelector("label.attach-button").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
+  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
   await go("#/p/maity/inbox");
 
   // Messages (§8.4): the project's messages, newest first, by type, with mentions, files and removal.
