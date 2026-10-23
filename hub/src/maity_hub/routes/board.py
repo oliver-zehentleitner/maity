@@ -117,16 +117,21 @@ def post_link(
         return idempotency.Outcome(201, "link", shown["id"], shown)
 
     response = idempotency.run(engine_of(request), request, caller, action)
-    observe_soon(request, response)
+    observe_soon(request, slug, response)
     return response
 
 
-def observe_soon(request: Request, response: JSONResponse) -> None:
-    """A new forge link is read after the commit, by the probe's worker, never here: the
-    worker's next round reads what no observation covers yet."""
+def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
+    """A new forge link is read after the commit, by the probe's worker, never here:
+    a job for the project's links (§6.13)."""
     worker = request.app.state.probe
-    if worker is not None and response.status_code == 201:
-        worker.links_added()
+    if worker is None or response.status_code != 201:
+        return
+    with engine_of(request).connect() as conn:
+        project_id = conn.execute(
+            select(t.project.c.id).where(t.project.c.slug == slug)
+        ).scalar_one()
+    worker.links_added(project_id)
 
 
 def load_link(conn: Connection, link_id: str) -> dict[str, Any]:

@@ -558,6 +558,23 @@ def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JS
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg))
 
 
+# A card's fields as its creation records them (§6.15).
+CREATED = (
+    "kind",
+    "title",
+    "body",
+    "label",
+    "status",
+    "area",
+    "assigned_to",
+    "depends_on",
+    "ships_with",
+    "ktw_ref",
+    "contract",
+    "links",
+)
+
+
 @router.post("/projects/{slug}/tasks")
 def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
@@ -651,26 +668,11 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         return idempotency.Outcome(201, "task", card_id, view)
 
     response = idempotency.run(engine_of(request), request, caller, action)
-    if body.links and response.status_code == 201 and request.app.state.probe is not None:
-        request.app.state.probe.links_added()  # after the commit, never awaited (§6.13)
+    if body.links:
+        from maity_hub.routes.board import observe_soon  # board builds on this module
+
+        observe_soon(request, slug, response)
     return response
-
-
-# A card's fields as its creation records them (§6.15).
-CREATED = (
-    "kind",
-    "title",
-    "body",
-    "label",
-    "status",
-    "area",
-    "assigned_to",
-    "depends_on",
-    "ships_with",
-    "ktw_ref",
-    "contract",
-    "links",
-)
 
 
 @router.patch("/projects/{slug}/tasks/{card_id}")
@@ -749,7 +751,7 @@ def patch_task(
         if body.depends_on is not None:
             _refuse_closed_release(card)
         before = (
-            task_view(conn, card, fg)
+            cards.edges(conn, card.id)
             if body.depends_on is not None or body.ships_with is not None
             else None
         )
@@ -1205,6 +1207,8 @@ def assign(
         if assigned.rowcount != 1:  # the holder renewed in the meantime
             raise _lease_active(_card(conn, card.id))
         if assignee != card.assigned_to:
+            # Not stamped onto `task_assigned`: §8.2 gives that event no `history`, and its
+            # value is a member id, which carries nothing a redaction would need to reach.
             history.record(
                 conn,
                 card,
