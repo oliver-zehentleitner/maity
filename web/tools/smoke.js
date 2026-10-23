@@ -2091,6 +2091,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/all", "no project: the empty hash lands on #/all");
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
+  // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
+  expect(main.querySelectorAll(".project-label.personal").length === 1
+    && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
+    "no project: a personal request is still shown, before the empty state");
+  // A truly empty account: the empty state alone.
+  const npGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/requests" ? Promise.resolve({ items: [], next_cursor: null }) : npGetAll(p));
+  await go("#/new"); await go("#/all"); await tick();
+  expect(text(main).includes("No projects yet") && !main.querySelector("li.entry") && !text(main).includes("Nothing waits for you"),
+    "no project and nothing personal: only the empty state");
+  win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
   expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");

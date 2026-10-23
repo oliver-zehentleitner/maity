@@ -6,4 +6,4 @@
 - web: Attach files is offered only where the hub lists attachments, and hidden once the hub
   answered 404 to the pending list
 - web: a personal request (docs/api.md §7) in everything waiting is labelled Personal, answered
-  and withdrawn on `/requests/{id}`, and links into no project
+  and withdrawn on `/requests/{id}`, and links into no project; a human without any membership still sees theirs on `#/all`

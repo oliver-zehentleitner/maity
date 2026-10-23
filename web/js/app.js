@@ -971,7 +971,14 @@ window.Maity = window.Maity || {};
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
-        M.views.noProjects(ctx, root);
+        // A personal request (§7) reaches its human without a membership:
+        // what waits comes first, the way to a project of one's own after it.
+        const waiting = (await M.api.getAll("/requests")).items;
+        if (seq !== renderSeq) return;
+        if (waiting.length) await M.views.inbox(ctx, root, []);
+        const start = h("div", { class: "no-projects" });
+        M.views.noProjects(ctx, start);
+        append(root, start);
         // Without a project of one's own, one's agents may still be in others'.
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);

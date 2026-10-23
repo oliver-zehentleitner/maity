@@ -126,7 +126,8 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    **Personal** with its project's name and no link into the project, it
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
-   personal ones come first.
+   personal ones come first. Without any membership, `#/all` still lists
+   them, before the way to create a project.
 2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
