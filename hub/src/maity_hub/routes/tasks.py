@@ -478,7 +478,11 @@ def list_tasks(
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             shown = ordered[:limit]
             more = len(ordered) > limit
-            following = paging.key_cursor(shown[-1].id, key(shown[-1]), bound) if more else None
+            following = (
+                paging.key_cursor(shown[-1].id, ordered[limit].id, key(shown[-1]), bound)
+                if more
+                else None
+            )
             return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
@@ -499,15 +503,22 @@ def list_tasks(
 
 
 def _after(
-    ordered: list[Any], anchor: str, was: tuple[Any, ...], key: Callable[[Any], tuple[Any, ...]]
+    ordered: list[Any],
+    anchor: str,
+    following: str | None,
+    was: tuple[Any, ...],
+    key: Callable[[Any], tuple[Any, ...]],
 ) -> list[Any]:
-    """The cards after the last one a page showed. Its place where it still sits in the
-    same column: a move ranks unranked cards on the way and spreads a column out, which
-    changes their keys but never the order of the cards that did not move. Its key at
-    the time where it left the column."""
-    for i, row in enumerate(ordered):
-        if row.id == anchor and key(row)[0] == was[0]:
-            return ordered[i + 1 :]
+    """The cards after the last one a page showed. A move ranks unranked cards on the way
+    and spreads a column out, which changes their keys but never the order of the cards
+    that did not move; so the page goes on after the last card shown where it still sits
+    in the same column, else from the first card not shown where it still sits, and only
+    when both have moved by the last card's key at the time."""
+    places = {row.id: i for i, row in enumerate(ordered)}
+    if anchor in places and key(ordered[places[anchor]])[0] == was[0]:
+        return ordered[places[anchor] + 1 :]
+    if following is not None and following in places:
+        return ordered[places[following] :]
     try:
         return [r for r in ordered if key(r) > was]
     except TypeError:  # a key of another shape: not a cursor this list gave

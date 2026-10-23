@@ -43,17 +43,18 @@ def uncursor(text: str, bound: str | None = None) -> tuple[datetime, str]:
         raise invalid({"cursor": "invalid"}) from None
 
 
-def key_cursor(anchor: str, key: Sequence[Any], bound: str) -> str:
+def key_cursor(anchor: str, following: str, key: Sequence[Any], bound: str) -> str:
     """A cursor for a list in an order the database does not keep (§6.4's card order):
-    the last item's id and its sort key, so the next page goes on after it."""
-    return _encode(["key", anchor, list(key), bound])
+    the last item's id, the next item's id and the last item's sort key, so the next page
+    goes on after the one or from the other."""
+    return _encode(["key", anchor, following, list(key), bound])
 
 
-def unkey(text: str, bound: str) -> tuple[str, tuple[Any, ...]]:
+def unkey(text: str, bound: str) -> tuple[str, str | None, tuple[Any, ...]]:
     try:
-        tag, anchor, key, given = _decode(text)
+        tag, anchor, following, key, given = _decode(text)
         if tag != "key" or given != bound or not isinstance(key, list):
             raise ValueError
-        return str(anchor), tuple(key)
+        return str(anchor), (str(following) if following is not None else None), tuple(key)
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None
