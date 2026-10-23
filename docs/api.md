@@ -5812,7 +5812,7 @@ applies (`logo`, `banner`, §6.1).
 
 | Forge | Square logo | Banner |
 |---|---|---|
-| GitHub | the owner's avatar: `owner.avatar_url` of `GET /repos/{owner}/{repo}` (GitHub has no repository avatar; this is what `https://github.com/<owner>.png` shows) | the social preview: `openGraphImageUrl` of the GraphQL `repository` object, only when `usesCustomOpenGraphImage` is true (GitHub's generated card is not a banner) |
+| GitHub | the owner's avatar, when the owner is an organization: `owner.avatar_url` of `GET /repos/{owner}/{repo}` with `owner.type` `Organization` (GitHub has no repository avatar; this is what `https://github.com/<owner>.png` shows). A repository a user owns has no forge logo: a person's photo is not a project's logo, and the dashboard draws the monogram unless one is uploaded | the social preview: `openGraphImageUrl` of the GraphQL `repository` object, only when `usesCustomOpenGraphImage` is true (GitHub's generated card is not a banner) |
 | GitLab | the project's `avatar_url`, else the namespace's | none |
 | Gitea, Forgejo (Codeberg) | the repository's `avatar_url`, else the owner's | none |
 

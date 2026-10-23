@@ -242,3 +242,22 @@ def test_repository_visibility_is_remembered_per_token(opener: FakeOpener) -> No
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
     assert len(visibility) == 2  # each token asked once for itself
     assert all(TOKEN not in str(key) for key in forge._visible)
+
+
+# --- the logo (§11.2) -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("owner", "expected"),
+    [
+        ({"type": "Organization", "avatar_url": "https://avatars.githubusercontent.com/u/1"},
+         "https://avatars.githubusercontent.com/u/1"),
+        ({"type": "User", "avatar_url": "https://avatars.githubusercontent.com/u/2"}, None),
+        ({"avatar_url": "https://avatars.githubusercontent.com/u/3"}, None),
+    ],
+)  # fmt: skip
+def test_the_owners_avatar_is_a_logo_only_for_an_organization(
+    opener: FakeOpener, owner: dict[str, Any], expected: str | None
+) -> None:
+    opener.answers["/repos/a/b"] = {"full_name": "a/b", "owner": owner}
+    assert READER.owner_avatar("a/b") == expected

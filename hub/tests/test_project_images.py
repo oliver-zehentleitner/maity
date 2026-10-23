@@ -36,6 +36,9 @@ def put(human: flow.Human, path: str, data: bytes, content_type: str, **headers:
     )
 
 
+OWNER_AVATAR = forge.Forge.owner_avatar  # the real one, before a fake replaces it
+
+
 class FakeForge:
     """The forge's answers about images, and the image hosts' answers."""
 
@@ -385,6 +388,24 @@ def test_a_refresh_that_fails_keeps_the_image_and_one_that_changes_it_announces(
     images.refresh(migrated, forge.Forge(None), project_id, "logo")
     assert owner.get("/projects/maity/logo").status_code == 404
     assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
+
+
+def test_a_users_photo_is_no_logo_and_a_stored_one_goes_on_the_next_refresh(
+    owner: flow.Human, fake_forge: FakeForge, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow.project(owner, "maity", repository={"url": REPO})
+    assert owner.get("/projects/maity/logo").content == PNG  # stored under the old rule
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    repository = {"owner": {"type": "User", "avatar_url": AVATAR}}
+    monkeypatch.setattr(forge.Forge, "owner_avatar", OWNER_AVATAR)
+    monkeypatch.setattr(forge.Forge, "_call", lambda self, path, *a: repository)
+    assert images.refresh(migrated, forge.Forge(None), project_id, "logo") is True
+    assert owner.get("/projects/maity/logo").status_code == 404  # the monogram (§11.2)
+    assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
+    repository["owner"]["type"] = "Organization"
+    images.refresh(migrated, forge.Forge(None), project_id, "logo")
+    assert owner.get("/projects/maity/logo").content == PNG
 
 
 def test_the_worker_finds_what_is_stale(
