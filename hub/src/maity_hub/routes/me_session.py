@@ -17,6 +17,7 @@ from maity_hub import (
     environment,
     events,
     idempotency,
+    ranks,
     rules,
 )
 from maity_hub import tables as t
@@ -288,14 +289,13 @@ def _packet(
         .order_by(t.card.c.updated_at.desc())
     ).all()
     assigned = conn.execute(
-        select(t.card)
-        .where(
+        select(t.card).where(
             t.card.c.assigned_to == mine.id,
             t.card.c.claim_holder.is_(None),
             t.card.c.status == "open",
         )
-        .order_by(t.card.c.updated_at.desc())
     ).all()
+    assigned = sorted(assigned, key=ranks.column_key)  # the card order, its priority (§6.4)
     scopes = scopes_for(mine.role, "agent")
     return {
         "server_time": clock.rfc3339(clock.now()),

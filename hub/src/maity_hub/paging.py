@@ -14,6 +14,23 @@ def cursor(at: datetime, row_id: str) -> str:
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
 
+def position_cursor(position: int) -> str:
+    """A cursor for a list in an order the database does not keep (§6.4's card order):
+    the position of the next item."""
+    raw = json.dumps(["at", position])
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def unposition(text: str) -> int:
+    try:
+        tag, position = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+        if tag != "at" or not isinstance(position, int) or position < 0:
+            raise ValueError
+        return position
+    except (ValueError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+
+
 def uncursor(text: str) -> tuple[datetime, str]:
     try:
         iso, row_id = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
