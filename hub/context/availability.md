@@ -61,3 +61,29 @@ for them `available` is the true starting point.
   deploy and once per new agent.
 - Set the state when the membership is created: every new agent would
   start `offline` and announce a return on its first resume.
+
+## A limit only ever lengthens a lease
+
+**Id:** 98ea3f6d-dbc2-4163-92e2-e2717c794b9b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (the availability slice); stated in `docs/api.md` §6.12 "Leases under a limit" in the same change
+**See:** https://github.com/oliver-zehentleitner/maity — 42d8258e-7dd7-4c6f-96e4-61926576d299 — as of 2026-10-23
+**Revisit when:** the contract owner reads "moves the extension" as allowing a shorter lease, or a short limit is used to keep a card longer than intended
+
+When a limit is stored, each lease the member holds becomes the later of
+its current end and the target (`until` plus the grace, capped 24 hours
+after the outage began). A second, shorter limit in the same outage, or a
+limit shorter than the remaining lease, leaves the lease where it is.
+
+**Reason:** the contract says leases are *extended*; a declaration is
+there to keep the member's cards through an outage, not to hand them out
+sooner than if the member had said nothing. The 24-hour cap still bounds
+every hold, so keeping the longer end never holds a card past it.
+
+**Rejected alternative:** set the lease to exactly the new target, the
+literal reading of "moves the extension": a member that first declared
+five hours and then thirty minutes would lose its cards hours earlier
+than its first declaration promised, and a ten-minute limit would cut a
+fresh two-hour lease to twenty-five minutes.
