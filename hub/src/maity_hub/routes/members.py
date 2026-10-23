@@ -61,6 +61,10 @@ class AvailabilityPolicyIn(Strict):
     grace_minutes: int | None = None
 
 
+class MemberPausedIn(PausedIn):
+    instance: str | None = Field(default=None, max_length=5)  # one agent instance (§5.3)
+
+
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
@@ -69,7 +73,9 @@ class MemberPatch(Strict):
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
-    paused: PausedIn | None = None
+    paused: MemberPausedIn | None = None
+    # Lifting one instance's pause: `{"paused": null, "instance": "<id>"}` (§5.3).
+    instance: str | None = Field(default=None, max_length=5)
     briefing: str | None = markdown(default=None)
 
 
@@ -279,9 +285,12 @@ def apply_patch(
     target: Any,
     values: dict[str, Any],
     pause: tuple[bool, str | None],
+    *,
+    instance: str | None = None,
 ) -> dict[str, Any]:
-    """Write a membership change and announce it; `pause` is (given, reason). Returns
-    the changed columns with their old values, for `member_changed_by_agent`."""
+    """Write a membership change and announce it; `pause` is (given, reason), for one
+    agent instance when `instance` names it. Returns the changed columns with their old
+    values, for `member_changed_by_agent`."""
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
@@ -329,7 +338,7 @@ def apply_patch(
             # A human's absence is the project's `absence` (§6.1, §5.3).
             raise invalid({"paused": "agents_only"}, "paused is for agent members")
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-        set_paused(conn, change, row, reason)
+        set_paused(conn, change, row, reason, instance=instance)
     return old
 
 
@@ -395,15 +404,29 @@ def patch_member(
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
+        if "instance" in given and ("paused" not in given or body.paused is not None):
+            raise invalid({"instance": "paused_only"}, "instance goes with paused: null")
         pause = ("paused" in given, body.paused.reason if body.paused else None)
+        # One agent instance's pause instead of the membership's (§5.3).
+        instance = (body.paused.instance if body.paused else body.instance) if pause[0] else None
+        if instance is not None:
+            if target.agent_id is None:
+                raise invalid({"paused": "agents_only"}, "paused is for agent members")
+            held = instances.require_active(conn, target, instance, "instance")
+            if agent_admin:
+                admin_agents.check_instance_pause(held, mine.principal_id)
         if agent_admin and admin_agents.needs_consent(conn, mine, target, values, pause):
             # The whole PATCH waits for the owner's go (§2.3 ᵃ).
             request_id = admin_agents.propose(
-                conn, mine, caller, target, {"action": "patch", "values": values, "pause": pause}
+                conn,
+                mine,
+                caller,
+                target,
+                {"action": "patch", "values": values, "pause": pause, "instance": instance},
             )
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         change = change_of(mine, caller)
-        old = apply_patch(conn, change, target, values, pause)
+        old = apply_patch(conn, change, target, values, pause, instance=instance)
         if agent_admin and "role" in old:
             admin_agents.announce(conn, change, target, "role", old["role"], values["role"])
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
@@ -475,27 +498,42 @@ def _availability_policy(
     return policy
 
 
-def set_paused(conn: Connection, change: Change, target: Any, reason: str | None) -> None:
-    """Set or clear `paused` (§5.3), naming `change.by`. Setting it tells the member
-    itself (its long-poll wakes), `reports_to` and the admins; lifting a pause someone
-    else set tells them the same way, with `paused: null`."""
+def set_paused(
+    conn: Connection,
+    change: Change,
+    target: Any,
+    reason: str | None,
+    *,
+    instance: str | None = None,
+) -> None:
+    """Set or clear `paused` (§5.3), naming `change.by`: the membership's, or with
+    `instance` that agent instance's alone. Setting it tells the member itself (its
+    long-poll wakes; for an instance only that instance), `reports_to` and the admins;
+    lifting a pause someone else set tells them the same way, with `paused: null`."""
     now = clock.now()
-    lifts_a_human_pause = reason is None and human_paused(target)
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.id == target.id)
-        .values(
-            paused_reason=reason,
-            paused_since=now if reason else None,
-            paused_by=change.by if reason else None,
-        )
-    )
+    values = {
+        "paused_reason": reason,
+        "paused_since": now if reason else None,
+        "paused_by": change.by if reason else None,
+    }
+    if instance is None:
+        lifts_a_human_pause = reason is None and human_paused(target)
+        conn.execute(update(t.membership).where(t.membership.c.id == target.id).values(**values))
+    else:
+        held = instances.require_active(conn, target, instance, "instance")
+        lifts_a_human_pause = reason is None and instances.human_paused(target, held)
+        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
     availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, row)
+    payload = {"session": view.get("session"), "paused": view["paused"]}
     audience = [f"member:{view['id']}", "role:admin"]
+    if instance is not None:
+        shown = next(i for i in view["instances"] if i["id"] == instance)
+        payload = {"session": shown["session"], "paused": shown["paused"], "instance": instance}
+        audience[0] = instances.token(view["id"], instance)
     if view["reports_to"]:
         audience.insert(1, f"member:{view['reports_to']}")
     emit(
@@ -503,7 +541,7 @@ def set_paused(conn: Connection, change: Change, target: Any, reason: str | None
         change.project.id,
         "session_paused",
         audience,
-        {"session": view.get("session"), "paused": view["paused"]},
+        payload,
         actor=change.actor,
         subject=("member", view["id"]),
     )
