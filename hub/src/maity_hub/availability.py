@@ -579,9 +579,9 @@ def sweep(engine: Engine) -> None:
 class Worker:
     """Runs `sweep` in the background (§6.12: the hub acts at `until` on its own)."""
 
-    def __init__(self, engine: Engine, interval: float = INTERVAL) -> None:
+    def __init__(self, engine: Engine, interval: float | None = None) -> None:
         self.engine = engine
-        self.interval = interval
+        self.interval = INTERVAL if interval is None else interval  # read now: tests set it
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
