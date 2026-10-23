@@ -7,7 +7,7 @@ import base64
 import binascii
 import json
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
@@ -181,17 +181,21 @@ def at_least(position: Position, floor: Position | None) -> Position:
 
 
 def cursor_of(item: Item) -> str:
-    raw = json.dumps([clock.rfc3339(item.at, millis=True), item.order[1], item.order[2]])
+    """The exact place of the last listed item: its `at` to the microsecond and the tie
+    keys, so items that share a timestamp are neither skipped nor repeated."""
+    raw = json.dumps([item.at.astimezone(UTC).isoformat(), item.order[1], item.order[2]])
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
 
 def older_than(cursor: str) -> tuple[datetime, int, int] | None:
     try:
         at, side, number = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-        moment = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
-        return (moment, int(side), int(number))
+        moment = datetime.fromisoformat(str(at))
     except (binascii.Error, ValueError, TypeError):
         return None
+    if moment.utcoffset() != timedelta(0):
+        return None  # a cursor this hub made is UTC
+    return (moment, int(side), int(number))
 
 
 def select_items(

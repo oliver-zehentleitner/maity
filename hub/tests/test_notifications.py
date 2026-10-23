@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import clock
 from maity_hub.notifications import positions
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -231,3 +232,79 @@ def test_the_long_poll_returns_on_a_new_item(make_client: ClientFactory, owner: 
     waiter.join(timeout=15)
     assert answers and [i["kind"] for i in answers[0]["items"]] == ["chat"]
     assert time.monotonic() - begun < 8
+
+
+def test_the_cursor_keeps_items_that_share_a_timestamp(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(make_client, owner)
+    frozen = clock.now().replace(microsecond=123456)
+    clock.set_source(lambda: frozen)
+    for n in range(3):
+        agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": f"m{n}"})
+    seen: list[int] = []
+    page = bell(owner, kind="chat", limit=1)
+    seen += [i["seq"] for i in page["items"]]
+    while page["next_cursor"]:
+        page = bell(owner, kind="chat", limit=1, cursor=page["next_cursor"])
+        seen += [i["seq"] for i in page["items"]]
+    assert len(seen) == 3 and len(set(seen)) == 3
+
+
+def test_a_session_ended_during_a_wait_gets_nothing(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(make_client, owner)
+    other = second_session(make_client, owner)
+    mine = owner.get("/auth/session").json()["session_id"]
+    start = bell(owner, limit=0)["next_after"]
+    answers: list[Any] = []
+    waiter = threading.Thread(
+        target=lambda: answers.append(owner.get(N, params={"after": start, "wait": 10}))
+    )
+    waiter.start()
+    time.sleep(0.6)
+    # Another password session ends the waiting one.
+    assert other.delete(f"/auth/sessions/{mine}").json()["ended_by"] == "revoked"
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "private"})
+    waiter.join(timeout=15)
+    assert answers and answers[0].status_code == 401
+    assert "private" not in answers[0].text
+
+
+def test_two_first_uses_agree_on_one_position_key(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def first_use() -> None:
+        try:
+            barrier.wait()
+            positions.prepare(migrated, None)
+        except BaseException as error:  # noqa: BLE001  reported below
+            errors.append(error)
+
+    threads = [threading.Thread(target=first_use) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    issued = bell(owner, limit=0)["next_after"]
+    assert bell(owner, after=issued)["items"] == []
+
+
+def test_a_card_view_shows_only_the_readers_own_watch(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = agent.post("/projects/maity/tasks", {"title": "Watched"}).json()
+    owner.client.put(
+        f"/api/v1/projects/maity/tasks/{card['id']}/watch", headers={"X-CSRF-Token": owner.csrf}
+    )
+    assert owner.get(f"/projects/maity/tasks/{card['id']}").json()["watching"] is True
+    listed = owner.get("/projects/maity/tasks").json()["items"]
+    assert next(c for c in listed if c["id"] == card["id"])["watching"] is True
+    assert agent.get(f"/projects/maity/tasks/{card['id']}").json()["watching"] is False
+    assert "watchers" not in owner.get(f"/projects/maity/tasks/{card['id']}").json()

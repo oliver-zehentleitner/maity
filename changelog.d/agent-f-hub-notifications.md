@@ -5,7 +5,7 @@
   every state change of a personal request, numbered per account under
   the human's row lock. The session list shows a session's `created`
   record, and a sign-in confirmed from an allowed session is in good
-  standing (§2.6.5). Migration `0029`.
+  standing (§2.6.5). Migration `0034`.
 - hub: `GET /me/notifications` (§18.2) — every kind derived from the
   events the human may read and their own records, counts with
   `by_project`, the cursor, sealed per-project positions with the stored

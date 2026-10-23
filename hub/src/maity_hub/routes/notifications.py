@@ -12,15 +12,15 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, delete, func, insert, select
+from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
-from maity_hub.errors import forbidden, humans_only, invalid, not_found
+from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.notifications import items, listing, positions
 from maity_hub.notifications.items import KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
@@ -52,6 +52,14 @@ def _snapshot(request: Request) -> Iterator[Connection]:
     options = {} if engine.dialect.name == "sqlite" else {"isolation_level": "REPEATABLE READ"}
     with engine.connect().execution_options(**options) as conn, conn.begin():
         yield conn
+
+
+def _require_live(conn: Connection, session_hash: str) -> None:
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.id_hash == session_hash)
+    ).first()
+    if row is None or row.ended_at is not None or not session_alive(row, clock.now()):
+        raise unauthenticated("the session has ended or expired")
 
 
 def _filters(raw: str | None, allowed: tuple[str, ...] | None, name: str) -> set[str] | None:
@@ -94,8 +102,13 @@ async def list_notifications(
             raise invalid({"cursor": "invalid"})
     human_id = caller.principal_id
 
+    positions.prepare(engine_of(request), settings_of(request).secret_key)
+
     def answer() -> dict[str, Any]:
         with _snapshot(request) as conn:
+            # Every snapshot, a held one included, checks the session again: one ended
+            # while the request waited receives nothing more (§18.2).
+            _require_live(conn, session)
             return _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
 
     first = await run_in_threadpool(answer)
@@ -108,6 +121,8 @@ async def list_notifications(
         while time.monotonic() < deadline:
             await asyncio.sleep(POLL)
             if _holding.get(session) is not token:
+                with engine_of(request).begin() as conn:
+                    _require_live(conn, session)
                 return JSONResponse({**first, "superseded": True})
             again = await run_in_threadpool(answer)
             if again["items"]:
@@ -179,6 +194,7 @@ def read_notifications(
     extra = set(body) - {"ids", "up_to", "kind", "project"}
     if len(given) != 1 or extra or ("ids" in body and ({"kind", "project"} & set(body))):
         raise invalid({name: "extra_forbidden" for name in extra} or {"body": "ids_or_up_to"})
+    positions.prepare(engine_of(request), settings_of(request).secret_key)
     with _snapshot(request) as conn:
         session = conn.execute(
             select(t.human_session).where(t.human_session.c.id_hash == session_hash)
@@ -255,12 +271,5 @@ def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: boo
                     card_id=card.id, membership_id=mine.id, created_at=clock.now()
                 )
             )
-        view = task_view(conn, card, reader_of(request))
-        view["watching"] = bool(
-            conn.execute(
-                select(func.count()).where(
-                    t.card_watch.c.card_id == card.id, t.card_watch.c.membership_id == mine.id
-                )
-            ).scalar_one()
-        )
+        view = task_view(conn, card, reader_of(request), mine)
         return JSONResponse(view)

@@ -23,7 +23,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, Engine, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ids
@@ -56,22 +56,30 @@ class Position:
         return n <= self.account
 
 
+def prepare(engine: Engine, secret_key: bytes | None) -> None:
+    """Make the stored position key at first use, in a transaction of its own: insert
+    if absent, and on a concurrent first use read the winner in a fresh transaction."""
+    if secret_key is not None:
+        return
+    with engine.begin() as conn:
+        if store.sealed(conn, KEY_NAME) is not None:
+            return
+    try:
+        with engine.begin() as conn:
+            store.add_sealed(conn, KEY_NAME, os.urandom(32))
+    except IntegrityError:
+        pass  # another request or replica made it first; its key stands
+
+
 def _key(conn: Connection, secret_key: bytes | None) -> bytes:
     if secret_key is not None:
         return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=PURPOSE.encode()).derive(
             secret_key
         )
     stored = store.sealed(conn, KEY_NAME)
-    if stored is not None and len(stored) == 32:
-        return stored
-    try:
-        with conn.begin_nested():
-            store.put_sealed(conn, KEY_NAME, os.urandom(32), None)
-    except IntegrityError:
-        pass  # another request made it first
-    made = store.sealed(conn, KEY_NAME)
-    assert made is not None
-    return made
+    if stored is None or len(stored) != 32:
+        raise RuntimeError("the position key is not prepared")
+    return stored
 
 
 def _aad(human_id: str) -> bytes:

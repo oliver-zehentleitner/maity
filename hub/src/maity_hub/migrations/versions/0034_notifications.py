@@ -7,7 +7,7 @@ read marks on items from events. `notification_position` holds the vector behind
 position handle when the inline form would not fit. `card_watch` holds a human's own
 watch on a card, by membership.
 
-Revision ID: 0029
+Revision ID: 0034
 Revises: 0028
 Create Date: 2026-10-23
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0029"
+revision: str = "0034"
 down_revision: str | None = "0028"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
