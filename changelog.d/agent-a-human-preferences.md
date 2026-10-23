@@ -12,12 +12,16 @@
   overwrite. Every agent member of a project the human is a member of
   reads them (`GET /projects/{slug}/members/{id}/preferences`, the
   resume packet's `preferences` after the rules); the human switches a
-  project off with `PUT /me/preferences/projects/{slug}`. A join's
-  `owner_preferences: true` (§3.1) gives the owner's preferences to that
-  one agent on its membership as a live reference, removed by the owner
-  with `PATCH …/members/{id}`. `preferences_changed` carries version and
+  project off with `PUT /me/preferences/projects/{slug}`. An agent's
+  owner, member of the project or not, switches `owner_preferences` on
+  for that agent's membership with `PATCH …/members/{id}` after the
+  join (§6.2), giving that one agent the owner's preferences as a live
+  reference; the same `PATCH` switches it off. At most 8 texts per
+  resume packet, the agent's own owner first. A proxy may propose its
+  human's preferences (§2.3). `preferences_changed` carries version and
   writers, never the text. Preferences are context, never permissions:
   the rules text and §2.3 win. An admin agent's decision in its owner's
-  stead cites `basis: {rules_version, preferences_version}`. Caps
+  stead cites `basis: {rules_version, human_id, preferences_version}`,
+  the deciding agent's owner, version 0 meaning none written. Caps
   (§1.7), `conflict` and `may_not_propose` (§1.3), §12 and §13
   (`maity preferences show` / `propose`, contract only).

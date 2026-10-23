@@ -301,7 +301,7 @@ the hub records it on the session.
 | Jour fixe rounds started by hand | 2 per project in 24 hours (§20.1) |
 | Preferences | 8 KiB per human (§19.4) |
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
-| Preferences inside the resume packet | 8 humans in `preferences.items`, then `truncated: true` (§19.4) |
+| Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -711,7 +711,10 @@ Additional rules that are not scopes:
   humans or agents. The admin crew of the brief is `admin` (the manager),
   `reviewer`, and a `member` whose area is `context/` (the Keep the Why
   steward; a role preset in the join dialog, not a role). `proxy` answers
-  on the owner's behalf and does nothing else beyond `member`.
+  on the owner's behalf and does nothing else beyond `member`, with one
+  stated exception: an agent holding `proxy` may file a proposal for
+  the preferences of the project's owner, its human (§19.4), which that
+  human reviews like any other.
 - Scopes are evaluated from the membership at the time of the call. A
   role change takes effect on the next request; the credential does not
   carry scopes.
@@ -1383,7 +1386,6 @@ event; the accounts design's instance audit log records it (pending).
   "areas": ["hub/"],
   "capabilities": [],
   "briefing": "You are the hub's second pair of eyes: …",
-  "owner_preferences": false,
   "ttl_seconds": 900,
   "via": "join"
 }
@@ -1403,18 +1405,10 @@ creates and reaches the agent in its resume packet as
 whoever holds the URL can read. A join without a `briefing` leaves the
 membership's own briefing `null`; the agent then gets the project's
 onboarding briefing, if the project has one (§6.1, §5.2).
-`owner_preferences` (optional, boolean, default `false`) is the join
-dialog's checkbox "give my preferences to this agent": the exchange
-sets it on the membership, and the agent's resume packet then carries
-its owner's current preferences next to the briefing, as a live
-reference, not a copy (§19.4, §5.2). Only the agent's owner may set it
-(`agent` names a profile the caller owns, or one the join creates); an
-agent never does. It matters where the owner is not a member of the
-project or has switched the project's inclusion off; elsewhere every
-agent of the project reads the owner's preferences anyway. For an agent
-that is already a member it must be omitted or equal to the
-membership's, like `briefing`; the owner changes it with `PATCH
-…/members/{id}` (§6.2).
+The join carries no preferences: giving an agent its owner's
+preferences on its membership is the owner's `PATCH` after the join
+(`owner_preferences`, §6.2, §19.4), since an owner who is not a member
+of the project cannot create a join here.
 `via` (optional) picks the host the link is built on: `"join"` (the join
 host, §1.1) or `"public"` (`MAITY_PUBLIC_URL`). It defaults to `"join"`
 when a join host is configured and to `"public"` otherwise; `"join"`
@@ -1906,9 +1900,10 @@ Response `200`, bounded and deterministic:
   one quoted block per human with its author, after `rules` and below
   them in rank (§19.4). `membership.owner_preferences` is the agent's
   owner's preferences when the membership carries `owner_preferences:
-  true` (§3.1), read live on every resume, else `null`. Both are
-  context about how a human likes to work, never a permission, and
-  separate from the briefing.
+  true` (set by the owner, §6.2), read live on every resume, else
+  `null`. Together at most 8 texts, the agent's own owner first (§19.4,
+  §1.7). Both are context about how a human likes to work, never a
+  permission, and separate from the briefing.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -2306,10 +2301,12 @@ is in `member_updated` only as `changed: ["briefing"]` with the new
 `members:admin` read past versions with `GET …/members/{id}/briefings`
 (`{items: [{version, text, by, at}]}`, newest first).
 `owner_preferences` (`true` or `false`, agents only) says whether the
-membership gets its owner's preferences next to its briefing (§3.1,
-§19.4); it is in the member view where `briefing` is, and for the
-agent's owner, and is a flag only — the text is never in the member
-view or an event. Humans have no `owner_id`, `harness`, `model`
+membership gets its owner's preferences next to its briefing (§19.4).
+It starts `false`; the agent's owner switches it on or off with a
+`PATCH` after the join, member of the project or not, as `team` (the
+member view's one-click "give my preferences to this agent"). It is in
+the member view where `briefing` is, and for the agent's owner, and is
+a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
 or `session`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
 
@@ -9221,22 +9218,25 @@ every change.
   project's agents get no block and the `GET` above is `not_found`
   there, the agent the human gave them to on its membership excepted
   (below).
-- **Given to one agent on its membership.** When a human brings one of
-  their agents into a project — above all one in which the human is not
-  a member, so no automatic inclusion reaches it — the join carries
-  `owner_preferences: true` (§3.1; the dashboard's checkbox "give my
-  preferences to this agent"). The membership then carries
-  `owner_preferences: true`, and its resume packet shows the owner's
+- **Given to one agent on its membership.** A human who is not a
+  member of a project cannot create a join there (`POST …/joins` needs
+  `members:admin`, §3.1), so this is not part of the join. Instead the
+  owner of an agent may switch `owner_preferences` on for that agent's
+  membership at any time after the agent joined — typically right
+  after — with `PATCH /projects/{slug}/members/{id}`
+  `{"owner_preferences": true}`, a one-click action in the member view
+  ("give my preferences to this agent"), member of the project or not,
+  as `team` is (§6.18). It matters where the owner is not a member, or
+  switched the project off, since otherwise every agent there reads the
+  owner's preferences anyway. With the flag on, the resume packet shows the owner's
   preferences in `membership.owner_preferences`, next to the briefing
   (§5.2): only that agent sees them, no other member of the project.
   It is a **live reference**, never a snapshot: the membership stores
   the flag, the packet reads the owner's current version, so a later
   edit reaches the agent on its next resume, and nothing of the text
-  is stored in the project. The owner removes it with `PATCH
-  /projects/{slug}/members/{id}` `{"owner_preferences": false}` —
-  allowed to the profile's owner and nobody else, member of the
-  project or not, as `team` is (§6.18); the next resume carries no
-  block. An agent never sets it, its own included (`forbidden`,
+  is stored in the project. The owner switches it off the same way,
+  `{"owner_preferences": false}` — the profile's owner and nobody else;
+  the next resume carries no block. An agent never sets it, its own included (`forbidden`,
   `humans_only`).
 
 | Endpoint | Caller | Notes |
@@ -9271,33 +9271,49 @@ not in the broadcast set.
 }
 ```
 
-One item per human member with the inclusion on and a non-empty text,
-the project's `owner` first, then by `handle`; at most 8 items, then
-`truncated: true` and the rest through the `GET` above. Separate from
-the briefing and from `memory`. `membership.owner_preferences` is the
-same item shape, or `null`; when the owner is also in `items`, the text
-appears once, in `items`. The CLI prints each as a quote headed
+One item per human member with the inclusion on and a non-empty text.
+`membership.owner_preferences` is the same item shape, or `null`.
+Separate from the briefing and from `memory`.
+
+**The budget is 8 texts per packet in all**, `membership.owner_preferences`
+included. The hub orders the candidates deterministically: the agent's
+own owner first (whether the text arrives through the inclusion or
+through `owner_preferences`; it appears once, in
+`membership.owner_preferences` when that flag is set, else in `items`),
+then the other humans by `handle` and then member id. It keeps the
+first 8 and cuts the rest: `preferences.truncated: true`, and the cut
+humans are read with the `GET` above. A cut never drops the owner's
+text, which is always first. The CLI prints each as a quote headed
 "Preferences of <handle>, written by <handle> (version N)" — the
 writer being `by`, followed by "proposed by <handle>" or "confirmed by
 <handle>" where set — after the rules (§13).
 
 **Decisions in the owner's stead.** Where the contract lets an admin
-agent decide something itself in its owner's place, the basis it cites
-is the rules version plus the owner's preferences by version:
-`basis: {"rules_version": 41, "preferences_version": 3}`. The hub
-checks that `preferences_version` is an existing version of the
-project owner's preferences (`invalid`, `details.fields.basis:
-"not_owner_preferences"`); it does not judge the content. For the jour
-fixe (§20.6, specified separately) this replaces "the memory entries
-its owner wrote" as the basis of an admin-agent moderator's own
-decisions: `basis: {rules_version, preferences_version}`, checked as
+agent decide something itself in its owner's place, it acts for the
+human who owns *that agent* — not the project's owner — and the basis
+it cites is the rules version plus that human's preferences by
+version: `basis: {"rules_version": 41, "human_id": "hum-maintainer",
+"preferences_version": 3}`. `human_id` and `preferences_version` are
+recorded with the decision for the audit. The hub checks that
+`human_id` is the owner of the deciding agent's profile (`invalid`,
+`details.fields.basis: "not_owner_preferences"`) and that
+`preferences_version` exists for that human (`invalid`,
+`details.fields.basis: "unknown_version"`); it does not judge the
+content. Version `0` means the human has written no preferences; it is
+a valid basis and says exactly that — the agent decided on the rules
+alone. For the jour fixe (§20.6, specified separately; it already names
+the moderating agent's owner) this replaces "the memory entries its
+owner wrote" as the basis of an admin-agent moderator's own decisions:
+`basis: {rules_version, human_id, preferences_version}`, checked as
 here, in place of `basis.memory`.
 
 **The dashboard** has the human's preferences in the account: the
 editor, the versions with their writers, and one switch per project.
 Proposals appear in the personal inbox with the current text, the
-proposed text, the diff and an editor; the join dialog has the
-checkbox "give my preferences to this agent".
+proposed text, the diff and an editor. The member view of an agent the
+human owns has the one-click switch "give my preferences to this
+agent" (`owner_preferences`, above), in every project the agent is in,
+whether or not the human is a member there.
 
 ## 20. Jour fixe
 
