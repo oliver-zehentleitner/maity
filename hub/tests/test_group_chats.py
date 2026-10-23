@@ -461,3 +461,30 @@ def test_a_close_that_commits_first_is_never_overtaken(
     assert added.json()["error"]["details"] == {"closed_reason": "no_human"}
     posted = say(owner, chat["id"], "still here?")
     assert posted.json()["error"]["code"] == "conversation_closed"
+
+
+def test_a_demotion_that_commits_first_ends_the_blind_redaction(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reviewer's probe: the admin is demoted right before the lock returns; the
+    blind redaction of a closed chat it cannot read is then `not_found`."""
+    other = other_human(make_client, migrated, "other-owner", role="admin")
+    their_agent = flow.agent(make_client, other)
+    chat = create(owner, their_agent.id).json()
+    seq = say(their_agent, chat["id"], "secret").json()["seq"]
+    delete(owner, f"{BASE}/{chat['id']}/participants/{owner.id}")  # closes it
+    admin = other_human(make_client, migrated, "admin", role="admin")
+    real = events.lock_project
+
+    def demoted_meanwhile(conn: Any, project: str) -> Any:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+        )
+        return real(conn, project)
+
+    monkeypatch.setattr(events, "lock_project", demoted_meanwhile)
+    refused = redact(admin, seq, expect="closed_chat_message")
+    assert refused.status_code == 404, refused.text

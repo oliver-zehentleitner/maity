@@ -500,7 +500,10 @@ def _redact_in_group(
 ) -> idempotency.Outcome:
     """§8.5 in a group chat: any human participant now, no agent; once the chat closed,
     its former human participants, and a human with `members:admin` blind, by `seq`."""
-    events.lock_project(conn, mine.project.id)  # the chat and who is in it as of the lock
+    events.lock_project(conn, mine.project.id)
+    # The caller's membership and role, the event, the chat and who is in it, all as of
+    # the lock: a demotion or a removal that commits first is never overtaken.
+    mine = membership(conn, caller, mine.project.slug)
     row = conn.execute(select(t.event).where(t.event.c.seq == row.seq)).one()
     group = group_chats.find(conn, mine.project.id, row.conversation_id)
     closed = group.closed_at is not None
