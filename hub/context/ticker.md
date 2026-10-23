@@ -116,7 +116,7 @@ contract file: it would wake every implementer for a one-line change.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's ruling on the buckets, 2026-10-23
+**Source:** docs/api.md §17.4 (signature, limits before the body, refusals alike, the body a trigger never a fact); the third part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23; the review of PR #235 and the contract owner's ruling on the buckets and, in the second round, on the held-back body, 2026-10-23
 **Revisit when:** a forge other than GitHub signs deliveries, or the hub runs more than one replica (the limits are in-process)
 **See:** packaging.md#cryptography-for-the-secrets-the-hub-stores-held-to-one-major-release — 2ea5c41e-7128-4205-91dc-04ff6110b338 — as of 2026-10-23
 
@@ -126,9 +126,10 @@ before the middleware would read the body. A missing, repeated or
 over-1-MiB `Content-Length` is `payload_too_large` for every slug. Then
 it looks up the project, its webhook and the opened secret; without one
 of them (or without `MAITY_SECRET_KEY`, or with a secret the key does
-not open) it answers `webhook_signature` before the body. For a known
-slug it takes a place in the per-project-and-address bucket before
-reading at most 1 MiB, so at most 60 bodies per project and address are
+not open) it takes a place in the per-address bucket, reads the declared
+body all the same and answers `webhook_signature`, so a body held back
+hangs for every slug alike. For a known slug it takes a place in the
+per-project-and-address bucket before reading at most 1 MiB, so at most 60 bodies per project and address are
 read at once, and gives the place back when the HMAC-SHA256 (exactly
 one signature header, compared in constant time) verifies; then it
 charges the project's bucket of verified deliveries. Every request that
@@ -147,10 +148,13 @@ cannot open it: the view shows `configured: false`, each delivery logs
 an error, and the hub logs at startup how many stored secrets it cannot
 open.
 
-Two differences remain, both accepted: a known slug's request reads its
-body and computes the HMAC before it is refused, so it takes longer
-than an unknown slug's, and a known slug's request past the
-per-address limit is answered `rate_limited` only after its body. There
+What remains apart, accepted: a known slug's request also opens the
+secret and computes the HMAC, a few microseconds; a known slug's request
+past the per-address limit is answered `rate_limited` only after its
+body; and with 60 of its own requests held open at once against one
+known slug, the 61st is refused before its body while an unknown slug's
+is still read. None of these tells one request from another; the held
+body did, as a one-request answer, and is read for every slug now. There
 is no replay protection, since GitHub signs no timestamp; a replayed
 delivery only makes the probe read again, and the probe announces only
 what it observes.
