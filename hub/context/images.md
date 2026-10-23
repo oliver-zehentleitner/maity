@@ -147,3 +147,28 @@ the decode keeps the limit in front of the parser rather than behind it.
 **Alternatives:** counting only accepted changes. It is closer to the
 wording "changes", but it leaves the decoder unguarded.
 
+## A GitHub logo is the owner's avatar only for an organization
+
+**Id:** de2d0f63-233e-4245-930a-007d42ce0a20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report and the contract owner's ruling, 2026-10-23 (card tsk-r0g494zg1qyp; `docs/api.md` §11.2)
+
+GitHub has no repository avatar, so the hub takes the owner's
+(`owner.avatar_url` of the repository) as the square logo, but only when
+`owner.type` is `Organization`. A repository a user owns has no forge
+logo: `logo` is `{available: false, source: null}` and the dashboard
+draws the monogram; an uploaded logo still wins. A logo stored under the
+old rule goes on the next refresh, since a refresh replaces what is
+stored with the forge's answer, an image or none.
+
+**Reason:** for a repository under a person's account the owner's avatar
+is that person's photo. The maintainer saw his own photo as the logo of
+two projects on every page of the dashboard; a person's photo is not a
+project's logo.
+
+**Rejected alternative:** the owner's avatar for every repository, as
+§11.2 said before. It gives an organization's repositories their logo
+and a person's repositories that person's face.
+
