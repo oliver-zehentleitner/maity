@@ -18,7 +18,7 @@ import fnmatch
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import avatars, clock, events
@@ -678,12 +678,13 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
     for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
         close_now(conn, placement, "membership_removed", actor, by)
-    # Its proposals for others go with it: a go must not approve what nobody proposes now.
+    # Its proposals go with it, a placement's and every other kind's (`proposals`): a go
+    # must not approve what nobody proposes now.
     proposed = conn.execute(
         select(t.request).where(
             t.request.c.asked_by == membership_id,
             t.request.c.status == "open",
-            t.request.c.placement_id.isnot(None),
+            or_(t.request.c.placement_id.isnot(None), t.request.c.proposal.isnot(None)),
         )
     ).all()
     for request in proposed:

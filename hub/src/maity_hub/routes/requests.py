@@ -128,7 +128,7 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
     task = _task(conn, row.task_id)
     if row.personal and row.status != "open" and row.task_snapshot is not None:
         task = row.task_snapshot  # the card as it was when the request closed (§7)
-    return {
+    view = {
         "id": row.id,
         "class": klass(row),
         "title": row.title,
@@ -153,6 +153,10 @@ def request_view(conn: Connection, row: Any) -> dict[str, Any]:
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
     }
+    shown = proposals.view(conn, row)
+    if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
+        raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
+    return view | shown
 
 
 def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
@@ -707,10 +711,12 @@ def answer(
                 raise _self_answer()
             raise not_found()
         _refuse_unless_open(row)
-        if inbox.needs_a_human(row, mine):
-            raise humans_only("under spawn_consent_by: human only a human answers this")
+        proposals.require_known(row)
+        refusal = inbox.needs_a_human(row, mine)
+        if refusal is not None:
+            raise humans_only(refusal)
         if not inbox.may_answer(conn, row, mine):
-            raise forbidden("requests:answer")
+            raise forbidden(inbox.answer_scope(row))
         if inbox.is_asker(row, mine):
             raise _self_answer()
         _check_answer(row, body)
@@ -755,7 +761,7 @@ def answer(
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
-        proposals.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, outcome, mine.principal_id, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -797,6 +803,7 @@ def withdraw(
         if not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
         _refuse_unless_open(row)
+        proposals.require_known(row)
         now = clock.now()
         conn.execute(
             update(t.request)
@@ -811,7 +818,7 @@ def withdraw(
         )
         _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
-        proposals.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
+        proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -837,8 +844,9 @@ def close_request(
     reason: str | None = None,
 ) -> None:
     """Answer (`go`, in `by`'s name) or withdraw an open request from inside the hub, as
-    the routes above would, without settling a placement again: the placement code that
-    calls this settles its own side (§15.6)."""
+    the routes above would. A proposal it carries is settled here, like every other
+    close; a placement is not settled again: the placement code that calls this settles
+    its own side (§15.6)."""
     row = _row(conn, request_id)
     if row.status != "open":
         return
@@ -885,6 +893,7 @@ def close_request(
         )
         kind, extra = "request_answered", {}
     _unblock(conn, row)
+    proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
     view = request_view(conn, _row(conn, row.id))
     emit(
         conn,
@@ -911,8 +920,12 @@ def file_consent(
     proposal: dict[str, Any] | None = None,
 ) -> str:
     """A consent request to the owner, go/no, waiting, linked to the placement it
-    settles (§15.6) or carrying the proposal it applies (`proposals`, §2.3 ᵃ); returns
-    its id."""
+    settles (§15.6) or carrying the proposal it applies (`proposals`, §2.3 ᵃ), never
+    both; returns its id."""
+    if placement_id is not None and proposal is not None:
+        raise ValueError("a consent settles a placement or carries a proposal, not both")
+    if proposal is not None:
+        proposals.check_kind(proposal)
     request_id = new_id("request")
     to = inbox.Addressee("owner")
     conn.execute(
