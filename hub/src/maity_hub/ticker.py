@@ -9,6 +9,7 @@ listing (§17.9) is the compact form of the same events.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -22,10 +23,14 @@ from maity_hub import tables as t
 from maity_hub.ticker_read import may_read_request, reason_of
 from maity_hub.views import event_views
 
+log = logging.getLogger(__name__)
+
 TYPES = ("merge", "decision", "deploy", "release", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
 FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
 TEXT_MAX = 280
+ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
+SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
 DECISION_CLASSES = ("decision", "consent", "contract")
 
 
@@ -232,6 +237,7 @@ def write(
     url: str | None,
     audience: Audience,
     origin: str,
+    delivery: str | None = None,
     actor: events.Actor | None = None,
     actor_principal: str | None = None,
     subject: tuple[str, str] | None = None,
@@ -280,7 +286,7 @@ def write(
         "text": cut(text),
         "url": url,
         "dedupe_key": dedupe_key,
-        "origin": {"via": origin, "delivery": None},
+        "origin": {"via": origin, "delivery": delivery},
         **base,
         **(facts or {}),
         "reasons": [
@@ -762,7 +768,9 @@ class Merge:
     contract: dict[str, set[str] | None] = field(default_factory=dict)
 
 
-def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
+def write_merge(
+    conn: Connection, project: Any, merge: Merge, delivery: str | None = None
+) -> int | None:
     """The item of one merge (§17.2), its audience per §17.3; None when it was announced."""
     conf = settings(project)
     people = members(conn, project.id)
@@ -833,7 +841,8 @@ def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
         text=text,
         url=merge.url,
         audience=audience,
-        origin="probe",
+        origin="webhook" if delivery else "probe",
+        delivery=delivery,
         subject=("pull_request", str(merge.number)),
         dedupe_key=f"merge:{merge.number}",
         facts={
@@ -851,5 +860,48 @@ def write_merge(conn: Connection, project: Any, merge: Merge) -> int | None:
             "areas": areas,
             "contract": contract,
             "tasks": [c.id for c in cards],
+        },
+    )
+
+
+def _https_or_none(value: Any) -> str | None:
+    """A forge's URL as an item's `url`: one absolute https URL of at most 2048 characters,
+    else none (§17.1)."""
+    if isinstance(value, str) and len(value) <= 2048 and re.fullmatch(r"https://\S+", value):
+        return value
+    return None
+
+
+def write_deploy(
+    conn: Connection, project: Any, deployment: dict[str, Any], delivery: str | None
+) -> int | None:
+    """An automatic deploy (§17.2–§17.4): what the forge reports as a successful
+    deployment, read through the probe. Listed for every member, waking no one: the
+    audience is `all` alone, no reasons, subscriptions included (§17.3)."""
+    environment = str(deployment["environment"])
+    sha = str(deployment["sha"]).lower()
+    if not 1 <= len(environment) <= ENVIRONMENT_MAX or not SHA.fullmatch(sha):
+        # The forge's word, bounded like a manual post's (§17.6): nothing else is announced.
+        log.warning("ticker: a deployment of %s with an unusable environment or sha", project.slug)
+        return None
+    log_url = _https_or_none(deployment.get("log_url"))
+    return write(
+        conn,
+        project.id,
+        kind="deploy",
+        text=f"Deployed {sha[:7]} to {environment}",
+        url=log_url,
+        audience=Audience(),
+        origin="webhook",
+        delivery=delivery,
+        subject=("deploy", f"{environment}@{sha}"),
+        dedupe_key=f"deploy:{environment}:{sha}",
+        facts={
+            "deploy": {
+                "environment": environment,
+                "sha": sha,
+                "version": None,
+                "log_url": log_url,
+            }
         },
     )

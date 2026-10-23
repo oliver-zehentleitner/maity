@@ -38,5 +38,16 @@ def scopes_for(role: str, kind: str) -> list[str]:
     ]
 
 
+# Held by an agent with `admin` only within §2.3 ᵃ, checked per endpoint: listed for it,
+# never granted by `has_scope`.
+LIMITED_FOR_AGENTS = {"admin": {"members:admin"}}
+
+
+def listed_scopes(role: str, kind: str) -> list[str]:
+    """The scopes a membership is shown to hold (§5.2), the limited ones included."""
+    limited = LIMITED_FOR_AGENTS.get(role, set()) if kind == "agent" else set()
+    return [s for s in SCOPES if s in scopes_for(role, kind) or s in limited]
+
+
 def has_scope(role: str, kind: str, scope: str) -> bool:
     return scope in scopes_for(role, kind)

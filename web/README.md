@@ -162,8 +162,13 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    members' areas offered), proposed or open, assigned to (only with
    `tasks:admin`; else the hub routes by area), depends on and ships
    with, and — in `freeze` or `fixes-only` — the reason the hub asks for.
-   Each card a human may move has a **Move** menu with exactly the moves
-   the hub allows them (mirroring its transition check): proposed ↔ open
+   A card's header names its assignee (a small picture and `@handle`, the
+   full name as tooltip, a link to the member), its claim line leads with
+   a dot (live, lease expired, not claimed), and a checkpoint shows two
+   lines, the rest in its tooltip. Its controls sit in one row at its foot.
+   Each card a human may move has a **status menu** (its column, ▾) with
+   exactly the moves the hub allows them (mirroring its transition check),
+   as "Move to <column>": proposed ↔ open
    for its creator, holder or an admin; review → done or back to work
    with done authority under the policy; cancel for an admin, or the
    creator of an open card. A pointer can drag the card instead: the
@@ -171,19 +176,25 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    dimmed; a drop on one of those is refused in words and sends nothing.
    Within a column the cards stand in the hub's order (`docs/api.md`
    §6.4: by `rank`, then the unranked ones by `created_at`, then by id).
-   With `tasks:admin` (an owner or admin) an open card can be placed: a
-   **Place** menu (Move up, Move down, To the top, To the bottom, as its
-   place allows) or dragging it over another card of its column, above or
+   With `tasks:admin` (an owner or admin) an open card can be placed: four
+   arrow buttons at the row's right, a group named "Place in column" (Move
+   to top, Move up, Move down, Move to bottom; the ones its place does not
+   allow are disabled and out of the Tab order), or dragging it over
+   another card of its column, above or
    below that card by the pointer's half; it sends `POST …/move` with
    `before`, `after` or `to`, and the board shows the new order once the
    hub answered, never before. A neighbour that moved or left meanwhile
    (`not_found`, `invalid`) has the board read again and said; a hub
    without the endpoint is said as such. Done and cancelled cards keep
    their order. With `tasks:admin` a card can be
-   assigned or reassigned (`POST …/assign`; a live lease is said, not
-   taken over). The hub's refusals (`invalid_transition`,
+   assigned or reassigned from its **Assign** menu (the members by
+   `@handle`, the full name as tooltip; `POST …/assign`; a live lease is
+   said, not taken over). The hub's refusals (`invalid_transition`,
    `dependencies_open`, …) are said in words; after a move the board is
-   read again and the focus stays on the card's menu. The board can be
+   read again and the focus stays on the card's control, or on an arrow
+   of it that still works when the one pressed is disabled at the new
+   place. Below 600 px the controls grow to 40 px and the arrows wrap onto
+   their own line. The board can be
    filtered by member (assigned or holding) and by area.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
