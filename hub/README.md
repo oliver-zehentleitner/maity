@@ -36,6 +36,10 @@ the `availability_policy` per membership, leases held through a limit for
 at most a day, `member_availability_changed` and `member_limit_ended` from
 a background sweep, and the policy's `coordinator` seats are in; cover by
 a substitute and the coordinator gate follow.
+The jour fixe (`docs/api.md` §20): the series in the policy, the
+moderator order, rounds opened on schedule or by hand, skipped and missed
+slots, and the answers, named or anonymous, are in; the statement, the
+exchange and the report follow.
 
 ## Run it locally with plain Python
 
