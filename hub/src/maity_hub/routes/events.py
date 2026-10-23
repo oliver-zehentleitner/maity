@@ -414,7 +414,16 @@ def redact(
         raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        try:
+            mine = membership(conn, caller, slug)
+        except ApiError:
+            from maity_hub.routes.conversations import outsider
+
+            if outsider(conn, caller, slug) is not None:  # reads along, redacts nothing
+                raise ApiError(
+                    403, "forbidden", "an owner outside reads along only", {"reason": "observer"}
+                ) from None
+            raise
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()

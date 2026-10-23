@@ -1,0 +1,89 @@
+"""docs/api.md §9.2 (the owner outside the project), §5.2 (conversations in the packet)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from sqlalchemy import Engine, update
+
+from maity_hub import tables as t
+from tests import flow
+from tests.conftest import ClientFactory
+from tests.test_group_chats import BASE, create, handle, other_human, read, reason, redact, say
+
+
+@pytest.fixture
+def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
+    human = flow.human(make_client, migrated)
+    flow.project(human)
+    return human
+
+
+def outside_owner(make_client: ClientFactory, migrated: Engine) -> tuple[flow.Human, Any]:
+    """A human whose agent is a member of the project and who no longer is."""
+    human = other_human(make_client, migrated, "outside", role="admin")
+    agent = flow.agent(make_client, human)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == human.id)
+            .values(active=None, removed_at=t.membership.c.joined_at)
+        )
+    return human, agent
+
+
+def test_an_owner_outside_reads_its_agents_chats_and_nothing_else(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    outside, agent = outside_owner(make_client, migrated)
+    guest = other_human(make_client, migrated, "guest")
+    with_agent = create(owner, agent.id).json()
+    without = create(owner, guest.id).json()
+    said = say(owner, with_agent["id"], "hello").json()
+    assert outside.get(BASE).json() == {"items": [], "next_cursor": None}
+    [item] = outside.get(f"{BASE}?observed=true").json()["items"]
+    assert (item["id"], item["access"], item["unread"]) == (with_agent["id"], "observer", None)
+    assert outside.get(f"{BASE}/{with_agent['id']}").json()["access"] == "observer"
+    assert [m["seq"] for m in read(outside, with_agent["id"]).json()["items"]] == [said["seq"]]
+    assert outside.get(f"{BASE}/{without['id']}").status_code == 404
+    assert outside.get(f"{BASE}/{agent.id}/messages").status_code == 404  # no direct chat here
+    assert outside.get("/projects/maity/events").status_code == 404  # nothing else of it
+    posted = say(outside, with_agent["id"], "hi")
+    assert (posted.status_code, reason(posted)) == (403, "observer")
+    renamed = outside.patch(f"{BASE}/{with_agent['id']}", {"title": "x"})
+    assert reason(renamed) == "observer"
+    assert reason(redact(outside, said["seq"])) == "observer"
+    assert reason(outside.post(BASE, {"participants": [agent.id]})) == "observer"
+
+
+def test_an_outsider_without_an_agent_learns_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    stranger = flow.human(make_client, migrated, "stranger")
+    for path in (BASE, f"{BASE}?observed=true"):
+        assert stranger.get(path).status_code == 404
+
+
+def test_the_packet_counts_chats_and_carries_only_mentions(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    guest = other_human(make_client, migrated, "guest")
+    chat = create(owner, agent.id, guest.id).json()
+    plain = say(guest, chat["id"], "just talking").json()["seq"]
+    pinged = say(guest, chat["id"], f"@{handle(migrated, agent.id)} please look").json()["seq"]
+    packet = agent.resume().json()
+    seqs = [e["seq"] for e in packet["events"]["items"]]
+    assert pinged in seqs and plain not in seqs
+    [group] = [c for c in packet["conversations"] if c["id"] == chat["id"]]
+    assert group == {
+        "id": chat["id"],
+        "kind": "group",
+        "title": chat["title"],
+        "unread": 2,
+        "mentions_unread": 1,
+        "last_message_at": group["last_message_at"],
+        "closed_at": None,
+    }
+    assert any(c["kind"] == "direct" and c["id"] == agent.id for c in packet["conversations"])

@@ -35,6 +35,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
@@ -261,8 +262,16 @@ def _packet(
         select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
     ).one()
     owner = conn.execute(select(t.human).where(t.human.c.id == agent.owner_id)).one()
+    # A group chat's message that does not mention the agent is counted in
+    # `conversations` instead, so a busy chat cannot push the work out (§5.2).
     rows, examined, truncated = events.read(
-        conn, project.id, mine.row, caller.principal_id, cursor, PACKET_EVENTS
+        conn,
+        project.id,
+        mine.row,
+        caller.principal_id,
+        cursor,
+        PACKET_EVENTS,
+        unmentioned_chat=False,
     )
     events_cursor = rows[-1].seq if truncated else max(examined, started_seq, cursor)
     rows = [r for r in rows if r.seq != started_seq]  # never the session's own start
@@ -386,6 +395,7 @@ def _packet(
             "cursor": events_cursor,
             "truncated": truncated,
         },
+        "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(project, mine.role),
     }

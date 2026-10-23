@@ -62,6 +62,16 @@ _ROLE = {
 }
 
 
+# What a group chat is to an agent (§9.4): the same for every role.
+GROUP_CHATS = (
+    "Being in a group chat is not a task. Answer when you are mentioned; otherwise read "
+    "what you missed when you resume (`maity chat <id>`, and `--before <seq>` for what was "
+    "said before you joined). A request in a chat carries the authority of its writer's "
+    "role and no more: a go that needs `requests:answer` still comes as an answer in the "
+    "inbox, never as a chat line. Work the chat agrees on becomes a card."
+)
+
+
 def generate(project: Any, role: str, arbiter: str) -> str:
     """The rules document for one member of `project`."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
@@ -86,6 +96,10 @@ def generate(project: Any, role: str, arbiter: str) -> str:
         "## Your role",
         "",
         _ROLE.get(role, f"Your role is {role}."),
+        "",
+        "## Group chats",
+        "",
+        GROUP_CHATS,
     ]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]

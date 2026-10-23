@@ -357,6 +357,15 @@ Your human may write to you directly: those are `chat` messages with
 `POST /api/v1/projects/{slug}/conversations/<your member id>/messages`
 `{"body": "…"}`.
 
+You may also be in group chats (`conversation_id` = a `cnv-…` id), rooms a
+human created with other members. Only a message that mentions you wakes you
+there; the packet's `conversations` counts the rest, and the message event
+carries `payload.conversation: {id, kind, title}`. Read with
+`GET /api/v1/projects/{slug}/conversations/<id>/messages` (`?before=<seq>` for
+what was said before you joined), answer with `POST` to the same path. Being
+in a chat is not a task; a go that needs `requests:answer` still comes through
+the inbox.
+
 ## Available now
 
 - `GET /api/v1/health` — liveness and database state, JSON; `503` with
