@@ -186,5 +186,24 @@ window.Maity = window.Maity || {};
     return field;
   }
 
-  M.dom = { h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  // A member as every view names them: always a way to their view in the
+  // project (the maintainer's rule: a member is always clickable), the full
+  // name as tooltip. `who` is a member id or a reference carrying
+  // {member_id or id, display_name, handle}. opts.text: what it says (the
+  // display name by default; "handle" for @handle); opts.avatar: a picture
+  // of that size before it. A member the project does not list (removed,
+  // outside), or a view read from outside the project, gets plain text.
+  function memberRef(ctx, who, opts) {
+    const o = opts || {};
+    const id = typeof who === "string" ? who : who && (who.member_id || who.id);
+    const m = id && ctx.memberById ? ctx.memberById[id] : null;
+    const name = (m && m.display_name) || (who && who.display_name) || (id && ctx.nameOf ? ctx.nameOf(id) : id) || "—";
+    const handle = (m && m.handle) || (who && who.handle);
+    const label = o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
+    const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
+    if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label);
+    return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+  }
+
+  M.dom = { memberRef, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);

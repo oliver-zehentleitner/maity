@@ -88,11 +88,12 @@ window.Maity = window.Maity || {};
     const byId = () => Object.fromEntries(items.map((m) => [m.id, m]));
     const nameOf = (id) => { const m = byId()[id]; return m ? m.display_name : ctx.nameOf(id); };
 
+    // Who paused it is a member like any other: a link to them.
     function pausedText(m) {
       const p = m.paused;
       if (!p) return "";
-      const by = p.by === m.id ? "paused itself" : "paused by " + nameOf(p.by);
-      return by + " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "");
+      const by = p.by === m.id ? "paused itself" : ["paused by ", M.dom.memberRef(ctx, p.by)];
+      return [by, " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "")];
     }
 
     // Focus survives a redraw by key: the element drawn for the same key.
@@ -292,7 +293,7 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, m.display_name), h("span", { class: "muted" }, " @" + m.handle),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + m.handle),
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 
@@ -341,7 +342,7 @@ window.Maity = window.Maity || {};
       const role = { title: "Role", cell: (m) => m.role };
       const presence = { title: "Presence", presence: true, cell: presenceNodes };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
-      const owner = { title: "Owner", cell: (m) => (m.owner ? m.owner.display_name : nameOf(m.owner_id)) };
+      const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       append(clear(box),

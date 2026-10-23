@@ -664,3 +664,27 @@ whose card it is.
 steps per action and still three labels per card. A single overflow menu
 for all actions: Place is used repeatedly while ordering a column, and a
 menu per press would make that slow.
+
+## A member is named through one helper, as a link to their row in Members
+
+**Id:** 801bc195-cbbf-497a-82d0-7c40bc7567b1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
+
+`M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
+a link to `#/p/<slug>/members/<id>` (Members marks that row and focuses
+it), the full name as tooltip, `data-member` for tests. A member the
+project does not list (removed, outside), a personal request's people,
+whose project the human may not be in, and every member in a view read
+from outside the project are plain text. A name inside a button (an
+inbox entry's head) stays text, since a link cannot sit in a button.
+
+**Reason:** the maintainer wants to reach any member's actions from
+wherever they appear, and one helper keeps the link, the tooltip and the
+plain-text rule the same on every page.
+
+**Rejected alternative:** a link built in each view: the rules for who
+is linkable (listed, inside the project) would drift between pages.

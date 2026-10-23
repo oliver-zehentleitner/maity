@@ -2602,6 +2602,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await atPick("chat-files", [atFile("shot300.png", PNG, 300 * 1024, "image/png")]);
   expect(text(main).includes("Not attached: shot300.png: the hub refused it as too large (the file is 300 KB): the body is over 64 KiB")
     && !text(main.querySelector(".attach")).includes("10 MiB"), "attachments: a size refusal says the hub's limit and the file's size, not a fixed one");
+  // A message that is no string (a hub answering an object) is left out, never "[object Object]".
+  win.Maity.api.postRaw = () => Promise.reject(Object.assign(new win.Maity.api.ApiError("x", 413, "/x", "payload_too_large", {}), { message: { too: "big" } }));
+  await atPick("chat-files", [atFile("odd.png", PNG, 2048, "image/png")]);
+  expect(text(main).includes("Not attached: odd.png: the hub refused it as too large (the file is 2.0 KB)") && !text(main).includes("[object Object]"),
+    "attachments: a non-string message is left out of the refusal");
   win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
   // A group chat: the participant attaches; a project message too.
   await go("#/p/maity/chat/cnv-0007");
@@ -2700,7 +2705,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
   const pmHand = pmSeq(6005);
-  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelector("a").getAttribute("href") === "#/p/maity/board"
+  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/p/maity/board"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
   expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/p/maity/members/hum-maintainer", "messages: the members it mentions, as links");
@@ -2767,7 +2772,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && btn(main.querySelector(".ticker-tabs"), "Everything").getAttribute("aria-pressed") === "true", "ticker: Everything lists every item one may read");
   expect(text(tkSeq(4315)).includes("Decided: Keep the order — Dashboard view order") && !text(tkSeq(4315)).includes("For you"),
     "ticker: a decision with the chosen reply and the request's title, read at read time");
-  expect(text(tkSeq(4325)).includes("This item was removed.") && !tkSeq(4305).querySelector("a") && text(tkSeq(4305)).includes("The old wiki moved."),
+  expect(text(tkSeq(4325)).includes("This item was removed.") && !tkSeq(4305).querySelectorAll("a").some((a) => !a.classList.contains("member-ref")) && text(tkSeq(4305)).includes("The old wiki moved."),
     "ticker: a removed item says so; an http link is not a link");
   byId("ticker-type").value = "contract"; byId("ticker-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(tkSeqs() === "4310,4302", "ticker: by type, contract meaning a merge that touched the contract");
@@ -2780,7 +2785,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const tkBad = ["JaVaScRiPt:alert(1)", " https://evil.example", "data:text/html,x", "http://plain.example", "https://user@evil.example/x"];
   win.Maity.api.get = (p) => (p.startsWith("/projects/maity/ticker?") && !p.includes("after=") ? tkGet(p).then((r) => ({ items: tkBad.map((u, i) => Object.assign({}, r.items[0], { seq: 9990 + i, text: i ? "x" : "<b>bold</b>", url: u })), next_cursor: null })) : tkGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
-  expect(tkItems().length === 5 && tkItems().every((li) => !li.querySelector("a")) && text(tkSeq(9990)).includes("<b>bold</b>") && !tkSeq(9990).querySelector("b"),
+  expect(tkItems().length === 5 && tkItems().every((li) => !li.querySelectorAll("a").some((a) => !a.classList.contains("member-ref"))) && text(tkSeq(9990)).includes("<b>bold</b>") && !tkSeq(9990).querySelector("b"),
     "ticker: text as text; javascript:, data:, http:, a leading space or a user in the URL is no link");
   // A decision answered in words has no reply label.
   win.Maity.api.get = (p) => (p.startsWith("/projects/maity/ticker?") && !p.includes("after=") ? tkGet(p).then((r) => ({ items: [Object.assign({}, r.items.find((x) => x.type === "merge"), { seq: 9995, type: "decision", contract: null,
@@ -3541,6 +3546,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = byId("join-agent").querySelectorAll("option").map((o) => o.attrs.value).filter(Boolean)[0] || "";
   await ceCase("join", byId("join-briefing"), "Start with the open PRs.", "/projects/maity/joins", ceSubmitOf(byId("join-briefing")));
   win.Maity.api.post = cePost; win.Maity.api.patch = cePatch;
+  await go("#/p/maity/inbox");
+
+  // A member is always clickable (the maintainer's rule): every view names members through one
+  // helper, a link to their view with the full name as tooltip; following it marks their row.
+  const mrFollow = async (route, label) => {
+    await go("#/p/maity/inbox"); await go(route); for (let k = 0; k < 6; k++) await tick();
+    const refs = main.querySelectorAll("a.member-ref");
+    const ref = refs[0];
+    expect(ref && /^#\/p\/maity\/members\/[^/]+$/.test(ref.getAttribute("href")) && ref.getAttribute("title") && ref.getAttribute("data-member"),
+      "member links: " + label + " names members as links with the full name as tooltip (" + refs.length + ")");
+    if (!ref) return;
+    const id = ref.getAttribute("data-member");
+    await go(ref.getAttribute("href")); for (let k = 0; k < 4; k++) await tick();
+    const row = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id);
+    expect(row && row.classList.contains("wanted"), "member links: from " + label + " the link lands on that member's row");
+  };
+  await mrFollow("#/p/maity/overview", "the overview");
+  await mrFollow("#/p/maity/chat/agt-a", "the chat");
+  await mrFollow("#/p/maity/messages", "the project messages");
+  await mrFollow("#/p/maity/agents", "the agents");
+  await mrFollow("#/p/maity/org", "the organisation");
+  await mrFollow("#/p/maity/members", "the members list");
+  await mrFollow("#/p/maity/board", "the board");
+  // The inbox: the entry's asker.
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const mrAsker = main.querySelector(".current .facts a.member-ref");
+  expect(mrAsker && mrAsker.getAttribute("href") === "#/p/maity/members/" + mrAsker.getAttribute("data-member"), "member links: the inbox names its asker as a link");
+  // Across projects the page has no member list of the request's project: names stay text, never a guessed link.
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".current") && !main.querySelectorAll(".entries a.member-ref").length,
+    "member links: in all projects no member is linked, since no member list of their project was read");
+  // The direct chat's heading names its agent as a link; a needs-in-session note names its member.
+  await go("#/p/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  const mrHead = main.querySelector(".chat-pane") && main.querySelector(".chat-pane").querySelector("a.member-ref");
+  expect(mrHead && mrHead.parentNode.tagName === "H2" && mrHead.getAttribute("data-member") === "agt-a",
+    "member links: the direct chat's heading links its agent");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const mrNis = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes("Merge PR #2"));
+  if (mrNis && mrNis.attrs["aria-expanded"] !== "true") { mrNis.click(); await tick(); }
+  expect(main.querySelector(".current .flag a.member-ref"), "member links: a needs-in-session note links its member");
+  // Someone the project does not list (removed, outside) is plain text, never a link.
+  const mrPlain = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: () => "Gone" }, { member_id: "agt-gone", display_name: "Gone Agent" });
+  expect(mrPlain.tagName === "SPAN" && mrPlain.classList.contains("plain") && text(mrPlain) === "Gone Agent" && mrPlain.getAttribute("title") === "Gone Agent",
+    "member links: a member the project does not list is plain text");
   await go("#/p/maity/inbox");
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.

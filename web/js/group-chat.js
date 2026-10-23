@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
     // An observer outside the project is not in the member list: said so, not by id.
     const observerName = (o) => (o === ctx.me.id ? "you" : ctx.outsider ? "another agent's owner"
-      : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
+      : ctx.memberById && ctx.memberById[o] ? M.dom.memberRef(ctx, o) : "an owner outside the project");
 
     const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
@@ -254,11 +254,11 @@ window.Maity = window.Maity || {};
 
     // Who is in it, and who else reads it (§9.2: shown in the chat itself).
     const people = () => h("p", { class: "muted group-people-line" }, "In it: ",
-      view.participants.map((p, i) => [i ? ", " : null, nameOf(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
+      view.participants.map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
     const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, "Also read by: ",
         view.observers.map((o, i) => [i ? ", " : null, observerName(o),
-          " (owner of " + view.participants.filter((p) => p.owner_id === o).map((p) => nameOf(ctx, p.member_id)).join(", ") + ")"]),
+          " (owner of ", view.participants.filter((p) => p.owner_id === o).map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id)]), ")"]),
         ". They read every message and write nothing.")
       : null);
 
@@ -311,7 +311,7 @@ window.Maity = window.Maity || {};
             + "Write here as for everyone who is or will be in the chat."));
         }
         append(box, h("ul", { class: "group-members" }, view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) =>
-          h("li", null, nameOf(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
+          h("li", null, M.dom.memberRef(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
             if (!window.confirm("Remove " + nameOf(ctx, p.member_id) + " from this chat? They no longer read it.")) return;
             act("Removing", nameOf(ctx, p.member_id) + " is no longer in the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
           } }, "Remove")))));

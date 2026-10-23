@@ -42,8 +42,8 @@ window.Maity = window.Maity || {};
         h("code", null, c.id),
         " " + (c.client || "") + " · created " + formatTime(c.created_at),
         c.revoked_at
-          ? h("span", { class: "muted" }, " · revoked " + formatTime(c.revoked_at) + " by " + ctx.nameOf(c.revoked_by)
-            + (c.revoked_reason ? " (" + c.revoked_reason + ")" : ""))
+          ? h("span", { class: "muted" }, " · revoked " + formatTime(c.revoked_at) + " by ", M.dom.memberRef(ctx, c.revoked_by),
+            c.revoked_reason ? " (" + c.revoked_reason + ")" : "")
           : (c.resumed_at
             ? h("span", null, " · last used " + formatAgo(c.last_used_at)
               + (c.last_used_via ? " " + (VIA[c.last_used_via] || "(" + c.last_used_via + ")") : ""))
@@ -215,13 +215,13 @@ window.Maity = window.Maity || {};
           h("header", null,
             M.avatar(m, 28),
             p.dot,
-            h("h3", null, m.display_name),
+            h("h3", null, M.dom.memberRef(ctx, m.id)),
             h("span", { class: "handle" }, "@" + m.handle),
             p.label),
           h("dl", { class: "facts" },
-            h("dt", null, "Owner"), h("dd", null, ctx.nameOf(m.owner_id)),
+            h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),
             h("dt", null, "Role"), h("dd", null, m.role),
-            h("dt", null, "Reports to"), h("dd", null, ctx.nameOf(m.reports_to)),
+            h("dt", null, "Reports to"), h("dd", null, m.reports_to ? M.dom.memberRef(ctx, m.reports_to) : "—"),
             h("dt", null, "Areas"), h("dd", null, m.areas.length ? m.areas.join(", ") : "—"),
             m.capabilities && m.capabilities.length
               ? [h("dt", null, "Capabilities"), h("dd", null, m.capabilities.join(", "))]
@@ -234,8 +234,8 @@ window.Maity = window.Maity || {};
             h("dt", null, "Last seen"), p.seen,
             h("dt", null, "Joined"), h("dd", null, formatTime(m.joined_at))),
           m.paused
-            ? h("p", { class: "flag" }, "Paused " + formatAgo(m.paused.since)
-              + (m.paused.by && m.paused.by !== m.id ? " by " + ctx.nameOf(m.paused.by) : "") + ": " + m.paused.reason,
+            ? h("p", { class: "flag" }, "Paused " + formatAgo(m.paused.since),
+              m.paused.by && m.paused.by !== m.id ? [" by ", M.dom.memberRef(ctx, m.paused.by)] : null, ": " + m.paused.reason,
               m.paused.by && m.paused.by !== m.id ? h("span", { class: "hint" }, " " + PAUSED_EFFECT) : null)
             : null,
           ctx.canAdmin ? pauseControl(ctx, m) : null,

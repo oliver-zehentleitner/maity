@@ -57,12 +57,14 @@ window.Maity = window.Maity || {};
     return "Free text";
   }
 
-  function addressee(ctx, to) {
+  function addressee(ctx, req) {
+    const to = req.to;
     if (!to) return null;
     if (to === "owner") return "the project's owner";
     if (to.startsWith("role:")) return "role " + to.slice(5);
     if (to === ctx.me.id) return "you";
-    return ctx.nameOf ? ctx.nameOf(to) : to;
+    if (to.startsWith("profile_owner:")) return "you, as the agent's owner";
+    return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
   }
 
   // In the cross-project view: the project's logo or monogram, its name
@@ -105,8 +107,21 @@ window.Maity = window.Maity || {};
     return computedGo ? "reply primary" : "reply";
   }
 
-  function who(person) {
-    return person.display_name + " · " + person.role + (person.session_id ? " · session " + person.session_id : "");
+  // A member named in an entry, as a link to them in the request's own
+  // project; a personal request's project may be one the human is not in,
+  // so there they stay text.
+  // A link only to someone this page knows is a member of the request's
+  // project: its own project's member list. Across projects that list is
+  // not read, so there, and for a personal request, they stay text.
+  function ref(ctx, req, person) {
+    const id = person && (person.member_id || person.id);
+    const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
+    const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
+    return M.dom.memberRef(view, person);
+  }
+
+  function who(ctx, req, person) {
+    return [ref(ctx, req, person), " · " + person.role + (person.session_id ? " · session " + person.session_id : "")];
   }
 
   function entryBody(ctx, req, names, onAnswer, onLater) {
@@ -119,9 +134,9 @@ window.Maity = window.Maity || {};
       ctx.scope === "all" && !req.personal
         ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
-      h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(req.asked_by) : "—"),
-      req.on_behalf_of ? [h("dt", null, "On behalf of"), h("dd", null, who(req.on_behalf_of))] : null,
-      req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req.to))] : null,
+      h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : "—"),
+      req.on_behalf_of ? [h("dt", null, "On behalf of"), h("dd", null, who(ctx, req, req.on_behalf_of))] : null,
+      req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req))] : null,
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
       req.task
         ? [h("dt", null, "Card"), h("dd", null, req.personal
@@ -149,7 +164,7 @@ window.Maity = window.Maity || {};
     if (nis) {
       append(body, h("p", { class: "flag", role: "note" },
         h("strong", null, "Needs you in the session: "),
-        nis.display_name + (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
+        ref(ctx, req, nis), (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
         nis.reason));
     }
 
@@ -158,7 +173,9 @@ window.Maity = window.Maity || {};
       append(body, h("p", { class: "answered" },
         (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req)),
         a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
-        a ? " · " + names.member(a.by) + (a.on_behalf_of ? " for " + names.member(a.on_behalf_of) : "") + " · " + formatTime(a.at) : null));
+        a ? [" · ", ref(ctx, req, { member_id: a.by, display_name: names.member(a.by) }),
+          a.on_behalf_of ? [" for ", ref(ctx, req, { member_id: a.on_behalf_of, display_name: names.member(a.on_behalf_of) })] : null,
+          " · " + formatTime(a.at)] : null));
       return body;
     }
 

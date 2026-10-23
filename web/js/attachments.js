@@ -43,7 +43,9 @@ window.Maity = window.Maity || {};
     const why = err.code === "invalid" && err.details && err.details.fields && (err.details.fields.body || err.details.fields.name);
     if (why) return { message: REFUSED[why] || why };
     if (err.code === "payload_too_large") {
-      return { message: "the hub refused it as too large (the file is " + sizeOf(size) + ")" + (err.message ? ": " + err.message : "") };
+      // The hub's own words when it sent words; anything else is left out.
+      const words = typeof err.message === "string" && err.message ? ": " + err.message : "";
+      return { message: "the hub refused it as too large (the file is " + sizeOf(size) + ")" + words };
     }
     if (err.code === "attachment_quota") return { message: err.details && err.details.scope === "pending"
       ? "you have 20 files, or 100 MiB, waiting to be sent; send or remove some first" : "the project's storage for files is full" };
@@ -286,7 +288,7 @@ window.Maity = window.Maity || {};
       if (!items.length) append(list, h("li", { class: "muted" }, "None."));
       items.forEach((a) => append(list, h("li", null,
         a.name ? a.name + " · " : "",
-        sizeOf(a.size) + " · " + (ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by) + " · expires " + formatAgo(a.expires_at),
+        sizeOf(a.size) + " · ", M.dom.memberRef(ctx, a.uploaded_by), " · expires " + formatAgo(a.expires_at),
         " ", h("button", {
           type: "button", class: "small", "aria-label": "Delete the pending upload of " + sizeOf(a.size) + " by " + (ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by),
           onclick: async () => {

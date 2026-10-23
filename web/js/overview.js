@@ -67,7 +67,7 @@ window.Maity = window.Maity || {};
             + plural(list.filter((m) => m.kind === "agent").length, "agent", "agents") + "; " + online + " online."),
           h("dl", { class: "facts" }, ROLES.filter((r) => list.some((m) => m.role === r)).map((r) => [
             h("dt", null, r),
-            h("dd", null, list.filter((m) => m.role === r).map((m, i) => [i ? ", " : null, m.display_name])),
+            h("dd", null, list.filter((m) => m.role === r).map((m, i) => [i ? ", " : null, M.dom.memberRef(ctx, m.id)])),
           ]))]
         : h("p", { class: "muted" }, "No members."));
   }
@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
       list.length
         ? h("ol", { class: "overview-reports" }, list.map((r) => h("li", null,
           M.avatar({ id: r.reported_by.member_id, avatar_url: r.reported_by.avatar_url }, 20),
-          h("span", null, " " + r.reported_by.display_name + " · "),
+          " ", M.dom.memberRef(ctx, r.reported_by), " · ",
           // The board has no card route yet: a report links to the board.
           h("a", { href: ctx.link("board"), "data-key": "report:" + r.task.id }, h("span", { class: "card-id" }, r.task.id), " " + r.task.title),
           h("span", { class: "muted" }, " · " + formatAgo(r.reported_at)),

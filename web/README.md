@@ -105,6 +105,14 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 Inside a project, in the order of their importance; see
 `context/views.md` for why.
 
+A member is always clickable: wherever a view names one (the overview's
+members and reports, an inbox entry's asker, addressee and answerer, chat
+authors and people, project messages, ticker items, the members list,
+agent cards, the organisation), the name is a link to that member's row
+in Members, with the full name as tooltip (`M.dom.memberRef`). A member
+the project does not list, a personal request's people and anyone in a
+read-along view are plain text.
+
 In every form with a multi-line field (an inbox answer in words, a chat
 message, a project message, a ticker post, a new card, a briefing, a
 join's briefing) **Ctrl+Enter**, or **⌘+Enter** on a Mac, sends what
