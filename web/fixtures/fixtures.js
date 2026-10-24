@@ -3,6 +3,68 @@
 "use strict";
 
 window.MAITY_FIXTURES = {
+  "admin-mail.json": {
+    "complete": true,
+    "enabled": true,
+    "failed_last_hour": 0,
+    "from": {
+      "source": "admin",
+      "value": {
+        "address": "maity@example.org",
+        "name": "Maity"
+      }
+    },
+    "host": {
+      "source": "env",
+      "value": "smtp.example.org"
+    },
+    "last_test": null,
+    "max_per_hour": {
+      "source": "default",
+      "value": 500
+    },
+    "missing": [],
+    "password": {
+      "set": false,
+      "source": "admin"
+    },
+    "port": {
+      "source": "default",
+      "value": 587
+    },
+    "reply_to": {
+      "source": "default",
+      "value": null
+    },
+    "secret_key": {
+      "set": true
+    },
+    "security_max_per_hour": {
+      "source": "default",
+      "value": 100
+    },
+    "security_queued": 0,
+    "security_sent_last_hour": 1,
+    "sent_last_hour": 12,
+    "sign_in_dropped_last_hour": 0,
+    "sign_in_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "sign_in_sent_last_hour": 0,
+    "signing_key": {
+      "set": true
+    },
+    "tls": {
+      "source": "default",
+      "value": "starttls"
+    },
+    "username": {
+      "source": "default",
+      "value": null
+    },
+    "warnings": []
+  },
   "admin-users.json": {
     "items": [
       {

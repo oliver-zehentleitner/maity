@@ -1097,3 +1097,22 @@ from the coordinator, roles or active members. **No check-in** disables
 the hint. Clearing the text removes the default briefing. Version, author
 and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
+
+**Instance administration** in the settings menu opens `#/admin` for the
+instance admin. It combines Users, Mail settings and Instance information;
+`#/admin/users` still opens the existing searchable user list. Each section
+is omitted when the hub does not list its route. A failed or forbidden read
+is shown without preventing the other sections from loading.
+
+Mail settings identify values set by the environment and keep them read-only.
+Only changed fields are saved. A blank password keeps the stored one; its
+explicit delete checkbox removes it. A new password is cleared from the input
+as soon as the save starts and is never shown back. Test send uses the saved
+settings and an explicit recipient, even with mail disabled, and displays
+the outcome, stage, SMTP code and server-redacted reply. It sends no mail
+until the admin presses **Send test mail**.
+
+Instance information shows the hub version, database reachability and migration
+revision/head, including a schema-outdated response. Sign-in method settings
+are deferred until their backend route lands on main; this change offers no
+controls for that unimplemented route.
