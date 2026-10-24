@@ -286,3 +286,19 @@ def test_onboarding_merge_and_version_use_the_locked_row(
     settings = put(owner, {"briefing": "mine"}).json()["settings"]
     assert settings["onboarding"]["version"] == 8
     assert settings["release_checklist"] == ["keep concurrent"]
+
+
+def test_historical_claim_does_not_onboard_a_later_rejoin(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+) -> None:
+    old = flow.agent(make_client, owner)
+    task = owner.post("/projects/maity/tasks", {"title": "old work", "body": "old"}).json()
+    assert old.post(f"/projects/maity/tasks/{task['id']}/claim", {}).status_code == 200
+    assert owner.delete(f"/projects/maity/members/{old.id}").status_code == 200
+    rejoined = flow.agent(make_client, owner, agent={"id": old.id})
+    assert "onboarding" in rejoined.resume().json()
+    downgrade(migrated, "0039")
+    migrate(migrated)
+    assert "onboarding" in rejoined.resume().json()

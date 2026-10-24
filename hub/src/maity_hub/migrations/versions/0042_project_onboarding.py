@@ -40,6 +40,8 @@ def upgrade() -> None:
         sa.column("project_id", sa.String),
         sa.column("agent_id", sa.String),
         sa.column("onboarded_at", TIMESTAMP),
+        sa.column("joined_at", TIMESTAMP),
+        sa.column("removed_at", TIMESTAMP),
     )
     for row in bind.execute(
         sa.select(events).where(events.c.kind == "task_claimed").order_by(events.c.at)
@@ -52,6 +54,8 @@ def upgrade() -> None:
                     membership.c.project_id == row.project_id,
                     membership.c.agent_id == holder,
                     membership.c.onboarded_at.is_(None),
+                    membership.c.joined_at <= row.at,
+                    sa.or_(membership.c.removed_at.is_(None), membership.c.removed_at >= row.at),
                 )
                 .values(onboarded_at=row.at)
             )
