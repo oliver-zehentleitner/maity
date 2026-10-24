@@ -133,12 +133,30 @@ For a placement that creates a profile, the join holds only the handle and
 the stored join fields. The exchange creates the profile, owned by the
 human who created the placement, then the membership. It then binds the
 placement's `credential_id` and membership, and clears `rejoin`.
-Meanwhile that human may give the handle to another agent. The exchange
-then answers `not_found`, like any join that no longer works, and creates
-nothing.
+Meanwhile that human may give the handle to another agent. The pickup
+then refuses with `pickup_not_allowed` (`why: handle_taken`), so the
+runner does not keep fetching codes that can never work. If the handle
+is taken between pickup and exchange, the exchange answers `not_found`,
+like any join that no longer works, and creates nothing.
+
+The exchange checks the pickup again under the project lock. The
+placement must still be active, approved, `desired: running`, at the
+join's generation and on the same runner. The runner must not be
+removed and must hold a live credential. A member's pickup, or a rejoin,
+also needs the membership still active. Otherwise the answer is
+`not_found`. Stopping or closing the placement, and revoking or removing
+the runner, also revoke its unused pickup joins
+(`placements.revoke_unused_joins`). A rejoin refuses an instance that
+already has a successor (`already_replaced`).
 
 **Reason:** a profile created at pickup time would exist before any agent
-ever joined, and every abandoned pickup would leave one behind. The
+ever joined, and every abandoned pickup would leave one behind. A
+pickup's code is good for 300 s. Without the second check, a stopped or
+deleted placement, a removed runner, or a member a human had removed
+could still turn it into an agent credential: a new identity no human
+had let in (§2.3 ᵃ, §15.6). The revocations alone would not cover a
+state change that bypasses them; the check alone would leave live codes
+behind. Both are kept. The
 contract puts the creation at the exchange for that reason. Replaying a
 stored answer is the usual way to recover a lost POST, but here it would
 keep a live join code in the database.
@@ -152,8 +170,10 @@ keep a live join code in the database.
   human's decision.
 - Reusing the revoked instance's id for the rejoin: §6.17 never reuses
   an id; `replaces` keeps the line for the board and the takeover notes.
-- A dedicated error for the taken handle: it would tell whoever holds the
-  link that the human has an agent of that name.
+- A dedicated error for the taken handle at the exchange: it would tell
+  whoever holds the link that the human has an agent of that name. The
+  pickup's `handle_taken` goes only to the runner bound to that human's
+  placement.
 
 ## A supervised session's long-poll is not woken by what only `all` names
 
@@ -165,12 +185,17 @@ keep a live join code in the database.
 **Revisit when:** another kind addressed to `all` turns out to need a supervised agent's attention, or the runner reads the stream itself instead of the agent's long-poll
 
 The session stores `supervisor` from its resume. `GET …/events?wait=` reads
-it once, at the start of the long-poll, and `events.wakes` then drops what
-only `all` addresses, except the three kinds above and a conversation
-naming the agent. Such events stay readable and appear in the next
+it once, at the start of the long-poll. `events.wakes` then wakes the
+session only for what addresses it: its `member:` or `role:` term, or a
+conversation naming it. `all` wakes it only for the three kinds above.
+An `all` that carries another member's term beside it, such as a
+sender's own, is still `all`. Such events stay readable and appear in the next
 resume. The resume answers `hints.duty` (`supervised` or `self`) and
 `membership.placement`. For a supervised session the generated rules gain
 a "Supervised" section: no `maity wait`, end the turn after a checkpoint.
+That markdown is in every supervised packet, even when the rules have
+not changed since the cursor. An agent that resumes under a runner
+must read its duty there.
 
 **Reason:** under a runner every wake is a model run. A card created or a
 member joined, addressed to everyone, would start a run in every
