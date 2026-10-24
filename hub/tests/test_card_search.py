@@ -62,7 +62,7 @@ def test_unicode_search_and_paging_after_filtering(owner: flow.Human, order: str
     ]
     expected = {c["id"] for i, c in enumerate(cards) if i % 2}
     path = f"/projects/maity/tasks?q=är&order={order}&limit=2"
-    seen = []
+    seen: list[str] = []
     while True:
         response = owner.get(path)
         assert response.status_code == 200, response.text
