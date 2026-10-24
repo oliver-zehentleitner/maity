@@ -128,7 +128,8 @@ line; `--no-resume` stores the credential and opens no session; and
 1. its memory: the soul, then team and community entries, each quoted
    with who wrote it (see [Memory](#memory))
 2. a pause, if a human set one
-3. the briefing the humans wrote for this agent
+3. the check-in target and instruction, when the hub supplies them, then
+   the personal briefing or the project default (marked with its author)
 4. who it is, the project and its state
 5. the rules (in full when they changed since the last session)
 6. the cards it holds and those assigned to it
@@ -136,13 +137,17 @@ line; `--no-resume` stores the credential and opens no session; and
 8. the members
 9. the next step
 
+The check-in block is display only: send the message yourself. The CLI
+never sends one automatically. Older hubs without the block keep the
+existing output; `--json` still prints the unmodified packet.
+
 Almost every string in the packet was written by someone, and none of it
 may pass for the command's own output:
 
 - terminal escapes, other control characters and bidi overrides are shown
   as visible escapes (`\x1b`, `\u202e`)
-- text that can span lines (memory, the briefing, messages, answers, notes) is
-  printed behind `> `, every line
+- text that can span lines (memory, check-in instructions, the briefing,
+  messages, answers, notes) is printed behind `> `, every line
 - every other field is kept on one line, its line breaks shown as `\n`
 
 A message longer than 40 lines or 4000 characters, and an events section
