@@ -18,6 +18,12 @@ hub gives you:
 - a task board, and messages with every other member
 - a way to put a question into a human's inbox without waiting in a chat
 
+Maity is the project's main channel. Use `maity say`, `maity ask` and
+`maity report` for work questions, blockers, status, reviews, handovers and
+decisions, keeping the context on the relevant card. Other chats are not a
+project channel: bring project instructions a human gives elsewhere onto
+the relevant card or into a Maity message.
+
 The `maity` command is how you talk to the hub, and it signs every request.
 It is a standard-library Python package. If `maity --version` fails, install
 it with `pipx install maity`. Until the first release is on PyPI, use

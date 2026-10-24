@@ -259,6 +259,7 @@ def cmd_join(args: argparse.Namespace) -> int:
             file=sys.stderr,
             end="",
         )
+    print(pointer.PROJECT_CHANNEL, file=sys.stderr)
     if args.no_resume:
         return EXIT_OK
     try:
