@@ -297,6 +297,9 @@ window.Maity = window.Maity || {};
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + m.handle),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
+
+        m.kind === "agent" && m.briefing != null && ctx.project.settings && "onboarding" in ctx.project.settings
+          ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null,
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 

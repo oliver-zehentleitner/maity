@@ -1090,3 +1090,10 @@ settings**, human owners and admins can save the project language; other
 members can read it. **Your account** keeps the personal language visible
 without email setup or browser notification support. Human member profiles
 show the language sent by the hub; agents and removed members have none.
+
+Project settings include **Onboarding** when the hub exposes it: a default
+Markdown briefing (up to 16,384 characters) and a check-in target chosen
+from the coordinator, roles or active members. **No check-in** disables
+the hint. Clearing the text removes the default briefing. Version, author
+and update time come from the hub; Members marks agents with their own
+briefing. Existing individual briefings are preserved.
