@@ -3948,6 +3948,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await tick();
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
+  // Onboarding settings preserve the full editable object and hide on older hubs.
+  const onboardingGet = win.Maity.api.get, onboardingPatch = win.Maity.api.patch;
+  const onboardingWrites = [];
+  win.Maity.api.patch = (path, body) => { onboardingWrites.push([path, body]); return onboardingPatch(path, body); };
+  await go("#/p/maity/board"); await projectSettings();
+  expect(!!byId("onboarding-briefing") && byId("onboarding-target").querySelectorAll("option").some((o) => o.attrs.value === "coordinator" && "selected" in o.attrs), "onboarding: default coordinator is editable");
+  byId("onboarding-briefing").value = "Report here: **welcome**";
+  byId("onboarding-target").value = "role:reviewer";
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(onboardingWrites[0]) === JSON.stringify(["/projects/maity", { settings: { onboarding: { briefing: "Report here: **welcome**", check_in_with: "role:reviewer" } } }]), "onboarding: only briefing and target are written");
+  expect(text(header).includes("Version 1") && text(header).includes("Onboarding saved."), "onboarding: saved version and status appear");
+  byId("onboarding-briefing").value = "😀".repeat(16385);
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick();
+  expect(onboardingWrites.length === 1 && text(header).includes("16,384"), "onboarding: Unicode character cap prevents oversized write");
+  byId("onboarding-briefing").value = ""; byId("onboarding-target").value = "";
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(onboardingWrites[1][1]) === JSON.stringify({ settings: { onboarding: {} } }), "onboarding: empty object disables check-in and clears default text");
+  win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maity"
+    ? { ...v, settings: Object.fromEntries(Object.entries(v.settings).filter(([k]) => k !== "onboarding")) } : v);
+  await go("#/p/maity/inbox"); await projectSettings();
+  expect(!byId("onboarding-briefing"), "onboarding: absent setting hides section on older hub");
+  win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maity/members"
+    ? { ...v, items: v.items.map((m) => ({ ...m, briefing: m.kind === "agent" ? "Own instructions" : null })) } : v);
+  await go("#/p/maity/members");
+  expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
+  win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
+
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));

@@ -873,6 +873,16 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if (body.settings && "onboarding" in body.settings) {
+        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
+        const value = body.settings.onboarding || { check_in_with: "coordinator" };
+        if (value.briefing && [...value.briefing].length > BRIEFING_CHARS) fail(400, "invalid", "Briefing too long", path);
+        const old = (p.settings || {}).onboarding || {};
+        p.settings = Object.assign({}, p.settings, { onboarding: Object.assign({}, value, {
+          version: (old.version || 0) + 1, by: me().member, updated_at: nowIso(),
+        }) });
+      }
+
       if ("repository" in body) {
         if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;

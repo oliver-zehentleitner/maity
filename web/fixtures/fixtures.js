@@ -1180,6 +1180,9 @@ window.MAITY_FIXTURES = {
     },
     "rules_version": 7,
     "settings": {
+      "onboarding": {
+        "check_in_with": "coordinator"
+      },
       "release_checklist": [
         "CHANGELOG has a section for this version",
         "live version equals the tag"
