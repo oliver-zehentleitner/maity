@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Connection, delete, func, insert, select, update
+from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
@@ -193,17 +193,26 @@ def moderator_order(conn: Connection, project: Any) -> list[Any]:
 
 
 def record_presence(conn: Connection, now: datetime) -> None:
-    """The minute's count for every agent membership with an instance online; older than a
-    day is pruned. Shown to nobody (§20.2)."""
-    from maity_hub import listening
+    """The minute's count for every agent membership with an instance `online` (§5.3: a
+    call within 120 seconds or a long-poll open); older than a day is pruned. Shown to
+    nobody (§20.2)."""
+    from maity_hub import instances, listening
 
     minute = now.replace(second=0, microsecond=0)
     live = conn.execute(
-        select(t.agent_session.c.membership_id, t.agent_session.c.id).where(
-            t.agent_session.c.live.is_(True)
-        )
+        select(
+            t.agent_session.c.membership_id,
+            t.agent_session.c.id,
+            t.agent_session.c.last_seen_at,
+        ).where(t.agent_session.c.live.is_(True))
     ).all()
-    online = sorted({m for m, session in live if listening.is_listening(session)})
+    online = sorted(
+        {
+            m
+            for m, session, seen in live
+            if instances.presence(seen, True, listening.is_listening(session)) == "online"
+        }
+    )
     known = set(
         conn.execute(
             select(t.presence_minute.c.membership_id).where(t.presence_minute.c.minute == minute)
@@ -468,6 +477,25 @@ def manual_starts_today(conn: Connection, project_id: str) -> int:
     return found
 
 
+def wake_now(conn: Connection, project_id: str, member_id: str) -> list[str]:
+    """Whom a later step wakes for a member: a human as `member:`, an agent at the instance
+    its team's rule selects now, never the one recorded at the opening; nobody when no
+    instance listens (§20.2)."""
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == project_id,
+            or_(t.membership.c.agent_id == member_id, t.membership.c.human_id == member_id),
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if member is None:
+        return []
+    if member.agent_id is None:
+        return [f"member:{member_id}"]
+    instance = selected_instance(member, _instances(conn, [member.id])[member.id])
+    return [f"instance:{member_id}#{instance}"] if instance is not None else []
+
+
 # --- the answer window closes (§20.4, §20.5) ------------------------------------------------
 
 
@@ -501,17 +529,11 @@ def close_answers(conn: Connection, round_row: Any) -> None:
         .where(t.jour_fixe_answer.c.round_id == round_row.id)
         .values(tag=None)
     )
-    moderator = round_row.moderator
-    token = (
-        f"instance:{moderator['member_id']}#{moderator['instance']}"
-        if moderator.get("instance")
-        else f"member:{moderator['member_id']}"
-    )
     emit(
         conn,
         round_row.project_id,
         "jour_fixe_answers_closed",
-        [token, "role:owner"],
+        [*wake_now(conn, round_row.project_id, round_row.moderator["member_id"]), "role:owner"],
         {
             "round_id": round_row.id,
             "answers_received": round_row.answers_received,
