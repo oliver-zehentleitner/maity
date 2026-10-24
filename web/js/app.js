@@ -77,6 +77,7 @@ window.Maity = window.Maity || {};
   function parseHash() {
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
+    if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
@@ -768,6 +769,7 @@ window.Maity = window.Maity || {};
       refresh: render,
       markSeen: () => {},
       every: (ms, fn) => { timers.push(window.setInterval(fn, ms)); },
+      onDispose: (fn) => { disposers.push(fn); },
       listeners: [],
       onEvents: (fn) => { ctx.listeners.push(fn); },
       // Re-reads /me for the switcher's counts. What counts as seen stays;
@@ -814,7 +816,10 @@ window.Maity = window.Maity || {};
 
   // Timers belong to one render; the next render stops them.
   let timers = [];
+  let disposers = [];
   function stopTimers() {
+    disposers.forEach((fn) => fn());
+    disposers = [];
     timers.forEach((t) => window.clearInterval(t));
     timers = [];
   }
@@ -987,10 +992,10 @@ window.Maity = window.Maity || {};
     renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -999,7 +1004,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length) await M.views.inbox(ctx, root, []);
+        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);
@@ -1018,6 +1023,8 @@ window.Maity = window.Maity || {};
         // Where one's agents are in projects one is not: read along there.
         const elsewhere = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere) append(root, elsewhere);
+      } else if (where.scope === "notifications") {
+        await M.waiting.full(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1044,6 +1051,7 @@ window.Maity = window.Maity || {};
     let label = "No such view";
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";
+    else if (where.scope === "notifications") label = "Notifications";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";

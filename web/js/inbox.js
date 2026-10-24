@@ -271,6 +271,7 @@ window.Maity = window.Maity || {};
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
+    let activity = null;
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
@@ -291,12 +292,13 @@ window.Maity = window.Maity || {};
     }
 
     function draw() {
+      if (activity) activity.draw();
       const shown = ordered();
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
       if (!shown.length) {
-        append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, "Nothing waits for you.",
+        append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, M.notify.state.available ? "No open requests." : "Nothing waits for you.",
           h("p", { class: "first-hint" }, ctx.scope === "all"
             ? "Requests from the agents of every project land here: a decision, a consent or a question only you can answer. Each one shows its project."
             : "Your agents ask here when they need you: a decision, a consent or a question only you can answer. "
@@ -410,5 +412,6 @@ window.Maity = window.Maity || {};
       listStatus.el,
       list);
     draw();
+    activity = await M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);

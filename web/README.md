@@ -1064,3 +1064,23 @@ silent agent** beside the board filters. The member list uses the same hint.
 Presence refreshes every 30 seconds. A live claim does not imply an online
 agent. The assigner's warning awaits card history; the creator is not
 assumed to be the assigner.
+
+
+**Waiting for you** combines open requests with unread activity, across
+projects and in each project inbox. Request-created notifications fold into
+an existing open request. Conversations occupy one row with their unread
+count and newest title; request updates, mentions, cards, agent outages,
+jour fixe, changes and account alerts have separate groups. Message content
+is not shown. The project filter applies to every group.
+
+Unread items are fetched in pages of 50. At most 200 activity rows appear;
+**More notifications** and the bell's **All notifications** link open a
+paginated list. Links use the dashboard's existing target-to-route mapping.
+Opening a chat marks its newest notification read, moving its conversation
+read mark. Opening a security alert never confirms it; use **This was me**.
+
+The visible waiting page and browser pop-ups share one notifications
+long-poll. Waiting activity updates even when pop-ups are off and preserves
+request drafts. A hub without notifications quietly keeps requests alone;
+a failed read keeps the last activity and shows an error. Opaque position
+rejection obtains a fresh head without marking anything read.
