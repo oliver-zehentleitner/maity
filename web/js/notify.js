@@ -279,5 +279,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig, subscribe, changed, KIND_WORDS };
+  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);
