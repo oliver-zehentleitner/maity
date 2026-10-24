@@ -44,6 +44,7 @@ from maity_hub.views import (
     member_views,
     paused,
     principal_id,
+    project_language,
     repository,
     task_views,
     ts,
@@ -352,6 +353,7 @@ def _packet(
         },
         "team": siblings,
         "project": {
+            "language": project_language(project),
             "slug": project.slug,
             "name": project.name,
             "state": project.state,
