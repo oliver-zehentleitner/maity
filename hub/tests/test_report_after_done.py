@@ -88,6 +88,7 @@ def test_report_after_done_preserves_closure_and_schedules_probe(
             .where(t.event.c.kind == "task_reported", t.event.c.subject_id == card["id"])
             .order_by(t.event.c.seq.desc())
         ).first()
+    assert event is not None
     assert event.payload["head"] == sha
 
 
