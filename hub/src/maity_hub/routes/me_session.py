@@ -12,6 +12,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import (
     API_VERSION,
     __version__,
+    availability,
     avatars,
     clock,
     environment,
@@ -84,6 +85,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("GET", "/me", None),
     ("POST", "/me/resume", None),
     ("PATCH", "/me", None),
+    ("POST", "/me/limit", None),
     ("GET", "/help", None),
     ("GET", "/projects", None),
     ("GET", "/projects/{slug}", "project:read"),
@@ -238,6 +240,15 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             actor=actor,
             subject=("session", session_id),
         )
+        # The member's next resume clears its limit (§6.12); a returning agent is
+        # announced before its packet is built.
+        if mine.row.limit_until is not None:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == mine.id)
+                .values(**availability.NO_LIMIT)
+            )
+        availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
@@ -289,6 +300,8 @@ def _packet(
                     "areas": view["areas"],
                     "presence": view["presence"],
                     "paused": view["paused"],
+                    "availability": view["availability"],  # §6.12
+                    "covered_by": view["covered_by"],
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
@@ -349,6 +362,8 @@ def _packet(
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
             "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
             "team": instances.team(conn, mine.row),
+            "availability_policy": availability.policy_of(mine.row),  # §6.12
+            "covering": [],  # cover by a substitute is not built yet (§6.12)
         },
         "team": siblings,
         "project": {
