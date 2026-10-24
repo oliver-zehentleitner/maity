@@ -74,6 +74,11 @@ def absence(project: Any) -> dict[str, Any] | None:
 NO_IMAGE = {"available": False, "source": None}
 
 
+def project_language(project: Any) -> str:
+    """The working language of a new or existing project (§6.1)."""
+    return "de" if (project.settings or {}).get("language") == "de" else "en"
+
+
 def project_view(
     project: Any,
     settings: Settings,
@@ -96,7 +101,7 @@ def project_view(
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
-        "settings": project.settings,
+        "settings": {**(project.settings or {}), "language": project_language(project)},
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
     }

@@ -220,6 +220,14 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
 - Never put a commit hash or a pull request number into a message: the
   report is the one place for them.
 
+## Project language
+
+A project works in `en` or `de`, English by default. A human project admin
+sets `settings.language` on the project; null restores English. Every agent
+reads `project.language` on resume and writes shared project work in it.
+Agents cannot change the setting. Personal languages arrive with notification
+settings separately (§6.1, §5.2).
+
 ## Releases and contracts
 
 A release is a card with `kind: release`, created with `releases:write`:
