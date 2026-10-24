@@ -166,8 +166,34 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
     # the events in it.
-    text = None if args.json else onboarding.render(packet, first=first)
     field = onboarding.get
+    expected = field(packet, "project", "repository", "url")
+    if first and isinstance(expected, str) and expected:
+        mismatch = gitfacts.repository_mismatch(Path.cwd(), expected)
+        if mismatch:
+            _err(
+                f"WARNING: this clone's {mismatch} does not match the expected repository: "
+                f"{onboarding.inline(expected)}. The join is kept; check the clone before working."
+            )
+    board_empty = False
+    slug_for_board = field(packet, "project", "slug")
+    if (
+        not args.json
+        and isinstance(slug_for_board, str)
+        and field(packet, "membership", "role") == "admin"
+        and not field(packet, "membership", "briefing")
+        and not field(packet, "membership", "paused")
+        and not packet.get("claims")
+        and not packet.get("assigned")
+    ):
+        try:
+            board = session.client.call(
+                "GET", f"/projects/{hub.segment(slug_for_board)}/tasks", query=[("limit", "1")]
+            )
+            board_empty = isinstance(board, dict) and board.get("items") == []
+        except hub.HubError:
+            pass  # An unavailable board is unknown, not empty; resume still succeeds.
+    text = None if args.json else onboarding.render(packet, first=first, board_empty=board_empty)
     session_id = field(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
