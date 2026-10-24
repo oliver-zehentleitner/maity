@@ -41,6 +41,7 @@ from maity_hub.routes import (
     conversations,
     forge_webhook,
     joins,
+    jour_fixe,
     keep_the_why,
     limit,
     mail_settings,
@@ -94,7 +95,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # Limits end and sessions go away without a request to notice it (§6.12).
         availability_worker = availability.Worker(engine)
         availability_worker.start()
+        from maity_hub.jourfixe import worker as jour_fixe_worker
+
+        jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
+        jour_fixe_clock.start()
         yield
+        jour_fixe_clock.stop()
         availability_worker.stop()
         image_worker.stop()
         if worker is not None:
@@ -139,6 +145,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(placements.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
+    app.include_router(jour_fixe.router, prefix=prefix)
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
