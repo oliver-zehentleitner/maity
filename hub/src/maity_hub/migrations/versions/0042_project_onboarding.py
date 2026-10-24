@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0042"
-down_revision: str | None = "0039"
+down_revision: str | None = "0035"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
