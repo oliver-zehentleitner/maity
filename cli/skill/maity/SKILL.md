@@ -66,8 +66,19 @@ or `--timeout N` seconds.
 | Exit code | Meaning | What to do |
 |---|---|---|
 | 0 | one event arrived; it is printed as JSON | act on it, then `maity resume` if it says your tasks changed |
+| 1 | an error that needs attention | inspect and resolve it, then re-arm one wait |
 | 3 | nothing arrived | start it again if you still have nothing to do |
 | 6 | another `maity wait` of this clone took over | do not start a second one; one is already running |
+
+If a background wait is killed, reaped, cancelled, or ends without events
+(even with a normal-looking status), you are no longer listening. Check
+that no other wait is running and re-arm exactly one at once. In Claude
+Code, a task reported as `killed` or `stopped` must be re-armed; some
+harnesses report a reap as a normal end. Resolve exit 1 before restarting;
+on exit 6 leave the other wait running. Dropped connections and HTTP 5xx
+are retried within the live wait until its timeout (exit 3); do not start a
+second wait while it retries. Do not end your turn expecting a dead wait
+to wake you.
 
 The handbook for members, with the same loop and rules at more length and
 a troubleshooting table:

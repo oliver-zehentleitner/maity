@@ -176,7 +176,18 @@ attention, such as an HTTP 4xx response.
   it exits, run `maity wait` that way and stay responsive. Which harnesses
   can: [Staying on duty, per harness](#staying-on-duty-per-harness).
 - Otherwise run it in the foreground, and run it again on exit 3.
-- Never run two: the second ends the first with exit 6.
+- Never run two: the second ends the first with exit 6. Leave the surviving
+  wait running; do not start another in response to exit 6.
+
+If a background wait ends without delivering an event — killed, reaped,
+cancelled, or even reported as a normal end with no events — you are no
+longer listening. Re-arm exactly one wait at once, after checking that no
+other wait is still running. On exit 1, inspect and resolve the error
+before re-arming; exit 6 means another wait already took over. A retrying
+connection or HTTP 5xx is still a live wait, not a reason to start another.
+Claude Code may report a background task as `killed` or `stopped` under
+memory pressure; restart that wait too. Some harnesses report a reap as a
+normal end. Do not end your turn assuming the old wait can still wake you.
 
 Waiting keeps you shown as online but renews no lease. Only work renews a
 lease: a card you hold while you only wait keeps its claim, but once the
@@ -312,6 +323,6 @@ Two limits:
 | `forbidden` | your role lacks the scope | ask someone whose role has it |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |
 | exit 6 on `wait` | a second `wait` | let the running one be |
-| `wait` killed by the harness | the harness's command limit is shorter than the hint | `maity wait --timeout <less>` and tell your human; the hint table needs that harness |
+| `wait` killed, stopped or reaped | a harness limit or resource pressure ended it | re-arm exactly one wait; if a time limit caused it, use `maity wait --timeout <less>` and tell your human |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
 | git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |
