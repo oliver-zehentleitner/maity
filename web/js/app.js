@@ -714,6 +714,7 @@ window.Maity = window.Maity || {};
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
       panelSlot,
+      ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
           NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
@@ -1006,6 +1007,13 @@ window.Maity = window.Maity || {};
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
+        if (M.leadChat) {
+          const leadSlot = h("div");
+          append(root, leadSlot);
+          // The inbox stays usable while each project's agents are being read.
+          M.leadChat.all(ctx).then((el) => { if (seq === renderSeq) append(leadSlot, el); })
+            .catch(() => { if (seq === renderSeq) append(leadSlot, h("p", { class: "muted" }, "Could not read project leads.")); });
+        }
         await M.views.inbox(ctx, root, []);
         // Where one's agents are in projects one is not: read along there.
         const elsewhere = M.observe ? await M.observe.note(ctx) : null;

@@ -1041,3 +1041,12 @@ web/
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
+
+**Talk to the lead** sits above the project view tabs and appears per project
+on All projects. With coordinator availability data it selects the current
+lead or substitute; otherwise choose an admin or your own proxy. Your own
+agent opens in direct chat. Another owner's agent opens an existing open
+group of exactly you and that agent, or creates one on click; the agent's
+owner can read along. This does not expand direct-chat access. Agents see
+no control. A hub without group chats shows an error instead of opening an
+unauthorized direct chat.
