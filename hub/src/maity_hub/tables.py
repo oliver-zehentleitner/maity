@@ -20,6 +20,8 @@ history is in the events.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -34,6 +36,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    true,
 )
 
 from maity_hub.db import metadata
@@ -195,6 +198,10 @@ membership = Table(
     Column("review_within_team", Boolean, nullable=False, server_default=false()),
     Column("team_updated_by", String(ID)),
     Column("team_updated_at", UtcDateTime),
+    # Preferences (§19.4): whether this membership's project reads its human's text, and
+    # whether this agent membership is given its owner's text.
+    Column("preferences_include", Boolean, nullable=False, server_default=true()),
+    Column("owner_preferences", Boolean, nullable=False, server_default=false()),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(
@@ -204,6 +211,39 @@ membership = Table(
     ),
     UniqueConstraint("project_id", "human_id", "active"),
     UniqueConstraint("project_id", "agent_id", "active"),
+    **MYSQL_TABLE,
+)
+
+# --- preferences (§19.4) -----------------------------------------------------------
+
+
+def _preference_columns() -> list[Column[Any]]:
+    return [
+        Column("markdown", MARKDOWN_TEXT, nullable=False),
+        Column("version", Integer, nullable=False),
+        Column("by_kind", String(16), nullable=False),
+        Column("by_id", String(ID), nullable=False),
+        Column("proposed_by", JSON_VALUE),  # the proposing agent, its project and request
+        Column("confirmed_by", String(ID)),
+    ]
+
+
+preferences = Table(
+    "preferences",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    *_preference_columns(),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+preferences_version = Table(
+    "preferences_version",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    *_preference_columns(),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "version"),
     **MYSQL_TABLE,
 )
 
@@ -658,11 +698,15 @@ request = Table(
         " OR (to_kind = 'role' AND to_role IS NOT NULL AND to_member IS NULL AND to_human IS NULL)"
         " OR (to_kind = 'owner' AND to_member IS NULL AND to_role IS NULL AND to_human IS NULL)"
         " OR (to_kind = 'profile_owner' AND to_profile IS NOT NULL AND to_human IS NOT NULL"
+        " AND to_member IS NULL AND to_role IS NULL)"
+        # A human in person (§19.4): a personal request no agent profile stands behind.
+        " OR (to_kind = 'human' AND to_human IS NOT NULL AND to_profile IS NULL"
         " AND to_member IS NULL AND to_role IS NULL)",
         name="to_shape",
     ),
     CheckConstraint(
-        "(personal AND to_kind = 'profile_owner') OR (NOT personal AND to_kind <> 'profile_owner')",
+        "(personal AND to_kind IN ('profile_owner', 'human'))"
+        " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
     Index("ix_request_project_status", "project_id", "status"),

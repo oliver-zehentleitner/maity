@@ -57,6 +57,7 @@ def test_the_member_view_has_the_contract_shape(
         "owner",  # likewise, and it owns the agent (§6.2)
         "credentials",
         "shared_environment",  # likewise (§5.3)
+        "owner_preferences",  # likewise (§19.4)
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
     }

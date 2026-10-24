@@ -300,18 +300,19 @@ def patch_team(
     Only the human who owns the agent profile, also when not a member."""
     if team is None:
         raise invalid({"team": "required"})
-    target, reader = _team_target(conn, caller, slug, member_id)
+    target, reader = team_target(conn, caller, slug, member_id)
     _set_team(conn, target, team, caller)
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     return row, reader
 
 
-def _team_target(
+def team_target(
     conn: Connection, caller: Caller, slug: str, member_id: str
 ) -> tuple[Any, Membership | None]:
-    """The membership whose rulebook a team-only PATCH changes, with the caller's own:
-    its agent's owner may call without being a member (§6.18); to anyone else who is no
-    member the project does not exist (§2.3)."""
+    """The agent membership a profile-owner-only PATCH changes (`team`, §6.18;
+    `owner_preferences`, §19.4), with the caller's own: its agent's owner may call
+    without being a member; to anyone else who is no member the project does not exist
+    (§2.3)."""
     project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
     if project is None or caller.kind == "runner":
         raise not_found()
