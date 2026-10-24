@@ -210,6 +210,9 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   a human) is reported with `"code": false`, `"pr_status": "none"` and no git
   fields at all; the summary carries the result, and the probe never runs on
   it. `maity report --no-code` sends that.
+  A `done` card whose pull request is still open also accepts a replacement
+  from its reporting member for the same pull request, without a claim; its
+  status and closure stay unchanged, even with `"done": true` (§6.6).
 - Never put a commit hash or a pull request number into a message: the
   report is the one place for them.
 

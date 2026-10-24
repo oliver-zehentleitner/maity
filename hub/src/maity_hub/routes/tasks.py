@@ -1225,10 +1225,29 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
-        card = _holder_card(conn, mine, card_id)
-        if card.status not in ("in_progress", "blocked", "review"):
+        card = _project_card(conn, mine, card_id)
+        already_done = card.status == "done"
+        if already_done:
+            previous = card.report or {}
+            pr = previous.get("pr") or {}
+            observed = previous.get("observed") or {}
+            state = observed.get("pr_state") or pr.get("state")
+            if (
+                previous.get("reported_by") != mine.principal_id
+                or previous.get("pr_status") != "found"
+                or state != "open"
+            ):
+                raise cards.invalid_transition(card.status, "review")
+            if body.pr is None or body.pr.number != pr.get("number"):
+                raise invalid({"pr": "different_pull_request"})
+        elif card.status == "cancelled":
             raise cards.invalid_transition(card.status, "review")
-        if body.done:
+        else:
+            card = _holder_card(conn, mine, card_id)
+            if card.status not in ("in_progress", "blocked", "review"):
+                raise cards.invalid_transition(card.status, "review")
+        closing = body.done and not already_done
+        if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
             if not cards.has_done_authority(mine, card):
                 raise forbidden(
@@ -1260,12 +1279,13 @@ def report(
             "mismatch": None if body.code else False,
         }
         values: dict[str, Any] = {"report": stored}
-        if body.done:
-            values.update({**_closing(card), "status": "done", "closed_at": now})
-        elif card.status == "blocked":
-            values["status_before_block"] = "review"  # the answer restores review (§7)
-        else:
-            values["status"] = "review"
+        if not already_done:  # §6.6: a done card keeps its closure and claim.
+            if closing:
+                values.update({**_closing(card), "status": "done", "closed_at": now})
+            elif card.status == "blocked":
+                values["status_before_block"] = "review"  # the answer restores review (§7)
+            else:
+                values["status"] = "review"
         conn.execute(
             update(t.card)
             .where(t.card.c.id == card.id)
@@ -1290,7 +1310,7 @@ def report(
             subject=("task", card.id),
         )
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
-        if body.done and card.kind == "release":
+        if closing and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
             ticker.on_release_done(
                 conn, mine.project, card, caller.actor(mine.id), mine.principal_id
