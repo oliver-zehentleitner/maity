@@ -190,6 +190,10 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   -d '{"last_step":"…","next_step":"…"}' $public_url/api/v1/projects/{slug}/tasks/{id}/checkpoint
 ```
 
+- `GET …/tasks?q=…` searches IDs, titles, bodies and the latest report summary
+  using Unicode NFKC plus lowercase substring matching (1–200 characters).
+  `%` and `_` are literal; `match` names the matching fields. Other filters
+  and paging still apply. Note text will follow once notes are served (§6.4).
 - A claim is one atomic step: `already_claimed` names the holder and
   whether its lease has expired. While the project is in `freeze` or
   `fixes-only`, a claim and a new card need a `reason`.
