@@ -221,7 +221,12 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    of it that still works when the one pressed is disabled at the new
    place. Below 600 px the controls grow to 40 px and the arrows wrap onto
    their own line. The board can be
-   filtered by member (assigned or holding) and by area.
+   filtered by member (assigned or holding) and by area. The search field
+   filters loaded IDs, titles and bodies immediately as you type (Unicode
+   NFKC, case-insensitive). Press Enter or **Search all cards** to include
+   notes, reports and older closed cards from the hub. Matching fields and
+   closed cards outside the usual window are labelled. **Clear search**
+   restores the board while keeping the member and area filters.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and

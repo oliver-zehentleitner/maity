@@ -401,6 +401,9 @@ window.Maity = window.Maity || {};
         KIND_LABELS[c.kind]
           ? h("span", { class: "badge " + c.kind }, KIND_LABELS[c.kind] + (c.kind === "release" ? " " + c.release.version : ""))
           : null,
+        c._searchClosed ? h("span", { class: "badge" }, "Closed · outside board window") : null,
+        Array.isArray(c.match) && c.match.length
+          ? h("span", { class: "label-tag" }, "Matched: " + c.match.join(", ")) : null,
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
@@ -432,6 +435,12 @@ window.Maity = window.Maity || {};
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
     let items = (await M.api.getAll(listPath)).items;
+    let boardItems = items;
+    let searchVersion = 0;
+    let hubResults = false;
+    const normalize = (value) => String(value || "").normalize("NFKC").toLowerCase();
+    const searchInput = h("input", { id: "board-search", type: "search", placeholder: "Search cards" });
+    const searchStatus = h("p", { class: "muted", role: "status", "aria-live": "polite" });
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     const columnsBox = h("div", { class: "columns" });
@@ -457,8 +466,11 @@ window.Maity = window.Maity || {};
     }
 
     async function reload(focusKey) {
-      items = (await M.api.getAll(listPath)).items;
-      draw();
+      boardItems = (await M.api.getAll(listPath)).items;
+      items = boardItems;
+      hubResults = false;
+      if (searchInput.value) await search();
+      else draw();
       refocus(focusKey);
     }
 
@@ -613,6 +625,10 @@ window.Maity = window.Maity || {};
     function shown(c) {
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
+      if (searchInput.value && !hubResults) {
+        const query = normalize(searchInput.value);
+        return [c.id, c.title, c.body].some((value) => normalize(value).includes(query));
+      }
       return true;
     }
 
@@ -626,7 +642,7 @@ window.Maity = window.Maity || {};
       columns = {};
       COLUMNS.forEach(([s]) => { columns[s] = visible.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
-      if (!items.length) {
+      if (!items.length && !searchInput.value) {
         append(intro, h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
           + "areas, claim them and report when they are done. Ask an agent in its chat to propose what it will work on, or write one yourself."));
       } else if (!visible.length) {
@@ -640,6 +656,48 @@ window.Maity = window.Maity || {};
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
     }
+
+    function localSearch() {
+      searchVersion++; // an older response must never replace a newer query or Clear
+      items = boardItems;
+      hubResults = false;
+      searchStatus.textContent = searchInput.value
+        ? "Filtering loaded cards. Press Enter to search all cards, including notes and reports." : "";
+      draw();
+    }
+
+    async function search() {
+      const query = searchInput.value;
+      if (!query) { localSearch(); return; }
+      const version = ++searchVersion;
+      if ([...query].length > 200) {
+        searchStatus.textContent = "Search must be at most 200 characters.";
+        return;
+      }
+      items = boardItems;
+      hubResults = false;
+      draw();
+      searchStatus.textContent = "Searching all cards…";
+      try {
+        const result = await M.api.getAll(ctx.base + "/tasks?status=all&q=" + encodeURIComponent(query));
+        if (version !== searchVersion) return;
+        const loaded = new Set(boardItems.map((c) => c.id));
+        items = result.items.map((c) => ({ ...c,
+          _searchClosed: !loaded.has(c.id) && ["done", "cancelled"].includes(c.status) }));
+        hubResults = true;
+        searchStatus.textContent = "Found " + items.length + " cards across all dates.";
+        draw();
+      } catch (err) {
+        if (version !== searchVersion) return;
+        searchStatus.textContent = "Search failed: " + (err.message || String(err)) + ". Showing loaded cards only.";
+      }
+    }
+    searchInput.addEventListener("input", localSearch);
+    const clearSearch = h("button", { type: "button", onclick: () => {
+      searchInput.value = "";
+      localSearch();
+      searchInput.focus();
+    } }, "Clear search");
 
     // Filters, from what is on the board.
     const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, "everyone"),
@@ -683,10 +741,12 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" }, h("h2", null, "Board"), newButton),
       h("p", { class: "muted" }, "Every open card, and the done and cancelled ones of the last " + CLOSED_WINDOW_DAYS + " days."),
-      h("form", { class: "board-filter", role: "search", onsubmit: (e) => e.preventDefault() },
+      h("form", { class: "board-filter", role: "search", onsubmit: (e) => { e.preventDefault(); search(); } },
+        h("label", { for: "board-search" }, "Search"), searchInput,
+        h("button", { type: "submit" }, "Search all cards"), clearSearch,
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel),
-      formBox, status.el, intro, columnsBox);
+      searchStatus, formBox, status.el, intro, columnsBox);
     draw();
   };
 })(window.Maity);

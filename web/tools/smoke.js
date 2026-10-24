@@ -1097,6 +1097,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   fa.value = "web/"; fa.dispatch("change"); fm.value = "agt-b"; fm.dispatch("change");
   expect(!visibleIds().length && text(main).includes("No card matches the filter."), "board: no match, said");
   fm.value = ""; fm.dispatch("change"); fa.value = ""; fa.dispatch("change");
+  // Search filters immediately; the hub adds notes/reports and older closed cards.
+  const searchInput = byId("board-search");
+  const beforeSearch = visibleIds();
+  searchInput.value = "ＴＳＫ－０００６"; searchInput.dispatch("input");
+  expect(JSON.stringify(visibleIds()) === JSON.stringify(["tsk-0006"]), "board search: immediate NFKC filter");
+  const savedGetAll = win.Maity.api.getAll;
+  const searchCalls = [];
+  let finishSearch;
+  win.Maity.api.getAll = async (path) => {
+    searchCalls.push(path);
+    if (path.includes("q=delayed")) return new Promise((resolve) => { finishSearch = resolve; });
+    return { items: [{ id: "tsk-old", title: "An old card", body: "", kind: "task", status: "done",
+      match: ["note"], depends_on: [], ships_with: [] }], next_cursor: null };
+  };
+  searchInput.value = "note-only"; searchInput.dispatch("input");
+  main.querySelector("form.board-filter").dispatch("submit"); await tick();
+  expect(searchCalls[0].includes("status=all&q=note-only") && !searchCalls[0].includes("closed_after"), "board search: full history query");
+  expect(visibleIds().includes("tsk-old") && text(main).includes("Matched: note")
+    && text(main).includes("Closed · outside board window"), "board search: remote note match and old closed marker");
+  searchInput.value = "delayed"; searchInput.dispatch("input");
+  main.querySelector("form.board-filter").dispatch("submit"); await tick();
+  btn(main, "Clear search").click();
+  finishSearch({ items: [], next_cursor: null }); await tick();
+  expect(JSON.stringify(visibleIds()) === JSON.stringify(beforeSearch), "board search: clear restores and ignores late response");
+  win.Maity.api.getAll = async () => { throw new Error("offline"); };
+  searchInput.value = "tsk-0006"; searchInput.dispatch("input");
+  main.querySelector("form.board-filter").dispatch("submit"); await tick();
+  expect(JSON.stringify(visibleIds()) === JSON.stringify(["tsk-0006"]) && text(main).includes("Search failed: offline"),
+    "board search: failure keeps local matches and reports error");
+  searchInput.value = "x".repeat(201); searchInput.dispatch("input");
+  main.querySelector("form.board-filter").dispatch("submit"); await tick();
+  expect(text(main).includes("Search must be at most 200 characters."), "board search: overlong query refused locally");
+  btn(main, "Clear search").click();
+  win.Maity.api.getAll = savedGetAll;
+  const fixtureSearch = await savedGetAll("/projects/maity/tasks?status=all&q=" + encodeURIComponent("ＴＳＫ－０００６"));
+  expect(fixtureSearch.items.length === 1 && fixtureSearch.items[0].id === "tsk-0006"
+    && fixtureSearch.items[0].match.includes("id"), "board search: fixture query uses Unicode matching");
   // A new card.
   btn(main, "New card").click(); await tick();
   const nf = main.querySelector("form.new-card");

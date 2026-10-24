@@ -1153,7 +1153,19 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path, query) => {
       const keep = statusFilter(query, "all");
-      return { items: file(m[1], "tasks.json", path).items.filter(keep), next_cursor: null };
+      let items = file(m[1], "tasks.json", path).items.filter(keep);
+      const q = query.get("q");
+      if (q !== null) {
+        if (!q || [...q].length > 200) fail(400, "invalid", "search must be 1–200 characters", path);
+        const norm = (value) => String(value || "").normalize("NFKC").toLowerCase();
+        const needle = norm(q);
+        items = items.map((card) => {
+          const match = ["id", "title", "body"].filter((key) => norm(card[key]).includes(needle));
+          if (card.report && norm(card.report.summary).includes(needle)) match.push("report");
+          return { ...card, match };
+        }).filter((card) => card.match.length);
+      }
+      return { items, next_cursor: null };
     }],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
