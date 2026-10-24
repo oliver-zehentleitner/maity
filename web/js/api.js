@@ -645,6 +645,10 @@ window.Maity = window.Maity || {};
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
+      if (body.email && "language" in body.email) {
+        if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
+        set.email.language = body.email.language;
+      }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
       if ("enabled" in b) set.browser.enabled = b.enabled;
@@ -869,6 +873,11 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if (body.settings && "language" in body.settings) {
+        if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+        if (!["en", "de"].includes(body.settings.language)) fail(400, "invalid", "unknown language", path);
+        p.settings = Object.assign({}, p.settings, { language: body.settings.language });
+      }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
