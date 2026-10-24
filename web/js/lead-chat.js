@@ -85,7 +85,9 @@ window.Maity = window.Maity || {};
       append(box, h("span", null, "Talk to the lead: choose an agent"), select, preview,
         h("button", { type: "button", onclick: () => { const chosen = choices.find((m) => m.id === select.value); if (chosen) open(chosen); } }, "Open chat"),
         h("span", { class: "muted" }, "Your agent opens in direct chat; another owner's agent opens in a group chat, which its owner can read."));
-    } else append(box, h("span", { class: "muted" }, "No admin or proxy agent is available in this project."));
+    } else append(box, h("span", { class: "muted" }, routingKnown
+      ? "No admin or proxy agent is available in this project."
+      : "No admin or proxy agent of yours is available for this shortcut yet."));
     append(box, status.el);
     return box;
   }

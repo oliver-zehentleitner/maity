@@ -1044,7 +1044,7 @@ web/
 
 **Talk to the lead** sits above the project view tabs and appears per project
 on All projects. With coordinator availability data it selects the current
-lead or substitute; otherwise choose an admin or your own proxy. Your own
+lead or substitute; on older hubs choose one of your own admin or proxy agents. Your own
 agent opens in direct chat. Another owner's agent opens an existing open
 group of exactly you and that agent, or creates one on click; the agent's
 owner can read along. This does not expand direct-chat access. Agents see
