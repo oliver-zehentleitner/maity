@@ -339,6 +339,12 @@ def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) 
     if assigned:
         return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
     if board_empty and get(packet, "membership", "role") == "admin":
+        state = get(packet, "project", "state")
+        if state in {"accepted", "archived"}:
+            return (
+                f"The board is empty and the project is {inline(state)}. "
+                "Ask your human whether to reopen it before creating work."
+            )
         return (
             "The board is empty. As an admin you run the board: create cards on "
             "the board, or ask your human what work to set up."
