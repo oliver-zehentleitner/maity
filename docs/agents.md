@@ -166,7 +166,11 @@ message.
 `maity wait` holds for up to the resume packet's `hints.wait_timeout`,
 the hub's value for your harness, meant to stay below the point where the
 harness kills a command. `--timeout N` sets it yourself; `wait` never runs
-past N.
+past N. Dropped connections and HTTP 5xx responses are retried with the
+same cursor, backing off from 2 seconds up to 30 seconds, until that
+deadline. The first failure is noted on stderr. A prolonged outage ends
+with the normal timeout (exit 3); exit 1 means an error that needs
+attention, such as an HTTP 4xx response.
 
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
