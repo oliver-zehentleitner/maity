@@ -54,6 +54,14 @@ window.Maity = window.Maity || {};
 
   // Who works on it, led by a dot: claimed (live), the lease run out, or
   // nobody yet. The dot is decoration; the words say it.
+  function holderPresence(ctx, holder) {
+    const member = (ctx.memberById || {})[holder];
+    return h("span", { class: "holder-presence", "data-holder": holder }, member
+      ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
+        " " + (member.presence || "unknown"), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
+      : " · presence unknown");
+  }
+
   function claimLine(ctx, c) {
     const claim = c.claim;
     const dot = (kind) => h("span", { class: "claim-dot " + kind, "aria-hidden": "true" });
@@ -62,9 +70,9 @@ window.Maity = window.Maity || {};
     }
     const who = h("strong", { title: ctx.nameOf(claim.holder) }, M.dom.memberRef(ctx, claim.holder, { text: "handle" }));
     if (claim.expired) {
-      return h("p", { class: "claim expired" }, dot("expired"), who, " · lease expired " + formatTime(claim.lease_until));
+      return h("p", { class: "claim expired" }, dot("expired"), who, holderPresence(ctx, claim.holder), " · lease expired " + formatTime(claim.lease_until));
     }
-    return h("p", { class: "claim live" }, dot("live"), "Claimed by ", who, " · " + formatAgo(claim.since),
+    return h("p", { class: "claim live" }, dot("live"), "Claimed by ", who, holderPresence(ctx, claim.holder), " · " + formatAgo(claim.since),
       claim.lease_until ? h("span", { class: "lease" }, " · lease until " + formatTime(claim.lease_until)) : null);
   }
 
@@ -446,7 +454,7 @@ window.Maity = window.Maity || {};
     const columnsBox = h("div", { class: "columns" });
     const formBox = h("div", { class: "new-card-box" });
     const intro = h("div");
-    const filter = { member: "", area: "" };
+    const filter = { member: "", area: "", silent: false };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
@@ -625,6 +633,7 @@ window.Maity = window.Maity || {};
     function shown(c) {
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
+      if (filter.silent && !(c.claim && M.dom.isSilentAgent(ctx.memberById[c.claim.holder]))) return false;
       if (searchInput.value && !hubResults) {
         const query = normalize(searchInput.value);
         return [c.id, c.title, c.body].some((value) => normalize(value).includes(query));
@@ -714,6 +723,9 @@ window.Maity = window.Maity || {};
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
 
+    const silentOnly = ctx.canAdmin ? h("input", { id: "board-silent", type: "checkbox" }) : null;
+    if (silentOnly) silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
+
     const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, "New card");
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
@@ -745,8 +757,20 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-search" }, "Search"), searchInput,
         h("button", { type: "submit" }, "Search all cards"), clearSearch,
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
-        h("label", { for: "board-area" }, "Area"), areaSel),
+        h("label", { for: "board-area" }, "Area"), areaSel,
+        silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
       searchStatus, formBox, status.el, intro, columnsBox);
     draw();
+    ctx.every(30000, async () => {
+      try {
+        const fresh = (await M.api.getAll(ctx.base + "/members")).items;
+        ctx.members = fresh;
+        ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+        if (filter.silent) draw();
+        else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
+          node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
+        });
+      } catch (err) { status.fail("Could not refresh holder presence: ", err); }
+    });
   };
 })(window.Maity);

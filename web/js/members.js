@@ -64,11 +64,12 @@ window.Maity = window.Maity || {};
   }
 
   // A presence the page knows gets its dot; anything else is said as it comes.
-  function presenceNodes(m) {
+  function presenceNodes(m, warn) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence] : String(m.presence || "unknown"),
-      m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
+      M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
+        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
   // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
@@ -340,7 +341,7 @@ window.Maity = window.Maity || {};
       // Owner and credentials only where the hub sends them.
       const hasCreds = agents.some((m) => "credentials" in m);
       const role = { title: "Role", cell: (m) => m.role };
-      const presence = { title: "Presence", presence: true, cell: presenceNodes };
+      const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
       const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
@@ -373,7 +374,7 @@ window.Maity = window.Maity || {};
         items = fresh;
         // Someone joined or left: redraw (focus kept); else presence in place.
         if (!same) { redraw(); return; }
-        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m)); });
+        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
         status.done();
       } catch (err) {
         status.fail("Could not refresh: ", err);

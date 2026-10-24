@@ -3861,6 +3861,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.leadChat.control({ ...leadCtx, me: { id: leadA.id, kind: "agent" } }) === null, "lead: agents have no button");
   win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
 
+  // Presence is independent of a live claim; timestamps never come from the lease.
+  const silenceDom = win.Maity.dom;
+  expect(!silenceDom.isSilentAgent({ kind: "human", presence: "offline" })
+    && !silenceDom.isSilentAgent({ kind: "agent", presence: "online" })
+    && !silenceDom.isSilentAgent({ kind: "agent" }), "silence: humans, online and unknown presence are not inferred silent");
+  const noCall = silenceDom.silentSince({ kind: "agent", presence: "away" }, true);
+  expect(text(noCall).includes("last call unknown") && noCall.className.includes("flag-inline"), "silence: no timestamp stays unknown");
+  const silentGet = win.Maity.api.get, silentAll = win.Maity.api.getAll;
+  let silentOnline = false, silentAdmin = true;
+  const silenceMembers = (value) => ({ ...value, items: value.items.map((m) => m.kind === "agent"
+    ? { ...m, presence: silentOnline ? "online" : "away", last_seen_at: "2026-10-23T04:12:00Z" } : m) });
+  win.Maity.api.get = (path) => silentGet(path).then((value) => path === "/projects/maity/members" ? silenceMembers(value)
+    : path === "/me" && !silentAdmin ? { ...value, projects: value.projects.map((p) => ({ ...p, role: "member" })) } : value);
+  win.Maity.api.getAll = (path) => silentAll(path).then((value) => path === "/projects/maity/members" ? silenceMembers(value) : value);
+  await go("#/p/maity/board");
+  const heldCount = main.querySelectorAll(".holder-presence").length;
+  expect(heldCount > 0 && main.querySelectorAll(".holder-presence .member-silence.flag-inline").length === heldCount,
+    "silence: admin sees warning beside held cards even with live claims");
+  const unheldCard = main.querySelectorAll("article.card").find((el) => !el.querySelector(".holder-presence"));
+  const silenceFilter = byId("board-silent"); silenceFilter.checked = true; silenceFilter.dispatch("change");
+  expect(main.querySelectorAll("article.card").length === heldCount, "silence: filter excludes unheld cards");
+  const silenceSearch = byId("board-search");
+  silenceSearch.value = unheldCard.getAttribute("data-card"); silenceSearch.dispatch("input");
+  expect(!main.querySelectorAll("article.card").length, "silence: text search cannot bypass the silent-holder filter");
+  silenceSearch.value = ""; silenceSearch.dispatch("input");
+  expect(main.querySelectorAll("article.card").length === heldCount && silenceFilter.checked,
+    "silence: clearing text keeps the silent-holder filter");
+  silentOnline = true; await fireIntervals(); await tick();
+  expect(!main.querySelectorAll("article.card").length, "silence: refreshed online agents leave the silent filter");
+  silentOnline = false; silentAdmin = false;
+  await go("#/p/maity/members");
+  expect(main.querySelectorAll(".member-silence").length > 0 && !main.querySelectorAll(".member-silence.flag-inline").length,
+    "silence: ordinary members see last-call hints without admin warnings");
+  await go("#/p/maity/board");
+  expect(!byId("board-silent") && !main.querySelectorAll(".member-silence.flag-inline").length, "silence: filter and warning styling are admin-only");
+  win.Maity.api.get = silentGet; win.Maity.api.getAll = silentAll;
+
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));
