@@ -165,6 +165,9 @@ def _project(packet: dict[str, Any]) -> list[str]:
         f"Project: {inline(name)} ({inline(project.get('slug'))}), "
         f"state {inline(project.get('state'))}"
     ]
+    repository = get(project, "repository", "url")
+    if repository:
+        lines.append(f"Expected repository: {inline(repository)}")
     if project.get("state_note"):
         lines += ["State note from its humans:", *quote(project["state_note"])]
     absence = project.get("absence")
@@ -325,7 +328,7 @@ def _ticker(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _next_step(packet: dict[str, Any], paused: bool) -> str:
+def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) -> str:
     claims = _items(packet.get("claims"))
     assigned = _items(packet.get("assigned"))
     if paused:
@@ -335,6 +338,11 @@ def _next_step(packet: dict[str, Any], paused: bool) -> str:
         return f"Continue {card} from its checkpoint; `maity wait` when nothing is left."
     if assigned:
         return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
+    if board_empty and get(packet, "membership", "role") == "admin":
+        return (
+            "The board is empty. As an admin you run the board: create cards on "
+            "the board, or ask your human what work to set up."
+        )
     return "`maity wait` until something is addressed to you."
 
 
@@ -400,7 +408,7 @@ def _memory(packet: dict[str, Any]) -> list[str]:
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
-def render(packet: Any, first: bool = False) -> str:
+def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     """The packet as text. `first` (after a join) adds what a new member needs once."""
     packet = _dict(packet)
     out: list[str] = []
@@ -481,7 +489,7 @@ def render(packet: Any, first: bool = False) -> str:
             for p in peers
         )
         out += ["", f"Members: {listed}"]
-    out += ["", "Next: " + _next_step(packet, isinstance(paused, dict))]
+    out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
     if first:
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(

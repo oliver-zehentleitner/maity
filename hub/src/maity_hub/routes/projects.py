@@ -9,7 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
@@ -97,6 +98,14 @@ class SettingsIn(Strict):
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
     onboarding: OnboardingIn | None = None
+    language: str | None = None
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def known_language(cls, value: Any) -> Any:
+        if value is not None and value not in ("en", "de"):
+            raise PydanticCustomError("unknown_language", "choose en or de")
+        return value
 
 
 class ProjectCreate(Strict):
@@ -297,6 +306,8 @@ def patch_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        # Membership's project snapshot may precede another writer's commit. Merge settings
+        # and make policy/event decisions from the current row under the shared project lock.
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
@@ -328,7 +339,11 @@ def patch_project(
                     settings_changed["settings.onboarding"] = announcement
             merged = dict(project.settings or {})
             for key in named:
-                if key != "onboarding" and merged.get(key) != dumped[key]:
+                if key == "language":
+                    effective = dumped[key] or "en"
+                    if effective != (merged.get(key) or "en"):
+                        settings_changed["settings.language"] = effective
+                elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (
                         True
                         if key == "release_checklist" and dumped[key] is not None
@@ -478,6 +493,8 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     """`humans_only` for what §2.3 lists as no agent's, before any other check."""
     if mine.kind != "agent":
         return
+    if body.settings is not None and "language" in body.settings.model_fields_set:
+        raise humans_only("the project's language is set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")

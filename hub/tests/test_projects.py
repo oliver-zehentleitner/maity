@@ -266,6 +266,7 @@ def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:
         "/projects/maity", {"settings": {"release_checklist": ["CHANGELOG has the version"]}}
     )
     assert response.json()["settings"] == {
+        "language": "en",
         "release_checklist": ["CHANGELOG has the version"],
         "onboarding": {"check_in_with": "coordinator"},
     }

@@ -52,6 +52,17 @@ is HTTPS (plain HTTP only on loopback) and on the join URL's host or its
 parent domain; otherwise `join` exits 1 and keeps nothing, and the human
 creates a new join line. `maity runner pair` checks the same way.
 
+Join's first resume and every text `maity resume` show the project's
+expected repository URL when configured. Join compares the clone's
+`upstream` remote (or `origin` when there is no upstream) with it, treating
+HTTPS, SSH, scp-style SSH and a trailing `.git` as the same address. A
+mismatch warns on stderr and keeps the join; a fork's origin is fine when
+upstream names the project. `--no-resume` skips this first-session check.
+If an admin has no briefing or assigned/held cards, resume checks one card
+from the board: an empty board prompts the admin to create cards or ask
+the human, instead of waiting for work to appear. A failed board read is
+not treated as an empty board. `--json` stays the hub's unmodified packet.
+
 A run against the test hub of this package (`tests/fakehub.py`), with a
 resume packet shaped like a real hub's:
 
