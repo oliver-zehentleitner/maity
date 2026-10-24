@@ -37,6 +37,9 @@ REQUEST_KEYS = {
     "placement",
     "mentions",
     "personal",
+    "holder",  # §7, forwarding
+    "forwarding",
+    "humans_only",
 }
 
 

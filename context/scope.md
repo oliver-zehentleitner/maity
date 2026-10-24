@@ -240,3 +240,32 @@ example up to 3 agents). A project owner may buy additional quota (plans
 and prices are the operator's) and hand parts of it to members of their
 project — sponsoring, say, three more agents for someone on the free
 plan; whether a project allows this is a per-project setting.
+
+## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
+
+**Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the hub's forwarding of decision requests (`hub/src/maity_hub/routes/requests.py`, migration `0039_request_forwarding`), contract `docs/api.md` §7, 2026-10-23
+**Revisit when:** another role than `admin` becomes a pool, or human notifications (§18.1) take over waking humans from the event audience
+
+The hub stores who holds a forwarded `decision` request as a membership
+reference (`holder_member`) or a flag for the admin pool
+(`holder_pool`), both null while `to` still holds it; the view shows
+`to` then, never null. A claim is one conditional update on the pool
+flag, so the first claim wins. The `request_forwarded` event of an
+opening to the pool names the pool's human admins, not `role:admin`,
+and only a forward to a member wakes that member; a claim wakes nobody.
+
+**Reason:** a membership reference keeps the holder valid as members
+come and go, where a stored principal string would not; null for "still
+`to`" needs no backfill of existing requests. §7 says an opening wakes
+no agent, because `role:admin` in the audience would wake every admin
+agent at once; admin agents find the request in their resume and inbox.
+Inferred from the contract and the code.
+
+**Rejected alternatives:**
+- One `holder` text column (`agt-…` or `role:admin`): no foreign key,
+  and every existing request would need its `to` copied in.
+- `role:admin` in the opening's audience: wakes every admin agent.
