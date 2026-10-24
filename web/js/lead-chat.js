@@ -33,7 +33,11 @@ window.Maity = window.Maity || {};
     const members = ctx.members || [];
     const lead = resolve(ctx.project, members);
     const own = ordered(members.filter((m) => m.kind === "agent" && !m.removed_at && m.owner_id === ctx.me.id));
+    const policy = ctx.project.policy || {};
+    const routingKnown = "coordinator" in policy && members.filter((m) => m.kind === "agent" && m.role === "admin" && !m.removed_at)
+      .every((m) => !!m.availability);
     const choices = ordered(members.filter((m) => m.kind === "agent" && !m.removed_at
+      && (routingKnown || m.owner_id === ctx.me.id)
       && (m.role === "admin" || (m.role === "proxy" && m.owner_id === ctx.me.id))));
     const box = h("section", { class: "lead-chat", "aria-label": "Talk to the lead" });
     const person = (m) => h("span", { class: "lead-person" },

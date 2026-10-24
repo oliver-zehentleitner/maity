@@ -3800,6 +3800,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "lead: explicit available substitute precedes cover");
   const leadCtx = { me: { id: "hum-me", kind: "human" }, base: "/projects/maity", project: { policy: { coordinator: leadA.id } },
     members: [leadA, leadB], memberById: { [leadA.id]: leadA, [leadB.id]: leadB }, link: (view, id) => "#/p/maity/" + view + "/" + id };
+  const oldHubLeadBox = win.Maity.leadChat.control({ ...leadCtx, project: { policy: {} } });
+  expect(oldHubLeadBox.querySelectorAll("option").length === 1 && oldHubLeadBox.querySelector("option").attrs.value === leadB.id,
+    "lead: older hub picker offers only the caller's own admins and proxies");
   const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post, leadServed = win.Maity.groupChat.served;
   const leadWrites = [];
   win.Maity.groupChat.served = async () => true;
