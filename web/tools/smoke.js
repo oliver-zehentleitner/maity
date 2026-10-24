@@ -308,7 +308,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(c2 && text(c2).includes("CLI binary") && text(c2).includes("context/join.md") && text(c2).includes("proceeds provisionally"), "next: decision with ktw_ref and while_open");
   const ta = c2.querySelector("textarea"); ta.value = "maity, as documented";
   btn(c2, "Send").click(); await tick(); await tick();
-  expect(text(main).includes("Nothing waits for you."), "inbox empty");
+  expect(text(main).includes("No open requests."), "inbox empty");
   const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); await tick();
   expect(main.querySelectorAll(".entry").length === 4, "show all: 4 entries in maity, answered ones too");
   const sortSel = byId("inbox-sort"); sortSel.value = "agent"; sortSel.dispatch("change"); await tick();
@@ -2336,7 +2336,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Every open card, and the done and cancelled ones of the last 14 days.")
     && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
   await go("#/p/dogfood/inbox");
-  expect(text(main).includes("Nothing waits for you.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
+  expect(text(main).includes("No open requests.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
 
@@ -3897,6 +3897,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/board");
   expect(!byId("board-silent") && !main.querySelectorAll(".member-silence.flag-inline").length, "silence: filter and warning styling are admin-only");
   win.Maity.api.get = silentGet; win.Maity.api.getAll = silentAll;
+
+  // Waiting activity: unread paging, grouping, request folding and in-place refresh.
+  const waitGet = win.Maity.api.get, waitPost = win.Maity.api.post;
+  const waitRows = [
+    { id: "ntf-w1", kind: "chat", at: "2026-10-24T01:00:00Z", title: "Older chat", content: "PRIVATE MESSAGE", project: { slug: "maity", name: "Maity" }, target: { type: "conversation", id: "agt-a" } },
+    { id: "ntf-w2", kind: "chat", at: "2026-10-24T02:00:00Z", title: "Newest chat", project: { slug: "maity", name: "Maity" }, target: { type: "conversation", id: "agt-a" } },
+    { id: "ntf-open", kind: "inbox", title: "Duplicate request", project: { slug: "maity", name: "Maity" }, target: { type: "request", id: "req-open" } },
+    { id: "ntf-answer", kind: "inbox", title: "Answered request", project: { slug: "maity", name: "Maity" }, target: { type: "request", id: "req-done" } },
+    { id: "ntf-security", kind: "security", title: "Security alert", target: { type: "session", id: "ses-1" } },
+    ...Array.from({ length: 201 }, (_, i) => ({ id: "ntf-card-" + i, kind: "card", at: "2026-10-24T01:00:00Z", title: "Card " + i, project: { slug: "sample", name: "Sample" }, target: { type: "task", id: "tsk-" + i } }))
+  ];
+  const waitRequests = [{ slug: "maity", id: "req-open", status: "open" }];
+  const waitingGroups = win.Maity.waiting.rows(waitRows, waitRequests, "");
+  expect(waitingGroups.chat.length === 1 && waitingGroups.chat[0].count === 2 && waitingGroups.chat[0].item.title === "Newest chat",
+    "waiting: one conversation row with unread count and newest title");
+  expect(waitingGroups.inbox.length === 1 && waitingGroups.inbox[0].item.id === "ntf-answer" && waitingGroups.account.length === 1,
+    "waiting: open requests fold once; answers and account alerts remain");
+  const waitCalls = [], waitWrites = [], waitDisposers = [];
+  let waitFilter = "", waitVersion = 0, waitRelease = null, waitPolls = 0;
+  win.Maity.notify.state.available = true;
+  win.Maity.api.get = (path) => {
+    if (path.startsWith("/me/notifications?unread=true")) {
+      waitCalls.push(path);
+      const cursor = Number(new URLSearchParams(path.split("?")[1]).get("cursor") || 0);
+      const data = waitVersion ? waitRows.filter((x) => x.kind !== "chat") : waitRows;
+      return Promise.resolve({ items: data.slice(cursor, cursor + 50), next_cursor: cursor + 50 < data.length ? String(cursor + 50) : null });
+    }
+    if (path.startsWith("/me/notifications?after=")) { waitPolls++; return new Promise((resolve) => { waitRelease = resolve; }); }
+    return waitGet(path);
+  };
+  win.Maity.api.post = (path, body) => { waitWrites.push([path, body]); return Promise.resolve({}); };
+  const waitHost = document.createElement("div");
+  const waitCtx = { scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) };
+  const waitingView = await win.Maity.waiting.mount(waitCtx, waitHost, waitRequests, () => waitFilter);
+  expect(waitCalls.length === 5 && waitCalls.every((p) => p.includes("limit=50")) && waitHost.querySelectorAll(".waiting-item").length === 200,
+    "waiting: pages all unread items at50, renders at most200 rows");
+  expect(text(waitHost).includes("More notifications") && !text(waitHost).includes("PRIVATE MESSAGE") && !text(waitHost).includes("Duplicate request"),
+    "waiting: overflow has a full-list link; message content and duplicate requests are absent");
+  waitFilter = "maity"; waitingView.draw();
+  expect(waitHost.querySelectorAll(".waiting-item").length === 2 && !text(waitHost).includes("Security alert"), "waiting: project filter applies across groups");
+  const waitChat = waitHost.querySelectorAll(".waiting-item").find((el) => el.getAttribute("data-notification") === "ntf-w2");
+  waitChat.querySelector("a").click(); await tick();
+  expect(JSON.stringify(waitWrites[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-w2"] }]), "waiting: opening a conversation marks its newest item read");
+  waitVersion = 1; win.Maity.notify.changed(); for (let i = 0; i < 8; i++) await tick();
+  expect(!text(waitHost).includes("Newest chat"), "waiting: a read update removes the conversation without replacing requests");
+  expect(waitPolls <= 1, "waiting: one shared long-poll while browser notifications are off");
+  waitDisposers.forEach((fn) => fn());
+  if (waitRelease) waitRelease({ items: [], next_after: "waiting-head" });
+  await tick();
+  win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

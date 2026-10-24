@@ -720,8 +720,50 @@ message_delivery = Table(
     **MYSQL_TABLE,
 )
 
-# How far a human has read a conversation: `unread` counts the agent's
-# messages after `last_seq`.
+# A group chat (§9.2): a room of two to twelve members, created by a human, closed
+# for good when its last human leaves. Its messages are `message` events whose
+# `conversation_id` is the chat's id. `hub_thread` marks a jour fixe round's thread
+# (§20.5), which the hub creates: no participant cap, no `use_direct`, no quota.
+conversation = Table(
+    "conversation",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("title", String(TITLE)),
+    _membership_ref("created_by"),  # null for the hub's own thread
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("hub_thread", Boolean, nullable=False, server_default=false()),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    **MYSQL_TABLE,
+)
+
+# One stay of a member in a group chat: a member who leaves and is added again gets a
+# new row, so its window (§9.2) starts at its latest join. `window_after` is the
+# project's highest event seq when it joined; `here` marks the open stay (true or
+# NULL, at most one per member and chat on every engine).
+conversation_participant = Table(
+    "conversation_participant",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("conversation_id", "conversation.id", nullable=False, index=True),
+    _membership_ref("membership_id", nullable=False, index=True),
+    Column("joined_at", UtcDateTime, nullable=False),
+    Column("window_after", BIG_ID, nullable=False),
+    Column("added_by", String(ID)),  # a member id; null when the hub added it
+    Column("left_at", UtcDateTime),
+    Column("removed_by", String(ID)),
+    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("here", Boolean, default=True),
+    UniqueConstraint(
+        "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
+    ),
+    CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# How far a member has read a conversation: `unread` counts the others' messages
+# after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(
     "conversation_read",
     metadata,
