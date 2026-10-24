@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import tables as t
 from tests import factory, flow
@@ -93,3 +93,45 @@ def test_only_human_project_admins_can_set_language(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, role, human_id=human.id)
     assert human.patch("/projects/maity", {"settings": {"language": "de"}}).status_code == status
+
+
+@pytest.mark.parametrize("checklist_write", [True, False])
+def test_settings_merge_uses_the_row_read_under_the_project_lock(
+    owner: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    checklist_write: bool,
+) -> None:
+    from maity_hub import events
+    from maity_hub.routes import projects
+
+    locked: list[str] = []
+
+    def changed_since_membership(conn: Connection, project_id: str) -> Any:
+        # Deterministically model a writer committing after membership() read its snapshot
+        # but before this PATCH acquires the lock. SQLite serializes real writers at BEGIN.
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(settings={"language": "de", "release_checklist": ["concurrent"]})
+        )
+        locked.append(project_id)
+        return events.lock_project(conn, project_id)
+
+    monkeypatch.setattr(projects, "lock_project", changed_since_membership, raising=False)
+    if checklist_write:
+        response = owner.patch("/projects/maity", {"settings": {"release_checklist": ["new"]}})
+        expected = {"language": "de", "release_checklist": ["new"]}
+    else:
+        response = owner.patch("/projects/maity", {"settings": {"language": "en"}})
+        expected = {"language": "en", "release_checklist": ["concurrent"]}
+    assert response.status_code == 200
+    assert locked
+    assert response.json()["settings"] == expected
+    with migrated.connect() as conn:
+        language_events = (
+            conn.execute(select(t.event.c.payload).where(t.event.c.kind == "project_updated"))
+            .scalars()
+            .all()
+        )
+    assert language_events == ([] if checklist_write else [{"fields": {"settings.language": "en"}}])

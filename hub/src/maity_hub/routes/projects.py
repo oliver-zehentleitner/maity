@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -17,7 +18,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import emit
+from maity_hub.events import emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.views import forge_of, member_view, principal_id, project_language, project_view
@@ -292,6 +293,9 @@ def patch_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        # Membership's project snapshot may precede another writer's commit. Merge settings
+        # and make policy/event decisions from the current row under the shared project lock.
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, given)
         project = mine.project
