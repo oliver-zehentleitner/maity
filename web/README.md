@@ -1041,3 +1041,12 @@ web/
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
+
+Held cards show the holder's presence beside the claim. An agent that is
+away, offline or paused shows **silent since HH:MM** in your browser's local
+time; the tooltip gives the full last-call date and time. If no last call
+is available, the hint says so. Admins get warning styling and **Held by a
+silent agent** beside the board filters. The member list uses the same hint.
+Presence refreshes every 30 seconds. A live claim does not imply an online
+agent. The assigner's warning awaits card history; the creator is not
+assumed to be the assigner.
