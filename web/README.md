@@ -1084,3 +1084,9 @@ long-poll. Waiting activity updates even when pop-ups are off and preserves
 request drafts. A hub without notifications quietly keeps requests alone;
 a failed read keeps the last activity and shows an error. Opaque position
 rejection obtains a fresh head without marking anything read.
+
+Language settings follow the API's English/Deutsch choices. In **Project
+settings**, human owners and admins can save the project language; other
+members can read it. **Your account** keeps the personal language visible
+without email setup or browser notification support. Human member profiles
+show the language sent by the hub; agents and removed members have none.
