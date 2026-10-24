@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -11,14 +12,26 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import Field
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules, ticker
+from maity_hub import (
+    clock,
+    idempotency,
+    images,
+    ktw,
+    onboarding,
+    placements,
+    policy,
+    releases,
+    rules,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import emit
+from maity_hub.events import emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
+from maity_hub.onboarding import OnboardingIn
 from maity_hub.views import forge_of, member_view, principal_id, project_view
 
 router = APIRouter()
@@ -83,6 +96,7 @@ class SettingsIn(Strict):
 
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
+    onboarding: OnboardingIn | None = None
 
 
 class ProjectCreate(Strict):
@@ -283,13 +297,15 @@ def patch_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
-        _authorise_patch(mine, given)
+        _authorise_patch(mine, body, given)
         project = mine.project
         actor = caller.actor(mine.id)
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        settings_changed: dict[str, Any] = {}
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
@@ -303,8 +319,21 @@ def patch_project(
             if body.settings.ticker is not None:
                 _check_ticker(body.settings.ticker)
             dumped = body.settings.model_dump()
+            if "onboarding" in named:
+                changed, stored, announcement = onboarding.replace_setting(
+                    conn, project, body.settings.onboarding, mine.id
+                )
+                dumped["onboarding"] = stored
+                if changed:
+                    settings_changed["settings.onboarding"] = announcement
             merged = dict(project.settings or {})
             for key in named:
+                if key != "onboarding" and merged.get(key) != dumped[key]:
+                    settings_changed[f"settings.{key}"] = (
+                        True
+                        if key == "release_checklist" and dumped[key] is not None
+                        else dumped[key]
+                    )
                 if dumped[key] is None:
                     merged.pop(key, None)
                 else:
@@ -329,6 +358,16 @@ def patch_project(
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
+        if settings_changed:
+            emit(
+                conn,
+                project.id,
+                "project_updated",
+                BROADCAST,
+                {"fields": settings_changed},
+                actor=actor,
+                subject=("project", project.slug),
+            )
         if "repository" in given:
             if values.get("repository_url") != project.repository_url:
                 # Observations are of the old repository: none of them answers for the new one.
@@ -444,7 +483,15 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("no agent changes this, whatever its role")
 
 
-def _authorise_patch(mine: Membership, given: set[str]) -> None:
+def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> None:
+    if (
+        mine.kind == "agent"
+        and mine.role == "admin"
+        and given == {"settings"}
+        and body.settings is not None
+        and body.settings.model_fields_set == {"onboarding"}
+    ):
+        return  # §2.3 ʰ: coordination alone, never a mixed project/settings PATCH.
     # The absence is written by the owner, the human it concerns, and nobody else (§6.1).
     if "absence" in given and (mine.role != "owner" or mine.kind != "human"):
         raise forbidden(message="the absence is set by the owner only")

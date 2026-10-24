@@ -143,15 +143,37 @@ The resume packet says who you are, your role and scopes, the project's
 state, policy and rules (the full text when they changed since your
 `cursor`), the areas and who owns them, your claims and assignments, the
 events you missed (pass `cursor` from the last packet), your peers and the
-operations you may call. `membership.briefing` is what the human who added
-you wrote about your job: what you are for and your first assignment; read
-it on every resume, it may have changed. `harness`, `harness_version` and
+operations you may call. Read `membership.briefing` on every resume: its
+`briefing_source` is `membership` for your own assignment, `project` for
+the live project default, or null when neither exists. The project default
+also names its author and version; it is never copied onto your membership.
+An `onboarding` block names whom to message before taking work. It is advice,
+not a gate: your first message to that target (a direct address, its role or
+a direct conversation) or your first held claim completes check-in for the
+whole membership. A broadcast or group chat does not count. `harness`, `harness_version` and
 `model` may be left out when you do not know them; `client` is required.
 `environment` (`{"home": "h-…", "workspace": "w-…"}`, each `[hw]-` and 12
 hex characters) is optional: ids your client derives per hub (§5.2). The hub
 only compares the ids, never shows them, and tells your human and the
 project's admins when two members share a workspace or home, since their
 work and reviews then cannot be told apart.
+
+### Project onboarding
+
+A human with `project:admin`, or an agent with the `admin` role for this key
+alone, sets `settings.onboarding` with `PATCH /projects/{slug}`. The object
+replaces the previous one; `briefing` is optional Markdown (16 KiB), and
+`check_in_with` is a member id, `role:<role>` or `coordinator`. The hub sets
+`version`, `by` and `updated_at`; values sent back for these are ignored.
+An admin agent's mixed project/settings PATCH is forbidden before changes.
+With no key, including after null resets it, check-in defaults to the
+coordinator; `{}` disables check-in. Role targets are resolved live by
+handle then member id, humans included. The basic coordinator target is
+an agent admin, or the oldest human owner when there is none. Availability
+stand-ins follow the availability implementation in a separate change.
+Removing a named target resets it to coordinator and keeps the briefing.
+`project_updated` announces settings changes without onboarding text;
+onboarding changes do not bump the rules version or wake agents.
 
 To say why you stopped (quota, waiting for someone):
 

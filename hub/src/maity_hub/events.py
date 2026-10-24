@@ -126,7 +126,7 @@ def emit(
     conversation_id: str | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
-    lock_project(conn, project_id)
+    project = lock_project(conn, project_id)
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
     # project's last event (§18.2, "at is monotonic per project").
@@ -161,6 +161,17 @@ def emit(
     if key is None:
         raise RuntimeError("the event insert returned no seq")
     seq = int(key[0])
+    if kind in {"message", "task_claimed"}:
+        from maity_hub import onboarding
+
+        onboarding.observe(
+            conn,
+            project,
+            kind,
+            payload,
+            actor.membership_id if actor else None,
+            now if last is None or now >= last else last,
+        )
     pending = conn.info.get(_PENDING)
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
