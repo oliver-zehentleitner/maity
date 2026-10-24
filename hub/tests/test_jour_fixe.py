@@ -275,6 +275,8 @@ def test_at_the_window_close_the_key_and_tags_die_and_the_moderator_is_woken(
     round_id = start(lead).json()["id"]
     answer(member, round_id, went_well="ok", anonymous=True)
     now[0] += timedelta(minutes=121)
+    path = f"/projects/maity/jour-fixe/rounds/{round_id}/answers?mine=true"
+    assert member.get(path).json()["items"] == []  # past the deadline, before the sweep
     worker.sweep(migrated)
     with migrated.connect() as conn:
         row = conn.execute(select(t.jour_fixe_round)).one()
@@ -284,10 +286,42 @@ def test_at_the_window_close_the_key_and_tags_die_and_the_moderator_is_woken(
     [closed] = events(migrated, "jour_fixe_answers_closed")
     assert closed.audience == [f"instance:{lead.id}#{lead.instance}", "role:owner"]
     assert closed.payload["answers_received"] == 1
-    path = f"/projects/maity/jour-fixe/rounds/{round_id}/answers?mine=true"
     assert member.get(path).json()["items"] == []  # nothing links it to its author now
     late = answer(member, round_id, went_well="late")
     assert late.json()["error"]["code"] in ("jour_fixe_state", "jour_fixe_answered")
+
+
+def test_the_close_wakes_the_moderator_where_it_listens_now_or_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    lead, member = team(owner, make_client)
+    start(lead)
+    listening._open.clear()  # the instance recorded at the opening stopped listening
+    now[0] += timedelta(minutes=121)
+    worker.sweep(migrated)
+    [closed] = events(migrated, "jour_fixe_answers_closed")
+    assert closed.audience == ["role:owner"]  # no fallback to the stale instance
+
+
+def test_minutes_online_count_working_calls_not_only_long_polls(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    from maity_hub.jourfixe import rounds
+
+    working = flow.agent(make_client, owner, role="admin")
+    working.resume()  # a call just now, no long-poll open: online (§5.3)
+    idle = flow.agent(make_client, owner, role="admin")
+    idle.resume()
+    with migrated.begin() as conn:
+        member_of = dict(conn.execute(select(t.membership.c.agent_id, t.membership.c.id)).all())
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.membership_id == member_of[idle.id])
+            .values(last_seen_at=now[0] - timedelta(minutes=5))
+        )
+        rounds.record_presence(conn, now[0])
+        counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
+    assert counted == {member_of[working.id]}
 
 
 def test_the_schedule_opens_skips_and_records_a_missed_slot(

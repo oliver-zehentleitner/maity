@@ -143,8 +143,9 @@ def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list
 def _is_own(round_row: Any, row: Any, mine: Any) -> bool:
     if not row.anonymous:
         return bool(row.author == mine.id)
-    if round_row.tag_key is None or row.tag is None:
-        return False  # the key is gone: nothing links it to anyone any more
+    if not window_open(round_row) or round_row.tag_key is None or row.tag is None:
+        # Past the deadline it is no one's, even before the sweep drops the key (§20.4).
+        return False
     return hmac.compare_digest(row.tag, tag(round_row.tag_key, round_row.id, mine.principal_id))
 
 
