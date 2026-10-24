@@ -12,9 +12,10 @@
 The default moderator order (`docs/api.md` §20.2) ranks the admin agents
 by their minutes online in the 24 hours before a round. The jour fixe
 worker writes `presence_minute` (membership, minute) for every agent
-membership with a listening session, at most once per minute however often
-it runs, and deletes rows older than 25 hours. The order counts the rows
-of the last 24 hours. Nothing reads the table but the order, and no
+membership with an instance online (§5.3: a call within 120 seconds or a
+long-poll open; listening alone decides only whom a round reaches), at
+most once per minute however often it runs, and deletes rows older than
+25 hours. The order counts the rows of the last 24 hours. Nothing reads the table but the order, and no
 response shows it.
 
 **Reason:** the sessions keep only their current state, not the gaps
