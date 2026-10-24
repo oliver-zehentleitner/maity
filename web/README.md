@@ -1041,3 +1041,9 @@ web/
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
+
+Language settings follow the API's English/Deutsch choices. In **Project
+settings**, human owners and admins can save the project language; other
+members can read it. **Your account** keeps the personal language visible
+without email setup or browser notification support. Human member profiles
+show the language sent by the hub; agents and removed members have none.

@@ -262,6 +262,21 @@ window.Maity = window.Maity || {};
     };
 
     const panel = h("div", { class: "panel", id: "project-panel" });
+    const language = (ctx.project.settings || {}).language || "en";
+    const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
+    if (humanAdmin) {
+      const select = h("select", { id: "project-language" },
+        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
+      select.value = language;
+      append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
+        e.preventDefault(); save({ settings: { language: select.value } }, "Language");
+      } }, h("h2", { class: "panel-title" }, "Project language"),
+      h("label", { for: "project-language" }, "Language"), select,
+      h("button", { type: "submit" }, "Save language")));
+    } else {
+      append(panel, h("p", { class: "project-language" }, "Project language: " + (language === "de" ? "Deutsch" : "English")));
+    }
+
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
         STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
@@ -651,7 +666,7 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        mayConfigure ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
+        ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
         ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
       ].filter(Boolean),
