@@ -667,6 +667,28 @@ window.Maity = window.Maity || {};
       return set;
     }],
     ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
+    ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return fixtures()["admin-mail.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/mail$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const value = fixtures()["admin-mail.json"];
+      Object.entries(body).forEach(([k]) => { if (value[k] && value[k].source === "env") fail(400, "invalid", "Set by the environment", path, { fields: { [k]: "set_by_environment" } }); });
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "enabled") value.enabled = v;
+        else if (k === "password") value.password = { set: v !== null, source: "admin" };
+        else value[k] = { value: v, source: v === null ? "default" : "admin" };
+      });
+      value.last_test = null; return value;
+    }],
+    ["POST", /^\/admin\/settings\/mail\/test$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      if (!body.to) fail(400, "invalid", "Recipient required", path);
+      const value = fixtures()["admin-mail.json"];
+      value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
+    }],
     // §16.1: the instance admin's list, by handle, filtered and paged.
     ["GET", /^\/admin\/users$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
@@ -974,6 +996,10 @@ window.Maity = window.Maity || {};
     }],
     // The hub's machine form (§4): here only what the views ask of it.
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
+      "/api/v1/admin/users": { get: {} },
+      "/api/v1/admin/settings/mail": { get: {}, patch: {} },
+      "/api/v1/admin/settings/mail/test": { post: {} },
+      "/api/v1/health": { get: {} },
       "/api/v1/projects/{slug}/ticker": { get: {}, post: {} },
       "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },

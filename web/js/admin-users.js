@@ -86,7 +86,9 @@ window.Maity = window.Maity || {};
         }
       } catch (err) {
         if (mine !== seq) return;
-        if (err.status === 404 && err.code === "not_found" && !cursor && !rows.length) {
+        if (await M.api.missingRoute(err, "GET", "/admin/users")) {
+          M.api.absent.note("GET", "/admin/users");
+          if (root.classList.contains("admin-section")) { root.remove(); return; }
           clear(box);
           append(box, h("p", null, "This hub has no user list yet."));
           status.done();

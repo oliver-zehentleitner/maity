@@ -552,10 +552,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Users of this hub"])
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Instance administration"])
     && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has this project's settings, the runners and, for the instance admin, the users");
-  const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Users of this hub");
-  expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: in the settings menu for the instance admin");
+  const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
+  expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
   gearButton().click(); await tick();
   await go("#/admin/users"); await tick();
   const userRows = () => main.querySelectorAll("table.users tbody tr");
@@ -617,14 +617,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
   uq.value = "";
   // A hub without the list, and someone who is not the instance admin.
-  win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => p === "/openapi.json" ? Promise.resolve({ paths: {} }) : (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
   await go("#/all"); await go("#/admin/users"); await tick();
   expect(text(main).includes("This hub has no user list yet.") && !main.querySelector(".error"), "users: a hub without the list says so");
   win.Maity.api.get = (p) => (p === "/me" ? uGet(p).then((x) => { x.member.instance_admin = false; return x; }) : uGet(p));
   await go("#/all"); await go("#/admin/users"); await tick();
   expect(!header.querySelectorAll("a").some((a) => a.textContent === "Users") && text(main).includes("Only the instance admin sees the users of this hub."),
     "users: no link and no list for anyone else");
-  win.Maity.api.get = uGet;
+  win.Maity.api.get = uGet; win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
@@ -4018,6 +4019,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/members");
   expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
   win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
+
+  // Unified instance administration: source-aware mail editing and isolated capabilities.
+  const adminGet = win.Maity.api.get, adminPatch = win.Maity.api.patch, adminPost = win.Maity.api.post;
+  const adminHas = win.Maity.api.hubHas, adminMissing = win.Maity.api.missingRoute;
+  const adminWrites = [], adminReads = [];
+  win.Maity.api.hubHas = async () => true;
+  win.Maity.api.get = (path) => { adminReads.push(path); return adminGet(path); };
+  win.Maity.api.patch = (path, body) => { adminWrites.push([path, JSON.parse(JSON.stringify(body))]); return adminPatch(path, body); };
+  await go("#/admin");
+  expect(text(main).includes("Instance administration") && main.querySelector("table.users") && byId("mail-host") && text(main).includes("fixture-head"), "admin: unified users, mail and instance health");
+  expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
+  byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(adminWrites[0]) === JSON.stringify(["/admin/settings/mail", { reply_to: "reply@example.org", password: "temporary-test-value" }]), "admin: only changed writable fields, password once");
+  expect(byId("mail-password").value === "" && !text(main).includes("temporary-test-value"), "admin: saved password is never displayed or retained in input");
+  byId("mail-password-remove").checked = true;
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(adminWrites[1][1]) === JSON.stringify({ password: null }), "admin: explicit password deletion writes null");
+  const testWrites = [];
+  win.Maity.api.post = async (path, body) => { testWrites.push([path, body]); return { ok: false, stage: "auth", smtp_code: 535, detail: "535 Credentials … rejected", at: "2026-10-24T00:00:00Z" }; };
+  byId("mail-test-to").value = "admin@example.org";
+  main.querySelector("form.admin-mail-test").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(testWrites) === JSON.stringify([["/admin/settings/mail/test", { to: "admin@example.org" }]]) && text(main).includes("Stage: auth") && text(main).includes("535 Credentials … rejected") && text(main).includes("Test mail failed."), "admin: test uses only recipient and shows unsuccessful200 stage/redacted reply");
+  win.Maity.api.get = (path) => path === "/health" ? Promise.reject(new win.Maity.api.ApiError("outdated", 503, path, "schema_outdated", { revision: "old", head: "new" })) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Database reachable, migration required.") && text(main).includes("Revision: old · head: new"), "admin: outdated schema is shown with both revisions");
+  win.Maity.api.patch = async () => { throw new win.Maity.api.ApiError("invalid settings", 400, "/admin/settings/mail", "invalid", { fields: { password: "secret_key_missing" } }); };
+  byId("mail-password").value = "failed-test-value";
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(byId("mail-password").value === "" && text(main).includes("instance encryption key is not configured") && !text(main).includes("failed-test-value"), "admin: failed save clears password and explains field refusal");
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("absent", 404, path, "not_found")) : adminGet(path);
+  win.Maity.api.missingRoute = async (err, method, path) => path === "/admin/settings/mail" && err.status === 404;
+  await go("#/all"); await go("#/admin");
+  expect(!main.querySelectorAll(".admin-section").some((s) => s.getAttribute("aria-label") === "Mail settings") && win.Maity.api.absent.has("GET", "/admin/settings/mail"), "admin: missing-route helper removes section and remembers absent endpoint");
+  win.Maity.api.missingRoute = adminMissing;
+  win.Maity.api.hubHas = async (method, path) => path === "/health";
+  await go("#/all"); await go("#/admin");
+  expect(!byId("mail-host") && !main.querySelector("table.users") && text(main).includes("Instance information"), "admin: unavailable sections are omitted independently");
+  win.Maity.api.hubHas = async () => true;
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Mail settings could not be read: denied") && text(main).includes("Instance information"), "admin:403 is visible and other sections still load");
+  win.Maity.api.get = (path) => path === "/me" ? adminGet(path).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } }))
+    : (adminReads.push(path), adminGet(path));
+  adminReads.length = 0; await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Only the instance admin can open this area.") && !adminReads.some((p) => p.startsWith("/admin/") || p === "/health"), "admin: non-admin cannot read configuration even by direct route");
+  win.Maity.api.get = adminGet; win.Maity.api.patch = adminPatch; win.Maity.api.post = adminPost;
+  win.Maity.api.hubHas = adminHas; win.Maity.api.missingRoute = adminMissing; win.Maity.api.forgetRoutes();
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
