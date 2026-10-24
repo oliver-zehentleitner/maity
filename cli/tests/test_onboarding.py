@@ -303,7 +303,7 @@ def test_a_failed_rendering_does_not_move_the_cursor(
 ) -> None:
     from maity import state
 
-    def broken(packet: Any, first: bool = False) -> str:
+    def broken(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         raise ValueError("renderer bug")
 
     monkeypatch.setattr(onboarding, "render", broken)
