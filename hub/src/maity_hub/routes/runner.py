@@ -518,6 +518,14 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
             "new_instance": replaces is None,
             "replaces": replaces,
         }, str(member.agent_id)
+    taken = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == placement.created_by,
+            t.agent_profile.c.handle == placement.new_handle,
+        )
+    ).first()
+    if taken is not None:  # the exchange would refuse it: no code that can never work
+        raise _pickup_refused("handle_taken")
     profile = placement.new_profile or {}
     return {
         "new_agent_handle": placement.new_handle,

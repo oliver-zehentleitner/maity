@@ -569,6 +569,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     ).rowcount
     if consumed != 1:  # a concurrent exchange won
         raise not_found()
+    if row.placement_id is not None:
+        _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
@@ -578,6 +580,10 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             t.membership.c.active.is_(True),
         )
     ).first()
+    if member is None and (row.replaces is not None or (row.placement_id and row.agent_id)):
+        # A pickup for a member, or a rejoin, never brings back a member a human removed
+        # (§15.9): it answers as every join that no longer works (§1.1).
+        raise not_found()
     if member is None:
         result = conn.execute(
             insert(t.membership).values(
@@ -614,15 +620,11 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         )
     )
     conn.execute(update(t.join_link).where(t.join_link.c.id == row.id).values(instance=instance))
-    if row.replaces is not None:
-        assert member is not None
+    if row.replaces is not None and member is not None:
         # Moved before the revocation, so that the lead passes on and is never null.
         _move_to_replacement(conn, member, row.replaces, instance, credential_id)
-        if row.placement_id is not None:
-            # A placement's rejoin replaces an instance whose credential is revoked already
-            # (§15.9): nothing to revoke, and no second credential_revoked.
-            instances.require_replaceable(conn, member, row.replaces, "replaces", revoked=True)
-        else:
+        if row.placement_id is None:  # a rejoin's instance is revoked already (§15.9),
+            # and `_recheck_instance` checked it: nothing to revoke, no second revocation
             old = instances.require_active(conn, member, row.replaces, "replaces")
             revoke(conn, old.id, "replaced", by=row.created_by)
             emit(
@@ -657,6 +659,40 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             subject=("member", agent_id),
         )
     return value, credential_id, agent_id, project.slug, project.signing, instance
+
+
+def _require_pickup_holds(conn: Connection, row: Any) -> None:
+    """A runner's pickup (§15.9) is exchanged only while what it was picked up for still
+    holds, read under the project lock: the placement active, approved, `desired: running`
+    and at the join's generation on the same runner, and that runner not removed and with
+    a live credential. Otherwise it answers as every join that no longer works (§1.1)."""
+    p = t.placement.c
+    placement = conn.execute(
+        select(p.runner_id, p.closed_at, p.desired, p.approval_status, p.generation).where(
+            p.id == row.placement_id
+        )
+    ).first()
+    runner = conn.execute(
+        select(t.runner.c.removed_at).where(t.runner.c.id == row.runner_id)
+    ).first()
+    live = conn.execute(
+        select(t.runner_credential.c.id).where(
+            t.runner_credential.c.runner_id == row.runner_id,
+            t.runner_credential.c.revoked_at.is_(None),
+        )
+    ).first()
+    if (
+        placement is None
+        or placement.runner_id != row.runner_id
+        or placement.closed_at is not None
+        or placement.desired != "running"
+        or placement.approval_status != "approved"
+        or placement.generation != row.generation
+        or runner is None
+        or runner.removed_at is not None
+        or live is None
+    ):
+        raise not_found()
 
 
 def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:

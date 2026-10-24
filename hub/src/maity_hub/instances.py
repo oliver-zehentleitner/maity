@@ -141,6 +141,13 @@ def require_replaceable(
     ).first()
     if row is None:
         raise invalid({field: "not_an_instance"})
+    successor = conn.execute(
+        select(t.credential.c.id).where(
+            t.credential.c.membership_id == member.id, t.credential.c.replaces == instance
+        )
+    ).first()
+    if successor is not None:  # a human's join replaced it already: one successor only
+        raise invalid({field: "already_replaced"})
     return row
 
 

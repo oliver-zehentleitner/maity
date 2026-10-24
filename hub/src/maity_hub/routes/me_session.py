@@ -267,7 +267,7 @@ def _packet(
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
-    if changed:
+    if changed or body.supervisor is not None:  # the supervised duty is in every packet
         rules_block["markdown"] = rules.generate(
             project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
         )

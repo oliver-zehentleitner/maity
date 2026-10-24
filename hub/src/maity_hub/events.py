@@ -306,14 +306,14 @@ def wakes(row: Any, membership: Any, principal: str, supervised: bool = False) -
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     audience = row.audience or []
-    if supervised and set(audience) <= {"all"} and row.kind not in SUPERVISED_ALL_WAKES:
-        return bool(row.conversation_id == principal)
-    return (
-        "all" in audience
-        or f"member:{principal}" in audience
+    addressed = (
+        f"member:{principal}" in audience
         or f"role:{membership.role}" in audience
         or row.conversation_id == principal
     )
+    if supervised:  # `all` beside another member's term (a sender's own) is still `all`
+        return addressed or ("all" in audience and row.kind in SUPERVISED_ALL_WAKES)
+    return addressed or "all" in audience
 
 
 def read_waking(
