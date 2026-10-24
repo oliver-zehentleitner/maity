@@ -19,6 +19,7 @@ from maity_hub import (
     idempotency,
     instances,
     memory,
+    onboarding,
     ranks,
     rules,
     ticker,
@@ -254,7 +255,7 @@ def _packet(
     session: dict[str, Any],
     settings: Any,
 ) -> dict[str, Any]:
-    project = mine.project
+    project = events.lock_project(conn, mine.project.id)
     fg = Forge(settings.forge_github_token)
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
@@ -328,6 +329,11 @@ def _packet(
         "api_version": API_VERSION,
         "hub_version": __version__,
         # First of the contents: the soul is what an agent loads before anything (§19.3).
+        **(
+            {"onboarding": check_in}
+            if (check_in := onboarding.hint(conn, project, mine.row))
+            else {}
+        ),
         "memory": memory.packet_block(conn, mine, agent.id, cursor),
         "session": session,
         "hints": {"wait_timeout": wait_timeout(body.harness)},
@@ -348,7 +354,7 @@ def _packet(
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
-            "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
+            **onboarding.briefing(project, mine.row),
             "team": instances.team(conn, mine.row),
         },
         "team": siblings,

@@ -156,6 +156,7 @@ project = Table(
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
     # The event seq at the last rules change, set under the project lock, so
@@ -181,6 +182,7 @@ membership = Table(
     Column("paused_by", String(ID)),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    Column("onboarded_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),

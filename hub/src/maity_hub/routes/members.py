@@ -394,6 +394,11 @@ def set_paused(conn: Connection, change: Change, target: Any, reason: str | None
 def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
     its claims released, every `reports_to` that names it cleared."""
+    from maity_hub import onboarding
+
+    onboarding.member_removed(
+        conn, change.project.id, target.agent_id or target.human_id, change.actor
+    )
     now = clock.now()
     credentials = (
         conn.execute(
