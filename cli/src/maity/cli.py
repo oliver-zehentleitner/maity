@@ -298,6 +298,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + timeout
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
+    backoff = 2.0
+    warned = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -315,10 +317,18 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
-            if exc.status is None and exc.code is None:  # dropped connection: same `after` again
-                time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
+            server_error = exc.status is not None and 500 <= exc.status < 600
+            disconnected = exc.status is None and exc.code is None
+            if server_error or disconnected:  # retry the same `after`, within the deadline
+                if not warned:
+                    reason = f"hub answered {exc.status}" if server_error else "hub connection lost"
+                    _err(f"{reason}, retrying until the timeout")
+                    warned = True
+                time.sleep(min(backoff, max(0.0, deadline - time.monotonic())))
+                backoff = min(backoff * 2, 30.0)
                 continue
             raise
+        backoff = 2.0
         if page.get("superseded"):
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED
