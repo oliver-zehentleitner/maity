@@ -208,5 +208,18 @@ window.Maity = window.Maity || {};
     return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
   }
 
-  M.dom = { memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  const isSilentAgent = (member) => !!member && member.kind === "agent"
+    && ["away", "offline", "paused", "revoked"].includes(member.presence);
+
+  function silentSince(member, warn) {
+    if (!isSilentAgent(member)) return null;
+    const date = member.last_seen_at && new Date(member.last_seen_at);
+    const known = date && !Number.isNaN(date.getTime());
+    const text = known ? "silent since " + date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
+      : "silent · last call unknown";
+    return h("span", { class: "member-silence " + (warn ? "flag-inline" : "muted"),
+      title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
+  }
+
+  M.dom = { isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);
