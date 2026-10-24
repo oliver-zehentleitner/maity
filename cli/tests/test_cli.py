@@ -643,3 +643,33 @@ def test_a_hub_without_supervised_sessions_resumes_without(
     fake.routes[("POST", "/api/v1/me/resume")] = resume
     assert cli.main(["resume", "--json"]) == cli.EXIT_OK
     assert "does not take the session's supervisor yet" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("write_pointer", [False, True])
+@pytest.mark.parametrize("no_resume", [False, True])
+def test_join_names_maity_as_the_work_channel_after_the_pointer(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    write_pointer: bool,
+    no_resume: bool,
+) -> None:
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]
+    if write_pointer:
+        args.append("--pointer")
+    if no_resume:
+        args.append("--no-resume")
+    assert cli.main(args) == cli.EXIT_OK
+    out = capsys.readouterr()
+    lines = out.err.splitlines()
+    assert lines[-1] == pointer.PROJECT_CHANNEL
+    assert "main channel" in lines[-1]
+    assert all(command in lines[-1] for command in ["maity say", "maity ask", "maity report"])
+    if write_pointer:
+        assert "wrote the Maity pointer block" in out.err
+        assert pointer.PROJECT_CHANNEL in (clone / "AGENTS.md").read_text()
+    else:
+        assert out.err.index(pointer.END) < out.err.rindex(pointer.PROJECT_CHANNEL)
+        assert not (clone / "AGENTS.md").exists()
+    assert fakehub.SECRET not in out.err + out.out
+    assert fakehub.CODE not in out.err + out.out
