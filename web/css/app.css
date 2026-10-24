@@ -907,3 +907,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 @media (max-width: 700px) {
   .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
 }
+
+.lead-chat { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
+.lead-chat select { max-width: 100%; }
+.lead-projects { margin-bottom: 20px; }

@@ -157,7 +157,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
-  expect(gets.some((p) => p.startsWith("/requests")) && !gets.some((p) => p.includes("/members")), "#/all renders from the requests alone");
+  expect(gets.some((p) => p.startsWith("/requests")) && main.querySelector(".lead-projects"), "#/all renders requests and project lead controls");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
   // The total also holds a personal request of a project the human is no member of (member: false), on no project's pill.
@@ -3824,6 +3824,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = nhGet;
   win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
+
+  // Lead routing and the direct/group boundary.
+  const leadA = { id: "agt-lead-a", kind: "agent", role: "admin", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
+  const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };
+  const leadOut = { ...leadA, availability: { state: "limited" }, covered_by: { member_id: leadB.id } };
+  expect(win.Maity.leadChat.resolve({ policy: { coordinator: "role:admin" } }, [leadB, leadA]).id === leadA.id, "lead: admin sorted by handle");
+  expect(win.Maity.leadChat.resolve({ policy: { coordinator: leadA.id } }, [leadOut, leadB]).id === leadB.id, "lead: active cover takes over");
+  expect(win.Maity.leadChat.resolve({ policy: {} }, [leadA]) === null, "lead: missing policy does not guess");
+  const leadSub = { ...leadA, id: "agt-sub", handle: "sub" };
+  expect(win.Maity.leadChat.resolve({ policy: { coordinator: leadA.id, coordinator_substitute: leadSub.id } }, [leadOut, leadB, leadSub]).id === leadSub.id,
+    "lead: explicit available substitute precedes cover");
+  const leadCtx = { me: { id: "hum-me", kind: "human" }, base: "/projects/maity", project: { policy: { coordinator: leadA.id } },
+    members: [leadA, leadB], memberById: { [leadA.id]: leadA, [leadB.id]: leadB }, link: (view, id) => "#/p/maity/" + view + "/" + id };
+  const oldHubLeadBox = win.Maity.leadChat.control({ ...leadCtx, project: { policy: {} } });
+  expect(oldHubLeadBox.querySelectorAll("option").length === 1 && oldHubLeadBox.querySelector("option").attrs.value === leadB.id,
+    "lead: older hub picker offers only the caller's own admins and proxies");
+  const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post, leadServed = win.Maity.groupChat.served;
+  const leadWrites = [];
+  win.Maity.groupChat.served = async () => true;
+  win.Maity.api.getAll = async () => ({ items: [
+    { id: "cnv-wider", kind: "group", access: "participant", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }, { member_id: "hum-third" }] },
+    { id: "cnv-closed", kind: "group", access: "participant", closed_at: "2026-10-23T00:00:00Z", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] },
+    { id: "cnv-observed", kind: "group", access: "observer", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] }
+  ] });
+  win.Maity.api.post = async (path, body) => { leadWrites.push([path, body]); return { id: "cnv-new-lead" }; };
+  const leadBox = win.Maity.leadChat.control(leadCtx);
+  btn(leadBox, "Talk to the lead").click(); await tick(); await tick();
+  expect(JSON.stringify(leadWrites) === JSON.stringify([["/projects/maity/conversations", { title: "Talk to the lead", participants: [leadA.id] }]])
+    && win.location.hash.endsWith("/cnv-new-lead"), "lead: foreign-owned agent gets a two-person group, never a broader existing chat");
+  win.Maity.api.getAll = async () => ({ items: [{ id: "cnv-pair", kind: "group", access: "participant", closed_at: null, participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] }] });
+  btn(leadBox, "Talk to the lead").click(); await tick(); await tick();
+  expect(leadWrites.length === 1 && win.location.hash.endsWith("/cnv-pair"), "lead: reuses an open exact pair");
+  const ownLeadBox = win.Maity.leadChat.control({ ...leadCtx, project: { policy: { coordinator: leadB.id } } });
+  expect(ownLeadBox.querySelectorAll("a").some((a) => a.textContent === "Talk to the lead" && a.attrs.href.endsWith("/" + leadB.id)), "lead: own agent uses direct link");
+  expect(win.Maity.leadChat.control({ ...leadCtx, me: { id: leadA.id, kind: "agent" } }) === null, "lead: agents have no button");
+  win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
