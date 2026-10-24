@@ -911,3 +911,10 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .lead-chat { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
 .lead-chat select { max-width: 100%; }
 .lead-projects { margin-bottom: 20px; }
+
+/* Waiting activity follows the request forms without replacing them. */
+.waiting-group { margin-top: 1.5rem; }
+.waiting-items { list-style: none; padding: 0; }
+.waiting-item { display: flex; flex-wrap: wrap; gap: .4rem .7rem; padding: .7rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.waiting-item a { flex: 1 1 18rem; }
+.waiting-item .muted { font-size: .85rem; }

@@ -618,8 +618,12 @@ window.Maity = window.Maity || {};
           : Math.max(a, ha) + "." + Math.max(b, hb);
         return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
       }
-      const listed = items.slice().sort(inOrder).reverse().slice(0, limit);
-      return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: head, server_time: nowIso() };
+      const offset = Number(query.get("cursor") || 0);
+      const ordered = items.slice().sort(inOrder).reverse();
+      const listed = ordered.slice(offset, offset + limit);
+      return { counts, by_project: byProject, items: listed.map(view),
+        next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
+        next_after: head, server_time: nowIso() };
     }],
     // §18.3: by ids, or everything up to a seq (of one kind or project).
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {

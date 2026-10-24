@@ -63,6 +63,7 @@ window.Maity = window.Maity || {};
       if (await M.api.missingRoute(err, "GET", "/me/notifications")) M.api.absent.note("GET", "/me/notifications");
       state.available = false;
     }
+    changed();
     return state;
   }
 
@@ -142,7 +143,8 @@ window.Maity = window.Maity || {};
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
             x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
           : h("p", { class: "muted" }, "No notifications in the last 30 days."),
-        h("p", { class: "hint" }, h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
+        h("p", { class: "hint" }, h("a", { href: "#/notifications", onclick: () => close(false) }, "All notifications"), " · ",
+          h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
         status.el);
     }
     // The latest 20 are read when the bell opens; "mark all read" marks up to
@@ -174,51 +176,66 @@ window.Maity = window.Maity || {};
   // ---- browser notifications (§18.8 stage 2) ---------------------------
 
   let browserLoop = null;
+  let browserConfig = null;
+  const watchers = new Set();
   const shown = new Set();
+  const changed = () => watchers.forEach((fn) => fn());
+  const wanted = () => browserConfig || watchers.size;
 
-  // Shows what is new while a tab is open, for the kinds switched on; the
-  // item's id is the tag, so two tabs show it once. Never one's own.
-  function startBrowser(ctx, settings) {
-    stopBrowser();
-    const b = settings && settings.browser;
-    if (!b || !b.enabled || !("Notification" in window) || window.Notification.permission !== "granted") return;
-    if (M.api.absent.has("GET", "/me/notifications")) return;
-    // A pause ends early when the loop is stopped, so nothing is left waiting.
-    const loop = { stopped: false, timer: null, wake: null };
+  // The waiting view and browser pop-ups share one request, even while a
+  // navigation or a settings change happens during an outstanding long-poll.
+  function ensureLoop() {
+    if (browserLoop || !wanted() || state.available === false) return;
+    const loop = { timer: null, wake: null, reset: false };
     browserLoop = loop;
-    // From now: a fresh head on every start and after another tab had the
-    // long-poll, so nothing since the page loaded pops up at once.
     let after = null;
     const pause = (ms) => new Promise((done) => {
       loop.wake = done;
-      loop.timer = window.setTimeout(done, ms);
+      loop.timer = window.setTimeout(() => { loop.wake = null; done(); }, ms);
     });
     (async () => {
-      while (!loop.stopped) {
+      while (wanted() && state.available !== false) {
         const asked = Date.now();
         let answer;
         try {
-          if (after === null) after = (await M.api.get("/me/notifications?limit=0")).next_after;
+          if (loop.reset) { after = null; loop.reset = false; }
+          if (after === null) {
+            const head = await M.api.get("/me/notifications?limit=0");
+            after = head.next_after;
+            state.counts = head.counts || state.counts;
+            state.byProject = head.by_project || state.byProject;
+          }
+          if (!wanted()) break;
           answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50");
         } catch (err) {
-          // Not on this hub: the loop ends instead of retrying for ever, and
-          // says so, so a later start (after a deploy) is not taken for running.
           if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
             M.api.absent.note("GET", "/me/notifications");
-            if (browserLoop === loop) browserLoop = null;
-            return;
+            state.available = false;
+            changed();
+            break;
           }
-          await pause(PAUSE_MS);
+          if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.after === "position") {
+            after = null;
+            changed();
+          }
+          if (wanted()) await pause(PAUSE_MS);
           continue;
         }
-        if (loop.stopped) return;
+        if (!wanted()) break;
+        if (loop.reset) continue; // A settings/session change discarded this answer.
         if (answer.superseded) { await pause(SUPERSEDED_MS); after = null; continue; }
         const items = answer.items || [];
-        // The hub's next position, passed back unchanged (§18.2).
         if (answer.next_after) after = answer.next_after;
-        items.forEach((x) => {
+        state.counts = answer.counts || state.counts;
+        state.byProject = answer.by_project || state.byProject;
+        // Refresh the snapshot, including removals/read flags; never insert a
+        // long-poll item into a request form or assume its count is complete.
+        changed();
+        const config = browserConfig;
+        if (config && !loop.reset) items.forEach((x) => {
+          const b = config.settings.browser;
           if (x.read || shown.has(x.id) || !b.kinds[x.kind]) return;
-          if (x.actor && x.actor.member_id === ctx.me.id) return;
+          if (x.actor && x.actor.member_id === config.ctx.me.id) return;
           shown.add(x.id);
           const withText = b.content && b.content[x.kind] && typeof x.content === "string";
           const note = new window.Notification(x.redacted ? "Maity" : x.title, {
@@ -227,19 +244,40 @@ window.Maity = window.Maity || {};
           });
           note.onclick = () => { window.focus(); window.location.hash = linkOf(x); note.close(); };
         });
-        if (!items.length && Date.now() - asked < QUICK_MS) await pause(PAUSE_MS);
+        if (!items.length && Date.now() - asked < QUICK_MS && wanted()) await pause(PAUSE_MS);
       }
-    })();
+    })().finally(() => { if (browserLoop === loop) browserLoop = null; });
+  }
+
+  function wakeLoop() {
+    if (!browserLoop || !browserLoop.wake) return;
+    window.clearTimeout(browserLoop.timer);
+    const wake = browserLoop.wake;
+    browserLoop.wake = null;
+    wake();
+  }
+
+  function startBrowser(ctx, settings) {
+    const b = settings && settings.browser;
+    browserConfig = b && b.enabled && ("Notification" in window) && window.Notification.permission === "granted"
+      ? { ctx, settings } : null;
+    if (browserLoop) browserLoop.reset = true;
+    wakeLoop();
+    ensureLoop();
   }
 
   function stopBrowser() {
-    const loop = browserLoop;
-    browserLoop = null;
-    if (!loop) return;
-    loop.stopped = true;
-    window.clearTimeout(loop.timer);
-    if (loop.wake) loop.wake();
+    browserConfig = null;
+    wakeLoop();
   }
 
-  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserLoop, KIND_WORDS };
+  function subscribe(fn) {
+    if (!wanted() && browserLoop) browserLoop.reset = true;
+    watchers.add(fn);
+    wakeLoop();
+    ensureLoop();
+    return () => { watchers.delete(fn); wakeLoop(); };
+  }
+
+  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);
