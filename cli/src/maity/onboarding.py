@@ -405,6 +405,21 @@ def _memory(packet: dict[str, Any]) -> list[str]:
     return [*out, ""]
 
 
+def _check_in(packet: dict[str, Any]) -> list[str]:
+    block = _dict(packet.get("onboarding"))
+    target = _dict(block.get("check_in_with"))
+    if not target.get("handle"):
+        return []  # Old hubs omit the block; tolerate a partial packet as elsewhere.
+    lines = [
+        "Check in:",
+        f"Report to @{inline(target['handle'])} ({inline(target.get('kind'))}) "
+        "with a message before you take any work.",
+    ]
+    if block.get("instruction"):
+        lines += quote(block["instruction"])
+    return [*lines, ""]
+
+
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
@@ -426,10 +441,16 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             "",
         ]
     out += _availability(packet, names)
+    out += _check_in(packet)
     briefing = ms.get("briefing")
     if briefing:
+        heading = "Your briefing, as the humans of this project wrote it for you:"
+        if ms.get("briefing_source") == "project":
+            author = _dict(ms.get("briefing_by"))
+            who = inline(author.get("handle") or author.get("id") or "unknown")
+            heading = f"Your briefing (project default, set by {who}):"
         out += [
-            "Your briefing, as the humans of this project wrote it for you:",
+            heading,
             *quote(briefing),
             "",
         ]
