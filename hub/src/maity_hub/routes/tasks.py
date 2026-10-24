@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -16,6 +16,7 @@ from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    card_search,
     cards,
     clock,
     idempotency,
@@ -439,6 +440,7 @@ def list_tasks(
     area: str | None = None,
     closed_after: datetime | None = None,
     order: Literal["board", "updated"] = "board",
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
@@ -477,14 +479,35 @@ def list_tasks(
         bound = paging.scope(
             status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
             area=area, closed_after=closed_after, order=order,
+            **({"q": q} if q is not None else {}),
         )  # fmt: skip
+        matched: dict[str, list[str]] = {}
+
+        def matching(rows: Sequence[Any]) -> list[Any]:
+            if q is None:
+                return list(rows)
+            result = []
+            for row in rows:
+                hit = card_search.matches(row, q)
+                if hit:
+                    matched[row.id] = hit
+                    result.append(row)
+            return result
+
+        def views(rows: Sequence[Any]) -> list[dict[str, Any]]:
+            shown = task_views(conn, rows, fg)
+            if q is not None:
+                for item in shown:
+                    item["match"] = matched[item["id"]]
+            return shown
+
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: sorted here, a
             # project's cards at a time, and paged after the last item shown.
             def key(row: Any) -> tuple[Any, ...]:
                 return ranks.board_key(cards.STATUSES, row)
 
-            ordered = sorted(conn.execute(query).all(), key=key)
+            ordered = sorted(matching(conn.execute(query).all()), key=key)
             if cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             shown = ordered[:limit]
@@ -499,7 +522,7 @@ def list_tasks(
                     in_column,
                     bound,
                 )
-            return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
+            return JSONResponse({"items": views(shown), "next_cursor": following})
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
@@ -508,14 +531,15 @@ def list_tasks(
                     and_(t.card.c.updated_at == after_at, t.card.c.id < after_id),
                 )
             )
-        rows = conn.execute(
-            query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc()).limit(limit + 1)
-        ).all()
+        query = query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc())
+        if q is None:
+            query = query.limit(limit + 1)
+        rows = matching(conn.execute(query).all())
         page = rows[:limit]
         next_cursor = (
             paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
         )
-        return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
+        return JSONResponse({"items": views(page), "next_cursor": next_cursor})
 
 
 def _after(
