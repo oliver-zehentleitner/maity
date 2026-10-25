@@ -164,7 +164,9 @@ agent_profile = Table(
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
     Column("deleted_at", UtcDateTime),
-    Column("live", Boolean, default=True, server_default=true()),
+    Column(
+        "live", Boolean, server_default=true()
+    ),  # the database fills it: inserts on older schemas name no `live`
     UniqueConstraint("owner_id", "handle", "live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
