@@ -483,11 +483,12 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def _locked(conn: Connection, caller: Caller, slug: str) -> Membership:
+def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -> Membership:
     """The caller's membership read after the project lock: a write to a chat decides on
     the membership, the chat, the caller's access and the audience as of the lock, so a
     leave, a close or a removal that commits first is never overtaken (§9.2)."""
-    first = writer(conn, caller, slug)  # an owner outside: observer (§9.2)
+    # An owner outside: observer for a chat it reads along, else not_found (§9.2).
+    first = writer(conn, caller, slug, conversation_id=conversation_id)
     events.lock_project(conn, first.project.id)
     return membership(conn, caller, slug)
 
@@ -546,7 +547,7 @@ def patch_conversation(
     slug: str, conversation_id: str, body: GroupPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.rename(conn, group, body.title, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -561,7 +562,7 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -576,7 +577,7 @@ def remove_participant(
     slug: str, conversation_id: str, member_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         leaving = member_id == mine.principal_id
         if leaving and group_chats.is_group(conversation_id):  # any participant leaves
             group, found = _group(conn, mine, conversation_id)
@@ -703,7 +704,7 @@ def send_message(
     slug: str, conversation_id: str, body: ChatIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:

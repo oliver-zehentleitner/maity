@@ -388,17 +388,40 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
     return {(r.agent_id or r.human_id): r.role for r in rows}
 
 
-def writer(conn: Connection, caller: Caller, slug: str) -> Membership:
+def writer(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    *,
+    conversation_id: str | None = None,
+    seq: int | None = None,
+) -> Membership:
     """The caller's membership for a write in a chat (a post, a change to the chat, a
-    redaction): an owner outside the project, who reads along in its agents' chats, gets
-    `forbidden` with `reason: observer` (§9.2), anyone else without a membership
-    `not_found`. Every other write uses `membership`, so it stays `not_found` for it."""
+    redaction). An owner outside the project gets `forbidden` with `reason: observer` only
+    for a chat it reads along: the chat named by `conversation_id`, or the one the event
+    `seq` belongs to. For anything else, a chat it does not read, a project event, an
+    unknown id, it gets `not_found` like every other write and read (§9.2)."""
     try:
         return membership(conn, caller, slug)
     except ApiError:
         from maity_hub.routes.conversations import outsider
 
-        if outsider(conn, caller, slug) is not None:
+        found = outsider(conn, caller, slug)
+        if found is None:
+            raise
+        if seq is not None:
+            conversation_id = conn.execute(
+                select(t.event.c.conversation_id).where(
+                    t.event.c.seq == seq,
+                    t.event.c.project_id == found.project.id,
+                    t.event.c.kind == "message",
+                )
+            ).scalar()
+        if (
+            group_chats.is_group(conversation_id)
+            and group_chats.find(conn, found.project.id, conversation_id or "") is not None
+            and group_chats.access(conn, conversation_id or "", found) == "observer"
+        ):
             raise ApiError(
                 403, "forbidden", "an owner outside reads along only", {"reason": "observer"}
             ) from None
@@ -410,7 +433,11 @@ def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) 
     def action(conn: Connection) -> idempotency.Outcome:
         # A chat post is a write in a chat an owner outside may read along; any other
         # message is not, and stays `not_found` for it (§9.2).
-        mine = writer(conn, caller, slug) if body.type == "chat" else membership(conn, caller, slug)
+        mine = (
+            writer(conn, caller, slug, conversation_id=body.conversation_id)
+            if body.type == "chat"
+            else membership(conn, caller, slug)
+        )
         mine.require("events:post")
         view = post_message(conn, mine, caller, body)
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
@@ -433,7 +460,7 @@ def redact(
         raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = writer(conn, caller, slug)
+        mine = writer(conn, caller, slug, seq=seq)
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()

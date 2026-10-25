@@ -138,3 +138,29 @@ def test_the_packet_keeps_only_the_current_stays_mentions(
     assert new in seqs and old not in seqs
     [group] = [c for c in packet["conversations"] if c["id"] == chat["id"]]
     assert (group["unread"], group["mentions_unread"]) == (1, 1)
+
+
+def test_observer_only_where_the_outsider_reads_along(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's probe: outside a chat it reads along, an outsider's write is
+    not_found, whatever it names."""
+    outside, agent = outside_owner(make_client, migrated)
+    guest = other_human(make_client, migrated, "guest")
+    without = create(owner, guest.id).json()  # none of its agents in it
+    notice = owner.post(
+        "/projects/maity/events", {"kind": "message", "type": "notice", "to": "all", "body": "x"}
+    ).json()["seq"]
+    assert redact(outside, notice).status_code == 404  # a project event
+    assert redact(outside, 10**9).status_code == 404  # no such seq
+    hidden_post = outside.post(
+        "/projects/maity/events",
+        {"kind": "message", "type": "chat", "body": "hi", "conversation_id": without["id"]},
+    )
+    assert hidden_post.status_code == 404
+    assert say(outside, without["id"], "hi").status_code == 404
+    assert outside.patch(f"{BASE}/{without['id']}", {"title": "x"}).status_code == 404
+    assert outside.patch(f"{BASE}/cnv-nonexistent", {"title": "x"}).status_code == 404
+    mine = create(owner, agent.id).json()
+    said = say(owner, mine["id"], "hello").json()["seq"]
+    assert reason(redact(outside, said)) == "observer"  # its agent's chat: observer
