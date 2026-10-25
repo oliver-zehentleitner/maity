@@ -318,3 +318,14 @@ def test_a_replayed_post_shows_no_redaction_reason(round_: Round) -> None:
     shown = replay.json()
     assert shown["body"] is None and shown["redaction"]["reason"] is None
     assert "private reason" not in replay.text
+
+
+def test_the_statement_and_posts_keep_their_byte_caps(round_: Round) -> None:
+    long_summary = round_.statement(summary="ä" * 1025)  # 2050 bytes, 1025 characters
+    assert long_summary.json()["error"]["details"]["fields"] == {"summary": "too_long"}
+    long_item = round_.statement(items=[{"text": "ä" * 513, "from": "anonymous"}])
+    assert long_item.json()["error"]["details"]["fields"] == {"items": "too_long"}
+    assert round_.statement(summary="ä" * 1024).status_code == 201  # 2048 bytes: in
+    long_post = round_.post(round_.lead, "response", body="ä" * 2049)
+    assert long_post.json()["error"]["details"]["fields"] == {"body": "too_long"}
+    assert round_.post(round_.lead, "response", body="ä" * 2048).status_code == 201
