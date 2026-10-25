@@ -155,8 +155,15 @@ card on the board, `req-…` the request in the inbox, `agt-…` and `hum-…`
 the member in Members, and `#123` the project repository's issue or pull
 request on GitHub (in a new tab; only for a GitHub repository). An id is
 linked by its shape alone, never looked up: a page it opens says when it
-holds no such thing. The link's text is the id as written; ids in code
-stay plain, and no mention is made.
+holds no such thing. The link's text is the id as written, and no mention
+is made. In Markdown (messages, chats) ids in code spans and fenced code
+stay plain; the other texts are not Markdown, so backticks there are just
+characters and an id between them still links. A text read along from
+outside a project (`#/observe`) links no id, as it links no member. In
+**All projects** `#123` stays text: `/me` gives no project's repository.
+A ticker item whose own link is the pull request or issue leaves its
+numbers as text. Known: a three-digit hex colour such as `#123` links
+too.
 
 1. **Inbox** (`#/p/<slug>/inbox`, the first screen; `#/p/<slug>/inbox/<id>`
    opens that request, among the answered if it is one): the requests waiting
@@ -1074,7 +1081,8 @@ web/
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links
-├── js/markdown.js    Markdown as DOM nodes, for chat messages
+├── js/ids.js         ids in text as links (cards, requests, members, #n)
+├── js/markdown.js    Markdown as DOM nodes, for chat messages; ids linked by js/ids.js
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu), the gear and the bell icons
 ├── js/mentions.js    the @ picker

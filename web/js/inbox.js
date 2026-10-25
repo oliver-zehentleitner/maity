@@ -308,9 +308,12 @@ window.Maity = window.Maity || {};
     const items = await load(ctx);
     const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
     const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
+    let showAll = false;
     if (wantedReq) {
       ui.current = keyOf(wantedReq);
-      if (wantedReq.status !== "open") ui.show = "all";
+      // An answered one is shown among the answered for this view only;
+      // the inbox's own choice stays as it was.
+      if (wantedReq.status !== "open") showAll = true;
     }
     const names = {
       member: (id) => (ctx.nameOf ? ctx.nameOf(id) : id || "—"),
@@ -320,7 +323,7 @@ window.Maity = window.Maity || {};
     const sorts = ctx.scope === "all" ? ["priority", "date", "agent", "project"] : ["priority", "date", "agent"];
     if (!sorts.includes(ui.sort)) ui.sort = "priority";
     // The cross-project view lists what is waiting, nothing else.
-    const show = () => (ctx.scope === "all" ? "open" : ui.show);
+    const show = () => (ctx.scope === "all" ? "open" : showAll ? "all" : ui.show);
 
     // The project filter is the cross-project view's only; a project no
     // longer in the switcher is no filter (it would empty the list for good).
@@ -441,9 +444,9 @@ window.Maity = window.Maity || {};
     sorts.map((s) => h("option", { value: s, selected: s === ui.sort }, s)));
     const showSelect = ctx.scope === "all" ? null : h("select", {
       id: "inbox-show",
-      onchange: (e) => { ui.show = e.target.value; draw(); },
+      onchange: (e) => { ui.show = e.target.value; showAll = false; draw(); },
     },
-    [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === ui.show }, l)));
+    [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === show() }, l)));
 
     // The cross-project view: a project filter and grouping by project.
     const projectSelect = ctx.scope === "all" ? h("select", {

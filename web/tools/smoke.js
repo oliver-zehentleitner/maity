@@ -1525,6 +1525,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
     "ids: in Markdown linked in text and emphasis, plain in code spans, fenced code and a link's own text " + idHrefs(mdIds));
   expect(!MD("tsk-0123456789ab").querySelector("a"), "ids: Markdown without the text's project links no id");
+  const idOut = IDS.where({ slug: "maity", outsider: true, project: { repository: { url: "https://github.com/o/r" } } });
+  expect(idOut.slug === null && idOut.repository === null && !idBox(win.Maity.markdown("See tsk-0123456789ab and #4", idOut)).querySelector("a.id-ref"),
+    "ids: read along from outside a project, nothing links");
+  expect(IDS.forgeBase("https://github.com/o/r/tree/main") === "https://github.com/o/r" && IDS.forgeBase("https://GitHub.com/o/r") === "https://github.com/o/r"
+    && IDS.forgeBase("https://github.com/o/r.git") === "https://github.com/o/r" && IDS.forgeBase("https://gitlab.com/o/r") === null && IDS.forgeBase("https://github.com/o") === null,
+    "ids: the repository read as the hub reads it — any case of github.com, owner and name the first two segments");
   const wmIds = idBox(win.Maity.dom.withMentions("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
     "body", (id) => "#/m/" + id, idAt));
   expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab",
@@ -1543,6 +1549,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
     "ids: a card the board does not hold is said");
+  const idShown = () => (byId("inbox-show").querySelectorAll("option").find((o) => "selected" in o.attrs || o.selected) || { attrs: {} }).attrs.value;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const idShowBefore = idShown();
+  byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change"); await tick();
   await go("#/p/maity/inbox/req-0009"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const idEntry = main.querySelector("li.entry.current");
   expect(idEntry && idEntry.attrs["data-request"] === "req-0009" && idEntry.classList.contains("done") && document.activeElement === idEntry.querySelector("button.entry-head"),
@@ -1553,7 +1563,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "ids: the ids of a request's title are links in its body, never inside its button");
   await go("#/p/maity/inbox/req-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector(".wanted-note")) === "No request req-zzzzzzzzzzzz in this project's inbox.", "ids: a request the inbox does not hold is said");
-  byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(idShown() === "open" && !main.querySelectorAll("li.entry").some((li) => li.attrs["data-request"] === "req-0009"),
+    "ids: after a deep link to an answered request the inbox's own choice (open) stands");
+  if (idShowBefore === "all") { byId("inbox-show").value = "all"; byId("inbox-show").dispatch("change"); await tick(); }
   idProto.focus = idFocus; document.activeElement = undefined;
   await go("#/p/maity/inbox");
   // A deep quote stops nesting instead of overflowing the stack.
@@ -3097,7 +3110,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "ticker: a tab; For me lists the items with a reason for the viewer, newest first");
   expect(text(tkSeq(4310)).includes("For you: you own the whole repository, you follow web/.") && text(tkSeq(4310)).includes("Contract change")
     && tkSeq(4310).querySelectorAll("a").find((a) => !a.classList.contains("id-ref")).getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214"
-    && tkSeq(4310).querySelector("a.id-ref").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/issues/214",
+    && !tkSeq(4310).querySelector("a.id-ref") && tkSeq(4310).querySelectorAll("a").length === 1,
     "ticker: why in words, a contract change marked, its link");
   expect(text(tkSeq(4330)).includes("(muted: it woke no one here)"), "ticker: a muted one says so");
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();

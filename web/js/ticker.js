@@ -114,7 +114,10 @@ window.Maity = window.Maity || {};
           h("span", { class: "badge" }, x.type === "merge" && x.contract ? "Contract change" : TYPE_WORD[x.type] || x.type),
           " ", h("span", { class: "muted" }, formatTime(x.at), x.actor && x.actor.member_id ? [" · ", M.dom.memberRef(ctx, x.actor.member_id)] : null)),
         x.redacted ? h("p", { class: "muted msg-redacted" }, "This item was removed.")
-          : h("p", { class: "ticker-text" }, M.ids.link(x.text, M.ids.where(ctx)), link ? [" ", h("a", { href: link, rel: "noopener noreferrer", target: "_blank" }, "link")] : null),
+          // An item whose own link is a pull request or an issue links it
+          // once: its numbers stay text.
+          : h("p", { class: "ticker-text" }, M.ids.link(x.text, link && /\/(pull|issues)\/\d+/.test(link)
+            ? Object.assign(M.ids.where(ctx), { repository: null }) : M.ids.where(ctx)), link ? [" ", h("a", { href: link, rel: "noopener noreferrer", target: "_blank" }, "link")] : null),
         decided && !x.redacted ? h("p", { class: "muted" }, M.ids.link(decided, M.ids.where(ctx))) : null,
         x.for_me ? h("p", { class: "ticker-why" }, "For you: " + x.why.map(whyWords).join(", ") + (x.muted ? " (muted: it woke no one here)" : "") + ".") : null);
     }

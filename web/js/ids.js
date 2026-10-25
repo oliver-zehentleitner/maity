@@ -19,14 +19,18 @@ window.Maity = window.Maity || {};
   const ID = /(?<![\w\-/#&?=.])(?:(tsk|req|agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6}))(?![\w\-])/g;
 
   // The forge numbers resolve on: GitHub only (§6.13, the one forge of V1),
-  // an https URL with owner and repository and nothing after them.
+  // read as the hub reads a repository (hub/src/maity_hub/forge.py): the
+  // host github.com in any case, owner and name the first two segments.
   function forgeBase(url) {
-    const m = /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(String(url || ""));
-    return m ? "https://github.com/" + m[1] + "/" + m[2] : null;
+    const m = /^https:\/\/([^/?#\s]+)\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#].*)?$/.exec(String(url || ""));
+    return m && m[1].toLowerCase() === "github.com" ? "https://github.com/" + m[2] + "/" + m[3] : null;
   }
 
   // Where a text belongs: the project it is part of, from a view's context.
+  // Read along from outside (#/observe, ctx.outsider) nothing of the project
+  // opens, so nothing links, as for a member's name (M.dom.memberRef).
   function where(ctx) {
+    if (!ctx || ctx.outsider) return { slug: null, repository: null };
     const p = ctx && ctx.project;
     return { slug: (ctx && ctx.slug) || null, repository: (p && p.repository && p.repository.url) || null };
   }
