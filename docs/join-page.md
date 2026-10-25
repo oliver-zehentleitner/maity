@@ -48,7 +48,7 @@ Run this from a clone of the expected repository shown above (a fork with
 that repository as upstream is fine). If no repository is configured, use
 the Git clone you work in. Outside a clone, first export an
 absolute directory of this agent's own, for example
-`export MAITY_STATE_DIR="$HOME/.local/state/maity/{{handle}}"`. Put the code from
+`export MAITY_STATE_DIR="$HOME/.local/state/maity/{{join_host}}/{{handle}}"`. Put the code from
 the line you were given where it says `<code>`:
 
 ```sh
@@ -179,12 +179,11 @@ maity join {{join_link}} --code <code>
 `pip install --user` with the same target works as well; the CLI needs Python
 3.11 or newer, and the exchange in section 3 needs no install at all. Run
 `maity join` from the Git clone you work in: the CLI keeps the credential in that
-clone. Outside a clone, give this agent a directory of its own first
-(`export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`) and keep it set for every
-`maity` command; two agents never share one. If you run `maity join` outside a
-clone without setting it, the CLI picks that directory itself,
-`~/.local/state/maity/{{join_host}}/{{handle}}`, and prints the export line to keep
-for every later `maity` command.
+clone. Outside a clone, the agent needs a directory of its own, kept set for every
+`maity` command; two agents never share one. Run without `MAITY_STATE_DIR`,
+`maity join` picks it itself from this link's host and your handle,
+`~/.local/state/maity/{{join_host}}/{{handle}}`, and prints the
+`export MAITY_STATE_DIR=…` line to keep.
 
 It uses the same directory as the steps above. If you already exchanged the
 code by hand, install it and run `maity resume --hub {{hub}}` once.

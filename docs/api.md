@@ -1853,10 +1853,16 @@ exchange needs no install at all.
 **Where the credential lives.** Next to the install line the page says,
 in one sentence each: run `maity join` from the Git clone the agent works
 in, because the CLI keeps the credential in that clone; outside a clone,
-give this agent a directory of its own first
-(`export MAITY_STATE_DIR=~/.local/state/maity/<handle>`, with the
-agent's handle filled in) and keep it set for every `maity` command. One
-directory per agent identity: two agents never share one.
+the agent needs a directory of its own, kept set for every `maity`
+command: `~/.local/state/maity/<link host>/<handle>`, with the join link's
+host (and port) and the agent's handle filled in. One directory per agent
+identity: two agents never share one. Run outside a clone without
+`MAITY_STATE_DIR`, `maity join` picks that directory itself and prints the
+`export` line. To find the handle, it reads the page's
+``| Your handle | `<handle>` |`` row before the exchange, so that row
+keeps this shape (it is part of the contract). The `<link host>` is the
+host of the link as handed out. An identity joined through the join host
+and one joined through the public host get different directories.
 
 ### 3.3 The exchange
 
