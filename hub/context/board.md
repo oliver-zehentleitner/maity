@@ -157,3 +157,26 @@ computed-count and authored-history distinction.
 add another state to synchronise and could imply that a member directly
 edited the parent's computed field. The contract requires computed counts;
 no other historical alternatives are known.
+
+## The completion error adds children only when open children participate
+
+**Id:** 504e69dd-4a07-4618-9fce-e0cd54da6a20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's completion-error shape ruling, 2026-10-25; docs/api.md §6.4
+**Revisit when:** the completion error is versioned or clients need a fixed set of detail keys
+
+`dependencies_open.details.open` is the deduplicated union of open explicit
+dependencies and open children. `details.children` repeats the children
+only when that subset is non-empty. A dependency-only refusal retains its
+existing `{open: [...]}` detail shape.
+
+**Reason:** adding subtasks should not change the error seen by clients
+whose cards have no children. Including an empty `children` key was a real
+alternative, exposed by the existing completion-report regression test;
+the contract owner accepted the conditional shape for compatibility.
+
+**Rejected alternative:** always include `children: []`, then revise the
+old clients and contract sample. It changes a previously valid response
+without giving dependency-only callers any new information.
