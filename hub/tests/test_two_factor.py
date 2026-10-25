@@ -768,3 +768,26 @@ def test_a_reset_quotes_the_reason_and_ends_every_session(
             .all()
         )
     assert len(ended) >= 2 and set(ended) == {"second_factor_reset"}
+
+
+@pytest.mark.parametrize("change", ["changed", "removed"])
+def test_a_reset_link_dies_with_the_address_it_went_to(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, change: str
+) -> None:
+    admin, target, _ = admin_and_target(make_client, migrated, moment)
+    admin.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": "lost phone"})
+    token = reset_link(migrated)
+    settings = t.notification_settings
+    with migrated.begin() as conn:  # what an address change or removal does to the row
+        values: dict[str, Any] = {"epoch": settings.c.epoch + 1}
+        if change == "changed":
+            values["address"] = "elsewhere@example.org"
+        else:
+            values.update(address=None, address_status="none")
+        conn.execute(settings.update().where(settings.c.human_id == target.id).values(**values))
+    assert target.client.get(f"/mail/second-factor-reset/{token}").status_code == 404
+    assert target.client.post(f"/mail/second-factor-reset/{token}").status_code == 404
+    assert target.get("/auth/second-factor").json()["enrolled"] is True
+    with migrated.connect() as conn:
+        used = conn.execute(select(t.second_factor_reset.c.used_at)).scalars().all()
+    assert used == [None]  # not consumed either

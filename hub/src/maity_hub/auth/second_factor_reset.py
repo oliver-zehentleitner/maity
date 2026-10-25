@@ -77,14 +77,10 @@ def request_reset(
     resolved = mail_settings.resolve(conn, hub.mail, hub.secret_key)
     if not (resolved.complete and resolved.enabled) or hub.mail.signing_key is None:
         raise ApiError(409, "mail_not_configured", "the instance has no working mail")
-    address = conn.execute(
-        select(t.notification_settings.c.address).where(
-            t.notification_settings.c.human_id == target_id,
-            t.notification_settings.c.address_status == "verified",
-        )
-    ).scalar()
-    if address is None:
+    mailbox = _verified(conn, target_id)
+    if mailbox is None:
         raise ApiError(409, "address_unverified", "the reset mail cannot reach this human")
+    address, epoch = mailbox
     wait = REQUESTS_BY_TARGET.hit(target_id)
     if wait:
         raise rate_limited(wait)
@@ -109,6 +105,7 @@ def request_reset(
             "p": PURPOSE,
             "n": nonce,
             "g": factor.generation,
+            "e": epoch,  # the address the link went to: dead once it changes (§18.6)
             "x": int(expires.timestamp()),
         },
     )
@@ -131,7 +128,22 @@ def request_reset(
     return clock.rfc3339(expires)
 
 
-def _live_request(conn: Connection, signing_key: bytes | None, token: str) -> Any:
+def _verified(conn: Connection, human_id: str, *, lock: bool = False) -> tuple[str, int] | None:
+    """The human's verified address and its epoch, or None. Locked like an address
+    change locks it, so a reset and an address change do not cross (§18.6)."""
+    query = select(t.notification_settings).where(
+        t.notification_settings.c.human_id == human_id,
+        t.notification_settings.c.address_status == "verified",
+    )
+    row = conn.execute(query.with_for_update() if lock else query).first()
+    if row is None or row.address is None:
+        return None
+    return str(row.address), int(row.epoch)
+
+
+def _live_request(
+    conn: Connection, signing_key: bytes | None, token: str, *, lock: bool = False
+) -> Any:
     """The request a token names, while it may still take effect, else None — never
     which reason: invalid, expired, used, or of a superseded generation (§18.6)."""
     payload = tokens.read(signing_key, token)
@@ -140,6 +152,10 @@ def _live_request(conn: Connection, signing_key: bytes | None, token: str) -> An
     nonce = payload.get("n")
     if not isinstance(nonce, str):
         return None
+    # The address first, in the order an address change takes it; then the factor.
+    mailbox = _verified(conn, str(payload.get("h")), lock=lock)
+    if mailbox is None or mailbox[1] != payload.get("e"):
+        return None  # the address it went to was changed or removed
     row = conn.execute(
         select(t.second_factor_reset).where(
             t.second_factor_reset.c.id == hashlib.sha256(nonce.encode()).hexdigest()
@@ -153,7 +169,7 @@ def _live_request(conn: Connection, signing_key: bytes | None, token: str) -> An
         or row.expires_at <= clock.now()
     ):
         return None
-    factor = second_factor.factor_of(conn, row.human_id)
+    factor = second_factor.factor_of(conn, row.human_id, lock=lock)
     if factor is None or factor.generation != row.generation or not second_factor.enrolled(factor):
         return None
     return row
@@ -175,12 +191,11 @@ def page(conn: Connection, signing_key: bytes | None, token: str) -> dict[str, s
 def confirm(conn: Connection, signing_key: bytes | None, token: str) -> bool:
     """The human's button: one transaction — the link consumed, the generation checked
     and moved, the factor and the recovery codes gone, every session ended. Of two
-    links racing, the first wins; the second finds the generation moved."""
-    row = _live_request(conn, signing_key, token)
+    links racing, the first wins; the second finds the generation moved. The address
+    row is locked before the factor, the order an address change takes, and a link
+    whose address was changed or removed since it went out is dead (§18.6)."""
+    row = _live_request(conn, signing_key, token, lock=True)
     if row is None:
-        return False
-    factor = second_factor.factor_of(conn, row.human_id, lock=True)
-    if factor is None or factor.generation != row.generation:
         return False
     used = conn.execute(
         update(t.second_factor_reset)
