@@ -26,29 +26,49 @@ window.Maity = window.Maity || {};
   }
   const kib = (n) => (n / 1024).toFixed(1).replace(/\.0$/, "");
 
-  // A line diff from the longest common subsequence: the texts are at most
-  // 8 KiB, so the table stays small. Each entry is "same", "del" or "add".
+  // A line diff: the common start and end as they are, the rest from the
+  // longest common subsequence. 8 KiB can hold thousands of lines, so the
+  // table is bounded: past DIFF_CELLS the changed part is shown as removed
+  // then added (`coarse`), which reads, where the table would freeze the page.
+  const DIFF_CELLS = 250000;
   function diffLines(before, after) {
     const a = before ? before.split("\n") : [];
     const b = after ? after.split("\n") : [];
-    const n = a.length;
-    const m = b.length;
-    const table = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) {
-      for (let j = m - 1; j >= 0; j--) {
-        table[i][j] = a[i] === b[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+    let lo = 0;
+    while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
+    let hiA = a.length;
+    let hiB = b.length;
+    while (hiA > lo && hiB > lo && a[hiA - 1] === b[hiB - 1]) { hiA--; hiB--; }
+    const same = (text) => ({ op: "same", text });
+    const out = a.slice(0, lo).map(same);
+    const n = hiA - lo;
+    const m = hiB - lo;
+    let coarse = false;
+    if ((n + 1) * (m + 1) > DIFF_CELLS) {
+      coarse = true;
+      for (let i = lo; i < hiA; i++) out.push({ op: "del", text: a[i] });
+      for (let j = lo; j < hiB; j++) out.push({ op: "add", text: b[j] });
+    } else {
+      // One flat table, row by row: cell (i, j) at i * (m + 1) + j.
+      const w = m + 1;
+      const t = new Array((n + 1) * w).fill(0);
+      for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+          t[i * w + j] = a[lo + i] === b[lo + j] ? t[(i + 1) * w + j + 1] + 1 : Math.max(t[(i + 1) * w + j], t[i * w + j + 1]);
+        }
       }
+      let i = 0;
+      let j = 0;
+      while (i < n && j < m) {
+        if (a[lo + i] === b[lo + j]) { out.push(same(a[lo + i])); i++; j++; }
+        else if (t[(i + 1) * w + j] >= t[i * w + j + 1]) out.push({ op: "del", text: a[lo + i++] });
+        else out.push({ op: "add", text: b[lo + j++] });
+      }
+      while (i < n) out.push({ op: "del", text: a[lo + i++] });
+      while (j < m) out.push({ op: "add", text: b[lo + j++] });
     }
-    const out = [];
-    let i = 0;
-    let j = 0;
-    while (i < n && j < m) {
-      if (a[i] === b[j]) { out.push({ op: "same", text: a[i] }); i++; j++; }
-      else if (table[i + 1][j] >= table[i][j + 1]) out.push({ op: "del", text: a[i++] });
-      else out.push({ op: "add", text: b[j++] });
-    }
-    while (i < n) out.push({ op: "del", text: a[i++] });
-    while (j < m) out.push({ op: "add", text: b[j++] });
+    a.slice(hiA).forEach((text) => out.push(same(text)));
+    out.coarse = coarse;
     return out;
   }
 
@@ -57,11 +77,13 @@ window.Maity = window.Maity || {};
   const SAID = { same: "", del: "Removed: ", add: "Added: " };
   function diffView(before, after) {
     if (before === after) return h("p", { class: "muted" }, "The proposed text is the same as yours.");
-    return h("ol", { class: "pref-diff", "aria-label": "Changes from your text to the proposed one" },
-      diffLines(before, after).map((d) => h("li", { class: "pref-" + d.op },
+    const lines = diffLines(before, after);
+    return [lines.coarse ? h("p", { class: "hint" }, "Too many changed lines to match them up one by one: the changed part shows your lines removed, then the proposed ones added.") : null,
+      h("ol", { class: "pref-diff", "aria-label": "Changes from your text to the proposed one" },
+      lines.map((d) => h("li", { class: "pref-" + d.op },
         h("span", { class: "pref-sign", "aria-hidden": "true" }, SIGNS[d.op]),
         SAID[d.op] ? h("span", { class: "visually-hidden" }, SAID[d.op]) : null,
-        h("span", { class: "pref-line" }, d.text || " "))));
+        h("span", { class: "pref-line" }, d.text || " "))))];
   }
 
   const handleOf = (who) => (who && who.handle ? "@" + who.handle : who && (who.member_id || who.id)) || "someone";
@@ -248,7 +270,12 @@ window.Maity = window.Maity || {};
   function review(ctx, req, answer) {
     const box = h("div", { class: "pref-review", "aria-busy": "true" },
       h("p", { class: "muted" }, "Reading your current preferences…"));
+    // What the human typed outlives a redraw: a conflict shows the review
+    // again against the newer version, with their edit and reason kept.
+    const kept = { draft: null, editing: false, why: "" };
+    let drawn = false;
     const draw = (full) => {
+      drawn = true;
       box.removeAttribute("aria-busy");
       const p = full.memory_proposal;
       const current = p.current || { markdown: "", version: 0 };
@@ -274,15 +301,17 @@ window.Maity = window.Maity || {};
       };
 
       const why = h("textarea", { id: "pref-why-" + req.id, rows: "2", placeholder: "Why not (optional; the agent reads it)" });
+      why.value = kept.why;
+      why.addEventListener("input", () => { kept.why = why.value; });
       const decline = h("button", { type: "button", class: "reply", onclick: () => {
         const text = why.value.trim();
         sendIt(text ? { reply_id: "no", text } : { reply_id: "no" }, "Declining…");
       } }, "Decline");
       const editor = h("textarea", { id: "pref-edit-" + req.id, rows: "10" });
-      editor.value = p.markdown;
+      editor.value = kept.draft !== null ? kept.draft : p.markdown;
       const editSize = h("p", { class: "hint", "aria-live": "polite" });
       const drawEditSize = () => { const n = utf8Length(editor.value); editSize.textContent = kib(n) + " of 8 KiB" + (n > CAP ? " — too long" : ""); };
-      editor.addEventListener("input", drawEditSize);
+      editor.addEventListener("input", () => { kept.draft = editor.value; drawEditSize(); });
       drawEditSize();
       const acceptEdit = () => {
         if (utf8Length(editor.value) > CAP) { editor.focus(); return; }
@@ -294,12 +323,17 @@ window.Maity = window.Maity || {};
         h("label", { for: editor.id }, stale ? "Merge it with your current text, then accept (" + M.dom.SEND_KEYS + ")" : "Your edit of the proposal (" + M.dom.SEND_KEYS + " accepts)"),
         editor, editSize,
         h("div", { class: "actions" },
-          h("button", { type: "button", onclick: () => { editPane.hidden = true; editButton.hidden = false; editButton.focus(); } }, "Cancel"),
+          // Cancel drops the edit: the next Edit starts from the proposal again.
+          h("button", { type: "button", onclick: () => {
+            kept.editing = false; kept.draft = null; editor.value = p.markdown; drawEditSize();
+            editPane.hidden = true; editButton.hidden = false; editButton.focus();
+          } }, "Cancel"),
           acceptEditButton));
-      editPane.hidden = true;
+      editPane.hidden = !kept.editing;
       const editButton = h("button", { type: "button", class: "reply", onclick: () => {
-        editPane.hidden = false; editButton.hidden = true; editor.focus();
+        kept.editing = true; editPane.hidden = false; editButton.hidden = true; editor.focus();
       } }, stale ? "Merge by hand" : "Edit, then accept");
+      editButton.hidden = kept.editing;
       // A plain go on a stale base would drop the newer text unread (§19.4).
       const accept = stale ? null : h("button", { type: "button", class: "reply primary", onclick: () => sendIt({ reply_id: "go" }, "Accepting…") }, "Accept");
       append(actions, decline, editButton, accept);
@@ -319,8 +353,15 @@ window.Maity = window.Maity || {};
         h("div", { class: "free-text" }, h("label", { for: why.id }, "Reason for declining"), why),
         actions,
         status.el);
+      // Drawn again while editing: the focus goes back into the edit.
+      if (kept.editing) window.setTimeout(() => editor.focus(), 0);
     };
-    const fail = (err) => { box.removeAttribute("aria-busy"); append(clear(box), M.errorBox(err)); };
+    // A failed read leaves a drawn review as it was, the edit included.
+    const fail = (err) => {
+      box.removeAttribute("aria-busy");
+      if (drawn) box.insertBefore(h("p", { class: "send-status failed", role: "alert" }, "Your current preferences could not be read again: " + (err.message || err.code)), box.firstChild);
+      else append(clear(box), M.errorBox(err));
+    };
     // The inbox read the request on its own (js/inbox.js): its proposal
     // carries the human's current text. After a conflict it is read again.
     function reload(note) {

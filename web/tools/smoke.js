@@ -4073,6 +4073,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(pfM.diffLines("a\nb\nc", "a\nc\nd").map((d) => d.op + d.text)) === JSON.stringify(["samea", "delb", "samec", "addd"]),
     "preferences: the diff keeps the common lines and marks the removed and the added ones");
   expect(pfM.utf8Length("aä€😀") === 1 + 2 + 3 + 4, "preferences: the 8 KiB cap counts UTF-8 bytes");
+  // Near the cap a text holds thousands of lines: the diff stays bounded and says so.
+  const pfMany = pfM.diffLines("x\n".repeat(4094), "y\n".repeat(4094));
+  expect(pfMany.coarse && pfMany.length === 8189 && pfMany.filter((d) => d.op === "del").length === 4094,
+    "preferences: thousands of changed lines are shown removed then added, without the full table");
+  const pfMid = pfM.diffLines(["a", "b", "c", "d"].join("\n").repeat(1), ["a", "c", "d", "e"].join("\n"));
+  const pfEdge = pfM.diffLines("keep\n" + "x\n".repeat(3000) + "end", "keep\n" + "x\n".repeat(3000) + "END");
+  expect(!pfMid.coarse && !pfEdge.coarse && pfEdge.filter((d) => d.op !== "same").length === 2,
+    "preferences: a long text changed in one line is matched exactly (common start and end trimmed)");
   // On the version it was written against: Accept, or edit first.
   const pfSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
   await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
@@ -4140,9 +4148,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pfPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pfPosts.push([p, b]); return pfPost(p, b); };
   btn(pfReview, "Merge by hand").click(); await tick();
-  const pfEdit = byId("pref-edit-req-p002");
+  let pfEdit = byId("pref-edit-req-p002");
   expect(pfEdit && !pfReview.querySelector(".pref-edit").hidden && pfEdit.value.includes("German in chat"), "preferences review: the editor opens with the proposal");
-  pfEdit.value = "Mine, written on version 3.\nGerman in chat, English in code and docs.";
+  const pfDraft = "Mine, written on version 3.\nGerman in chat, English in code and docs.";
+  pfEdit.value = pfDraft; pfEdit.dispatch("input");
+  // Saved elsewhere while merging: 409, and the newer text cannot be read either; the edit stays.
+  const pfConflictErr = () => Promise.reject(new win.Maity.api.ApiError("changed", 409, "/requests/req-p002/answer", "conflict", { current_version: 5, base_version: 5 }));
+  win.Maity.api.post = (p, b) => (p === "/requests/req-p002/answer" ? pfConflictErr() : pfPost(p, b));
+  win.Maity.api.get = (p) => (p === "/requests/req-p002" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : pfGet(p));
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  pfReview = main.querySelector(".current .pref-review");
+  expect(byId("pref-edit-req-p002").value === pfDraft && !pfReview.querySelector(".pref-edit").hidden
+    && text(pfReview).includes("could not be read again: down"), "preferences review: a failed re-read keeps the edit open and says why");
+  // The re-read works: the review is drawn again against the newer version, the edit kept and open.
+  win.Maity.api.get = pfGet;
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  pfReview = main.querySelector(".current .pref-review");
+  pfEdit = byId("pref-edit-req-p002");
+  expect(pfEdit && pfEdit.value === pfDraft && !pfReview.querySelector(".pref-edit").hidden && btn(pfReview, "Merge by hand").hidden
+    && text(pfReview).includes("changed while you looked"), "preferences review: after a conflict the edit is kept, open, against the newer version");
+  win.Maity.api.post = (p, b) => { pfPosts.push([p, b]); return pfPost(p, b); };
   btn(pfReview, "Accept my edit").click(); await pfSettle();
   expect(JSON.stringify(pfPosts[0]) === JSON.stringify(["/requests/req-p002/answer", { reply_id: "go", markdown: pfEdit.value, base_version: 5 }]),
     "preferences review: an edited accept carries the text and the current version");
