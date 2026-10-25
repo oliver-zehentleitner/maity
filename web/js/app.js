@@ -81,6 +81,8 @@ window.Maity = window.Maity || {};
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     if (parts[0] === "notifications") return { scope: "notifications" };
+    // The login page, always reachable (docs/api.md §16.7); signed in, the root.
+    if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
@@ -1120,14 +1122,19 @@ window.Maity = window.Maity || {};
         await M.api.get("/auth/session");
       } catch (err) {
         if (err.status === 401) {
-          if (seq === renderSeq) renderLogin(main);
+          // At the root, the instance's landing page where it has one
+          // (§16.7); anywhere else, and when it is off or fails, sign-in.
+          const landing = where.scope === null && M.landing ? await M.landing.read() : null;
+          if (seq !== renderSeq) return;
+          if (landing) M.landing.show(main, landing, document.getElementById("header"));
+          else renderLogin(main);
           return;
         }
         throw err;
       }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
-      if (where.scope === null) {
+      if (where.scope === null || where.scope === "login") {
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
@@ -1224,6 +1231,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;
 

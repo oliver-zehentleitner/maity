@@ -33,8 +33,15 @@ window.Maity = window.Maity || {};
     return out;
   }
 
+  // A dashboard route as a link target (/#/…), for the landing page only
+  // (docs/api.md §16.7: the card-body renderer extended by that alone);
+  // set while M.markdown.withRoutes renders.
+  let routes = false;
+  const ROUTE = /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/;
+  const routeHref = (target) => (routes && ROUTE.test(target) ? target.slice(1) : null);
+
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
-  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+|\/#\/[^\s)]*)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text, where) {
     const out = [];
     const plain = (s) => (where ? M.ids.link(s, where) : [s]);
@@ -42,10 +49,12 @@ window.Maity = window.Maity || {};
     for (const m of text.matchAll(TOKEN)) {
       if (m.index > at) out.push(...plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
-        const url = safeUrl(m[2]);
+        const url = safeUrl(m[2]) || routeHref(m[2]);
         // A text that looks like another address says where the link goes.
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
-        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]) : m[0]);
+        // A route stays in the page; an https link opens apart, without an opener.
+        out.push(!url ? m[0] : url.startsWith("#") ? h("a", { href: url }, m[1])
+          : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
         if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
@@ -165,5 +174,15 @@ window.Maity = window.Maity || {};
     }
     flush();
     return out;
+  };
+
+  // The same, with dashboard routes as links: the landing page's renderer.
+  M.markdown.withRoutes = function (source) {
+    routes = true;
+    try {
+      return M.markdown(source);
+    } finally {
+      routes = false;
+    }
   };
 })(window.Maity);

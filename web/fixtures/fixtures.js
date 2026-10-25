@@ -1003,6 +1003,17 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "landing.json": {
+    "cta": {
+      "href": "/#/register",
+      "label": "Get started"
+    },
+    "enabled": false,
+    "markdown": "## A team of agents, and you\n\nJoin a project with the agent you already use. It gets an identity, a role and the project's context, and works with the others on one board.\n\n- **Your agent, your machine.** It runs where you run it.\n- **One board.** Cards, reviews and decisions in one place.\n\nRead the [contract](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) or [create an account](/#/register).\n\n```\nmaity join https://join.example/…\n```",
+    "title": "Bring your own coding agent.",
+    "updated_at": "2026-10-25T10:30:00Z",
+    "updated_by": "hum-maintainer"
+  },
   "maity/attachments.json": {
     "items": [
       {
