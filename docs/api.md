@@ -133,7 +133,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor without the password (or, for an account without one, a first factor) in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -151,7 +151,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version`. Also a "Not me" naming a generation that is not the current unconfirmed factor's (§2.8.1) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.17, §6.18); `details.max` |
@@ -1698,28 +1698,48 @@ secret_key_missing`.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
+| `GET /auth/second-factor` | human | `{enrolled, confirmed, generation, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
 | `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
 | `POST /auth/second-factor/totp` | human, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unfinished one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unfinished until it expires |
 | `POST /auth/second-factor/recovery-codes` | human, with the proof below, and step-up | ten new recovery codes, the old ones void at once; 200 `{recovery_codes}` |
 | `DELETE /auth/second-factor` | human, with the proof below, and step-up | turns the second factor off for this human; `forbidden` with `details.reason: second_factor_required` while the policy requires it of this human (§2.8.5) |
+| `DELETE /auth/second-factor/unconfirmed` `{generation}` | human, a session in good standing that existed before the enrolment | "Not me": removes an unconfirmed factor of that generation (below); `conflict` (§1.3) and nothing changed when the current factor is confirmed, of another generation, or absent |
 
 - **The proof.** For an account **with a password**: the password,
   given in the last 10 minutes on the calling session — its sign-in by
-  password, or `POST /auth/reauthenticate` — otherwise `forbidden` with
-  `details.reason: reauthentication_required`. For an account
-  **without one**: a session in good standing (§2.6.5) that is at least
-  24 hours old, the guard §2.6.3 sets for changing the verified address
-  (not in good standing: `forbidden`, `details.reason:
-  not_in_good_standing`; younger: `details.reason: session_too_new`).
-  Never a fresh session from the mailbox: temporary access to the
-  mailbox (§2.3) must not install a factor of its holder's choosing,
-  which would give standing at the next sign-in (§2.8.2) and end the
-  human's trusted sessions; and for a password account it would lock
-  out the human who holds the password. Setting a first password on an
-  account without one is the accounts design's item (pending), not this
-  section's.
+  password, or `POST /auth/reauthenticate` — so a session obtained
+  through the mailbox (§2.3) never puts a factor on the account of a
+  human who holds the password. For an account **without one**: any of
+  its first factors given in the last 10 minutes on the calling session
+  (its sign-in by mail link or device code; to refresh it, the human
+  signs in again). Without it the call is `forbidden` with
+  `details.reason: reauthentication_required`. While a factor is
+  enrolled, a new enrolment also needs step-up with it (§2.8.4). Setting
+  a first password on an account without one is the accounts design's
+  item (pending), not this section's.
+- **Confirmed and unconfirmed factors.** A factor enrolled from a
+  session in good standing (§2.6.5), or after the password was given
+  as above, is **confirmed**. One enrolled from any other session — for
+  an account without a password, a fresh mail or device-code session —
+  is **unconfirmed**: it is asked at every sign-in like any factor, but
+  it grants no good standing (§2.8.2), so temporary access to the
+  mailbox cannot become standing through a factor its holder chose. Its
+  `second_factor_changed` `{change: enrolled, generation}` item behaves
+  like a mail sign-in's (§2.6.5): a banner in every other session,
+  marked read only from a session in good standing that existed before
+  the enrolment, through `ids`. Marking it read ("This was me")
+  confirms the factor — but only while the human's current factor is
+  still unconfirmed and of the item's `generation`, compared and
+  changed in one transaction; an item of a superseded generation is
+  only marked read and changes no factor. **"Not me"** (`DELETE
+  /auth/second-factor/unconfirmed` with the item's `generation`, from
+  such a session, no step-up) removes the factor under the same
+  comparison, ends the session that enrolled it and every session that
+  passed it, and moves the generation; a stale one never removes a newer
+  enrolment. An account with no session in good standing keeps an
+  unconfirmed factor unconfirmed: for it the mailbox is the account
+  (§2.3), and the factor adds no standing.
 - **The code.** RFC 6238 with SHA-1, 6 digits, a 30-second step; the
   current step and one step either side are accepted, and every step is
   accepted once per human (the hub stores the last step used), so a
@@ -1733,9 +1753,10 @@ secret_key_missing`.
   a log or an event. Recovery codes stored as HMAC-SHA-256 under the
   same key, each usable once; a database copy alone yields neither.
 - **The factor's generation.** Each human carries a counter that moves
-  on every enrolment, turning off, reset, new set of recovery codes and
-  use of a recovery code. A reset link names the generation it was
-  issued for (§2.8.3).
+  on every enrolment, confirmation, turning off, reset, new set of
+  recovery codes and use of a recovery code. A reset link (§2.8.3) and
+  an `enrolled` item (above) name the generation they were issued for,
+  and act only while it is current.
 - **The key lost.** While enrolments exist and `MAITY_SECRET_KEY` is
   missing or no longer opens them, the hub does **not** treat the
   instance as `off`: it fails closed. An enrolled human's sign-in stops
@@ -1801,8 +1822,9 @@ included:
   makes the full session; the other answers `code_invalid` and creates
   nothing.
 
-**Good standing.** A session whose sign-in included the second factor
-is in good standing (§2.6.5), whatever the first factor was: the factor is what neither a mailbox nor an unlocked dashboard
+**Good standing.** A session whose sign-in included a **confirmed**
+second factor (§2.8.1) is in good standing (§2.6.5), whatever the first
+factor was; an unconfirmed factor never gives it: the factor is what neither a mailbox nor an unlocked dashboard
 provides, which is the reason good standing exists. The session list
 carries `second_factor: true | false` per session.
 
@@ -1905,12 +1927,13 @@ environment winning as there:
   as the verify does. Full sessions such a human already holds when
   the setting is turned on, or when they become an owner, are moved to
   that state at their next call, not ended. An account without a
-  password satisfies the setting like any other, once it holds a
-  session in good standing at least 24 hours old (§2.8.1) — an
-  enrolment session keeps its age and good standing, and lives as long
-  as any session (§2.1); until then it waits at the enrolment session.
-  A human with a password re-authenticates with it first when the
-  session was signed in another way.
+  password satisfies the setting like any other: its fresh sign-in by
+  mail link or device code is the proof enrolment needs (§2.8.1). A
+  human with a password re-authenticates with it first when the session
+  was signed in another way. An enrolment from the enrolment session
+  meets the setting at once, confirmed or not; an unconfirmed factor
+  completes the sign-in without good standing (§2.8.1), so the setting
+  never promotes a session the rules of §2.6.5 would not.
 
 #### 2.8.6 Rate limits
 
@@ -7269,8 +7292,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
 | POST | `/auth/reauthenticate` | human with a password | 2.8.1 |
 | GET | `/auth/second-factor` | human | 2.8.1 |
-| POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, with the password re-given in the last 10 minutes or, without a password, from a session in good standing at least 24 hours old; recovery codes also step-up | 2.8.1 |
+| POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, with the password (or, without one, a first factor) given in the last 10 minutes; recovery codes, and a new enrolment over an existing one, also step-up | 2.8.1 |
 | DELETE | `/auth/second-factor` | human, the same proof and step-up | 2.8.1 |
+| DELETE | `/auth/second-factor/unconfirmed` | human, a session in good standing older than the enrolment; `{generation}` | 2.8.1 |
 | POST | `/auth/second-factor/verify` | human, a second-factor or full session | 2.8.2, 2.8.4 |
 | POST | `/admin/users/{id}/second-factor/reset` | `instance:admin`, human, step-up | 2.8.3 |
 | POST | `/auth/sessions/end-others` | human; from a session not in good standing it ends only the others not in good standing, and not at all while it is younger than 1 hour | 2.6.5 |
