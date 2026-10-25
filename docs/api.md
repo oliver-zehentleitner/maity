@@ -1717,9 +1717,15 @@ secret_key_missing`.
   mailbox (§2.3) must not install a factor of its holder's choosing,
   which would give standing at the next sign-in (§2.8.2) and end the
   human's trusted sessions; and for a password account it would lock
-  out the human who holds the password. Setting a first password on an
-  account without one is the accounts design's item (pending), not this
-  section's.
+  out the human who holds the password. One exception, under
+  `required_admins` only (§2.8.5): a human without a password who has
+  **no session in good standing at all** may enrol from the enrolment
+  session itself. With no trusted session there is nothing for a factor
+  to take over — the mailbox already is the whole account — and the
+  human is not held out for good. The moment the human has a session in
+  good standing, the 24-hour rule applies as written. Setting a first
+  password on an account without one is the accounts design's item
+  (pending), not this section's.
 - **The code.** RFC 6238 with SHA-1, 6 digits, a 30-second step; the
   current step and one step either side are accepted, and every step is
   accepted once per human (the hub stores the last step used), so a
@@ -1908,7 +1914,12 @@ environment winning as there:
   password satisfies the setting like any other, once it holds a
   session in good standing at least 24 hours old (§2.8.1) — an
   enrolment session keeps its age and good standing, and lives as long
-  as any session (§2.1); until then it waits at the enrolment session.
+  as any session (§2.1); until then it waits at the enrolment session,
+  unless it has no session in good standing at all, in which case it
+  enrols from the enrolment session (§2.8.1). A session in good
+  standing that is moved into the enrolment state keeps that standing
+  for the decisions §2.6.5 ties to it, "This was me" on a sign-in alert
+  among them.
   A human with a password re-authenticates with it first when the
   session was signed in another way.
 
