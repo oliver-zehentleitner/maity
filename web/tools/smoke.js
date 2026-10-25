@@ -1864,6 +1864,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
   btn(cpPanel(), "Close").click(); for (let k = 0; k < 4; k++) await tick();
   expect(win.location.hash === "#/p/maity/board" && !cpPanel(), "card panel: Close goes back to the board");
+  // Opened from a filtered, searched board: the filters and the search stay, opening and going back.
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-search").value = "API contract"; byId("board-search").dispatch("input"); await tick();
+  const cpLink2 = cpCard().querySelector("a.card-open");
+  cpLink2.click(); await go(cpLink2.getAttribute("href")); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && main.querySelector(".columns").querySelectorAll("article.card").length === 1,
+    "card panel: a title opens its card on the board as it was, filter and search kept");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(!cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && cpCard() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: back on the board, the filter and the search as they were, the card marked and its title focused");
+  // A link from elsewhere still reveals its card whatever the filter says.
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "" && byId("board-search").value === "", "card panel: a link from elsewhere opens its card with every column shown");
+  // An action in the panel keeps the focus in the panel, on its redrawn control.
+  await go("#/p/maity/tasks/tsk-0005"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpMove = () => cpPanel().querySelector(".card-move .menu-button");
+  cpMove().click(); await tick();
+  cpPanel().querySelectorAll(".card-move .menu-item").find((el) => el.textContent === "Move to In progress").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && cpPanel().contains(document.activeElement) && document.activeElement === cpMove()
+    && text(cpMove()).startsWith("In progress"),
+    "card panel: a move from the panel redraws its card there and keeps the focus on its menu");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
+  expect(!cpPanel(), "card panel: after an action Escape still closes it");
   // A hub without notes or history says so in the panel, nothing asked.
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : cpGet(p));
   win.Maity.api.forgetRoutes(); cpGets.length = 0;

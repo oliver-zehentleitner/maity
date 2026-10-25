@@ -216,7 +216,10 @@ too.
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff); a hub without notes or
    history says so there. **Close**, Escape and Back go to the board with
-   the card marked and its title focused. A card the board does not hold
+   the card marked and its title focused; a card opened by its title keeps
+   the board's column filter, member, area, search and scroll, while a link
+   from elsewhere shows every column. An action in the panel keeps the
+   focus there. A card the board does not hold
    (closed earlier) is read by itself (`GET …/tasks/{id}`) and opened;
    one there is not is said. Context rounds are marked, contract cards show their
    state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
