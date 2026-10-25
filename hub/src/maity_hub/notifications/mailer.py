@@ -337,7 +337,8 @@ def compose(
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             if content and item.text and not item.redacted:
-                writer = items.actor_name(conn, item.actor_membership)
+                # A display name is text the hub did not write either (§18.5).
+                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(item.text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
