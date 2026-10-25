@@ -64,6 +64,7 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
+from maity_hub.routes import registration as registration_routes
 
 log = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
