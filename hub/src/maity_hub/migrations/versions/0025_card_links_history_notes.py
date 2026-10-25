@@ -114,11 +114,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_card_note_author_created", table_name="card_note")
-    op.drop_index("ix_card_note_card_created", table_name="card_note")
+    # The tables alone: each index goes with its table. Dropping an index first fails on
+    # MariaDB where a foreign key still uses it (card_note.author, card_history.card_id,
+    # card_link.card_id lead their indexes).
     op.drop_table("card_note")
-    op.drop_index("ix_card_history_link", table_name="card_history")
-    op.drop_index("ix_card_history_card_at", table_name="card_history")
     op.drop_table("card_history")
-    op.drop_index(op.f("ix_card_link_card_id"), table_name="card_link")
     op.drop_table("card_link")
