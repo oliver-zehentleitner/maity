@@ -548,6 +548,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(thCss.includes('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {') && thDark(':root[data-theme="dark"]').includes("--bg: #111418;")
     && thDark(':root:not([data-theme="light"])') === thDark(':root[data-theme="dark"]'),
     "theme: the dark tokens apply by the system unless Light is picked, and when Dark is picked, the same in both");
+  // The brand (web/brand/BRAND.md): the 28 px header lockup in the page's theme, the favicons, the loader.
+  const brImgs = header.querySelector(".brand").querySelectorAll("img");
+  expect(brImgs.length === 2 && brImgs.map((i) => i.getAttribute("src")).join(" ") === "brand/maity-lockup.svg brand/maity-lockup-dark.svg"
+    && brImgs.every((i) => i.getAttribute("alt") === "Maity" && i.getAttribute("height") === "28"), "brand: the header's title is the lockup, one file per theme, named Maity");
+  expect(thCss.includes(".brand-lockup.brand-dark { display: none; }")
+    && thCss.includes(':root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }')
+    && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
+    "brand: the dark lockup shows where the page is dark, by the system or by the pick");
+  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image.png"', 'href="brand/loader.css"']
+    .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading…<\/p>/.test(html)
+    && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
+  expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
   expect(/<script src="js\/theme.js"><\/script>/.test(html) && html.indexOf("js/theme.js") < html.indexOf("js/dom.js"),
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.

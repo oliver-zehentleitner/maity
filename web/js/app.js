@@ -110,6 +110,15 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // The header lockup (web/brand/BRAND.md: 28 px, the small mark), one file
+  // per theme; app.css shows the one the page's theme asks for, so a theme
+  // picked in the menu switches it too.
+  function brandTitle() {
+    return h("h1", { class: "brand" },
+      h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "Maity", width: "94", height: "28" }),
+      h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
+  }
+
   function stateBadge(state, note) {
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
@@ -118,7 +127,7 @@ window.Maity = window.Maity || {};
 
   function renderLogin(main) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      h("h1", { class: "brand" }, "Maity"),
+      brandTitle(),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
@@ -756,7 +765,7 @@ window.Maity = window.Maity || {};
     });
     append(header,
       h("div", { class: "bar" },
-        h("h1", { class: "brand" }, "Maity"),
+        brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
@@ -1048,7 +1057,7 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
-      append(clear(document.getElementById("header")), h("div", { class: "bar" }, h("h1", { class: "brand" }, "Maity")));
+      append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
       append(clear(main), errorBox(err));
       return;
     }

@@ -36,3 +36,33 @@ Direction B, a wordmark with a square i-dot. Direction C plain, and C
 with a typeset "m": the typeset "m" depends on a font. A loader lap of
 1.8 s reads as sluggish; 0.6 s blurs the trail into a ring at small
 sizes.
+
+## The header lockup is two images switched by the theme; the site takes the brand files from web/brand/
+
+**Id:** 8dd044a4-153d-4181-af43-ee8193b6a91e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's wiring card (tsk-cdqnq7r3v56p), 2026-10-25; web/brand/BRAND.md; the dashboard's implementation, 2026-10-25
+**Revisit when:** the header needs the lockup in a colour other than its two files, or the site gets a build step
+
+The header's title is `maity-lockup.svg` and `maity-lockup-dark.svg` as
+two `<img>` with `alt="Maity"`, 28 px tall; app.css shows the dark one
+where the page is dark by the system (unless Light was picked) or by the
+picked Dark, the same two conditions the dark tokens use. The page loader
+is `loader.html` inline in index.html, its timing in `brand/loader.css`.
+The site at maity.dev links `brand/…`, which the pages workflow copies
+from `web/brand/`, so the files have one home.
+
+**Reason:** an `<img>` keeps the SVG's own markup and needs no copy of
+its paths in code, and the class rule follows the page's theme, which an
+`<img>` switching by `prefers-color-scheme` alone would not (a picked
+Dark on a light system). Copying at publish time keeps the site and the
+dashboard on the same files.
+
+**Rejected alternative:** `maity-lockup-currentcolor.svg` inline, which
+follows `currentColor` and the accent token by itself: in a page built by
+scripts it means either the SVG's paths in a JavaScript string or a
+`<template>` cloned at run time, both a second copy of the file to keep in
+step. Copies of the files under `docs/brand/` for the site: two homes for
+the same file.
