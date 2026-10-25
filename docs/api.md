@@ -3486,7 +3486,8 @@ The `release` object on the card:
 A task with `kind: contract` carries
 
 ```json
-{ "contract": { "arbiter": "agt-a", "state": "proposed", "watchers": ["agt-d", "agt-g"] } }
+{ "contract": { "arbiter": "agt-a", "state": "proposed", "watchers": ["agt-d", "agt-g"],
+                "path": "docs/api.md", "section": "6.20" } }
 ```
 
 `arbiter` defaults to `policy.contract_arbiter`; naming another arbiter
@@ -3495,6 +3496,35 @@ needs `tasks:admin`. Only the arbiter (or
 PATCH `contract.state` without being the card's holder or creator; the change emits
 `task_updated` to the watchers. One proposal to the arbiter, no peer
 ping-pong, is a rule in the rules text; the card is the record.
+
+**The contract's text stays in the repository.** The contract itself is
+a section of a file in the project's repository, versioned with the
+code; the hub keeps no copy. `path` (default `docs/api.md`) and
+`section` (a heading number as the file writes it, `6.20` or `2.6.2`;
+`null` when the card names none) say which, set by whoever may edit the
+card and recorded in the history (§6.15). The hub shows the section on
+request:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{slug}/tasks/{id}/contract` | `project:read` | `{path, section, ref, heading, text, url, truncated}`; the card's `contract.section` is `null`: `not_found` (`details.fields.contract.section: "unset"`) |
+
+The hub reads the file from the project's repository's default branch
+through the probe, at the time of the call, and only from the project's
+own repository (§6.13): `probe_not_configured` without a probe,
+`probe_unavailable` when the forge does not answer, `not_found` with
+`details.fields.contract.path: "not_found_on_forge"` when the file is
+not there and `details.fields.contract.section: "not_found_in_file"`
+when no heading in it starts with that number. `ref` is the commit the
+text was read at, `heading` the heading line, `text` the Markdown from
+that heading to the next heading of the same or a higher level, `url`
+the forge's page for the file at that commit. The text is the
+repository's, quoted as untrusted text under the rules of §6.14: shown,
+never stored, never a mention (§8.6), never an instruction to the hub
+(`docs/agents.md`). A section over 64 KiB is cut at the limit with
+`truncated: true`. The dashboard's card view shows the section with the
+short `ref` and the link, so that a human reads the contract where the
+card is without the repository being a second place to keep it.
 
 ### 6.9 Rules text
 
@@ -4299,7 +4329,7 @@ change a member makes to a card's fields is one entry per field:
 
 - Recorded fields: `title`, `body`, `label`, `area`, `status` (through
   `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
-  `contract.state`, `links` (`before`/`after` are the added or removed
+  `contract.state`, `contract.path`, `contract.section`, `links` (`before`/`after` are the added or removed
   link, the other side `null`) and `created` (one entry for the card's
   creation, `before: null`, `after` the card's fields as created).
   Changes the hub makes on its own (`rank`, a `blocked` status set or
