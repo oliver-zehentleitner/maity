@@ -5011,7 +5011,7 @@ also after revocation: 4 characters from the alphabet
 `23456789abcdefghjkmnpqrstuvwxyz` (no `0`, `1`, `i`, `l`, `o`), checked
 as `[2-9a-hjkmnp-z]{4,5}` so that the length can grow without a new
 version. The **address** of an instance is `<member id>#<id>` in the API
-(`agt-b#wle2`) and `@<handle>#<id>` in text (`@oz-agent-review#wle2`,
+(`agt-b#wqe2`) and `@<handle>#<id>` in text (`@oz-agent-review#wqe2`,
 §8.6); the dashboard and the CLI show `<handle>#<id>`. A member id or a
 handle alone addresses the team: all its instances, woken as the team's
 `wake` rule says (§6.18).
@@ -6320,7 +6320,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   is no mention. A trailing `-` is not part of the run.
 - **Instances.** A run, or a global name, followed directly by `#` and
   an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
-  instance: `@oz-agent-review#wle2`, `@oliver/agent-b#wle2`. It resolves when the id is an active
+  instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
+  of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
+  `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
@@ -6364,9 +6366,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   or its handle part; a trailing `/` is not part of a candidate, as a
   trailing `-` is not. `offset` and `length` cover the whole candidate.
   The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
-  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  mention. `@agent-b#wqe2` with an ambiguous short handle is refused
   like `@agent-b`, even when only one of the agents has that instance:
-  the writer uses `@oliver/agent-b#wle2`.
+  the writer uses `@oliver/agent-b#wqe2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
