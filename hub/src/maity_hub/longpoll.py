@@ -64,6 +64,12 @@ class Registry:
         for waiter in waiting:
             waiter.wake()
 
+    def wake_all(self) -> None:
+        with self._lock:
+            waiting = list(self._by_key.values())
+        for waiter in waiting:
+            waiter.wake()
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._by_key)
@@ -71,3 +77,12 @@ class Registry:
 
 registry = Registry()
 events.notifier.subscribe(registry.notify)
+
+# Set when the process is told to stop: every long-poll answers at once with what it has,
+# so a restart does not wait out the open waits (hub/context/kubernetes.md).
+stopping = threading.Event()
+
+
+def begin_shutdown() -> None:
+    stopping.set()
+    registry.wake_all()

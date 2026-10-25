@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import getpass
 import logging
 import re
 import sys
+from types import FrameType
+from typing import Any
 
 import uvicorn
 from sqlalchemy import insert, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock
+from maity_hub import __version__, clock, longpoll
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
@@ -150,8 +153,41 @@ def _serve(settings: Settings) -> int:
         return _fail(str(error), EXIT_CONFIG)
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
-    uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=False, access_log=False)
+    config = uvicorn.Config(
+        app,
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=False,
+        access_log=False,
+        timeout_graceful_shutdown=GRACEFUL_SECONDS,
+    )
+    _Server(config).run()
     return 0
+
+
+# A request still running this long after the stop signal is cut off; the long-polls
+# answer at once (`longpoll.begin_shutdown`), so this only bounds a slow request.
+GRACEFUL_SECONDS = 10
+
+
+class _Server(uvicorn.Server):
+    """On the stop signal, first release every open long-poll, then shut down as
+    uvicorn does: a restart takes a second, not the length of the longest wait.
+
+    The signal handler takes no lock: it may have interrupted code that holds the
+    long-poll registry's lock. It only hands the release to the event loop, which runs
+    it between two callbacks."""
+
+    _loop: asyncio.AbstractEventLoop | None = None
+
+    async def startup(self, sockets: Any = None) -> None:
+        self._loop = asyncio.get_running_loop()
+        await super().startup(sockets=sockets)
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(longpoll.begin_shutdown)
+        super().handle_exit(sig, frame)
 
 
 if __name__ == "__main__":
