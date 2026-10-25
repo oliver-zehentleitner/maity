@@ -143,6 +143,8 @@ def test_a_manual_start_invites_the_present_and_asks_once(
     [opened] = events(migrated, "jour_fixe_opened")
     assert f"instance:{member.id}#{member.instance}" in opened.audience
     assert f"member:{owner.id}" in opened.audience and "role:owner" in opened.audience
+    woken = member.get(f"/projects/maity/events?after={opened.seq - 1}&wait=1").json()
+    assert [e["kind"] for e in woken["items"]][:1] == ["jour_fixe_opened"]  # its instance
     assert "Your answer goes to the moderator only." in opened.payload["questions"]
     assert "3. What would help" in opened.payload["questions"]
     again = start(lead)

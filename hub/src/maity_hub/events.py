@@ -365,10 +365,11 @@ def read_for_runner(
     return rows, examined
 
 
-def wakes(row: Any, membership: Any, principal: str) -> bool:
+def wakes(row: Any, membership: Any, principal: str, instance: str | None = None) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
-    admin never wakes, and neither does a kind in NON_WAKING."""
+    admin never wakes, and neither does a kind in NON_WAKING. `instance:<member>#<id>`
+    wakes only that instance, though the whole team reads it."""
     if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
@@ -393,6 +394,7 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
         or f"member:{principal}" in audience
         or f"role:{membership.role}" in audience
         or row.conversation_id == principal
+        or (instance is not None and f"instance:{principal}#{instance}" in audience)
     )
 
 
@@ -401,7 +403,13 @@ def _group_chat(row: Any) -> bool:
 
 
 def read_waking(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    instance: str | None = None,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
@@ -410,7 +418,7 @@ def read_waking(
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal)
+        if wakes(r, membership, principal, instance)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

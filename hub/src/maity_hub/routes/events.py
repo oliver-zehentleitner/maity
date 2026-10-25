@@ -123,7 +123,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    since,
+                    limit,
+                    caller.instance,
                 )
             else:
                 rows, examined, _ = events.read(
