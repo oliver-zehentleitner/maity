@@ -405,7 +405,9 @@ def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[st
     version, else none."""
     block = onboarding.briefing(project, membership)
     if block["briefing_source"] == "membership":
-        block["briefing_by"] = written.get(membership.briefing_by) if membership.briefing_by else None
+        block["briefing_by"] = (
+            written.get(membership.briefing_by) if membership.briefing_by else None
+        )
         block["briefing_version"] = membership.briefing_version
     return block
 
