@@ -419,3 +419,21 @@ def test_after_leaving_a_group_chat_nothing_more(
     # A chat the human left drops out, what came before included (§18.1).
     assert got["counts"]["chat"] == 0
     assert not any(i["kind"] == "chat" for i in got["items"])
+
+
+def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from tests.test_group_chats import create, redact, say
+
+    someone = group_member(make_client, migrated, "someone")
+    chat = create(owner, someone.id, title="Room").json()
+    seq = say(someone, chat["id"], "a secret").json()["seq"]
+    assert redact(someone, seq).status_code == 200
+    listed = owner.get("/projects/maity/conversations").json()["items"]
+    unread = next(c["unread"] for c in listed if c["id"] == chat["id"])
+    got = bell(owner)
+    assert got["counts"]["chat"] == unread == 1
+    assert got["by_project"]["maity"]["chat"] == 1
+    item = next(i for i in got["items"] if i["kind"] == "chat")
+    assert (item["redacted"], item["title"]) == (True, None)
