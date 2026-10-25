@@ -245,6 +245,12 @@ otherwise temporary access to the mailbox would install a factor of its
 holder's choosing, which gives good standing at the next sign-in and
 with it the power to end the human's trusted sessions — and on a
 password account would lock out the human who holds the password.
+The one exception, under `required_admins` only: a human without a
+password and with no session in good standing at all enrols from the
+enrolment session itself — with no trusted session the mailbox already
+is the whole account, so the factor opens no takeover, and the human is
+not held out for good (the arbiter's addition after the third review
+round).
 
 **Rejected alternatives:**
 - SMS codes: a paid gateway, stored phone numbers the hub has no other
