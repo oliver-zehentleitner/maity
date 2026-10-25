@@ -5761,9 +5761,9 @@ reviewers' business, as the team rule of `context/process.md` says.
 under `none` reads `optional`, and setting `required` there is `invalid`
 (`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
 change needs `reason`, like every policy change. Under `optional`
-nothing below applies: the packet's block carries `enabled` and
-`instruction` only, nobody is reminded, and `why` on a report is
-accepted when sent and never required.
+nothing below applies, except the shape of `why`: the packet's block
+carries `enabled` and `instruction` only, nobody is reminded, and a
+report may carry `why` or not.
 
 **The commitment at resume.** Under `required` the packet's
 `keep_the_why` block (§5.2) carries the commitment: `commitment:
@@ -5801,15 +5801,17 @@ confirmation, else `false`. Humans, and agents in a project under
 `optional`, carry neither. The Members view shows it as a mark with the
 session's start, not as an error.
 
-**The why on a code report.** Under `required` a report with `code:
-true` (§6.6) carries `why`: either `{"ref": "<path>#<id>"}` — the
-entry that keeps the change's reasoning, `path` relative to the
-repository's root and ending in `.md`, `id` the entry's `Id` — or
-`{"none": "<reason>"}`, at least 10 characters, saying why this change
-has no decision to keep (a mechanical change, a correction, a revert). A
-code report without `why` is `invalid` (`details.fields.why:
-"required"`); a report with `code: false` never carries it (`invalid`,
-`not_for_no_code`). The hub stores `why` on the report, sets the card's
+**The why on a code report.** `why` on a report (§6.6) has one shape
+whatever the policy: an object with exactly one of `ref` —
+`"<path>#<id>"`, the entry that keeps the change's reasoning, `path`
+relative to the repository's root and ending in `.md`, `id` the entry's
+`Id` — or `none` — a reason of at least 10 characters why this change
+has no decision to keep (a mechanical change, a correction, a revert).
+Anything else is `invalid` (`details.fields.why: "malformed"`), and on
+a report with `code: false` it is `invalid` (`not_for_no_code`), under
+both policies. The policy decides presence only: under `required` a
+report with `code: true` without `why` is `invalid` (`required`); under
+`optional` it may be absent. The hub stores `why` on the report, sets the card's
 `ktw_ref` to `why.ref` when the card has none, and shows `why.none` on
 the card as "no why: <reason>" — to whoever reads the card, and to the
 reviewer, who decides whether the reason holds. The hub does not check
@@ -5819,7 +5821,9 @@ can read the file at `pr.head`, a later stage that is not this contract.
 **The dashboard's part.** The project's Settings tab offers
 `policy.keep_the_why` (`required` / `optional`, with `reason`) with the
 other policy fields; the Members view marks an unconfirmed agent; the
-`keep_the_why` notification links to the member; a card shows
+`keep_the_why` notification links to the member in the project when
+the owner is a member of it, else to the agent in the owner's Agents
+view (§6.3), since the owner cannot open the project; a card shows
 `report.why` under its report.
 
 **The CLI's part** is in §13: `maity ack keep-the-why`, `maity report
@@ -6110,7 +6114,7 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
-| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable by it, its owner and admins | `{project, instance, session_id, acknowledge_by}`; once per session, 30 minutes after its start; wakes the instance |
+| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per session, 30 minutes after its start; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `role:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
@@ -10491,7 +10495,7 @@ rules that make a position safe to resume from:
   notification is read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
   list shows. `mention`, `card`, `agent`, `ticker`, `jour_fixe`,
-  `security` and `system` count the unread items of that kind. `total` is `inbox + chat + mention` —
+  `keep_the_why`, `security` and `system` count the unread items of that kind. `total` is `inbox + chat + mention` —
   what asks for the human, not what informs them; the dashboard shows
   it in the tab title as `(6) maity` and nothing when it is `0`. The
   other counts show on the bell and their own badges only.
@@ -10504,9 +10508,10 @@ rules that make a position safe to resume from:
   `unread` of that project's conversations, `total` the per-project
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
-  through a personal request — then only `inbox` is set, and the
-  dashboard shows it as a badge on the personal inbox, not in the
-  project switcher, since the human cannot open the project. The sum of
+  through a personal request or a `keep_the_why` record about an agent
+  of theirs (§6.23) — then only `inbox` and `keep_the_why` are set, and
+  the dashboard shows them on the personal inbox and the bell, not in
+  the project switcher, since the human cannot open the project. The sum of
   the entries' `inbox` is `counts.inbox`: no personal request is
   counted twice or left out. `security` and `system` belong to no
   project and appear only in `counts`.
@@ -10581,10 +10586,10 @@ device; the browser's own permission is per browser and is not stored.
 
 ```json
 {
-  "kinds": ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security"],
+  "kinds": ["inbox", "chat", "mention", "card", "agent", "keep_the_why", "ticker", "jour_fixe", "security"],
   "browser": {
     "enabled": true,
-    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "ticker": false, "jour_fixe": true, "security": true },
+    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "keep_the_why": true, "ticker": false, "jour_fixe": true, "security": true },
     "content": { "chat": false, "mention": false }
   },
   "email": {
@@ -10600,6 +10605,7 @@ device; the browser's own permission is per browser and is not stored.
       "mention":   { "mode": "immediate", "content": false },
       "card":      { "mode": "daily" },
       "agent":     { "mode": "immediate" },
+      "keep_the_why": { "mode": "immediate" },
       "ticker":    { "mode": "daily" },
       "jour_fixe": { "mode": "daily" },
       "security":  { "mode": "immediate" }
@@ -10623,7 +10629,10 @@ device; the browser's own permission is per browser and is not stored.
   which the dashboard puts into the browser notification and the
   operating system may show on a locked screen; without it the item
   has no `content` and the notification carries the title only.
-  `ticker` is off by default. `security` here governs only the browser
+  `ticker` is off by default. `keep_the_why` (§6.23) is on by default
+  here and `immediate` by mail: it tells an owner that an agent of
+  theirs does not carry the project's memory, and nobody else waits
+  for it. `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
