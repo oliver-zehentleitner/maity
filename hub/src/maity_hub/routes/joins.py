@@ -506,7 +506,8 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
-            live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
+            if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
+                live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
             # concurrent guesses cannot all read the same count (a lost update
             # would let more than three codes be tried, or unburn a join).

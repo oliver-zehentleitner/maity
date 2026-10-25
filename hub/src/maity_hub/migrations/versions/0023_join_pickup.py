@@ -5,7 +5,7 @@
 supervises.
 
 Revision ID: 0023
-Revises: 0042
+Revises: 0022
 Create Date: 2026-10-23
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0023"
-down_revision: str | None = "0042"
+down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

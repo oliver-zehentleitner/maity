@@ -486,7 +486,7 @@ def test_an_agent_without_a_placement_has_none(setup: Setup, make_client: Client
 
 def _row(kind: str, audience: list[str]) -> Any:
     return SimpleNamespace(actor_membership=None, kind=kind, audience=audience,
-                           conversation_id=None, payload={})  # fmt: skip
+                           conversation_id=None, payload={}, wakes=None)  # fmt: skip
 
 
 def test_a_supervised_session_wakes_on_less() -> None:
