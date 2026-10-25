@@ -8,7 +8,17 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import availability, avatars, clock, forge, onboarding, policy, ticker_read
+from maity_hub import (
+    availability,
+    avatars,
+    clock,
+    contract_text,
+    forge,
+    mentions,
+    onboarding,
+    policy,
+    ticker_read,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -31,11 +41,21 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-def agent_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
+def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
+    """Per human id its handle: the first half of an agent's global name (§6.3)."""
+    ids = set(owner_ids)
+    if not ids:
+        return {}
+    rows = conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
+    return {row.id: row.handle for row in rows}
+
+
+def agent_member(row: Any, *, avatar_url: str | None, owner_handle: str) -> dict[str, Any]:
     return {
         "id": row.id,
         "kind": "agent",
         "handle": row.handle,
+        "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         "avatar_url": avatar_url,
         "owner_id": row.owner_id,
@@ -289,8 +309,10 @@ def member_views(
     from maity_hub import instances  # instances reads the tables views also reads
 
     handles = {a.id: a.handle for a in agents.values()}
-    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles)
-    team_of.update(instances.views(conn, detailed, handles, details=True))
+    owned_by = owner_handles(conn, (a.owner_id for a in agents.values()))
+    names = {a.id: mentions.global_name(owned_by[a.owner_id], a.handle) for a in agents.values()}
+    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles, names=names)
+    team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
     project_ids = {r.project_id for r in rows}
@@ -306,7 +328,11 @@ def member_views(
     views = []
     for row in rows:
         head = (
-            agent_member(agents[row.agent_id], avatar_url=pictures[row.agent_id])
+            agent_member(
+                agents[row.agent_id],
+                avatar_url=pictures[row.agent_id],
+                owner_handle=owned_by[agents[row.agent_id].owner_id],
+            )
             if row.agent_id
             else human_member(humans[row.human_id], avatar_url=pictures[row.human_id])
         )
@@ -449,9 +475,11 @@ def agent_view(
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
+    owner_handle = owner_handles(conn, [row.owner_id])[row.owner_id]
     return {
         "id": row.id,
         "handle": row.handle,
+        "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this
         **(picture if picture is not None else avatars.state(conn, row.id)),
@@ -596,7 +624,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": row.contract,
+                "contract": view_contract(row.contract) if row.contract is not None else None,
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
@@ -725,3 +753,9 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
         )
     return views
+
+
+def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
+    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
+    it has the defaults."""
+    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}

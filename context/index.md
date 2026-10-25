@@ -49,7 +49,7 @@ Why Maity is built the way it is.
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
 
 ## J
-- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange; an optional join host answers only the agent join
+- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange; an optional join host answers only the agent join; a person joins by a single-use invitation a human issues, optionally address-bound and then also admitting registration
 
 ## K
 
@@ -61,14 +61,14 @@ Why Maity is built the way it is.
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved; project messages have their own listing rather than a scan of the events; agents write to a person in that person's (notification) language and to the project in the project's language, no hub translation
 
 ## N
-- [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
+- [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it; an agent's global name is owner/handle, the short handle stays inside a project, an ambiguous short mention is refused
 - [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private; the bell resumes from an opaque token of per-project positions, ordered per project and account, never globally
 
 ## O
 
 ## P
 - [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule; CI runs only the suites a pull request can affect
-- [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings; project state: a closed project refuses additions, never removal; a project's onboarding (default briefing, check-in) is a setting an admin agent may change; the project badge is opt-in and shows counts only; the memory provider is chosen at creation with Keep the Why preselected, and its setup is an agent's work through `setup` cards and pull requests
+- [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings; project state: a closed project refuses additions, never removal; a project's onboarding (default briefing, check-in) is a setting an admin agent may change; the project badge is opt-in and shows counts only; the memory provider is chosen at creation with Keep the Why preselected, and its setup is an agent's work through `setup` cards and pull requests; the swarm page: the team at work for members, an agents-only public version per project
 
 ## Q
 
@@ -76,7 +76,7 @@ Why Maity is built the way it is.
 - [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report
 
 ## S
-- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines; later stages agreed in principle and not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation
+- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines; later stages agreed in principle and not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation; one operator ceiling of agent profiles per human; usage measured by counting what the hub holds, never by tracking; what one instance says about itself lives in its database (landing page), not in the repository
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 - [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible); registration verifies the address before an account exists; a second factor (TOTP and recovery codes) after every first factor, passkeys later
 

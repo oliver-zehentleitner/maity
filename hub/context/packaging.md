@@ -179,3 +179,32 @@ decision with its own review.
 **Rejected alternative:** PyNaCl (libsodium): a different cipher than the
 contract names. A pure-Python AES: slower and not audited. Deriving a key
 stream from HMAC in the standard library: a home-made cipher.
+
+## The wheel carries the dashboard
+
+**Id:** df58484e-1f02-4949-bd3c-3d32456fb57a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on the local quickstart card, 2026-10-25; docs/install/quickstart.md
+**Revisit when:** the dashboard gets a build step, its own release cadence, or a second server that serves it
+
+The `maity-hub` wheel force-includes `web/index.html`, `css/`, `js/`
+and `brand/` as `maity_hub/web`, the same way it already carries
+`docs/join-page.md`. web/'s `fixtures/`, `tools/` and `context/`
+stay in the checkout. `checkout_web_dir()` still prefers `web/` beside
+`hub/` in a checkout, and otherwise falls back to the packaged
+directory. The image keeps `MAITY_WEB_DIR=/app/web`. `serve` prints
+the dashboard's address, or that it serves the API alone.
+
+**Reason:** the quickstart installs the hub with pipx and ends with the
+dashboard open. Without the dashboard in the wheel, an installed hub
+served the API alone. The dashboard is static files with no build step,
+the API serves it, and both change together, so one distribution keeps
+them at one version.
+
+**Rejected alternatives:**
+- A separate dashboard package: a second install line, and versions
+  that can drift apart from the API they call.
+- Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
+  environment variable in a path meant to take five minutes.

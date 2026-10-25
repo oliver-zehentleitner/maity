@@ -167,10 +167,16 @@ def presence(last_used_at: datetime | None, live: bool, listening: bool) -> str:
 
 
 def views(
-    conn: Connection, members: Iterable[Any], handles: dict[str, str], *, details: bool = False
+    conn: Connection,
+    members: Iterable[Any],
+    handles: dict[str, str],
+    *,
+    details: bool = False,
+    names: dict[str, str] | None = None,
 ) -> dict[int, list[dict[str, Any]]]:
     """Per agent membership its active instances as the instance view (§6.17), oldest
-    first. `details` adds `credential_id`, for the agent's owner and `members:admin`."""
+    first. `details` adds `credential_id`, for the agent's owner and `members:admin`;
+    `names` (agent id -> global name, §6.3) adds the instance's `name`."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     rows = {m.id: m for m in members if m.agent_id is not None}
@@ -214,6 +220,8 @@ def views(
             "address": address(member.agent_id, c.instance),
             "label": f"{handle}#{c.instance}",
         }
+        if names is not None:
+            view["name"] = f"{names[member.agent_id]}#{c.instance}"  # owner/handle#id (§6.3)
         if details:
             view["credential_id"] = c.id
         view.update(

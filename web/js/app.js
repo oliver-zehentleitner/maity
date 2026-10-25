@@ -24,6 +24,9 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
+    // One card (#/p/<slug>/tasks/<id>, an id's link, js/ids.js): the board
+    // with that card marked; its tab is the board's.
+    { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
@@ -355,6 +358,9 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
+    // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
+    if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -546,6 +552,83 @@ window.Maity = window.Maity || {};
     h("label", { for: "signing-reason" }, "Reason"), reason,
     h("button", { type: "submit" }, "Change signing"));
     return form;
+  }
+
+  // Project memory (docs/api.md §6.1, §6.21), read here and not changed:
+  // the hub would set nothing up and remove nothing on a change, so a change
+  // is an agent's work in the repository, on a card. The setup chosen at
+  // creation, and its cards once the hub made them.
+  function memoryPanel(ctx) {
+    const { PROVIDERS, OPTIONS } = M.projectSetup;
+    const provider = ctx.project.memory && ctx.project.memory.provider;
+    const s = ctx.project.setup;
+    const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([, title]) => title) : [];
+    let setup;
+    if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
+    else if (Array.isArray(s.cards) && s.cards.length) {
+      setup = h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]));
+    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
+    else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
+    return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
+      h("h2", { class: "panel-title", id: "memory-heading" }, "Project memory"),
+      h("p", null, h("strong", null, named || "—"),
+        provider === "keep-the-why" ? ": joining agents load the Keep the Why skill and keep the project's reasons in the repository's context/."
+          : provider === "none" ? ": the project works without a memory provider." : null),
+      h("p", { class: "hint" }, "Chosen when the project was created. A change is work in the repository: write a card for an agent; "
+        + "the hub sets nothing up and removes nothing."),
+      setup);
+  }
+
+  // policy.badge (docs/api.md §6.20): off unless an admin switches it on, a
+  // policy change with its reason. The README snippet and, while it is on,
+  // the badge as the hub serves it.
+  const BADGES = [["off", "Off: no badge is served"], ["members", "Members: how many humans and agents"],
+    ["agents_online", "Agents online: how many agents are online now"]];
+  function badgeForm(ctx, save) {
+    const current = ctx.project.policy.badge;
+    const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "badge-reason", required: true, placeholder: "Why it changes (logged)" });
+    // As reached in this tab; a file:// page has no origin to name.
+    const raw = window.location && window.location.origin;
+    const origin = raw && raw !== "null" ? raw : "https://<hub>";
+    const url = origin + "/badge/" + encodeURIComponent(ctx.slug) + ".svg";
+    const snippet = "[![maity](" + url + ")](" + origin + "/#/p/" + encodeURIComponent(ctx.slug) + "/overview)";
+    const copy = h("button", {
+      type: "button",
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(snippet);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed — select the line";
+        }
+      },
+    }, "Copy");
+    return h("form", {
+      class: "inline-form badge-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { badge: select.value }, reason: reason.value.trim() }, "Badge");
+      },
+    },
+    h("h2", { class: "panel-title" }, "README badge"),
+    h("p", { class: "hint" }, "Public: anyone with the address sees the count, never a name. The hub serves it while the badge is on. "
+      + "The address is this hub's as reached in this tab."),
+    h("label", { for: "badge-select" }, "Badge"), select,
+    // Shown from the hub itself; fixture mode has no hub to serve it.
+    current !== "off" && M.api.source === "api"
+      // Versioned by the rules: a policy change bumps it, so a cached
+      // badge of the old variant is not shown (§6.20: max-age=60).
+      ? h("img", { class: "badge-preview", src: "/badge/" + encodeURIComponent(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
+        alt: "The project's badge as the hub serves it" }) : null,
+    h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
+    current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
+    h("label", { for: "badge-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Change badge"));
   }
 
   // ---- project logo -------------------------------------------------------
@@ -1062,14 +1145,14 @@ window.Maity = window.Maity || {};
       return;
     }
     if (seq !== renderSeq) return;
-    renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
+    renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
     if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = where.route;
+    else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {

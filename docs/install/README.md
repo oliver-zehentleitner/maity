@@ -8,6 +8,9 @@ account, backups and upgrades. The commands themselves are in
 
 ## Which path
 
+Just trying it on your own machine? The [quickstart](quickstart.md) gets
+a personal hub with SQLite running in about five minutes.
+
 | Path | When | Database | You provide |
 |---|---|---|---|
 | [Plain Python](#plain-python) | one machine you control; the smallest setup | SQLite (default), or an existing PostgreSQL or MariaDB | Python 3.12+, a TLS reverse proxy for anything beyond this machine |

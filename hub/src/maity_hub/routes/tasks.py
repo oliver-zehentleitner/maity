@@ -19,6 +19,7 @@ from maity_hub import (
     card_search,
     cards,
     clock,
+    contract_text,
     idempotency,
     instances,
     mentions,
@@ -40,7 +41,14 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
-from maity_hub.views import human_paused, paused, principal_id, task_view, task_views
+from maity_hub.views import (
+    human_paused,
+    paused,
+    principal_id,
+    task_view,
+    task_views,
+    view_contract,
+)
 
 router = APIRouter()
 
@@ -56,6 +64,8 @@ class ReleaseIn(Strict):
 class ContractIn(Strict):
     arbiter: str | None = None
     watchers: list[str] = Field(default_factory=list, max_length=50)
+    path: str = contract_text.DEFAULT_PATH  # where the contract's text lives (§6.8)
+    section: str | None = None
 
 
 class TypedPullRequestIn(Strict):
@@ -76,6 +86,8 @@ class ReleasePatchIn(Strict):
 class ContractPatchIn(Strict):
     state: Literal["proposed", "final"] | None = None
     watchers: list[str] | None = Field(default=None, max_length=50)
+    path: str | None = None
+    section: str | None = None  # null clears it
 
 
 class ChecklistTickIn(Strict):
@@ -267,7 +279,25 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
         _member_id(conn, mine, watcher, "contract.watchers")
-    return {"arbiter": arbiter, "state": "proposed", "watchers": watchers}
+    _check_contract_place(body.path, body.section)
+    return {
+        "arbiter": arbiter,
+        "state": "proposed",
+        "watchers": watchers,
+        "path": body.path,
+        "section": body.section,
+    }
+
+
+def _check_contract_place(path: str | None, section: str | None) -> None:
+    """`path` repository-relative, `section` one heading number (§6.8)."""
+    errors: dict[str, str] = {}
+    if path is not None and (reason := contract_text.path_error(path)):
+        errors["contract.path"] = reason
+    if section is not None and (reason := contract_text.section_error(section)):
+        errors["contract.section"] = reason
+    if errors:
+        raise invalid(errors)
 
 
 def _is_arbiter(mine: Membership, contract: dict[str, Any]) -> bool:
@@ -370,6 +400,14 @@ def _patched_contract(
         for watcher in watchers:
             _member_id(conn, mine, watcher, "contract.watchers")
         contract["watchers"] = watchers
+    given = body.model_fields_set
+    if "path" in given and body.path is None:
+        raise invalid({"contract.path": "not_a_path"})
+    _check_contract_place(body.path, body.section)
+    if body.path is not None:
+        contract["path"] = body.path
+    if "section" in given:
+        contract["section"] = body.section
     return contract
 
 
@@ -492,8 +530,9 @@ def list_tasks(
             if q is None:
                 return list(rows)
             result = []
+            notes = card_search.note_bodies(conn, (row.id for row in rows))
             for row in rows:
-                hit = card_search.matches(row, q)
+                hit = card_search.matches(row, q, notes[row.id])
                 if hit:
                     matched[row.id] = hit
                     result.append(row)
@@ -824,9 +863,12 @@ def patch_task(
         if "release_data" in changed:
             payload["release"] = view["release"]
             fields.append("release")
-        old_state = (before_card.contract or {}).get("state")
-        if "contract" in changed and old_state != (card.contract or {}).get("state"):
-            extra.append(("contract.state", old_state, (card.contract or {}).get("state")))
+        if "contract" in changed:
+            # Compared as the card shows them: a card from before §6.8 has the defaults.
+            was, now = view_contract(before_card.contract), view["contract"] or {}
+            for name in ("state", "path", "section"):
+                if was.get(name) != now.get(name):
+                    extra.append((f"contract.{name}", was.get(name), now.get(name)))
         entries = history.record(
             conn,
             before_card,

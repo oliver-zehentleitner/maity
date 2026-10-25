@@ -65,6 +65,708 @@ window.MAITY_FIXTURES = {
     },
     "warnings": []
   },
+  "admin-statistics-empty.json": {
+    "as_of": "2026-10-25T10:00:00Z",
+    "coverage": {
+      "reviews_since": "2026-10-25"
+    },
+    "days": [
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-25",
+        "humans_active": 1,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": 0
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-24",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-23",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-22",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-21",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-20",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-19",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-18",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-17",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-16",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-15",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-14",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-13",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-12",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-11",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-10",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-09",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-08",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-07",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-06",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-05",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-04",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-03",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-02",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-01",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-30",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-29",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-28",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-27",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-26",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      }
+    ],
+    "returning": {
+      "after_30_days": 0,
+      "after_7_days": 0
+    },
+    "totals": {
+      "agents": 0,
+      "humans": 1,
+      "humans_pending": 0,
+      "humans_with_an_agent": 0,
+      "instances_online": 0,
+      "projects": 0
+    },
+    "window_days": 30
+  },
+  "admin-statistics.json": {
+    "as_of": "2026-10-25T10:00:00Z",
+    "coverage": {
+      "reviews_since": "2026-10-22"
+    },
+    "days": [
+      {
+        "agents_active": 30,
+        "cards_claimed": 18,
+        "cards_created": 20,
+        "cards_done": 12,
+        "date": "2026-10-25",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": 8
+      },
+      {
+        "agents_active": 41,
+        "cards_claimed": 21,
+        "cards_created": 25,
+        "cards_done": 19,
+        "date": "2026-10-24",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": 10
+      },
+      {
+        "agents_active": 35,
+        "cards_claimed": 24,
+        "cards_created": 30,
+        "cards_done": 17,
+        "date": "2026-10-23",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": 12
+      },
+      {
+        "agents_active": 46,
+        "cards_claimed": 27,
+        "cards_created": 22,
+        "cards_done": 15,
+        "date": "2026-10-22",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": 8
+      },
+      {
+        "agents_active": 40,
+        "cards_claimed": 19,
+        "cards_created": 27,
+        "cards_done": 13,
+        "date": "2026-10-21",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 34,
+        "cards_claimed": 22,
+        "cards_created": 32,
+        "cards_done": 20,
+        "date": "2026-10-20",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 45,
+        "cards_claimed": 25,
+        "cards_created": 24,
+        "cards_done": 18,
+        "date": "2026-10-19",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 39,
+        "cards_claimed": 28,
+        "cards_created": 29,
+        "cards_done": 16,
+        "date": "2026-10-18",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 33,
+        "cards_claimed": 20,
+        "cards_created": 21,
+        "cards_done": 14,
+        "date": "2026-10-17",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 44,
+        "cards_claimed": 23,
+        "cards_created": 26,
+        "cards_done": 12,
+        "date": "2026-10-16",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 38,
+        "cards_claimed": 26,
+        "cards_created": 31,
+        "cards_done": 19,
+        "date": "2026-10-15",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 32,
+        "cards_claimed": 18,
+        "cards_created": 23,
+        "cards_done": 17,
+        "date": "2026-10-14",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 43,
+        "cards_claimed": 21,
+        "cards_created": 28,
+        "cards_done": 15,
+        "date": "2026-10-13",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 37,
+        "cards_claimed": 24,
+        "cards_created": 20,
+        "cards_done": 13,
+        "date": "2026-10-12",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 31,
+        "cards_claimed": 27,
+        "cards_created": 25,
+        "cards_done": 20,
+        "date": "2026-10-11",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 42,
+        "cards_claimed": 19,
+        "cards_created": 30,
+        "cards_done": 18,
+        "date": "2026-10-10",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 36,
+        "cards_claimed": 22,
+        "cards_created": 22,
+        "cards_done": 16,
+        "date": "2026-10-09",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 30,
+        "cards_claimed": 25,
+        "cards_created": 27,
+        "cards_done": 14,
+        "date": "2026-10-08",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 41,
+        "cards_claimed": 28,
+        "cards_created": 32,
+        "cards_done": 12,
+        "date": "2026-10-07",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 35,
+        "cards_claimed": 20,
+        "cards_created": 24,
+        "cards_done": 19,
+        "date": "2026-10-06",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 46,
+        "cards_claimed": 23,
+        "cards_created": 29,
+        "cards_done": 17,
+        "date": "2026-10-05",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 40,
+        "cards_claimed": 26,
+        "cards_created": 21,
+        "cards_done": 15,
+        "date": "2026-10-04",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 34,
+        "cards_claimed": 18,
+        "cards_created": 26,
+        "cards_done": 13,
+        "date": "2026-10-03",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 45,
+        "cards_claimed": 21,
+        "cards_created": 31,
+        "cards_done": 20,
+        "date": "2026-10-02",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 39,
+        "cards_claimed": 24,
+        "cards_created": 23,
+        "cards_done": 18,
+        "date": "2026-10-01",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 33,
+        "cards_claimed": 27,
+        "cards_created": 28,
+        "cards_done": 16,
+        "date": "2026-09-30",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 44,
+        "cards_claimed": 19,
+        "cards_created": 20,
+        "cards_done": 14,
+        "date": "2026-09-29",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 38,
+        "cards_claimed": 22,
+        "cards_created": 25,
+        "cards_done": 12,
+        "date": "2026-09-28",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 32,
+        "cards_claimed": 25,
+        "cards_created": 30,
+        "cards_done": 19,
+        "date": "2026-09-27",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 43,
+        "cards_claimed": 28,
+        "cards_created": 22,
+        "cards_done": 17,
+        "date": "2026-09-26",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      }
+    ],
+    "returning": {
+      "after_30_days": 4,
+      "after_7_days": 11
+    },
+    "totals": {
+      "agents": 117,
+      "humans": 41,
+      "humans_pending": 2,
+      "humans_with_an_agent": 29,
+      "instances_online": 23,
+      "projects": 12
+    },
+    "window_days": 30
+  },
   "admin-users.json": {
     "items": [
       {
@@ -984,6 +1686,23 @@ window.MAITY_FIXTURES = {
         "handle": "agent-b",
         "harness": "Claude Code",
         "id": "agt-b",
+        "instances": [
+          {
+            "address": "agt-b#wle2",
+            "claims": 1,
+            "created_at": "2026-10-21T10:12:03Z",
+            "harness": "Claude Code",
+            "id": "wle2",
+            "label": "agent-b#wle2",
+            "last_seen_at": "2026-10-21T11:20:00Z",
+            "lead": false,
+            "model": "claude-opus-5-5",
+            "paused": null,
+            "presence": "offline",
+            "replaces": null,
+            "revoked_at": null
+          }
+        ],
         "joined_at": "2026-10-21T10:12:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
@@ -1000,6 +1719,13 @@ window.MAITY_FIXTURES = {
           "listening": true,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T10:12:00Z"
+        },
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 1,
+          "review_within_team": false,
+          "wake": "all"
         }
       },
       {
@@ -1012,6 +1738,23 @@ window.MAITY_FIXTURES = {
         "handle": "agent-c",
         "harness": "Pi",
         "id": "agt-c",
+        "instances": [
+          {
+            "address": "agt-c#k3pa",
+            "claims": 0,
+            "created_at": "2026-10-21T09:40:00Z",
+            "harness": "Codex",
+            "id": "k3pa",
+            "label": "agent-c#k3pa",
+            "last_seen_at": "2026-10-21T13:40:00Z",
+            "lead": false,
+            "model": null,
+            "paused": null,
+            "presence": "online",
+            "replaces": null,
+            "revoked_at": null
+          }
+        ],
         "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
@@ -1025,7 +1768,14 @@ window.MAITY_FIXTURES = {
         "presence": "paused",
         "reports_to": "agt-a",
         "role": "member",
-        "session": null
+        "session": null,
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 3,
+          "review_within_team": false,
+          "wake": "all"
+        }
       },
       {
         "areas": [
@@ -1224,8 +1974,12 @@ window.MAITY_FIXTURES = {
       "etag": "\"f-logo-1\"",
       "source": "forge"
     },
+    "memory": {
+      "provider": "keep-the-why"
+    },
     "name": "Maity",
     "policy": {
+      "badge": "off",
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
@@ -1251,6 +2005,7 @@ window.MAITY_FIXTURES = {
         "live version equals the tag"
       ]
     },
+    "setup": null,
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -3168,8 +3923,12 @@ window.MAITY_FIXTURES = {
       "available": false,
       "source": null
     },
+    "memory": {
+      "provider": "none"
+    },
     "name": "Sample shop",
     "policy": {
+      "badge": "members",
       "claim_policy": "self-claim",
       "contract_arbiter": "hum-maintainer",
       "done_authority": "holder",
@@ -3190,6 +3949,12 @@ window.MAITY_FIXTURES = {
         "CHANGELOG has a section for this version",
         "live version equals the tag"
       ]
+    },
+    "setup": {
+      "cards": [],
+      "keep_the_why_badge": false,
+      "keep_the_why_init": false,
+      "maity_badge": false
     },
     "slug": "sample",
     "state": "freeze",

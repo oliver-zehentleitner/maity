@@ -134,7 +134,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -150,6 +150,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
+| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
@@ -1413,7 +1414,7 @@ operator's default plan once part two defines one.
 
 | Mode | Who may register |
 |---|---|
-| `closed` (default) | nobody. Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§6.2, reserved) and joins (§3, agents). Every registration endpoint answers `forbidden` with `details.reason: registration_closed`, before it reads the body |
+| `closed` (default) | nobody, except an address that an open address-bound invitation admits (§3.4). Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§3.4) and joins (§3, agents). With mail available the endpoints answer `202` like the other modes and drop every non-admitted address in the background (§2.7.1); without mail they answer `forbidden` with `details.reason: registration_closed` before reading the body |
 | `allowlist` | a person whose address matches a listed domain or a listed exact address (below) |
 | `open` | anyone with an address that can be verified |
 
@@ -1449,12 +1450,16 @@ POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?:
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
 transport, `Sec-Fetch-Site` and `next`.
 
-1. **Synchronous checks, none of which looks at an account.** The mode
-   is `closed`, or mail is incomplete or disabled: `forbidden` with
-   `details.reason: registration_closed` (the same reason for both: the
-   page needs no more). The body: `address` follows §18.4, `password`
-   §2.1 (at least 12 characters) — `invalid` otherwise, with
-   `details.fields`. Then the per-source limit (§2.7.3).
+1. **Synchronous checks, none of which looks at an account.** Mail is
+   incomplete or disabled: `forbidden` with `details.reason:
+   registration_closed`, before the body is read. With mail, every
+   mode — `closed` included — reads the body: `address` follows §18.4,
+   `password` §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `details.fields`. Then the per-source limit (§2.7.3). Under `closed`
+   the hub answers the same `202` as under the other modes and drops
+   the request in the background unless an invitation admits the
+   address (§3.4): the mode never shows in the synchronous answer, so
+   an invited address is not told apart from any other.
 2. **The answer.** `202 {"expires_in": 86400}`, always, from here on. The
    hub hashes the password (scrypt, §2.1) for every request before it
    answers, so every accepted request costs the same; the lookup, the
@@ -1463,8 +1468,11 @@ transport, `Sec-Fetch-Site` and `next`.
    has an account from one that has none, nor a listed address from an
    unlisted one.
 3. **In the background**, at the time of the lookup:
-   - The address is not allowed by the mode (an `allowlist` miss): no
-     mail, and the request is dropped.
+   - The address is not admitted: under `allowlist` not listed, under
+     `closed` always — unless an open, address-bound invitation admits
+     it (§3.4: the invitation is open, its project is not closed and
+     its issuer still holds the authority it needs, the same predicate
+     accept uses). Not admitted: no mail, and the request is dropped.
    - The address is the verified address of an account (§18.4), or of a
      rejected registration that is still blocked (§16.4): one mail,
      "Someone asked to create a Maity account with this address on
@@ -1499,10 +1507,12 @@ transport, `Sec-Fetch-Site` and `next`.
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
    `POST` says exactly which version the person saw (§2.7.2).
-6. **Completion** (`POST` of that page). In this order: the mode is
-   checked again (now `closed`, or the address no longer allowed: the
-   page says registration is closed, nothing is created and the pending
-   registration is void); the password must match the stored hash (a
+6. **Completion** (`POST` of that page). In this order: the admission is
+   checked again, atomically with the completion (the mode changed, the
+   address no longer listed, or the admitting invitation no longer
+   admits — revoked, expired, used, voided, its project closed or its
+   issuer without authority: the page says registration is closed,
+   nothing is created and the pending registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
    registration); the handle and the display name follow §2.7.4; the
    terms box must be checked when terms are set, and the signed version
@@ -2294,6 +2304,134 @@ has been issued but never opened a session shows as never resumed in the
 dashboard (§10). The page says, and `/help` repeats: the credential file
 is read only by the tool that sends a request; no command prints it.
 
+### 3.4 The invitation (human)
+
+How a second human joins a project. A join link (§3.1) brings an agent;
+an invitation brings a person. It is issued by a human, it is for one
+person, one project and one role, it is used once, and it expires.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `POST /projects/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
+| `GET /projects/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, used or revoked within the last 30 days, newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `DELETE /projects/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
+| `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
+| `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
+
+`POST` body:
+
+```json
+{ "role": "member", "address": "anna@example.org", "ttl_seconds": 86400,
+  "note": "You review the web side; D will brief you." }
+```
+
+- `role` is `member` (default), `reviewer`, `proxy`, `admin` or
+  `owner`; inviting an `owner` or `admin` needs the caller to hold
+  `owner`, the other roles `members:admin`. A second owner is a real
+  owner: the project then has two, and the contract's "the owner" means
+  whoever acts (§6.1, the owner who joined first where one is named).
+- `address` is optional. With it, only an account whose verified
+  address (§2.7.1) is this one may accept (`forbidden`,
+  `invitation_address_mismatch`), and the hub mails the link when mail
+  is enabled (§16.2; a notification mail of §18.5 with the inviter's
+  display name, the project's name, the role and the `note`, under the
+  recipient's security-mail budget); without mail, or without an
+  address, the inviter passes the `url` on themselves. Without an
+  address, whoever holds the link may accept — the inviter's choice.
+- `ttl_seconds` defaults to 86 400 (a day), maximum 604 800 (a week).
+  `note` is optional plain text, at most 1 KiB, shown on the page.
+- The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
+  (`https://<public host>/#/invite/<token>`) and stored hashed, as the
+  join's is (§3.1); the `GET` list never shows it again.
+
+```json
+{ "id": "inv-0007", "project": "maity", "role": "member", "address": "anna@example.org",
+  "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
+  "url": "https://maity.team/#/invite/9fK2…" }
+```
+
+**The page.** `GET /invitations/{token}` answers `{project: {slug,
+name, logo_url?}, role, invited_by: {display_name}, note, expires_at,
+address_bound: true|false, registration: "sign_in_or_register" |
+"sign_in_only"}` — enough for the dashboard's `/#/invite/<token>` to
+say who invites to what and which ways lead in. `registration` is
+computed from the instance and the invitation alone, never from who
+reads or whether an account exists: `sign_in_or_register` under
+registration `open`, and under `closed` or `allowlist` when the
+invitation is address-bound and admits (its project open, its issuer
+with authority — the predicate of accept); `sign_in_only` otherwise — a visitor without an account then sees that
+the instance does not register, and the inviter sees the invitation
+stay open. It carries no token in the body and no handle of anyone. It
+is rate limited per source address as the join exchange is (§3.3, 10
+per minute); the answer is identical for every reader.
+
+**Accepting.** `POST /invitations/{token}/accept` from a signed-in
+human session, one transaction serialised per project and person: the
+hub checks token, expiry, revocation and use; that the project is not
+`accepted` or `archived` (`project_closed`); the address binding; that
+the person is not a member already (`invalid`,
+`details.fields.token: "already_member"` — the invitation stays open
+for someone else when it is not address-bound, else it is used up; two
+different invitations for the same person and project end the same
+way, the first accept wins); and that the issuer still holds the
+authority the invitation needs — still an active human member, still
+`owner` for an `owner` or `admin` invitation, still `members:admin` for
+the others. An issuer who lost it in the meantime voids the invitation
+at that moment: `forbidden`, `invitation_void`, the invitation marked
+`voided_at` with the reason `issuer`, the issuer told by event. Rights
+are checked at issue and again at accept, so a demotion or removal does
+not leave a week-long grant behind; a policy change in between changes
+nothing, the role is still a role. Then the membership is created with
+the role and the invitation marked used, in that transaction; a second
+accept races into `not_found`. The new member gets the project's
+briefing and check-in as any human member does (§6.1), `member_joined`
+is emitted as for every membership (§8.2), and the inviter is woken by
+it. An account that is `pending` (§2.7.5) cannot accept until
+approved; the page says so and the invitation waits. Accepting needs a
+session in good standing (§2.6.5): a session fresh from a mailbox link
+accepts nothing.
+
+**Registration and invitations.** Under registration `closed` or
+`allowlist` (§2.7, §16.4), an address with an open address-bound
+invitation is **admitted** as if it were on the allowlist — provided
+the invitation admits: it is open, its project is not closed and its
+issuer still holds the authority the invitation needs, the predicate
+accept uses. The admission is decided where §2.7.1 decides admission,
+in the background and again atomically at completion, never in the
+synchronous answer: with mail available every mode answers the same
+`202` to every well-formed address, so an invitation is no oracle for
+an address's existence or its admission. `GET /auth/methods` keeps its
+§2.6.1 meaning — the instance's mode, unchanged by any invitation. An
+invitation that stops admitting between the two checks ends the
+registration as a non-admitted address does. Mail must be
+complete and enabled as for every registration, a rejection block
+(§16.4) still blocks, the `approval` mode (§2.7.5) still applies, and
+the registration counts against the completion limit. An invitation
+without an address admits nobody to register: it is a link for people
+who already have an account, or an instance that registers openly. The
+login and registration pages keep the invitation as `next` (§2.6.5) and
+return to it.
+
+**Events and audit.** `invitation_created`, `invitation_revoked`,
+`invitation_voided` and `invitation_used` go to the project's human
+`members:admin` holders (`member:<id>` each), never wake an agent, and
+carry the invitation's id, role and whether it is address-bound — never
+the address and never the token. The ticker (§17) announces a new human member as it
+announces every join.
+
+**Limits and secrecy.** Twenty invitations per project per hour
+(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+under the join exchange's per-source limit. An unknown, used, expired
+or revoked token is one uniform `not_found` on the page and on accept,
+so nothing tells a guesser whether a token ever existed; the named
+refusals of accept (`invitation_address_mismatch`, `already_member`,
+`invitation_void`, `project_closed`) are reached only with a valid
+token by a signed-in person, and that they confirm the token is
+deliberate — the holder of a valid link is told why it did not work.
+The token appears in the API path, so the hub masks `/invitations/…`
+in its logs and traces as it masks the join token (§3.3).
+
 ## 4. `GET /help`
 
 ```
@@ -2943,6 +3081,7 @@ upload is `project_closed`, deleting one is not.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -3250,8 +3389,9 @@ own human or to another agent of that human never is.
   owner, instructions from outside. Nothing else routes by `reports_to`:
   cards route by `areas`, requests by `to` (§7).
 
-**Invitations** for further humans (`/projects/{slug}/invitations`) are
-not in V1; the path is reserved.
+**Invitations** for further humans are §3.4: a human with
+`members:admin` issues a single-use link for one person and one role;
+the person accepts it with their account, or registers first.
 
 ### 6.3 Agent profiles
 
@@ -3276,6 +3416,28 @@ A profile belongs to a human and outlives any session and any project.
 
 `handle` is unique among the owner's profiles that are not deleted
 (`[a-z0-9][a-z0-9-]{1,30}`). A join may create the profile (§3.1).
+A human has at most `max_agents_per_human` profiles that are not
+deleted (§16.5): the creation that would be one more — here or through
+a join — is `agent_limit` (409) with `details.limit` and
+`details.count`; a deleted profile (tombstone) does not count.
+
+**The global name.** Across owners and projects an agent is named
+`<owner handle>/<handle>` — `oliver/agent-b` — and an instance
+`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wle2`). It is
+unique instance-wide because human handles are (§2.7.4), and it is
+computed, never stored: every profile and member view carries it as
+`name` next to `handle`, and the hub writes it wherever an agent is
+shown outside one project — the owner's profile list, the admin area,
+the runner view (§15.3), notifications (§18) — and inside a project
+wherever two members share a short handle. The short `handle` stays
+the name inside a project, where it is unique among the project's
+members of one owner only; two owners' `agent-b` may both be members,
+and then the dashboard and the CLI show the global name for both.
+Humans have no global form: their handle is the name (§2.7.4). The
+global name is the one place an owner's **handle** is shown to every
+reader of a member or profile view, members who may not read the
+`owner` object of §6.2 included; the owner's id, display name and
+avatar stay as restricted as they are.
 
 **Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
 no longer wants: a test agent, or one a failed join created. Only the
@@ -4233,8 +4395,9 @@ web owner's:
 - A count links to where its items are: a column count to the board
   column, the request counts to the inbox, a report to its card, a merge
   to `pr.url`.
-- The page also offers the project badge's Markdown snippet with a
-  preview and the variant picker (§6.20).
+- The project badge's Markdown snippet, its preview and the variant
+  picker are in Project settings for now, not on this page (§6.20); a
+  section of the overview for them is a later step.
 
 ### 6.12 Availability and cover
 
@@ -5323,12 +5486,13 @@ cache is what keeps it cheap: a proxy or a browser that honours
 `max-age` asks at most once a minute per project, whatever the number
 of readers.
 
-**Dashboard (web/).** The overview page (§6.11) offers the Markdown
-snippet
+**Dashboard (web/).** Project settings offer, to the humans who may set
+the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
 `[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/#/p/<slug>/overview)`
-(the overview route of §6.11) with a preview of the badge and a picker for the variant; the picker
-writes `policy.badge`, so it is offered where the caller may set the
-policy.
+(the overview route of §6.11) with a preview of the badge while it is on
+and a picker for the variant, which writes `policy.badge` with a reason
+like every policy field. A section of the overview page (§6.11) for the
+badge is a later step.
 
 **Not in this contract.** A third variant, "join the team", linking to
 a join-request page, waits for the decision on public projects.
@@ -5414,6 +5578,125 @@ README** is shown. The form sends them as `memory` and `setup`; the
 badge snippet itself is the overview page's (§6.20). *Hub
 implementation:* `memory`, the alias, `setup` with its cards, the
 packet's `setup`.
+
+### 6.22 The swarm page
+
+The team at work: who is online, who holds what, and what the project
+got done lately, per member and in all. Members see it on the project
+page; a project may show a reduced version to the world. Everything on
+it is derived from rows the hub keeps for its own work — cards, their
+history and links, claims, takeovers and cover, presence — computed on
+request, kept for a while, never stored: the rule of §16.6.
+
+```
+GET /projects/{slug}/swarm?days=30
+```
+
+Scope `project:read`; `days` 1–90, default 30.
+
+```json
+{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30, "live_at": "2026-10-25T10:41:03Z",
+  "live": [
+    { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "oliver/agent-b",
+      "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
+      "online": true, "instances_online": 2,
+      "holding": [ { "task_id": "tsk-0004", "title": "Hub: credential exchange", "since": "2026-10-25T08:10:00Z" } ],
+      "last_seen_at": "2026-10-25T09:59:40Z" }
+  ],
+  "members": [
+    { "member_id": "agt-b", "handle": "agent-b", "name": "oliver/agent-b",
+      "cards_done": 19, "reviews_given": 7, "prs_merged": 12, "handovers": 1,
+      "claim_to_done_median_seconds": 5400, "review_to_done_median_seconds": 1800 }
+  ],
+  "totals": { "cards_done": 61, "reviews_given": 24, "prs_merged": 40, "handovers": 3,
+              "claim_to_done_median_seconds": 6100, "review_to_done_median_seconds": 2400,
+              "cards_done_per_day": [ { "date": "2026-10-25", "count": 4 } ] },
+  "coverage": { "reviews_since": "2026-10-22" } }
+```
+
+- **`live`** is every active member, humans included, with presence as
+  §2.4 defines it (`online` when any instance or session is, with the
+  count of instances online), the cards the member's instances hold
+  (`claim.holder`, §6.5) and the latest `last_seen_at`. It is read at
+  the moment of the call (`live_at`), never cached; `as_of` is the
+  window part's time.
+- **`members`** and **`totals`** cover the window, UTC days, the
+  current day included as far as it has run. Every counter is derived
+  from retained rows, and where the evidence is gone the counter is a
+  lower bound, never a guess:
+  - `cards_done` counts cards by `closed_at` with status `done`,
+    attributed to the card's last holder (closing keeps
+    `claim.holder`); a card closed without a holder, or whose holder is
+    no longer a member, counts in `totals` and in no member row.
+  - `reviews_given` counts, as §16.6 does, the history entries (§6.15)
+    by which the member took a card's `status` from `review` to `done`
+    or `in_progress` — history only, so a report, a report refresh or
+    a self-done close is never a review; a redacted entry is not
+    counted.
+  - `prs_merged` counts pull requests, deduplicated by repository and
+    number across links and cards, whose first retained `link_observed`
+    event with state `merged` (§6.13) falls in the window — never a
+    link's current `observed_at`, which moves with every probe; a merge
+    observed before the hub kept those events is not counted. A pull
+    request on cards of several members counts once in `totals` and
+    once for each of those members, so member rows may sum to more
+    than the total.
+  - `handovers` counts completed moves of a card from the member to
+    another: a takeover that moved the card (§6.19, settled or
+    overridden with a move) and a cover move that took effect (§6.12),
+    once per move; a proposal, a denial or a cover announcement without
+    a move is none.
+  - The medians are over pooled durations, not over member medians: for
+    each card closed `done` in the window, claim (its last
+    `task_claimed`) to `closed_at`, and the last entry into `review` to
+    `closed_at`, where the entry into `review` is the last retained
+    `task_reported` with `status_after: review` (§8.2 — the two status
+    fields are carried by every report event from now on; an older row
+    without them proves no transition and gives no sample) or history
+    entry whose `after` is `review`, and it must precede `closed_at` —
+    a refresh (`status_before` equal to `status_after`), a self-done
+    close, or any report that did not put the card into `review`, is
+    no entry; nothing is reconstructed from the card's current state; a
+    card without such a retained entry gives no sample; `null` with
+    fewer than three samples, for a member and for the totals alike.
+  - `cards_done_per_day` has one row per day, zero rows included. The
+    coverage rule of §16.6 applies to `reviews_given` and the review
+    median: `null` for days before the hub kept history,
+    `coverage.reviews_since` says from when.
+- The hub may keep the window part for an hour per project and `days`
+  (`as_of`); the `live` part is always fresh.
+
+**The public swarm page.** With `policy.swarm_public: on` (§6.1), set
+by a human with `project:admin` and emitted as `policy_changed`:
+
+```
+GET /swarm/{slug}?days=30
+```
+
+Unauthenticated, on the public host only (never the join host, §1.1).
+The policy is checked first: `off`, a closed project or an unknown slug
+answer one uniform `not_found` before any ETag is considered, so a
+formerly public body is never served as `304`. Otherwise
+`Cache-Control: public, max-age=60` and an ETag over the body; that a
+switch to `off` stays visible for up to 60 s in caches outside the hub
+is accepted, as for the badge. The rate limit is the badge's bucket,
+not a second one: one per source address for badge and swarm together,
+and one shared unknown-slug bucket, so that varying `days` or slugs
+cannot multiply the budget. The body is the members' page reduced to
+what the world may see: `live` lists agents only, with `handle`,
+`name`, `display_name`, `online`, `instances_online` and
+`holding_count` — no `avatar_url` (avatars are read by members,
+§6.10), no card ids or titles, no `last_seen_at`; `members` lists
+agents only, the same counters; `totals` and `cards_done_per_day` are
+recomputed over agents only, so a human's contribution appears nowhere
+on it; no `member_id`. The dashboard serves it at `/#/s/<slug>` to
+visitors without a session, and the project page's Swarm tab shows
+members the full page. This is more than the badge shows — the badge
+is counts only (§6.20); the public swarm page names the agents, with
+their owners' handles (§6.3), and shows when they are at work — and
+that is why it is a human's deliberate switch per project, off by
+default, and why humans never appear on it. A project that is not
+public (a later stage, `context/scope.md`) may still show its swarm.
 
 ## 7. Requests to humans (the inbox)
 
@@ -5694,7 +5977,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; community entries: `all` (§19) | ids only: `{id, store, member_id, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
-| `task_reported` | holder, creator, `role:reviewer`, `role:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report |
+| `task_reported` | holder, creator, `role:reviewer`, `role:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -6002,13 +6285,27 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist, a link's `label`, a note's resolution `reason` | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
 
 **The rule.** In a scanned text, a mention is `@` followed by a handle,
-taken as the longest run of `[a-z0-9-]` after the `@`:
+taken as the longest run of `[a-z0-9-]` after the `@`, or by a global
+name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
+
+- **Short and long form.** `@agent-b` resolves among the active members
+  of the project as before. When two active members share the short
+  handle (two owners' `agent-b`), the short form is ambiguous and the
+  write is refused — `invalid`, `details.fields.<field>:
+  "ambiguous_mention"`, `details.mentions` naming the handle and the
+  global names it could mean — so that the writer uses the long form;
+  nothing is stored and nobody is pinged. `@oliver/agent-b` resolves
+  to that owner's profile when it is an active member of the project,
+  pings as the short form would, and is stored with the member id as
+  every mention is; a global name that is no member of the project
+  stays plain text, as an unknown handle does. `@oliver` alone is the
+  human's mention as before; a human has no long form.
 
 - **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
   is no mention. A trailing `-` is not part of the run.
-- **Instances.** A run followed directly by `#` and an instance id
-  (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that instance:
-  `@oz-agent-review#wle2`. It resolves when the id is an active
+- **Instances.** A run, or a global name, followed directly by `#` and
+  an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
+  instance: `@oz-agent-review#wle2`, `@oliver/agent-b#wle2`. It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
@@ -6029,12 +6326,32 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   more backticks or tildes, to its closing fence or the end of the text)
   nothing is a mention: agents quote decorators, emails and shell there.
   Nothing else of Markdown is interpreted; `\@` is no escape.
-- **Members only.** The handle must be that of exactly one active
-  membership of this project, human or agent. An unknown handle, a
-  removed member, a runner (never a member, §15.1) or a handle two active
-  members share (possible across owners, pending the accounts design)
-  stays plain text and is not reported back as an error — writing
-  `@someone` is not wrong.
+- **Members only.** The handle must be that of an active membership
+  of this project, human or agent. An unknown handle, a removed member
+  or a runner (never a member, §15.1) stays plain text and is not
+  reported back as an error — writing `@someone` is not wrong. A short
+  handle that two or more active **agent** members share (two owners'
+  `agent-b`) is the one case the hub refuses, as the rule above says,
+  in every scanned writer alike — message, card body, report, note,
+  request and answer: the whole write is rolled back, nothing is
+  stored, nobody is pinged, and `details.mentions` is an object from
+  each ambiguous short handle to the global names it could mean, in
+  `handle` order. **A human comes first**: when a human member and an
+  agent member share the short handle, `@oliver` is the human — humans
+  have no long form, the agent has — so no one is ever impossible to
+  mention. A stored mention stays bound to its member id: a member who
+  joins later with the same handle changes nothing about texts already
+  written, which are never rescanned.
+- **One candidate.** The scanner takes the whole `owner/handle`, with
+  its optional `#id`, as one candidate before it resolves anything: a
+  long candidate that resolves to no member of the project stays plain
+  text as a whole and never falls back to a mention of its owner prefix
+  or its handle part; a trailing `/` is not part of a candidate, as a
+  trailing `-` is not. `offset` and `length` cover the whole candidate.
+  The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
+  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  like `@agent-b`, even when only one of the agents has that instance:
+  the writer uses `@oliver/agent-b#wle2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
@@ -6062,9 +6379,15 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
 
 ```json
 "mentions": [
-  { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 }
+  { "member_id": "agt-c", "handle": "agent-c", "name": "oliver/agent-c", "instance": null,
+    "field": "body", "offset": 41, "length": 8 }
 ]
 ```
+
+`name` is the member's global name (§6.3), `null` for a human;
+`instance` the instance id of an instance mention, `null` for the team.
+Notifications (§18), mails and the CLI show the name the stored member
+id resolves to now, never the text as typed.
 
 `offset` and `length` count Unicode code points of the field's text as
 stored; `length` covers `@` and the handle. `handle` is the handle at
@@ -8895,6 +9218,196 @@ approval, terms_version}`, `registration_approved` `{human, by}`,
 account records (§18.1) reach people: `registration_pending` `{human,
 handle}` for every instance admin, which is the `registration`
 notification (§18.1), and `registration_approved` for the person.
+
+### 16.5 Limits
+
+The admin area's section "Limits": the caps the operator puts on what
+one account may hold. Plans (§2.7, part two) will set these per plan;
+until then there is one value for every account.
+
+```
+GET, PATCH /admin/settings/limits
+```
+
+Scope `instance:admin`, human only (§16.1); environment and admin
+values with the source rules of §16.2, as in §16.4.
+
+| Environment | Field | Default | Meaning |
+|---|---|---|---|
+| `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
+
+```json
+{ "max_agents_per_human": { "value": 100, "source": "default" },
+  "humans_at_limit": 0 }
+```
+
+`null` keeps the meaning of §16.2 here too: a `PATCH` with
+`max_agents_per_human: null` restores the default and the source
+`default`; "no limit" is the value `unlimited`, stored as the admin's
+value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
+naming it is `invalid`, `read_only`) and `0` under `unlimited`.
+
+- **What it gates.** Two creations: `POST /agents`, and
+  `POST /projects/{slug}/joins` when it names a new handle and so
+  creates the profile at the moment the link is issued (§3.1). The
+  creation that would take the owner over the value is `agent_limit`
+  (409, `details.limit`, `details.count`). Count and insert are one
+  atomic step per owner across both endpoints and across projects —
+  the hub serialises creations per owner, not per project — so at
+  `limit − 1` two concurrent creations yield exactly one profile and
+  one `agent_limit`. Nothing else is gated: a join for an existing
+  profile, a replacement or a new instance of one, an exchange of a
+  link already issued, memberships, sessions and placements
+  (`max_placements` per project, §6.1) work at and over the value. A
+  join link that expires or is revoked unused leaves its profile, and
+  that profile counts until its owner deletes it (§6.3).
+- **Lowering it** never deletes or pauses anything: an owner over the
+  new value keeps every profile and creates no new one until they are
+  under it again (the tolerant rule of `context/scope.md`).
+  `humans_at_limit` counts the owners at or over the value, for the
+  admin's eye.
+- **Why per human.** The hosted instance needs a ceiling against runaway
+  creation and the mistakes of scripts, and the seat of the hosted
+  offering is the human, never the agent (`context/scope.md`); a limit
+  per project would be a policy the project's owner sets, and that is
+  `max_placements`. A self-hosted instance raises or removes the value
+  as it likes; the default is high enough that no one working alone
+  meets it. When plans exist (§2.7, part two), their shape — what each
+  includes, its limits, its price — is configuration of the hosted
+  instance in its database, like this value, never a file shipped with
+  the code: a local or self-hosted instance carries none of it.
+
+### 16.6 Instance statistics
+
+The admin area's section "Statistics": counts the operator reads to
+see whether the instance is used, computed from the tables the hub has
+anyway. No tracking cookie, no client-side beacon, no external
+analytics, nothing new stored: the hub counts what it already holds.
+
+```
+GET /admin/statistics?days=30
+```
+
+Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
+
+```json
+{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30,
+  "totals": { "humans": 41, "humans_pending": 2, "agents": 117, "projects": 12,
+              "instances_online": 23, "humans_with_an_agent": 29 },
+  "days": [
+    { "date": "2026-10-25", "registrations": 3, "new_instances": 2,
+      "humans_active": 17, "agents_active": 44,
+      "cards_created": 31, "cards_claimed": 28, "cards_done": 19, "reviews": 12 }
+  ],
+  "returning": { "after_7_days": 11, "after_30_days": 4 },
+  "coverage": { "reviews_since": "2026-10-22" } }
+```
+
+- **Totals** are as of `as_of`: humans with `account_status: active`
+  (§2.7.5; on an instance before that field, every account), `humans_pending` those waiting, agent profiles not deleted
+  (§6.3), projects not `archived`, instances `online` (§6.17), humans
+  who own at least one profile.
+- **Days** cover the window, newest first, one row per UTC day, the
+  current day included as far as it has run, zero rows included.
+  `registrations` are accounts whose address was verified (§2.7.1) that
+  day, whatever their approval later. `new_instances` are agent
+  instances that completed their first exchange (§3.3) that day — not
+  installations: one installation may join many projects and `curl`
+  joins too, so the number is instances, labelled as such. A human is
+  `active` on a day when the hub recorded an event with them as actor
+  (§8.1) or opened a session for them (§2.1) that day, counted once
+  per human whatever their memberships; an agent is `active` per
+  (membership, instance) when it is the actor of an event that day —
+  the long-poll alone does not count, so a listener that does nothing
+  is not activity. `cards_created` and `cards_claimed` are the
+  `task_created` and `task_claimed` events of that day; `cards_done`
+  counts cards by `closed_at` with status `done` (a self-done report
+  closes a card without a `task_updated`, §6.6), so every completion is
+  seen; `reviews` counts the history entries (§6.15) that took a card's
+  `status` from `review` to `done` or `in_progress` that day.
+- **What the hub cannot know.** `reviews` depends on history: for a
+  day before the hub kept it, the value is `null`, and
+  `coverage.reviews_since` says from when the number is real; a
+  redacted history entry (§8.5) is not counted, so on any day the
+  number is a lower bound. Every other series is derived from rows the
+  hub keeps for its own work, and is exact as far as those rows exist.
+- **Returning** counts humans whose first activity ever — the earliest
+  of their first session and first event, not the first within the
+  window — lies 7 (30) or more days back and who were active within the
+  last 7 (30) days: the one number that says whether people come back.
+  A deleted account is not counted.
+- The hub may compute an answer once an hour per `days` value and keep
+  it (`as_of` says when); the counts are derived, never written
+  anywhere. Nothing here names a person: counts only
+  (`context/trust.md`, the instance admin sees counts).
+
+### 16.7 Landing page
+
+What a visitor who is not signed in sees at the dashboard's root. By
+default — on every self-hosted and local instance — that is the bare
+login page, as today. An instance whose operator wants a face puts it
+here: the content lives in the database, written by the instance admin,
+never in the repository, so the code stays the same for everyone and
+the hosted instance's words are the operator's.
+
+```
+GET, PATCH /admin/settings/landing
+```
+
+Scope `instance:admin`, human only (§16.1). Admin values only — there
+is no environment form: the page is content, not deployment.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | whether the root shows the landing page to visitors who are not signed in |
+| `title` | `null` | 1–120 characters, the page's heading and `<title>` |
+| `markdown` | `null` | the body, at most 64 KiB of Markdown under the rules below; required when `enabled` |
+| `cta` | `null` | `{label, href}`: a button; `label` 1–40 characters, `href` a dashboard route (`/#/login`, `/#/register`) or an `https` URL |
+
+```json
+{ "enabled": true, "title": "Bring your own coding agent.",
+  "markdown": "…", "cta": { "label": "Sign in", "href": "/#/login" },
+  "updated_at": "2026-10-25T10:30:00Z", "updated_by": "hum-maintainer" }
+```
+
+- **Markdown rules.** Text only in this version: headings, paragraphs,
+  emphasis, lists, block quotes, fenced code and links — no images,
+  because the hub has no public image store (avatars, logos and banners
+  are read by members, §6.10, §11.2, and this page is for visitors) —
+  and no raw HTML: a line with an HTML tag outside fenced code is
+  `invalid` with `details.fields.markdown` naming it, while HTML inside
+  fenced code is text and stays inert. A link is an `https` URL or a
+  dashboard route, an absolute path beginning with `/#/`; anything else
+  (`http`, `javascript`, `data`, a protocol-relative `//`, credentials
+  in the URL, a lookalike prefix) is `invalid` the same way. The
+  dashboard renders it with its card-body renderer — text nodes, safe
+  links — extended for this surface by the dashboard-route link alone;
+  `title` and the `cta` label are text nodes. What the hub validates
+  and what the dashboard renders are the same list, kept in step. The
+  text is the operator's and is shown as written; it is not a mention
+  and not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Reading it.** `GET /landing` is unauthenticated on the public host
+  (never on the join host, §1.1) and answers `{enabled, title,
+  markdown, cta, updated_at}` — `{enabled: false}` alone when disabled
+  — the same body for every visitor, with `Cache-Control: public,
+  max-age=60` and an ETag computed over the body (so it changes with
+  every edit and with `enabled`, and a disabled page never answers
+  `304` to an enabled ETag). An edit or a disable is visible within
+  60 s: that delay is accepted, the page is content, not a gate. It
+  carries no `updated_by`.
+- **The dashboard's part.** At `/`, a visitor without a session fetches
+  `GET /landing` and sees the landing page when `enabled`, with the
+  `cta` and a sign-in link; when disabled, or when the call fails, the
+  login page as today — the landing page can never stand between a
+  person and sign-in. A visitor with a session lands on the dashboard
+  as today; that routing is the dashboard's and is never part of the
+  public JSON. `/#/login` always reaches the login page. The landing
+  page changes nothing about §2.6.1: which sign-in methods the login
+  page offers is that section's.
+- **Changes** are recorded on the setting itself — `updated_at`,
+  `updated_by` — which is the record in this version (there is no
+  instance event list yet); they emit no project event and wake
+  nobody.
 
 ## 17. The change ticker
 

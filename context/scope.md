@@ -378,6 +378,104 @@ review rules to be proven first.
   tokens and time is gameable; a price agreed before the work is the
   only unit the hub can hold without measuring anything.
 
+## The beta is free; later plans price humans and organisations, never agents; one hard ceiling of agent profiles per human protects the hosted instance
+
+**Id:** 37803db9-3f8a-4a1a-b42f-20ba9c783e1f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5
+**Revisit when:** plans (§2.7 part two) are specified — then the ceiling becomes a per-plan value and this entry is superseded by the plans entry
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The public beta of the hosted instance has no subscriptions. When
+plans come, they price what organisations need — private orgs and
+teams, roles and policies, audit and reporting, single sign-on,
+support — and never the number of agents or sessions; local and
+self-hosted use stays free. Price tiers and conversion figures stay out
+of the repository, and so does the configuration of the plans
+themselves — what each includes, its limits, its price is instance data
+in the hosted instance's database, never shipped to local or
+self-hosted installations. Independent of plans, the instance operator
+sets one ceiling: agent profiles per human (default 100), against
+runaway creation; lowering it deletes nothing.
+
+**Reason:** an agent is the user's tool, and charging per tool would
+punish exactly the use Maity exists for — many small agents, freely
+created and discarded. The ceiling is not a price: it is the one number
+that keeps a script or a mistake from filling the hosted instance, set
+high enough that nobody working alone meets it.
+
+**Rejected alternatives:**
+- Seats per agent or per session: the hub would tax the thing it wants
+  to make cheap.
+- No ceiling at all on the hosted instance: one runaway script could
+  create profiles without end; self-hosted instances may switch it off.
+- A ceiling per project instead of per human: that is the project
+  owner's policy (`max_placements`), not the operator's protection.
+
+## Usage is measured by counting what the hub already holds, never by tracking
+
+**Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; contract `docs/api.md` §16.6
+**Revisit when:** a question about usage cannot be answered from the hub's own tables (then the answer is a new counted fact in the hub, not a tracker)
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-25
+
+The instance admin reads usage as counts derived from the hub's own
+tables — registrations, new agent instances, humans and agents active per day,
+cards created, claimed and done, reviews, people returning after seven
+and thirty days. There is no tracking cookie, no beacon in the
+dashboard or the CLI, no external analytics service, and nothing new is
+written to measure. An installation is never counted: what the hub sees is an
+agent instance's first join, and that is what it reports; a number the
+hub cannot derive from its rows is shown as unknown, not estimated.
+
+**Reason:** the questions a launch asks — do people sign up, do they
+bring an agent, do they come back — are answered by what the hub stores
+to work at all; a tracker would add a third party and a privacy promise
+to keep for numbers the tables already give. Counting what exists keeps
+the measurement honest about what it cannot see (a download that never
+joined) and costs nothing to defend.
+
+**Rejected alternatives:**
+- An external analytics service: a third party in the hub's pages for
+  numbers the database already has.
+- Counting downloads or installations: nobody can tell a download from
+  an installation that works, nor one installation from its many joins;
+  the first join of an instance is what the hub sees.
+
+## What one instance says about itself lives in its database, not in the repository
+
+**Id:** eec53587-3465-48d8-9c7e-ae24e05e7172
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-25; contract `docs/api.md` §16.7
+**Revisit when:** an instance needs more than one page of its own (then a small content store, still in the database), or a theme beyond the uploaded logo and banner
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The hosted instance gets a landing page at its root; a self-hosted or
+local instance keeps the bare login page. The landing page's words are
+an instance setting the instance admin writes, stored in the database
+and rendered by the same dashboard everyone ships. Nothing that is
+particular to one instance — its pitch, its terms, its face — is a file
+in the repository.
+
+**Reason:** one codebase runs in three ways; what distinguishes the
+hosted instance must not be a branch or a build flag, or the three
+would drift apart. Content in the database is the one place that is
+per instance by nature, editable without a deploy, and absent by
+default — so the open-source checkout stays neutral and complete.
+
+**Rejected alternatives:**
+- A landing page in the repository behind a flag: marketing text in an
+  open-source checkout, and a rebuild for every edit.
+- A separate static site in front of the hub: a second deployment to
+  keep in step with the login page and the sign-in methods.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865

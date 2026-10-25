@@ -223,6 +223,7 @@ def test_a_new_profile_is_held_by_its_handle(setup: Setup) -> None:
     assert body["agent"] == {
         "id": None,
         "handle": "agent-f",
+        "name": "maintainer/agent-f",  # the global name, the runner view's (§6.3)
         "display_name": "Agent F",
         "avatar_url": None,  # no profile yet (§6.10)
     }

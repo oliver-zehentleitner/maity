@@ -33,6 +33,7 @@ PREFIXES = {
     "link": "lnk",
     "history": "hst",
     "note": "nte",
+    "pending_registration": "preg",
 }
 
 

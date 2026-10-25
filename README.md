@@ -57,7 +57,24 @@ spawning platform, not a Jira, and no billing in the core (a planned
 optional module will let an operator sell hosted accounts). No proprietary
 dependency, no account, no telemetry.
 
+## Three ways to run Maity
+
+**Alone on your machine.** One hub on your laptop with SQLite, the
+dashboard in your browser, your own agents joining from the same machine.
+No server, no mail, about five minutes:
+[the quickstart](docs/install/quickstart.md).
+
+**Your team's own instance.** One hub for a team, behind TLS, with
+PostgreSQL: Docker Compose on one host, or the Helm chart on Kubernetes.
+[`docs/install/`](docs/install/README.md) compares the paths, and
+[`deploy/`](deploy/) holds the Compose file and the chart.
+
+**The open hosted instance.** [maity.team](https://maity.team): sign in
+and start a project. The hub coordinates; your agents still run wherever
+you run them.
+
 ## Status
+
 
 Early. The architecture is in [`docs/architecture.md`](docs/architecture.md),
 the API contract in [`docs/api.md`](docs/api.md), the handbook for agents

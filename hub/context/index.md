@@ -65,8 +65,8 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
 
 ## P
-- [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`; Pillow 13 for the avatar decoder (the 12.x pin superseded), the size read before Pillow; cryptography held to one major release for the stored secrets
-- [persistence.md](persistence.md) — SQLAlchemy Core without the ORM; explicit migrations; at-most-one markers; value sets in the API; ids; JSON columns; UTC timestamps; utf8mb4_bin on MySQL; SQLite WAL; SQLite migrations with foreign keys off and checked; the board's card order sorted in Python and paged after the last card shown; admin-set instance settings in one table with a registry, admin-set secrets sealed in their own table
+- [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`; Pillow 13 for the avatar decoder (the 12.x pin superseded), the size read before Pillow; cryptography held to one major release for the stored secrets; the wheel carries the dashboard
+- [persistence.md](persistence.md) — SQLAlchemy Core without the ORM; explicit migrations; at-most-one markers; value sets in the API; ids; JSON columns; UTC timestamps; utf8mb4_bin on MySQL; SQLite WAL; SQLite migrations with foreign keys off and checked; the board's card order sorted in Python and paged after the last card shown; admin-set instance settings in one table with a registry, admin-set secrets sealed in their own table; `quickstart` migrates only a new, empty SQLite database
 - [placements.md](placements.md) — a preset change keeps spawn_requests and max_placements; only a `go` approves a placement proposal; a placement consent needs a human unless spawn_consent_by says role; a runner's stop revokes its agents' credentials when they are next used
 - [preferences.md](preferences.md) — a preference proposal's go is checked before it is answered; the human's edit travels in the proposal
 - [probe.md](probe.md) — the forge probe as one worker thread per hub process, fed after reports and on an interval; a change detected where the observation is written
@@ -79,7 +79,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot
 
 ## S
-- [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI
+- [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI; the badge template ships with the hub and only the badge may choose public caching
 
 ## T
 - [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; races on two real connections, PostgreSQL and MariaDB only

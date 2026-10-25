@@ -98,6 +98,56 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
+    # `active`, or `pending` while a registration waits for the operator (§2.7.5).
+    Column("account_status", String(16), nullable=False, server_default="active"),
+    Column("registered_at", UtcDateTime),  # set only for an account made by registration
+    # The terms version accepted at registration, and when (§2.7.2); null otherwise.
+    Column("terms_version", String(64)),
+    Column("terms_accepted_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# A registration whose address is not yet proven (docs/api.md §2.7.1): the address, the
+# password chosen with it, where the request came from and what it saw. Deleted 24 hours
+# after it was made; `voided_at` ends it earlier (another request, the cap of five, a
+# completion of the same address). `nonce_hash` is the link's single-use nonce.
+pending_registration = Table(
+    "pending_registration",
+    metadata,
+    _id(primary_key=True),
+    Column("address", String(254), nullable=False),
+    Column("address_normalized", String(254), nullable=False, index=True),
+    Column("password_hash", String(255), nullable=False),
+    Column("source_ip", String(64), nullable=False),
+    Column("user_agent", String(512)),
+    Column("language", String(35)),
+    Column("terms_version", String(64)),  # what the request saw, never an acceptance
+    Column("next", String(2048)),
+    Column("nonce_hash", String(64)),
+    Column("wrong_passwords", Integer, nullable=False, server_default="0"),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("voided_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# One row per address that registration ever changed pending registrations for, locked
+# (`SELECT … FOR UPDATE`) to serialise those changes (§2.7.1). Only a lock, no data.
+registration_lock = Table(
+    "registration_lock",
+    metadata,
+    Column("address_normalized", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
+# An address that may not register until `until` (§16.4): after a rejection or an expired
+# approval, 30 days; the instance admin lifts it early.
+registration_block = Table(
+    "registration_block",
+    metadata,
+    Column("address_normalized", String(254), primary_key=True),
+    Column("until", UtcDateTime, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
 
@@ -147,6 +197,7 @@ project = Table(
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
+    Column("badge", String(20), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
