@@ -96,6 +96,6 @@ def downgrade() -> None:
         batch_op.drop_constraint(batch_op.f("fk_request_takeover_id_takeover"), type_="foreignkey")
         batch_op.drop_index(batch_op.f("ix_request_takeover_id"))
         batch_op.drop_column("takeover_id")
-    op.drop_index("ix_takeover_project_status", table_name="takeover")
-    op.drop_index(op.f("ix_takeover_task_id"), table_name="takeover")
+    # The table takes its indexes with it; MariaDB refuses to drop one alone that
+    # backs a foreign key.
     op.drop_table("takeover")
