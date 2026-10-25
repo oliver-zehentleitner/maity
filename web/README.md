@@ -103,7 +103,8 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
-| `#/admin/users` | the users of this hub, for the instance admin only (`member.instance_admin` on `/me`, `docs/api.md` §16); **Users** beside **Account** in the header |
+| `#/admin` | instance administration: users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
+| `#/admin/users` | compatibility route for the searchable user list |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -1097,3 +1098,22 @@ from the coordinator, roles or active members. **No check-in** disables
 the hint. Clearing the text removes the default briefing. Version, author
 and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
+
+**Instance administration** in the settings menu opens `#/admin` for the
+instance admin. It combines Users, Mail settings and Instance information;
+`#/admin/users` still opens the existing searchable user list. Each section
+is omitted when the hub does not list its route. A failed or forbidden read
+is shown without preventing the other sections from loading.
+
+Mail settings identify values set by the environment and keep them read-only.
+Only changed fields are saved. A blank password keeps the stored one; its
+explicit delete checkbox removes it. A new password is cleared from the input
+as soon as the save starts and is never shown back. Test send uses the saved
+settings and an explicit recipient, even with mail disabled, and displays
+the outcome, stage, SMTP code and server-redacted reply. It sends no mail
+until the admin presses **Send test mail**.
+
+Instance information shows the hub version, database reachability and migration
+revision/head, including a schema-outdated response. Sign-in method settings
+are deferred until their backend route lands on main; this change offers no
+controls for that unimplemented route.
