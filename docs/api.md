@@ -8745,6 +8745,74 @@ Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
   anywhere. Nothing here names a person: counts only
   (`context/trust.md`, the instance admin sees counts).
 
+### 16.7 Landing page
+
+What a visitor who is not signed in sees at the dashboard's root. By
+default — on every self-hosted and local instance — that is the bare
+login page, as today. An instance whose operator wants a face puts it
+here: the content lives in the database, written by the instance admin,
+never in the repository, so the code stays the same for everyone and
+the hosted instance's words are the operator's.
+
+```
+GET, PATCH /admin/settings/landing
+```
+
+Scope `instance:admin`, human only (§16.1). Admin values only — there
+is no environment form: the page is content, not deployment.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | whether the root shows the landing page to visitors who are not signed in |
+| `title` | `null` | 1–120 characters, the page's heading and `<title>` |
+| `markdown` | `null` | the body, at most 64 KiB of Markdown under the rules below; required when `enabled` |
+| `cta` | `null` | `{label, href}`: a button; `label` 1–40 characters, `href` a dashboard route (`/#/login`, `/#/register`) or an `https` URL |
+
+```json
+{ "enabled": true, "title": "Bring your own coding agent.",
+  "markdown": "…", "cta": { "label": "Sign in", "href": "/#/login" },
+  "updated_at": "2026-10-25T10:30:00Z", "updated_by": "hum-maintainer" }
+```
+
+- **Markdown rules.** Text only in this version: headings, paragraphs,
+  emphasis, lists, block quotes, fenced code and links — no images,
+  because the hub has no public image store (avatars, logos and banners
+  are read by members, §6.10, §11.2, and this page is for visitors) —
+  and no raw HTML: a line with an HTML tag outside fenced code is
+  `invalid` with `details.fields.markdown` naming it, while HTML inside
+  fenced code is text and stays inert. A link is an `https` URL or a
+  dashboard route, an absolute path beginning with `/#/`; anything else
+  (`http`, `javascript`, `data`, a protocol-relative `//`, credentials
+  in the URL, a lookalike prefix) is `invalid` the same way. The
+  dashboard renders it with its card-body renderer — text nodes, safe
+  links — extended for this surface by the dashboard-route link alone;
+  `title` and the `cta` label are text nodes. What the hub validates
+  and what the dashboard renders are the same list, kept in step. The
+  text is the operator's and is shown as written; it is not a mention
+  and not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Reading it.** `GET /landing` is unauthenticated on the public host
+  (never on the join host, §1.1) and answers `{enabled, title,
+  markdown, cta, updated_at}` — `{enabled: false}` alone when disabled
+  — the same body for every visitor, with `Cache-Control: public,
+  max-age=60` and an ETag computed over the body (so it changes with
+  every edit and with `enabled`, and a disabled page never answers
+  `304` to an enabled ETag). An edit or a disable is visible within
+  60 s: that delay is accepted, the page is content, not a gate. It
+  carries no `updated_by`.
+- **The dashboard's part.** At `/`, a visitor without a session fetches
+  `GET /landing` and sees the landing page when `enabled`, with the
+  `cta` and a sign-in link; when disabled, or when the call fails, the
+  login page as today — the landing page can never stand between a
+  person and sign-in. A visitor with a session lands on the dashboard
+  as today; that routing is the dashboard's and is never part of the
+  public JSON. `/#/login` always reaches the login page. The landing
+  page changes nothing about §2.6.1: which sign-in methods the login
+  page offers is that section's.
+- **Changes** are recorded on the setting itself — `updated_at`,
+  `updated_by` — which is the record in this version (there is no
+  instance event list yet); they emit no project event and wake
+  nobody.
+
 ## 17. The change ticker
 
 The maintainer's decision of 2026-10-22: every merge into the default
