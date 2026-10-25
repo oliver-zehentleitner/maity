@@ -162,41 +162,43 @@ def for_human(
         return queued
     mailable = [i for i in pending if i.kind in MAILED_KINDS]
     state = _state(conn, human_id)
-    if _instance_full(conn, budget):
-        # Over the instance's budget nothing waits in a queue of its own: the human's
-        # items stay pending and go out merged into their next mail (§18.5).
-        if state.held_since is None and mailable:
-            _set_state(conn, human_id, held_since=now)
-        return queued
+    # What falls due in this pass goes out as one mail, so a pass sends at most one per
+    # human and the instance's budget is checked right before that one send.
+    due: list[Item] = []
+    clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
         due = [i for i in mailable if modes.get(i.kind) in ("immediate", "hourly", "daily")]
-        if due:
-            queued += _send(conn, row, due, prefs, signing_key, public_url, zone)
-        _set_state(conn, human_id, held_since=None, hourly_at=now, daily_at=now)
-        return queued
-    immediate = [i for i in mailable if modes.get(i.kind) == "immediate"]
-    capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
-    if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
-        queued += _send(conn, row, immediate, prefs, signing_key, public_url, zone)
-        immediate = []
-    hour = now.replace(minute=0, second=0, microsecond=0)
-    if state.hourly_at is None:
-        _set_state(conn, human_id, hourly_at=hour)
-    elif state.hourly_at < hour:
-        # The capped immediate items of the hour go out with the hour's digest (§18.5).
-        due = [i for i in mailable if modes.get(i.kind) == "hourly"] + immediate
-        if due:
-            queued += _send(conn, row, due, prefs, signing_key, public_url, zone)
-        _set_state(conn, human_id, hourly_at=now)
-    at = time.fromisoformat(prefs["daily_at"])
-    today = datetime.combine(local.date(), at, tzinfo=zone)
-    if state.daily_at is None:
-        _set_state(conn, human_id, daily_at=now)
-    elif local >= today and state.daily_at < today:
-        due = [i for i in mailable if modes.get(i.kind) == "daily"]
-        if due:
-            queued += _send(conn, row, due, prefs, signing_key, public_url, zone)
-        _set_state(conn, human_id, daily_at=now)
+        clocks = {"hourly_at": now, "daily_at": now}
+    else:
+        immediate = [i for i in mailable if modes.get(i.kind) == "immediate"]
+        capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
+        if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
+            due += immediate
+            immediate = []
+        hour = now.replace(minute=0, second=0, microsecond=0)
+        if state.hourly_at is None:
+            clocks["hourly_at"] = hour
+        elif state.hourly_at < hour:
+            # The capped immediate items of the hour go with the hour's digest (§18.5).
+            due += [i for i in mailable if modes.get(i.kind) == "hourly"] + immediate
+            clocks["hourly_at"] = now
+        today = datetime.combine(local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone)
+        if state.daily_at is None:
+            clocks["daily_at"] = now
+        elif local >= today and state.daily_at < today:
+            due += [i for i in mailable if modes.get(i.kind) == "daily"]
+            clocks["daily_at"] = now
+    if due:
+        if _instance_full(conn, budget):
+            # Over the instance's budget nothing waits in a queue of its own: the
+            # items stay pending and go out merged into the human's next mail (§18.5).
+            _set_state(conn, human_id, held_since=state.held_since or now, **clocks)
+            return queued
+        unique = list({key(i): i for i in due}.values())
+        queued += _send(conn, row, unique, prefs, signing_key, public_url, zone)
+        clocks["held_since"] = None
+    if clocks:
+        _set_state(conn, human_id, **clocks)
     return queued
 
 
@@ -335,7 +337,8 @@ def compose(
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             if content and item.text and not item.redacted:
-                writer = items.actor_name(conn, item.actor_membership)
+                # A display name is text the hub did not write either (§18.5).
+                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(item.text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:

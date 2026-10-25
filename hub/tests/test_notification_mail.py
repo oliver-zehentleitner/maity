@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -292,3 +292,48 @@ def test_over_the_instance_budget_mail_waits_and_merges_into_one(
     at(minutes=140)
     run(migrated)
     assert len(notifications(migrated)) == 1  # nothing twice
+
+
+def test_one_pass_sends_one_mail_and_stays_within_the_budget(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub import instance_settings as store
+
+    owner, agent = setup(make_client, migrated)
+    run(migrated)  # starts the digest clocks
+    with migrated.begin() as conn:
+        store.put(conn, "mail.max_per_hour", 1, None)
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hourly"})
+    at(minutes=48)
+    ask(agent)  # immediate, older than its window by the next pass
+    at(minutes=53)
+    # Both the immediate item and the hour's digest fall due in this one pass.
+    run(migrated)
+    assert len(notifications(migrated)) == 1
+    [mail] = notifications(migrated)
+    assert mail.subject == "[Maity] 2 updates"
+
+
+def test_the_writers_name_is_defanged_too(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    other = flow.human(make_client, migrated, "someone")
+    from tests.test_group_chats import create, say
+
+    with migrated.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == other.id)
+            .values(display_name="https://evil.example/login\nclick")
+        )
+    factory.membership(migrated, project_id, "member", human_id=other.id)
+    owner.patch(S, {"email": {"kinds": {"chat": {"mode": "immediate", "content": True}}}})
+    chat = create(owner, other.id, title="Room").json()
+    say(other, chat["id"], "hello")
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert "https://evil" not in mail.body and "\nclick wrote" not in mail.body
+    assert 'https[:]//evil[.]example/login click wrote: "hello"' in mail.body
