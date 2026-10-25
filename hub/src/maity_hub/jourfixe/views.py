@@ -52,15 +52,18 @@ def _statement(statement: Any, reader: Any, readers: set[str]) -> Any:
 
 
 def _posts(round_row: Any, reader: Any, readers: set[str]) -> list[dict[str, Any]]:
-    return [
-        {**post(p), "redaction": _redaction(p.get("redaction"), reader, readers)}
-        for p in round_row.posts
-    ]
+    return [post(p, reader, readers) for p in round_row.posts]
 
 
-def post(found: dict[str, Any]) -> dict[str, Any]:
-    """A post as §20.7 shows it; `step_n` is the hub's own bookkeeping."""
-    return {k: v for k, v in found.items() if k != "step_n"}
+def post(
+    found: dict[str, Any], reader: Any = None, readers: frozenset[str] | set[str] = frozenset()
+) -> dict[str, Any]:
+    """A post as §20.7 shows it to `reader`: `step_n` is the hub's own bookkeeping, and a
+    redaction's reason only for whom §8.5 shows it (none without a reader, as on a
+    replay)."""
+    shown = {k: v for k, v in found.items() if k != "step_n"}
+    shown["redaction"] = _redaction(found.get("redaction"), reader, set(readers))
+    return shown
 
 
 def full(
