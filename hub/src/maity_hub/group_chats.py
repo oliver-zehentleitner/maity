@@ -540,11 +540,12 @@ def _announce(
     """`conversation_created`/`_updated` to the participants after the change and whoever
     it removed (§8.2); a conversation's event, so no see-all reaches it."""
     current = stays(conn, conversation.id)
+    readers = ["role:owner"] if conversation.hub_thread else []  # they read along (§20.5)
     emit(
         conn,
         conversation.project_id,
         kind,
-        list(dict.fromkeys([*audience(current), *also])),
+        list(dict.fromkeys([*audience(current), *also, *readers])),
         {**view(conn, conversation), "changed": changed},
         actor=actor,
         subject=("conversation", conversation.id),

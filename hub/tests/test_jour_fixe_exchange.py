@@ -12,7 +12,7 @@ from sqlalchemy import Engine, select
 from maity_hub import clock, events, listening
 from maity_hub import tables as t
 from maity_hub.jourfixe import worker
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 STEP = timedelta(minutes=121)  # past the default window of 120 minutes
@@ -249,3 +249,29 @@ def test_a_member_who_left_the_thread_is_no_participant_any_more(round_: Round) 
     assert round_.member.id not in view["steps"][-1]["eligible"]
     gone = round_.post(round_.member, "response")
     assert gone.json()["error"]["details"]["reason"] == "not_eligible"
+
+
+def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    # The agents are another human's: the owner reads along as owner, not as their owner.
+    other = flow.human(make_client, migrated, "other")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    lead = flow.agent(make_client, other, role="admin")
+    member = flow.agent(make_client, other)
+    now[0] += timedelta(minutes=5)  # the owner's own calls are long past: not online
+    listen(lead)
+    listen(member)
+    round_id = lead.post("/projects/maity/jour-fixe/rounds", {"reason": "r"}).json()["id"]
+    member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
+    now[0] += STEP
+    worker.sweep(migrated)
+    statement = {"topics": [{"title": "T", "items": [{"text": "ok", "from": member.id}]}]}
+    assert lead.post(rounds_path(round_id, "/statement"), statement).status_code == 201
+    round_ = owner.get(rounds_path(round_id)).json()
+    assert owner.id not in {p["member_id"] for p in round_["participants"]}
+    seen = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    jour_fixe = [e for e in seen if (e.get("payload") or {}).get("jour_fixe")]
+    assert {e["kind"] for e in jour_fixe} >= {"conversation_created", "message"}
