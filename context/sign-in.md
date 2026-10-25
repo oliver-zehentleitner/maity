@@ -195,3 +195,54 @@ maintainer's direction settled the choice, not each reason):
 - Completing only in the browser that registered (a pending cookie):
   breaks reading the mail on another device; asking again for the
   password chosen at registration proves the same person instead.
+
+## A second factor for humans starts with TOTP and recovery codes, asked after every first factor; passkeys come later
+
+**Id:** 3ec96221-b8f8-49d4-951f-9cbc9fc39d91
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's go on the two-factor sketch, 2026-10-25 (TOTP app and ten recovery codes for password accounts, per instance off / optional / required for admins, asked at a new session and before sensitive actions, agents unaffected, passkeys a later stage); contract in `docs/api.md` §2.8
+**Revisit when:** passkeys (WebAuthn) are taken up, a human CLI login is added, or the second factor is found to be skipped by a sign-in method or by a call that should have asked for it
+**See:** sign-in.md#a-sign-in-link-is-only-as-strong-as-the-mailbox--the-hub-says-so-and-makes-a-mail-sign-in-visible-instead-of-claiming-to-stop-it — 7865693c-fe02-4df8-ac9e-ebb1bbf8cf20 — as of 2026-10-25
+
+An enrolled human gives a six-digit code from an authenticator app, or
+one of ten single-use recovery codes, after the first factor of every
+new session — password, device code or mail link alike — and again
+before a short list of sensitive calls (address and password changes,
+changes of the factor itself, minting a credential, instance settings).
+The instance admin chooses `off`, `optional` or `required_admins`; a
+lost factor is reset by the instance admin only when the human confirms
+it by mail, or by the operator on the server.
+
+Which parts are confirmed and which are inferred: the factor types, the
+three policy values, step-up as such, agents being unaffected and
+passkeys later are the maintainer's go. The reasons below, asking after
+every method, `optional` as the default, the reset with proof by mail,
+the list of sensitive calls and the limits are this contract's
+proposal, marked as such in §2.8 for the maintainer to confirm.
+
+**Reason:** TOTP needs nothing from the browser or the operating
+system and nothing outside the hub — no relying-party binding to a host
+name that a self-hosted instance may change, no SMS gateway — so it
+works on every device a human uses with the dashboard, and the
+recovery codes cover the lost phone without the operator. Asking after
+every first factor, not only after the password, is what closes the
+limit the mail-link entry states: an agent that reads its human's
+mailbox can obtain a sign-in link, but not the code from the human's
+app. The reset needs the human's mailbox as well as the admin so that
+neither alone removes a human's second factor.
+
+**Rejected alternatives:**
+- SMS codes: a paid gateway, stored phone numbers the hub has no other
+  use for, and SIM swapping (as in the passwordless entry).
+- A code by mail as the second factor: mail is already a first factor
+  (§2.6.3), so for a mail sign-in both factors would be the same
+  mailbox.
+- Passkeys first: not rejected, scheduled as the second stage in the
+  maintainer's go; TOTP comes first because it has no browser or host
+  dependency (reason inferred).
+- Asking only after the password, leaving the device code and the mail
+  link as they are: the mail link would stay a way around the factor
+  (reason inferred; the device code is a proposal either way, since its
+  approval already comes from a signed-in device).
