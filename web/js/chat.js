@@ -73,7 +73,7 @@ window.Maity = window.Maity || {};
     const who = chat.kind === "group"
       ? (chat.access === "observer" ? "you read along · " : "") + (chat.closed ? "closed · " : "") + "group · " + chat.participants.map((m) => m.display_name).join(", ")
       : one
-      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + one.handle : null, one.harness || null].filter(Boolean).join(" · ")
+      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
       : chat.participants.map((m) => m.display_name).join(", ");
     const presence = chat.kind !== "group" && one ? PRESENCE_LABELS[one.presence] || one.presence || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
@@ -214,7 +214,7 @@ window.Maity = window.Maity || {};
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
-    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body));
+    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx)));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
@@ -519,7 +519,8 @@ window.Maity = window.Maity || {};
     // message with it, where it would reach the member.
     const mentionHint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
     // What the hub would take as a mention (§8.6): nothing inside code.
-    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/;
+    // A short handle or owner/handle, either with an instance's #id (§6.17).
+    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9](?:\/[a-z0-9-]*[a-z0-9])?(?:#[2-9a-hjkmnp-z]{4,5})?)(?![A-Za-z0-9_])/;
     function hintMention() {
       const found = MENTIONED.exec(withoutCode(text.value));
       clear(mentionHint);

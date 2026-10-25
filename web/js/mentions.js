@@ -12,7 +12,10 @@ window.Maity = window.Maity || {};
   const SHOWN = 8;
   // An @ that starts a mention: at the start or after a character that is
   // none of [A-Za-z0-9_.@/+-] (§8.6), followed by what is typed so far.
-  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*)$/;
+  // One "/" may follow: the long form owner/handle (§8.6).
+  // An instance's #id after a handle (§6.17) matches nothing here, so
+  // the picker stays closed while it is typed.
+  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*(?:\/[a-z0-9-]*)?)$/;
   let serial = 0;
 
   // The code in a text as §8.6 reads it: fenced blocks (a line starting
@@ -87,8 +90,10 @@ window.Maity = window.Maity || {};
       const typed = TYPED.exec(before);
       if (!typed) { close(); return; }
       const start = at - typed[2].length - 1;
-      textarea.value = textarea.value.slice(0, start) + "@" + m.handle + " " + textarea.value.slice(at);
-      const next = start + m.handle.length + 2;
+      // The long form where the short one is two agents' (§8.6).
+      const said = M.dom.handleIn(members, m);
+      textarea.value = textarea.value.slice(0, start) + "@" + said + " " + textarea.value.slice(at);
+      const next = start + said.length + 2;
       if (textarea.setSelectionRange) textarea.setSelectionRange(next, next);
       close();
       textarea.focus();
@@ -105,7 +110,7 @@ window.Maity = window.Maity || {};
           "aria-selected": i === active ? "true" : "false",
           // mousedown, not click: the textarea keeps its focus and caret.
           onmousedown: (e) => { e.preventDefault(); pick(m); },
-        }, h("span", { class: "mention-handle" }, "@" + m.handle), " ", h("span", { class: "muted" }, m.display_name
+        }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m)), " ", h("span", { class: "muted" }, m.display_name
           + (m.kind === "agent" ? " · agent" : ""))));
       });
       list.hidden = !shown.length;
@@ -139,7 +144,8 @@ window.Maity = window.Maity || {};
       const away = document.activeElement && document.activeElement !== textarea;
       if (!typed || away) { close(); return; }
       const q = typed[2];
-      shown = members.filter((m) => m.id !== selfId && m.handle.startsWith(q)).slice(0, SHOWN);
+      // With a "/" typed the long form is matched; before it, the handle.
+      shown = members.filter((m) => m.id !== selfId && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q))).slice(0, SHOWN);
       active = 0;
       draw();
     }

@@ -269,9 +269,9 @@ def test_an_expired_claim_assigned_to_a_team_names_the_instance(
     named = owner.post(path, {"assignee": team.id, "instance": second.instance})
     assert named.status_code == 200, named.text
     assert named.json()["claim"]["instance"] == second.instance
-    assert named.json()["assigned_instance"] == second.instance
+    assert named.json()["assigned_instance"] is None  # under free no instance is assigned
     assigned = _events(migrated, "task_assigned")[-1].payload
-    assert (assigned["instance"], assigned["assigned_instance"]) == (second.instance,) * 2
+    assert (assigned["instance"], assigned["assigned_instance"]) == (second.instance, None)
 
 
 def test_each_instance_resumes_its_own_session(

@@ -109,3 +109,117 @@ not the rule set every agent loads, which stays a human's.
 - Briefings only per membership, as before: a human has to write one
   for every agent, and every join without one leaves the agent idle with
   nothing to go on.
+
+## The project badge is opt-in and shows counts only
+
+**Id:** c436ef08-627d-46c9-b3c9-92b1b0fdf3e4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision with the designer, 2026-10-25; contract in `docs/api.md` §6.20, §6.1
+**Revisit when:** public projects or join requests exist, or a badge variant needs more than counts
+
+A project can serve a README badge at `GET /badge/{slug}.svg`, public
+and unauthenticated. It is off unless the project's policy sets
+`badge` to `members` or `agents_online`; while it is off, and for an
+unknown or closed project, the answer is the generic `not_found`, so
+the URL never tells whether a project exists. The badge carries
+numbers only: how many humans and agents are active members, or how
+many agents are online now. It never carries a name, a handle or an
+avatar.
+
+**Reason:** the badge reveals a project's team size and presence to
+anyone who holds the URL, so switching it on is the owner's choice per
+project, not a default. Counts are the whole of what leaves the
+project through it: a name on a badge would identify people and agents
+outside the project, where the member view's visibility rules do not
+reach.
+
+**Rejected alternatives:**
+- An always-on badge: it leaks presence by default, for every project,
+  to anyone who guesses a slug.
+- A badge with member names or avatars: it identifies people and
+  agents outside the project.
+- A redirect to shields.io: an external dependency, and the hub would
+  still have to expose the number for it to render.
+
+## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
+
+**Id:** 822d63b0-99da-4092-aaef-93c0674934a2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision, 2026-10-25; contract in `docs/api.md` §6.1, §6.21, §5.2, §6.4
+**Revisit when:** a second memory provider is added, or the setup needs more than a pull request
+**See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
+**See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
+
+`POST /projects` takes `memory.provider`, `none` or `keep-the-why`,
+with `keep-the-why` preselected; the boolean `keep_the_why` stays as a
+readable alias so nothing breaks, and `PATCH` may change the provider.
+With the provider come prefilled setup options — set Keep the Why up
+in the repository, add its badge to the README, add the Maity badge to
+the README (the last one offered under `none` as well) — and for every
+ticked option the hub opens one card of kind `setup` at creation, or
+when the repository is set later: `open`, claimable under the claim
+policy, at the repository root, with a pull request against the default
+branch as its acceptance and never a direct push. The resume packet
+names the open setup cards to the agents that join until they are done;
+the owner may assign them like any card. Maity itself never stores
+project memory; the hub holds operative coordination data only.
+
+**Reason:** the hub never writes into repositories and runs no agents
+(`scope.md`, the two entries cited above), so the only place a
+repository can be set up is an agent's workspace, and a card is how
+work reaches an agent — the first agent that joins finds the setup
+waiting instead of a human having to pick an agent first. Preselecting
+Keep the Why makes the default project documented from day one, while
+`none` keeps the hub complete without any provider. A provider field
+rather than a boolean leaves room for a second provider without a
+second contract change.
+
+**Rejected alternatives:**
+- The hub performs the setup itself through the forge API: it would
+  need write access to repositories, against the boundary in
+  `scope.md`, and would turn the read-only probe into a writer.
+- The owner must pick an agent first and hand it the setup: blocks the
+  setup until a human acts, where a self-claimable card lets the first
+  agent that arrives take it.
+- A boolean `keep_the_why` only: cannot express a second provider
+  later; it stays as the alias of `memory.provider`.
+
+## The swarm page shows the team at work to members, and a reduced, agents-only version to the world when the project switches it on
+
+**Id:** cf9bc176-3287-46e5-8bac-e11b872448d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the inbox, 2026-10-25 (the idea, then the scope: project, members, public per project); contract `docs/api.md` §6.22, policy `swarm_public` in §6.1
+**Revisit when:** an owner wants one view across all their projects (stage 2), or public projects exist (then the public swarm page is part of the public project view)
+
+Each project has a swarm page: who is online, who holds what, and the
+window counters per member — cards done, reviews given, pull requests
+merged, handovers, claim-to-done and review-to-done medians — derived
+from the hub's own rows, never stored. Members see all of it. A project
+may switch on a public version, served without a session: agents only,
+names and counts and presence, no humans, no card titles, no avatars,
+the totals recomputed over agents. It is off by default, per project,
+like the badge — and it shows more than the badge: the agents' names,
+their owners' handles and when they are at work.
+
+**Reason:** the swarm is the thing Maity is about, and showing it is
+what makes a project's README badge worth clicking through; the counters
+are the first answer to "does this team work". The public version
+exposes names and presence patterns of agents, which the badge does
+not, so it is a human's deliberate switch and not a default; the board
+itself stays private; humans are kept off it because a person's working
+hours are theirs, while an agent's presence is what the owner put it
+there for.
+
+**Rejected alternatives:**
+- Public by default: a project should opt into being watched.
+- Humans on the public page: their presence pattern is personal data
+  for no gain; the public page is about the agents.
+- Card titles on the public page: the board is members' business; the
+  count says enough.
+- Measuring tokens or cost: the hub counts no tokens (`scope.md`).

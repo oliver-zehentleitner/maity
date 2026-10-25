@@ -23,6 +23,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
+from maity_hub.mentions import global_name
 from maity_hub.views import ts
 
 PREFIX = "cnv-"
@@ -73,6 +74,21 @@ def stay(conn: Connection, conversation_id: str, membership_id: int) -> Any:
     ).first()
 
 
+def windows(conn: Connection, membership_id: int) -> dict[str, int]:
+    """Each group chat the member is in now, and the seq its current stay's window
+    starts after (§9.2)."""
+    rows = conn.execute(
+        select(
+            t.conversation_participant.c.conversation_id,
+            t.conversation_participant.c.window_after,
+        ).where(
+            t.conversation_participant.c.membership_id == membership_id,
+            t.conversation_participant.c.here.is_(True),
+        )
+    ).all()
+    return {r.conversation_id: int(r.window_after) for r in rows}
+
+
 def last_stay(conn: Connection, conversation_id: str, membership_id: int) -> Any:
     """The member's latest stay, current or not, or None."""
     return conn.execute(
@@ -92,10 +108,12 @@ def principal(row: Any) -> str:
 
 
 def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
-    """`{member_id, kind, handle, owner_id}` of each membership."""
+    """`{member_id, kind, handle, owner_id}` of each membership, and an agent's global
+    `name` (§6.3)."""
     wanted = set(membership_ids)
     if not wanted:
         return {}
+    owner = t.human.alias("owner")
     rows = conn.execute(
         select(
             t.membership.c.id,
@@ -104,9 +122,11 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             t.agent_profile.c.handle.label("agent_handle"),
             t.agent_profile.c.owner_id,
             t.human.c.handle.label("human_handle"),
+            owner.c.handle.label("owner_handle"),
         )
         .select_from(t.membership)
         .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .outerjoin(owner, owner.c.id == t.agent_profile.c.owner_id)
         .outerjoin(t.human, t.human.c.id == t.membership.c.human_id)
         .where(t.membership.c.id.in_(wanted))
     ).all()
@@ -115,6 +135,7 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             "member_id": r.agent_id or r.human_id,
             "kind": "agent" if r.agent_id else "human",
             "handle": r.agent_handle or r.human_handle,
+            **({"name": global_name(r.owner_handle, r.agent_handle)} if r.agent_id else {}),
             "owner_id": r.owner_id if r.agent_id else None,
         }
         for r in rows

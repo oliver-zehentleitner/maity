@@ -14,12 +14,15 @@ from sqlalchemy import Connection, case, select, update
 
 from maity_hub import (
     admin_agents,
+    availability,
+    briefings,
     clock,
     group_chats,
     idempotency,
     instances,
     placements,
     rules,
+    seats,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
@@ -50,14 +53,29 @@ class PausedIn(Strict):
     reason: str = markdown(min_length=1)
 
 
+class AvailabilityPolicyIn(Strict):
+    """Fields not named keep their current value (§6.12)."""
+
+    on_unavailable: str | None = None
+    substitutes: list[str] | None = Field(default=None, max_length=availability.MAX_SUBSTITUTES)
+    grace_minutes: int | None = None
+
+
+class MemberPausedIn(PausedIn):
+    instance: str | None = Field(default=None, max_length=5)  # one agent instance (§5.3)
+
+
 class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
+    availability_policy: AvailabilityPolicyIn | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
-    paused: PausedIn | None = None
+    paused: MemberPausedIn | None = None
+    # Lifting one instance's pause: `{"paused": null, "instance": "<id>"}` (§5.3).
+    instance: str | None = Field(default=None, max_length=5)
     briefing: str | None = markdown(default=None)
 
 
@@ -191,6 +209,27 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         return JSONResponse({"items": views, "next_cursor": None})
 
 
+@router.get("/projects/{slug}/members/{member_id}/briefings")
+def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """A member's briefing versions, newest first (§6.2): for the agent's owner, a member
+    of the project or not, and for a human with `members:admin`."""
+    with engine_of(request).begin() as conn:
+        project = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).first()
+        if project is None or caller.kind == "runner":
+            raise not_found()
+        try:
+            target = member_row(conn, project.id, member_id)
+        except ApiError:
+            target = None
+        if target is None or not instances.owns_agent(conn, caller, target):
+            mine = membership(conn, caller, slug)  # not_found for a stranger
+            if target is None or target.agent_id is None:
+                raise not_found()
+            if mine.kind != "human" or not mine.may("members:admin"):
+                raise forbidden("members:admin", "the agent's owner or an admin reads them")
+        return JSONResponse({"items": briefings.history(conn, target.id)})
+
+
 @router.get("/projects/{slug}/members/{member_id}")
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
@@ -246,21 +285,32 @@ def apply_patch(
     target: Any,
     values: dict[str, Any],
     pause: tuple[bool, str | None],
+    *,
+    instance: str | None = None,
 ) -> dict[str, Any]:
-    """Write a membership change and announce it; `pause` is (given, reason). Returns
-    the changed columns with their old values, for `member_changed_by_agent`."""
+    """Write a membership change and announce it; `pause` is (given, reason), for one
+    agent instance when `instance` names it. Returns the changed columns with their old
+    values, for `member_changed_by_agent`."""
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
     if changed:
+        columns = {k: v for k, v in changed.items() if k != "briefing"}
         conn.execute(
             update(t.membership)
             .where(t.membership.c.id == target.id)
-            .values(**changed, changed_by_credential=change.credential_id, changed_via=change.via)
+            .values(**columns, changed_by_credential=change.credential_id, changed_via=change.via)
         )
+        if "briefing" in changed:
+            # A new version, by whoever wrote it (§6.2); its text is never in an event.
+            briefings.record(conn, target.id, changed["briefing"], change.by, clock.now())
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
         view = member_view(conn, row)  # to everyone: never the briefing
+        if "availability_policy" in changed:
+            view["changed"] = sorted(changed)
+        if "briefing" in changed:
+            view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
         if {"role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(
@@ -288,7 +338,7 @@ def apply_patch(
             # A human's absence is the project's `absence` (§6.1, §5.3).
             raise invalid({"paused": "agents_only"}, "paused is for agent members")
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-        set_paused(conn, change, row, reason)
+        set_paused(conn, change, row, reason, instance=instance)
     return old
 
 
@@ -320,10 +370,17 @@ def patch_member(
         target = member_row(conn, mine.project.id, member_id)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never changes a human's membership")
-        if not agent_admin:
+        if "availability_policy" in given:
+            _policy_humans_only(conn, mine, caller, target, body.availability_policy)
+        own_policy = given == {"availability_policy"} and target.id == mine.id
+        if not agent_admin and not (own_policy and mine.kind == "human"):
+            # A human sets their own policy without members:admin (§6.12).
             mine.require("members:admin")
         if agent_admin:
             admin_agents.check_patch(mine, target, body, given)
+        new_policy = None
+        if "availability_policy" in given:
+            new_policy = _availability_policy(conn, mine, target, body.availability_policy)
         kind = "agent" if target.agent_id else "human"
         if body.reports_to is not None:
             # Two PATCHes naming each other must not both pass the cycle check.
@@ -342,18 +399,34 @@ def patch_member(
             values["reports_to"] = None
         if "briefing" in given:
             values["briefing"] = body.briefing or None
+        if new_policy is not None and new_policy != availability.policy_of(target):
+            values["availability_policy"] = new_policy
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
+        if "instance" in given and ("paused" not in given or body.paused is not None):
+            raise invalid({"instance": "paused_only"}, "instance goes with paused: null")
         pause = ("paused" in given, body.paused.reason if body.paused else None)
+        # One agent instance's pause instead of the membership's (§5.3).
+        instance = (body.paused.instance if body.paused else body.instance) if pause[0] else None
+        if instance is not None:
+            if target.agent_id is None:
+                raise invalid({"paused": "agents_only"}, "paused is for agent members")
+            held = instances.require_active(conn, target, instance, "instance")
+            if agent_admin:
+                admin_agents.check_instance_pause(held, mine.principal_id)
         if agent_admin and admin_agents.needs_consent(conn, mine, target, values, pause):
             # The whole PATCH waits for the owner's go (§2.3 ᵃ).
             request_id = admin_agents.propose(
-                conn, mine, caller, target, {"action": "patch", "values": values, "pause": pause}
+                conn,
+                mine,
+                caller,
+                target,
+                {"action": "patch", "values": values, "pause": pause, "instance": instance},
             )
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         change = change_of(mine, caller)
-        old = apply_patch(conn, change, target, values, pause)
+        old = apply_patch(conn, change, target, values, pause, instance=instance)
         if agent_admin and "role" in old:
             admin_agents.announce(conn, change, target, "role", old["role"], values["role"])
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
@@ -384,26 +457,83 @@ def _owner_preferences(
     return idempotency.Outcome(200, "member_team", str(row.id), view)
 
 
-def set_paused(conn: Connection, change: Change, target: Any, reason: str | None) -> None:
-    """Set or clear `paused` (§5.3), naming `change.by`. Setting it tells the member
-    itself (its long-poll wakes), `reports_to` and the admins; lifting a pause someone
-    else set tells them the same way, with `paused: null`."""
+def _policy_humans_only(
+    conn: Connection, mine: Membership, caller: Caller, target: Any, change: Any
+) -> None:
+    """Before anything else (§2.3): an agent never decides what happens to a human's
+    work, nor that a human takes over work."""
+    if caller.kind == "human":
+        return
+    if target.agent_id is None:
+        raise humans_only("a human's availability_policy is set by humans only")
+    for entry in (change.substitutes or []) if change is not None else []:
+        if entry.startswith("hum-") and _is_member(conn, mine.project.id, entry):
+            raise humans_only("only a human names a human as a substitute")
+
+
+def _is_member(conn: Connection, project_id: str, member_id: str) -> bool:
+    try:
+        member_row(conn, project_id, member_id)
+    except ApiError:
+        return False
+    return True
+
+
+def _availability_policy(
+    conn: Connection, mine: Membership, target: Any, change: Any
+) -> dict[str, Any]:
+    """The policy as it will be stored: the fields named over the current ones, `invalid`
+    naming every bad field (§6.12)."""
+    if change is None:
+        return dict(availability.DEFAULT_POLICY)
+    policy = availability.policy_of(target)
+    for name in ("on_unavailable", "grace_minutes"):
+        if getattr(change, name) is not None:
+            policy[name] = getattr(change, name)
+    if change.substitutes is not None:
+        policy["substitutes"] = list(dict.fromkeys(change.substitutes))
+    errors = availability.policy_errors(conn, mine.project.id, target, policy)
+    if errors:
+        raise invalid(errors)
+    return policy
+
+
+def set_paused(
+    conn: Connection,
+    change: Change,
+    target: Any,
+    reason: str | None,
+    *,
+    instance: str | None = None,
+) -> None:
+    """Set or clear `paused` (§5.3), naming `change.by`: the membership's, or with
+    `instance` that agent instance's alone. Setting it tells the member itself (its
+    long-poll wakes; for an instance only that instance), `reports_to` and the admins;
+    lifting a pause someone else set tells them the same way, with `paused: null`."""
     now = clock.now()
-    lifts_a_human_pause = reason is None and human_paused(target)
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.id == target.id)
-        .values(
-            paused_reason=reason,
-            paused_since=now if reason else None,
-            paused_by=change.by if reason else None,
-        )
-    )
+    values = {
+        "paused_reason": reason,
+        "paused_since": now if reason else None,
+        "paused_by": change.by if reason else None,
+    }
+    if instance is None:
+        lifts_a_human_pause = reason is None and human_paused(target)
+        conn.execute(update(t.membership).where(t.membership.c.id == target.id).values(**values))
+    else:
+        held = instances.require_active(conn, target, instance, "instance")
+        lifts_a_human_pause = reason is None and instances.human_paused(target, held)
+        conn.execute(update(t.credential).where(t.credential.c.id == held.id).values(**values))
+    availability.reconcile_ids(conn, [target.id], change.actor)
     if reason is None and not lifts_a_human_pause:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, row)
+    payload = {"session": view.get("session"), "paused": view["paused"]}
     audience = [f"member:{view['id']}", "role:admin"]
+    if instance is not None:
+        shown = next(i for i in view["instances"] if i["id"] == instance)
+        payload = {"session": shown["session"], "paused": shown["paused"], "instance": instance}
+        audience[0] = instances.token(view["id"], instance)
     if view["reports_to"]:
         audience.insert(1, f"member:{view['reports_to']}")
     emit(
@@ -411,7 +541,7 @@ def set_paused(conn: Connection, change: Change, target: Any, reason: str | None
         change.project.id,
         "session_paused",
         audience,
-        {"session": view.get("session"), "paused": view["paused"]},
+        payload,
         actor=change.actor,
         subject=("member", view["id"]),
     )
@@ -420,6 +550,11 @@ def set_paused(conn: Connection, change: Change, target: Any, reason: str | None
 def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
     its claims released, every `reports_to` that names it cleared."""
+    from maity_hub import onboarding
+
+    onboarding.member_removed(
+        conn, change.project.id, target.agent_id or target.human_id, change.actor
+    )
     now = clock.now()
     credentials = (
         conn.execute(
@@ -497,6 +632,8 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    seats.reset(conn, change.project.id, removed, change.actor)
+    instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
 
 
 @router.delete("/projects/{slug}/members/{member_id}")

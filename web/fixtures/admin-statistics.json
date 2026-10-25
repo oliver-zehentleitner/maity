@@ -1,0 +1,351 @@
+{
+ "as_of": "2026-10-25T10:00:00Z",
+ "window_days": 30,
+ "totals": {
+  "humans": 41,
+  "humans_pending": 2,
+  "agents": 117,
+  "projects": 12,
+  "instances_online": 23,
+  "humans_with_an_agent": 29
+ },
+ "days": [
+  {
+   "date": "2026-10-25",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 30,
+   "cards_created": 20,
+   "cards_claimed": 18,
+   "cards_done": 12,
+   "reviews": 8
+  },
+  {
+   "date": "2026-10-24",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 41,
+   "cards_created": 25,
+   "cards_claimed": 21,
+   "cards_done": 19,
+   "reviews": 10
+  },
+  {
+   "date": "2026-10-23",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 35,
+   "cards_created": 30,
+   "cards_claimed": 24,
+   "cards_done": 17,
+   "reviews": 12
+  },
+  {
+   "date": "2026-10-22",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 46,
+   "cards_created": 22,
+   "cards_claimed": 27,
+   "cards_done": 15,
+   "reviews": 8
+  },
+  {
+   "date": "2026-10-21",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 40,
+   "cards_created": 27,
+   "cards_claimed": 19,
+   "cards_done": 13,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-20",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 34,
+   "cards_created": 32,
+   "cards_claimed": 22,
+   "cards_done": 20,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-19",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 45,
+   "cards_created": 24,
+   "cards_claimed": 25,
+   "cards_done": 18,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-18",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 39,
+   "cards_created": 29,
+   "cards_claimed": 28,
+   "cards_done": 16,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-17",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 33,
+   "cards_created": 21,
+   "cards_claimed": 20,
+   "cards_done": 14,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-16",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 44,
+   "cards_created": 26,
+   "cards_claimed": 23,
+   "cards_done": 12,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-15",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 38,
+   "cards_created": 31,
+   "cards_claimed": 26,
+   "cards_done": 19,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-14",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 32,
+   "cards_created": 23,
+   "cards_claimed": 18,
+   "cards_done": 17,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-13",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 43,
+   "cards_created": 28,
+   "cards_claimed": 21,
+   "cards_done": 15,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-12",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 37,
+   "cards_created": 20,
+   "cards_claimed": 24,
+   "cards_done": 13,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-11",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 31,
+   "cards_created": 25,
+   "cards_claimed": 27,
+   "cards_done": 20,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-10",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 42,
+   "cards_created": 30,
+   "cards_claimed": 19,
+   "cards_done": 18,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-09",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 36,
+   "cards_created": 22,
+   "cards_claimed": 22,
+   "cards_done": 16,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-08",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 30,
+   "cards_created": 27,
+   "cards_claimed": 25,
+   "cards_done": 14,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-07",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 41,
+   "cards_created": 32,
+   "cards_claimed": 28,
+   "cards_done": 12,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-06",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 35,
+   "cards_created": 24,
+   "cards_claimed": 20,
+   "cards_done": 19,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-05",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 46,
+   "cards_created": 29,
+   "cards_claimed": 23,
+   "cards_done": 17,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-04",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 40,
+   "cards_created": 21,
+   "cards_claimed": 26,
+   "cards_done": 15,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-03",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 34,
+   "cards_created": 26,
+   "cards_claimed": 18,
+   "cards_done": 13,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-02",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 45,
+   "cards_created": 31,
+   "cards_claimed": 21,
+   "cards_done": 20,
+   "reviews": null
+  },
+  {
+   "date": "2026-10-01",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 39,
+   "cards_created": 23,
+   "cards_claimed": 24,
+   "cards_done": 18,
+   "reviews": null
+  },
+  {
+   "date": "2026-09-30",
+   "registrations": 3,
+   "new_instances": 2,
+   "humans_active": 12,
+   "agents_active": 33,
+   "cards_created": 28,
+   "cards_claimed": 27,
+   "cards_done": 16,
+   "reviews": null
+  },
+  {
+   "date": "2026-09-29",
+   "registrations": 1,
+   "new_instances": 0,
+   "humans_active": 14,
+   "agents_active": 44,
+   "cards_created": 20,
+   "cards_claimed": 19,
+   "cards_done": 14,
+   "reviews": null
+  },
+  {
+   "date": "2026-09-28",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 16,
+   "agents_active": 38,
+   "cards_created": 25,
+   "cards_claimed": 22,
+   "cards_done": 12,
+   "reviews": null
+  },
+  {
+   "date": "2026-09-27",
+   "registrations": 2,
+   "new_instances": 3,
+   "humans_active": 13,
+   "agents_active": 32,
+   "cards_created": 30,
+   "cards_claimed": 25,
+   "cards_done": 19,
+   "reviews": null
+  },
+  {
+   "date": "2026-09-26",
+   "registrations": 0,
+   "new_instances": 1,
+   "humans_active": 15,
+   "agents_active": 43,
+   "cards_created": 22,
+   "cards_claimed": 28,
+   "cards_done": 17,
+   "reviews": null
+  }
+ ],
+ "returning": {
+  "after_7_days": 11,
+  "after_30_days": 4
+ },
+ "coverage": {
+  "reviews_since": "2026-10-22"
+ }
+}

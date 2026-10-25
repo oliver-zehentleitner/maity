@@ -6,6 +6,7 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
@@ -64,6 +65,13 @@ class Settings:
     # environment switches them (§2.6.6); None leaves them to the instance admin.
     sign_in_device_code: bool | None = None
     sign_in_email_link: bool | None = None
+    # MAITY_ON_RUNNER_REVOKE: what revoking a runner does to its agents where a project
+    # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
+    # is refused).
+    on_runner_revoke: str = "keep"
+    # MAITY_REGISTRATION*, MAITY_TERMS_*: what the environment sets for registration
+    # (§16.4); None where it leaves the instance admin to decide.
+    registration: Any = None
 
     @property
     def join_host(self) -> str | None:
@@ -107,6 +115,10 @@ class Settings:
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
+            on_runner_revoke=parse_choice(
+                env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
+            ),
+            registration=parse_registration(env),
         )
 
 
@@ -118,11 +130,32 @@ def parse_secret_key(value: str) -> bytes | None:
         raise ConfigError(str(error)) from None
 
 
+def parse_registration(env: dict[str, str]) -> Any:
+    """`registration.RegistrationEnvironment`, imported here so that loading the settings
+    does not load the tables."""
+    from maity_hub import registration
+
+    try:
+        return registration.parse(env)
+    except registration.RegistrationConfigError as error:
+        raise ConfigError(str(error)) from None
+
+
 def parse_mail(env: dict[str, str]) -> MailEnvironment:
     try:
         return mail_environment.parse(env)
     except mail_environment.MailConfigError as error:
         raise ConfigError(str(error)) from None
+
+
+def parse_choice(env: dict[str, str], name: str, choices: tuple[str, ...], default: str) -> str:
+    """One of `choices`; unset is the default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if value not in choices:
+        raise ConfigError(f"{name} must be one of {', '.join(choices)}: {value!r}")
+    return value
 
 
 def parse_number(
@@ -235,12 +268,14 @@ def derive_public_url(host: str, port: int) -> str:
 
 
 def checkout_web_dir() -> Path | None:
-    """`web/` beside `hub/` when running from a checkout, else nothing."""
+    """`web/` beside `hub/` when running from a checkout, else the dashboard an installed
+    package carries (`maity_hub/web`, built in by `pyproject.toml`), else nothing."""
     package = Path(__file__).resolve().parent
     hub = package.parents[1]
     if package.parent.name == "src" and (hub / "pyproject.toml").is_file():
         return hub.parent / "web"
-    return None
+    packaged = package / "web"
+    return packaged if (packaged / "index.html").is_file() else None
 
 
 _DRIVERS = {

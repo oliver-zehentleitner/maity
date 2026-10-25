@@ -9,7 +9,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, formatAgo, formatTime } = M.dom;
+  const { h, append, clear, formatAgo, formatTime } = M.dom;
 
   const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 
@@ -124,8 +124,21 @@ window.Maity = window.Maity || {};
     return [ref(ctx, req, person), " · " + person.role + (person.session_id ? " · session " + person.session_id : "")];
   }
 
+  // The project a request's text belongs to, for its ids as links
+  // (js/ids.js): none for a personal request from a project the human is
+  // not in, whose pages would not open.
+  function textAt(ctx, req) {
+    const p = ctx.projects.find((x) => x.slug === req.slug);
+    const slug = req.personal && !p ? null : req.slug;
+    return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null) };
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
+    const at = textAt(ctx, req);
+    // The title is inside the entry's button, where a link cannot be: its
+    // ids are offered here.
+    const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
       ctx.scope === "all" && req.personal
@@ -134,6 +147,7 @@ window.Maity = window.Maity || {};
       ctx.scope === "all" && !req.personal
         ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
+      titleRefs.length ? [h("dt", null, "In the title"), h("dd", { class: "title-refs" }, titleRefs.map((a, i) => [i ? ", " : null, a]))] : null,
       h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : "—"),
       req.on_behalf_of ? [h("dt", null, "On behalf of"), h("dd", null, who(ctx, req, req.on_behalf_of))] : null,
       req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req))] : null,
@@ -141,7 +155,7 @@ window.Maity = window.Maity || {};
       req.task
         ? [h("dt", null, "Card"), h("dd", null, req.personal
           ? req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
-          : h("a", { href: ctx.projectLink(req.slug, "board") },
+          : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) },
             req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
         : null,
       h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
@@ -152,13 +166,13 @@ window.Maity = window.Maity || {};
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref);
+    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at);
     if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
     if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {
       append(body, h("h3", { class: "sub" }, "Options it sees"),
         h("ul", { class: "options" }, req.options.map((o) =>
-          h("li", null, h("strong", null, o.label), o.detail ? " — " + o.detail : ""))));
+          h("li", null, h("strong", null, M.ids.link(o.label, at)), o.detail ? [" — ", M.ids.link(o.detail, at)] : ""))));
     }
     const nis = req.needs_in_session;
     if (nis) {
@@ -168,8 +182,12 @@ window.Maity = window.Maity || {};
         nis.reason));
     }
 
+    const preference = M.preferences && M.preferences.isProposal(req);
+    // Not read in full: no reply that could apply a proposal unseen.
+    const unread = req.personal && req.status === "open" && req.unreadable;
     if (req.status !== "open") {
       const a = req.answer;
+      if (preference) append(body, M.preferences.outcome(req));
       append(body, h("p", { class: "answered" },
         (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req)),
         a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
@@ -188,6 +206,22 @@ window.Maity = window.Maity || {};
         status.fail("Not sent: ", err);
       });
     };
+
+    if (unread) {
+      const again = h("button", { type: "button", onclick: async () => {
+        again.disabled = true;
+        await readInFull(req);
+        const fresh = entryBody(ctx, req, names, onAnswer, onLater);
+        append(clear(body), Array.from(fresh.childNodes));
+      } }, "Try again");
+      append(body, h("div", { class: "error", role: "alert" },
+        h("p", null, "This request could not be read in full, so it is not offered for an answer yet: it may be a proposal whose texts you should see first. "
+          + (req.unreadable.message || req.unreadable.code || "")),
+        again));
+    }
+    // A preference proposal (§19.4) is answered in its review: accept,
+    // accept an edit, decline; Later, talk and Withdraw stay below.
+    if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload)));
 
     const textId = "reply-" + req.slug + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
@@ -219,10 +253,11 @@ window.Maity = window.Maity || {};
           },
         }, "Withdraw") : null,
         // The primary reply last, the others in the hub's order before it.
-        [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
-          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
+        (preference || unread ? [] : [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
+          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")]).map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
-      h("div", { class: "free-text" },
+      // A preference proposal's words go with its Decline, in the review.
+      preference || unread ? null : h("div", { class: "free-text" },
         h("label", { for: textId }, "Free text (" + M.dom.SEND_KEYS + " sends)"),
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
@@ -241,6 +276,15 @@ window.Maity = window.Maity || {};
     return body;
   }
 
+  // A personal request as GET /requests/{id} has it: a proposal with its
+  // texts (§19.4), or the error that kept it from being read.
+  function readInFull(r) {
+    return M.api.get("/requests/" + encodeURIComponent(r.id)).then((full) => {
+      delete r.unreadable;
+      if (full.memory_proposal) r.memory_proposal = full.memory_proposal;
+    }, (err) => { r.unreadable = err; });
+  }
+
   async function load(ctx) {
     if (ctx.scope === "project") {
       const requests = await M.api.getAll(ctx.base + "/requests?status=all");
@@ -249,11 +293,28 @@ window.Maity = window.Maity || {};
     }
     const requests = await M.api.getAll("/requests");
     requests.items.forEach((r) => { r.slug = r.project.slug; });
+    // A list shows no proposal (§7): an open personal request is read on its
+    // own, so a preference proposal (§19.4) comes with its review's texts.
+    // One that cannot be read is offered no reply until it is: it may be a
+    // proposal whose texts the human has to see first.
+    await Promise.all(requests.items.filter((r) => r.personal && r.status === "open").map(readInFull));
     return requests.items;
   }
 
-  M.views.inbox = async function (ctx, root) {
+  // args[0]: a request to show (#/p/<slug>/inbox/<id>, an id's link,
+  // js/ids.js): opened, and listed among the answered when it is one; an id
+  // the project's inbox does not hold is said.
+  M.views.inbox = async function (ctx, root, args) {
     const items = await load(ctx);
+    const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
+    const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
+    let showAll = false;
+    if (wantedReq) {
+      ui.current = keyOf(wantedReq);
+      // An answered one is shown among the answered for this view only;
+      // the inbox's own choice stays as it was.
+      if (wantedReq.status !== "open") showAll = true;
+    }
     const names = {
       member: (id) => (ctx.nameOf ? ctx.nameOf(id) : id || "—"),
       project: (req) => (req.project && req.project.name)
@@ -262,7 +323,7 @@ window.Maity = window.Maity || {};
     const sorts = ctx.scope === "all" ? ["priority", "date", "agent", "project"] : ["priority", "date", "agent"];
     if (!sorts.includes(ui.sort)) ui.sort = "priority";
     // The cross-project view lists what is waiting, nothing else.
-    const show = () => (ctx.scope === "all" ? "open" : ui.show);
+    const show = () => (ctx.scope === "all" ? "open" : showAll ? "all" : ui.show);
 
     // The project filter is the cross-project view's only; a project no
     // longer in the switcher is no filter (it would empty the list for good).
@@ -307,7 +368,7 @@ window.Maity = window.Maity || {};
       }
       const entry = (req) => {
         const expanded = keyOf(req) === ui.current;
-        return h("li", { class: "entry" + (expanded ? " current" : "") + (req.status !== "open" ? " done" : "") },
+        return h("li", { class: "entry" + (expanded ? " current" : "") + (req.status !== "open" ? " done" : ""), "data-request": req.id },
           ctx.scope === "all"
             ? h("div", { class: "entry-row" }, projectBadge(ctx, req, names), entrySummary(ctx, req, names, expanded, () => {
               ui.current = expanded ? null : keyOf(req);
@@ -383,9 +444,9 @@ window.Maity = window.Maity || {};
     sorts.map((s) => h("option", { value: s, selected: s === ui.sort }, s)));
     const showSelect = ctx.scope === "all" ? null : h("select", {
       id: "inbox-show",
-      onchange: (e) => { ui.show = e.target.value; draw(); },
+      onchange: (e) => { ui.show = e.target.value; showAll = false; draw(); },
     },
-    [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === ui.show }, l)));
+    [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === show() }, l)));
 
     // The cross-project view: a project filter and grouping by project.
     const projectSelect = ctx.scope === "all" ? h("select", {
@@ -410,8 +471,14 @@ window.Maity = window.Maity || {};
         projectSelect ? [h("label", { for: "inbox-project" }, "Project"), projectSelect,
           h("label", { class: "check", for: "inbox-group" }, groupBox, " Group by project")] : null),
       listStatus.el,
+      wanted && !wantedReq ? h("p", { class: "muted wanted-note", role: "status" }, "No request " + wanted + " in this project's inbox.") : null,
       list);
     draw();
+    if (wantedReq) {
+      const head = Array.from(list.querySelectorAll("li.entry")).filter((li) => li.getAttribute("data-request") === wanted)
+        .map((li) => li.querySelector("button.entry-head"))[0];
+      if (head) window.setTimeout(() => head.focus(), 0);
+    }
     activity = await M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);

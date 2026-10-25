@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import events, mentions
+from maity_hub import clock, events, mentions
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from tests import factory, flow
@@ -53,15 +53,31 @@ def agent_named(
         ("x\x85~~~\n@agent-b", ["agent-b"]),
         ("x\x0b```\n@agent-b", ["agent-b"]),
         ("```\r\n@agent-b\r\n```\r\n@agent-c", ["agent-c"]),
+        # The global name (§6.3): a run, `/`, a run — judged whole.
+        ("ask @oliver/agent-b about it", ["oliver/agent-b"]),
+        ("(@oliver/agent-b).", ["oliver/agent-b"]),
+        ("@oliver/agent-b-", ["oliver/agent-b"]),
+        ("@oliver/agent-b/docs", ["oliver/agent-b"]),
+        ("@oliver/", ["oliver"]),  # a trailing `/` is a boundary of the short form
+        ("@oliver/-", ["oliver"]),
+        ("@oliver/agent_b", []),  # no boundary after the global name: no mention at all
+        ("@oliver/Agent-B", ["oliver"]),
+        ("a/@oliver/agent-b", []),
+        ("oliver@example.org/agent-b", []),
+        ("`@oliver/agent-b` and @oliver/agent-c", ["oliver/agent-c"]),
+        ("@all/agent-b @owner/agent-c", ["all/agent-b", "owner/agent-c"]),  # names, not groups
     ],
 )
 def test_the_rule(text: str, handles: list[str]) -> None:
-    assert [h for _, _, h in mentions.candidates(text)] == handles
+    found = mentions.candidates(text)
+    assert [f"{c.owner}/{c.handle}" if c.owner else c.handle for c in found] == handles
 
 
 def test_offsets_count_code_points() -> None:
-    [(offset, length, handle)] = mentions.candidates("ä 😀 @agent-b")
-    assert (offset, length, handle) == (4, 8, "agent-b")
+    [(offset, length, handle, owner)] = mentions.candidates("ä 😀 @agent-b")
+    assert (offset, length, handle, owner) == (4, 8, "agent-b", None)
+    [found] = mentions.candidates("ä @oliver/agent-b.")
+    assert (found.offset, found.length, found.handle, found.owner) == (2, 15, "agent-b", "oliver")
 
 
 # --- messages ------------------------------------------------------------------------------
@@ -81,7 +97,15 @@ def test_a_message_mention_joins_the_audience(
     event = response.json()
     assert f"member:{named.id}" in event["audience"]
     assert event["payload"]["mentions"] == [
-        {"member_id": named.id, "handle": "agent-c", "field": "body", "offset": 3, "length": 8}
+        {
+            "member_id": named.id,
+            "handle": "agent-c",
+            "name": "maintainer/agent-c",
+            "instance": None,
+            "field": "body",
+            "offset": 3,
+            "length": 8,
+        }
     ]
 
 
@@ -110,6 +134,118 @@ def test_a_chat_is_never_resolved(make_client: ClientFactory, owner: flow.Human)
     events = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
     [chat] = [e for e in events if e["kind"] == "message" and e["payload"].get("type") == "chat"]
     assert chat["payload"]["mentions"] == [] and f"member:{other.id}" not in chat["audience"]
+
+
+def second_owners_agent(engine: Engine, owner_handle: str, handle: str) -> str:
+    """Another owner's agent with the same short handle, a member of the project."""
+    with engine.connect() as conn:
+        known = conn.execute(select(t.human.c.id).where(t.human.c.handle == owner_handle)).scalar()
+    owner_id = known or factory.human(engine, owner_handle)
+    agent_id = f"agt-{owner_handle}-{handle}"
+    with engine.begin() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            insert(t.agent_profile).values(
+                id=agent_id,
+                owner_id=owner_id,
+                handle=handle,
+                display_name=handle,
+                created_at=clock.now(),
+            )
+        )
+    factory.membership(engine, project_id, "member", agent_id=agent_id)
+    return agent_id
+
+
+def test_the_global_name_resolves_and_a_shared_short_handle_is_refused(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    mine = agent_named(make_client, owner, "agent-b")
+    alone = say(writer, to=owner.id, body="cc @agent-b").json()
+    assert [m["member_id"] for m in alone["payload"]["mentions"]] == [mine.id]
+    theirs = second_owners_agent(migrated, "anna", "agent-b")
+    refused = say(writer, to=owner.id, body="cc @agent-b and @agent-a")
+    assert refused.status_code == 400, refused.text
+    details = refused.json()["error"]["details"]
+    assert details == {
+        "fields": {"body": "ambiguous_mention"},
+        "mentions": {"agent-b": ["anna/agent-b", "maintainer/agent-b"]},
+    }
+    long = say(writer, to=owner.id, body="cc @anna/agent-b, not @maintainer/agent-b.").json()
+    assert long["payload"]["mentions"] == [
+        {
+            "member_id": theirs,
+            "handle": "agent-b",
+            "name": "anna/agent-b",
+            "instance": None,
+            "field": "body",
+            "offset": 3,
+            "length": 13,
+        },
+        {
+            "member_id": mine.id,
+            "handle": "agent-b",
+            "name": "maintainer/agent-b",
+            "instance": None,
+            "field": "body",
+            "offset": 22,
+            "length": 19,
+        },
+    ]
+    assert f"member:{theirs}" in long["audience"] and f"member:{mine.id}" in long["audience"]
+    # A global name that is no member, and a human's handle, which has no long form.
+    other = say(writer, to=owner.id, body="@nobody/agent-b @maintainer/maintainer @maintainer")
+    [human] = other.json()["payload"]["mentions"]
+    assert (human["member_id"], human["handle"], human["name"]) == (owner.id, "maintainer", None)
+
+
+def test_a_human_comes_first_and_the_refusal_names_every_shared_handle(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    # Two agents named like the human: `@maintainer` is the human, the agents have long forms.
+    second_owners_agent(migrated, "anna", "maintainer")
+    second_owners_agent(migrated, "bob", "maintainer")
+    plain = say(writer, to=owner.id, body="@maintainer @anna/maintainer").json()
+    assert [m["member_id"] for m in plain["payload"]["mentions"]] == [
+        owner.id,
+        "agt-anna-maintainer",
+    ]
+    agent_named(make_client, owner, "agent-z")
+    second_owners_agent(migrated, "anna", "agent-z")
+    second_owners_agent(migrated, "bob", "agent-b")
+    agent_named(make_client, owner, "agent-b")
+    refused = say(writer, to=owner.id, body="@agent-z then @agent-b")
+    assert refused.json()["error"]["details"]["mentions"] == {
+        "agent-b": ["bob/agent-b", "maintainer/agent-b"],
+        "agent-z": ["anna/agent-z", "maintainer/agent-z"],
+    }
+    assert list(refused.json()["error"]["details"]["mentions"]) == ["agent-b", "agent-z"]
+
+
+def test_a_card_body_with_a_shared_short_handle_stores_nothing(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent_named(make_client, owner, "agent-b")
+    second_owners_agent(migrated, "anna", "agent-b")
+    refused = owner.post("/projects/maity/tasks", {"title": "x", "body": "for @agent-b"})
+    assert refused.json()["error"]["details"]["fields"] == {"body": "ambiguous_mention"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.card)).first() is None
+
+
+def test_ambiguity_is_judged_among_whom_a_text_may_name(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    mine = agent_named(make_client, owner, "agent-b")
+    theirs = second_owners_agent(migrated, "anna", "agent-b")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        found = mentions.resolve(conn, project_id, "@agent-b", "body", among={theirs})
+        assert [m["member_id"] for m in found] == [theirs]
+        assert mentions.resolve(conn, project_id, "@agent-b", "body", among={owner.id}) == []
+    del mine
 
 
 def test_mentions_are_read_only(make_client: ClientFactory, owner: flow.Human) -> None:

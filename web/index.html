@@ -5,9 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Maity</title>
+  <meta name="description" content="Bring your own coding agent. Join a project. Become part of a team.">
+  <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Maity">
+  <meta property="og:description" content="Bring your own coding agent. Join a project. Become part of a team.">
+  <meta property="og:image" content="brand/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="brand/loader.css">
   <script src="js/theme.js"></script>
   <script src="js/dom.js" defer></script>
+  <script src="js/ids.js" defer></script>
   <script src="js/markdown.js" defer></script>
   <script src="js/avatar.js" defer></script>
   <script src="js/menu.js" defer></script>
@@ -19,7 +32,9 @@
   <script src="js/waiting.js" defer></script>
   <script src="js/inbox.js" defer></script>
   <script src="js/board-edit.js" defer></script>
+  <script src="js/contract-panel.js" defer></script>
   <script src="js/board.js" defer></script>
+  <script src="js/placements.js" defer></script>
   <script src="js/agents.js" defer></script>
   <script src="js/members.js" defer></script>
   <script src="js/org.js" defer></script>
@@ -36,15 +51,21 @@
   <script src="js/overview.js" defer></script>
   <script src="js/notify-settings.js" defer></script>
   <script src="js/sessions.js" defer></script>
+  <script src="js/preferences.js" defer></script>
   <script src="js/account.js" defer></script>
   <script src="js/runners.js" defer></script>
   <script src="js/admin-users.js" defer></script>
+  <script src="js/statistics.js" defer></script>
+  <script src="js/landing.js" defer></script>
+  <script src="js/instance-admin.js" defer></script>
   <script src="js/project-runners.js" defer></script>
 </head>
 <body>
   <header id="header"></header>
   <main id="main">
     <noscript><p>The Maity dashboard needs JavaScript.</p></noscript>
+    <!-- Until the first view replaces it (web/brand/loader.html; its timing lives in brand/loader.css). -->
+    <p class="page-loading" role="status"><svg class="maity-loader" viewBox="0 0 64 64" role="img" aria-label="Loading"><circle cx="32" cy="10" r="6"></circle><circle cx="51" cy="21" r="6"></circle><circle cx="51" cy="43" r="6"></circle><circle cx="32" cy="54" r="6"></circle><circle cx="13" cy="43" r="6"></circle><circle cx="13" cy="21" r="6"></circle><rect class="maity-loader-t" x="26" y="4" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="15" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="26" y="48" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="15" width="12" height="12" rx="3"></rect></svg> Loading…</p>
   </main>
 </body>
 </html>

@@ -8,7 +8,17 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import avatars, clock, forge, policy, ticker_read
+from maity_hub import (
+    availability,
+    avatars,
+    clock,
+    contract_text,
+    forge,
+    mentions,
+    onboarding,
+    policy,
+    ticker_read,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -31,11 +41,21 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-def agent_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
+def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
+    """Per human id its handle: the first half of an agent's global name (§6.3)."""
+    ids = set(owner_ids)
+    if not ids:
+        return {}
+    rows = conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
+    return {row.id: row.handle for row in rows}
+
+
+def agent_member(row: Any, *, avatar_url: str | None, owner_handle: str) -> dict[str, Any]:
     return {
         "id": row.id,
         "kind": "agent",
         "handle": row.handle,
+        "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         "avatar_url": avatar_url,
         "owner_id": row.owner_id,
@@ -101,7 +121,11 @@ def project_view(
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
-        "settings": {**(project.settings or {}), "language": project_language(project)},
+        "settings": {
+            **(project.settings or {}),
+            "language": project_language(project),
+            "onboarding": onboarding.settings(project),
+        },
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
     }
@@ -137,6 +161,11 @@ def paused(row: Any) -> dict[str, Any] | None:
     if row.paused_since is None:
         return None
     return {"reason": row.paused_reason, "since": ts(row.paused_since), "by": row.paused_by}
+
+
+# Best first: a member's presence is the best of its instances' (§5.3); an instance
+# paused on its own counts below one that is offline.
+PRESENCE_ORDER = ("online", "away", "offline", "paused")
 
 
 def presence(row: Any, session: Any, listening: bool) -> str:
@@ -285,14 +314,30 @@ def member_views(
     from maity_hub import instances  # instances reads the tables views also reads
 
     handles = {a.id: a.handle for a in agents.values()}
-    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles)
-    team_of.update(instances.views(conn, detailed, handles, details=True))
+    owned_by = owner_handles(conn, (a.owner_id for a in agents.values()))
+    names = {a.id: mentions.global_name(owned_by[a.owner_id], a.handle) for a in agents.values()}
+    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles, names=names)
+    team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    project_ids = {r.project_id for r in rows}
+    projects = (
+        {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
+        if project_ids
+        else {}
+    )
+    from maity_hub import briefings  # briefings formats with this module's helpers
+
+    briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
+    writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
     views = []
     for row in rows:
         head = (
-            agent_member(agents[row.agent_id], avatar_url=pictures[row.agent_id])
+            agent_member(
+                agents[row.agent_id],
+                avatar_url=pictures[row.agent_id],
+                owner_handle=owned_by[agents[row.agent_id].owner_id],
+            )
             if row.agent_id
             else human_member(humans[row.human_id], avatar_url=pictures[row.human_id])
         )
@@ -324,11 +369,19 @@ def member_views(
             )
         else:
             is_listening = False
+        shown_presence = presence(row, session, is_listening)
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
-                "presence": presence(row, session, is_listening),
+                "presence": shown_presence,
                 "paused": paused(row),
+                "availability": availability.view(
+                    row, shown_presence, humans.get(row.human_id), projects[row.project_id]
+                ),
+                "availability_policy": availability.policy_of(row),
+                # Cover by a substitute is not built yet (§6.12).
+                "covered_by": None,
+                "covering": [],
                 "joined_at": ts(row.joined_at),
                 "placement": placed.get(row.id),  # always null for a human
             }
@@ -336,10 +389,16 @@ def member_views(
         if row.agent_id is not None:
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
+            if view["instances"] and row.paused_since is None:
+                # The best of its instances' (§5.3).
+                view["presence"] = min(
+                    (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
+                )
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
-        if briefing(row) if callable(briefing) else briefing:
+        if row.id in briefed:
             view["briefing"] = row.briefing
+            view.update(briefings.fields(row, writers))
         if details(row) if callable(details) else details:
             view["owner"] = owners.get(row.agent_id) if row.agent_id else None
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
@@ -389,8 +448,11 @@ def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, 
         select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
     ):
         found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
-        if c.revoked_at is not None:
-            if c.revoked_at >= recent:
+        revoked = c.revoked_at
+        if revoked is None and c.revoke_due_at is not None and c.revoke_due_at <= clock.now():
+            revoked = c.revoke_due_at  # due after a runner's stop (§15.3)
+        if revoked is not None:
+            if revoked >= recent:
                 found["revoked_recent"] += 1
             continue
         found["active"] += 1
@@ -423,9 +485,11 @@ def agent_view(
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
+    owner_handle = owner_handles(conn, [row.owner_id])[row.owner_id]
     return {
         "id": row.id,
         "handle": row.handle,
+        "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this
         **(picture if picture is not None else avatars.state(conn, row.id)),
@@ -433,6 +497,7 @@ def agent_view(
         "git_identity": git_identity(row),
         "memberships": [{"project": m.slug, "role": m.role} for m in memberships],
         "created_at": ts(row.created_at),
+        "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
 
 
@@ -453,6 +518,24 @@ def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
         "session_id": session,
         "instance": row.instance,
         "replaces": row.replaces,
+        **_revocation(row),
+    }
+
+
+def _revocation(row: Any) -> dict[str, Any]:
+    """A credential a runner's stop revokes after the grace shows as revoked once that
+    has passed, before its first use writes it (§15.3, `runner_revoke`)."""
+    if (
+        row.revoked_at is None
+        and row.revoke_due_at is not None
+        and row.revoke_due_at <= clock.now()
+    ):
+        return {
+            "revoked_at": ts(row.revoke_due_at),
+            "revoked_by": row.revoke_due_by,
+            "revoked_reason": "runner_revoked",
+        }
+    return {
         "revoked_at": ts(row.revoked_at),
         "revoked_by": row.revoked_by,
         "revoked_reason": row.revoked_reason,
@@ -508,10 +591,13 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
+    from maity_hub.board import links, notes  # board reads views for member ids
     from maity_hub.instances import address
     from maity_hub.releases import tags  # releases reads views; imported here, not at the top
 
     release_tags = tags(conn, [r for r in rows if r.kind == "release"])
+    linked = links.views_of(conn, (r.id for r in rows))
+    noted = notes.counts_of(conn, (r.id for r in rows))
     now = clock.now()
     views = []
     for row in rows:
@@ -549,7 +635,9 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": row.contract,
+                "contract": view_contract(row.contract) if row.contract is not None else None,
+                "links": linked[row.id],
+                "notes": noted[row.id],
                 "created_at": ts(row.created_at),
                 "updated_at": ts(row.updated_at),
                 "closed_at": ts(row.closed_at),
@@ -606,6 +694,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     instance_of = instances_of(
         conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
     )
+    human_ids = {r.actor_human_id for r in rows if r.actor_human_id is not None}
+    human_handles = (
+        dict(
+            conn.execute(
+                select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(human_ids))
+            ).all()
+        )
+        if human_ids
+        else {}
+    )
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (
         dict(
@@ -640,6 +738,13 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "harness": row.actor_harness,
                 "model": row.actor_model,
             }
+        elif row.actor_human_id is not None:  # §8.1
+            actor = {
+                "kind": "human",
+                "id": row.actor_human_id,
+                "handle": human_handles.get(row.actor_human_id),
+                "via": row.actor_via,
+            }
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",
@@ -671,8 +776,25 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": audience,
+                **_wakes(row),
                 "payload": payload,
                 "redacted": row.redacted,
             }
         )
     return views
+
+
+def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
+    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
+    it has the defaults."""
+    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}
+
+
+def _wakes(row: Any) -> dict[str, Any]:
+    """The instances a team's wake rule chose, as addresses; absent when no team's rule
+    narrowed the event (§8.2)."""
+    if row.wakes is None:
+        return {}
+    return {
+        "wakes": [f"{member}#{instance}" for member, ids in row.wakes.items() for instance in ids]
+    }

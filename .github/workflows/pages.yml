@@ -38,6 +38,8 @@ jobs:
       - run: |
           mkdir -p site
           cp -r docs/. site/
+          # The brand files have one home, web/brand/; the site links them from brand/.
+          cp -r web/brand site/brand
           pip install --quiet keep-the-why-dashboard
           ktw-dashboard --export site/keep-the-why-dashboard .
           for d in hub cli web; do

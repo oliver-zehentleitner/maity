@@ -9,7 +9,7 @@ the team.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
@@ -31,6 +31,27 @@ MAX_INSTANCES = 16
 
 def address(member_id: str, instance: str) -> str:
     return f"{member_id}#{instance}"
+
+
+def token(member_id: str, instance: str | None) -> str:
+    """The audience token of one instance, or of the team when none is bound (§8.2)."""
+    return f"instance:{member_id}#{instance}" if instance else f"member:{member_id}"
+
+
+def human_paused(member: Any, credential: Any) -> bool:
+    """Whether someone other than the agent itself paused this instance (§5.3)."""
+    return credential.paused_since is not None and credential.paused_by != member.agent_id
+
+
+def paused_view(row: Any) -> dict[str, Any] | None:
+    """`paused` of a membership or a credential row, which store it alike (§5.3)."""
+    if row.paused_since is None:
+        return None
+    return {
+        "reason": row.paused_reason,
+        "since": clock.rfc3339(row.paused_since),
+        "by": row.paused_by,
+    }
 
 
 def split_address(text: str) -> tuple[str, str | None]:
@@ -123,6 +144,34 @@ def require_active(conn: Connection, member: Any, instance: str, field: str) -> 
     return row
 
 
+def require_replaceable(
+    conn: Connection, member: Any, instance: str, field: str, *, revoked: bool = False
+) -> Any:
+    """The credential of the instance a join replaces. A human's join replaces an active
+    instance (`require_active`, §3.1). Only the hub's placement pickup passes `revoked`:
+    a rejoin replaces the instance whose credential was revoked (§15.9), and never a live
+    sibling, so with `revoked` the instance's credential must be revoked."""
+    if not revoked:
+        return require_active(conn, member, instance, field)
+    row = conn.execute(
+        select(t.credential).where(
+            t.credential.c.membership_id == member.id,
+            t.credential.c.instance == instance,
+            t.credential.c.revoked_at.is_not(None),
+        )
+    ).first()
+    if row is None:
+        raise invalid({field: "not_an_instance"})
+    successor = conn.execute(
+        select(t.credential.c.id).where(
+            t.credential.c.membership_id == member.id, t.credential.c.replaces == instance
+        )
+    ).first()
+    if successor is not None:  # a human's join replaced it already: one successor only
+        raise invalid({field: "already_replaced"})
+    return row
+
+
 def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> str | None:
     """The one instance a member id or an address comes down to (§6.5, §6.19): the
     named one; else the team's only active instance, or its lead under `distribution:
@@ -167,10 +216,16 @@ def presence(last_used_at: datetime | None, live: bool, listening: bool) -> str:
 
 
 def views(
-    conn: Connection, members: Iterable[Any], handles: dict[str, str], *, details: bool = False
+    conn: Connection,
+    members: Iterable[Any],
+    handles: dict[str, str],
+    *,
+    details: bool = False,
+    names: dict[str, str] | None = None,
 ) -> dict[int, list[dict[str, Any]]]:
     """Per agent membership its active instances as the instance view (§6.17), oldest
-    first. `details` adds `credential_id`, for the agent's owner and `members:admin`."""
+    first. `details` adds `credential_id`, for the agent's owner and `members:admin`;
+    `names` (agent id -> global name, §6.3) adds the instance's `name`."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     rows = {m.id: m for m in members if m.agent_id is not None}
@@ -181,27 +236,9 @@ def views(
         .where(t.credential.c.membership_id.in_(list(rows)), t.credential.c.revoked_at.is_(None))
         .order_by(t.credential.c.created_at, t.credential.c.id)
     ).all()
-    sessions = {
-        s.credential_id: s
-        for s in conn.execute(
-            select(t.agent_session).where(
-                t.agent_session.c.credential_id.in_([c.id for c in credentials]),
-                t.agent_session.c.live.is_(True),
-            )
-        )
-    }
+    sessions = _live_sessions(conn, [c.id for c in credentials])
     latest = _latest_sessions(conn, [c.id for c in credentials if c.id not in sessions])
-    claims: dict[tuple[int, str], int] = {}
-    for holder, instance, count in conn.execute(
-        select(t.card.c.claim_holder, t.card.c.claim_instance, func.count())
-        .where(
-            t.card.c.claim_holder.in_(list(rows)),
-            t.card.c.claim_instance.is_not(None),
-            t.card.c.status.notin_(("done", "cancelled")),
-        )
-        .group_by(t.card.c.claim_holder, t.card.c.claim_instance)
-    ):
-        claims[(holder, instance)] = count
+    claims = _claim_counts(conn, list(rows))
     found: dict[int, list[dict[str, Any]]] = {m: [] for m in rows}
     for c in credentials:
         member = rows[c.membership_id]
@@ -214,6 +251,8 @@ def views(
             "address": address(member.agent_id, c.instance),
             "label": f"{handle}#{c.instance}",
         }
+        if names is not None:
+            view["name"] = f"{names[member.agent_id]}#{c.instance}"  # owner/handle#id (§6.3)
         if details:
             view["credential_id"] = c.id
         view.update(
@@ -231,11 +270,11 @@ def views(
                 ),
                 "presence": (
                     "paused"
-                    if member.paused_since is not None
+                    if member.paused_since is not None or c.paused_since is not None
                     else presence(c.last_used_at, session is not None, is_listening)
                 ),
                 "last_seen_at": clock.rfc3339(c.last_used_at) if c.last_used_at else None,
-                "paused": None,
+                "paused": paused_view(c),
                 "lead": member.lead_instance == c.instance,
                 "claims": claims.get((member.id, c.instance), 0),
                 "replaces": c.replaces,
@@ -244,7 +283,63 @@ def views(
             }
         )
         found[member.id].append(view)
+    if details:
+        _shared_workspaces(found, credentials, sessions)
     return found
+
+
+def _shared_workspaces(
+    found: dict[int, list[dict[str, Any]]], credentials: Sequence[Any], sessions: dict[str, Any]
+) -> None:
+    """`shared_environment` of each instance view: the siblings whose open session
+    declares the same workspace (§6.17). A shared home within a team is normal and not
+    shown."""
+    by_place: dict[tuple[int, str], list[str]] = {}
+    for c in credentials:
+        session = sessions.get(c.id)
+        if session is not None and session.env_workspace:
+            by_place.setdefault((c.membership_id, session.env_workspace), []).append(c.instance)
+    shared: dict[tuple[int, str], list[str]] = {}
+    for (membership_id, _), ids in by_place.items():
+        for instance in ids:
+            shared.setdefault((membership_id, instance), []).extend(i for i in ids if i != instance)
+    for membership_id, views_ in found.items():
+        for view in views_:
+            view["shared_environment"] = [
+                {"instance": other, "level": "workspace"}
+                for other in shared.get((membership_id, view["id"]), [])
+            ]
+
+
+def _live_sessions(conn: Connection, credential_ids: list[str]) -> dict[str, Any]:
+    """Per credential its open session, if it has one."""
+    if not credential_ids:
+        return {}
+    return {
+        s.credential_id: s
+        for s in conn.execute(
+            select(t.agent_session).where(
+                t.agent_session.c.credential_id.in_(credential_ids),
+                t.agent_session.c.live.is_(True),
+            )
+        )
+    }
+
+
+def _claim_counts(conn: Connection, membership_ids: list[int]) -> dict[tuple[int, str], int]:
+    """Per (membership, instance) the open cards it holds."""
+    claims: dict[tuple[int, str], int] = {}
+    for holder, instance, count in conn.execute(
+        select(t.card.c.claim_holder, t.card.c.claim_instance, func.count())
+        .where(
+            t.card.c.claim_holder.in_(membership_ids),
+            t.card.c.claim_instance.is_not(None),
+            t.card.c.status.notin_(("done", "cancelled")),
+        )
+        .group_by(t.card.c.claim_holder, t.card.c.claim_instance)
+    ):
+        claims[(holder, instance)] = count
+    return claims
 
 
 def _latest_sessions(conn: Connection, credential_ids: list[str]) -> dict[str, Any]:
@@ -269,6 +364,136 @@ def instances_of(conn: Connection, credential_ids: Iterable[str | None]) -> dict
         conn.execute(
             select(t.credential.c.id, t.credential.c.instance).where(t.credential.c.id.in_(ids))
         ).all()
+    )
+
+
+def assigned_for(conn: Connection, member: Any, named: str | None) -> str | None:
+    """The `assigned_instance` a card assigned to `member` gets (§6.18), on every path
+    that assigns it: none under `free`, where any instance claims; the named one under
+    `lead`; the named one or the next in turn under `round_robin`. A human has none."""
+    if member.agent_id is None or member.distribution == "free":
+        return None
+    if named is not None:
+        return named
+    if member.distribution == "round_robin":
+        return round_robin(conn, member)
+    return None  # under `lead` the lead instance chooses
+
+
+def round_robin(conn: Connection, member: Any) -> str | None:
+    """The next instance after the one last chosen, in order of `created_at`, skipping
+    revoked and paused ones and preferring those online (§6.18); `None` when none is
+    left, which leaves the card to the team. Remembers the choice."""
+    from maity_hub import listening  # the in-process registry of open long-polls
+
+    if member.paused_since is not None:
+        return None
+    candidates = [c for c in active(conn, member.id) if c.paused_since is None]
+    if not candidates:
+        return None
+    last = (
+        conn.execute(
+            select(t.credential.c.created_at, t.credential.c.id).where(
+                t.credential.c.membership_id == member.id,
+                t.credential.c.instance == member.round_robin_last,
+            )
+        ).first()
+        if member.round_robin_last is not None
+        else None
+    )
+    # The rotation goes on after the last one chosen, also when that one has left it,
+    # by the key `active()` orders by, so two instances created in one instant still
+    # take turns.
+    after = [c for c in candidates if last is not None and (c.created_at, c.id) > tuple(last)]
+    order = after + [c for c in candidates if c not in after]
+    sessions = _live_sessions(conn, [c.id for c in order])
+    now = clock.now()
+
+    def online(c: Any) -> bool:
+        session = sessions.get(c.id)
+        if session is not None and listening.is_listening(session.id):
+            return True
+        seen = c.last_used_at
+        return (
+            session is not None
+            and seen is not None
+            and (now - seen).total_seconds() <= ONLINE_SECONDS
+        )
+
+    chosen: str = next((c for c in order if online(c)), order[0]).instance
+    conn.execute(
+        update(t.membership).where(t.membership.c.id == member.id).values(round_robin_last=chosen)
+    )
+    return chosen
+
+
+# --- the team wake (§8.2) ----------------------------------------------------------------
+
+
+def team_wakes(
+    conn: Connection, project_id: str, audience: list[str], actor_membership: int | None
+) -> dict[str, list[str]] | None:
+    """For each team the audience addresses by `member:` or `role:` whose `wake` rule is
+    not `all`, the instances the event wakes: the lead, or the listening instance with
+    the fewest claims (ties to the one idle longest); none when nobody of the team
+    listens. `None` when no team was narrowed. The actor's own team is never woken by
+    its own event, so it is left out."""
+    from maity_hub import listening  # the in-process registry of open long-polls
+
+    teams = [
+        m
+        for m in conn.execute(
+            select(t.membership).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.removed_at.is_(None),
+                t.membership.c.agent_id.is_not(None),
+                t.membership.c.wake != "all",
+            )
+        )
+        if m.id != actor_membership
+        and (f"member:{m.agent_id}" in audience or f"role:{m.role}" in audience)
+    ]
+    if not teams:
+        return None
+    credentials = conn.execute(
+        select(t.credential).where(
+            t.credential.c.membership_id.in_([m.id for m in teams]),
+            t.credential.c.revoked_at.is_(None),
+        )
+    ).all()
+    sessions = _live_sessions(conn, [c.id for c in credentials])
+    listening_now = [
+        c for c in credentials if c.id in sessions and listening.is_listening(sessions[c.id].id)
+    ]
+    claims = _claim_counts(conn, [m.id for m in teams]) if listening_now else {}
+    chosen: dict[str, list[str]] = {}
+    for m in teams:
+        mine = [c for c in listening_now if c.membership_id == m.id]
+        if m.wake == "lead":
+            chosen[m.agent_id] = [c.instance for c in mine if c.instance == m.lead_instance]
+            continue
+        free = min(
+            mine,
+            key=lambda c: (claims.get((m.id, c.instance), 0), c.last_used_at or c.created_at),
+            default=None,
+        )
+        chosen[m.agent_id] = [free.instance] if free is not None else []
+    return chosen
+
+
+def refresh_team_wake(conn: Connection, project_id: str) -> None:
+    """Keep `project.team_wake` true exactly while one of its teams narrows the wake."""
+    narrowed = conn.execute(
+        select(t.membership.c.id)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.removed_at.is_(None),
+            t.membership.c.wake != "all",
+        )
+        .limit(1)
+    ).first()
+    conn.execute(
+        update(t.project).where(t.project.c.id == project_id).values(team_wake=narrowed is not None)
     )
 
 
@@ -320,7 +545,7 @@ def team_target(
         target = member_row(conn, project.id, member_id)
     except ApiError:
         target = None
-    if target is not None and _owns_agent(conn, caller, target):
+    if target is not None and owns_agent(conn, caller, target):
         try:
             return target, membership(conn, caller, slug)
         except ApiError:
@@ -332,7 +557,7 @@ def team_target(
     return target, mine
 
 
-def _owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
+def owns_agent(conn: Connection, caller: Caller, target: Any) -> bool:
     if caller.kind != "human" or target.agent_id is None:
         return False
     owner = conn.execute(
@@ -348,7 +573,7 @@ def _require_profile_owner(conn: Connection, caller: Caller, target: Any) -> Non
         raise humans_only()
     if target.agent_id is None:
         raise invalid({"team": "agents_only"}, "a team is an agent membership's")
-    if not _owns_agent(conn, caller, target):
+    if not owns_agent(conn, caller, target):
         raise humans_only()
 
 
@@ -392,6 +617,8 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
             changed_via=caller.via,
         )
     )
+    if "wake" in changed:
+        refresh_team_wake(conn, target.project_id)
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     emit(
         conn,

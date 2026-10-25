@@ -1,4 +1,5 @@
-"""`GET /admin/users` (docs/api.md §16.1): the instance's humans, for the instance admin."""
+"""`GET /admin/users` (docs/api.md §16.1) and `GET /admin/statistics` (§16.6), for the
+instance admin."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
-from maity_hub import avatars
+from maity_hub import avatars, statistics
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.deps import HumanCaller, engine_of
@@ -90,3 +91,17 @@ def list_users(
 
 def _counts(conn: Any, query: Any) -> dict[str, int]:
     return {key: int(count) for key, count in conn.execute(query).all()}
+
+
+@router.get("/admin/statistics")
+def get_statistics(
+    request: Request,
+    caller: HumanCaller,
+    days: int = Query(default=statistics.DEFAULT_DAYS, ge=1, le=statistics.MAX_DAYS),
+) -> JSONResponse:
+    """§16.6: counts of the instance's use, for the instance admin; computed at most once
+    an hour per window, never stored."""
+    with engine_of(request).begin() as conn:
+        if caller.principal_id != instance_admin_id(conn):
+            raise forbidden("instance:admin")
+        return JSONResponse(statistics.CACHE.get(conn, days))
