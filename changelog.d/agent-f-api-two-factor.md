@@ -1,8 +1,10 @@
 ### Added
 
 - docs/api.md §2.8: two-factor sign-in for humans — a TOTP app and ten
-  recovery codes, sealed with `MAITY_SECRET_KEY` (an account without a
-  password enrols behind the 24-hour guard of §2.6.3);
+  recovery codes for every account, sealed with `MAITY_SECRET_KEY`,
+  enrolled after a fresh first factor (the password where there is one,
+  `POST /auth/reauthenticate`); recovery codes and reset links bound to
+  the factor's generation; a lost instance key fails closed;
   a second-factor session after every first factor (password, device
   code, mail link) that reaches nothing but the verify and logout; step-up
   within 10 minutes before sensitive calls; the instance setting
