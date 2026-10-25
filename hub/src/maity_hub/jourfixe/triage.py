@@ -96,8 +96,8 @@ def _statement_proposals(round_row: Any) -> dict[str, dict[str, Any]]:
 
 def submit_report(
     conn: Connection, round_row: Any, mine: Any, body: dict[str, Any], actor: Actor, fg: Forge
-) -> dict[str, Any]:
-    """The moderator's report; returns `{round_id, requests, tasks}` of what it filed."""
+) -> None:
+    """The moderator's report, made final with what it files and opens."""
     lock_project(conn, round_row.project_id)
     round_row = _reload(conn, round_row.id)
     if mine.principal_id != round_row.moderator["member_id"]:
@@ -163,7 +163,7 @@ def submit_report(
         "proposals": proposals,
         "proposals_not_carded": [],
     }
-    return _finish(conn, round_row, report, mine.id, actor, fg)
+    _finish(conn, round_row, report, mine.id, actor, fg)
 
 
 # --- the report the hub builds (§20.6, no report in time) -------------------------------------
@@ -221,13 +221,13 @@ def build_report(conn: Connection, round_row: Any) -> None:
             ),
             1,
         )
-    ][:PROPOSALS_MAX]
+    ]  # the statement's caps (20 topics, 20 proposals) hold the report's (§1.7)
     report = {
         "by": None,
         "source": "hub",
         "summary": None,
         "summary_redaction": None,
-        "findings": findings[:FINDINGS_MAX],
+        "findings": findings,
         "proposals": proposals,
         "proposals_not_carded": [],
     }
@@ -351,15 +351,12 @@ def _finish(
     asker: int,
     actor: Actor | None,
     fg: Forge | None,
-) -> dict[str, Any]:
+) -> None:
     """File the requests, open the cards of decided adoptions, and make the report final."""
     project = conn.execute(select(t.project).where(t.project.c.id == round_row.project_id)).one()
-    requests: list[str] = []
-    tasks: list[str] = []
     for proposal in report["proposals"]:
         if proposal["triage"] == "to_owner":
             proposal["request_id"] = _file_request(conn, round_row, proposal, asker, actor)
-            requests.append(proposal["request_id"])
         elif proposal["decision"]["outcome"] == "adopt":
             # Only the moderator decides, so a decided proposal always has a caller.
             assert actor is not None and fg is not None
@@ -380,7 +377,6 @@ def _finish(
                 )
             else:
                 proposal["task_id"] = card_id
-                tasks.append(card_id)
     now = clock.now()
     conn.execute(
         update(t.jour_fixe_round)
@@ -411,7 +407,6 @@ def _finish(
         subject=("jour_fixe", round_row.id),
     )
     _ticker(conn, project, round_row, report)
-    return {"round_id": round_row.id, "requests": requests, "tasks": tasks}
 
 
 def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, Any]) -> None:
