@@ -279,8 +279,10 @@ neither.
 
 The resume shows a `Keep the Why` block there: either the time this
 instance confirmed, or the request to confirm with
-`maity ack keep-the-why` within 30 minutes, after which the owner is
-told. `maity ack keep-the-why` sends `POST /me/keep-the-why/ack`. It
+`maity ack keep-the-why` by the deadline, 30 minutes after the
+instance's first resume. At the deadline the hub sends one reminder,
+and 30 minutes after that, still without a confirmation, it tells the
+owner. `maity ack keep-the-why` sends `POST /me/keep-the-why/ack`. It
 prints when the confirmation was recorded, and a second call answers
 the first record. In a project that does not require it, it says so and
 exits 0. The CLI never confirms on its own.
