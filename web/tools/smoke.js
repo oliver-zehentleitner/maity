@@ -1475,6 +1475,61 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
 
+  // The contract's section on a contract card (js/contract-panel.js, docs/api.md §6.8): folded until opened,
+  // the repository's text untrusted, the hub's code when it cannot resolve it, never an older text.
+  const ctGets = [], ctPatches = [];
+  const ctGet = win.Maity.api.get, ctPatch = win.Maity.api.patch;
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  win.Maity.api.patch = (p, b) => { if (b && b.contract) ctPatches.push([p, b]); return ctPatch(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const ctCard = () => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0009");
+  const ctBox = () => ctCard().querySelector("details.contract-section");
+  const ctOpen = async () => { ctBox().open = true; ctBox().dispatch("toggle"); for (let k = 0; k < 4; k++) await tick(); };
+  const ctBody = () => ctBox().querySelector(".contract-body");
+  const ctSave = async (path, section) => {
+    byId("contract-path-tsk-0009").value = path; byId("contract-section-tsk-0009").value = section;
+    ctBox().querySelector("form.contract-place").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  };
+  expect(ctBox() && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 8.2" && !ctGets.length,
+    "contract: a contract card names its file and section, folded, nothing read yet");
+  await ctOpen();
+  const ctLinks = ctBody().querySelectorAll("a");
+  expect(ctGets.length === 1 && ctGets[0] === "/projects/maity/tasks/tsk-0009/contract"
+    && text(ctBody().querySelector(".contract-meta")).startsWith("docs/api.md at 3f9c2a1 · read ")
+    && ctLinks.some((a) => text(a) === "the file on the forge" && a.getAttribute("href").startsWith("https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e"))
+    && text(ctBody().querySelector(".contract-text")).includes("Every event has a kind.") && ctBody().querySelector(".contract-text code"),
+    "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
+  expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
+    && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(ctGets.length === 2, "contract: Refresh reads again");
+  win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+    "contract: a failed read shows the place and the hub's code, never the older text");
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  await ctSave("docs/api.md", "4.1");
+  expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
+    && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
+  await ctOpen();
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+    "contract: ambiguous_in_file said with its code");
+  await ctSave("docs/api.md", "9.99"); await ctOpen();
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  await ctSave("docs/runner.md", "1"); await ctOpen();
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+    "contract: probe_not_configured said with its code");
+  await ctSave("docs/api.md", "9.1"); await ctOpen();
+  expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
+  const ctBefore = ctGets.length;
+  await ctSave("docs/api.md", ""); await ctOpen();
+  expect(ctPatches[ctPatches.length - 1][1].contract.section === null && ctGets.length === ctBefore
+    && text(ctBody()) === "The card names no section yet.", "contract: no section, nothing read, said so");
+  await ctSave("/etc/passwd", "1");
+  expect(text(ctBox().querySelector(".send-status")).startsWith("Not saved: contract.path: not_a_path"), "contract: the hub's refusal of a path is said");
+  win.Maity.api.get = ctGet; win.Maity.api.patch = ctPatch;
+  await go("#/p/maity/inbox");
+
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());

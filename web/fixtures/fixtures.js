@@ -322,6 +322,39 @@ window.MAITY_FIXTURES = {
       }
     ]
   },
+  "maity/contracts.json": {
+    "docs/api.md#4.1": {
+      "error": {
+        "code": "not_found",
+        "fields": {
+          "contract.section": "ambiguous_in_file"
+        },
+        "message": "two headings with this number",
+        "status": 404
+      }
+    },
+    "docs/api.md#8.2": {
+      "heading": "### 8.2 Event kinds",
+      "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+      "text": "### 8.2 Event kinds\n\nEvery event has a `kind`. A chat message is `message` with `type: chat`; see [the events section](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md#8-events).\n\n- `message` — a chat, a handover or a blocker\n- `task_updated` — a card changed\n\nAsk @agent-a about tsk-0123456789ab before changing it.",
+      "truncated": false,
+      "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md"
+    },
+    "docs/api.md#9.1": {
+      "heading": "### 9.1 A long section",
+      "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+      "text": "### 9.1 A long section\n\nThe first 64 KiB of it.",
+      "truncated": true,
+      "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md"
+    },
+    "docs/runner.md#1": {
+      "error": {
+        "code": "probe_not_configured",
+        "message": "no forge token for the repository",
+        "status": 409
+      }
+    }
+  },
   "maity/conversations.json": {
     "agt-a": {
       "cursor": 4202,
@@ -1769,6 +1802,8 @@ window.MAITY_FIXTURES = {
         "closed_at": null,
         "contract": {
           "arbiter": "agt-a",
+          "path": "docs/api.md",
+          "section": "8.2",
           "state": "proposed",
           "watchers": [
             "agt-b",

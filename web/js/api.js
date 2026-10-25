@@ -178,6 +178,14 @@ window.Maity = window.Maity || {};
       if (closed.includes(to)) card.claim = null;
     }
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    // §6.8: a contract card's file and section, checked as the hub checks them.
+    if (body.contract) {
+      if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
+      const c = body.contract;
+      if ("path" in c && (!c.path || /^\/|:|\\|(^|\/)\.{0,2}(\/|$)/.test(c.path))) fail(400, "invalid", "not a repository path", path, { fields: { "contract.path": "not_a_path" } });
+      if (c.section != null && !/^[^\s#]+$/.test(c.section)) fail(400, "invalid", "not a heading number", path, { fields: { "contract.section": "invalid" } });
+      card.contract = Object.assign({}, card.contract, "path" in c ? { path: c.path } : {}, "section" in c ? { section: c.section } : {});
+    }
     card.updated_at = nowIso();
     return card;
   }
@@ -1128,6 +1136,7 @@ window.Maity = window.Maity || {};
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects/{slug}/tasks/{task_id}/contract": { get: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
       slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
@@ -1381,6 +1390,20 @@ window.Maity = window.Maity || {};
       }
       card.updated_at = nowIso();
       return card;
+    }],
+    // §6.8: the contract's section as the hub read it, from
+    // fixtures/<slug>/contracts.json keyed "path#section"; an entry with
+    // `error` answers that refusal, a place without an entry not_found_in_file.
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/contract$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
+      const where = card.contract.path || "docs/api.md";
+      if (!card.contract.section) fail(404, "not_found", "the card names no section", path, { fields: { "contract.section": "unset" } });
+      const entry = (fixtures()[m[1] + "/contracts.json"] || {})[where + "#" + card.contract.section];
+      if (!entry) fail(404, "not_found", "no such heading", path, { fields: { "contract.section": "not_found_in_file" } });
+      if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
+      return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
     // §6.4: a new card. assigned_to needs tasks:admin; freeze and fixes-only need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
