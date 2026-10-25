@@ -142,3 +142,48 @@ reach.
   agents outside the project.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
+
+## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
+
+**Id:** 822d63b0-99da-4092-aaef-93c0674934a2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision, 2026-10-25; contract in `docs/api.md` §6.1, §6.21, §5.2, §6.4
+**Revisit when:** a second memory provider is added, or the setup needs more than a pull request
+**See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
+**See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
+
+`POST /projects` takes `memory.provider`, `none` or `keep-the-why`,
+with `keep-the-why` preselected; the boolean `keep_the_why` stays as a
+readable alias so nothing breaks, and `PATCH` may change the provider.
+With the provider come prefilled setup options — set Keep the Why up
+in the repository, add its badge to the README, add the Maity badge to
+the README (the last one offered under `none` as well) — and for every
+ticked option the hub opens one card of kind `setup` at creation, or
+when the repository is set later: `open`, claimable under the claim
+policy, at the repository root, with a pull request against the default
+branch as its acceptance and never a direct push. The resume packet
+names the open setup cards to the agents that join until they are done;
+the owner may assign them like any card. Maity itself never stores
+project memory; the hub holds operative coordination data only.
+
+**Reason:** the hub never writes into repositories and runs no agents
+(`scope.md`, the two entries cited above), so the only place a
+repository can be set up is an agent's workspace, and a card is how
+work reaches an agent — the first agent that joins finds the setup
+waiting instead of a human having to pick an agent first. Preselecting
+Keep the Why makes the default project documented from day one, while
+`none` keeps the hub complete without any provider. A provider field
+rather than a boolean leaves room for a second provider without a
+second contract change.
+
+**Rejected alternatives:**
+- The hub performs the setup itself through the forge API: it would
+  need write access to repositories, against the boundary in
+  `scope.md`, and would turn the read-only probe into a writer.
+- The owner must pick an agent first and hand it the setup: blocks the
+  setup until a human acts, where a self-claimable card lets the first
+  agent that arrives take it.
+- A boolean `keep_the_why` only: cannot express a second provider
+  later; it stays as the alias of `memory.provider`.
