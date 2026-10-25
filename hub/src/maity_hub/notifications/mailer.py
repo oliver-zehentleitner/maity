@@ -42,6 +42,7 @@ DIGEST_MAX = 50
 SUBJECT_MAX = 120
 CONTENT_MAX = 500
 MAILED_KINDS = ("inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe")
+SECURITY_MAILED = ("session_created", "second_factor_changed", "second_factor_failed")
 
 _WORDS = {
     "en": {
@@ -59,6 +60,11 @@ _WORDS = {
             "Time: {time}\nMethod: {method}\nBrowser: {browser}\nSystem: {os}\n"
             "Address: {ip}\n\nIf this was not you, end it here: {sessions}\n"
         ),
+        "factor_body": (
+            "{title}\n\nTime: {time}\n\n"
+            "If this was not you, sign in and check your sessions: {sessions}\n"
+            "Two-factor settings: {security}\n"
+        ),
     },
     "de": {
         "updates": "{n} Neuigkeiten",
@@ -75,6 +81,11 @@ _WORDS = {
             "Eine neue Sitzung hat sich bei deinem Konto auf {url} angemeldet.\n\n"
             "Zeit: {time}\nMethode: {method}\nBrowser: {browser}\nSystem: {os}\n"
             "Adresse: {ip}\n\nWarst du das nicht? Hier beenden: {sessions}\n"
+        ),
+        "factor_body": (
+            "{title}\n\nZeit: {time}\n\n"
+            "Warst du das nicht? Melde dich an und prüfe deine Sitzungen: {sessions}\n"
+            "Zwei-Faktor-Einstellungen: {security}\n"
         ),
     },
 }
@@ -156,10 +167,14 @@ def for_human(
     ]
     modes = {kind: (prefs["kinds"].get(kind) or {}).get("mode", "off") for kind in prefs["kinds"]}
     queued = 0
-    # A new sign-in is a security mail of its own; quiet hours do not hold it (§2.6.5).
+    # A new sign-in, and every change or failure of the second factor, is a security mail
+    # of its own; quiet hours do not hold it (§2.6.5, §2.8).
     for item in pending:
-        if item.record_type == "session_created" and modes.get("security") == "immediate":
-            _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+        if item.record_type in SECURITY_MAILED and modes.get("security") == "immediate":
+            if item.record_type == "session_created":
+                _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+            else:
+                _factor_mail(conn, row, item, prefs, signing_key, public_url, local)
             _mark(conn, human_id, [item])
             queued += 1
     if _quiet(prefs.get("quiet_hours"), local):
@@ -397,6 +412,44 @@ def _sign_in_mail(
         human_id=row.human_id,
         to=row.address,
         subject=f"[Maity] {words['sign_in']}",
+        body=body,
+        extra_headers={
+            "List-Unsubscribe": f"<{stop}>",
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+    )
+
+
+def _factor_mail(
+    conn: Connection,
+    row: Any,
+    item: Item,
+    prefs: dict[str, Any],
+    signing_key: bytes,
+    public_url: str,
+    local: datetime,
+) -> None:
+    """A change or a failure of the second factor (§2.8.1, §2.8.2): what happened and
+    when, and where to look; never a code, a secret or a link that signs anyone in."""
+    words = _WORDS[prefs["language"]]
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
+    stop = f"{public_url}/mail/unsubscribe/{token}"
+    title = item.title or ""
+    body = words["factor_body"].format(
+        title=title,
+        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        sessions=f"{public_url}/#/account/sessions",
+        security=f"{public_url}/#/account/security",
+    )
+    body += "\n" + words["stop"].format(kind="security", url=stop)
+    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    outbox.enqueue(
+        conn,
+        kind="security",
+        human_id=row.human_id,
+        to=row.address,
+        subject=f"[Maity] {title}"[:SUBJECT_MAX],
         body=body,
         extra_headers={
             "List-Unsubscribe": f"<{stop}>",

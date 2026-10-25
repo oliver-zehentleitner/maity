@@ -17,7 +17,12 @@ from maity_hub import clock
 from maity_hub import tables as t
 
 KEPT = timedelta(days=90)
-SECURITY = ("session_created", "email_address_changed")
+SECURITY = (
+    "session_created",
+    "email_address_changed",
+    "second_factor_changed",
+    "second_factor_failed",
+)
 SYSTEM = ("mail_disabled",)
 PERSONAL = (
     "personal_request_created",

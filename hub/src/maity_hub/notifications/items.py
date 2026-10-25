@@ -67,6 +67,13 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "an unknown system",
         "address_changed": "Sign-in address changed",
         "mail_disabled": "Mail to {address} disabled after 3 failures",
+        "factor_enrolled": "Two-factor sign-in turned on",
+        "factor_disabled": "Two-factor sign-in turned off",
+        "factor_recovery_codes": "New recovery codes",
+        "factor_recovery_code_used": "Recovery code used",
+        "factor_reset": "Two-factor sign-in reset by {by}",
+        "factor_instance_off": "Two-factor sign-in turned off for this instance",
+        "factor_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
     },
     "de": {
         "asks": "{who} fragt: {title}",
@@ -92,6 +99,13 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "ein unbekanntes System",
         "address_changed": "Anmeldeadresse geändert",
         "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
+        "factor_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
+        "factor_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
+        "factor_recovery_codes": "Neue Wiederherstellungscodes",
+        "factor_recovery_code_used": "Wiederherstellungscode benutzt",
+        "factor_reset": "Zwei-Faktor-Anmeldung von {by} zurückgesetzt",
+        "factor_instance_off": "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
+        "factor_failed": "Falsche Codes nach einer Anmeldung: {browser} auf {os}, {ip}",
     },
 }
 
@@ -463,6 +477,28 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     title=where.say("address_changed"),
                     target={"type": "settings", "id": "notifications"},
                     url=_url(where, "/#/account/notifications"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
+        elif row.type in ("second_factor_changed", "second_factor_failed"):
+            if row.type == "second_factor_failed":
+                title = where.say(
+                    "factor_failed",
+                    browser=data.get("browser") or where.say("a_browser"),
+                    os=data.get("os") or where.say("unknown_os"),
+                    ip=data.get("ip") or "?",
+                )
+            else:
+                title = where.say(f"factor_{data.get('change')}", by=data.get("by") or "?")
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(title),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/#/account/security"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )
