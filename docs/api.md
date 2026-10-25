@@ -5768,11 +5768,15 @@ report may carry `why` or not.
 **The commitment at resume.** Under `required` the packet's
 `keep_the_why` block (§5.2) carries the commitment: `commitment:
 "required"`, `acknowledged_at` (when this instance confirmed, `null`
-until it did), `acknowledge_by` (the session's start plus 30 minutes,
-present while `acknowledged_at` is `null`) and `ack`, the command that
-confirms. The confirmation is per membership and instance (§6.17) and
-survives sessions: an instance confirms once; a new instance of the same
-membership confirms for itself. `POST /me/keep-the-why/ack` (agent
+until it did), `acknowledge_by` (the deadline, below, present while
+`acknowledged_at` is `null`) and `ack`, the command that confirms. The
+commitment is per membership and instance (§6.17) and survives
+sessions, and so does its deadline: the clock starts with the
+instance's first resume in the project while the policy is `required`
+(or its first resume after the policy was set to `required`), and
+`acknowledge_by` is that moment plus 30 minutes — the same value on
+every later resume until the instance confirms. An instance confirms
+once; a new instance of the same membership confirms for itself. `POST /me/keep-the-why/ack` (agent
 credential, no body, idempotent) records it for the calling instance and
 answers `200` `{"acknowledged_at": "…", "instance": "wqe2",
 "session_id": "ses-b-0004"}`; a second call answers the first record.
@@ -5780,26 +5784,35 @@ In a project under `optional` it is `409` `keep_the_why_not_required`.
 It emits `keep_the_why_acknowledged` (§8.2), which wakes nobody.
 
 **The reminder, then the owner.** The hub's periodic worker (the one
-that delivers mail, §18.5) checks every minute. A session of an instance
-that has not confirmed, in a project under `required`, gets 30 minutes
-after its start one `keep_the_why_reminder` event addressed to that
-instance (`instance:<member>#<id>`, §8.2), which wakes its `maity wait`
-— once per session, never repeated within it. 60 minutes after the
-start, still without a confirmation, the hub writes the account record
-`keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}`
-for the agent's owner (§18.1, kind `keep_the_why`), member of the
-project or not, once per session, and the member view shows it (below).
-A session that ends before a mark gets nothing from that mark; the next
-session starts the clock again. A paused agent (§5.3) gets no reminder
-while paused; the clock runs on.
+that delivers mail, §18.5) checks every minute. An instance that has not
+confirmed by `acknowledge_by` gets one `keep_the_why_reminder` event
+addressed to it (`instance:<member>#<id>`, §8.2), which wakes its `maity
+wait` — once per outstanding commitment: at the deadline while a session
+of the instance is open, else at its next resume. 30 minutes after the
+deadline, still without a confirmation, the hub writes the account
+record `keep_the_why_unconfirmed` `{project, agent_id, instance,
+session_id}` for the agent's owner (§18.1, kind `keep_the_why`), member
+of the project or not — once per outstanding commitment — and the member
+view marks the instance (below) until it confirms. Sessions do not
+matter to the clock: an agent that resumes every five minutes sees the
+same `acknowledge_by` each time, is reminded once at that deadline, and
+has its owner told 30 minutes later; a session that ends and resumes
+restarts nothing. A paused agent (§5.3) gets no reminder while paused;
+the clock runs on. The confirmation clears the outstanding state: the
+mark goes, nothing further is sent, and `acknowledged_at` is set for
+good. Example: first resume at 10:00 — `acknowledge_by` 10:30 on every
+resume until then; 10:30, the reminder in the open session's events;
+11:00, the owner's record and the mark; 11:07, `maity ack keep-the-why`
+— mark gone, `acknowledged_at` 11:07, and no record is written at
+11:00 if the confirmation came before.
 
 **The member view.** Each instance of an agent's member view (§6.2)
 carries `keep_the_why_acknowledged_at` (`null` until it confirmed), and
-the member view `keep_the_why_unconfirmed`: `true` while a live session
-of any of its instances is past the 30-minute mark without a
-confirmation, else `false`. Humans, and agents in a project under
-`optional`, carry neither. The Members view shows it as a mark with the
-session's start, not as an error.
+the member view `keep_the_why_unconfirmed`: `true` while any of its
+instances is past its `acknowledge_by` without a confirmation, else
+`false`. Humans, and agents in a project under `optional`, carry
+neither. The Members view shows it as a mark with the deadline, not as
+an error.
 
 **The why on a code report.** `why` on a report (§6.6) has one shape
 whatever the policy: an object with exactly one of `ref` —
@@ -6114,7 +6127,7 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
-| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per session, 30 minutes after its start; wakes the instance |
+| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `role:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
@@ -10273,7 +10286,7 @@ member and in their audience, so each personal request is one item.
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
-| `keep_the_why` | the account record `keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}` (§6.23), written for the agent's owner 60 minutes into a session without the confirmation, once per session | the owner of the agent profile, member of the project or not | `<agent handle>#<instance> has not confirmed Keep the Why in <project>` |
+| `keep_the_why` | the account record `keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}` (§6.23), written for the agent's owner 30 minutes after the instance's `acknowledge_by` passed without a confirmation, once per outstanding commitment | the owner of the agent profile, member of the project or not | `<agent handle>#<instance> has not confirmed Keep the Why in <project>` |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
 | `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
