@@ -62,6 +62,7 @@ from maity_hub.routes import (
     runner,
     runners,
     sign_in_settings,
+    swarm,
     tasks,
     ticker,
 )
@@ -164,6 +165,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
+    app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
     _mount_web(app, settings)
     if settings.public_url_guessed:
         log.warning(

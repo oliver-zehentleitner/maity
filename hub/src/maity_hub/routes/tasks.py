@@ -1590,6 +1590,7 @@ def report(
                 changed_via=caller.via,
             )
         )
+        status_before = card.status
         card = _card(conn, card.id)
         targets = _member(principal_id(conn, card.claim_holder)) + _member(
             principal_id(conn, card.created_by)
@@ -1599,7 +1600,9 @@ def report(
             mine.project.id,
             "task_reported",
             list(dict.fromkeys(targets)) + ["role:reviewer", "role:admin"],
-            stored,
+            # The persisted status on both sides, so that a reader tells an entry into
+            # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
+            {**stored, "status_before": status_before, "status_after": card.status},
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
