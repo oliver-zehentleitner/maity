@@ -126,7 +126,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -189,6 +189,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `jour_fixe_answered` | a second answer of the same member in a jour fixe round, named or anonymous (§20.3, §20.4); `details` is `{}` |
 | 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step requested before step 2 opened or after the last step's window ended (the exchange never reopens), while another further step is still pending, or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
 | 409 | `request_claimed` | a claim on a request that is no longer open to `role:admin`, because another admin claimed it first (§7); `details.holder` |
+| 409 | `keep_the_why_not_required` | `POST /me/keep-the-why/ack` in a project whose `policy.keep_the_why` is `optional` (§6.23) |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
@@ -2581,7 +2582,9 @@ Response `200`, bounded and deterministic:
   "areas": [ { "path": "/", "owner": "hum-maintainer" }, { "path": "hub/", "owner": "agt-b" },
              { "path": "context/", "owner": "agt-a" } ],
   "keep_the_why": { "enabled": true,
-                    "instruction": "Load the keep-the-why skill and read context/index.md before working." },
+                    "instruction": "Load the keep-the-why skill and read context/index.md before working.",
+                    "commitment": "required", "acknowledged_at": null,
+                    "acknowledge_by": "2026-10-21T14:11:10Z", "ack": "maity ack keep-the-why" },
   "claims": [ { "…task…": "with checkpoint, links and notes_open, see §6.4" } ],
   "assigned": [ { "…task…": "assigned to me, not yet claimed; links and notes_open as in claims" } ],
   "requests": {
@@ -2690,7 +2693,9 @@ Response `200`, bounded and deterministic:
   permission, and separate from the briefing.
 - `project.memory` is the project's memory provider (§6.1); the
   top-level `keep_the_why` (`enabled`, `instruction`) says what follows
-  from it for this agent, as before.
+  from it for this agent, as before; under `policy.keep_the_why:
+  required` it also carries the commitment — `commitment`,
+  `acknowledged_at`, `acknowledge_by`, `ack` — that §6.23 defines.
 - `setup` (not in the example above) is present only while the project
   has a setup card (§6.21) that is not `done` or `cancelled`: the list of
   those cards, in card order, each
@@ -2774,6 +2779,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
+| `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
@@ -3094,6 +3100,7 @@ upload is `project_closed`, deleting one is not.
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
+| `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's notification and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -3134,12 +3141,14 @@ session:
   "availability": { "state": "available", "since": "2026-10-21T10:12:00Z" },
   "availability_policy": { "on_unavailable": "wait", "substitutes": [], "grace_minutes": 15 },
   "covered_by": null, "covering": [],
+  "keep_the_why_unconfirmed": false,
   "joined_at": "2026-10-21T10:12:00Z",
   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
             "wake": "all", "review_within_team": false },
   "instances": [ { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
                    "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "online",
-                   "paused": null, "lead": false, "claims": 1, "created_at": "…" } ]
+                   "paused": null, "lead": false, "claims": 1, "created_at": "…",
+                   "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z" } ]
 }
 ```
 
@@ -3164,7 +3173,9 @@ It starts `false`; the agent's owner switches it on or off with a
 member view's one-click "give my preferences to this agent"). It is in
 the member view where `briefing` is, and for the agent's owner, and is
 a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
-or `session`. `avatar_url` is the member's avatar (§6.10), the same in
+or `session`. `keep_the_why_unconfirmed` and each instance's
+`keep_the_why_acknowledged_at` are the Keep the Why commitment (§6.23):
+agents only, and only under `policy.keep_the_why: required`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
 
 **Language.** A human's member view carries `language` (`en` or `de`):
@@ -3808,6 +3819,7 @@ POST /projects/{slug}/tasks/{id}/report
   "pr_status": "found",
   "pr_unknown_reason": null,
   "code": true,
+  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "done": false
 }
 ```
@@ -3828,6 +3840,7 @@ Stored on the card as `report`:
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
+  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "mismatch": false }
 ```
 
@@ -3848,6 +3861,13 @@ Stored on the card as `report`:
   rather than as unverified. `code` defaults to `true`, where every git
   field is required as above. `maity report --no-code` sends it and
   reads no git facts.
+- Under `policy.keep_the_why: required` (§6.1) a report with `code:
+  true` carries `why` — `{"ref": "<path>#<id>"}`, the `context/` entry
+  that keeps the change's reasoning, or `{"none": "<reason>"}` — else it
+  is `invalid` (`details.fields.why: "required"`). The hub stores it on
+  the report and sets the card's `ktw_ref` from `why.ref` when the card
+  has none (§6.23). `maity report --why REF` and `--no-why REASON` send
+  it.
 - Effect: status `review`, `claim` kept. With `"done": true` the card
   goes to `done` instead when the caller holds done authority and no
   dependency is open; otherwise the whole call is refused
@@ -5722,6 +5742,91 @@ that is why it is a human's deliberate switch per project, off by
 default, and why humans never appear on it. A project that is not
 public (a later stage, `context/scope.md`) may still show its swarm.
 
+### 6.23 The Keep the Why commitment
+
+Keep the Why is part of every project that chose it as its memory
+provider (§6.1, §6.21), and the hub, not a team rule, makes sure that
+every agent carries it. The maintainer's decision of 2026-10-25
+(`context/projects.md`): an agent is told at resume that it uses Keep
+the Why and confirms that it does; an agent that does not confirm is
+reminded, and its owner is told when the reminder goes unanswered; and
+a code report names the entry that keeps its why. The hub never reads a
+repository for this (`context/scope.md`): it records the commitment and
+the reference; the entry itself is the pull request's and its
+reviewers' business, as the team rule of `context/process.md` says.
+
+**The policy.** `policy.keep_the_why` (§6.1) is `required` or
+`optional`. A project whose `memory.provider` is `keep-the-why` reads
+`required` unless a human with `project:admin` set `optional`; a project
+under `none` reads `optional`, and setting `required` there is `invalid`
+(`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
+change needs `reason`, like every policy change. Under `optional`
+nothing below applies: the packet's block carries `enabled` and
+`instruction` only, nobody is reminded, and `why` on a report is
+accepted when sent and never required.
+
+**The commitment at resume.** Under `required` the packet's
+`keep_the_why` block (§5.2) carries the commitment: `commitment:
+"required"`, `acknowledged_at` (when this instance confirmed, `null`
+until it did), `acknowledge_by` (the session's start plus 30 minutes,
+present while `acknowledged_at` is `null`) and `ack`, the command that
+confirms. The confirmation is per membership and instance (§6.17) and
+survives sessions: an instance confirms once; a new instance of the same
+membership confirms for itself. `POST /me/keep-the-why/ack` (agent
+credential, no body, idempotent) records it for the calling instance and
+answers `200` `{"acknowledged_at": "…", "instance": "wqe2",
+"session_id": "ses-b-0004"}`; a second call answers the first record.
+In a project under `optional` it is `409` `keep_the_why_not_required`.
+It emits `keep_the_why_acknowledged` (§8.2), which wakes nobody.
+
+**The reminder, then the owner.** The hub's periodic worker (the one
+that delivers mail, §18.5) checks every minute. A session of an instance
+that has not confirmed, in a project under `required`, gets 30 minutes
+after its start one `keep_the_why_reminder` event addressed to that
+instance (`instance:<member>#<id>`, §8.2), which wakes its `maity wait`
+— once per session, never repeated within it. 60 minutes after the
+start, still without a confirmation, the hub writes the account record
+`keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}`
+for the agent's owner (§18.1, kind `keep_the_why`), member of the
+project or not, once per session, and the member view shows it (below).
+A session that ends before a mark gets nothing from that mark; the next
+session starts the clock again. A paused agent (§5.3) gets no reminder
+while paused; the clock runs on.
+
+**The member view.** Each instance of an agent's member view (§6.2)
+carries `keep_the_why_acknowledged_at` (`null` until it confirmed), and
+the member view `keep_the_why_unconfirmed`: `true` while a live session
+of any of its instances is past the 30-minute mark without a
+confirmation, else `false`. Humans, and agents in a project under
+`optional`, carry neither. The Members view shows it as a mark with the
+session's start, not as an error.
+
+**The why on a code report.** Under `required` a report with `code:
+true` (§6.6) carries `why`: either `{"ref": "<path>#<id>"}` — the
+entry that keeps the change's reasoning, `path` relative to the
+repository's root and ending in `.md`, `id` the entry's `Id` — or
+`{"none": "<reason>"}`, at least 10 characters, saying why this change
+has no decision to keep (a mechanical change, a correction, a revert). A
+code report without `why` is `invalid` (`details.fields.why:
+"required"`); a report with `code: false` never carries it (`invalid`,
+`not_for_no_code`). The hub stores `why` on the report, sets the card's
+`ktw_ref` to `why.ref` when the card has none, and shows `why.none` on
+the card as "no why: <reason>" — to whoever reads the card, and to the
+reviewer, who decides whether the reason holds. The hub does not check
+that the file holds the entry: that is the review's gate until the probe
+can read the file at `pr.head`, a later stage that is not this contract.
+
+**The dashboard's part.** The project's Settings tab offers
+`policy.keep_the_why` (`required` / `optional`, with `reason`) with the
+other policy fields; the Members view marks an unconfirmed agent; the
+`keep_the_why` notification links to the member; a card shows
+`report.why` under its report.
+
+**The CLI's part** is in §13: `maity ack keep-the-why`, `maity report
+--why REF` / `--no-why REASON`, and the `Keep the Why` block of `maity
+resume`.
+
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -6005,6 +6110,8 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
+| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable by it, its owner and admins | `{project, instance, session_id, acknowledge_by}`; once per session, 30 minutes after its start; wakes the instance |
+| `keep_the_why_acknowledged` | the agent's owner when a member, `role:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all**; a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
@@ -7872,9 +7979,10 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.commitment: required` in the packet (§6.23) a block `Keep the Why` follows: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
-| `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
+| `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
+| `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
@@ -10134,7 +10242,9 @@ when it is read or sent, from two sources, plus a read flag per human:
   the instances contract (#162, §7) `personal_request_created`,
   `personal_request_answered` and `personal_request_withdrawn`; and with
 registration (§2.7.5, §16.4) `registration_pending`, written for every
-instance admin, and `registration_approved`, written for the person.
+instance admin, and `registration_approved`, written for the person; and with the Keep
+the Why commitment (§6.23) `keep_the_why_unconfirmed`, written for the
+agent's owner.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -10159,6 +10269,7 @@ member and in their audience, so each personal request is one item.
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
+| `keep_the_why` | the account record `keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}` (§6.23), written for the agent's owner 60 minutes into a session without the confirmation, once per session | the owner of the agent profile, member of the project or not | `<agent handle>#<instance> has not confirmed Keep the Why in <project>` |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
 | `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
