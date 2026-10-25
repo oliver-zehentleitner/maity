@@ -7,9 +7,9 @@ the same team. It holds for the logo, avatars, the org chart and icons.
 
 ## Mark: "the round" (C3)
 
-Five members sit in a circle. An agent, the blue square, takes its seat
-at the top. A drawn "m" (two arches, the same stroke logic as the seats)
-sits in the middle: the project everyone gathers around.
+Six seats in a circle: five humans and one agent, the blue square, taking
+its seat at the top. A drawn "m" (two arches, the same stroke logic as
+the seats) sits in the middle: the project everyone gathers around.
 
 | File | Use |
 |---|---|
@@ -20,6 +20,9 @@ sits in the middle: the project everyone gathers around.
 - Clear space around the mark: one seat.
 - Minimum size: 16 px.
 - Lockup: mark + "maity" in Space Grotesk 700, lower case, letter-spacing -0.02em.
+  The lockups in this set (`maity-lockup*.svg`) are the header lockup, 28 px
+  tall, so they carry the small mark by the size rule above; a lockup used
+  large (README top, docs hero, 48 px and up) takes the mark with the "m".
 
 Decided by oliver, 2026-10-23, out of three directions (A: two figures
 forming an "m"; B: wordmark with a square i-dot; C: the round). C was

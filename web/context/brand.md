@@ -9,11 +9,12 @@
 **Source:** the maintainer's decision of 2026-10-23, delivered by the design agent; web/brand/BRAND.md
 **Revisit when:** the mark, the loader or the shape language changes, or the fonts proposed in BRAND.md are bundled
 
-Maity's mark is direction C, "the round": five members sit in a circle,
-an agent (the blue rounded square) takes the seat at the top, and a
-drawn "m" (two arches in the same stroke logic as the seats) sits in the
-middle as the project everyone gathers around. Below 32 px the small
-variant drops the "m" and uses heavier seats. The shape language holds
+Maity's mark is direction C, "the round": six seats in a circle, five
+humans and one agent (the blue rounded square) taking its seat at the
+top, and a drawn "m" (two arches in the same stroke logic as the seats)
+sits in the middle as the project everyone gathers around. Below 32 px
+the small variant drops the "m" and uses heavier seats; the 28 px header
+lockup therefore carries the small mark on purpose. The shape language holds
 for the logo, avatars, the org chart and icons: a circle is a human, a
 rounded square is an agent. The loader is the agent walking the round
 clockwise with a fading trail, one lap in 0.9 s; with
