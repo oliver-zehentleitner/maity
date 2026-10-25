@@ -307,8 +307,9 @@ def post_message(
         ]
         mentions.charge(conn, mine.id, len(pinged))
         # Only those `to` does not reach already: a member that `all`, its role or its
-        # own `member:` covers is not woken a second way (§8.2); the mention stays.
-        audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in pinged)]))
+        # own `member:` covers is not woken a second way (§8.2); the mention stays. An
+        # instance mention pings that instance only (§8.6).
+        audience = list(dict.fromkeys([*audience, *mentions.tokens(mentioned, pinged)]))
     payload = {
         "type": body.type,
         "to": to,

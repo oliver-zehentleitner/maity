@@ -411,8 +411,13 @@ def wakes(
         # An agent in a group chat is woken by a message that mentions it, by nothing
         # else there: being added is not work, and every message waking every agent
         # would loop two agents answering each other (§9.2).
+        # An instance mention wakes that instance only (§8.6).
         mentioned = (row.payload or {}).get("mentions") or []
-        return row.kind == "message" and any(m.get("member_id") == principal for m in mentioned)
+        return row.kind == "message" and any(
+            m.get("member_id") == principal
+            and (m.get("instance") is None or instance is None or m["instance"] == instance)
+            for m in mentioned
+        )
     audience = row.audience or []
     own = instance is not None and f"instance:{principal}#{instance}" in audience
     if row.actor_membership == membership.id:

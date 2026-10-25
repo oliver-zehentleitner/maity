@@ -66,16 +66,29 @@ def agent_named(
         ("oliver@example.org/agent-b", []),
         ("`@oliver/agent-b` and @oliver/agent-c", ["oliver/agent-c"]),
         ("@all/agent-b @owner/agent-c", ["all/agent-b", "owner/agent-c"]),  # names, not groups
+        # An instance id directly after the name belongs to it (§6.17).
+        ("ask @agent-b#wqe2.", ["agent-b#wqe2"]),
+        ("@oliver/agent-b#wqe2", ["oliver/agent-b#wqe2"]),
+        ("@agent-b#wqe2x9", ["agent-b"]),  # no id: the `#` is a boundary
+        ("@agent-b#wle2", ["agent-b"]),  # `l` is not in the id alphabet
+        ("@agent-b#WLE2 @agent-c#1 @agent-d#", ["agent-b", "agent-c", "agent-d"]),
+        ("@agent-b-#wqe2", ["agent-b"]),
+        ("`@agent-b#wqe2`", []),
     ],
 )
 def test_the_rule(text: str, handles: list[str]) -> None:
     found = mentions.candidates(text)
-    assert [f"{c.owner}/{c.handle}" if c.owner else c.handle for c in found] == handles
+    shown = [
+        (f"{c.owner}/{c.handle}" if c.owner else c.handle)
+        + (f"#{c.instance}" if c.instance else "")
+        for c in found
+    ]
+    assert shown == handles
 
 
 def test_offsets_count_code_points() -> None:
-    [(offset, length, handle, owner)] = mentions.candidates("ä 😀 @agent-b")
-    assert (offset, length, handle, owner) == (4, 8, "agent-b", None)
+    [(offset, length, handle, owner, instance)] = mentions.candidates("ä 😀 @agent-b")
+    assert (offset, length, handle, owner, instance) == (4, 8, "agent-b", None, None)
     [found] = mentions.candidates("ä @oliver/agent-b.")
     assert (found.offset, found.length, found.handle, found.owner) == (2, 15, "agent-b", "oliver")
 
@@ -246,6 +259,104 @@ def test_ambiguity_is_judged_among_whom_a_text_may_name(
         assert [m["member_id"] for m in found] == [theirs]
         assert mentions.resolve(conn, project_id, "@agent-b", "body", among={owner.id}) == []
     del mine
+
+
+def team_of_two(make_client: ClientFactory, owner: flow.Human) -> tuple[flow.Agent, flow.Agent]:
+    first = agent_named(make_client, owner, "agent-b")
+    team = owner.patch(f"/projects/maity/members/{first.id}", {"team": {"max_instances": 2}})
+    assert team.status_code == 200, team.text
+    second = flow.agent(make_client, owner, agent={"id": first.id}, new_instance=True)
+    return first, second
+
+
+def test_an_instance_mention_pings_that_instance_only(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    first, second = team_of_two(make_client, owner)
+    text = f"@agent-b#{second.instance} and @maintainer/agent-b#{second.instance}"
+    event = say(writer, to=owner.id, body=text).json()
+    stored = event["payload"]["mentions"]
+    assert [(m["member_id"], m["instance"], m["length"]) for m in stored] == [
+        (first.id, second.instance, 13),
+        (first.id, second.instance, 24),
+    ]
+    assert f"instance:{first.id}#{second.instance}" in event["audience"]
+    assert f"member:{first.id}" not in event["audience"]
+    # The handle alone is the team.
+    team = say(writer, to=owner.id, body="@agent-b").json()
+    assert team["payload"]["mentions"][0]["instance"] is None
+    assert f"member:{first.id}" in team["audience"]
+
+
+def test_an_unknown_or_revoked_instance_leaves_the_whole_text_plain(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    first, second = team_of_two(make_client, owner)
+    unknown = say(writer, to=owner.id, body="@agent-b#zzzz").json()
+    assert unknown["payload"]["mentions"] == []
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == second.credential_id)
+            .values(revoked_at=clock.now())
+        )
+    revoked = say(writer, to=owner.id, body=f"@agent-b#{second.instance}").json()
+    assert revoked["payload"]["mentions"] == []
+    assert say(writer, to=owner.id, body="@maintainer#wqe2").json()["payload"]["mentions"] == []
+    del first
+
+
+def test_an_ambiguous_short_handle_is_refused_even_with_an_instance(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    first, _ = team_of_two(make_client, owner)
+    second_owners_agent(migrated, "anna", "agent-b")
+    refused = say(writer, to=owner.id, body=f"@agent-b#{first.instance}")
+    assert refused.json()["error"]["details"]["fields"] == {"body": "ambiguous_mention"}
+    long = say(writer, to=owner.id, body=f"@maintainer/agent-b#{first.instance}").json()
+    assert long["payload"]["mentions"][0]["instance"] == first.instance
+
+
+def test_a_card_mention_of_an_instance_wakes_that_instance(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    first, second = team_of_two(make_client, owner)
+    created = owner.post(
+        "/projects/maity/tasks", {"title": "x", "body": f"@agent-b#{second.instance}"}
+    )
+    assert created.status_code == 201, created.text
+    with migrated.connect() as conn:
+        event = conn.execute(select(t.event).where(t.event.c.kind == "mentioned")).one()
+    assert event.audience == [f"instance:{first.id}#{second.instance}"]
+
+
+def test_in_a_group_chat_an_instance_mention_wakes_that_instance_only(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    first, second = team_of_two(make_client, owner)
+    other = agent_named(make_client, owner, "agent-c")
+    created = owner.post(
+        "/projects/maity/conversations", {"title": "Room", "participants": [first.id, other.id]}
+    )
+    assert created.status_code == 201, created.text
+    chat = created.json()
+    sent = owner.post(
+        f"/projects/maity/conversations/{chat['id']}/messages",
+        {"body": f"@agent-b#{second.instance} please"},
+    )
+    assert sent.status_code == 201, sent.text
+    with migrated.connect() as conn:
+        row = conn.execute(
+            select(t.event).where(t.event.c.kind == "message").order_by(t.event.c.seq.desc())
+        ).first()
+        membership = conn.execute(
+            select(t.membership).where(t.membership.c.agent_id == first.id)
+        ).one()
+    assert events.wakes(row, membership, first.id, second.instance)
+    assert not events.wakes(row, membership, first.id, first.instance)
 
 
 def test_mentions_are_read_only(make_client: ClientFactory, owner: flow.Human) -> None:
