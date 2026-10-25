@@ -1254,7 +1254,7 @@ controls for that unimplemented route.
 
 **Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
 visitor without a session gets the instance's landing page when the hub's
-`GET /landing` says it is on: the large lockup (light or dark with the
+`GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
 theme), the title (also the tab's), the operator's Markdown drawn by the
 chat's renderer with one addition for this page alone — links to
 dashboard routes (`/#/…`) stay in the page, `https` links open apart,

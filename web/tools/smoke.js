@@ -2545,7 +2545,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lpBefore = lpReads.length;
   await go("#/p/maity/inbox"); await tick();
   expect(lpReads.length === lpBefore && byId("login-handle"), "landing: only the root asks for it");
-  win.Maity.api.get = lpGet;
+  // A hub whose machine form does not list it is not asked.
+  lpAnswer = () => Promise.resolve(lpPage);
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : p === "/landing" ? (lpReads.push(p), lpAnswer()) : lpGet(p));
+  win.Maity.api.forgetRoutes();
+  const lpBefore2 = lpReads.length;
+  await go("#/all"); await go(""); await tick(); await tick();
+  expect(lpReads.length === lpBefore2 && byId("login-handle"), "landing: a hub without it is not asked; the login page");
+  win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
   await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();

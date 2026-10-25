@@ -17,8 +17,11 @@ window.Maity = window.Maity || {};
   const utf8Length = (s) => [...s].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
 
   // The page as the hub serves it, or null: disabled, absent or failed.
+  // Asked only where the hub's machine form lists it: an older hub would
+  // answer 404 on every visit to the root.
   async function read() {
     try {
+      if (!await M.api.hubHas("GET", "/landing")) return null;
       const page = await M.api.get("/landing");
       return page && page.enabled && page.markdown ? page : null;
     } catch (err) {
