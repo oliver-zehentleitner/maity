@@ -40,11 +40,16 @@ def test_new_existing_and_resume_language_defaults(
 def test_language_merges_and_emits_only_effective_changes(
     owner: flow.Human, migrated: Engine
 ) -> None:
+    owner.patch("/projects/maity", {"settings": {"language": "en"}})
     owner.patch("/projects/maity", {"settings": {"release_checklist": ["keep this"]}})
     with migrated.connect() as conn:
         before = conn.execute(select(t.project.c.rules_version)).scalar_one()
     response = owner.patch("/projects/maity", {"settings": {"language": "de"}})
-    assert response.json()["settings"] == {"language": "de", "release_checklist": ["keep this"]}
+    assert response.json()["settings"] == {
+        "language": "de",
+        "release_checklist": ["keep this"],
+        "onboarding": {"check_in_with": "coordinator"},
+    }
     owner.patch("/projects/maity", {"settings": {"language": "de"}})
     owner.patch("/projects/maity", {"settings": {}})
     owner.patch("/projects/maity", {"settings": {"language": None}})
@@ -54,6 +59,7 @@ def test_language_merges_and_emits_only_effective_changes(
             select(t.event).where(t.event.c.kind == "project_updated").order_by(t.event.c.seq)
         ).all()
         project = conn.execute(select(t.project)).one()
+    events = [e for e in events if "settings.language" in e.payload.get("fields", {})]
     assert [e.payload for e in events] == [
         {"fields": {"settings.language": "de"}},
         {"fields": {"settings.language": "en"}},
@@ -127,11 +133,15 @@ def test_settings_merge_uses_the_row_read_under_the_project_lock(
         expected = {"language": "en", "release_checklist": ["concurrent"]}
     assert response.status_code == 200
     assert locked
-    assert response.json()["settings"] == expected
+    assert response.json()["settings"] == {
+        **expected,
+        "onboarding": {"check_in_with": "coordinator"},
+    }
     with migrated.connect() as conn:
         language_events = (
             conn.execute(select(t.event.c.payload).where(t.event.c.kind == "project_updated"))
             .scalars()
             .all()
         )
+    language_events = [p for p in language_events if "settings.language" in p.get("fields", {})]
     assert language_events == ([] if checklist_write else [{"fields": {"settings.language": "en"}}])

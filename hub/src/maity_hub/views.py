@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import avatars, clock, forge, policy, ticker_read
+from maity_hub import avatars, clock, forge, onboarding, policy, ticker_read
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -101,7 +101,11 @@ def project_view(
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
-        "settings": {**(project.settings or {}), "language": project_language(project)},
+        "settings": {
+            **(project.settings or {}),
+            "language": project_language(project),
+            "onboarding": onboarding.settings(project),
+        },
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
     }
