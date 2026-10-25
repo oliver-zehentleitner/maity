@@ -66,6 +66,7 @@ def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, 
                 "member_id": view["id"],
                 "kind": view["kind"],
                 "handle": view["handle"],
+                **({"name": view["name"]} if "name" in view else {}),  # agents: owner/handle
                 "display_name": view["display_name"],
                 "avatar_url": view["avatar_url"],
                 "online": online,
@@ -84,7 +85,11 @@ def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, 
 def _who(rows: list[Any], live: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     """The identity of each member row of the window part."""
     return {
-        row.id: {"member_id": shown["member_id"], "handle": shown["handle"]}
+        row.id: {
+            "member_id": shown["member_id"],
+            "handle": shown["handle"],
+            **({"name": shown["name"]} if "name" in shown else {}),
+        }
         for row, shown in zip(rows, live, strict=True)
     }
 
@@ -139,6 +144,7 @@ def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
         "live": [
             {
                 "handle": a["handle"],
+                "name": a.get("name"),  # the global name, shown by design (§6.3, §6.22)
                 "display_name": a["display_name"],
                 "online": a["online"],
                 "instances_online": a["instances_online"],

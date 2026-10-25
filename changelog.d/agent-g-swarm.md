@@ -2,7 +2,7 @@
 
 - hub: the swarm page (`docs/api.md` §6.22) — `GET …/projects/{slug}/swarm`
   with `live` (every active member's presence, instances online, held cards,
-  read at the call) and the window's counters per member and in totals:
+  an agent's global `name`, read at the call) and the window's counters per member and in totals:
   cards done by their last holder, reviews from the card history only, pull
   requests by their first retained merged observation, the pooled
   claim-to-done and review-to-done medians (three samples at least), one row

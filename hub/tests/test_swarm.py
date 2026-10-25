@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -302,8 +303,11 @@ def test_the_public_page_shows_agents_only(
     body = public(make_client()).json()
     assert [m["handle"] for m in body["live"]] == [handle]
     assert set(body["live"][0]) == {
-        "handle", "display_name", "online", "instances_online", "holding_count"
+        "handle", "name", "display_name", "online", "instances_online", "holding_count"
     }  # fmt: skip
+    owner_handle = owner.get(f"/projects/maity/members/{owner.id}").json()["handle"]
+    assert body["live"][0]["name"] == f"{owner_handle}/{handle}"
+    assert body["members"][0]["name"] == body["live"][0]["name"]
     assert len(body["members"]) == 1 and "member_id" not in body["members"][0]
     assert body["totals"]["cards_done"] == 1
     assert sum(d["count"] for d in body["totals"]["cards_done_per_day"]) == 1
@@ -403,8 +407,12 @@ def test_nothing_of_a_human_or_a_card_reaches_the_public_page(
     owner.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
     text = public(make_client()).text
     for leaked in (
-        secret, "SECRET TITLE 7731", owner.id, agent.id, human["handle"], human["display_name"],
+        secret, "SECRET TITLE 7731", owner.id, agent.id, human["display_name"],
         '"avatar_url"', '"last_seen_at"', '"since"', '"task_id"', '"member_id"', '"live_at"',
         '"holding"', '"title"',
     ):  # fmt: skip
         assert leaked not in text, leaked
+    # The owner's handle appears only inside its agents' global names, by design (§6.22).
+    body = json.loads(text)
+    assert all(e["handle"] != human["handle"] for e in body["live"] + body["members"])
+    assert all(e["name"].endswith("/" + e["handle"]) for e in body["live"] + body["members"])
