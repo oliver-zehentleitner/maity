@@ -225,9 +225,10 @@ proposed and the maintainer accepted. Every account may enrol, with or
 without a password (the arbiter's ruling; the go had named password
 accounts). The proof for enrolling, turning the factor off and new
 recovery codes is the password re-given within 10 minutes, or, for an
-account without one, a session in good standing at least 24 hours old
-(the arbiter's ruling after the second review round). The reasons below
-are this contract's reading.
+account without one, a first factor given within 10 minutes; a factor
+enrolled outside good standing and without the password stays
+unconfirmed (the arbiter's rulings after the second review round). The
+reasons below are this contract's reading.
 
 **Reason:** TOTP needs nothing from the browser or the operating
 system and nothing outside the hub — no relying-party binding to a host
@@ -240,11 +241,17 @@ mailbox can obtain a sign-in link, but not the code from the human's
 app. The reset needs the human's mailbox as well as the admin so that
 neither alone removes a human's second factor.
 
-The proof keeps a fresh session from the mailbox out of enrolment:
-otherwise temporary access to the mailbox would install a factor of its
-holder's choosing, which gives good standing at the next sign-in and
-with it the power to end the human's trusted sessions — and on a
-password account would lock out the human who holds the password.
+A factor enrolled outside good standing — for an account without a
+password, from a fresh mail or device-code session — stays
+**unconfirmed** until a session in good standing that existed before it
+says "This was me"; it is asked at sign-in but gives no good standing,
+and such a session can remove it with "Not me". Both act only on the
+factor generation the notice names. Otherwise temporary access to the
+mailbox would become durable standing through a factor its holder
+chose, ending the human's trusted sessions under the existing standing
+rules. On a password account the password is required instead, since
+there a mailbox session's factor would also lock out the human who
+holds the password.
 
 **Rejected alternatives:**
 - SMS codes: a paid gateway, stored phone numbers the hub has no other
@@ -252,11 +259,13 @@ password account would lock out the human who holds the password.
 - Any first factor given in the last 10 minutes as the proof (the
   arbiter's first ruling): a fresh mailbox session could then enrol and
   gain standing through its own factor.
-- A factor enrolled outside good standing that stays "unconfirmed" and
-  gives no standing until a trusted session confirms it (proposed in
-  the second review round): the arbiter chose the 24-hour guard
-  instead, which keeps such a factor from being installed at all; an
-  account without a trusted session that old waits.
+- For an account without a password, a session in good standing at
+  least 24 hours old as the proof (the arbiter's interim ruling): an
+  account without such a session could not enrol and would wait,
+  under `required_admins` at the enrolment session; the unconfirmed
+  state lets it enrol without gaining standing.
+- Requiring a trusted session's approval before an enrolment from an
+  untrusted session takes effect: the same bootstrap gap.
 - Accepting that a mailbox session enrols a factor that gives standing:
   it turns the stated mailbox limit into a takeover of the trusted
   sessions.
