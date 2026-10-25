@@ -77,5 +77,5 @@ Replace each placeholder; everything else stays byte for byte.
 ## Markdown the overview page offers
 
 ```markdown
-[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/p/<slug>)
+[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/#/p/<slug>/overview)
 ```
