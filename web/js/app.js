@@ -131,6 +131,8 @@ window.Maity = window.Maity || {};
   // ---- sign-in ------------------------------------------------------------
 
   function renderLogin(main) {
+    // A landing page may have set the tab's title (§16.7).
+    document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));

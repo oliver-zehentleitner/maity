@@ -1030,4 +1030,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .landing-cta { font-size: 1.05rem; padding: 10px 20px; }
 .landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }
 .landing-preview .landing { margin: 16px auto; }
+.landing-preview .inert-link { text-decoration: underline dotted; }
+.landing-preview .inert-link.button { cursor: default; }
 .landing-form textarea { font-family: var(--mono); }

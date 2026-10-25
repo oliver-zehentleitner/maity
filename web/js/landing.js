@@ -11,7 +11,7 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime, safeUrl } = M.dom;
   const SETTINGS = "/admin/settings/landing";
-  const ROUTE = /^\/#\/[A-Za-z0-9._~%/?=&-]*$/;
+  const ROUTE = M.markdown.ROUTE;
   const TITLE_MAX = 120, LABEL_MAX = 40;
   const MARKDOWN_MAX = 64 * 1024; // bytes of UTF-8, as the hub counts
   const utf8Length = (s) => [...s].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
@@ -90,9 +90,18 @@ window.Maity = window.Maity || {};
       markdown: markdown.value.trim() ? markdown.value : null,
       cta: label.value.trim() || href.value.trim() ? { label: label.value.trim(), href: href.value.trim() } : null,
     });
+    // The preview's links are text: a click would leave the editor and
+    // its unsaved text.
+    const inert = (node) => {
+      Array.from(node.querySelectorAll("a")).forEach((a) => {
+        a.parentNode.insertBefore(h("span", { class: "inert-link " + (a.className || "") }, a.textContent), a);
+        a.remove();
+      });
+      return node;
+    };
     const drawPreview = () => {
       const v = value();
-      append(clear(preview), v.markdown ? page(v) : h("p", { class: "muted" }, "Write the page's text to see it here."));
+      append(clear(preview), v.markdown ? inert(page(v)) : h("p", { class: "muted" }, "Write the page's text to see it here."));
     };
     [title, markdown, label, href].forEach((el) => el.addEventListener("input", drawPreview));
 
@@ -138,7 +147,8 @@ window.Maity = window.Maity || {};
         const local = {};
         if (v.markdown && utf8Length(v.markdown) > MARKDOWN_MAX) local.markdown = "longer than 64 KiB";
         if (v.enabled && !v.markdown) local.markdown = "required";
-        if (v.cta && (!v.cta.label || !(ROUTE.test(v.cta.href) || safeUrl(v.cta.href)))) local["cta.href"] = "invalid";
+        if (v.cta && !v.cta.label) local.cta = "a button needs a label as well as a link";
+        else if (v.cta && !(ROUTE.test(v.cta.href) || safeUrl(v.cta.href))) local["cta.href"] = "invalid";
         if (Object.keys(local).length) { refused(local); status.done(); return; }
         refused({});
         status.busy("Saving…");
@@ -148,7 +158,9 @@ window.Maity = window.Maity || {};
           append(status.el, h("span", { class: "ok" }, v.enabled ? "Saved. Visitors see it within a minute." : "Saved. Visitors see the login page."));
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
-          if (fields) { refused(fields); status.done(); } else status.fail("Not saved: ", err);
+          // The hub's body cap can be met before the Markdown's own limit.
+          if (err.status === 413) { refused({ markdown: "larger than the hub accepts in one save; shorten the text" }); status.done(); }
+          else if (fields) { refused(fields); status.done(); } else status.fail("Not saved: ", err);
         }
       },
     },

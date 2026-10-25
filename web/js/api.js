@@ -2106,7 +2106,8 @@ window.Maity = window.Maity || {};
     const path = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
-      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing") {
+      // The hub serves its machine form and the landing page without a session.
+      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json") {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {

@@ -177,6 +177,9 @@ window.Maity = window.Maity || {};
   };
 
   // The same, with dashboard routes as links: the landing page's renderer.
+  // The one rule for a dashboard route as a link target, for the landing
+  // page's button too (js/landing.js).
+  M.markdown.ROUTE = ROUTE;
   M.markdown.withRoutes = function (source) {
     routes = true;
     try {

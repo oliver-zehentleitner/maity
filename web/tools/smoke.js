@@ -2518,6 +2518,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     markdown: "## A team\n\nRead the [contract](https://example.org/api) or [register](/#/register); not [this](javascript:alert(1)) nor <b>bold</b>.\n\n```\n<script>x</script>\n```",
     cta: { label: "Get started", href: "/#/register" } };
   let lpAnswer = () => Promise.resolve(lpPage);
+  // Signed out, the machine form is read afresh: the hub serves it without a session.
+  win.Maity.api.forgetRoutes();
   const lpReads = [];
   win.Maity.api.get = (p) => { if (p === "/landing") { lpReads.push(p); return lpAnswer(); } return lpGet(p); };
   await go(""); await tick(); await tick();
@@ -2535,7 +2537,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
     "landing: the button and a sign-in link");
   await go("#/login"); await tick();
-  expect(byId("login-handle") && !main.querySelector("article.landing"), "landing: #/login always reaches the login page");
+  expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
   lpAnswer = () => Promise.resolve({ enabled: false });
   await go(""); await tick(); await tick();
   expect(byId("login-handle") && !main.querySelector("article.landing"), "landing: disabled, the login page");
@@ -4482,6 +4484,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "landing editor: the settings read, who changed them last, a preview by the visitor's renderer");
   byId("landing-title").value = "Hello"; byId("landing-title").dispatch("input");
   expect(text(lePreview().querySelector(".landing-title")) === "Hello", "landing editor: the preview follows the typing");
+  expect(!lePreview().querySelector("a") && lePreview().querySelectorAll(".inert-link").length >= 2,
+    "landing editor: the preview's links are text, so a click cannot leave unsaved work");
   const leMd = byId("landing-markdown").value;
   byId("landing-enabled").checked = true; byId("landing-markdown").value = "";
   await leSave();
@@ -4493,7 +4497,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("landing-markdown").value = leMd; byId("landing-cta-href").value = "ftp://example.org";
   await leSave();
   expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "The link: not allowed here", "landing editor: a button link that is neither a route nor https is refused");
-  byId("landing-cta-href").value = "/#/register";
+  byId("landing-cta-href").value = "/#/register"; byId("landing-cta-label").value = "";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "a button needs a label as well as a link", "landing editor: a button without a label is said so");
+  byId("landing-cta-label").value = "Get started";
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("too large", 413, p, "payload_too_large")) : lePatch(p, b));
+  await leSave();
+  expect(text(byId("landing-markdown-error")) === "larger than the hub accepts in one save; shorten the text", "landing editor: the hub's body cap is said at the text");
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
   await leSave();
   expect(lePatches.length === 2 && JSON.stringify(lePatches[1]) === JSON.stringify({ enabled: true, title: "Hello", markdown: leMd, cta: { label: "Get started", href: "/#/register" } })
     && text(leBox()).includes("Saved. Visitors see it within a minute."), "landing editor: saved as one PATCH of all fields");
