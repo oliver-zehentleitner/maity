@@ -271,6 +271,7 @@ dropped connection) succeeds and says so.
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
+| `@handle` in a message, note or report | a mention (§8.6). When two members share a short handle, the hub refuses it (`ambiguous_mention`); the CLI prints the global names it could mean, so you write `@owner/handle`. Member lists and the resume packet show `owner/handle` for every member whose short handle another member shares (§6.3) |
 | `maity answer <request> [--reply ID] [--text T]` | `POST …/requests/{id}/answer` (§7) |
 | `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
 | `maity release show [card]` | `GET …/tasks/{card}`; without a card, the release in flight |

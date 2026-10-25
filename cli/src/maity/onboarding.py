@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from typing import Any
 
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
@@ -102,25 +103,38 @@ def _items(data: Any) -> list[dict[str, Any]]:
 _ID_SHAPED = re.compile(r"^(agt|hum|role|area)[-:]", re.IGNORECASE)
 
 
-def _names(packet: dict[str, Any]) -> dict[str, str]:
-    """member id → handle, from the peers and this member itself: a human reads names. A
-    handle stays out when it could be read as something else: shared by two members, shaped
-    like an id or an address, or `all`; that member keeps its id."""
-    pairs: list[tuple[str, str]] = []
-    for member in [*_items(packet.get("peers")), _dict(packet.get("me"))]:
-        member_id, handle = member.get("member_id"), member.get("handle")
-        if isinstance(member_id, str) and isinstance(handle, str) and handle:
-            pairs.append((member_id, handle))
+_GLOBAL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def shown_names(members: Iterable[tuple[Any, Any, Any]]) -> dict[str, str]:
+    """member id → the name to show, from (member id, handle, global name) triples: the
+    handle, unique in the project; for two members sharing a short handle, each one's
+    global name `owner/handle` (§6.3) when the hub sent it. A name stays out when it could
+    be read as something else: shared without a global name, shaped like an id or an
+    address, or `all`; that member keeps its id."""
+    triples = [
+        (member_id, handle, name if isinstance(name, str) and _GLOBAL_NAME.match(name) else None)
+        for member_id, handle, name in members
+        if isinstance(member_id, str) and isinstance(handle, str) and handle
+    ]
     owners: dict[str, set[str]] = {}
-    for member_id, handle in pairs:
+    for member_id, handle, _ in triples:
         owners.setdefault(_key(handle), set()).add(member_id)
-    return {
-        member_id: handle
-        for member_id, handle in pairs
-        if len(owners[_key(handle)]) == 1
-        and not _ID_SHAPED.match(_key(handle))
-        and _key(handle) not in ("all", "")
-    }
+    shown: dict[str, str] = {}
+    for member_id, handle, name in triples:
+        if _ID_SHAPED.match(_key(handle)) or _key(handle) in ("all", ""):
+            continue
+        if len(owners[_key(handle)]) == 1:
+            shown[member_id] = handle
+        elif name is not None:
+            shown[member_id] = name
+    return shown
+
+
+def _names(packet: dict[str, Any]) -> dict[str, str]:
+    """member id → name, from the peers and this member itself: a human reads names."""
+    members = [*_items(packet.get("peers")), _dict(packet.get("me"))]
+    return shown_names((m.get("member_id"), m.get("handle"), m.get("name")) for m in members)
 
 
 def _key(handle: str) -> str:
@@ -136,7 +150,9 @@ def _name(value: Any, names: dict[str, str]) -> str:
 
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
-    handle = inline(me.get("handle") or me.get("member_id") or "?")
+    member_id = me.get("member_id")
+    shown = names.get(member_id) if isinstance(member_id, str) else None
+    handle = inline(shown or me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
     line = f"You are {handle}" + (f" ({inline(name)})" if name and inline(name) != handle else "")
     if me.get("member_id"):
@@ -521,6 +537,10 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(
             "Run `maity resume` at the start of every session; `maity --help` lists the rest."
+        )
+        out.append(
+            "Mention a member as @handle; when two members share a short handle, the hub "
+            "refuses it and you write the long form @owner/handle."
         )
     # Every piece above is cleaned already; this pass guarantees that nothing missed reaches
     # the terminal as a control sequence.

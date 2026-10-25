@@ -231,7 +231,7 @@ def full_packet() -> dict[str, Any]:
 def test_no_string_in_the_packet_can_forge_a_line_or_reach_the_terminal(first: bool) -> None:
     text = onboarding.render(hostile(full_packet()), first=first)
     lines = text.splitlines()
-    assert [line for line in lines if line.startswith("Next:")] == [lines[-1 - 2 * first]]
+    assert [line for line in lines if line.startswith("Next:")] == [lines[-1 - 3 * first]]
     for bad in ("\x1b", "\x07", "\x9b", "\u202e", "\r"):
         assert bad not in text
     assert "\\x1b[1A" in text and "\\u202e" in text and "\\x9b" in text
@@ -452,3 +452,34 @@ def test_checkin_is_display_only_and_json_remains_the_packet(
         ("POST", "/api/v1/me/resume"),
         ("POST", "/api/v1/me/resume"),
     ]
+
+
+def test_a_shared_short_handle_is_shown_as_the_global_name() -> None:
+    peers = [
+        {"member_id": "agt-a", "handle": "agent-a", "role": "admin", "presence": "online",
+         "name": "maintainer/agent-a"},
+        {"member_id": "agt-x", "handle": "agent-b", "role": "member", "presence": "away",
+         "name": "eve/agent-b"},
+    ]  # fmt: skip
+    me = {"member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b",
+          "owner": {"id": "hum-1", "handle": "maintainer"}}  # fmt: skip
+    text = onboarding.render(packet(peers=peers, me=me))
+    assert "You are maintainer/agent-b" in text
+    assert "eve/agent-b [agt-x]" in text
+    assert "agent-a [agt-a]" in text and "maintainer/agent-a" not in text  # unique: short
+
+
+def test_shown_names_falls_back_to_the_id() -> None:
+    shown = onboarding.shown_names(
+        [
+            ("agt-1", "agent-b", "eve/agent-b"),
+            ("agt-2", "agent-b", None),  # shared, no global name sent: the id stays
+            ("agt-3", "agt-9", "x/agt-9"),  # id-shaped
+            ("agt-4", "agent-c", "x/agent-c\x1b]52"),  # unique: the handle, name unused
+        ]
+    )
+    assert shown == {"agt-1": "eve/agent-b", "agt-4": "agent-c"}
+
+
+def test_the_first_session_explains_the_long_form() -> None:
+    assert "@owner/handle" in onboarding.render(packet(), first=True)

@@ -868,3 +868,25 @@ def test_wait_names_the_event_on_stderr_and_keeps_stdout_json(
     out = capsys.readouterr()
     assert json.loads(out.out)["seq"] == 31
     assert "#31 task_created tsk-9: Fix" in out.err and "\x1b" not in out.err
+
+
+def test_an_ambiguous_mention_names_the_long_forms(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details = {
+        "fields": {"body": "ambiguous_mention"},
+        "mentions": {
+            "agent-b": ["eve/agent-b", "maintainer/agent-b", "x/\x1b]52;c;aGk=\x07"],
+            "Not A Handle": ["a/b"],  # not handle-shaped: left out
+        },
+    }
+    fake.routes[("POST", "/api/v1/projects/maity/events")] = lambda s: (
+        400, {"error": {"code": "invalid", "message": "use the global name", "details": details}}
+    )  # fmt: skip
+    argv = ["say", "all", "ask @agent-b", "--type", "notice"]
+    assert cli.main(argv) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "body: ambiguous_mention" in err
+    assert "@agent-b could mean: @eve/agent-b, @maintainer/agent-b" in err
+    assert "write the long form @owner/handle" in err
+    assert "\x1b" not in err and "Not A Handle" not in err and "@a/b" not in err
