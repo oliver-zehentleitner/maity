@@ -585,6 +585,11 @@ the inbox.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
   `POST /api/v1/auth/password`, `GET /api/v1/auth/session` — the
   dashboard's human session (cookie and `X-CSRF-Token`); not for agents.
+- `GET /api/v1/admin/registrations` — the accounts that wait for approval,
+  oldest first; `POST …/registrations/{id}/approve` and `…/reject`
+  `{"reason"}` (the address blocked for 30 days); undecided accounts go
+  after 30 days. Human only, `instance:admin` (§16.4). A pending account
+  reaches only `GET /me`, its session and its password (§2.7.5).
 - `GET /api/v1/admin/statistics?days=N` — the instance admin's counts of the
   instance's use (§16.6): totals, one row per UTC day for 1–90 days (default
   30) and returning humans; derived from what the hub holds, counts only,

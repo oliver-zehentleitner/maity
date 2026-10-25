@@ -51,10 +51,20 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             **human_member(human, avatar_url=None),
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
+            "account_status": human.account_status,
+            "terms": (
+                {
+                    "version": human.terms_version,
+                    "accepted_at": clock.rfc3339(human.terms_accepted_at),
+                }
+                if human.terms_version is not None
+                else None
+            ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),
         },
-        "projects": _human_projects(conn, human.id),
+        # A pending account is a member of nothing (§2.7.5).
+        "projects": _human_projects(conn, human.id) if human.account_status == "active" else [],
     }
 
 

@@ -13,25 +13,33 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Body, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy import Connection, Engine, and_, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, invitations, registration, registration_mail
+from maity_hub import (
+    clock,
+    paging,
+    registration,
+    registration_accounts,
+    registration_mail,
+)
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, rate_limited
+from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.mail import address
 from maity_hub.ratelimit import Limiter
 
 router = APIRouter()
+
+PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 PASSWORD_MIN = 12  # §2.1
 BY_SOURCE = Limiter(10, 3600)  # POST /auth/register per source address (§2.7.3), 429
@@ -161,12 +169,8 @@ def _store(
             delete(t.pending_registration).where(t.pending_registration.c.expires_at <= now)
         )
         resolved = _resolved(conn, hub)
-        # TODO(registration part 2): completion re-checks the admission atomically and
-        # ends a registration whose invitation stopped admitting (§2.7.1, §3.4).
-        admitted = resolved.allows(given) or (
-            resolved.mail_ready and invitations.admits_address(conn, normalized)
-        )
-        if over or not admitted:
+        # A filter that spares a mail; completion checks again (`registration_accounts`).
+        if over or not registration_accounts.admitted(conn, resolved, given):
             registration.DROPPED.add()
             return
         blocked = conn.execute(
@@ -295,3 +299,77 @@ def lift_block(blocked: str, request: Request, caller: HumanCaller) -> Response:
             )
         )
     return Response(status_code=204)
+
+
+class RejectIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=registration_accounts.REASON_MAX)
+
+
+@router.get("/admin/registrations")
+def list_registrations(
+    request: Request,
+    caller: HumanCaller,
+    limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The accounts that wait for approval, oldest first (§16.4)."""
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        registration_accounts.expire(conn)
+        c = t.account_registration.c
+        query = select(t.account_registration).where(c.status == "pending")
+        if cursor is not None:
+            after_at, after_id = paging.uncursor(cursor, "registrations")
+            query = query.where(
+                or_(c.created_at > after_at, and_(c.created_at == after_at, c.human_id > after_id))
+            )
+        rows = conn.execute(query.order_by(c.created_at, c.human_id).limit(limit + 1)).all()
+        page = rows[:limit]
+        next_cursor = (
+            paging.cursor(page[-1].created_at, page[-1].human_id, "registrations")
+            if len(rows) > limit
+            else None
+        )
+        items = [registration_accounts.item(conn, row) for row in page]
+        return JSONResponse({"items": items, "next_cursor": next_cursor})
+
+
+def _decidable(conn: Connection, human_id: str) -> Any:
+    """The pending account, locked; `not_found` for none, `invalid_transition` for one
+    another instance admin decided meanwhile (§16.4)."""
+    registration_accounts.expire(conn)
+    row = registration_accounts.locked(conn, human_id)
+    if row is None:
+        raise not_found()
+    if row.status != "pending":
+        raise ApiError(
+            409,
+            "invalid_transition",
+            f"the registration is {row.status} already",
+            {"from": row.status, "to": "decided"},
+        )
+    return row
+
+
+@router.post("/admin/registrations/{human_id}/approve")
+def approve_registration(human_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        row = _decidable(conn, human_id)
+        registration_accounts.approve(conn, row, caller.principal_id)
+        return JSONResponse({**registration_accounts.item(conn, row), "account_status": "active"})
+
+
+@router.post("/admin/registrations/{human_id}/reject")
+def reject_registration(
+    human_id: str, body: RejectIn, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    if any(ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in body.reason):
+        raise invalid({"reason": "invalid"})
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        row = _decidable(conn, human_id)
+        registration_accounts.remove(conn, row, "rejected", caller.principal_id, body.reason)
+        return JSONResponse({"id": human_id, "status": "rejected"})

@@ -155,6 +155,24 @@ invitation = Table(
     **MYSQL_TABLE,
 )
 
+# An account that registration made under `approval: operator` (§2.7.5, §16.4): what the
+# instance admin needs to decide on it, and the decision. No foreign key to `human`: a
+# rejected or expired account is deleted, and its row keeps that it was decided.
+account_registration = Table(
+    "account_registration",
+    metadata,
+    Column("human_id", String(ID), primary_key=True),
+    Column("address", String(254), nullable=False),
+    Column("address_normalized", String(254), nullable=False, index=True),
+    Column("source_ip", String(64), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("status", String(16), nullable=False),  # pending, active, rejected, expired
+    Column("decided_at", UtcDateTime),
+    Column("decided_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
 # One row per address that registration ever changed pending registrations for, locked
 # (`SELECT … FOR UPDATE`) to serialise those changes (§2.7.1). Only a lock, no data.
 registration_lock = Table(
