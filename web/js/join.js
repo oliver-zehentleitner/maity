@@ -130,6 +130,8 @@ window.Maity = window.Maity || {};
         : m.instances ? "" : "The hub has not listed its instances here.";
     }
     agentSelect.addEventListener("change", showAgent);
+    // Choosing an instance is choosing to replace it.
+    replaced.addEventListener("change", () => { replaceOne.checked = true; another.checked = false; });
     // The project's members read again, for the instances a choice offers.
     async function rereadMembers() {
       try { members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
@@ -230,13 +232,17 @@ window.Maity = window.Maity || {};
           // took for a member's, or an instance revoked meanwhile: read the
           // members again and offer what the hub has.
           const notMember = fields.new_instance === "not_a_member" || fields.replaces === "not_a_member";
-          if (agent.id && (fields.instance === "required" || fields.replaces || notMember || err.code === "instance_quota")) {
-            if (fields.instance === "required") saidMember.add(agent.id);
+          // The hub checks the membership's fields before the instance
+          // (routes/joins.py): a differing role, area or briefing says
+          // "member" as surely as instance: required does.
+          const saysMember = fields.instance === "required" || Object.values(fields).includes("differs_from_membership");
+          if (agent.id && (saysMember || fields.replaces || notMember || err.code === "instance_quota")) {
+            if (saysMember) saidMember.add(agent.id);
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
             if (notMember) members = members.filter((m) => m.id !== agent.id);
             showAgent();
-            if (fields.instance === "required") status.fail("No join created: ", { message: "this agent is already a member of the project. "
+            if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
               + "Choose whether the line starts another instance or replaces one, then create it." });
             (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
           }

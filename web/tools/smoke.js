@@ -1957,7 +1957,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "join: another instance beyond the team's limit shows the hub's instance_quota as it is");
   inPick("agt-c");
   expect(byId("join-replaces").querySelectorAll("option").map((o) => o.attrs.value).join() === "k3pa" && text(byId("join-quota")) === "1 of 3 instances active.",
-    "join: a revoked instance is not offered to replace");
+    "join: a member's active instance offered, the team's count against its limit");
   inNew(); await inSubmit();
   expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
   // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
@@ -1988,6 +1988,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   inProto.focus = inFocus; document.activeElement = undefined;
   await inSubmit();
   expect(inPosts.length === 5 && inPosts[4][1].replaces === "q2zz" && !("role" in inPosts[4][1]), "join: after the refusal the join is created as a replacement");
+  // The hub checks the membership's fields first: its differs_from_membership says "member" as well.
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members"
+    ? inGetAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-x", kind: "agent", handle: "spare", display_name: "Spare", role: "member",
+      team: { max_instances: 2 }, instances: [{ id: "q2zz", label: "spare#q2zz", presence: "offline", last_seen_at: null, claims: 0, revoked_at: null },
+        { id: "r3yy", label: "spare#r3yy", presence: "online", last_seen_at: null, claims: 0, revoked_at: null }] }]), next_cursor: null }))
+    : inGetAll(p));
+  win.Maity.api.post = (p, b) => {
+    inPosts.push([p, b]);
+    return b.agent.id === "agt-x" && "areas" in b
+      ? Promise.reject(new win.Maity.api.ApiError("the agent is a member; change its membership instead", 400, p, "invalid", { fields: { areas: "differs_from_membership" } }))
+      : inPost(p, b);
+  };
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  inPick("agt-x"); byId("join-areas").value = "web/";
+  await inSubmit();
+  expect(!inBox().hidden && text(main).includes("this agent is already a member of the project") && byId("join-role").parentNode.hidden,
+    "join: the hub's differs_from_membership also brings the instance choice");
+  inNew();
+  byId("join-replaces").value = "r3yy"; byId("join-replaces").dispatch("change");
+  expect(byId("join-replace").checked && !byId("join-new-instance").checked, "join: choosing an instance to replace selects Replace");
   win.Maity.api.post = inPost; win.Maity.api.getAll = inGetAll;
   // Joining lives in Agents: no tab of its own; the old route opens the panel there.
   expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("Join an agent")), "join: no tab of its own any more");

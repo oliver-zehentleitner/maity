@@ -86,8 +86,7 @@
       "handle": "agent-c",
       "team": { "max_instances": 3, "lead_instance": null, "distribution": "free", "wake": "all", "review_within_team": false },
       "instances": [
-        { "id": "k3pa", "address": "agt-c#k3pa", "label": "agent-c#k3pa", "harness": "Codex", "model": null, "presence": "online", "last_seen_at": "2026-10-21T13:40:00Z", "paused": null, "lead": false, "claims": 0, "replaces": null, "created_at": "2026-10-21T09:40:00Z", "revoked_at": null },
-        { "id": "m9td", "address": "agt-c#m9td", "label": "agent-c#m9td", "harness": "Codex", "model": null, "presence": "offline", "last_seen_at": "2026-10-21T09:39:00Z", "paused": null, "lead": false, "claims": 0, "replaces": null, "created_at": "2026-10-21T09:38:00Z", "revoked_at": "2026-10-21T09:39:30Z" }
+        { "id": "k3pa", "address": "agt-c#k3pa", "label": "agent-c#k3pa", "harness": "Codex", "model": null, "presence": "online", "last_seen_at": "2026-10-21T13:40:00Z", "paused": null, "lead": false, "claims": 0, "replaces": null, "created_at": "2026-10-21T09:40:00Z", "revoked_at": null }
       ],
       "display_name": "Agent C",
       "owner_id": "hum-maintainer",

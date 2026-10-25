@@ -1051,21 +1051,6 @@ window.MAITY_FIXTURES = {
             "presence": "online",
             "replaces": null,
             "revoked_at": null
-          },
-          {
-            "address": "agt-c#m9td",
-            "claims": 0,
-            "created_at": "2026-10-21T09:38:00Z",
-            "harness": "Codex",
-            "id": "m9td",
-            "label": "agent-c#m9td",
-            "last_seen_at": "2026-10-21T09:39:00Z",
-            "lead": false,
-            "model": null,
-            "paused": null,
-            "presence": "offline",
-            "replaces": null,
-            "revoked_at": "2026-10-21T09:39:30Z"
           }
         ],
         "joined_at": "2026-10-21T08:00:00Z",

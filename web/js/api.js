@@ -1596,6 +1596,10 @@ window.Maity = window.Maity || {};
         fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
       }
       if (member) {
+        // routes/joins.py: the membership's own fields first, then the instance.
+        const differ = ["role", "reports_to", "areas", "capabilities", "briefing"].filter((k) => k in body && body[k] != null
+          && JSON.stringify(body[k]) !== JSON.stringify(member[k] === undefined ? null : member[k]));
+        if (differ.length) fail(400, "invalid", "the agent is a member; change its membership instead", path, { fields: Object.fromEntries(differ.map((k) => [k, "differs_from_membership"])) });
         const active = (member.instances || []).filter((i) => !i.revoked_at);
         if (body.new_instance && body.replaces != null) fail(400, "invalid", "new_instance or replaces, not both", path, { fields: { instance: "one_of" } });
         if (body.replaces != null) {
@@ -1605,8 +1609,6 @@ window.Maity = window.Maity || {};
         } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
           fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
         }
-        const differ = ["role", "reports_to"].filter((k) => k in body && body[k] !== member[k]);
-        if (differ.length) fail(400, "invalid", "a join leaves the membership as it is", path, { fields: Object.fromEntries(differ.map((k) => [k, "differs"])) });
       }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
