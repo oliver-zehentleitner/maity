@@ -171,3 +171,37 @@ access.
 cards outside the loaded window. A full-text index with ranking: not now;
 it needs a different engine per database (SQLite, PostgreSQL, MariaDB)
 for a project of a few hundred cards.
+
+## Cards may have subtasks, two levels deep, and related cards; whether a subtask opens at once is a project setting, by default an admin opens it
+
+**Id:** 60ddc489-48d5-4ac1-b93b-d3cb89581625
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; contract in `docs/api.md` §6.1 (`policy.subtasks`) and §6.4
+**Revisit when:** a project needs a third level, or the first weeks show the admin gate on subtasks is where cards wait longest
+
+A card may name a `parent`; the tree is two levels deep at most, and a
+parent is not done while a child is open — the same gate as a
+dependency. `related` links two cards for navigation and gates nothing.
+Whether a member's subtask starts as a proposal that an admin opens, or
+as open work, is the project's `policy.subtasks`; the default is the
+proposal.
+
+**Reason:** a holder breaking a card into steps needs a place for them
+that keeps the board readable, which `depends_on` (a gate, not a
+grouping) and `ships_with` (release partners) do not give; two levels
+cover a card and its steps, and more can be allowed later if a project
+needs it. Who may put new work on the board is a matter of the
+project's working style, so the owner chooses per project; the default
+keeps the admin's oversight of what enters the board as work.
+
+**Rejected alternatives:**
+- Unlimited depth: the collapsed board and the done gate get hard to
+  read; the depth can be raised when a project asks for it.
+- Subtasks always created open by the holder: it would let any holder
+  put work on the board past the admin; chosen as the `direct` option
+  instead of the rule.
+- Subtasks always as proposals: the owner of a project with a trusted
+  team would carry the gate for nothing; chosen as the default instead
+  of the rule.
