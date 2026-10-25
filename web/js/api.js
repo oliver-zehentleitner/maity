@@ -1184,9 +1184,57 @@ window.Maity = window.Maity || {};
       }
       return Object.assign({}, base, { window_days: n, days });
     }],
+    // §16.7: the public landing page — fixtures/landing.json, off as on
+    // every fresh instance; ?landing=on shows it, ?landing=fail fails; the admin's settings
+    // checked as the hub checks them (hub/src/maity_hub/landing.py).
+    ["GET", /^\/landing$/, (m, body, path) => {
+      if (params.get("landing") === "fail") fail(503, "unavailable", "the hub is unavailable", path);
+      const v = fixtures()["landing.json"];
+      if (!(v.enabled || params.get("landing") === "on")) return { enabled: false };
+      return { enabled: true, title: v.title, markdown: v.markdown, cta: v.cta, updated_at: v.updated_at };
+    }],
+    ["GET", /^\/admin\/settings\/landing$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtures()["landing.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/landing$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const v = Object.assign({}, fixtures()["landing.json"]);
+      const errors = {};
+      const target = (t) => /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/.test(t) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
+      Object.entries(body).forEach(([k, x]) => {
+        if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
+        else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
+        else if (x === null) v[k] = null;
+        else if (k === "title") { if (typeof x === "string" && x.trim() && x.length <= 120) v.title = x.trim(); else errors.title = "invalid"; }
+        else if (k === "markdown") {
+          let fence = null, bad = null;
+          String(x).replace(/\r\n?/g, "\n").split("\n").some((line, i) => {
+            if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
+            const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+            if (f) { fence = f[1]; return false; }
+            const links = [...line.matchAll(/\]\(([^)\s]*)\)/g)].map((y) => y[1]);
+            if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line) || links.some((t) => !target(t))) { bad = "line " + (i + 1); return true; }
+            return false;
+          });
+          if (bad) errors.markdown = bad; else v.markdown = x;
+        } else if (k === "cta") {
+          if (!x.label || !String(x.label).trim()) errors.cta = "invalid";
+          else if (!target(x.href || "")) errors["cta.href"] = "invalid";
+          else v.cta = { label: String(x.label).trim(), href: x.href };
+        }
+      });
+      if (!Object.keys(errors).length && v.enabled && !v.markdown) errors.markdown = "required";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      v.updated_at = nowIso(); v.updated_by = me().member.id;
+      fixtures()["landing.json"] = v;
+      return v;
+    }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
       "/api/v1/admin/users": { get: {} },
       "/api/v1/admin/statistics": { get: {} },
+      "/api/v1/admin/settings/landing": { get: {}, patch: {} },
+      "/api/v1/landing": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
@@ -2081,7 +2129,8 @@ window.Maity = window.Maity || {};
     const path = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
-      if (!fixtureSignedIn && !path.startsWith("/auth/")) {
+      // The hub serves its machine form and the landing page without a session.
+      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json") {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {

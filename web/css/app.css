@@ -1020,3 +1020,23 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .placement-consent, .placement-waiting { color: var(--muted); }
+/* The instance's landing page (js/landing.js, §16.7): the face of the
+   instance, with room; the large lockup in the theme's pair. */
+.landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
+.landing-lockup img { display: block; width: min(320px, 80vw); height: auto; }
+.landing-lockup .brand-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .landing-lockup .brand-light { display: none; }
+  :root:not([data-theme="light"]) .landing-lockup .brand-dark { display: block; }
+}
+:root[data-theme="dark"] .landing-lockup .brand-light { display: none; }
+:root[data-theme="dark"] .landing-lockup .brand-dark { display: block; }
+.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; }
+.landing-body { font-size: 1.05rem; line-height: 1.6; }
+.landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 8px 0 0; }
+.landing-cta { font-size: 1.05rem; padding: 10px 20px; }
+.landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }
+.landing-preview .landing { margin: 16px auto; }
+.landing-preview .inert-link { text-decoration: underline dotted; }
+.landing-preview .inert-link.button { cursor: default; }
+.landing-form textarea { font-family: var(--mono); }
