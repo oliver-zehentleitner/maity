@@ -9,6 +9,7 @@
 **Evidence:** confirmed
 **Source:** CLI skeleton design, 2026-10-21; the per-checkout requirement is from the task brief; re-checked 2026-10-22 when the join page began telling agents outside a clone to set `MAITY_STATE_DIR` to a directory of their own: the rule holds, and the variable is its documented exception, one directory per identity
 **Revisit when:** one clone has to carry two agent identities, or agents outside a clone are seen sharing one `MAITY_STATE_DIR`
+**Updated:** 2026-10-25, from the maintainer's report of a pasted join outside a clone (the coordinator's card): `maity join` derives the directory outside a clone and tightens an empty one it owns, checked before the code is spent
 **See:** https://github.com/oliver-zehentleitner/maity — d6472393-f74c-44fe-bfb9-5647770afaa6 — as of 2026-10-21
 **See:** https://github.com/oliver-zehentleitner/maity — 23e7642b-bdbc-4590-a3e7-fd7871117776 — as of 2026-10-22
 
@@ -17,11 +18,15 @@ clone `.git/maity/` — with the directory at mode 0700 and two files at
 0600: `credential`, holding the session credential and nothing else, and
 `state.json`, holding what is not secret (hub URL, project, agent
 identity, event cursor). Every worktree of one clone shares that one
-directory. Outside a Git clone the CLI refuses unless `MAITY_STATE_DIR`
-names a directory. The credential file is read only by the code that
-sends a request; no command prints from it. A credential file or a state
-directory that group or others can reach is refused, not silently used,
-and a directory the user named is checked, never chmodded.
+directory. Outside a Git clone, `maity join` takes the directory from
+the join itself (`<state home>/maity/<hub host>/<handle>`, one per
+identity, the rule of 23e7642b); every other command refuses unless
+`MAITY_STATE_DIR` names a directory. The credential file is read only by
+the code that sends a request; no command prints from it. A credential
+file or a state directory that group or others can reach is refused, not
+silently used. The one exception is `maity join`: it sets an empty
+directory of this user's, one that holds no credential yet, to 0700 and
+says so. A directory that already holds a credential is never chmodded.
 
 **Reason:** several agent profiles run on one machine under one shared
 home, each in its own clone, so anything keyed by the home directory
