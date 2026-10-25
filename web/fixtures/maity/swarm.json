@@ -1,0 +1,250 @@
+{
+ "as_of": "2026-10-21T13:00:00Z",
+ "window_days": 30,
+ "live_at": "2026-10-21T13:41:03Z",
+ "live": [
+  {
+   "member_id": "hum-maintainer",
+   "kind": "human",
+   "handle": "maintainer",
+   "name": null,
+   "display_name": "Maintainer",
+   "avatar_url": null,
+   "online": true,
+   "instances_online": 0,
+   "holding": [],
+   "last_seen_at": "2026-10-21T13:40:00Z"
+  },
+  {
+   "member_id": "agt-a",
+   "kind": "agent",
+   "handle": "agent-a",
+   "name": "maintainer/agent-a",
+   "display_name": "Agent A",
+   "avatar_url": null,
+   "online": true,
+   "instances_online": 1,
+   "holding": [
+    {
+     "task_id": "tsk-0001",
+     "title": "API contract: docs/api.md",
+     "since": "2026-10-21T09:10:00Z"
+    }
+   ],
+   "last_seen_at": "2026-10-21T13:41:10Z"
+  },
+  {
+   "member_id": "agt-b",
+   "kind": "agent",
+   "handle": "agent-b",
+   "name": "maintainer/agent-b",
+   "display_name": "Agent B",
+   "avatar_url": null,
+   "online": true,
+   "instances_online": 2,
+   "holding": [
+    {
+     "task_id": "tsk-0004",
+     "title": "Hub: credential exchange and storage",
+     "since": "2026-10-21T10:00:00Z"
+    }
+   ],
+   "last_seen_at": "2026-10-21T13:39:30Z"
+  },
+  {
+   "member_id": "agt-c",
+   "kind": "agent",
+   "handle": "agent-c",
+   "name": "maintainer/agent-c",
+   "display_name": "Agent C",
+   "avatar_url": null,
+   "online": false,
+   "instances_online": 0,
+   "holding": [],
+   "last_seen_at": "2026-10-21T11:02:00Z"
+  }
+ ],
+ "members": [
+  {
+   "member_id": "hum-maintainer",
+   "kind": "human",
+   "handle": "maintainer",
+   "name": null,
+   "cards_done": 3,
+   "reviews_given": 9,
+   "prs_merged": 0,
+   "handovers": 0,
+   "claim_to_done_median_seconds": null,
+   "review_to_done_median_seconds": null
+  },
+  {
+   "member_id": "agt-a",
+   "kind": "agent",
+   "handle": "agent-a",
+   "name": "maintainer/agent-a",
+   "cards_done": 12,
+   "reviews_given": 4,
+   "prs_merged": 10,
+   "handovers": 1,
+   "claim_to_done_median_seconds": 5400,
+   "review_to_done_median_seconds": 1800
+  },
+  {
+   "member_id": "agt-b",
+   "kind": "agent",
+   "handle": "agent-b",
+   "name": "maintainer/agent-b",
+   "cards_done": 19,
+   "reviews_given": 0,
+   "prs_merged": 12,
+   "handovers": 2,
+   "claim_to_done_median_seconds": 9000,
+   "review_to_done_median_seconds": 2700
+  },
+  {
+   "member_id": "agt-c",
+   "kind": "agent",
+   "handle": "agent-c",
+   "name": "maintainer/agent-c",
+   "cards_done": 2,
+   "reviews_given": 0,
+   "prs_merged": 1,
+   "handovers": 0,
+   "claim_to_done_median_seconds": null,
+   "review_to_done_median_seconds": null
+  }
+ ],
+ "totals": {
+  "cards_done": 36,
+  "reviews_given": 13,
+  "prs_merged": 23,
+  "handovers": 3,
+  "claim_to_done_median_seconds": 6100,
+  "review_to_done_median_seconds": 2400,
+  "cards_done_per_day": [
+   {
+    "date": "2026-10-21",
+    "count": 4
+   },
+   {
+    "date": "2026-10-20",
+    "count": 2
+   },
+   {
+    "date": "2026-10-19",
+    "count": 0
+   },
+   {
+    "date": "2026-10-18",
+    "count": 3
+   },
+   {
+    "date": "2026-10-17",
+    "count": 5
+   },
+   {
+    "date": "2026-10-16",
+    "count": 1
+   },
+   {
+    "date": "2026-10-15",
+    "count": 2
+   },
+   {
+    "date": "2026-10-14",
+    "count": 4
+   },
+   {
+    "date": "2026-10-13",
+    "count": 2
+   },
+   {
+    "date": "2026-10-12",
+    "count": 0
+   },
+   {
+    "date": "2026-10-11",
+    "count": 3
+   },
+   {
+    "date": "2026-10-10",
+    "count": 5
+   },
+   {
+    "date": "2026-10-09",
+    "count": 1
+   },
+   {
+    "date": "2026-10-08",
+    "count": 2
+   },
+   {
+    "date": "2026-10-07",
+    "count": 4
+   },
+   {
+    "date": "2026-10-06",
+    "count": 2
+   },
+   {
+    "date": "2026-10-05",
+    "count": 0
+   },
+   {
+    "date": "2026-10-04",
+    "count": 3
+   },
+   {
+    "date": "2026-10-03",
+    "count": 5
+   },
+   {
+    "date": "2026-10-02",
+    "count": 1
+   },
+   {
+    "date": "2026-10-01",
+    "count": 2
+   },
+   {
+    "date": "2026-09-30",
+    "count": 4
+   },
+   {
+    "date": "2026-09-29",
+    "count": 2
+   },
+   {
+    "date": "2026-09-28",
+    "count": 0
+   },
+   {
+    "date": "2026-09-27",
+    "count": 3
+   },
+   {
+    "date": "2026-09-26",
+    "count": 5
+   },
+   {
+    "date": "2026-09-25",
+    "count": 1
+   },
+   {
+    "date": "2026-09-24",
+    "count": 2
+   },
+   {
+    "date": "2026-09-23",
+    "count": 4
+   },
+   {
+    "date": "2026-09-22",
+    "count": 2
+   }
+  ]
+ },
+ "coverage": {
+  "reviews_since": "2026-10-20"
+ }
+}

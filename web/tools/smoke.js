@@ -1475,6 +1475,62 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
 
+  // The swarm (js/swarm.js, docs/api.md §6.22): the members' tab, the public page, the policy switch.
+  const swGets = [];
+  const swGet = win.Maity.api.get, swPatch = win.Maity.api.patch;
+  win.Maity.api.get = (p) => { if (p.includes("swarm")) swGets.push(p); return swGet(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox"); await go("#/p/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
+  const swTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Swarm");
+  const swLive = () => (main.querySelector("ul.swarm-live") || { childNodes: [] }).childNodes;
+  const swLi = (id) => swLive().find((li) => li.attrs["data-member"] === id);
+  expect(swTab && swTab.getAttribute("aria-current") === "page" && swGets[0] === "/projects/maity/swarm?days=30" && swLive().length === 4,
+    "swarm: a tab of the project, read for 30 days, everyone in the live strip");
+  expect(text(swLi("agt-b")).includes("online, 2 instances") && swLi("agt-b").querySelector(".swarm-holding a").getAttribute("href") === "#/p/maity/tasks/tsk-0004"
+    && text(swLi("agt-b")).includes("Hub: credential exchange and storage") && text(swLi("agt-c")).includes("last seen") && text(swLi("hum-maintainer")).includes(" online"),
+    "swarm: online with its instances, what each holds as links to the cards, last seen for the offline");
+  const swRows = main.querySelectorAll("table.swarm-table tbody tr");
+  const swTotal = main.querySelector("table.swarm-table tfoot tr");
+  const swRowB = swRows.find((tr) => tr.attrs["data-member"] === "agt-b");
+  expect(swRows.length === 4 && JSON.stringify(swRowB.childNodes.slice(1).map((c) => text(c))) === JSON.stringify(["19", "0", "12", "2", "2 h 30 min", "45 min"])
+    && text(swRows.find((tr) => tr.attrs["data-member"] === "agt-c")).endsWith("––") && text(swTotal).startsWith("All36132331 h 42 min40 min"),
+    "swarm: the window's table per member and in all, medians in words, – below three samples " + JSON.stringify([text(swRowB), text(swTotal)]));
+  expect(text(main).includes("36 cards done") && main.querySelector(".swarm-per-day").childNodes[1].tagName.toLowerCase() === "svg"
+    && text(main).includes("Reviews are counted from 2026-10-20.") && text(main).includes("fewer than three cards")
+    && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/s/maity"), "swarm: cards done per day, the coverage and samples notes, the public page linked");
+  btn(main, "7 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(swGets[swGets.length - 1] === "/projects/maity/swarm?days=7" && btn(main, "7 days").getAttribute("aria-pressed") === "true", "swarm: the switch reads 7 days");
+  // The public page: agents only, by their global names, no pictures, no card titles or links.
+  await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
+  const swPub = main.querySelector("article.swarm-public");
+  expect(swPub && swGets[swGets.length - 1] === "/swarm/maity?days=30" && swPub.querySelector("ul.swarm-live").childNodes.length === 3
+    && !text(swPub).includes("Maintainer") && text(swPub).includes("maintainer/agent-b") && text(swPub).includes("holds 1 card")
+    && !swPub.querySelector("img") && !swPub.querySelectorAll("a").some((a) => /tasks/.test(a.getAttribute("href") || "")) && !text(swPub).includes("credential exchange")
+    && swPub.querySelectorAll("table.swarm-table tbody tr").length === 3 && document.title === "Swarm · maity",
+    "swarm: the public page shows agents only, by global name, counts and presence, no pictures or card titles");
+  // The switch in Project settings, a policy change with its reason; off, the public page is not found.
+  const swPatches = [];
+  win.Maity.api.patch = (p, b) => { swPatches.push([p, b]); return swPatch(p, b); };
+  await go("#/p/maity/inbox"); await projectSettings();
+  byId("swarm-public-select").value = "off";
+  header.querySelector("form.swarm-public-form").dispatch("submit"); await tick();
+  expect(!swPatches.length && text(header.querySelector("form.swarm-public-form")).includes("never a human, a picture or a card's title"), "swarm: the switch says what it exposes, and needs a reason");
+  byId("swarm-public-select").value = "off"; byId("swarm-public-reason").value = "Not yet";
+  header.querySelector("form.swarm-public-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(swPatches.length === 1 && JSON.stringify(swPatches[0][1]) === JSON.stringify({ policy: { swarm_public: "off" }, reason: "Not yet" }), "swarm: switched off as a policy change");
+  if (header.querySelector("form.swarm-public-form")) await projectSettings();
+  await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No public swarm here") && text(main).includes("This project shows no public swarm page"), "swarm: off, the public page is a friendly not found");
+  win.Maity.api.patch = swPatch;
+  await swPatch("/projects/maity", { policy: { swarm_public: "on" }, reason: "back on" });
+  // A hub without the swarm says so in the tab.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : swGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("This hub has no swarm page yet.") && !main.querySelector("table.swarm-table"), "swarm: a hub without it says so");
+  win.Maity.api.get = swGet; win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox");
+
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());

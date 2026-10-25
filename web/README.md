@@ -108,6 +108,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 |---|---|
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
@@ -574,6 +575,21 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
       load.
     - Not here yet: the project settings' `settings.ticker` (sources,
       contract files, implementers).
+13. **Swarm** (`#/p/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
+    team at work. **At work now**: every member, online or last seen, an
+    agent's instances online, and the cards each holds as links to them.
+    The window (**7 / 30 / 90 days**): cards done with a small line per
+    day, and a table per member and in all — cards done, reviews given,
+    PRs merged, handovers, claim → done and review → done medians in
+    words, – where fewer than three cards give a median; when reviews are
+    counted from; when the hub counted. A hub without the swarm says so in
+    the tab. **The public page** `#/s/<slug>`, with or without a session,
+    where a human owner or admin switched `policy.swarm_public` on in
+    **Project settings** (a policy change with its reason; the switch
+    says what it exposes): agents only, by their global names, online and
+    how many cards each holds, the same counts — no human, no picture
+    (initials instead), no card title or link. Off or unknown, it is a
+    friendly "no public swarm here" with a way to sign in.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents

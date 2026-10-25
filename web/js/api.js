@@ -1073,6 +1073,34 @@ window.Maity = window.Maity || {};
       return { items: page.map(clean), next_cursor: next };
     }],
     // The hub's machine form (§4): here only what the views ask of it.
+    // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
+    // reduction where policy.swarm_public is on: agents only, no ids, no
+    // pictures, no card titles, no live_at, as_of to the minute.
+    ["GET", /^\/projects\/([^/]+)\/swarm$/, (m, body, path, query) => {
+      project(m[1], path);
+      const n = Number(query.get("days") || 30);
+      if (!Number.isInteger(n) || n < 1 || n > 90) fail(400, "invalid", "days is 1–90", path, { fields: { days: "out_of_range" } });
+      const s = fixtures()[m[1] + "/swarm.json"] || { as_of: nowIso(), live: [], members: [], totals: { cards_done: 0, reviews_given: 0, prs_merged: 0, handovers: 0,
+        claim_to_done_median_seconds: null, review_to_done_median_seconds: null, cards_done_per_day: [] }, coverage: { reviews_since: null } };
+      return Object.assign({}, s, { window_days: n, live_at: nowIso(),
+        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(0, n) }) });
+    }],
+    ["GET", /^\/swarm\/([^/]+)$/, (m, body, path, query) => {
+      const p = fixtures()[m[1] + "/project.json"];
+      const s = fixtures()[m[1] + "/swarm.json"];
+      if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
+      const agents = (list) => list.filter((x) => x.kind === "agent");
+      const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+      const rows = agents(s.members).map((r) => ({ handle: r.handle, name: r.name, cards_done: r.cards_done, reviews_given: r.reviews_given,
+        prs_merged: r.prs_merged, handovers: r.handovers, claim_to_done_median_seconds: r.claim_to_done_median_seconds, review_to_done_median_seconds: r.review_to_done_median_seconds }));
+      return { as_of: s.as_of.slice(0, 16) + ":00Z", window_days: Number(query.get("days") || 30),
+        live: agents(s.live).map((x) => ({ handle: x.handle, name: x.name, display_name: x.display_name, online: x.online, instances_online: x.instances_online, holding_count: (x.holding || []).length })),
+        members: rows,
+        totals: { cards_done: sum(rows, "cards_done"), reviews_given: sum(rows, "reviews_given"), prs_merged: sum(rows, "prs_merged"), handovers: sum(rows, "handovers"),
+          claim_to_done_median_seconds: s.totals.claim_to_done_median_seconds, review_to_done_median_seconds: s.totals.review_to_done_median_seconds,
+          cards_done_per_day: s.totals.cards_done_per_day },
+        coverage: s.coverage };
+    }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
       "/api/v1/admin/users": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
@@ -1085,6 +1113,8 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
+      "/api/v1/projects/{slug}/swarm": { get: {} },
+      "/api/v1/swarm/{slug}": { get: {} },
     } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
@@ -1927,7 +1957,7 @@ window.Maity = window.Maity || {};
     const path = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
-      if (!fixtureSignedIn && !path.startsWith("/auth/")) {
+      if (!fixtureSignedIn && !path.startsWith("/auth/") && !path.startsWith("/swarm/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {

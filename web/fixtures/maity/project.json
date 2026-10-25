@@ -19,7 +19,8 @@
     "tag_authority": "human",
     "steward_writes": "cards_only",
     "lease_seconds": 7200,
-    "signing": "optional"
+    "signing": "optional",
+    "swarm_public": "on"
   },
   "absence": null,
   "settings": {
