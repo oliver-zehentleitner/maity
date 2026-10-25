@@ -104,13 +104,15 @@ def submit(
     return shown
 
 
-def _view(row: Any, authors: dict[int, str]) -> dict[str, Any]:
+def _view(row: Any, authors: dict[int, str], reader: Any = None) -> dict[str, Any]:
     shown: dict[str, Any] = {"id": row.id, "anonymous": row.anonymous}
     if not row.anonymous:
         shown["author"] = authors.get(row.author)
         shown["withdrawn"] = row.withdrawn
     if row.redaction is not None:
-        shown.update({f: None for f in FIELDS}, redaction=row.redaction)
+        from maity_hub.jourfixe.views import project_redaction
+
+        shown.update({f: None for f in FIELDS}, redaction=project_redaction(row.redaction, reader))
     else:
         shown.update({f: getattr(row, f) for f in FIELDS}, redaction=None)
     return shown
@@ -134,10 +136,10 @@ def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list
 
     authors = principal_ids(conn, (r.author for r in rows if r.author is not None))
     if only_mine:
-        return [_view(r, authors) for r in rows if _is_own(round_row, r, mine)]
+        return [_view(r, authors, mine) for r in rows if _is_own(round_row, r, mine)]
     if not readers_see_all(round_row, mine):
         raise not_found()
-    return [_view(r, authors) for r in rows]
+    return [_view(r, authors, mine) for r in rows]
 
 
 def _is_own(round_row: Any, row: Any, mine: Any) -> bool:
