@@ -4,7 +4,9 @@
   recovery codes for every account, sealed with `MAITY_SECRET_KEY`,
   enrolled after a fresh first factor (the password where there is one,
   `POST /auth/reauthenticate`); recovery codes and reset links bound to
-  the factor's generation; a lost instance key fails closed;
+  the factor's generation; a factor enrolled outside good standing stays
+  unconfirmed (no good standing, "This was me" / "Not me") until a
+  trusted session confirms it; a lost instance key fails closed;
   a second-factor session after every first factor (password, device
   code, mail link) that reaches nothing but the verify and logout; step-up
   within 10 minutes before sensitive calls; the instance setting

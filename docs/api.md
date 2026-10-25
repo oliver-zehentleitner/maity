@@ -1699,12 +1699,13 @@ secret_key_missing`.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
+| `GET /auth/second-factor` | human | `{enrolled, confirmed, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
 | `POST /auth/reauthenticate` `{password}` | human with a password | a fresh first factor on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
 | `POST /auth/second-factor/totp` | human, fresh first factor | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unconfirmed one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unconfirmed until it expires |
 | `POST /auth/second-factor/recovery-codes` | human, fresh first factor and step-up | ten new recovery codes, the old ones void at once; 200 `{recovery_codes}` |
-| `DELETE /auth/second-factor` | human, fresh first factor and step-up | turns the second factor off for this human; `forbidden` with `details.reason: second_factor_required` while the policy requires it of this human (§2.8.5) |
+| `DELETE /auth/second-factor` | human, fresh first factor and step-up |
+| `DELETE /auth/second-factor/unconfirmed` | human, a session in good standing that existed before the enrolment | removes an unconfirmed factor ("Not me", below); `not_found` when the factor is confirmed or none is enrolled | turns the second factor off for this human; `forbidden` with `details.reason: second_factor_required` while the policy requires it of this human (§2.8.5) |
 
 - **A fresh first factor.** The account's own first factor given in
   the last 10 minutes on the calling session: its sign-in, or `POST
@@ -1719,6 +1720,23 @@ secret_key_missing`.
   `forbidden` with `details.reason: reauthentication_required` and
   changes nothing. Setting a first password on an account without one
   is the accounts design's item (pending), not this section's.
+- **Confirmed and unconfirmed factors (proposal).** A factor enrolled
+  from a session in good standing (§2.6.5), or after a re-authentication
+  with the password, is **confirmed**. One enrolled from any other
+  session — for an account without a password, a fresh mail or
+  device-code session — is **unconfirmed**: it is asked at every
+  sign-in like any factor, but it grants no good standing (§2.8.2), so
+  temporary access to the mailbox cannot become standing through a
+  factor its holder chose. Its `second_factor_changed` `{change:
+  enrolled}` item behaves like a mail sign-in's (§2.6.5): a banner in
+  every other session, marked read only from a session in good
+  standing that existed before the enrolment, through `ids`. Marking it
+  read ("This was me") confirms the factor; **"Not me"** (`DELETE
+  /auth/second-factor/unconfirmed`, from such a session, no step-up)
+  removes it, ends the session that enrolled it and every session that
+  passed it, and moves the generation. An account with no session in
+  good standing keeps an unconfirmed factor unconfirmed: for it the
+  mailbox is the account (§2.3), and the factor adds no standing.
 - **The code.** RFC 6238 with SHA-1, 6 digits, a 30-second step; the
   current step and one step either side are accepted, and every step is
   accepted once per human (the hub stores the last step used), so a
@@ -1800,9 +1818,9 @@ method, the device code included)**:
   makes the full session; the other answers `code_invalid` and creates
   nothing.
 
-**Good standing (proposal).** A session whose sign-in included the
-second factor is in good standing (§2.6.5), whatever the first factor
-was: the factor is what neither a mailbox nor an unlocked dashboard
+**Good standing (proposal).** A session whose sign-in included a
+**confirmed** second factor (§2.8.1) is in good standing (§2.6.5),
+whatever the first factor was; an unconfirmed factor never gives it: the factor is what neither a mailbox nor an unlocked dashboard
 provides, which is the reason good standing exists. The session list
 carries `second_factor: true | false` per session.
 
@@ -1908,7 +1926,10 @@ environment winning as there:
   password satisfies the setting like any other: its fresh sign-in by
   mail link or device code is the fresh first factor enrolment needs
   (§2.8.1). A human with a password who signed in another way
-  re-authenticates with it first.
+  re-authenticates with it first. An enrolment made from the enrolment
+  session meets the setting at once, confirmed or not; an unconfirmed
+  factor completes the sign-in without good standing (§2.8.1), so the
+  setting never promotes a session the rules of §2.6.5 would not.
 
 #### 2.8.6 Rate limits
 
@@ -7269,6 +7290,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/auth/second-factor` | human | 2.8.1 |
 | POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, fresh first factor; recovery codes also step-up | 2.8.1 |
 | DELETE | `/auth/second-factor` | human, fresh first factor and step-up | 2.8.1 |
+| DELETE | `/auth/second-factor/unconfirmed` | human, a session in good standing older than the enrolment | 2.8.1 |
 | POST | `/auth/second-factor/verify` | human, a second-factor or full session | 2.8.2, 2.8.4 |
 | POST | `/admin/users/{id}/second-factor/reset` | `instance:admin`, human, step-up | 2.8.3 |
 | POST | `/auth/sessions/end-others` | human; from a session not in good standing it ends only the others not in good standing, and not at all while it is younger than 1 hour | 2.6.5 |
