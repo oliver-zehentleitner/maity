@@ -347,7 +347,7 @@ def open_card(
     return card_id
 
 
-def _card_body(round_row: Any, proposal: dict[str, Any]) -> str:
+def card_body(round_row: Any, proposal: dict[str, Any]) -> str:
     line = f"From the jour fixe of {_day(round_row).isoformat()} (round {round_row.id})."
     return f"{proposal['reason']}\n\n{line}" if proposal.get("reason") else line
 
@@ -374,7 +374,7 @@ def _finish(
                 project,
                 marker,
                 proposal["title"],
-                _card_body(round_row, proposal),
+                card_body(round_row, proposal),
                 asker,
                 actor,
                 fg,
@@ -459,9 +459,9 @@ def settle(
         # leaves on a card, so no text of the proposal comes back (§20.8).
         from maity_hub.jourfixe.redaction import REDACTED_TEXT, REDACTED_TITLE
 
-        title, body = REDACTED_TITLE, _card_body(round_row, {"reason": REDACTED_TEXT})
+        title, body = REDACTED_TITLE, card_body(round_row, {"reason": REDACTED_TEXT})
     else:
-        title, body = proposal["title"], _card_body(round_row, proposal)
+        title, body = proposal["title"], card_body(round_row, proposal)
     open_card(conn, project, dict(marker), title, body, mine.id, actor, fg)
 
 

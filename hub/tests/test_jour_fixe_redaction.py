@@ -168,3 +168,34 @@ def test_adopting_a_proposal_redacted_before_opens_a_placeholder_card(round_: Ro
         [card] = conn.execute(select(t.card).where(t.card.c.jour_fixe.isnot(None))).all()
     assert card.title == "[redacted jour fixe proposal]"
     assert card.body.startswith("[redacted]") and "minutes per run" not in card.body
+
+
+def test_a_body_a_person_extended_is_left_and_every_rewritten_event_is_announced(
+    round_: Round,
+) -> None:
+    [task_id] = report(round_, proposals=[decided(round_.owner)]).json()["tasks"]
+    path = f"/projects/maity/tasks/{task_id}"
+    hub_body = round_.owner.get(path).json()["body"]
+    extended = hub_body + "\nHuman clarification"
+    assert round_.owner.patch(path, {"body": extended}).status_code == 200
+    assert round_.owner.post(f"{path}/notes", {"body": "a note"}).status_code == 201
+    assert redact(round_.owner, round_, "proposal:r1").status_code == 200
+    card = round_.owner.get(path).json()
+    assert card["body"] == extended  # a person's edit is left as it is
+    assert card["title"] == "[redacted jour fixe proposal]"  # the title is still the hub's
+    with round_.engine.connect() as conn:
+        rows = conn.execute(select(t.event).order_by(t.event.c.seq)).all()
+    notices = [r.payload.get("seq") for r in rows if r.kind == "event_redacted"]
+    for kind in ("note_added", "task_created", "task_updated"):
+        rewritten = [
+            r.seq
+            for r in rows
+            if r.kind == kind
+            and r.subject_id == task_id
+            and "redacted" in str(r.payload)
+            and not r.redacted
+        ]
+        assert all(seq in notices for seq in rewritten), (kind, rewritten, notices)
+        assert len(set(notices)) == len(notices)  # each event announced once
+    [note] = [r for r in rows if r.kind == "note_added"]
+    assert note.payload["task"]["title"]["redacted"] is True and note.seq in notices

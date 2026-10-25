@@ -111,20 +111,23 @@ def _redact_request(
 def _redact_card(
     conn: Connection,
     card: Any,
-    title: str,
-    reason: str | None,
+    texts: tuple[str, str | None, str, str],
     redaction: dict[str, Any],
     actor: Any,
 ) -> None:
     """While the card still carries the hub's text: its title the placeholder and the
     reason in its body `[redacted]`, as hub edits; every history entry holding them
     redacted as §6.15 redacts one, and `task.title` in the card's mention and note events
-    written under that title."""
+    written under that title, each rewritten event announced.
+
+    `texts` is (title, reason, the body the hub wrote, that body with the placeholder):
+    a title or body that is no longer exactly the hub's was edited by a person since."""
+    title, reason, hub_body, placeholder_body = texts
     changes: dict[str, Any] = {}
     if card.title == title:
         changes["title"] = REDACTED_TITLE
-    if reason and card.body and card.body.startswith(reason):
-        changes["body"] = REDACTED_TEXT + card.body[len(reason) :]
+    if reason and card.body == hub_body:
+        changes["body"] = placeholder_body
     if changes:
         conn.execute(
             update(t.card).where(t.card.c.id == card.id).values(**changes, updated_at=clock.now())
@@ -148,15 +151,36 @@ def _redact_card(
             t.card_history.c.redacted.is_(False),
         )
     ).all()
+    rewritten: set[int] = set()  # one write's event holds several entries: one notice
     for entry in entries:
-        texts = list(_strings((entry.before, entry.after)))
-        if any(title in text or (reason and reason in text) for text in texts):
-            history.redact(conn, entry, tombstone)
+        held = list(_strings((entry.before, entry.after)))
+        holds = any(title in text or (reason and reason in text) for text in held)
+        if holds and history.redact(conn, entry, tombstone) and entry.event_seq is not None:
+            rewritten.add(entry.event_seq)
+    for seq in sorted(rewritten):
+        _announce(conn, seq, redaction, actor)
     for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added")):
         task = (event.payload or {}).get("task") or {}
         if not event.redacted and task.get("title") == title:
             payload = {**event.payload, "task": {**task, "title": tombstone}}
             conn.execute(update(t.event).where(t.event.c.seq == event.seq).values(payload=payload))
+            _announce(conn, event.seq, redaction, actor)
+
+
+def _announce(conn: Connection, seq: int, redaction: dict[str, Any], actor: Any) -> None:
+    """`event_redacted` for an event whose values a redaction rewrote, to the event's own
+    audience (§8.5, §20.8)."""
+    row = conn.execute(select(t.event).where(t.event.c.seq == seq)).one()
+    emit(
+        conn,
+        row.project_id,
+        "event_redacted",
+        list(row.audience or []),
+        {"seq": seq, "reason": redaction["reason"]},
+        actor=actor,
+        subject=("event", str(seq)),
+        conversation_id=row.conversation_id,
+    )
 
 
 def _strings(value: Any) -> Iterator[str]:
@@ -200,7 +224,15 @@ def redact_proposal(
         _redact_request(conn, proposal["request_id"], redaction, actor)
     card = _card_of(conn, round_row.id, proposal_id)
     if card is not None:
-        _redact_card(conn, card, title, reason, redaction, actor)
+        from maity_hub.jourfixe.triage import card_body
+
+        texts = (
+            title,
+            reason,
+            card_body(round_row, proposal),
+            card_body(round_row, {"reason": REDACTED_TEXT}),
+        )
+        _redact_card(conn, card, texts, redaction, actor)
     for event in _events_of(conn, ("jour_fixe", round_row.id), ("jour_fixe_reported",)):
         _tombstone_event(conn, event.seq, redaction, actor)
     return True
