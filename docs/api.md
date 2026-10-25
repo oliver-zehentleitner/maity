@@ -6332,7 +6332,7 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
   instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
   of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
-  `#wqe2` is no id and its `#` a plain boundary). It resolves when the id is an active
+  `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
