@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import re
+import urllib.parse
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
@@ -369,6 +370,8 @@ def render_page(
         "hub": hub,
         "token": token,
         "join_link": link,
+        # The host `maity join` keys an identity's directory by outside a clone (cli/README).
+        "join_host": urllib.parse.urlsplit(link).netloc.lower(),
         "cli_install": settings.cli_install,
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
