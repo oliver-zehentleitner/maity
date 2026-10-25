@@ -246,6 +246,23 @@ def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, 
     return found
 
 
+def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
+    """Each human's language (`en` or `de`) from their notification settings (§6.2,
+    §18.4); a human who never set it reads as `en`."""
+    if not human_ids:
+        return {}
+    rows = conn.execute(
+        select(t.notification_settings.c.human_id, t.notification_settings.c.preferences).where(
+            t.notification_settings.c.human_id.in_(human_ids)
+        )
+    ).all()
+    found = {}
+    for human_id, stored in rows:
+        language = ((stored or {}).get("email") or {}).get("language")
+        found[human_id] = language if language in ("en", "de") else "en"
+    return found
+
+
 def member_views(
     conn: Connection,
     rows: Sequence[Any],
@@ -289,6 +306,7 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    languages = human_languages(conn, human_ids)
     views = []
     for row in rows:
         head = (
@@ -338,6 +356,9 @@ def member_views(
             view["instances"] = team_of.get(row.id, [])
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
+        elif row.agent_id is None:
+            # The human's own language, read live from their notification settings (§6.2).
+            view["language"] = languages.get(row.human_id, "en")
         if briefing(row) if callable(briefing) else briefing:
             view["briefing"] = row.briefing
         if details(row) if callable(details) else details:

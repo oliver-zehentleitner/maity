@@ -291,6 +291,8 @@ def _packet(
                     "areas": view["areas"],
                     "presence": view["presence"],
                     "paused": view["paused"],
+                    # Write to a human in their language (§5.2, §6.2).
+                    **({"language": view["language"]} if "language" in view else {}),
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))

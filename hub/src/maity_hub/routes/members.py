@@ -9,7 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, case, select, update
 
 from maity_hub import (
@@ -59,6 +60,14 @@ class MemberPatch(Strict):
     capabilities: list[str] | None = Field(default=None, max_length=20)
     paused: PausedIn | None = None
     briefing: str | None = markdown(default=None)
+    # A human's language is their notification settings' (§6.2, §18.4), changed only
+    # there by the human: here it is `read_only`.
+    language: Any = None
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _language_read_only(cls, _value: Any) -> Any:
+        raise PydanticCustomError("read_only", "a human sets their language in their settings")
 
 
 class RevokeIn(Strict):

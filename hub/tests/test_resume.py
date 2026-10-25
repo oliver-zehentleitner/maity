@@ -104,6 +104,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "areas": ["/"],
             "presence": "online",
             "paused": None,
+            "language": "en",
         }
     ]
     assert "GET /projects/maity/members" in packet["operations"]
