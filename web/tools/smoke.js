@@ -1724,6 +1724,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
 
+  // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
+  const cfStore = {};
+  const cfLs = win.localStorage;
+  win.localStorage = { getItem: (k) => (k in cfStore ? cfStore[k] : null), setItem: (k, v) => { cfStore[k] = String(v); }, removeItem: (k) => { delete cfStore[k]; } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const cfCols = () => main.querySelectorAll("section.column").map((c) => c.getAttribute("aria-label"));
+  const cfCards = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  const cfAll = cfCols().length;
+  expect(byId("board-column") && byId("board-column").value === "" && cfAll >= 7, "board: the column filter shows every column by default " + JSON.stringify(cfCols()));
+  byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]) && cfCards().includes("tsk-0003") && cfCards().includes("tsk-0002") && !cfCards().includes("tsk-0006")
+    && cfStore["maity.board.column.maity"] === "closed", "board: Closed shows the done and cancelled columns only, and is remembered " + JSON.stringify([cfCols(), cfCards()]));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("board-column").value === "closed" && JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]), "board: the column filter is there again on the next visit");
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-member").value = "agt-a"; byId("board-member").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["In progress"]) && cfCards().includes("tsk-0001") && !cfCards().includes("tsk-0007"),
+    "board: the column filter works with the member filter " + JSON.stringify(cfCards()));
+  await go("#/p/maity/tasks/tsk-0003"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll("article.card.wanted").length === 1 && cfCols().length === cfAll, "board: a card asked for by its link is shown whatever the column filter says");
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+  expect(cfCols().length === cfAll && !("maity.board.column.maity" in cfStore), "board: every column again, nothing remembered");
+  win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = "review"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Review"]), "board: with storage blocked the filter still works");
+  win.localStorage = cfLs;
+  await go("#/p/maity/inbox");
+
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
