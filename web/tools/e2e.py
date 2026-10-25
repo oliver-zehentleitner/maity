@@ -1099,8 +1099,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
 
     def own_pause() -> dict | None:
+        # The agent's own pause is its instance's (§6.17); the membership's stays clear.
         members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
-        return next(m for m in members if m["id"] == agent_id).get("paused")
+        member = next(m for m in members if m["id"] == agent_id)
+        assert member.get("paused") is None, member
+        (instance,) = member["instances"]  # the one CLI agent of this run
+        return instance.get("paused")
 
     assert own_pause() is None, own_pause()
     run.api(alpha, "PATCH", "/me", {"paused": {"reason": "e2e: out of quota"}})
