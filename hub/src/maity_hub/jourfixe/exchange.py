@@ -507,3 +507,44 @@ def handle_deadlines(conn: Connection, project_id: str) -> None:
         step = current_step(row)
         if step is not None and _ended(step, now):
             _close_current(conn, row)
+
+
+# --- redaction of a round's message (§20.8) ---------------------------------------------------
+
+
+def redact_copy(conn: Connection, marker: dict[str, Any], redaction: dict[str, Any]) -> None:
+    """The round's copy of a redacted statement or post becomes a tombstone, in the same
+    transaction as the message: the text null, `redaction` `{at, by, reason}`."""
+    row = conn.execute(
+        select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == marker["round_id"])
+    ).first()
+    if row is None:
+        return
+    if marker["step"] == "statement" and row.statement is not None:
+        topics = [
+            {
+                **topic,
+                "title": None,
+                "summary": None,
+                "items": [{**item, "text": None} for item in topic["items"]],
+                "proposals": [
+                    {**p, "title": None, "reason": None, "redaction": redaction}
+                    for p in topic["proposals"]
+                ],
+                "redaction": redaction,
+            }
+            for topic in row.statement["topics"]
+        ]
+        values: dict[str, Any] = {"statement": {**row.statement, "topics": topics}}
+    else:
+        values = {
+            "posts": [
+                (
+                    {**p, "body": None, "redaction": redaction}
+                    if p["id"] == marker.get("post_id")
+                    else p
+                )
+                for p in row.posts
+            ]
+        }
+    conn.execute(update(t.jour_fixe_round).where(t.jour_fixe_round.c.id == row.id).values(**values))

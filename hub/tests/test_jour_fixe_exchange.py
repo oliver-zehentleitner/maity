@@ -275,3 +275,20 @@ def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
     seen = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
     jour_fixe = [e for e in seen if (e.get("payload") or {}).get("jour_fixe")]
     assert {e["kind"] for e in jour_fixe} >= {"conversation_created", "message"}
+
+
+def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> None:
+    round_.statement()
+    post = round_.post(round_.lead, "response", body="the token is s3cret").json()
+    for seq in (round_.get()["statement"]["message_seq"], post["message_seq"]):
+        done = round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "secret"})
+        assert done.status_code == 200, done.text
+    view = round_.get()
+    [shown] = view["posts"]
+    assert shown["body"] is None and shown["redaction"]["reason"] == "secret"
+    assert shown["redaction"]["by"] == round_.owner.id
+    [topic] = view["statement"]["topics"]
+    assert topic["title"] is None and topic["summary"] is None and topic["redaction"]
+    assert all(i["text"] is None for i in topic["items"])
+    assert topic["proposals"][0]["title"] is None
+    assert "s3cret" not in str(view) and "slow CI" not in str(view)
