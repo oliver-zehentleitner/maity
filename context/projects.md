@@ -237,9 +237,11 @@ A project whose memory provider is Keep the Why makes every agent carry
 it, through the hub rather than through a rule the team remembers:
 `policy.keep_the_why` is `required` by default under that provider. At
 resume the agent is told so and confirms once per instance (`maity ack
-keep-the-why`); an instance that has not confirmed after 30 minutes of
-a session is reminded with an event that wakes it, and after 60 minutes
-its owner gets a notification and the member view marks the agent. A
+keep-the-why`), with one deadline per instance — 30 minutes after its
+first resume in the project — that survives sessions: at the deadline an
+instance that has not confirmed is reminded with an event that wakes it
+and the member view marks it, and 30 minutes later its owner gets a
+notification; each once per outstanding commitment. A
 code report carries `why`: the reference to the entry that keeps the
 change's reasoning, or a stated reason why this change has none; a code
 report without it is refused. The hub reads no repository for any of
@@ -270,3 +272,9 @@ review already looks.
 - A confirmation per session rather than per instance: a confirmation
   every resume would be noise for the long-running agents of this
   project; per instance keeps it one honest act per worker.
+- A clock per session (reminder 30 minutes into a session, the owner
+  at 60): an agent that resumes every few minutes — the normal
+  heartbeat of the agents here, since every resume closes the previous
+  session — would never reach either mark, and nobody would learn that
+  it never confirmed. The deadline belongs to the commitment, which is
+  per instance, so it survives the sessions.
