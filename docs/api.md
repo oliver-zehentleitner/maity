@@ -2094,6 +2094,7 @@ Response `200`, bounded and deterministic:
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
                 "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
+    "memory": { "provider": "keep-the-why" },
     "keep_the_why": true,
     "language": "en",
     "rules_version": 7
@@ -2208,6 +2209,19 @@ Response `200`, bounded and deterministic:
   `null`. Together at most 8 texts, the agent's own owner first (§19.4,
   §1.7). Both are context about how a human likes to work, never a
   permission, and separate from the briefing.
+- `project.memory` is the project's memory provider (§6.1); the
+  top-level `keep_the_why` (`enabled`, `instruction`) says what follows
+  from it for this agent, as before.
+- `setup` (not in the example above) is present only while the project
+  has a setup card (§6.21) that is not `done` or `cancelled`: the list of
+  those cards, in card order, each
+  `{"id": "tsk-0001", "title": "Set up Keep the Why in the repository",
+  "status": "open", "holder": null}` — `holder` the holding member's
+  id while the card is claimed. It names the setup that still waits to
+  the first agents that join, so the project's repository is set up
+  before the work starts; whether an agent claims one follows the claim
+  policy, as for any card. It is no event and wakes nobody; the hub
+  refuses nothing while it is shown.
 - `project.language` is the project's language (§6.1, `en` when the
   project has not set it), and every human in `peers` carries
   `language`, that human's language (§6.2, §18.4); agents in `peers`
@@ -2340,7 +2354,10 @@ around.
                   "forge": "github", "probe_configured": true },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
+  "memory": { "provider": "keep-the-why" },
   "keep_the_why": true,
+  "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": true,
+             "cards": ["tsk-0001", "tsk-0002", "tsk-0003"] },
   "keep_the_why_export": {
     "observed_at": "2026-10-22T11:40:00Z",
     "summary": { "members": 4, "failed": 0, "entries": 57,
@@ -2385,9 +2402,9 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, repository?, keep_the_why?, policy?: {preset}}`; the creator becomes `owner`; `201` |
+| `POST /projects` | human | `{slug, name, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner`; `201` |
 | `GET /projects/{slug}` | `project:read` | |
-| `PATCH /projects/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with the `admin` role, and nothing else by it (§2.3 ʰ) | any of `name`, `repository`, `keep_the_why`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; `reason` required when `state` or `policy` changes |
+| `PATCH /projects/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with the `admin` role, and nothing else by it (§2.3 ʰ) | any of `name`, `repository`, `memory` (or its alias `keep_the_why`), `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
 | `GET /projects/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and role brief for the caller |
 | `GET /projects/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
 | `PUT /projects/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
@@ -2424,9 +2441,28 @@ an `error`). A member's `error`, and the export's own `error` when the
 root itself could not be read, is `null` or `{code, reason}`
 (`ktw_unavailable`, §11.3) — the project view itself never fails on the
 export; a member's `summary` then holds its last good read, or is
-`null`. It is independent of `keep_the_why` (whether joining agents are
-told to use the skill): a project may show the export of a Keep the Why
-it does not ask its agents to maintain.
+`null`. It is independent of `memory.provider` (whether joining agents
+are told to use the skill): a project may show the export of a Keep the
+Why it does not ask its agents to maintain.
+
+**Project memory** is chosen when the project is created: where the
+project's durable memory — decisions, rejected alternatives,
+constraints — lives, and which skill a joining agent is told to load for
+it. The hub holds operative coordination data only (cards, messages,
+roles, sessions) and never stores project memory itself
+(`context/scope.md`); the maintainer's decision of 2026-10-25
+(`context/projects.md`). The behaviour and the setup that goes with the
+choice are §6.21.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
+| `keep_the_why` | boolean, read and written | the alias of `memory.provider`: `true` iff the provider is `keep-the-why`. In a `POST` or `PATCH` body it is accepted as before and means `{"provider": "keep-the-why"}` or `{"provider": "none"}`; a body that carries both with values that disagree is `invalid` (`details.fields.keep_the_why: "conflicts_with_memory"`). Every project view keeps the field, so no client breaks |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+
+A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
+`rules_changed` (§6.9, §8.2), as a change of `keep_the_why` did; it
+creates and cancels no setup card (§6.21).
 
 **Settings**: `language` (below); `release_checklist` (§6.7); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3). `PATCH` merges
@@ -2577,7 +2613,7 @@ upload is `project_closed`, deleting one is not.
 | `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards |
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
-| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation, a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -2993,10 +3029,13 @@ do"), and `members:admin` in a project gives no right to it.
 }
 ```
 
-`kind` is `task`, `release` (§6.7), `contract` (§6.8) or
+`kind` is `task`, `release` (§6.7), `contract` (§6.8),
 `maintenance_round` (a Keep the Why context round, opened at milestones;
 it behaves as a `task` and exists so that the board and the release list
-can tell it from feature work). `rank` is the card's place within its status
+can tell it from feature work) or `setup` (a card the hub opens at
+project creation for a setup option the creator ticked, §6.21; it
+behaves as a `task`, and only the hub creates one — `kind: setup` in a
+`POST …/tasks` body is `invalid`). `rank` is the card's place within its status
 column — an opaque string set by the hub, never by a client, `null`
 until the card is first placed. **Card order** within a status is total:
 cards with a rank by rank (bytewise), then cards without one; equal
@@ -4774,8 +4813,11 @@ set like every other policy field: `PATCH /projects/{slug}` with
 `policy` by a human with `project:admin` (§2.3 ʰ), with a `reason`;
 the change emits `policy_changed` with `old`, `new` and `reason` to
 everyone and bumps `rules_version`. Every preset fills `off` at
-creation, a project that predates the field reads as `off`, and a later
-preset change keeps the value, as it keeps `signing`.
+creation — the one exception is a creating human who sent
+`setup.maity_badge: true` (§6.21): that fills `members` at creation
+itself, with no `policy_changed` and no `reason`, since the creation is
+the human's choice — a project that predates the field reads as `off`,
+and a later preset change keeps the value, as it keeps `signing`.
 
 **When nothing is served.** While `badge` is `off`, for a slug the hub
 does not know, and for a project that is closed (`accepted` or
@@ -4826,6 +4868,88 @@ policy.
 
 **Not in this contract.** A third variant, "join the team", linking to
 a join-request page, waits for the decision on public projects.
+
+### 6.21 Project memory and setup cards
+
+A project chooses its memory provider when it is created, and the setup
+that goes with the choice is done by an agent, through cards and pull
+requests — never by the hub. The maintainer's decision of 2026-10-25
+(`context/projects.md`): the hub never writes into a repository and
+runs no agent (`context/scope.md`), so the only place a repository can
+be set up is an agent's workspace, and a card is how work reaches an
+agent. Preselecting Keep the Why makes the default project documented
+from day one.
+
+**The provider.** `memory.provider` on `POST /projects` (§6.1) is
+`keep-the-why` by default or `none`; `PATCH` may change it later. Maity
+itself never stores project memory — the hub holds operative
+coordination data only — and reimplements no provider: with
+`keep-the-why` the hub tells joining agents to load the skill and reads
+the published export (§11.3), nothing more. Other providers may come
+later; the export semantics of §11 are unchanged by this section.
+
+**The options.** `setup` on `POST /projects` holds three booleans. The
+two Keep the Why options are `true` unless the creator unticks them: an
+absent `setup`, or an absent key, means `true` for them. `maity_badge`
+is `false` when absent: a bare API call never makes a project's counts
+public (§6.20); the dashboard pre-ticks all three, so a human's form
+sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
+(`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
+`invalid` (`unknown_field`). `setup` is read back with the project
+(§6.1) and is not accepted on `PATCH` (`invalid`, `read_only`).
+
+| Option | Offered | What the card asks for |
+|---|---|---|
+| `keep_the_why_init` | with `memory.provider: keep-the-why` only; under `none` it is taken as `false` whatever was sent | if the repository has no root `.keep-the-why`, set Keep the Why up with its default settings (the skill's project init; `context/`, `.keep-the-why`, the `AGENTS.md` pointer); if it already has one, nothing to change — the card is reported with `code: false` (§6.6) saying so |
+| `keep_the_why_badge` | with `memory.provider: keep-the-why` only; `false` under `none` | add the Keep the Why badge to the repository's `README.md` |
+| `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Sending it as `true` also sets the project's `policy.badge` to `members` at creation itself (also without a repository): the creating human's choice, written with the policy preset as `off` would be, no `policy_changed`, no `reason`; the badge serves from that moment, the card only puts the snippet into the README |
+
+**The cards.** For every option that is `true` the hub creates one card
+(§6.4) when the project is created, or — when the project is created
+without a `repository` — when `repository` is first set by `PATCH`
+(then by whoever set it; a project that never gets a repository gets no
+setup card, and `setup.cards` stays `null`). Each card:
+
+| Field | Value |
+|---|---|
+| `kind` | `setup` |
+| `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Add the Maity badge to the README` (`maity_badge`) |
+| `body` | Markdown: what to do (the option's row above, with the repository URL and, for the Maity badge, the snippet of §6.20 with this project's slug and hub filled in) and the acceptance: **for a change, a pull request in the repository against its default branch, never a direct push to the default branch**; the card is reported with the pull request (§6.6) and goes to `review` as any card. When nothing needs changing (a root `.keep-the-why` already exists, a badge is already in the README), the card is reported with `code: false` and the reason, no empty pull request |
+| `status` | `open`: claimable under the project's `claim_policy` (self-claim: any agent member may take it; assign-only: the owner assigns it like any card) |
+| `label` | `chore` |
+| `area` | `/`, the repository root |
+| `created_by` | the human who created the project, or who set the repository |
+| `assigned_to` | `null`; the owner may assign it like any card |
+
+The cards are created in the order of the table above, in one
+transaction with the project (or the repository change), each with its
+`task_created` event (§8.2). In `freeze` or `fixes-only` the hub
+supplies the `reason` §6.1 requires there (`project setup`); in a closed
+project (`accepted`, `archived`) a repository change creates no card, and
+`setup.cards` stays `null` — §6.1 has no exception for the hub. The
+work then goes the way of every card: claim, checkpoint, report, review
+by whoever holds done authority; a cancelled card is cancelled, the hub
+recreates nothing. A later change of `memory.provider` creates and
+cancels no card; what is open is for the owner to cancel or keep.
+Nothing is written into the repository by the hub, and the hub never
+checks whether a pull request landed: that is the probe's observation
+on the report (§6.6, §11), as for any card.
+
+**The resume packet.** While a setup card is not `done` or `cancelled`,
+every agent's packet carries `setup` with those cards (§5.2), and the
+CLI prints them as a `Setup waits` block, one line per card (§13). A
+hint, not a gate: the hub refuses nothing while it is shown.
+
+**Dashboard (web/).** The create-project form shows **Project memory**
+as a dropdown — `none`, and **Keep the Why** preselected — and, while
+Keep the Why is selected, the three prefilled checkboxes beneath it
+(**Set up Keep the Why in the repository**, **Add the Keep the Why
+badge to the README**, **Add the Maity badge to the README**), each of
+which may be unticked; under `none` only **Add the Maity badge to the
+README** is shown. The form sends them as `memory` and `setup`; the
+badge snippet itself is the overview page's (§6.20). *Hub
+implementation:* `memory`, the alias, `setup` with its cards, the
+packet's `setup`.
 
 ## 7. Requests to humans (the inbox)
 
@@ -5120,7 +5244,7 @@ learns its content.
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
-| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider` and its alias `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `role:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `role:owner`, `role:admin` | credential id; never the value |
@@ -6922,7 +7046,7 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |

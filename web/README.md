@@ -706,7 +706,10 @@ session of this human was signed out while this one stays signed in.
 
 **Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
-its rule said under the field and checked before sending), an optional repository URL, Keep the Why, and
+its rule said under the field and checked before sending), an optional repository URL, the project
+memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
+setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
+badge — the last one also offered with `none`), and
 the policy preset (`hierarchical` or `solo`). The creator becomes the
 owner. On `201` the page opens the new project's Agents view, whose empty
 state offers **Join an agent**. The hub's `invalid` answer is shown under
