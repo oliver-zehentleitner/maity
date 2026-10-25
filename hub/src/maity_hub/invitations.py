@@ -94,23 +94,28 @@ def admits(conn: Connection, row: Any, project: Any, now: datetime | None = None
     )
 
 
-def admits_address(conn: Connection, normalized: str) -> bool:
+def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> bool:
     """Whether an open, address-bound invitation admits this address to register under
     `closed` or `allowlist` (§2.7.1, §3.4). An invitation without an address admits
-    nobody to register."""
+    nobody to register. With `lock`, the invitations are read `FOR UPDATE`: completion
+    decides on them as they stay until it commits, so a revocation racing it waits or
+    wins, never slips between the check and the account."""
     now = clock.now()
-    rows = conn.execute(
-        select(t.invitation, t.project.c.state.label("project_state"))
-        .join(t.project, t.project.c.id == t.invitation.c.project_id)
-        .where(
-            t.invitation.c.address_normalized == normalized,
-            t.invitation.c.used_at.is_(None),
-            t.invitation.c.revoked_at.is_(None),
-            t.invitation.c.voided_at.is_(None),
-            t.invitation.c.expires_at > now,
-        )
-    ).all()
-    return any(row.project_state not in CLOSED_STATES and issuer_holds(conn, row) for row in rows)
+    query = select(t.invitation).where(
+        t.invitation.c.address_normalized == normalized,
+        t.invitation.c.used_at.is_(None),
+        t.invitation.c.revoked_at.is_(None),
+        t.invitation.c.voided_at.is_(None),
+        t.invitation.c.expires_at > now,
+    )
+    rows = conn.execute(query.with_for_update() if lock else query).all()
+    for row in rows:
+        state = conn.execute(
+            select(t.project.c.state).where(t.project.c.id == row.project_id)
+        ).scalar()
+        if state not in CLOSED_STATES and issuer_holds(conn, row):
+            return True
+    return False
 
 
 def account_address(conn: Connection, human_id: str) -> str | None:

@@ -72,13 +72,6 @@ def _closed() -> ApiError:
     return ApiError(403, "forbidden", "registration is closed", {"reason": "registration_closed"})
 
 
-def _safe_next(value: str | None) -> bool:
-    """A path on this hub (§2.6.5): one slash, no scheme, no host, no backslash."""
-    if value is None:
-        return True
-    return value.startswith("/") and not value.startswith("//") and "\\" not in value
-
-
 def _body(raw: bytes) -> RegisterIn:
     try:
         data = json.loads(raw or b"null")
@@ -94,8 +87,6 @@ def _body(raw: bytes) -> RegisterIn:
     errors: dict[str, str] = {}
     if not address.valid(body.address.strip()):
         errors["address"] = "invalid"
-    if not _safe_next(body.next):
-        errors["next"] = "invalid"
     if errors:
         raise invalid(errors)
     return body
@@ -143,7 +134,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         origin.address,
         request.headers.get("user-agent"),
         request.headers.get("accept-language"),
-        body.next,
+        registration.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 

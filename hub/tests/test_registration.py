@@ -249,8 +249,9 @@ def test_the_body_is_checked_after_the_mode(make_client: ClientFactory, migrated
             "/api/v1/auth/register", json={"address": "ada@example.com", "password": "short"}
         )
     )
-    assert field(register(client, next="https://evil.example/")) == {"next": "invalid"}
     assert pending(migrated) == []
+    assert register(client, next="https://evil.example/").status_code == 202
+    assert [row.next for row in pending(migrated)] == ["/"]  # replaced silently (§2.6.5)
 
 
 def test_an_agent_credential_is_refused(make_client: ClientFactory, migrated: Engine) -> None:

@@ -162,14 +162,16 @@ account_registration = Table(
     "account_registration",
     metadata,
     Column("human_id", String(ID), primary_key=True),
-    Column("address", String(254), nullable=False),
-    Column("address_normalized", String(254), nullable=False, index=True),
-    Column("source_ip", String(64), nullable=False),
+    # Cleared when the account is deleted (rejected, expired): the block keeps the address.
+    Column("address", String(254)),
+    Column("address_normalized", String(254)),
+    Column("source_ip", String(64)),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("status", String(16), nullable=False),  # pending, active, rejected, expired
     Column("decided_at", UtcDateTime),
     Column("decided_by", String(ID)),
+    Column("reason", String(1024)),  # a rejection's, as the instance admin wrote it
     **MYSQL_TABLE,
 )
 

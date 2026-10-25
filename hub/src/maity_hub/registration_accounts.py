@@ -16,14 +16,17 @@ import logging
 import re
 import secrets
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, invitations, registration
 from maity_hub import tables as t
+from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords
 from maity_hub.auth.caller import SESSION_ABSOLUTE, session_id_hash
 from maity_hub.ids import new_id
@@ -67,11 +70,16 @@ def claim_address(conn: Connection, normalized: str, human_id: str) -> bool:
     return False
 
 
-def admitted(conn: Connection, resolved: registration.Resolved, given: str) -> bool:
-    """§2.7.1: the mode and the lists, or an open address-bound invitation that admits."""
+def admitted(
+    conn: Connection, resolved: registration.Resolved, given: str, *, lock: bool = False
+) -> bool:
+    """§2.7.1: the mode and the lists, or an open address-bound invitation that admits;
+    with `lock` (completion) the invitations stay as read until the account exists."""
     if resolved.allows(given):
         return True
-    return resolved.mail_ready and invitations.admits_address(conn, registration.normalized(given))
+    return resolved.mail_ready and invitations.admits_address(
+        conn, registration.normalized(given), lock=lock
+    )
 
 
 def _blocked(conn: Connection, normalized: str, now: Any) -> bool:
@@ -110,7 +118,7 @@ def _void(conn: Connection, pending_id: str, now: Any) -> None:
 
 def complete(
     conn: Connection,
-    resolved: registration.Resolved,
+    resolve: Callable[[Connection], registration.Resolved],
     pending_id: str,
     *,
     password: str,
@@ -121,7 +129,9 @@ def complete(
     source: str,
 ) -> Completion:
     """§2.7.1 step 6, in its order. The caller has checked the link's signature and
-    nonce (§18.6) and holds the transaction; this commits nothing itself."""
+    nonce (§18.6) and holds the transaction; this commits nothing itself. `resolve`
+    reads the registration settings, called under the address's lock, so the admission
+    decided on is the one in force when the account is made."""
     now = clock.now()
     found = conn.execute(
         select(t.pending_registration.c.address_normalized).where(
@@ -139,7 +149,14 @@ def complete(
     if pending is None or pending.voided_at is not None or pending.expires_at <= now:
         return Completion("gone")
     normalized = pending.address_normalized
-    if not admitted(conn, resolved, pending.address) or _blocked(conn, normalized, now):
+    resolved = resolve(conn)
+    # Before the operator's account exists, a registered account would be the earliest
+    # human and so the instance admin (§16): until then the instance registers nobody.
+    if (
+        instance_admin_id(conn) is None
+        or not admitted(conn, resolved, pending.address, lock=True)
+        or _blocked(conn, normalized, now)
+    ):
         _void(conn, pending.id, now)
         return Completion("closed")
     if not passwords.verify_password(password, pending.password_hash):
@@ -164,25 +181,32 @@ def complete(
     if _registered_last_hour(conn, now) >= resolved.value("max_new_accounts_per_hour"):
         return Completion("later")
     human_id = new_id("human")
+    status = "pending" if resolved.value("approval") == "operator" else "active"
+    made = conn.begin_nested()  # the account and its address claim, or neither
+    try:
+        conn.execute(
+            insert(t.human).values(
+                id=human_id,
+                handle=handle,
+                display_name=display_name,
+                password_hash=pending.password_hash,
+                created_at=now,
+                last_login_at=now,
+                last_seen_at=now,
+                account_status=status,
+                registered_at=now,
+                terms_version=terms["version"] if terms is not None else None,
+                terms_accepted_at=now if terms is not None else None,
+            )
+        )
+    except IntegrityError:  # the handle taken meanwhile, after the check above
+        made.rollback()
+        return Completion("invalid", fields={"handle": "taken"})
     if not claim_address(conn, normalized, human_id):
+        made.rollback()
         _void(conn, pending.id, now)  # a loser: as an expired link, never why (§2.7.1)
         return Completion("gone")
-    status = "pending" if resolved.value("approval") == "operator" else "active"
-    conn.execute(
-        insert(t.human).values(
-            id=human_id,
-            handle=handle,
-            display_name=display_name,
-            password_hash=pending.password_hash,
-            created_at=now,
-            last_login_at=now,
-            last_seen_at=now,
-            account_status=status,
-            registered_at=now,
-            terms_version=terms["version"] if terms is not None else None,
-            terms_accepted_at=now if terms is not None else None,
-        )
-    )
+    made.commit()
     if status == "pending":
         conn.execute(
             insert(t.account_registration).values(
@@ -206,12 +230,11 @@ def complete(
         .values(voided_at=now)
     )
     session_id, csrf = start_session(conn, human_id, source)
-    target = pending.next if status == "active" and pending.next else None
     return Completion(
         "created",
         human_id=human_id,
         account_status=status,
-        next=target or (PENDING_PAGE if status == "pending" else "/"),
+        next=PENDING_PAGE if status == "pending" else registration.safe_next(pending.next),
         session_id=session_id,
         csrf=csrf,
     )
@@ -297,7 +320,8 @@ def approve(conn: Connection, row: Any, by: str) -> None:
 
 def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str | None) -> None:
     """Delete the pending account with its sessions and block its address for 30 days:
-    a rejection (`by`, `reason`) or an expiry (§2.7.5)."""
+    a rejection (`by`, `reason`) or an expiry (§2.7.5). The row keeps the decision and
+    the reason, no longer the address or where the request came from."""
     now = clock.now()
     conn.execute(delete(t.human_session).where(t.human_session.c.human_id == row.human_id))
     conn.execute(delete(t.human).where(t.human.c.id == row.human_id))
@@ -305,11 +329,18 @@ def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str 
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == row.human_id)
-        .values(status=status, decided_at=now, decided_by=by)
+        .values(
+            status=status,
+            decided_at=now,
+            decided_by=by,
+            reason=reason,
+            address=None,
+            address_normalized=None,
+            source_ip=None,
+        )
     )
-    # TODO(#280): mail the person — the reason on a rejection, "was not approved in time"
-    # on an expiry (security budget, §16.2).
-    del reason
+    # TODO(#280): mail the person — `reason` on a rejection, "was not approved in time"
+    # on an expiry (security budget, §16.2) — and the `registration_rejected` record.
 
 
 def block(conn: Connection, normalized: str, until: Any) -> None:

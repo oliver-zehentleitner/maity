@@ -87,8 +87,11 @@ def complete(engine: Engine, settings: Settings, pending_id: str, **given: Any) 
         **given,
     }
     with engine.begin() as conn:
-        resolved = routes._resolved(conn, settings)
-        return registration_accounts.complete(conn, resolved, pending_id, **body)
+        return registration_accounts.complete(conn, resolver(settings), pending_id, **body)
+
+
+def resolver(settings: Settings) -> Any:
+    return lambda conn: routes._resolved(conn, settings)
 
 
 def human(engine: Engine, human_id: str) -> Any:
@@ -238,10 +241,9 @@ def test_two_completions_at_once_create_one_account(
     def other() -> str:
         with second.begin():
             started.set()
-            resolved = routes._resolved(second, settings)
             done = registration_accounts.complete(
-                second, resolved, two.id, password=PASSWORD, handle="ada2", display_name="Ada",
-                terms_seen=None, terms_accepted=False, source="203.0.113.8",
+                second, resolver(settings), two.id, password=PASSWORD, handle="ada2",
+                display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.8",
             )  # fmt: skip
             finished.set()
             return str(done.kind)
@@ -249,9 +251,8 @@ def test_two_completions_at_once_create_one_account(
     pool = ThreadPoolExecutor(max_workers=1)
     first_tx = first.begin()
     try:
-        resolved = routes._resolved(first, settings)
         done = registration_accounts.complete(
-            first, resolved, one.id, password=PASSWORD, handle="ada", display_name="Ada",
+            first, resolver(settings), one.id, password=PASSWORD, handle="ada", display_name="Ada",
             terms_seen=None, terms_accepted=False, source="203.0.113.7",
         )  # fmt: skip
         assert done.kind == "created"
@@ -266,6 +267,93 @@ def test_two_completions_at_once_create_one_account(
         first.close()
         pool.shutdown(wait=True, cancel_futures=True)
         second.close()
+
+
+def test_nobody_registers_before_the_operators_account_exists(
+    make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    """The earliest human is the instance admin (§16): a registration must never be it."""
+    settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
+    row = requested(make_client, migrated, settings)
+    assert complete(migrated, settings, row.id).kind == "closed" and claims == {}
+
+
+def test_the_next_path_follows_the_dashboard_rule(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    """§2.6.5: anything but `/` or a dashboard route becomes `/`, silently."""
+    for bad in ("https://evil.example/", "/\t//evil.example", "/#/a//b", "/#/x#y", "/#/a b"):
+        assert registration.safe_next(bad) == "/", bad
+    assert registration.safe_next("/#/projects/maity") == "/#/projects/maity"
+    settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
+    client = make_client(mail=settings.mail, registration=settings.registration)
+    answer = client.post(
+        "/api/v1/auth/register",
+        json={"address": "ada@example.com", "password": PASSWORD, "next": "/\t//evil.example"},
+    )
+    assert answer.status_code == 202
+    [row] = pending(migrated)
+    assert row.next == "/"
+    with migrated.begin() as conn:  # a value stored before the rule tightened
+        conn.execute(update(t.pending_registration).values(next="//evil.example"))
+    assert complete(migrated, settings, row.id).next == "/"
+
+
+def test_a_handle_taken_at_the_last_moment_is_the_pages_error(
+    admin: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    claims: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The check and the insert race (§2.7.4): the unique handle decides, never a 500."""
+    settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
+    row = requested(make_client, migrated, settings)
+    monkeypatch.setattr(registration_accounts, "check_names", lambda conn, h, d: {})
+    taken = complete(migrated, settings, row.id, handle="maintainer")
+    assert (taken.kind, taken.fields) == ("invalid", {"handle": "taken"}) and claims == {}
+    assert complete(migrated, settings, row.id).kind == "created"  # the link still works
+
+
+def test_a_revocation_racing_the_completion_waits_for_it(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    """Completion reads the admitting invitation `FOR UPDATE`: a revocation in flight
+    holds it, and the completion then sees it revoked. SQLite serialises every writer
+    anyway, so this runs on PostgreSQL and MariaDB; released before the worker is joined."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the lock is for the server databases")
+    flow.project(admin)
+    closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    invited = admin.post("/projects/maity/invitations", {"address": "ada@example.com"}).json()
+    row = requested(make_client, migrated, closed)
+    first = migrated.connect()
+    started, finished = threading.Event(), threading.Event()
+
+    def completing() -> str:
+        started.set()
+        kind = str(complete(migrated, closed, row.id).kind)
+        finished.set()
+        return kind
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    first_tx = first.begin()
+    try:
+        first.execute(
+            update(t.invitation)
+            .where(t.invitation.c.id == invited["id"])
+            .values(revoked_at=clock.now())
+        )
+        waiting = pool.submit(completing)
+        assert started.wait(timeout=10)
+        assert not finished.wait(timeout=0.5)  # held by the revocation
+        first_tx.commit()
+        assert waiting.result(timeout=10) == "closed"
+    finally:
+        if first_tx.is_active:
+            first_tx.rollback()
+        first.close()
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 # --- the pending account (§2.7.5) -------------------------------------------------------
@@ -347,6 +435,16 @@ def test_the_admin_rejects_with_a_reason(
     assert rejected.json() == {"id": done.human_id, "status": "rejected"}
     assert human(migrated, done.human_id) is None
     assert person.get("/me").status_code == 401  # its sessions went with it
+    with migrated.connect() as conn:
+        kept = conn.execute(
+            select(t.account_registration).where(t.account_registration.c.human_id == done.human_id)
+        ).one()
+    assert (kept.reason, kept.address, kept.address_normalized, kept.source_ip) == (
+        "Not a team member.",
+        None,
+        None,
+        None,
+    )
     with migrated.connect() as conn:
         until = conn.execute(
             select(t.registration_block.c.until).where(
