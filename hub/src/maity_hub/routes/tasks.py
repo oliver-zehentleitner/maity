@@ -530,8 +530,9 @@ def list_tasks(
             if q is None:
                 return list(rows)
             result = []
+            notes = card_search.note_bodies(conn, (row.id for row in rows))
             for row in rows:
-                hit = card_search.matches(row, q)
+                hit = card_search.matches(row, q, notes[row.id])
                 if hit:
                     matched[row.id] = hit
                     result.append(row)
