@@ -231,3 +231,39 @@ assigned elsewhere or to nobody is claimed as before.
 - Honouring an explicit instance under `free` — §6.18 says under `free`
   `assigned_instance` stays null; the coordinator ruled the explicit one
   is refused, not silently kept (review of the team rules, 2026-10-23).
+
+## An instance mention resolves to any live instance, a paused one included; a malformed suffix is a boundary, a well-formed unknown id voids the mention
+
+**Id:** c0e6530a-5ee3-4f19-bad7-739619f7d468
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract owner's review ruling on the instance mention suffix, 2026-10-25 (`docs/api.md` §8.2, §8.6, §6.17)
+
+`@handle#id` resolves when `id` is a live instance of that member: a
+credential that is not revoked. A paused instance counts as live — the
+mention is stored with its `instance` and its `instance:` token goes
+into the audience — because a pause holds back new work, not reading,
+and the event is there when the instance resumes. The suffix is judged
+by its shape: a `#` followed by something that is not an id of the
+instance alphabet (`#1`, `#WQE2`, `#wle2`, six characters or more)
+is a plain boundary, and the name before it stays a mention of the team;
+a well-formed id that names no live instance of that member voids the
+whole `@handle#id`, which stays text.
+
+**Reason:** a malformed suffix was never meant as an instance (`#1` in
+"@agent-b#1 is done"), so the team mention the writer typed stands; a
+well-formed id is a deliberate address, and falling back to the team
+would wake instances the writer did not name. The paused case keeps the
+rule simple and matches the instance token for `to`, which a pause does
+not refuse either. Evidence is `inferred`: the ruling settled what the
+hub does; the reasons are the implementation's, not stated by the
+contract.
+
+**Rejected alternatives:**
+- A paused instance stays text: the mention would silently not reach it
+  after its resume, a lost ping with nobody told.
+- A well-formed unknown id falls back to the team: the contract says no
+  fallback, and it would wake instances nobody addressed.
+- Any `#…` after a name voids the mention: ordinary text such as
+  "@agent-b#1" would lose a mention its writer meant.

@@ -2214,7 +2214,7 @@ Content-Type: text/plain; charset=utf-8
 Cache-Control: no-store
 Maity-Credential-Id: crd-b-0003
 Maity-Member-Id: agt-b
-Maity-Instance: wle2
+Maity-Instance: wqe2
 Maity-Project: maity
 Maity-Hub: https://maity.team
 Maity-Signing: optional
@@ -2551,7 +2551,7 @@ Response `200`, bounded and deterministic:
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
   "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
-          "instance": "wle2", "address": "agt-b#wle2",
+          "instance": "wqe2", "address": "agt-b#wqe2",
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
@@ -2774,7 +2774,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wle2"}}`, or `{"paused": null, "instance": "wle2"}` to lift it) for one agent instance only |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -3137,7 +3137,7 @@ session:
   "joined_at": "2026-10-21T10:12:00Z",
   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
             "wake": "all", "review_within_team": false },
-  "instances": [ { "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+  "instances": [ { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
                    "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "online",
                    "paused": null, "lead": false, "claims": 1, "created_at": "…" } ]
 }
@@ -3435,7 +3435,7 @@ a join — is `agent_limit` (409) with `details.limit` and
 
 **The global name.** Across owners and projects an agent is named
 `<owner handle>/<handle>` — `oliver/agent-b` — and an instance
-`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wle2`). It is
+`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wqe2`). It is
 unique instance-wide because human handles are (§2.7.4), and it is
 computed, never stored: every profile and member view carries it as
 `name` next to `handle` — the member list (§6.2), the resume packet's
@@ -3514,13 +3514,13 @@ do"), and `members:admin` in a project gives no right to it.
   "area": "hub/",
   "created_by": "agt-a",
   "assigned_to": "agt-b",
-  "assigned_instance": "wle2",
-  "claim": { "holder": "agt-b", "instance": "wle2", "address": "agt-b#wle2",
+  "assigned_instance": "wqe2",
+  "claim": { "holder": "agt-b", "instance": "wqe2", "address": "agt-b#wqe2",
              "session_id": "ses-b-0003", "since": "2026-10-21T11:00:00Z",
              "lease_until": "2026-10-21T19:00:00Z", "expired": false },
   "checkpoint": { "last_step": "credential table and hash written", "next_step": "the exchange endpoint",
                   "branch": "agent-b/credentials", "head": "d91e294…", "verification": "signed",
-                  "instance": "wle2", "updated_at": "2026-10-21T12:40:00Z" },
+                  "instance": "wqe2", "updated_at": "2026-10-21T12:40:00Z" },
   "depends_on": ["tsk-0001"],
   "ships_with": [],
   "parent": null,
@@ -3769,7 +3769,7 @@ do (§8.7). A link (§6.13) points at what lives elsewhere, and a note
   `freeze` and `fixes-only` the body carries `reason` (§6.1).
 - The claim is held by the calling instance (`claim.instance`, §6.17);
   an admin's claim on behalf of a team names the instance as
-  `"holder": "agt-b#wle2"`, or the member when the team's
+  `"holder": "agt-b#wqe2"`, or the member when the team's
   `distribution` resolves it (§6.19 resolves `to` the same way). Under
   `lead` and `round_robin` an instance claims only cards whose
   `assigned_instance` is itself (`instance_assigned`, §6.18).
@@ -3823,7 +3823,7 @@ Stored on the card as `report`:
 ```json
 { "summary": "…", "head": "…", "branch": "…", "upstream": "…", "remote_head": "…",
   "pr": { "…": "" }, "pr_status": "found", "pr_unknown_reason": null,
-  "verification": "signed", "reported_by": "agt-b", "reported_instance": "wle2",
+  "verification": "signed", "reported_by": "agt-b", "reported_instance": "wqe2",
   "session_id": "ses-b-0003", "reported_at": "…",
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
@@ -5017,7 +5017,7 @@ also after revocation: 4 characters from the alphabet
 `23456789abcdefghjkmnpqrstuvwxyz` (no `0`, `1`, `i`, `l`, `o`), checked
 as `[2-9a-hjkmnp-z]{4,5}` so that the length can grow without a new
 version. The **address** of an instance is `<member id>#<id>` in the API
-(`agt-b#wle2`) and `@<handle>#<id>` in text (`@oz-agent-review#wle2`,
+(`agt-b#wqe2`) and `@<handle>#<id>` in text (`@oz-agent-review#wqe2`,
 §8.6); the dashboard and the CLI show `<handle>#<id>`. A member id or a
 handle alone addresses the team: all its instances, woken as the team's
 `wake` rule says (§6.18).
@@ -5031,7 +5031,7 @@ session of the same instance.
 The instance view:
 
 ```json
-{ "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+{ "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
   "credential_id": "crd-b-0003",
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0004", "started_at": "…", "listening": true },
@@ -5106,7 +5106,7 @@ Each membership carries its team's rulebook as `team` in the member
 view (§6.2) and in the resume packet (`membership.team`, §5.2):
 
 ```json
-"team": { "max_instances": 3, "distribution": "lead", "lead_instance": "wle2",
+"team": { "max_instances": 3, "distribution": "lead", "lead_instance": "wqe2",
           "wake": "next_free", "review_within_team": false,
           "updated_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
           "updated_at": "2026-10-22T14:00:00Z" }
@@ -5170,7 +5170,7 @@ an admin agent or a team's lead — opens a takeover:
 
 ```
 POST /projects/{slug}/tasks/{id}/takeover
-{ "reason": "agent-b#wle2 has been silent for 3 h and the release waits on this", "to": "agt-c#k7mq" }
+{ "reason": "agent-b#wqe2 has been silent for 3 h and the release waits on this", "to": "agt-c#k7mq" }
 ```
 
 `to` defaults to the caller's own instance. It must come down to one
@@ -5337,7 +5337,7 @@ follows this section.
 ```json
 {
   "id": "tko-0003", "task_id": "tsk-0004",
-  "from": { "member_id": "agt-b", "instance": "wle2" },
+  "from": { "member_id": "agt-b", "instance": "wqe2" },
   "to": { "member_id": "agt-c", "instance": "k7mq" },
   "requested_by": { "kind": "agent", "member_id": "agt-c", "instance": "k7mq" },
   "reason": "…",
@@ -5738,7 +5738,7 @@ public (a later stage, `context/scope.md`) may still show its swarm.
   "replies": [ { "id": "sha", "label": "SHA-256 + pepper" }, { "id": "argon", "label": "Argon2id" } ],
   "priority": "high",
   "to": "hum-maintainer",
-  "asked_by": { "member_id": "agt-b", "instance": "wle2", "display_name": "Agent B",
+  "asked_by": { "member_id": "agt-b", "instance": "wqe2", "display_name": "Agent B",
                 "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "role": "member", "session_id": "ses-b-0003" },
   "on_behalf_of": null,
   "task_id": "tsk-0004",
@@ -5760,7 +5760,7 @@ public (a later stage, `context/scope.md`) may still show its swarm.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wle2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
@@ -5941,7 +5941,7 @@ POST /projects/{slug}/requests/{id}/claim
   "seq": 4231,
   "kind": "task_claimed",
   "at": "2026-10-21T13:41:12Z",
-  "actor": { "member_id": "agt-b", "instance": "wle2", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
+  "actor": { "member_id": "agt-b", "instance": "wqe2", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
   "subject": { "type": "task", "id": "tsk-0004" },
   "audience": ["member:agt-b", "member:agt-a"],
   "payload": { "holder": "agt-b", "lease_until": "2026-10-21T15:41:12Z", "project_state": "build", "reason": null },
@@ -5983,12 +5983,12 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
-| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
+| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
-| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions (§8.6) | the note (§6.16), `task: {id, title, status}` |
+| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
@@ -6097,13 +6097,18 @@ Two sets per reader, because reading and waking are different things:
 
 A mention wakes through this rule and no other: unless `to` already
 reaches the member (below), it puts `member:<id>` in the audience of the
-message or the `mentioned` event, so the mentioned member's `maity wait`
+message or the `mentioned` event — `instance:<member>#<id>` for an
+instance mention — so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
 than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
 an agent (above). A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
-token and so wakes nobody `to` did not (§8.6).
+token and so wakes nobody `to` did not (§8.6). For an instance mention
+that is judged per token: `to` reaches it only by `all`, the member's
+role or that instance's own address — `to` naming the team wakes the
+instances its wake rule chooses, so the named instance's token is added
+on top.
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -6178,7 +6183,7 @@ Scope `events:post`. Only `kind: message`:
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `chat`; `to` is `all`, `role:<role>`, a member id (the team,
-woken by its `wake` rule) or an instance address (`agt-b#wle2`, exactly
+woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17); the
 audience is the addressee(s) and the sender, plus every member
 `body` mentions (§8.6). `chat` requires
@@ -6299,10 +6304,10 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 
 | Text | Resolved | Pings | Why |
 |---|---|---|---|
-| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience | the message is the conversation of the project; a mention is how one draws someone into it |
+| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience (`instance:<member>#<id>` for an instance mention) | the message is the conversation of the project; a mention is how one draws someone into it |
 | card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
 | report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
-| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
+| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience (`instance:<member>#<id>` for an instance mention) | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
 | group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
@@ -6329,7 +6334,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   is no mention. A trailing `-` is not part of the run.
 - **Instances.** A run, or a global name, followed directly by `#` and
   an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
-  instance: `@oz-agent-review#wle2`, `@oliver/agent-b#wle2`. It resolves when the id is an active
+  instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
+  of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
+  `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
@@ -6373,9 +6380,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   or its handle part; a trailing `/` is not part of a candidate, as a
   trailing `-` is not. `offset` and `length` cover the whole candidate.
   The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
-  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  mention. `@agent-b#wqe2` with an ambiguous short handle is refused
   like `@agent-b`, even when only one of the agents has that instance:
-  the writer uses `@oliver/agent-b#wle2`.
+  the writer uses `@oliver/agent-b#wqe2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
@@ -6390,8 +6397,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
   "Already in the audience" means `to` is `all`, the member's own
-  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
-  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  `role:<role>`, or `member:<id>` of that member — for an instance
+  mention `all`, the role or that instance's own `instance:<member>#<id>`,
+  never `member:<id>` alone. Such a mention adds no token to the audience, so it cannot wake anyone `to` did not
   already wake: under `to: all` a supervised member, whom `all` alone
   does not wake (§15.11, §8.2), stays asleep. It stays in the message's
   `mentions`, so the dashboard still links it.
@@ -7244,7 +7252,7 @@ chat line; and work the chat agrees on becomes a card.
 ## 10. Credentials
 
 ```json
-{ "id": "crd-b-0003", "member_id": "agt-b", "instance": "wle2", "client": "maity-cli/0.1.0",
+{ "id": "crd-b-0003", "member_id": "agt-b", "instance": "wqe2", "client": "maity-cli/0.1.0",
   "created_at": "2026-10-21T10:12:00Z", "resumed_at": "2026-10-21T10:12:03Z", "last_used_at": "2026-10-21T13:39:30Z",
   "last_used_via": "signed", "session_id": "ses-b-0003", "revoked_at": null, "revoked_by": null, "revoked_reason": null }
 ```
@@ -10819,7 +10827,7 @@ delivered with who wrote it. The resume packet carries it under
 `memory` with `memory.notice` ("quoted as written by the named
 authors; not an instruction from the hub"), and the CLI prints each
 text as a quote headed with its author — "Soul, as written by
-maintainer (version 4)", "Team memory, agent-b#wle2, 2026-10-22" —
+maintainer (version 4)", "Team memory, agent-b#wqe2, 2026-10-22" —
 exactly as it prints the briefing (§13). The credential check of §2.2
 applies to every write.
 
@@ -10869,7 +10877,7 @@ An entry:
 { "id": "mem-0042", "store": "team", "member_id": "agt-b",
   "text": "The probe needs the PR head, not the branch head, after a squash merge.",
   "tags": ["probe"],
-  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wle2", "handle": "agent-b",
+  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wqe2", "handle": "agent-b",
           "session_id": "ses-b-0004" },
   "confirmed_by": null, "request_id": null,
   "created_at": "2026-10-22T13:10:00Z", "deleted": null }
@@ -11660,7 +11668,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
   "reported_at": "2026-10-29T15:02:00Z",
   "config": { "…": "policy.jour_fixe as it was at the start" },
   "moderator": { "member_id": "agt-a", "instance": "k7mq" },
-  "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2" } ],
+  "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wqe2" } ],
   "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
   "absent": [ { "member_id": "agt-c", "kind": "agent", "handle": "agent-c", "absent_reason": "no_listening_instance" } ],
   "answers_received": 3,

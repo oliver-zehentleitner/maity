@@ -103,8 +103,8 @@ def _items(data: Any) -> list[dict[str, Any]]:
 _ID_SHAPED = re.compile(r"^(agt|hum|role|area)[-:]", re.IGNORECASE)
 
 
-# A team's global name `owner/handle` (§6.3); an instance's `…#id` is not a mention target
-# here, by §8.6, and falls back like any other value.
+# A team's global name `owner/handle` (§6.3). The check-in target is a member, never an
+# instance, so an `…#id` (an instance mention, §8.6) falls back like any other value here.
 _GLOBAL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
 
 

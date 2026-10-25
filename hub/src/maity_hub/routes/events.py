@@ -306,19 +306,23 @@ def post_message(
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
-        named = mentions.members(mentioned)
-        roles = _roles(conn, mine.project.id, named)
-        pinged = [
-            m
-            for m in named
+        roles = _roles(conn, mine.project.id, mentions.members(mentioned))
+        # Only what `to` does not reach already, judged per token (§8.2): a team mention
+        # is reached by `all`, its role or its own `member:`; an instance mention only by
+        # `all`, its role or its own `instance:` token — `to` naming the team wakes the
+        # instances its wake rule chooses, not necessarily the one named (§8.6). The
+        # mention stays either way.
+        pinged: dict[str, str] = {}  # token -> member
+        for m in mentioned:
+            token = instances.token(m["member_id"], m["instance"])
             if not (
-                "all" in audience or f"member:{m}" in audience or f"role:{roles[m]}" in audience
-            )
-        ]
-        mentions.charge(conn, mine.id, len(pinged))
-        # Only those `to` does not reach already: a member that `all`, its role or its
-        # own `member:` covers is not woken a second way (§8.2); the mention stays.
-        audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in pinged)]))
+                "all" in audience
+                or token in audience
+                or f"role:{roles[m['member_id']]}" in audience
+            ):
+                pinged[token] = m["member_id"]
+        mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
+        audience = list(dict.fromkeys([*audience, *pinged]))
     payload = {
         "type": body.type,
         "to": to,
