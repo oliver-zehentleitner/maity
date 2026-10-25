@@ -1822,9 +1822,108 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const idCard = main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0004");
   const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
-  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === idCard
+  const cpPanel = () => main.querySelector("aside.card-panel");
+  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1
+    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === "tsk-0004"
     && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
-    "ids: a card's link opens the board with that card marked and focused, the Board tab current");
+    "ids: a card's link opens the card's panel on the board, the card marked there, the Board tab current");
+  // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
+  expect(!cpPanel() && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === main.querySelectorAll("article.card.wanted")[0].querySelector("a.card-open"),
+    "card panel: back on the board, the card that was open is marked and its title focused");
+  const cpLink = cpCard().querySelector("a.card-open");
+  expect(cpLink && cpLink.getAttribute("href") === "#/p/maity/tasks/tsk-0001" && text(cpLink) === "API contract: docs/api.md", "card panel: a card's title is the link that opens it");
+  const cpGets = [], cpPosts = [];
+  const cpGet = win.Maity.api.get, cpGetAll = win.Maity.api.getAll, cpPost = win.Maity.api.post;
+  win.Maity.api.get = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGet(p); };
+  win.Maity.api.getAll = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGetAll(p); };
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  await go(cpLink.getAttribute("href")); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpNotes = () => cpPanel().querySelectorAll(".card-note-list li").map((li) => text(li));
+  expect(cpPanel() && cpPanel().querySelector(".card-panel-card article.card") && cpPanel().querySelector(".card-panel-card article.card .card-actions")
+    && !cpPanel().querySelector(".card-panel-card a.card-open") && !cpPanel().querySelector(".card-panel-card article.card").getAttribute("draggable")
+    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against."
+    && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
+    && cpGets.includes("/projects/maity/tasks/tsk-0001/notes?state=open"),
+    "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
+  const cpHist = cpPanel().querySelectorAll(".card-history-list li").map((li) => text(li));
+  expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
+    && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
+    "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
+  expect(!cpPosts.length, "card panel: an empty note is not sent");
+  byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
+    && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
+    "card panel: a note is posted and listed, the form ready for the next");
+  // A second submit while the first post is on its way sends nothing; a refusal lets it be sent again.
+  let cpRelease = null;
+  win.Maity.api.post = (p, b) => {
+    if (!p.includes("/notes")) return cpPost(p, b);
+    cpPosts.push([p, b]);
+    return new Promise((resolve, reject) => { cpRelease = () => reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable")); });
+  };
+  const cpBefore = cpPosts.length;
+  byId("card-note-body").value = "Twice?";
+  const cpForm = () => cpPanel().querySelector("form.card-note-form");
+  cpForm().dispatch("submit"); cpForm().dispatch("submit"); await tick();
+  expect(cpPosts.length === cpBefore + 1 && btn(cpForm(), "Post the note").disabled, "card panel: a note is posted once while the first post is pending, its button disabled");
+  cpRelease(); for (let k = 0; k < 3; k++) await tick();
+  expect(!btn(cpForm(), "Post the note").disabled && byId("card-note-body").value === "Twice?" && text(cpForm()).includes("Not posted"),
+    "card panel: a refused post keeps the text and the button usable again");
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 3, "card panel: the note is sent again after the refusal");
+  // Escape closes, as Close does: the board again, the card marked, its title focused.
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: Escape goes back to the board, the card marked and its title focused");
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  btn(cpPanel(), "Close").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel(), "card panel: Close goes back to the board");
+  // Opened from a filtered, searched board: the filters and the search stay, opening and going back.
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-search").value = "API contract"; byId("board-search").dispatch("input"); await tick();
+  const cpLink2 = cpCard().querySelector("a.card-open");
+  cpLink2.click(); await go(cpLink2.getAttribute("href")); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && main.querySelector(".columns").querySelectorAll("article.card").length === 1,
+    "card panel: a title opens its card on the board as it was, filter and search kept");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(!cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && cpCard() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: back on the board, the filter and the search as they were, the card marked and its title focused");
+  // A link from elsewhere still reveals its card whatever the filter says.
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "" && byId("board-search").value === "", "card panel: a link from elsewhere opens its card with every column shown");
+  // An action in the panel keeps the focus in the panel, on its redrawn control.
+  const cpMove = () => cpPanel().querySelector(".card-move .menu-button");
+  const cpPick = async (label) => {
+    cpMove().click(); await tick();
+    const item = cpPanel().querySelectorAll(".card-move .menu-item").find((el) => el.textContent === label);
+    if (item) { item.click(); for (let k = 0; k < 6; k++) await tick(); }
+    return !!item;
+  };
+  await go("#/p/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpMoved = await cpPick("Move to Proposed");
+  expect(cpMoved && cpPanel() && cpPanel().contains(document.activeElement) && document.activeElement === cpMove()
+    && text(cpMove()).startsWith("Proposed"),
+    "card panel: a move from the panel redraws its card there and keeps the focus on its menu");
+  // A move that leaves no control to return to (done: no menu) keeps the focus in the panel, on its heading.
+  await go("#/p/maity/tasks/tsk-0005"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpDone = await cpPick("Move to Done");
+  expect(cpDone && !cpMove() && document.activeElement === byId("card-panel-title"),
+    "card panel: a move to done, its menu gone, leaves the focus on the panel's heading");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
+  expect(!cpPanel(), "card panel: after an action Escape still closes it");
+  // A hub without notes or history says so in the panel, nothing asked.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : cpGet(p));
+  win.Maity.api.forgetRoutes(); cpGets.length = 0;
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && text(cpPanel()).includes("This hub has no notes yet.") && text(cpPanel()).includes("This hub has no card history yet.") && !cpGets.length,
+    "card panel: a hub without notes or history says so and is not asked");
+  win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost; win.Maity.api.forgetRoutes();
   await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
     "ids: a card the board does not hold is said");
