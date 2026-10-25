@@ -221,11 +221,22 @@ window.Maity = window.Maity || {};
 
     append(root, h("div", { class: "toolbar agents-head" }, h("h2", null, "Agents"), J ? joinButton : null),
       countLine, J ? [J.panel, J.listStatus.el] : null);
+    // Where they run (js/placements.js), where the hub has placements: after
+    // the grid, before the record of earlier joins — also with no agent
+    // yet, when a placement that creates its profile is all there is.
+    // Not awaited: the view shows at once and the section joins it when
+    // read, so neither the grid nor the join panel waits for the runners.
+    const placements = () => {
+      if (!M.placements) return;
+      const credsOf = Object.fromEntries(agents.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]));
+      M.placements.section(ctx, credsOf).then((placed) => { if (placed && earlierBox.parentNode === root) root.insertBefore(placed, earlierBox); });
+    };
     // No agents yet: the panel opens, and the way in is said.
     if (!agents.length) {
       append(root, h("p", { class: "muted" }, "No agents in this project yet.", J ? " Join one: its line is made here." : ""), grid, earlierBox);
       drawGrid();
       if (J) J.open(joinButton);
+      placements();
       return;
     }
 
@@ -258,7 +269,7 @@ window.Maity = window.Maity || {};
             M.avatar(m, 28),
             p.dot,
             h("h3", null, M.dom.memberRef(ctx, m.id)),
-            h("span", { class: "handle" }, "@" + m.handle),
+            h("span", { class: "handle" }, "@" + M.dom.handleOf(ctx, m)),
             p.label),
           h("dl", { class: "facts" },
             h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),
@@ -283,6 +294,8 @@ window.Maity = window.Maity || {};
           ctx.canAdmin ? pauseControl(ctx, m) : null,
           // A hub that does not know briefings yet has no such key.
           ctx.canAdmin && m.kind === "agent" && "briefing" in m ? briefingControl(ctx, m) : null,
+          // Its owner gives it their preferences (§19.4); a hub without them has no key.
+          M.preferences && m.owner_id === ctx.me.id && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           creds[i].error
             ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(creds[i].error))
             : credentials(ctx, m, creds[i].list),
@@ -292,5 +305,6 @@ window.Maity = window.Maity || {};
     drawGrid();
     // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
     if (J && args && args[0] === "join") J.open(joinButton);
+    placements();
   };
 })(window.Maity);

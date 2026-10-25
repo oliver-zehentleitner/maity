@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock
+from maity_hub import API_VERSION, clock, longpoll
 from maity_hub.auth import device_codes, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -97,7 +97,8 @@ async def _hold(read: Callable[[], dict[str, Any]], wait: int, key: str) -> dict
     deadline = time.monotonic() + wait
     current = first
     try:
-        while time.monotonic() < deadline:
+        # A stopping hub answers with what it has; the client simply waits again (§8.3).
+        while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
             if _holding.get(key) is not token:
                 return {**current, "superseded": True}

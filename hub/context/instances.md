@@ -134,3 +134,136 @@ which is harmless because join codes live one hour at most.
 cannot know which id a credential had before a rollback; keeping the old
 ids would need them stored outside the schema the downgrade removes.
 
+
+## The team wake is chosen when the event is written and stored per team
+
+**Id:** 7d24afac-b6b5-4d71-9211-517aa5821e64
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-23 (`docs/api.md` §6.18, §8.2)
+
+`emit` picks the instances a `lead` or `next_free` team wakes and stores
+them on the event as `wakes`: `{member id: [instance ids]}` for each
+team the audience reaches by `member:` or `role:` whose rule narrows it,
+an empty list when nobody of that team listened, and null when no team
+was narrowed. A reader's instance is woken through `member:`/`role:`
+only when its team is absent from `wakes` or it is in its list. The
+project row carries `team_wake`, true while one of its teams has a rule
+other than `all`, and only then does `emit` run the lookup.
+
+**Reason:** §8.2 says the choice is made when the event is written and
+recorded on it. Keying it by team lets a reader tell "my team was
+narrowed and I am not chosen" from "my team wakes all" without reading
+the team's current rule, which may have changed since. The event table
+is the largest one and most projects have no narrowing team, so null
+instead of an empty map and the project flag keep their cost at zero.
+
+**Rejected alternatives:**
+- Choosing at read time from the team's current rule — two instances
+  polling at once could both be "next free".
+- A flat list of addresses only — cannot express "narrowed, nobody
+  listening" for one team next to an unnarrowed one.
+- Looking up the project's teams on every emit — one more query per
+  event for every project.
+
+## `PATCH /me` pauses the calling instance; the resume shows the team's or its own pause
+
+**Id:** a430ae96-2c24-439d-8cb9-d4646483fd77
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-23 (`docs/api.md` §5.2, §5.3, §6.17)
+
+An instance's own pause is stored on its credential row, in the same
+three columns as the membership's. `PATCH /me` sets it for the calling
+instance only, also on a team of one; `PATCH …/members/{id}` with
+`instance` sets or lifts one instance's pause, without it the
+membership's. The resume packet's `membership.paused` shows the
+membership's pause, or else the calling instance's own, so an agent of
+a team of one sees what it saw before. A member's `presence` is the best
+of its instances', an instance paused on its own counting below one that
+is offline.
+
+**Reason:** §5.3 says `PATCH /me` declares the calling instance's pause
+and its siblings carry on. The contract names `membership.paused` as
+where the agent learns of its pause but has no separate field for the
+instance's own; showing either there keeps the CLI's pause notice
+working unchanged.
+
+**Rejected alternatives:**
+- Keeping `PATCH /me` on the membership for a team of one — the same
+  call would mean different things depending on the team's size.
+- A new `me.paused` field — not in the contract.
+
+## `instance_assigned` applies to cards assigned to the team, and an unset instance is refused only under `lead`
+
+**Id:** 1476dae7-eac9-4e29-9f42-151978322677
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-23 (`docs/api.md` §6.5, §6.18, error table)
+**Revisit when:** the contract settles whether `round_robin` refuses a claim while `assigned_instance` is unset
+
+An instance's claim is checked against `assigned_instance` only when
+the card is assigned to its own team. It is refused when
+`assigned_instance` names another instance, and under
+`distribution: lead` while it is unset unless the caller is the lead. An
+admin's claim on a team's behalf names its instance and is not checked.
+Under `free` no card gets an `assigned_instance`: an explicit `instance`
+on `assign` is refused (`invalid`, `details.fields.instance:
+"distribution_free"`) unless the assign moves an expired claim of another
+holder, where it only names the instance the claim lands on. Every path
+that assigns a card — create, `PATCH assigned_to`, the area-owner default
+and `assign` — sets `assigned_instance` by the team's distribution.
+
+**Reason:** the error table refuses an unset instance under `lead` only;
+§6.5 says that under `lead` and `round_robin` an instance claims only
+cards assigned to itself. Under `round_robin` the hub sets the instance
+on every assign, so an unset one only remains when no instance was free;
+refusing it then would leave a card nobody of the team can claim. The
+distribution rule describes "cards assigned to the team", so a card
+assigned elsewhere or to nobody is claimed as before.
+
+**Rejected alternatives:**
+- Refusing an unset instance under `round_robin` too, as §6.5 reads —
+  open until the contract says which text wins.
+- Honouring an explicit instance under `free` — §6.18 says under `free`
+  `assigned_instance` stays null; the coordinator ruled the explicit one
+  is refused, not silently kept (review of the team rules, 2026-10-23).
+
+## An instance mention resolves to any live instance, a paused one included; a malformed suffix is a boundary, a well-formed unknown id voids the mention
+
+**Id:** c0e6530a-5ee3-4f19-bad7-739619f7d468
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract owner's review ruling on the instance mention suffix, 2026-10-25 (`docs/api.md` §8.2, §8.6, §6.17)
+
+`@handle#id` resolves when `id` is a live instance of that member: a
+credential that is not revoked. A paused instance counts as live — the
+mention is stored with its `instance` and its `instance:` token goes
+into the audience — because a pause holds back new work, not reading,
+and the event is there when the instance resumes. The suffix is judged
+by its shape: a `#` followed by something that is not an id of the
+instance alphabet (`#1`, `#WQE2`, `#wle2`, six characters or more)
+is a plain boundary, and the name before it stays a mention of the team;
+a well-formed id that names no live instance of that member voids the
+whole `@handle#id`, which stays text.
+
+**Reason:** a malformed suffix was never meant as an instance (`#1` in
+"@agent-b#1 is done"), so the team mention the writer typed stands; a
+well-formed id is a deliberate address, and falling back to the team
+would wake instances the writer did not name. The paused case keeps the
+rule simple and matches the instance token for `to`, which a pause does
+not refuse either. Evidence is `inferred`: the ruling settled what the
+hub does; the reasons are the implementation's, not stated by the
+contract.
+
+**Rejected alternatives:**
+- A paused instance stays text: the mention would silently not reach it
+  after its resume, a lost ping with nobody told.
+- A well-formed unknown id falls back to the team: the contract says no
+  fallback, and it would wake instances nobody addressed.
+- Any `#…` after a name voids the mention: ordinary text such as
+  "@agent-b#1" would lose a mention its writer meant.

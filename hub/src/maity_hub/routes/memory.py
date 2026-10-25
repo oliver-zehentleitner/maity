@@ -20,7 +20,7 @@ from maity_hub.deps import AgentCaller, AnyCaller, HumanCaller, engine_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, markdown
 from maity_hub.routes.agents import owned
-from maity_hub.routes.requests import file_consent, request_view
+from maity_hub.routes.requests import file_consent, file_personal, request_view
 
 router = APIRouter()
 
@@ -31,6 +31,10 @@ Tag = Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]{1,32}$")]
 
 class SoulIn(Strict):
     markdown: str = Field(max_length=memory.SOUL_MAX)
+
+
+class SoulProposalIn(SoulIn):
+    reason: str = markdown(min_length=1)
 
 
 class EntryIn(Strict):
@@ -76,6 +80,32 @@ def soul_versions(agent_id: str, request: Request, caller: HumanCaller) -> JSONR
 def my_soul(request: Request, caller: AgentCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         return JSONResponse(memory.soul_view(conn, str(caller.agent_id)))
+
+
+@router.post("/me/soul/proposals")
+def propose_soul(body: SoulProposalIn, request: Request, caller: AgentCaller) -> JSONResponse:
+    if memory.size(body.markdown) > memory.SOUL_MAX:
+        raise invalid({"markdown": "too_long"}, "a soul is at most 8 KiB")
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        project = conn.execute(select(t.project).where(t.project.c.id == caller.project_id)).one()
+        mine = membership(conn, caller, project.slug)
+        agent_id = str(caller.agent_id)
+        request_id = file_personal(
+            conn,
+            mine,
+            caller,
+            agent_id,
+            "consent",
+            "May my soul read like this?",
+            body.reason,
+            proposal=memory.propose_soul(conn, agent_id, body.markdown),
+        )
+        return idempotency.Outcome(
+            202, "proposal_request", request_id, _load_proposal(conn, request_id)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
 
 
 # --- team and community memory (§19.2) -----------------------------------------------------------

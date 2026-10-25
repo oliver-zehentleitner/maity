@@ -779,6 +779,7 @@ def scenario(run: Run, page: Page) -> None:
     assert [r.get("answer", {}).get("reply_id") for r in got] == ["go"], got
     no_problems(run, "all projects")
 
+    id_links_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -851,6 +852,37 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A card id in a request's text is a link to that card on the board."""
+    run.step("an id in a request's text links to the card")
+    out = run.maity(
+        alpha, "ask", f"Which order after {card_id}?\nIt follows {card_id}.", "--to", "human",
+        "--class", "info",
+    )
+    request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
+    entry = page.locator("li.entry.current")
+    expect(entry).to_contain_text(f"Which order after {card_id}?")
+    link = entry.locator(".summary a.id-ref")
+    expect(link).to_have_text(card_id)
+    expect(link).to_have_attribute("href", f"#/p/e2e-alpha/tasks/{card_id}")
+    expect(entry.locator(".title-refs a.id-ref")).to_have_text(card_id)
+    run.a11y(page, "inbox, an id in the text as a link")
+    link.click()
+    expect(page).to_have_url(re.compile(rf"#/p/e2e-alpha/tasks/{card_id}$"))
+    expect(page.locator(f'article.card.wanted[data-card="{card_id}"]')).to_be_visible()
+    expect(
+        page.locator("nav.views").get_by_role("link", name="Board", exact=True)
+    ).to_have_attribute("aria-current", "page")
+    run.shot(page, "card-from-id-link")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("After the release.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+    no_problems(run, "id links")
 
 
 def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:
@@ -1067,8 +1099,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
 
     def own_pause() -> dict | None:
+        # The agent's own pause is its instance's (§6.17); the membership's stays clear.
         members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
-        return next(m for m in members if m["id"] == agent_id).get("paused")
+        member = next(m for m in members if m["id"] == agent_id)
+        assert member.get("paused") is None, member
+        (instance,) = member["instances"]  # the one CLI agent of this run
+        return instance.get("paused")
 
     assert own_pause() is None, own_pause()
     run.api(alpha, "PATCH", "/me", {"paused": {"reason": "e2e: out of quota"}})
@@ -1090,12 +1126,25 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("header .state")).to_have_text("Freeze")
     expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
     project_settings(page)
-    page.locator("#absence-until").fill("2030-01-02T10:00")
+    # Availability caps an absence at 90 days. Choose next week in the browser's
+    # local timezone so this scenario remains valid as the calendar moves on.
+    absence = page.evaluate("""() => {
+      const until = new Date();
+      until.setDate(until.getDate() + 7);
+      until.setHours(10, 0, 0, 0);
+      const pad = n => String(n).padStart(2, "0");
+      return {
+        input: `${until.getFullYear()}-${pad(until.getMonth() + 1)}-${pad(until.getDate())}T10:00`,
+        iso: until.toISOString(),
+        date: until.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" }),
+      };
+    }""")
+    page.locator("#absence-until").fill(absence["input"])
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
     expect(page.locator("header .project-state .away")).to_contain_text(
-        re.compile(r"Away until Jan 2, 2030, 10:00")
+        re.compile(r"Away until " + re.escape(absence["date"]) + r", 10:00")
     )
     # The state block sits at the projects' right, in their row, behind a separator;
     # on a phone it goes under them, and nothing scrolls sideways.
@@ -1136,7 +1185,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         project
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
-    assert project["absence"]["until"].startswith("2030-01-02"), project
+    assert project["absence"]["until"] == absence["iso"].replace(".000Z", "Z"), project
     log = run.api(alpha, "GET", "/projects/e2e-alpha/events", after=cursor, wait=0)["items"]
     change = next((e for e in log if e["kind"] == "state_changed"), None)
     assert change, log
@@ -1898,16 +1947,16 @@ def users_step(run: Run, page: Page) -> None:
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/#/all")
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
-    link = page.get_by_role("menuitem", name="Users of this hub", exact=True)
+    link = page.get_by_role("menuitem", name="Instance administration", exact=True)
     if "instance_admin" not in me:
-        run.step("users: this hub names no instance admin yet, so there is no Users link")
+        run.step("users: this hub names no instance admin yet, so there is no administration link")
         expect(link).to_have_count(0)
         page.keyboard.press("Escape")
         return
     run.step("users: the instance admin lists the hub's humans")
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
-    expect(page).to_have_url(re.compile(r"#/admin/users$"))
+    expect(page).to_have_url(re.compile(r"#/admin$"))
     owner = page.locator("table.users tbody tr", has_text="(you)")
     expect(owner).to_contain_text("instance admin")
     expect(owner).to_contain_text("@" + OWNER)

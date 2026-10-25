@@ -9,6 +9,7 @@ the hub tells them apart by the id, a client by `kind`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -23,7 +24,13 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
-from maity_hub.routes.events import MessageIn, chat_parties, post_message, remember_read
+from maity_hub.routes.events import (
+    MessageIn,
+    chat_parties,
+    post_message,
+    remember_read,
+    writer,
+)
 from maity_hub.views import principal_id, sees_chat_reasons, ts
 
 router = APIRouter()
@@ -50,6 +57,55 @@ class GroupPatch(Strict):
 
 class ParticipantIn(Strict):
     member_id: str
+
+
+@dataclass(frozen=True)
+class Outsider:
+    """A human who is no member of the project but owns an agent that is one: it reads
+    along in exactly the chats its agents are in, and nothing else of the project
+    (§9.2). Shaped like a `Membership` where the chat code reads one."""
+
+    project: Any
+    principal_id: str
+    kind: str = "human"
+    id: int = -1  # names no membership row
+    role: str | None = None  # holds no role in the project
+
+    def may(self, scope: str) -> bool:
+        del scope
+        return False
+
+
+def outsider(conn: Connection, caller: Caller, slug: str) -> Outsider | None:
+    """The caller as an owner outside the project, or None."""
+    if caller.kind != "human" or caller.human_id is None:
+        return None
+    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    if project is None:
+        return None
+    agent = conn.execute(
+        select(t.membership.c.id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.active.is_(True),
+            t.agent_profile.c.owner_id == caller.human_id,
+        )
+        .limit(1)
+    ).first()
+    return Outsider(project, caller.human_id) if agent is not None else None
+
+
+def _reader(conn: Connection, caller: Caller, slug: str) -> Any:
+    """A member, or an owner outside the project, who may read chats; `not_found` for
+    anyone else, so the route says nothing of the project to an outsider (§9.2)."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError:
+        found = outsider(conn, caller, slug)
+        if found is None:
+            raise
+        return found
 
 
 def _observer() -> ApiError:
@@ -184,7 +240,8 @@ def _read_mark(conn: Connection, reader: int, conversation_id: str) -> int:
 
 
 def _short(person: dict[str, Any]) -> dict[str, Any]:
-    return {k: person[k] for k in ("member_id", "kind", "handle")}
+    """A participant as the list shows it; an agent with its global name (§6.3)."""
+    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
 
 
 def _direct_item(
@@ -208,6 +265,20 @@ def _direct_item(
         "last_message": _preview(conn, last),
         "_activity": last.at if last is not None else agent.joined_at,
     }
+
+
+def _direct_items(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
+    """The caller's direct conversations: each needs both parties active in the project
+    (§9.1), so an agent whose owner is no member has none, and its list and packet carry
+    only its group chats."""
+    items = []
+    for agent_id in _owned_agents(conn, mine, caller):
+        try:
+            items.append(_direct_item(conn, mine, caller, agent_id))
+        except ApiError as gone:
+            if gone.status != 404:
+                raise
+    return items
 
 
 def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id: str) -> int:
@@ -351,9 +422,13 @@ def list_conversations(
 ) -> JSONResponse:
     """Every conversation the caller is in, both kinds, newest activity first (§9.3)."""
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        items = [_direct_item(conn, mine, caller, a) for a in _owned_agents(conn, mine, caller)]
-        items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
+        mine = _reader(conn, caller, slug)
+        items = []
+        if isinstance(mine, Membership):
+            items = _direct_items(conn, mine, caller)
+            items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
+        elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
+            items = [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, True)]
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         bound = paging.scope(observed=observed)
         if cursor is not None:
@@ -370,13 +445,28 @@ def list_conversations(
         return JSONResponse({"items": page, "next_cursor": next_cursor})
 
 
+PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
+PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_message_at", "closed_at")
+
+
+def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
+    """`conversations` of the resume packet: the agent's direct one and its group chats,
+    newest activity first, at most 50, with the list's counts (§5.2, §9.3)."""
+    items = _direct_items(conn, mine, caller)
+    items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, False)]
+    items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
+    return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
+
+
 # --- group chats (§9.2) --------------------------------------------------------------------
 
 
 @router.post("/projects/{slug}/conversations")
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        # No chat to read along in yet: an owner outside gets not_found here (§9.2).
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
         conversation_id = group_chats.create(
@@ -394,11 +484,12 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def _locked(conn: Connection, caller: Caller, slug: str) -> Membership:
+def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -> Membership:
     """The caller's membership read after the project lock: a write to a chat decides on
     the membership, the chat, the caller's access and the audience as of the lock, so a
     leave, a close or a removal that commits first is never overtaken (§9.2)."""
-    first = membership(conn, caller, slug)
+    # An owner outside: observer for a chat it reads along, else not_found (§9.2).
+    first = writer(conn, caller, slug, conversation_id=conversation_id)
     events.lock_project(conn, first.project.id)
     return membership(conn, caller, slug)
 
@@ -427,7 +518,7 @@ def get_conversation(
     slug: str, conversation_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = _reader(conn, caller, slug)
         if group_chats.is_group(conversation_id):
             return JSONResponse(_load(conn, mine, conversation_id))
         # A direct one answers its list item, so any item opens by its id (§9.1).
@@ -457,7 +548,7 @@ def patch_conversation(
     slug: str, conversation_id: str, body: GroupPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.rename(conn, group, body.title, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -472,7 +563,7 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))
         return idempotency.Outcome(
@@ -487,7 +578,7 @@ def remove_participant(
     slug: str, conversation_id: str, member_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         leaving = member_id == mine.principal_id
         if leaving and group_chats.is_group(conversation_id):  # any participant leaves
             group, found = _group(conn, mine, conversation_id)
@@ -552,13 +643,15 @@ def read_messages(
     if after is not None and before is not None:
         raise invalid({"before": "with_after"}, "after or before, not both")
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = _reader(conn, caller, slug)
         group = None
         found = "party"
         window = 0
         if group_chats.is_group(conversation_id):
             group, found = _group(conn, mine, conversation_id)
             window = _window(conn, group, mine, found)
+        elif isinstance(mine, Outsider):  # an outsider reads group chats only
+            raise not_found()
         else:
             _party(conn, mine, conversation_id, hidden=False)
         query = _messages(mine.project.id, conversation_id)
@@ -612,7 +705,7 @@ def send_message(
     slug: str, conversation_id: str, body: ChatIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, caller, slug)
+        mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:

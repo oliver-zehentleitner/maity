@@ -2,15 +2,15 @@
 
 An agent with the `admin` role holds `members:admin` only here: `PATCH` and `DELETE` of
 an agent membership whose role is `member` or `reviewer` and that is not its own, and
-in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused` and `role` between
-`member` and `reviewer`. Everything a human decides stays a human's: a human's
-membership, `capabilities`, the `proxy`, `admin` and `owner` roles, a pause a human set
-(`humans_only`). A removal, and a change of the role or the pause of a reviewer or of
-the contract arbiter, waits for the owner's go: it is filed as a `member_change`
-proposal (`proposals`), which only a human with `members:admin` answers, and applied
-on `go` with the agent as actor and the human as approver, when the change is still
-allowed then. Every other use of `members:admin` stays
-human-only through the scope table.
+in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`, `availability_policy`
+(§6.12) and `role` between `member` and `reviewer`. Everything a human decides stays a
+human's: a human's membership, `capabilities`, the `proxy`, `admin` and `owner` roles,
+a pause a human set (`humans_only`). A removal, and a change of the role, the pause or
+the availability policy of a reviewer, of the contract arbiter or of the coordinator,
+waits for the owner's go: it is filed as a `member_change` proposal (`proposals`),
+which only a human with `members:admin` answers, and applied on `go` with the agent as
+actor and the human as approver, when the change is still allowed then. Every other use
+of `members:admin` stays human-only through the scope table.
 """
 
 from __future__ import annotations
@@ -75,9 +75,20 @@ def _check_pause(target: Any, agent_id: str) -> None:
         )
 
 
+def check_instance_pause(credential: Any, agent_id: str) -> None:
+    """The same rule for one agent instance's own pause, stored on its credential
+    (§5.3, §6.17)."""
+    _check_pause(credential, agent_id)
+
+
 def _is_arbiter(project: Any, target: Any) -> bool:
     arbiter: str = project.contract_arbiter
     return bool(arbiter == target.agent_id)
+
+
+def _is_coordinator(project: Any, target: Any) -> bool:
+    coordinator: str = project.coordinator
+    return bool(coordinator == target.agent_id)
 
 
 def needs_consent(
@@ -87,11 +98,15 @@ def needs_consent(
     values: dict[str, Any],
     pause: tuple[bool, str | None],
 ) -> bool:
-    """A role change or a pause of a reviewer or of the contract arbiter (§2.3 ᵃ)."""
+    """A role change or a pause of a reviewer or of the contract arbiter (§2.3 ᵃ), and a
+    change of the availability policy of a reviewer, the arbiter or the coordinator,
+    as for a role change (§6.12)."""
     del conn
-    sensitive = target.role == "reviewer" or _is_arbiter(mine.project, target)
+    project = mine.project
+    sensitive = target.role == "reviewer" or _is_arbiter(project, target)
     touches = ("role" in values and values["role"] != target.role) or pause[0]
-    return bool(sensitive and touches)
+    cover_seat = sensitive or _is_coordinator(project, target)
+    return bool((sensitive and touches) or (cover_seat and "availability_policy" in values))
 
 
 def _handle(conn: Connection, target: Any) -> str:
@@ -112,6 +127,8 @@ def propose(
         title = f"Remove {handle}"
     elif "role" in change.get("values", {}):
         title = f"Change {handle} to {change['values']['role']}"
+    elif "availability_policy" in change.get("values", {}):
+        title = f"Change cover for {handle}"
     else:
         title = f"Pause {handle}"
     summary = f"{principal_id(conn, mine.id)} asks for this change of {handle}'s membership."
@@ -176,6 +193,13 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     boss = proposal["values"].get("reports_to")
     if boss is not None and target.id in members.chain(conn, boss):
         raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
+    cover = proposal["values"].get("availability_policy")
+    if cover is not None:
+        from maity_hub import availability
+
+        errors = availability.policy_errors(conn, target.project_id, target, cover)
+        if errors:  # a substitute left, or changed, while the request waited (§6.12)
+            raise invalid(errors, "the cover cannot apply as proposed any more")
 
 
 def settle(conn: Connection, s: proposals.Settlement) -> None:
@@ -215,7 +239,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if active is None:
             values["reports_to"] = None
     given, reason = proposal["pause"]
-    old = members.apply_patch(conn, change, target, values, (bool(given), reason))
+    old = members.apply_patch(
+        conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
+    )
     if "role" in old:
         announce(conn, change, target, "role", old["role"], values["role"], request.id)
 

@@ -93,6 +93,61 @@ human = Table(
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
+    # The human's declared limit (§6.12): it applies to every membership of the account.
+    Column("limit_until", UtcDateTime),
+    Column("limit_since", UtcDateTime),
+    Column("limit_reason", MARKDOWN_TEXT),
+    Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
+    # `active`, or `pending` while a registration waits for the operator (§2.7.5).
+    Column("account_status", String(16), nullable=False, server_default="active"),
+    Column("registered_at", UtcDateTime),  # set only for an account made by registration
+    # The terms version accepted at registration, and when (§2.7.2); null otherwise.
+    Column("terms_version", String(64)),
+    Column("terms_accepted_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# A registration whose address is not yet proven (docs/api.md §2.7.1): the address, the
+# password chosen with it, where the request came from and what it saw. Deleted 24 hours
+# after it was made; `voided_at` ends it earlier (another request, the cap of five, a
+# completion of the same address). `nonce_hash` is the link's single-use nonce.
+pending_registration = Table(
+    "pending_registration",
+    metadata,
+    _id(primary_key=True),
+    Column("address", String(254), nullable=False),
+    Column("address_normalized", String(254), nullable=False, index=True),
+    Column("password_hash", String(255), nullable=False),
+    Column("source_ip", String(64), nullable=False),
+    Column("user_agent", String(512)),
+    Column("language", String(35)),
+    Column("terms_version", String(64)),  # what the request saw, never an acceptance
+    Column("next", String(2048)),
+    Column("nonce_hash", String(64)),
+    Column("wrong_passwords", Integer, nullable=False, server_default="0"),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("voided_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# One row per address that registration ever changed pending registrations for, locked
+# (`SELECT … FOR UPDATE`) to serialise those changes (§2.7.1). Only a lock, no data.
+registration_lock = Table(
+    "registration_lock",
+    metadata,
+    Column("address_normalized", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
+# An address that may not register until `until` (§16.4): after a rejection or an expired
+# approval, 30 days; the instance admin lifts it early.
+registration_block = Table(
+    "registration_block",
+    metadata,
+    Column("address_normalized", String(254), primary_key=True),
+    Column("until", UtcDateTime, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
 
@@ -106,7 +161,14 @@ agent_profile = Table(
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
     Column("created_at", UtcDateTime, nullable=False),
-    UniqueConstraint("owner_id", "handle"),
+    # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
+    # after, so that its handle is free for a new profile of the same owner at once.
+    Column("deleted_at", UtcDateTime),
+    Column(
+        "live", Boolean, server_default=true()
+    ),  # the database fills it: inserts on older schemas name no `live`
+    UniqueConstraint("owner_id", "handle", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
 
@@ -196,6 +258,7 @@ project = Table(
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
+    Column("badge", String(20), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
@@ -210,14 +273,24 @@ project = Table(
     Column("max_placements", Integer, nullable=False, server_default="8"),
     # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
+    # Whose outage gates new assignments by agents, and who stands in for that role
+    # alone (§6.1, §6.12); the defaults fill projects made before 0024.
+    Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
+    Column("coordinator_substitute", String(ID)),
+    # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
+    Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
+    # does writing an event look for the instances it wakes.
+    Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
@@ -238,6 +311,12 @@ membership = Table(
     Column("paused_by", String(ID)),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    Column("onboarded_at", UtcDateTime),
+    # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
+    # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
+    Column("briefing_version", Integer, nullable=False, server_default="0"),
+    Column("briefing_by", String(ID)),
+    Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
@@ -249,6 +328,7 @@ membership = Table(
     Column("distribution", String(16), nullable=False, server_default="free"),
     Column("lead_instance", String(INSTANCE)),
     Column("wake", String(16), nullable=False, server_default="all"),
+    Column("round_robin_last", String(INSTANCE)),  # the instance `round_robin` chose last
     Column("review_within_team", Boolean, nullable=False, server_default=false()),
     Column("team_updated_by", String(ID)),
     Column("team_updated_at", UtcDateTime),
@@ -256,6 +336,19 @@ membership = Table(
     # whether this agent membership is given its owner's text.
     Column("preferences_include", Boolean, nullable=False, server_default=true()),
     Column("owner_preferences", Boolean, nullable=False, server_default=false()),
+    # Availability (§6.12): the policy (null reads as the default), an agent's stored
+    # limit, the state the hub last announced and since when, and when the current
+    # outage began (null while available).
+    Column("availability_policy", JSON_VALUE),
+    Column("limit_until", UtcDateTime),
+    Column("limit_since", UtcDateTime),
+    Column("limit_source", String(16)),
+    Column("limit_harness", String(TITLE)),
+    Column("limit_reason", MARKDOWN_TEXT),
+    Column("limit_placement_id", String(ID)),
+    Column("availability_state", String(16)),
+    Column("availability_since", UtcDateTime),
+    Column("outage_since", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(
@@ -301,6 +394,20 @@ preferences_version = Table(
     **MYSQL_TABLE,
 )
 
+# Every version of a membership's briefing, the current one included (§6.2):
+# `GET …/members/{id}/briefings` for the agent's owner and `members:admin`.
+member_briefing = Table(
+    "member_briefing",
+    metadata,
+    _membership_ref("membership_id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("text", MARKDOWN_TEXT),
+    Column("by", String(ID)),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("membership_id", "version"),
+    **MYSQL_TABLE,
+)
+
 # --- joining and credentials ----------------------------------------------------
 
 join_link = Table(
@@ -333,6 +440,11 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # A runner's pickup for a placement (§15.9): the placement, the runner and the
+    # generation it was picked up for; null on a human's join.
+    _ref("placement_id", "placement.id", index=True),
+    _ref("runner_id", "runner.id"),
+    Column("generation", Integer),
     CheckConstraint("agent_id IS NOT NULL OR new_agent_handle IS NOT NULL", name="names_an_agent"),
     **MYSQL_TABLE,
 )
@@ -357,6 +469,14 @@ credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # A runner's stop revokes the agents' credentials after the placement's grace
+    # (§15.3): when, and on whose authority, until it is revoked.
+    Column("revoke_due_at", UtcDateTime),
+    Column("revoke_due_by", String(ID)),
+    # The instance's own pause (§5.3), as the membership's is stored.
+    Column("paused_reason", MARKDOWN_TEXT),
+    Column("paused_since", UtcDateTime),
+    Column("paused_by", String(ID)),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -385,6 +505,9 @@ agent_session = Table(
     # derived by the client per hub. Only ever compared, never shown or logged.
     Column("env_home", String(16)),
     Column("env_workspace", String(16)),
+    # `maity-runner/<version>` when a runner supervises the session (§15.11): its
+    # long-poll wakes on a narrower set, and its rules say so.
+    Column("supervisor", String(80)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
@@ -524,6 +647,9 @@ runner_credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # What its revocation applied, per attached project: `[{project_id, rule, stopped}]`;
+    # the runner is told the stopped placements on its next call (§15.3).
+    Column("stopped", JSON_VALUE),
     # True while unrevoked, NULL afterwards: one live credential per runner (§15.1).
     Column("live", Boolean, default=True),
     UniqueConstraint("runner_id", "live"),
@@ -655,6 +781,9 @@ card = Table(
     # The holding instance of an agent holder (§6.17); null for a human holder and,
     # until an instance of the team calls, for a claim made on a team's behalf.
     Column("claim_instance", String(INSTANCE)),
+    # Every agent instance that reported the card (§6.18 `review_within_team`): a list of
+    # `{member_id, instance}`; the report itself names only the latest.
+    Column("reported_instances", JSON_VALUE),
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
@@ -691,6 +820,73 @@ card_edge = Table(
     Column("kind", String(16), nullable=False),  # depends_on, ships_with
     PrimaryKeyConstraint("from_card", "to_card", "kind"),
     CheckConstraint("from_card <> to_card", name="no_self_edge"),
+    **MYSQL_TABLE,
+)
+
+# What a card carries beyond its fields (§6.13, §6.15, §6.16). A link is deleted when
+# it is removed; the history keeps it.
+card_link = Table(
+    "card_link",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False, index=True),
+    Column("kind", String(16), nullable=False),  # issue, pr, url
+    Column("url", String(2048), nullable=False),  # forge_url or url, as shown
+    Column("label", String(TITLE)),
+    Column("forge", String(32)),
+    Column("repository", String(255)),
+    Column("number", BIG_ID),
+    # The probe's read (§6.13), null until the first one and for a link it never reads.
+    Column("observed", JSON_VALUE),
+    _membership_ref("added_by", nullable=False),
+    Column("added_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# One entry per field a member changed, never edited but by redaction (§6.15).
+card_history = Table(
+    "card_history",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    _membership_ref("actor_membership"),
+    Column("actor_session_id", String(ID)),
+    Column("field", String(32), nullable=False),
+    # The link a `links` entry adds or removes: what a replayed add or a repeated
+    # removal finds it by, even once the entry is redacted.
+    Column("link_id", String(ID)),
+    Column("link_change", String(8)),  # `added` or `removed`, for a `links` entry
+    Column("before", JSON_VALUE),
+    Column("after", JSON_VALUE),
+    Column("diff", MARKDOWN_TEXT),
+    # The `task_created`/`task_updated` event of the write, whose values a redaction
+    # of this entry redacts too.
+    Column("event_seq", BIG_ID),
+    Column("redacted", Boolean, nullable=False),
+    Column("redaction", JSON_VALUE),  # the tombstone of §8.5 once redacted
+    Index("ix_card_history_card_at", "card_id", "at", "id"),
+    Index("ix_card_history_link", "link_id"),
+    **MYSQL_TABLE,
+)
+
+card_note = Table(
+    "card_note",
+    metadata,
+    _id(primary_key=True),
+    _ref("card_id", "card.id", nullable=False),
+    _membership_ref("author", nullable=False),
+    Column("author_kind", String(16), nullable=False),  # human, agent: the agents' share
+    Column("body", MARKDOWN_TEXT),
+    Column("mentions", JSON_VALUE),
+    Column("state", String(16), nullable=False),
+    Column("resolution", JSON_VALUE),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
+    Column("redacted", Boolean, nullable=False),
+    Column("redaction", JSON_VALUE),
+    Index("ix_card_note_card_created", "card_id", "created_at", "id"),
+    Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -789,6 +985,9 @@ event = Table(
     # The runner that caused the event (§15.10), with `actor_membership` null; like the
     # session and credential columns, no foreign key: the log outlives what it names.
     Column("actor_runner_id", String(ID)),
+    # A human who is no member of the project (§8.1: the owner deleting a profile with
+    # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
+    Column("actor_human_id", String(ID)),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -797,6 +996,10 @@ event = Table(
     Column("conversation_id", String(ID)),
     Column("payload", JSON_VALUE, nullable=False),
     Column("redacted", Boolean, nullable=False),
+    # The instances a team's `wake` rule chose (§8.2): `{member id: [instance ids]}` for
+    # each team it narrowed, an empty list when none of that team listened; null when
+    # no team was narrowed, which is most events.
+    Column("wakes", JSON_VALUE),
     Index("ix_event_project_seq", "project_id", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),
     # A placement's reports, newest first (§15.6).

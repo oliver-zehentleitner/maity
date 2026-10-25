@@ -217,7 +217,7 @@ window.Maity = window.Maity || {};
       const others = items.filter((x) => x.id !== m.id);
       const listed = !m.reports_to || others.some((x) => x.id === m.reports_to);
       const reports = keyed("reports:" + m.id, h("select", { id: id("reports") }, h("option", { value: "" }, "nobody"),
-        others.map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")")),
+        others.map((x) => h("option", { value: x.id }, x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")")),
         listed ? null : h("option", { value: m.reports_to }, nameOf(m.reports_to) + " (not in this list)")));
       reports.value = m.reports_to || "";
       // A drafted boss who has left since is dropped, and said: a select that
@@ -297,7 +297,7 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + m.handle),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
 
@@ -381,7 +381,14 @@ window.Maity = window.Maity || {};
         const same = ids(fresh) === ids(items);
         items = fresh;
         // Someone joined or left: redraw (focus kept); else presence in place.
-        if (!same) { redraw(); return; }
+        // The page's member list follows, so every name on it — a global
+        // name where a handle is now shared (§6.3) — agrees with the rows.
+        if (!same) {
+          ctx.members = fresh;
+          ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+          redraw();
+          return;
+        }
         fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
         status.done();
       } catch (err) {

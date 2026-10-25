@@ -34,10 +34,15 @@ def test_the_member_view_has_the_contract_shape(
     agent = flow.agent(make_client, owner, role="member", areas=["hub/"], reports_to=owner.id)
     agent.resume(harness="Claude Code", model="claude-opus-5-5")
     view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    assert view["name"] == f"maintainer/{view['handle']}"  # the global name (§6.3)
+    [instance] = view["instances"]
+    assert instance["name"] == f"{view['name']}#{instance['id']}"
+    assert agent.get("/me").json()["member"]["name"] == view["name"]
     assert set(view) == {
         "id",
         "kind",
         "handle",
+        "name",
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
@@ -51,8 +56,15 @@ def test_the_member_view_has_the_contract_shape(
         "last_seen_at",
         "presence",
         "paused",
+        "availability",  # §6.12
+        "availability_policy",
+        "covered_by",
+        "covering",
         "joined_at",
         "briefing",  # the owner holds members:admin
+        "briefing_by",  # with it: who wrote it, its version and when (§6.2)
+        "briefing_version",
+        "briefing_updated_at",
         "placement",
         "owner",  # likewise, and it owns the agent (§6.2)
         "credentials",
@@ -168,9 +180,14 @@ def test_the_agent_declares_its_own_pause(owner: flow.Human, make_client: Client
     no_key = agent.client.patch("/api/v1/me", json={"paused": {"reason": "x"}}, headers=agent.auth)
     assert no_key.json()["error"]["details"]["fields"] == {"Idempotency-Key": "required"}
     response = agent.patch("/me", {"paused": {"reason": "waiting for the contract"}})
-    assert response.json()["paused"]["by"] == agent.id
-    agent.resume()  # its own pause ends with its next session
-    assert owner.get(f"/projects/maity/members/{agent.id}").json()["paused"] is None
+    # The calling instance's pause, not the membership's (§5.3).
+    assert response.json()["paused"] is None
+    (mine,) = response.json()["instances"]
+    assert mine["paused"]["by"] == agent.id and mine["presence"] == "paused"
+    assert response.json()["presence"] == "paused"
+    assert agent.resume().json()["membership"]["paused"] is None  # it ends with its next session
+    (mine,) = owner.get(f"/projects/maity/members/{agent.id}").json()["instances"]
+    assert mine["paused"] is None
 
 
 def test_removing_a_member_revokes_releases_and_allows_a_rejoin(
@@ -219,9 +236,11 @@ def test_profiles_belong_to_their_human(
     )
     assert created.status_code == 201
     body = created.json()
+    assert body["name"] == "maintainer/agent-b"  # the global name (§6.3)
     assert set(body) == {
         "id",
         "handle",
+        "name",
         "display_name",
         "avatar_url",
         "avatar_source",  # the profile's owner reads it (§6.10)
@@ -229,6 +248,7 @@ def test_profiles_belong_to_their_human(
         "git_identity",
         "memberships",
         "created_at",
+        "deleted_at",  # null until its owner deletes it (§6.3)
     }
     assert body["git_identity"] == {"name": "B", "email": "b@x.y"}
     taken = owner.post("/agents", {"handle": "agent-b", "display_name": "Again"})

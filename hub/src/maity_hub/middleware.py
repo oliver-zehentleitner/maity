@@ -39,7 +39,7 @@ _IMAGE_UPLOAD = re.compile(
     r"^/api/v1/(projects/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
 )
 CSP = "default-src 'self'"
-# The only Cache-Control a route may set instead of no-store: the project images
+# The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
 ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache"})
 
@@ -59,7 +59,12 @@ class HubMiddleware:
         # Decided before anything is logged: the log masks every path there (§1.1).
         on_join_host = join_host.is_join_host(scope, self.settings)
         scope["state"]["on_join_host"] = on_join_host
-        send = _with_headers(send)
+        public_badge = (
+            not on_join_host
+            and scope.get("method") == "GET"
+            and bool(re.fullmatch(r"/badge/[^/]+\.svg", scope.get("path", "")))
+        )
+        send = _with_headers(send, public_badge=public_badge)
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -246,7 +251,7 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
 
 
-def _with_headers(send: Send) -> Send:
+def _with_headers(send: Send, *, public_badge: bool = False) -> Send:
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
             given = message.get("headers", [])
@@ -254,9 +259,12 @@ def _with_headers(send: Send) -> Send:
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
             # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
-            # §6.10).
+            # §6.10). Only successful public badge GETs may choose public caching (§6.20).
             chosen = next((v for k, v in given if k.lower() == b"cache-control"), None)
-            cache = chosen if chosen in ROUTE_CACHE else b"no-store"
+            badge_cache = (
+                public_badge and message["status"] in (200, 304) and chosen == b"public, max-age=60"
+            )
+            cache = chosen if chosen in ROUTE_CACHE or badge_cache else b"no-store"
             headers += [
                 (b"maity-server-time", clock.rfc3339(clock.now(), millis=True).encode()),
                 (b"cache-control", cache),

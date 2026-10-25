@@ -383,3 +383,20 @@ def test_the_breaker_holds_for_a_minute(make_client: ClientFactory, desk: flow.H
     assert redeem(make_client(peer="198.51.100.2"), code).status_code == 429
     routes._breaker["until"] = tripped - routes.BREAKER_SECONDS - 1  # the minute is over
     assert redeem(make_client(peer="198.51.100.3"), code).status_code == 200
+
+
+def test_a_waiting_poll_answers_when_the_hub_stops(desk: flow.Human) -> None:
+    from maity_hub import longpoll
+
+    code = started(desk)
+    answers: list[Any] = []
+    begun = time.monotonic()
+    waiter = threading.Thread(
+        target=lambda: answers.append(desk.get(f"/auth/device-codes/{code['id']}?wait=30"))
+    )
+    waiter.start()
+    time.sleep(0.5)
+    longpoll.begin_shutdown()
+    waiter.join(timeout=10)
+    assert answers and answers[0].json()["status"] == "waiting"
+    assert time.monotonic() - begun < 5  # not the 30 seconds it asked for

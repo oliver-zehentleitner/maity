@@ -16,11 +16,12 @@ import hmac
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import Connection, and_, select, update
 
-from maity_hub import clock
+from maity_hub import availability, clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.config import DEFAULT_CLI_INSTALL
@@ -163,12 +164,12 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         ).all()
         for membership_id, lease in memberships:
             conn.execute(
-                update(t.card)
-                .where(
+                update(t.card).where(
                     t.card.c.claim_holder == membership_id,
                     t.card.c.status.notin_(CLOSED_STATUSES),
                 )
-                .values(lease_until=now + timedelta(seconds=lease))
+                # A limit's hold is never shortened by a renewal (§6.12).
+                .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
 
@@ -274,6 +275,8 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.credential.c.verifier,
             t.credential.c.revoked_at,
             t.credential.c.revoked_reason,
+            t.credential.c.revoke_due_at,
+            t.credential.c.revoke_due_by,
             t.credential.c.membership_id,
             t.credential.c.instance,
             t.membership.c.project_id,
@@ -292,19 +295,31 @@ def _credential(conn: Connection, credential_id: str) -> Any:
 
 
 def _refuse_revoked(row: Any) -> None:
+    from maity_hub import runner_revoke
+
+    # A runner's stop: the placements it closed, told to the runner while the revoked
+    # credential is its latest (§15.3); an agent credential has no such list.
+    told = {}
+    if getattr(row, "is_latest", False):
+        told = {"stop": [p for applied in row.stopped or [] for p in applied["stopped"]]}
     if row.revoked_at is not None:
         raise ApiError(
             401,
             "credential_revoked",
             "this credential was revoked",
-            {"reason": row.revoked_reason},
+            {"reason": row.revoked_reason, **told},
         )
     if getattr(row, "runner_removed_at", None) is not None:
         # Removing a runner revokes its credential in the same transaction; this holds
         # even if a credential ever outlived its runner (§15.3).
         raise ApiError(
-            401, "credential_revoked", "this runner was removed", {"reason": "runner_removed"}
+            401,
+            "credential_revoked",
+            "this runner was removed",
+            {"reason": "runner_removed", **told},
         )
+    if runner_revoke.due(row):  # its grace after a runner's stop has passed (§15.3)
+        raise runner_revoke.RevocationDue(row.id, row.revoke_due_by)
 
 
 def _agent(
@@ -355,7 +370,8 @@ def _agent(
         lease = conn.execute(
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
         ).scalar_one()
-        conn.execute(update(t.card).where(held).values(lease_until=now + timedelta(seconds=lease)))
+        renewed = availability.renewed_lease(conn, membership_id, now, lease)
+        conn.execute(update(t.card).where(held).values(lease_until=renewed))
     if session is not None:
         # The claim belongs to the instance; it follows the instance's live session.
         conn.execute(
@@ -389,6 +405,8 @@ def _runner_credential(conn: Connection, credential_id: str) -> Any:
             t.runner_credential.c.revoked_at,
             t.runner_credential.c.revoked_reason,
             t.runner_credential.c.runner_id,
+            t.runner_credential.c.stopped,
+            t.runner_credential.c.created_at,
             t.runner.c.owner_id,
             t.runner.c.removed_at.label("runner_removed_at"),
         )
@@ -397,7 +415,13 @@ def _runner_credential(conn: Connection, credential_id: str) -> Any:
     ).first()
     if row is None:
         raise unauthenticated()
-    return row
+    newer = conn.execute(
+        select(t.runner_credential.c.id).where(
+            t.runner_credential.c.runner_id == row.runner_id,
+            t.runner_credential.c.created_at > row.created_at,
+        )
+    ).first()
+    return SimpleNamespace(**row._asdict(), is_latest=newer is None)
 
 
 def _runner(conn: Connection, row: Any) -> Caller:

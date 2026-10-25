@@ -1,0 +1,62 @@
+{
+  "enabled": true,
+  "complete": true,
+  "missing": [],
+  "host": {
+    "value": "smtp.example.org",
+    "source": "env"
+  },
+  "port": {
+    "value": 587,
+    "source": "default"
+  },
+  "tls": {
+    "value": "starttls",
+    "source": "default"
+  },
+  "username": {
+    "value": null,
+    "source": "default"
+  },
+  "password": {
+    "set": false,
+    "source": "admin"
+  },
+  "from": {
+    "value": {
+      "address": "maity@example.org",
+      "name": "Maity"
+    },
+    "source": "admin"
+  },
+  "reply_to": {
+    "value": null,
+    "source": "default"
+  },
+  "max_per_hour": {
+    "value": 500,
+    "source": "default"
+  },
+  "security_max_per_hour": {
+    "value": 100,
+    "source": "default"
+  },
+  "sign_in_max_per_hour": {
+    "value": 60,
+    "source": "default"
+  },
+  "signing_key": {
+    "set": true
+  },
+  "secret_key": {
+    "set": true
+  },
+  "warnings": [],
+  "last_test": null,
+  "sent_last_hour": 12,
+  "security_sent_last_hour": 1,
+  "security_queued": 0,
+  "sign_in_sent_last_hour": 0,
+  "sign_in_dropped_last_hour": 0,
+  "failed_last_hour": 0
+}

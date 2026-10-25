@@ -20,6 +20,7 @@ from starlette.types import Scope
 from maity_hub import (
     API_VERSION,
     __version__,
+    availability,
     errors,
     forge,
     images,
@@ -39,11 +40,15 @@ from maity_hub.routes import (
     admin,
     agents,
     avatars,
+    badges,
+    board,
+    contract_text,
     conversations,
     device_codes,
     forge_webhook,
     joins,
     keep_the_why,
+    limit,
     mail_settings,
     me_session,
     members,
@@ -64,6 +69,7 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
+from maity_hub.routes import registration as registration_routes
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +105,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # runs whether or not the hub holds a token (docs/api.md §11.2).
         image_worker = images.Worker(engine, reader)
         image_worker.start()
+        # Limits end and sessions go away without a request to notice it (§6.12).
+        availability_worker = availability.Worker(engine)
+        availability_worker.start()
         yield
+        availability_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -125,9 +135,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
+    app.include_router(limit.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
@@ -136,6 +148,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
     app.include_router(tasks.router, prefix=prefix)
+    app.include_router(board.router, prefix=prefix)
+    app.include_router(contract_text.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
@@ -149,6 +163,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
+    app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     _mount_web(app, settings)
     if settings.public_url_guessed:
         log.warning(

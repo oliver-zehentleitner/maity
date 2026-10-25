@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -246,17 +247,34 @@ def cmd_join(args: argparse.Namespace) -> int:
     target = hub.join_target(url)
     if not code.strip():
         raise UsageError("the join code is empty")
-    directory = state.resolve_state_dir()
+    derived = False
+    try:
+        directory = state.resolve_state_dir()
+    except state.StateError as outside:
+        directory = _identity_dir(url, target, outside)
+        derived = True
     if state.has_credential(directory):
+        where = "this directory" if derived else "this clone"
         _err(
-            f"this clone already holds a session credential ({state.credential_path(directory)}); "
+            f"{where} already holds a session credential ({state.credential_path(directory)}); "
             "run `maity resume`, or revoke the session in the dashboard and delete that file "
             "before joining again"
         )
         return EXIT_ERROR
+    # Before the exchange: the code works once, so a directory that would refuse the
+    # credential afterwards must refuse it now, while the join can still be retried.
+    was = state.prepare_for_join(directory)
+    if was is not None:
+        _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
     result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
     base = hub.accept_hub(url, result.hub)  # before anything is kept
-    path = state.write_credential(directory, result.credential)
+    try:
+        path = state.write_credential(directory, result.credential)
+    except (state.StateError, OSError) as exc:  # the join is spent: keep the credential
+        path = state.rescue_credential(result.credential)
+        _err(f"{directory} refused the credential after the exchange ({exc}); kept it in {path}")
+        directory = path.parent
+        derived = True  # the export line below names the rescue directory
     state.save_state(
         directory,
         {
@@ -271,6 +289,13 @@ def cmd_join(args: argparse.Namespace) -> int:
         f"stored in {path} (mode 0600, not printed)",
         file=sys.stderr,
     )
+    if derived:
+        os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
+        print(
+            f"This agent's identity lives in {directory}. Every later maity "
+            f"command needs it: export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}",
+            file=sys.stderr,
+        )
     if args.pointer:
         root = pointer.repo_root(Path.cwd())
         if root is not None:
@@ -296,6 +321,21 @@ def cmd_join(args: argparse.Namespace) -> int:
             f"How to work as a member: {onboarding.HANDBOOK}"
         )
         return EXIT_ERROR
+
+
+# The join page's table row naming the agent (docs/join-page.md, §3.2).
+_PAGE_HANDLE = re.compile(r"^\| Your handle \| `([a-z0-9][a-z0-9-]{1,62})` \|$", re.MULTILINE)
+
+
+def _identity_dir(url: str, target: str, outside: Exception) -> Path:
+    """Outside a Git clone and without MAITY_STATE_DIR: the agent's own directory, from the
+    hub's host and the handle the join page names, so the pasted line works as it is. A page
+    without a handle leaves the refusal as it was."""
+    handle = _PAGE_HANDLE.search(hub.get_text(target))
+    host = urllib.parse.urlsplit(hub.hub_base(url)).netloc.lower()
+    if handle is None or not host or "/" in host or host.startswith("."):
+        raise outside
+    return state.identity_dir(host, handle.group(1))
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
@@ -865,9 +905,12 @@ def _conversation_kind(c: dict[str, Any]) -> Any:
 
 
 def _handles(conversation: dict[str, Any]) -> dict[str, str]:
-    people = (_obj(p) for p in conversation.get("participants") or [])
+    people = [_obj(p) for p in conversation.get("participants") or []]
+    shown = onboarding.shown_names(
+        (p.get("member_id"), p.get("kind"), p.get("handle"), p.get("name")) for p in people
+    )
     return {
-        p["member_id"]: str(p.get("handle") or p["member_id"])
+        p["member_id"]: shown.get(p["member_id"], p["member_id"])
         for p in people
         if isinstance(p.get("member_id"), str)
     }
@@ -1139,10 +1182,14 @@ MESSAGE_TYPES = SAY_TYPES  # §8.4 without `chat`, which §9 reads
 
 def _handle_map(session: Session) -> dict[str, str]:
     answer = session.client.call("GET", session.project_path("members"))
+    members = [m for m in (_field(answer, "items") or []) if isinstance(m, dict)]
+    shown = onboarding.shown_names(
+        (m.get("id"), m.get("kind"), m.get("handle"), m.get("name")) for m in members
+    )
     return {
-        m["id"]: str(m.get("handle") or m["id"])
-        for m in (_field(answer, "items") or [])
-        if isinstance(m, dict) and isinstance(m.get("id"), str)
+        str(m["id"]): shown.get(m["id"]) or str(m["id"])
+        for m in members
+        if isinstance(m.get("id"), str)
     }
 
 
@@ -1671,7 +1718,7 @@ def _placement_line(p: dict[str, Any]) -> str:
         state_ += f"/{reported['reason']}"
     pending = "" if p.get("reported_current", True) else " (pending)"
     return (
-        f"{show(p.get('id'))}  {show(agent.get('handle') or agent.get('id'))} on "
+        f"{show(p.get('id'))}  {onboarding.label(agent)} on "
         f"{show(runner.get('name') or runner.get('id'))}  {show(p.get('harness'))} "
         f"{show(p.get('mode'))}  desired {show(p.get('desired'))}, {show(state_)}{pending}"
     )
@@ -1906,7 +1953,7 @@ def cmd_note_list(args: argparse.Namespace) -> int:
         author = _obj(note.get("author"))
         print(
             f"{onboarding.inline(note.get('id'))}  {onboarding.inline(note.get('state'))}  "
-            f"{onboarding.inline(author.get('handle') or author.get('member_id'))}  "
+            f"{onboarding.label(author)}  "
             f"{onboarding.inline(note.get('created_at'))}"
         )
         for line in str(note.get("body") or "").splitlines():

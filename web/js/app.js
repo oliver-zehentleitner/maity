@@ -24,6 +24,9 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
+    // One card (#/p/<slug>/tasks/<id>, an id's link, js/ids.js): the board
+    // with that card marked; its tab is the board's.
+    { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
@@ -78,11 +81,14 @@ window.Maity = window.Maity || {};
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     if (parts[0] === "notifications") return { scope: "notifications" };
+    // The login page, always reachable (docs/api.md §16.7); signed in, the root.
+    if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "observe" && parts[1]) return { scope: "observe", slug: parts[1], args: parts.slice(2) };
+    if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
     if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
     if (parts[0] === "p" && parts[1]) {
       return { scope: "project", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
@@ -105,8 +111,18 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      fail: (prefix, err) => { el.textContent = prefix + err.message; el.className = "send-status failed"; },
+      // An ambiguous mention is said with the long forms to write (§8.6).
+      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
     };
+  }
+
+  // The header lockup (web/brand/BRAND.md: 28 px, the small mark), one file
+  // per theme; app.css shows the one the page's theme asks for, so a theme
+  // picked in the menu switches it too.
+  function brandTitle() {
+    return h("h1", { class: "brand" },
+      h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "Maity", width: "94", height: "28" }),
+      h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
   }
 
   function stateBadge(state, note) {
@@ -116,8 +132,10 @@ window.Maity = window.Maity || {};
   // ---- sign-in ------------------------------------------------------------
 
   function renderLogin(main) {
+    // A landing page may have set the tab's title (§16.7).
+    document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      h("h1", { class: "brand" }, "Maity"),
+      brandTitle(),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
@@ -256,7 +274,7 @@ window.Maity = window.Maity || {};
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
       .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
-      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + m.handle + " (" + m.kind + ")" })));
+      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
     }
@@ -345,6 +363,9 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
+    // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
+    if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -538,6 +559,83 @@ window.Maity = window.Maity || {};
     return form;
   }
 
+  // Project memory (docs/api.md §6.1, §6.21), read here and not changed:
+  // the hub would set nothing up and remove nothing on a change, so a change
+  // is an agent's work in the repository, on a card. The setup chosen at
+  // creation, and its cards once the hub made them.
+  function memoryPanel(ctx) {
+    const { PROVIDERS, OPTIONS } = M.projectSetup;
+    const provider = ctx.project.memory && ctx.project.memory.provider;
+    const s = ctx.project.setup;
+    const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([, title]) => title) : [];
+    let setup;
+    if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
+    else if (Array.isArray(s.cards) && s.cards.length) {
+      setup = h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]));
+    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
+    else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
+    return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
+      h("h2", { class: "panel-title", id: "memory-heading" }, "Project memory"),
+      h("p", null, h("strong", null, named || "—"),
+        provider === "keep-the-why" ? ": joining agents load the Keep the Why skill and keep the project's reasons in the repository's context/."
+          : provider === "none" ? ": the project works without a memory provider." : null),
+      h("p", { class: "hint" }, "Chosen when the project was created. A change is work in the repository: write a card for an agent; "
+        + "the hub sets nothing up and removes nothing."),
+      setup);
+  }
+
+  // policy.badge (docs/api.md §6.20): off unless an admin switches it on, a
+  // policy change with its reason. The README snippet and, while it is on,
+  // the badge as the hub serves it.
+  const BADGES = [["off", "Off: no badge is served"], ["members", "Members: how many humans and agents"],
+    ["agents_online", "Agents online: how many agents are online now"]];
+  function badgeForm(ctx, save) {
+    const current = ctx.project.policy.badge;
+    const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "badge-reason", required: true, placeholder: "Why it changes (logged)" });
+    // As reached in this tab; a file:// page has no origin to name.
+    const raw = window.location && window.location.origin;
+    const origin = raw && raw !== "null" ? raw : "https://<hub>";
+    const url = origin + "/badge/" + encodeURIComponent(ctx.slug) + ".svg";
+    const snippet = "[![maity](" + url + ")](" + origin + "/#/p/" + encodeURIComponent(ctx.slug) + "/overview)";
+    const copy = h("button", {
+      type: "button",
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(snippet);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed — select the line";
+        }
+      },
+    }, "Copy");
+    return h("form", {
+      class: "inline-form badge-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { badge: select.value }, reason: reason.value.trim() }, "Badge");
+      },
+    },
+    h("h2", { class: "panel-title" }, "README badge"),
+    h("p", { class: "hint" }, "Public: anyone with the address sees the count, never a name. The hub serves it while the badge is on. "
+      + "The address is this hub's as reached in this tab."),
+    h("label", { for: "badge-select" }, "Badge"), select,
+    // Shown from the hub itself; fixture mode has no hub to serve it.
+    current !== "off" && M.api.source === "api"
+      // Versioned by the rules: a policy change bumps it, so a cached
+      // badge of the old variant is not shown (§6.20: max-age=60).
+      ? h("img", { class: "badge-preview", src: "/badge/" + encodeURIComponent(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
+        alt: "The project's badge as the hub serves it" }) : null,
+    h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
+    current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
+    h("label", { for: "badge-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Change badge"));
+  }
+
   // ---- project logo -------------------------------------------------------
 
   // Dark enough for white initials: each at least 5.2:1 against #fff (WCAG AA).
@@ -716,7 +814,7 @@ window.Maity = window.Maity || {};
       items: () => [
         ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
-        ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
+        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
       ].filter(Boolean),
     });
     // Light, dark, or as the system has it; per browser (js/theme.js).
@@ -746,6 +844,7 @@ window.Maity = window.Maity || {};
       items: () => [
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
+        { label: "Preferences", href: "#/account/preferences" },
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
@@ -754,10 +853,10 @@ window.Maity = window.Maity || {};
     });
     append(header,
       h("div", { class: "bar" },
-        h("h1", { class: "brand" }, "Maity"),
+        brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1026,14 +1125,19 @@ window.Maity = window.Maity || {};
         await M.api.get("/auth/session");
       } catch (err) {
         if (err.status === 401) {
-          if (seq === renderSeq) renderLogin(main);
+          // At the root, the instance's landing page where it has one
+          // (§16.7); anywhere else, and when it is off or fails, sign-in.
+          const landing = where.scope === null && M.landing ? await M.landing.read() : null;
+          if (seq !== renderSeq) return;
+          if (landing) M.landing.show(main, landing, document.getElementById("header"));
+          else renderLogin(main);
           return;
         }
         throw err;
       }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
-      if (where.scope === null) {
+      if (where.scope === null || where.scope === "login") {
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
@@ -1046,19 +1150,19 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
-      append(clear(document.getElementById("header")), h("div", { class: "bar" }, h("h1", { class: "brand" }, "Maity")));
+      append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
       append(clear(main), errorBox(err));
       return;
     }
     if (seq !== renderSeq) return;
-    renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
+    renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = where.route;
+    if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
+    else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
@@ -1093,6 +1197,8 @@ window.Maity = window.Maity || {};
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
         await M.views.account(ctx, root, where.args);
+      } else if (where.scope === "instance-admin") {
+        await M.views.instanceAdmin(ctx, root);
       } else if (where.scope === "admin-users") {
         await M.views.adminUsers(ctx, root);
       } else if (where.scope === "runners") {
@@ -1117,6 +1223,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "admin-users") label = "Users";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
@@ -1127,6 +1234,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;
 

@@ -46,3 +46,30 @@ migration downgrades.
 - A fresh database per test (`CREATE DATABASE`) — the cleanest isolation,
   but it needs administrative rights on the test server and is slow on
   MariaDB.
+
+## Races are tested on two real connections, on PostgreSQL and MariaDB only
+
+**Id:** 0326b02f-c73b-44c5-88dd-98fe9fd19710
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (the limit expiry's race test)
+**Revisit when:** the hub runs on a database whose isolation differs from both again, or SQLite gets concurrent writers
+
+`tests/concurrency.py` opens two connections, each in its own transaction,
+and runs their steps in a fixed order; a step that must wait for the other
+runs in a thread, and the test asserts it is still blocked before releasing
+it. The helpers skip on SQLite, so these tests run in CI's PostgreSQL and
+MariaDB jobs.
+
+**Reason:** a compare-and-set or a lock is only shown to work by a second
+writer that reads, waits or loses at the right moment. SQLite serialises all
+writers, so the same test there would pass without proving anything. Both
+server databases run under READ COMMITTED (`db.make_engine` sets it), but
+they lock rows and resolve a conditional UPDATE each in their own way, which
+is what such a race exercises.
+
+**Rejected alternatives:**
+- Simulate the second writer by changing the row between two calls on one
+  connection: it shows the comparison, never the waiting on a lock.
+- Run the race on SQLite as well: a green result there means nothing.

@@ -1,10 +1,13 @@
 """Mentions: `@handle` of an active member, resolved at write time (docs/api.md §8.6).
 
 The hub scans a text once, when it is written, and stores what it found on the object:
-`{member_id, handle, field, offset, length}` with offsets in code points. A mention is
-`@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not part of it), with a word
-boundary before and after, outside inline code spans and fenced code blocks, naming
-exactly one active membership of the project. Group words are never mentions.
+`{member_id, handle, name, instance, field, offset, length}` with offsets in code
+points. A mention is `@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not
+part of it), or an agent's global name `@owner/handle` (§6.3), with a word boundary
+before and after, outside inline code spans and fenced code blocks, naming an active
+membership of the project. A short handle two active agent members share is refused,
+naming the global names it could mean; a human with that handle comes first. Group
+words are never mentions.
 
 Which texts are scanned and who is pinged is the caller's; this module resolves, caps
 and counts pings against the writer's rate.
@@ -14,12 +17,14 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
+from maity_hub import instances
 from maity_hub import tables as t
-from maity_hub.errors import invalid, rate_limited
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import on_rollback
 from maity_hub.ratelimit import Limiter
 
@@ -29,6 +34,7 @@ PINGS_PER_WINDOW, PING_WINDOW = 30, 600.0
 GROUP_WORDS = frozenset({"all", "here", "everyone", "owner"})
 
 _RUN = re.compile(r"[a-z0-9-]+")
+_SUFFIX = re.compile(r"#([2-9a-hjkmnp-z]{4,5})")  # an instance id (§6.17)
 _NOT_BEFORE = re.compile(r"[A-Za-z0-9_.@/+-]")
 _NOT_AFTER = re.compile(r"[A-Za-z0-9_]")
 _FENCE = re.compile(r"^(`{3,}|~{3,})")
@@ -90,9 +96,20 @@ def code_ranges(text: str) -> list[tuple[int, int]]:
     return sorted(ranges)
 
 
-def candidates(text: str) -> list[tuple[int, int, str]]:
-    """(offset, length, handle) of every `@handle` the rule accepts, before the
-    membership check."""
+class Candidate(NamedTuple):
+    offset: int
+    length: int  # the `@` and the name
+    handle: str
+    owner: str | None  # the owner's handle in a global name `@owner/handle`, else None
+    instance: str | None = None  # `#id` directly after the name: one instance (§6.17)
+
+
+def candidates(text: str) -> list[Candidate]:
+    """Every `@handle` and `@owner/handle` the rule accepts, before the membership
+    check, each with an optional `#id`. A run followed by `/` and a second run is the
+    global name, judged whole: a boundary missing after it makes it no mention at all,
+    never a short one. An instance id directly after the name, itself followed by a
+    boundary, belongs to the candidate; a `#` followed by anything else is a boundary."""
     found = []
     code = code_ranges(text)  # sorted and disjoint
     starts = [start for start, _ in code]
@@ -102,41 +119,72 @@ def candidates(text: str) -> list[tuple[int, int, str]]:
         run = _RUN.match(text, at + 1)
         if run is None:
             continue
+        owner: str | None = None
         handle = run.group().rstrip("-")
+        second = _RUN.match(text, run.end() + 1) if text[run.end() : run.end() + 1] == "/" else None
+        if second is not None and second.group().rstrip("-"):
+            owner, handle = run.group(), second.group().rstrip("-")
+            after = second.start() + len(handle)
+        else:
+            after = at + 1 + len(handle)
         if not handle:
             continue
-        after = at + 1 + len(handle)
+        instance: str | None = None
+        suffix = _SUFFIX.match(text, after)
+        if suffix is not None and not (
+            suffix.end() < len(text) and _NOT_AFTER.match(text[suffix.end()])
+        ):
+            instance, after = suffix.group(1), suffix.end()
         if after < len(text) and _NOT_AFTER.match(text[after]):
             continue
-        if handle in GROUP_WORDS or (handle == "role" and text[after : after + 1] == ":"):
+        if owner is None and (
+            handle in GROUP_WORDS or (handle == "role" and text[after : after + 1] == ":")
+        ):
             continue
         inside = bisect_right(starts, at) - 1
         if inside >= 0 and at < code[inside][1]:
             continue
-        found.append((at, len(handle) + 1, handle))
+        found.append(Candidate(at, after - at, handle, owner, instance))
     return found
 
 
+def global_name(owner_handle: str, handle: str) -> str:
+    """An agent's name across owners and projects (§6.3); computed, never stored."""
+    return f"{owner_handle}/{handle}"
+
+
 def resolve(
-    conn: Connection, project_id: str, text: str | None, field: str
+    conn: Connection,
+    project_id: str,
+    text: str | None,
+    field: str,
+    *,
+    among: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """The mentions of one text field, oldest offset first; `invalid` past the caps.
-    A handle that names no active member, or more than one, stays text."""
+    """The mentions of one text field, oldest offset first; `invalid` past the caps and
+    for a short handle two active members share (`ambiguous_mention`, with the global
+    names it could mean in `details.mentions`). `among` narrows the members a mention
+    may name (a group chat's participants); anyone else's handle stays text, as an
+    unknown one does."""
     if not text:
         return []
     found = candidates(text)
     if not found:
         return []
-    handles = {handle for _, _, handle in found}
+    handles = {c.handle for c in found}
+    owner = t.human.alias("owner")
     rows = conn.execute(
         select(
+            t.membership.c.id,
             t.membership.c.agent_id,
             t.membership.c.human_id,
             t.agent_profile.c.handle.label("agent_handle"),
             t.human.c.handle.label("human_handle"),
+            owner.c.handle.label("owner_handle"),
         )
         .select_from(t.membership)
         .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .outerjoin(owner, owner.c.id == t.agent_profile.c.owner_id)
         .outerjoin(t.human, t.human.c.id == t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
@@ -144,18 +192,92 @@ def resolve(
             (t.agent_profile.c.handle.in_(handles)) | (t.human.c.handle.in_(handles)),
         )
     ).all()
-    members: dict[str, list[str]] = {}
+    humans: dict[str, str] = {}  # handle -> member id; human handles are unique
+    memberships: dict[str, int] = {}  # agent member id -> membership row id
+    agents: dict[str, list[tuple[str, str]]] = {}  # handle -> (member id, global name)
+    long: dict[tuple[str, str], tuple[str, str]] = {}  # (owner, handle) -> (member id, name)
     for row in rows:
-        handle = row.agent_handle or row.human_handle
-        members.setdefault(handle, []).append(row.agent_id or row.human_id)
-    mentions = [
-        {"member_id": members[h][0], "handle": h, "field": field, "offset": o, "length": n}
-        for o, n, h in found
-        if len(members.get(h, [])) == 1
-    ]
+        member_id = row.agent_id or row.human_id
+        if among is not None and member_id not in among:
+            continue
+        if row.agent_id:
+            memberships[row.agent_id] = row.id
+            name = global_name(row.owner_handle, row.agent_handle)
+            agents.setdefault(row.agent_handle, []).append((member_id, name))
+            long[(row.owner_handle, row.agent_handle)] = (member_id, name)
+        else:
+            humans[row.human_handle] = member_id
+    # A human comes first: humans have no long form, the agent has (§8.6).
+    shared = {
+        c.handle: sorted(name for _, name in agents[c.handle])
+        for c in sorted(found, key=lambda c: c.handle)
+        if c.owner is None and c.handle not in humans and len(agents.get(c.handle, [])) > 1
+    }
+    if shared:
+        raise ApiError(
+            400,
+            "invalid",
+            "a short handle names more than one member: use the global name",
+            {"fields": {field: "ambiguous_mention"}, "mentions": shared},
+        )
+    live = _active_instances(conn, memberships, {c.instance for c in found if c.instance})
+    mentions = []
+    for c in found:
+        named: tuple[str, str | None] | None
+        if c.owner is not None:
+            named = long.get((c.owner, c.handle))
+        elif c.handle in humans:
+            named = (humans[c.handle], None)  # a human's handle is the name
+        else:
+            named = agents[c.handle][0] if c.handle in agents else None
+        if named is not None and c.instance is not None and (named[0], c.instance) not in live:
+            named = None  # not an active instance of that member: the whole text stays text
+        if named is not None:
+            mentions.append(
+                {
+                    "member_id": named[0],
+                    "handle": c.handle,
+                    "name": named[1],
+                    "instance": c.instance,  # null: the team (§8.6)
+                    "field": field,
+                    "offset": c.offset,
+                    "length": c.length,
+                }
+            )
     if len({m["member_id"] for m in mentions}) > MAX_MEMBERS or len(mentions) > MAX_OCCURRENCES:
         raise invalid({field: "too_many_mentions"}, "too many mentions in one text")
     return mentions
+
+
+def _active_instances(
+    conn: Connection, memberships: dict[str, int], wanted: set[str]
+) -> set[tuple[str, str]]:
+    """(member id, instance id) of the wanted ids that are live instances of these agent
+    members: a credential not revoked (§6.17)."""
+    if not wanted or not memberships:
+        return set()
+    by_row = {row_id: member_id for member_id, row_id in memberships.items()}
+    rows = conn.execute(
+        select(t.credential.c.membership_id, t.credential.c.instance).where(
+            t.credential.c.membership_id.in_(list(by_row)),
+            t.credential.c.instance.in_(wanted),
+            t.credential.c.revoked_at.is_(None),
+        )
+    )
+    return {(by_row[r.membership_id], r.instance) for r in rows}
+
+
+def tokens(mentions: list[dict[str, Any]], members: Iterable[str]) -> list[str]:
+    """The audience tokens that ping `members` as these mentions name them: an instance
+    mention pings that instance only (`instance:<member>#<id>`), a mention of the
+    handle alone the team (`member:<id>`, woken by its wake rule, §8.2)."""
+    wanted = set(members)
+    found = [
+        instances.token(m["member_id"], m.get("instance"))
+        for m in mentions
+        if m["member_id"] in wanted
+    ]
+    return list(dict.fromkeys(found))
 
 
 def members(mentions: list[dict[str, Any]]) -> list[str]:

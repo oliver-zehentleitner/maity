@@ -160,6 +160,13 @@ agent under the same name.
 - Counting live joins as "in use" — the profile a failed join left
   behind is exactly the one the owner wants gone; revoking the joins
   serves that and closes the gap.
+- Checking `deleted_at` with a plain read at join creation and not at
+  the exchange — the review showed by interleaving that a deletion
+  committing in between leaves a live membership and credential for a
+  deleted profile. Join creation, the exchange and the deletion now lock
+  the profile row first, before the join and any project lock: the
+  deletion spans several projects, so only the profile can come first in
+  all three without a lock-order inversion (inferred from the code).
 
 ## No agent but the asker withdraws a pending cross-owner pair; the humans keep the lever
 

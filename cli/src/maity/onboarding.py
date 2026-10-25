@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from typing import Any
 
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
@@ -102,25 +103,67 @@ def _items(data: Any) -> list[dict[str, Any]]:
 _ID_SHAPED = re.compile(r"^(agt|hum|role|area)[-:]", re.IGNORECASE)
 
 
+# A team's global name `owner/handle` (§6.3). The check-in target is a member, never an
+# instance, so an `…#id` (an instance mention, §8.6) falls back like any other value here.
+_GLOBAL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def shown_names(members: Iterable[tuple[Any, Any, Any, Any]]) -> dict[str, str]:
+    """member id → the name to show, from (member id, kind, handle, global name): the
+    handle, unique among the members given; for agents sharing a short handle, each one's
+    global name `owner/handle` (§6.3) when the hub sent it. A human keeps its handle when
+    only agents share it: a human comes first and has no long form (§8.6). A name stays out
+    when it could be read as something else: shared without a global name, shaped like an
+    id or an address, or `all`; that member keeps its id."""
+    rows = [
+        (
+            member_id,
+            kind,
+            handle,
+            name if isinstance(name, str) and _GLOBAL_NAME.match(name) else None,
+        )
+        for member_id, kind, handle, name in members
+        if isinstance(member_id, str) and isinstance(handle, str) and handle
+    ]
+    sharers: dict[str, list[tuple[str, Any]]] = {}
+    for member_id, kind, handle, _ in rows:
+        sharers.setdefault(_key(handle), []).append((member_id, kind))
+    shown: dict[str, str] = {}
+    for member_id, kind, handle, name in rows:
+        if _ID_SHAPED.match(_key(handle)) or _key(handle) in ("all", ""):
+            continue
+        others = [k for m, k in sharers[_key(handle)] if m != member_id]
+        if not others or (kind == "human" and all(k == "agent" for k in others)):
+            shown[member_id] = handle
+        elif name is not None:
+            shown[member_id] = name
+    return shown
+
+
+def label(member: Any) -> str:
+    """One member object as a reader names it outside a member list: its global name when
+    the hub sent one, else its handle, else its id (§6.3)."""
+    member = _dict(member)
+    name = member.get("name")
+    if isinstance(name, str) and _GLOBAL_NAME.match(name):
+        return name
+    return inline(member.get("handle") or member.get("member_id") or member.get("id") or "?")
+
+
 def _names(packet: dict[str, Any]) -> dict[str, str]:
-    """member id → handle, from the peers and this member itself: a human reads names. A
-    handle stays out when it could be read as something else: shared by two members, shaped
-    like an id or an address, or `all`; that member keeps its id."""
-    pairs: list[tuple[str, str]] = []
-    for member in [*_items(packet.get("peers")), _dict(packet.get("me"))]:
-        member_id, handle = member.get("member_id"), member.get("handle")
-        if isinstance(member_id, str) and isinstance(handle, str) and handle:
-            pairs.append((member_id, handle))
-    owners: dict[str, set[str]] = {}
-    for member_id, handle in pairs:
-        owners.setdefault(_key(handle), set()).add(member_id)
-    return {
-        member_id: handle
-        for member_id, handle in pairs
-        if len(owners[_key(handle)]) == 1
-        and not _ID_SHAPED.match(_key(handle))
-        and _key(handle) not in ("all", "")
-    }
+    """member id → name, from the peers and this member itself: a human reads names. The
+    packet's peers carry no global name yet; for this member it is built from `me.owner`."""
+    me = _dict(packet.get("me"))
+    owner, handle = get(me, "owner", "handle"), me.get("handle")
+    mine = me.get("name")
+    if not mine and isinstance(owner, str) and isinstance(handle, str):
+        mine = f"{owner}/{handle}"
+    members = [
+        *((m.get("member_id"), m.get("kind"), m.get("handle"), m.get("name"))
+          for m in _items(packet.get("peers"))),
+        (me.get("member_id"), "agent", handle, mine),
+    ]  # fmt: skip
+    return shown_names(members)
 
 
 def _key(handle: str) -> str:
@@ -136,7 +179,9 @@ def _name(value: Any, names: dict[str, str]) -> str:
 
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
-    handle = inline(me.get("handle") or me.get("member_id") or "?")
+    member_id = me.get("member_id")
+    shown = names.get(member_id) if isinstance(member_id, str) else None
+    handle = inline(shown or me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
     line = f"You are {handle}" + (f" ({inline(name)})" if name and inline(name) != handle else "")
     if me.get("member_id"):
@@ -355,7 +400,7 @@ def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) 
 def _author(by: Any) -> str:
     """Who wrote a memory text: a handle, with the instance for an agent (§19.2)."""
     by = _dict(by)
-    who = inline(by.get("handle") or by.get("member_id") or by.get("id") or "someone")
+    who = label(by) if by else "someone"
     return f"{who}#{inline(by['instance'])}" if by.get("instance") else who
 
 
@@ -418,7 +463,7 @@ def _check_in(packet: dict[str, Any]) -> list[str]:
         return []  # Old hubs omit the block; tolerate a partial packet as elsewhere.
     lines = [
         "Check in:",
-        f"Report to @{inline(target['handle'])} ({inline(target.get('kind'))}) "
+        f"Report to @{label(target)} ({inline(target.get('kind'))}) "
         "with a message before you take any work.",
     ]
     if block.get("instruction"):
@@ -453,7 +498,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         heading = "Your briefing, as the humans of this project wrote it for you:"
         if ms.get("briefing_source") == "project":
             author = _dict(ms.get("briefing_by"))
-            who = inline(author.get("handle") or author.get("id") or "unknown")
+            who = label(author) if author else "unknown"
             heading = f"Your briefing (project default, set by {who}):"
         out += [
             heading,
@@ -521,6 +566,10 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(
             "Run `maity resume` at the start of every session; `maity --help` lists the rest."
+        )
+        out.append(
+            "Mention a member as @handle; when two members share a short handle, the hub "
+            "refuses it and you write the long form @owner/handle."
         )
     # Every piece above is cleaned already; this pass guarantees that nothing missed reaches
     # the terminal as a control sequence.

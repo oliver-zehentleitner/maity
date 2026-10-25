@@ -1245,6 +1245,7 @@ def file_personal(
     *,
     options: list[dict[str, Any]] | None = None,
     task_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
 ) -> str:
     """A request the hub files to the human who owns the agent profile `agent_id`, member
     of the project or not (`to: profile_owner:<agent id>`); returns its id. Nothing else
@@ -1253,6 +1254,8 @@ def file_personal(
     It keeps the asker's project in `project_id`, so the project's paths find it for the
     asker and its events have a log. `to_human` is the owner at filing time: a profile
     that later changes hands leaves its open personal requests with the human asked."""
+    if proposal is not None:
+        proposals.check_kind(proposal)
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
@@ -1268,6 +1271,7 @@ def file_personal(
         to_human=owner,
         options=options,
         task_id=task_id,
+        proposal=proposal,
     )
 
 

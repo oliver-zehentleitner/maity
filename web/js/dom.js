@@ -65,6 +65,8 @@ window.Maity = window.Maity || {};
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    // A project's README badge, served by the hub at its root (§6.20).
+    if (/^\/badge\/[a-z0-9][a-z0-9-]{1,62}\.svg(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
     // Object URLs exist only for an upload in fixture mode, a page opened from file://.
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
@@ -129,25 +131,33 @@ window.Maity = window.Maity || {};
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
   // nodes and member links. Offsets and lengths count code points; only the
   // stored ones for this field are links, and only where the text there is
-  // "@" + the stored handle; nothing the writer typed becomes a link.
-  function withMentions(text, mentions, field, hrefOf) {
+  // "@" + the stored handle; nothing the writer typed becomes a member link.
+  // `at` (M.ids.where): the project the text belongs to, for the ids in
+  // the text between mentions as links (js/ids.js).
+  function withMentions(text, mentions, field, hrefOf, at) {
     const chars = Array.from(String(text || ""));
     const marks = (mentions || [])
       .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
       .sort((a, b) => a.offset - b.offset);
     const out = [];
-    let at = 0;
+    const plain = (s) => (at && M.ids ? M.ids.link(s, at) : [s]);
+    let from = 0;
     marks.forEach((x) => {
-      if (x.offset < at || x.offset + x.length > chars.length) return;
+      if (x.offset < from || x.offset + x.length > chars.length) return;
       const said = chars.slice(x.offset, x.offset + x.length).join("");
-      if (said !== "@" + x.handle) return;
-      if (x.offset > at) out.push(chars.slice(at, x.offset).join(""));
-      // No href: a mention named where its member cannot be opened.
+      // The hub stores a long mention (§8.6) with the whole @owner/handle,
+      // and an instance mention with its #id after either form.
+      const suffix = x.instance ? "#" + x.instance : "";
+      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix)) return;
+      if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
+      // No href: a mention named where its member cannot be opened. An
+      // instance mention links to the member; the instance is in the title.
       const href = hrefOf(x.member_id);
-      out.push(href ? h("a", { class: "mention", href }, said) : h("span", { class: "mention" }, said));
-      at = x.offset + x.length;
+      const title = x.instance ? "instance " + x.instance : null;
+      out.push(href ? h("a", { class: "mention", href, title }, said) : h("span", { class: "mention", title }, said));
+      from = x.offset + x.length;
     });
-    if (at < chars.length) out.push(chars.slice(at).join(""));
+    if (from < chars.length) out.push(...plain(chars.slice(from).join("")));
     return out;
   }
 
@@ -189,6 +199,38 @@ window.Maity = window.Maity || {};
   // What a view says where a feature of a newer hub would be: muted, not red.
   const notOnHub = (text) => h("p", { class: "muted not-on-hub" }, text);
 
+  // The handle a member goes by in a project (docs/api.md §6.3): the short
+  // one, or an agent's global name (owner/handle) where two members of the
+  // project share the short one. A human has no long form and keeps the
+  // short one ("a human comes first", §8.6). `members`: the project's list.
+  const sharedOf = new WeakMap();
+  function sharedHandles(members) {
+    const list = members || [];
+    if (!sharedOf.has(list)) {
+      const count = {};
+      list.forEach((m) => { if (m && m.handle) count[m.handle] = (count[m.handle] || 0) + 1; });
+      sharedOf.set(list, new Set(Object.keys(count).filter((k) => count[k] > 1)));
+    }
+    return sharedOf.get(list);
+  }
+  function handleIn(members, m) {
+    if (!m || !m.handle) return null;
+    return m.kind === "agent" && m.name && sharedHandles(members).has(m.handle) ? m.name : m.handle;
+  }
+  const handleOf = (ctx, m) => handleIn(ctx && ctx.members, m);
+
+  // The hub's refusal of a short handle two agents share (§8.6
+  // ambiguous_mention), in words with the long forms it names; null for
+  // any other error.
+  function ambiguousMention(err) {
+    const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    if (!fields || !Object.values(fields).includes("ambiguous_mention")) return null;
+    const named = (err.details && err.details.mentions) || {};
+    const parts = Object.keys(named).map((handle) => "@" + handle + " is " + named[handle].length + " agents here: write "
+      + named[handle].map((n) => "@" + n).join(" or "));
+    return { message: (parts.length ? parts.join("; ") : "a handle here is two agents: write its long form, @owner/handle") + "." };
+  }
+
   // A member as every view names them: always a way to their view in the
   // project (the maintainer's rule: a member is always clickable), the full
   // name as tooltip. `who` is a member id or a reference carrying
@@ -201,7 +243,7 @@ window.Maity = window.Maity || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = id && ctx.memberById ? ctx.memberById[id] : null;
     const name = (m && m.display_name) || (who && who.display_name) || (id && ctx.nameOf ? ctx.nameOf(id) : id) || "—";
-    const handle = (m && m.handle) || (who && who.handle);
+    const handle = (m && handleOf(ctx, m)) || (who && who.handle);
     const label = o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label);
@@ -221,5 +263,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);

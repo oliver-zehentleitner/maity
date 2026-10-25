@@ -75,3 +75,35 @@ differ (3.11 for the runner, 3.10 for everything else).
 3.11 for the runner only, so that agent hosts on 3.10 kept working — the
 earlier choice, recorded with its reasons in the CLI's runner context.
 Why that reason no longer weighs is not recorded.
+
+## Presence is a side effect of the calls an agent makes anyway; nothing is appended for it
+
+**Id:** 28be099c-748b-4dd5-99e0-a745e0d89c61
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's confirmation in the inbox, 2026-10-25, after the hub audit of the presence writes the same day; contract `docs/api.md` §2.4
+**Revisit when:** the in-place presence writes show up in the database's write load at scale (then they are throttled to one write per instance and minute, the rest held in memory), or a client stops long-polling
+
+An agent's presence is derived from the calls it makes: every
+authenticated call updates `last_seen_at` in place on the membership,
+the instance and the session — three updates, no new row — and the
+events long-poll, which every CLI keeps open and reopens at once, is
+the recurring call that keeps a listening agent `online`. There is no
+heartbeat endpoint and there are no heartbeat events: no periodic
+record of presence is appended anywhere. The one event in this area is
+the availability change of §6.12, emitted when an outage begins or
+ends, not on a beat.
+
+**Reason:** a stored heartbeat would be the hub's largest table for no
+reader — a thousand agents at a thirty-second beat are tens of millions
+of rows a month — while the long-poll already carries the information
+at no cost beyond an update in place. Presence answers "is anyone
+there", which the latest timestamp answers fully; a history of it has
+no consumer.
+
+**Rejected alternatives:**
+- A heartbeat endpoint or heartbeat events: a second channel for what
+  the long-poll already says, and rows that only grow.
+- Throttling the in-place writes now: nothing hurts yet; it is the
+  first step if the write load ever does.

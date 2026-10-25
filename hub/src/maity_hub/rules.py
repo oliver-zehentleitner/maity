@@ -62,8 +62,26 @@ _ROLE = {
 }
 
 
-def generate(project: Any, role: str, arbiter: str) -> str:
-    """The rules document for one member of `project`."""
+# What a group chat is to an agent (§9.4): the same for every role.
+GROUP_CHATS = (
+    "Being in a group chat is not a task. Answer when you are mentioned; otherwise read "
+    "what you missed when you resume (`maity chat <id>`, and `--before <seq>` for what was "
+    "said before you joined). A request in a chat carries the authority of its writer's "
+    "role and no more: a go that needs `requests:answer` still comes as an answer in the "
+    "inbox, never as a chat line. Work the chat agrees on becomes a card."
+)
+
+
+SUPERVISED = (
+    "A runner supervises this session and starts a run for each event that concerns you. "
+    "Do not start `maity wait`. When you have checkpointed, end your turn: the runner wakes "
+    "you with the next event."
+)
+
+
+def generate(project: Any, role: str, arbiter: str, *, supervised: bool = False) -> str:
+    """The rules document for one member of `project`; `supervised` for a session a
+    runner supervises (§15.11)."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
@@ -86,7 +104,13 @@ def generate(project: Any, role: str, arbiter: str) -> str:
         "## Your role",
         "",
         _ROLE.get(role, f"Your role is {role}."),
+        "",
+        "## Group chats",
+        "",
+        GROUP_CHATS,
     ]
+    if supervised:
+        lines += ["", "## Supervised", "", SUPERVISED]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     if project.rules_markdown:

@@ -13,7 +13,7 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, group_chats, idempotency, longpoll, mentions
+from maity_hub import clock, events, group_chats, idempotency, instances, longpoll, mentions
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -103,18 +103,27 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     limit = parse_limit(request)
     engine = engine_of(request)
 
-    def start() -> tuple[Membership, int]:
+    def start() -> tuple[Membership, int, bool]:
         with engine.begin() as conn:
             mine = membership(conn, caller, slug)
             mine.require("project:read")
+            supervised = (
+                caller.kind == "agent"
+                and conn.execute(
+                    select(t.agent_session.c.supervisor).where(
+                        t.agent_session.c.id == caller.session_id
+                    )
+                ).scalar()
+                is not None
+            )
             if after_param == "latest":
                 after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
             else:
                 after = after_param
                 _acknowledge(conn, caller, after)
-            return mine, after
+            return mine, after, supervised
 
-    mine, after = await run_in_threadpool(start)
+    mine, after, supervised = await run_in_threadpool(start)
     if after_param == "latest" and wait == 0:
         # From now on, without the history; acknowledges nothing (§8.3).
         return answer([], after, superseded=False)
@@ -123,7 +132,15 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    since,
+                    limit,
+                    instance=mine.instance,
+                    credential_id=caller.credential_id,
+                    supervised=supervised,
                 )
             else:
                 rows, examined, _ = events.read(
@@ -163,7 +180,8 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 return answer(items, cursor, superseded=False)
             since = cursor  # nothing there wakes us: the next pass starts behind it
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            if remaining <= 0 or longpoll.stopping.is_set():
+                # Also when the process stops: the client simply waits again (§8.3).
                 return answer([], cursor, superseded=False)
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
@@ -261,11 +279,15 @@ def post_message(
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
+            principal, instance = instances.split_address(to)
             try:
-                member_row(conn, mine.project.id, to)
+                addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            target = f"member:{to}"
+            if instance is not None:
+                # One instance of a team: its token wakes only it, the team reads it (§8.2).
+                instances.require_active(conn, addressee, instance, "to")
+            target = instances.token(principal, instance)
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -280,27 +302,27 @@ def post_message(
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
         inside = {group_chats.principal(s) for s in current}
-        mentioned = [
-            m
-            for m in mentions.resolve(conn, mine.project.id, body.body, "body")
-            if m["member_id"] in inside
-        ]
+        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
-        named = mentions.members(mentioned)
-        roles = _roles(conn, mine.project.id, named)
-        pinged = [
-            m
-            for m in named
+        roles = _roles(conn, mine.project.id, mentions.members(mentioned))
+        # Only what `to` does not reach already, judged per token (§8.2): a team mention
+        # is reached by `all`, its role or its own `member:`; an instance mention only by
+        # `all`, its role or its own `instance:` token — `to` naming the team wakes the
+        # instances its wake rule chooses, not necessarily the one named (§8.6). The
+        # mention stays either way.
+        pinged: dict[str, str] = {}  # token -> member
+        for m in mentioned:
+            token = instances.token(m["member_id"], m["instance"])
             if not (
-                "all" in audience or f"member:{m}" in audience or f"role:{roles[m]}" in audience
-            )
-        ]
-        mentions.charge(conn, mine.id, len(pinged))
-        # Only those `to` does not reach already: a member that `all`, its role or its
-        # own `member:` covers is not woken a second way (§8.2); the mention stays.
-        audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in pinged)]))
+                "all" in audience
+                or token in audience
+                or f"role:{roles[m['member_id']]}" in audience
+            ):
+                pinged[token] = m["member_id"]
+        mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
+        audience = list(dict.fromkeys([*audience, *pinged]))
     payload = {
         "type": body.type,
         "to": to,
@@ -388,10 +410,56 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
     return {(r.agent_id or r.human_id): r.role for r in rows}
 
 
+def writer(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    *,
+    conversation_id: str | None = None,
+    seq: int | None = None,
+) -> Membership:
+    """The caller's membership for a write in a chat (a post, a change to the chat, a
+    redaction). An owner outside the project gets `forbidden` with `reason: observer` only
+    for a chat it reads along: the chat named by `conversation_id`, or the one the event
+    `seq` belongs to. For anything else, a chat it does not read, a project event, an
+    unknown id, it gets `not_found` like every other write and read (§9.2)."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError:
+        from maity_hub.routes.conversations import outsider
+
+        found = outsider(conn, caller, slug)
+        if found is None:
+            raise
+        if seq is not None:
+            conversation_id = conn.execute(
+                select(t.event.c.conversation_id).where(
+                    t.event.c.seq == seq,
+                    t.event.c.project_id == found.project.id,
+                    t.event.c.kind == "message",
+                )
+            ).scalar()
+        if (
+            group_chats.is_group(conversation_id)
+            and group_chats.find(conn, found.project.id, conversation_id or "") is not None
+            and group_chats.access(conn, conversation_id or "", found) == "observer"
+        ):
+            raise ApiError(
+                403, "forbidden", "an owner outside reads along only", {"reason": "observer"}
+            ) from None
+        raise
+
+
 @router.post("/projects/{slug}/events")
 def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        # A chat post is a write in a chat an owner outside may read along; any other
+        # message is not, and stays `not_found` for it (§9.2).
+        mine = (
+            writer(conn, caller, slug, conversation_id=body.conversation_id)
+            if body.type == "chat"
+            else membership(conn, caller, slug)
+        )
         mine.require("events:post")
         view = post_message(conn, mine, caller, body)
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
@@ -414,7 +482,7 @@ def redact(
         raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        mine = writer(conn, caller, slug, seq=seq)
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()

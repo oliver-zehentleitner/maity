@@ -165,12 +165,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(document.title.startsWith("(7) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
   expect(allChip.getAttribute("aria-label") === "5 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
-  expect(main.querySelectorAll(".project-label").length === 5, "every entry labelled with its project, a personal request as Personal");
+  expect(main.querySelectorAll(".project-label").length === 6, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
     && /^#\/p\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
     "inbox: each entry's project badge is a link to the project, before the entry");
-  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
+  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Personal, Maity|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
     "inbox: the project's name starts each entry's accessible name");
   // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
   const markOf = (label) => chip(label).querySelector(".project-mark");
@@ -209,7 +209,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 4
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 5
     && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
     "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
   // The entry expanded is the first on screen, not the first of the ungrouped order.
@@ -283,6 +283,78 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   slowText.dispatch("blur");
   releaseList(); await tick(); await tick();
   expect(slowList.hidden && !slowText.getAttribute("aria-activedescendant"), "mentions: an answer after a blur draws nothing");
+  // Global names (docs/api.md §6.3, §8.6): where two agents share a short handle the picker offers and
+  // inserts the long form; a human who shares one with an agent keeps the short one.
+  const idBoxGn = (nodes) => { const box = document.createElement("div"); win.Maity.dom.append(box, nodes); return box; };
+  const gnText = document.createElement("textarea");
+  const gnList = win.Maity.mentionPicker(gnText, () => Promise.resolve([
+    { id: "agt-1", kind: "agent", handle: "agent-b", name: "oliver/agent-b", display_name: "Oliver's B" },
+    { id: "agt-2", kind: "agent", handle: "agent-b", name: "anna/agent-b", display_name: "Anna's B" },
+    { id: "agt-3", kind: "agent", handle: "agent-c", name: "oliver/agent-c", display_name: "C" },
+    { id: "hum-o", kind: "human", handle: "oliver", display_name: "Oliver" },
+    { id: "agt-4", kind: "agent", handle: "oliver", name: "anna/oliver", display_name: "Anna's Oliver" }]), "me");
+  gnText.value = "@a"; gnText.dispatch("input"); await tick(); await tick();
+  const gnOpts = () => gnList.querySelectorAll("li.mention-option").map((li) => text(li.childNodes[0]));
+  expect(JSON.stringify(gnOpts()) === JSON.stringify(["@oliver/agent-b", "@anna/agent-b", "@agent-c"]), "global names: the picker offers the long form where the short one is shared " + JSON.stringify(gnOpts()));
+  gnList.querySelectorAll("li.mention-option")[1].dispatch("mousedown"); await tick();
+  expect(gnText.value === "@anna/agent-b ", "global names: picking inserts the long form");
+  gnText.value = "@anna/"; gnText.dispatch("input"); await tick();
+  expect(JSON.stringify(gnOpts()) === JSON.stringify(["@anna/agent-b", "@anna/oliver"]), "global names: typing the long form narrows the picker " + JSON.stringify(gnOpts()));
+  gnList.querySelectorAll("li.mention-option")[0].dispatch("mousedown"); await tick();
+  expect(gnText.value === "@anna/agent-b ", "global names: and picking completes it");
+  gnText.value = "@ol"; gnText.dispatch("input"); await tick();
+  expect(JSON.stringify(gnOpts()) === JSON.stringify(["@oliver", "@anna/oliver"]), "global names: a human comes first and keeps the short handle");
+  gnText.dispatch("keydown", { key: "Escape" });
+  gnText.value = "@agent-b#wl"; gnText.dispatch("input"); await tick();
+  expect(gnList.hidden && gnText.value === "@agent-b#wl", "global names: an instance #id being typed offers nothing and is left as typed");
+  const gnRefused = win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid",
+    { fields: { body: "ambiguous_mention" }, mentions: { "agent-b": ["anna/agent-b", "oliver/agent-b"] } }));
+  expect(gnRefused && gnRefused.message === "@agent-b is 2 agents here: write @anna/agent-b or @oliver/agent-b."
+    && win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid", { fields: { body: "too_many_mentions" } })) === null,
+    "global names: the hub's ambiguous_mention in words with the long forms");
+  const gnStored = idBoxGn(win.Maity.dom.withMentions("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
+    "summary", (id) => "#/m/" + id));
+  expect(gnStored.querySelector("a.mention") && text(gnStored.querySelector("a.mention")) === "@anna/shop-dev" && gnStored.querySelector("a.mention").getAttribute("href") === "#/m/agt-s2",
+    "global names: a stored long mention is a link to its member");
+  // A project with two shop-dev of different owners (fixtures/sample): both by their global names; a
+  // project without a shared handle keeps the short ones; the hub's refusal of the short form is said.
+  await go("#/p/sample/agents"); for (let k = 0; k < 4; k++) await tick();
+  const gnHandles = main.querySelectorAll("article.profile").map((a) => text(a.querySelector(".handle")));
+  expect(gnHandles.includes("@maintainer/shop-dev") && gnHandles.includes("@anna/shop-dev"), "global names: two owners' shop-dev in Agents by their long names " + JSON.stringify(gnHandles));
+  await go("#/p/sample/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes(" @anna/shop-dev") && text(main).includes(" @maintainer/shop-dev") && text(main).includes(" @maintainer") && !text(main).includes("@hum-"),
+    "global names: and in Members; the human by the short handle");
+  await go("#/p/sample/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Shop Dev (@maintainer/shop-dev)"))
+    && byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Agent B (@agent-b)")),
+    "global names: the join panel names a profile long only where its handle is shared in the project");
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll("article.profile").some((a) => text(a.querySelector(".handle")) === "@agent-b"), "global names: no shared handle, the short one");
+  // Someone with the same short handle joins while Members is open: the refresh shows both by their long names.
+  await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const gnAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? gnAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-b9", kind: "agent", handle: "agent-b",
+    name: "anna/agent-b", display_name: "Anna's B", role: "member", reports_to: null, areas: [], capabilities: [], presence: "offline", last_seen_at: null }]), next_cursor: null })) : gnAll(p));
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes(" @maintainer/agent-b") && text(main).includes(" @anna/agent-b"), "global names: a join seen by Members' refresh turns both into long names");
+  win.Maity.api.getAll = gnAll;
+  const gnPosts = [];
+  const gnPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { gnPosts.push([p, b]); return gnPost(p, b); };
+  await go("#/p/sample/message"); for (let k = 0; k < 2; k++) await tick();
+  expect(byId("message-to").querySelectorAll("option").some((o) => text(o) === "Anna's Shop Dev (@anna/shop-dev)"), "global names: the message's addressee list by the long names");
+  byId("message-to").value = "all"; byId("message-body").value = "Ship it, @shop-dev.";
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("form.message-form")).includes("Not sent: @shop-dev is 2 agents here: write @anna/shop-dev or @maintainer/shop-dev.")
+    && byId("message-body").value === "Ship it, @shop-dev.", "global names: a short handle two agents share is refused with the long forms, the text kept");
+  byId("message-body").value = "Ship it, @anna/shop-dev.";
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(gnPosts.length === 2 && text(main).includes("mentioned and notified: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
+  win.Maity.api.post = gnPost;
+  await go("#/p/sample/messages"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll(".pmsg-mentions a").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
+  await go("#/p/maity/inbox");
+
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
   expect(!slowList.hidden, "mentions: once read, the list is there at once");
   // A mention's link opens the member: Members with that row marked and focused.
@@ -337,6 +409,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "mentions: offsets count code points, not UTF-16 units");
   expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
     "mentions: a stored mention whose text does not match stays text");
+  // An instance mention (§8.6, §6.17): @handle#id or @owner/handle#id links to the member, the instance in the title.
+  const instShort = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  const instLong = linkOf(wm("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
+  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wqe2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wqe2"
+    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wqe2",
+    "mentions: a stored instance mention, short or long, links to its member with the instance in the title");
+  const teamSuffix = wm("ping @agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", instance: null, field: "body", offset: 5, length: 8 }]);
+  expect(linkOf(teamSuffix).length === 1 && linkOf(teamSuffix)[0].textContent === "@agent-b" && !linkOf(teamSuffix)[0].getAttribute("title")
+    && teamSuffix[teamSuffix.length - 1] === "#wqe2", "mentions: a team mention followed by a #-looking suffix links the handle, the suffix stays text");
+  expect(!linkOf(wm("ping @agent-b#k3pa", [{ member_id: "agt-b", handle: "agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }])).length,
+    "mentions: a stored instance mention whose #id does not match stays text");
   expect(!linkOf(wm("hi @agent-b", [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 3, length: 8 }])).length
     && !linkOf(wm("hi @agent-b", [])).length, "mentions: only this field's stored mentions, never a typed @");
   expect(wm("a @x @y", [{ member_id: "x", handle: "x", field: "body", offset: 2, length: 2 }, { member_id: "y", handle: "y", field: "body", offset: 5, length: 2 }])
@@ -548,14 +631,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(thCss.includes('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {') && thDark(':root[data-theme="dark"]').includes("--bg: #111418;")
     && thDark(':root:not([data-theme="light"])') === thDark(':root[data-theme="dark"]'),
     "theme: the dark tokens apply by the system unless Light is picked, and when Dark is picked, the same in both");
+  // The brand (web/brand/BRAND.md): the 28 px header lockup in the page's theme, the favicons, the loader.
+  const brImgs = header.querySelector(".brand").querySelectorAll("img");
+  expect(brImgs.length === 2 && brImgs.map((i) => i.getAttribute("src")).join(" ") === "brand/maity-lockup.svg brand/maity-lockup-dark.svg"
+    && brImgs.every((i) => i.getAttribute("alt") === "Maity" && i.getAttribute("height") === "28"), "brand: the header's title is the lockup, one file per theme, named Maity");
+  expect(thCss.includes(".brand-lockup.brand-dark { display: none; }")
+    && thCss.includes(':root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }')
+    && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
+    "brand: the dark lockup shows where the page is dark, by the system or by the pick");
+  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image.png"', 'href="brand/loader.css"']
+    .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading…<\/p>/.test(html)
+    && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
+  expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
   expect(/<script src="js\/theme.js"><\/script>/.test(html) && html.indexOf("js/theme.js") < html.indexOf("js/dom.js"),
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Users of this hub"])
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Instance administration"])
     && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has this project's settings, the runners and, for the instance admin, the users");
-  const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Users of this hub");
-  expect(usersLink && usersLink.getAttribute("href") === "#/admin/users", "users: in the settings menu for the instance admin");
+  const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
+  expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
   gearButton().click(); await tick();
   await go("#/admin/users"); await tick();
   const userRows = () => main.querySelectorAll("table.users tbody tr");
@@ -617,14 +712,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
   uq.value = "";
   // A hub without the list, and someone who is not the instance admin.
-  win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => p === "/openapi.json" ? Promise.resolve({ paths: {} }) : (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
   await go("#/all"); await go("#/admin/users"); await tick();
   expect(text(main).includes("This hub has no user list yet.") && !main.querySelector(".error"), "users: a hub without the list says so");
   win.Maity.api.get = (p) => (p === "/me" ? uGet(p).then((x) => { x.member.instance_admin = false; return x; }) : uGet(p));
   await go("#/all"); await go("#/admin/users"); await tick();
   expect(!header.querySelectorAll("a").some((a) => a.textContent === "Users") && text(main).includes("Only the instance admin sees the users of this hub."),
     "users: no link and no list for anyone else");
-  win.Maity.api.get = uGet;
+  win.Maity.api.get = uGet; win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
@@ -1453,6 +1549,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hintLink = hintEl().querySelector("a");
   expect(!hintEl().hidden && text(hintEl()).includes("In this chat @agent-c notifies nobody.") && hintLink
     && hintLink.getAttribute("href") === "#/p/maity/message/%40agent-c", "message: a chat's @name is said to notify nobody, with a project message offered");
+  chatText.value = "Ask @maintainer/agent-c#k3pa"; chatText.dispatch("input");
+  expect(!hintEl().hidden && text(hintEl()).includes("In this chat @maintainer/agent-c#k3pa notifies nobody.")
+    && hintEl().querySelector("a").getAttribute("href") === "#/p/maity/message/" + encodeURIComponent("@maintainer/agent-c#k3pa"),
+    "message: a chat's instance mention, long or short, gets the hint with the whole mention");
   chatText.value = "mail me@agent-c"; chatText.dispatch("input");
   expect(hintEl().hidden, "message: an @ inside a word gives no hint");
   chatText.value = "run `@agent-c` or\n```\n@agent-c\n```"; chatText.dispatch("input");
@@ -1461,6 +1561,157 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Opened from a chat with the @name in it.
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
+
+  // The contract's section on a contract card (js/contract-panel.js, docs/api.md §6.8): folded until opened,
+  // the repository's text untrusted, the hub's code when it cannot resolve it, never an older text.
+  const ctGets = [], ctPatches = [];
+  const ctGet = win.Maity.api.get, ctPatch = win.Maity.api.patch;
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  win.Maity.api.patch = (p, b) => { if (b && b.contract) ctPatches.push([p, b]); return ctPatch(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const ctCard = () => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0009");
+  const ctBox = () => ctCard().querySelector("details.contract-section");
+  const ctOpen = async () => { ctBox().open = true; ctBox().dispatch("toggle"); for (let k = 0; k < 4; k++) await tick(); };
+  const ctBody = () => ctBox().querySelector(".contract-body");
+  const ctSave = async (path, section) => {
+    byId("contract-path-tsk-0009").value = path; byId("contract-section-tsk-0009").value = section;
+    ctBox().querySelector("form.contract-place").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  };
+  expect(ctBox() && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 8.2" && !ctGets.length,
+    "contract: a contract card names its file and section, folded, nothing read yet");
+  await ctOpen();
+  const ctLinks = ctBody().querySelectorAll("a");
+  expect(ctGets.length === 1 && ctGets[0] === "/projects/maity/tasks/tsk-0009/contract"
+    && text(ctBody().querySelector(".contract-meta")).startsWith("docs/api.md at 3f9c2a1 · read ")
+    && ctLinks.some((a) => text(a) === "the file on the forge" && a.getAttribute("href").startsWith("https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e"))
+    && text(ctBody().querySelector(".contract-text")).includes("Every event has a kind.") && ctBody().querySelector(".contract-text code"),
+    "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
+  expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
+    && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(ctGets.length === 2, "contract: Refresh reads again");
+  win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+    "contract: a failed read shows the place and the hub's code, never the older text");
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  const ctBeforeSave = ctGets.length;
+  await ctSave("docs/api.md", "4.1");
+  expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
+    && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
+  expect(ctBox().open && ctGets.length === ctBeforeSave + 1, "contract: after a save the panel stays open and reads the new section once");
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+    "contract: ambiguous_in_file said with its code");
+  await ctSave("docs/api.md", "9.99"); await ctOpen();
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  await ctSave("docs/runner.md", "1"); await ctOpen();
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+    "contract: probe_not_configured said with its code");
+  await ctSave("docs/api.md", "9.1"); await ctOpen();
+  expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
+  const ctBefore = ctGets.length;
+  await ctSave("docs/api.md", ""); await ctOpen();
+  expect(ctPatches[ctPatches.length - 1][1].contract.section === null && ctGets.length === ctBefore
+    && text(ctBody()) === "The card names no section yet.", "contract: no section, nothing read, said so");
+  await ctSave("/etc/passwd", "1");
+  expect(text(ctBox().querySelector(".send-status")).startsWith("Not saved: contract.path: not_a_path"), "contract: the hub's refusal of a path is said");
+  win.Maity.api.get = ctGet; win.Maity.api.patch = ctPatch;
+  // Where the agents run (js/placements.js, docs/api.md §15.5–§15.7): one row per placement in Agents,
+  // with Stop, Start and Restart for whoever may; a refusal as the hub words it; placement events read again.
+  const plPosts = [], plPatches = [];
+  const plPost = win.Maity.api.post, plPatch = win.Maity.api.patch, plGet = win.Maity.api.get, plGetAll = win.Maity.api.getAll;
+  let plFeed = [], plReads = 0;
+  win.Maity.api.post = (p, b) => { if (p.includes("/placements/")) plPosts.push([p, b]); return plPost(p, b); };
+  win.Maity.api.patch = (p, b) => { if (p.includes("/placements/")) plPatches.push([p, b]); return plPatch(p, b); };
+  win.Maity.api.get = (p) => (p.includes("/events?")
+    ? (() => { const items = plFeed; plFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 30000, superseded: false }); })()
+    : plGet(p));
+  win.Maity.api.getAll = (p) => { if (p === "/projects/maity/placements") plReads += 1; return plGetAll(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  const plBox = () => main.querySelector("section.placements");
+  const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
+  const plFacts = (id) => text(plRow(id).querySelector("dl.facts"));
+  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().querySelectorAll("li.placement").length === 4
+    && (() => { const kids = plBox().parentNode.childNodes; return kids[kids.indexOf(plBox()) + 1] === main.querySelector(".earlier-box"); })(),
+    "placements: a section in Agents after the grid, one row per placement");
+  expect(text(plRow("plc-0001")).includes("on home-laptop") && plFacts("plc-0001").includes("claude-code · opus · interactive")
+    && plFacts("plc-0001").includes("Wantedrunning") && plFacts("plc-0001").includes("running · since") && plFacts("plc-0001").includes("Generation4")
+    && btn(plRow("plc-0001"), "Stop") && btn(plRow("plc-0001"), "Restart") && !btn(plRow("plc-0001"), "Restart with a new join"),
+    "placements: a running one — runner, harness, model, mode, wanted, reported, generation; Stop and Restart");
+  expect(plFacts("plc-0002").includes("stopped: stopped as asked") && btn(plRow("plc-0002"), "Start") && btn(plRow("plc-0002"), "Restart with a new join"),
+    "placements: a stopped one offers Start, and a new join where its credential was revoked");
+  expect(plFacts("plc-0003").includes("failed: crash loop (5 quick exits within 30 min)") && plRow("plc-0003").querySelector(".placement-state").classList.contains("flag-inline"),
+    "placements: a crash loop is flagged with its count");
+  const plConsent = plRow("plc-0004").querySelector(".placement-consent a");
+  expect(plFacts("plc-0004").includes("Waits for consent to start") && plConsent && plConsent.getAttribute("href") === "#/p/maity/inbox/req-0012"
+    && !plRow("plc-0004").querySelectorAll("button").length, "placements: pending consent links to its request in the inbox, and offers nothing else here");
+  expect(text(plRow("plc-0001")).includes("Session: tmux -S /var/lib/maity-runner/tmux.sock attach") && text(plRow("plc-0001")).includes("Logs: maity runner logs plc-0001")
+    && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it");
+  const plStop = btn(plRow("plc-0001"), "Stop");
+  plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPatches.length === 1 && plPatches[0][0] === "/projects/maity/placements/plc-0001" && JSON.stringify(plPatches[0][1]) === JSON.stringify({ desired: "stopped" })
+    && plFacts("plc-0001").includes("Wantedstopped") && btn(plRow("plc-0001"), "Start"),
+    "placements: Stop is one PATCH of desired, unconfirmed; the row reads again");
+  btn(plRow("plc-0001"), "Restart").click(); await tick();
+  expect(!plPosts.length && text(plRow("plc-0001")).includes("Restart Agent B? Its session ends and starts again.") && btn(plRow("plc-0001"), "Yes, restart"),
+    "placements: Restart asks once more first");
+  btn(plRow("plc-0001"), "Yes, restart").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPosts.length === 1 && plPosts[0][0] === "/projects/maity/placements/plc-0001/restart" && JSON.stringify(plPosts[0][1]) === "{}"
+    && plFacts("plc-0001").includes("Waiting for the runner to act on generation 5 (last: running)") && plFacts("plc-0001").includes("Wantedrunning"),
+    "placements: the confirmed restart is one POST; pending until the runner reports the new generation");
+  btn(plRow("plc-0002"), "Restart with a new join").click(); await tick();
+  btn(plRow("plc-0002"), "Yes, restart with a new join").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPosts.length === 2 && JSON.stringify(plPosts[1][1]) === JSON.stringify({ rejoin: true }), "placements: a new join is a restart with rejoin");
+  win.Maity.api.patch = (p, b) => (p.includes("/placements/") ? Promise.reject(new win.Maity.api.ApiError("the project is closed", 409, p, "project_closed")) : plPatch(p, b));
+  btn(plRow("plc-0001"), "Stop").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(plBox().querySelector(".send-status")) === "Not stopped: the project is closed (project_closed)", "placements: a refusal is the hub's message and code");
+  const plBefore = plReads;
+  plFeed = [{ seq: 30001, kind: "placement_reported", at: "2026-10-22T14:10:00Z", actor: { kind: "runner", id: "rnr-0002" }, payload: { placement_id: "plc-0001", state: "running" } }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(plReads === plBefore + 1, "placements: a placement event reads the list again");
+  // A runner listed for a project one administers but owned by someone else gives no rights over it.
+  const plRunner = (owner) => Promise.resolve({ items: [{ id: "rnr-0002", name: "home-laptop", owner_id: owner }], next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) })) : plGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && !plBox().querySelectorAll("button").length, "placements: a runner someone else owns gives a project admin no actions");
+  // One's own runner gives the rights, also over agents someone else owns.
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && btn(plRow("plc-0003"), "Restart"), "placements: one's own runner gives a project admin the actions, also over another owner's agent");
+  // No agent yet: the section is still there for a placement that creates its profile.
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("No agents in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 4,
+    "placements: with no agent yet, where they run is still shown");
+  // While the placements are read the join panel is open already: the button never shows to vanish.
+  let plRelease = null;
+  const plGetAll2 = win.Maity.api.getAll;
+  const plGet2 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet2(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet2(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/placements" ? new Promise((r) => { plRelease = () => r(plGetAll2(p)); })
+    : p === "/projects/maity/members" ? plGetAll2(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && main.querySelector("button.join-open").hidden,
+    "placements: while they are read, the view is there and a project without agents shows its join panel");
+  if (plRelease) plRelease();
+  for (let k = 0; k < 4; k++) await tick();
+  win.Maity.api.getAll = plGetAll2; win.Maity.api.get = plGet2;
+  // Neither the runner's owner nor the agents' owner: the rows without actions.
+  const othersOwn = (r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) });
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then(othersOwn) : plGet(p));
+  win.Maity.api.getAll = (p) => (p === "/runners" ? Promise.resolve({ items: [], next_cursor: null })
+    : p === "/projects/maity/members" ? plGetAll(p).then(othersOwn) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plBox().querySelectorAll("button").length,
+    "placements: neither the runner's nor the agent's owner sees no actions");
+  win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox");
 
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
@@ -1485,6 +1736,77 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
     && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
     && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+
+  // Ids in text become links (js/ids.js, tsk-dcj6qwjxc9cq): by shape only, the id as the link's text.
+  const IDS = win.Maity.ids;
+  const idAt = { slug: "maity", repository: "https://github.com/oliver-zehentleitner/maity" };
+  const idBox = (nodes) => { const box = document.createElement("div"); win.Maity.dom.append(box, nodes); return box; };
+  const idHrefs = (box) => box.querySelectorAll("a.id-ref").map((a) => text(a) + "=" + a.getAttribute("href")).join(" ");
+  const idAll = idBox(IDS.link("See tsk-0123456789ab, req-abcdefghjkmn; ask agt-mbf0gthrsash or hum-mebxvnc20qeg about #340.", idAt));
+  expect(idHrefs(idAll) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab req-abcdefghjkmn=#/p/maity/inbox/req-abcdefghjkmn "
+    + "agt-mbf0gthrsash=#/p/maity/members/agt-mbf0gthrsash hum-mebxvnc20qeg=#/p/maity/members/hum-mebxvnc20qeg #340=https://github.com/oliver-zehentleitner/maity/issues/340"
+    && text(idAll) === "See tsk-0123456789ab, req-abcdefghjkmn; ask agt-mbf0gthrsash or hum-mebxvnc20qeg about #340.",
+    "ids: card, request, agent, human and #n become links, the text unchanged " + idHrefs(idAll));
+  const idForge = idAll.querySelectorAll("a.id-ref").find((a) => text(a) === "#340");
+  expect(idForge.getAttribute("target") === "_blank" && idForge.getAttribute("rel") === "noopener noreferrer"
+    && !idAll.querySelectorAll("a.id-ref").find((a) => text(a) === "tsk-0123456789ab").getAttribute("target"),
+    "ids: a forge number opens the forge in a new tab, an id stays in the dashboard");
+  const idNone = idBox(IDS.link("tsk-0001 tsk-0123456789abc xtsk-0123456789ab tsk-0123456789ab_x tsk-0123456789aI prj-0123456789ab "
+    + "https://x.example/tsk-0123456789ab page#12 #0 #12345678 a.tsk-0123456789ab", idAt));
+  expect(!idNone.querySelector("a"), "ids: not well-formed, part of a word, a URL or a path, or another prefix: plain text");
+  expect(!idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: null })).querySelector("a")
+    && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: "maity", repository: "https://gitlab.com/o/r" }))) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab"
+    && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: "https://github.com/o/r.git" }))) === "#12=https://github.com/o/r/issues/12",
+    "ids: without a project no id links, without a GitHub repository no number does");
+  const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
+  expect(idHrefs(mdIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12"
+    && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
+    "ids: in Markdown linked in text and emphasis, plain in code spans, fenced code and a link's own text " + idHrefs(mdIds));
+  expect(!MD("tsk-0123456789ab").querySelector("a"), "ids: Markdown without the text's project links no id");
+  const idOut = IDS.where({ slug: "maity", outsider: true, project: { repository: { url: "https://github.com/o/r" } } });
+  expect(idOut.slug === null && idOut.repository === null && !idBox(win.Maity.markdown("See tsk-0123456789ab and #4", idOut)).querySelector("a.id-ref"),
+    "ids: read along from outside a project, nothing links");
+  expect(IDS.forgeBase("https://github.com/o/r/tree/main") === "https://github.com/o/r" && IDS.forgeBase("https://GitHub.com/o/r") === "https://github.com/o/r"
+    && IDS.forgeBase("https://github.com/o/r.git") === "https://github.com/o/r" && IDS.forgeBase("https://gitlab.com/o/r") === null && IDS.forgeBase("https://github.com/o") === null,
+    "ids: the repository read as the hub reads it — any case of github.com, owner and name the first two segments");
+  const wmIds = idBox(win.Maity.dom.withMentions("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
+    "body", (id) => "#/m/" + id, idAt));
+  expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab",
+    "ids: between mentions the text's ids are links, the mention stays the hub's");
+  // An id's pages: #/p/<slug>/tasks/<id> is the board with the card marked and focused, its tab the
+  // board's; #/p/<slug>/inbox/<id> opens the request. An id neither holds is said.
+  const idProto = Object.getPrototypeOf(main);
+  const idFocus = idProto.focus;
+  idProto.focus = function () { document.activeElement = this; };
+  await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const idCard = main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0004");
+  const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
+  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === idCard
+    && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
+    "ids: a card's link opens the board with that card marked and focused, the Board tab current");
+  await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
+    "ids: a card the board does not hold is said");
+  const idShown = () => (byId("inbox-show").querySelectorAll("option").find((o) => "selected" in o.attrs || o.selected) || { attrs: {} }).attrs.value;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const idShowBefore = idShown();
+  byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change"); await tick();
+  await go("#/p/maity/inbox/req-0009"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const idEntry = main.querySelector("li.entry.current");
+  expect(idEntry && idEntry.attrs["data-request"] === "req-0009" && idEntry.classList.contains("done") && document.activeElement === idEntry.querySelector("button.entry-head"),
+    "ids: a request's link opens it, an answered one among the answered, its head focused");
+  await go("#/p/maity/inbox/req-0011"); for (let k = 0; k < 4; k++) await tick();
+  const idTitle = main.querySelector("li.entry.current .title-refs");
+  expect(idTitle && idHrefs(idTitle) === "#2=https://github.com/oliver-zehentleitner/maity/issues/2" && !main.querySelector("li.entry.current button.entry-head a"),
+    "ids: the ids of a request's title are links in its body, never inside its button");
+  await go("#/p/maity/inbox/req-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector(".wanted-note")) === "No request req-zzzzzzzzzzzz in this project's inbox.", "ids: a request the inbox does not hold is said");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(idShown() === "open" && !main.querySelectorAll("li.entry").some((li) => li.attrs["data-request"] === "req-0009"),
+    "ids: after a deep link to an answered request the inbox's own choice (open) stands");
+  if (idShowBefore === "all") { byId("inbox-show").value = "all"; byId("inbox-show").dispatch("change"); await tick(); }
+  idProto.focus = idFocus; document.activeElement = undefined;
+  await go("#/p/maity/inbox");
   // A deep quote stops nesting instead of overflowing the stack.
   const mdDeep = MD(">".repeat(5000) + " deep");
   let quoteDepth = 0;
@@ -1914,6 +2236,88 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
   expect(main.querySelectorAll("article.seat").some((a) => text(a).includes("Agent New")), "the new profile's join is a seat in the grid");
+  // An agent that is already a member joins as an instance (docs/api.md §3.1, §6.17): one in place of
+  // an instance, or another one; the membership's own fields stay out of the join.
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  const inPosts = [];
+  const inPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { inPosts.push([p, b]); return inPost(p, b); };
+  const inBox = () => main.querySelector("fieldset.join-instance");
+  const inPick = (id) => { byId("join-agent").value = id; byId("join-agent").dispatch("change"); };
+  const inNew = () => { byId("join-replace").checked = false; byId("join-new-instance").checked = true; };
+  const inSubmit = async () => { main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  const inAgain = async () => { btn(main.querySelector(".join-result"), "Join another").click(); await tick(); };
+  inPick("agt-x");
+  expect(inBox().hidden && !byId("join-role").parentNode.hidden, "join: no instance choice for an agent that is not a member");
+  inPick("agt-b");
+  const inOpts = byId("join-replaces").querySelectorAll("option");
+  expect(!inBox().hidden && byId("join-replace").checked && inOpts.length === 1 && inOpts[0].attrs.value === "wle2"
+    && text(inOpts[0]).startsWith("agent-b#wle2 · last seen") && text(inOpts[0]).endsWith(" · 1 card")
+    && ["join-role", "join-reports", "join-areas", "join-briefing"].every((id) => byId(id).parentNode.hidden)
+    && text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
+    "join: a member offers Replace instance preselected with its active instances, the membership's fields hidden");
+  await inSubmit();
+  const inBody = inPosts[0] && inPosts[0][1];
+  expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
+    && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
+  await inAgain(); inPick("agt-b"); inNew(); await inSubmit();
+  expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
+    && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
+    "join: another instance beyond the team's limit shows the hub's instance_quota as it is");
+  inPick("agt-c");
+  expect(byId("join-replaces").querySelectorAll("option").map((o) => o.attrs.value).join() === "k3pa" && text(byId("join-quota")) === "1 of 3 instances active.",
+    "join: a member's active instance offered, the team's count against its limit");
+  inNew(); await inSubmit();
+  expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
+  // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
+  // refusal brings the choice, with the instances read again, and the next create carries it.
+  await inAgain();
+  const inGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members"
+    ? inGetAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-x", kind: "agent", handle: "spare", display_name: "Spare", role: "member",
+      team: { max_instances: 2 }, instances: [{ id: "q2zz", label: "spare#q2zz", presence: "offline", last_seen_at: null, claims: 2, revoked_at: null }] }]), next_cursor: null }))
+    : inGetAll(p));
+  win.Maity.api.post = (p, b) => {
+    inPosts.push([p, b]);
+    return b.agent.id === "agt-x" && !b.replaces && !b.new_instance
+      ? Promise.reject(new win.Maity.api.ApiError("the agent is a member: new_instance or replaces", 400, p, "invalid", { fields: { instance: "required" } }))
+      : inPost(p, b);
+  };
+  inPick("agt-x");
+  expect(inBox().hidden, "join: the list on screen does not show agt-x as a member");
+  const inProto = Object.getPrototypeOf(main);
+  const inFocus = inProto.focus;
+  inProto.focus = function () { document.activeElement = this; };
+  await inSubmit();
+  expect(inPosts.length === 4 && !inBox().hidden && byId("join-replace").checked && byId("join-replaces").value === "q2zz"
+    && text(byId("join-replaces").querySelector("option")) === "spare#q2zz · last seen never · 2 cards"
+    && text(main).includes("No join created: this agent is already a member of the project. Choose whether the line starts another instance or replaces one, then create it.")
+    && document.activeElement === byId("join-replaces") && byId("join-role").parentNode.hidden,
+    "join: the hub's instance-required refusal offers replace or another instance, the focus on the choice");
+  inProto.focus = inFocus; document.activeElement = undefined;
+  await inSubmit();
+  expect(inPosts.length === 5 && inPosts[4][1].replaces === "q2zz" && !("role" in inPosts[4][1]), "join: after the refusal the join is created as a replacement");
+  // The hub checks the membership's fields first: its differs_from_membership says "member" as well.
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members"
+    ? inGetAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-x", kind: "agent", handle: "spare", display_name: "Spare", role: "member",
+      team: { max_instances: 2 }, instances: [{ id: "q2zz", label: "spare#q2zz", presence: "offline", last_seen_at: null, claims: 0, revoked_at: null },
+        { id: "r3yy", label: "spare#r3yy", presence: "online", last_seen_at: null, claims: 0, revoked_at: null }] }]), next_cursor: null }))
+    : inGetAll(p));
+  win.Maity.api.post = (p, b) => {
+    inPosts.push([p, b]);
+    return b.agent.id === "agt-x" && "areas" in b
+      ? Promise.reject(new win.Maity.api.ApiError("the agent is a member; change its membership instead", 400, p, "invalid", { fields: { areas: "differs_from_membership" } }))
+      : inPost(p, b);
+  };
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  inPick("agt-x"); byId("join-areas").value = "web/";
+  await inSubmit();
+  expect(!inBox().hidden && text(main).includes("this agent is already a member of the project") && byId("join-role").parentNode.hidden,
+    "join: the hub's differs_from_membership also brings the instance choice");
+  inNew();
+  byId("join-replaces").value = "r3yy"; byId("join-replaces").dispatch("change");
+  expect(byId("join-replace").checked && !byId("join-new-instance").checked, "join: choosing an instance to replace selects Replace");
+  win.Maity.api.post = inPost; win.Maity.api.getAll = inGetAll;
   // Joining lives in Agents: no tab of its own; the old route opens the panel there.
   expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("Join an agent")), "join: no tab of its own any more");
   await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
@@ -2155,13 +2559,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
     "header: arrows move through the items; Picture goes to the account's picture");
-  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[3].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[3],
+  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[4].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[4],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -2209,7 +2613,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
   const avAgents = main.querySelectorAll(".picture-list li");
   // The fixtures' seven, and any joined earlier in this run.
-  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @agent-b")), "picture: the human's agents, each with its own upload");
+  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @maintainer/agent-b")), "picture: the human's agents, each with its own upload and its global name");
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
@@ -2262,6 +2666,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
+  // The instance's landing page (js/landing.js, docs/api.md §16.7): at the root, for a visitor without a session.
+  const lpGet = win.Maity.api.get;
+  const lpPage = { enabled: true, title: "Bring your own coding agent.", updated_at: "2026-10-25T10:30:00Z",
+    markdown: "## A team\n\nRead the [contract](https://example.org/api) or [register](/#/register); not [this](javascript:alert(1)) nor <b>bold</b>.\n\n```\n<script>x</script>\n```",
+    cta: { label: "Get started", href: "/#/register" } };
+  let lpAnswer = () => Promise.resolve(lpPage);
+  // Signed out, the machine form is read afresh: the hub serves it without a session.
+  win.Maity.api.forgetRoutes();
+  const lpReads = [];
+  win.Maity.api.get = (p) => { if (p === "/landing") { lpReads.push(p); return lpAnswer(); } return lpGet(p); };
+  await go(""); await tick(); await tick();
+  const lp = main.querySelector("article.landing");
+  const lpLinks = lp ? lp.querySelectorAll("a") : [];
+  expect(lp && text(lp.querySelector(".landing-title")) === "Bring your own coding agent." && document.title === "Bring your own coding agent."
+    && lp.querySelectorAll(".landing-lockup img").length === 2 && text(lp.querySelector(".landing-body")).includes("A team"),
+    "landing: at the root without a session, the lockup, the title (also the tab's) and the operator's text");
+  expect(lpLinks.some((a) => text(a) === "contract" && a.getAttribute("href") === "https://example.org/api" && a.getAttribute("target") === "_blank")
+    && lpLinks.some((a) => text(a) === "register" && a.getAttribute("href") === "#/register" && !a.getAttribute("target"))
+    && !lpLinks.some((a) => text(a) === "this") && text(lp).includes("<b>bold</b>") && !lp.querySelector("b") && lp.querySelector("pre code").textContent === "<script>x</script>",
+    "landing: https links open apart, dashboard routes stay in the page, anything else and HTML stay text");
+  const lpCta = lpLinks.find((a) => a.classList.contains("landing-cta"));
+  const lpSign = lpLinks.find((a) => text(a) === "Sign in");
+  expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
+    "landing: the button and a sign-in link");
+  await go("#/login"); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
+  lpAnswer = () => Promise.resolve({ enabled: false });
+  await go(""); await tick(); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing"), "landing: disabled, the login page");
+  lpAnswer = () => Promise.reject(new win.Maity.api.ApiError("down", 503, "/landing", "unavailable"));
+  await go("#/all"); await go(""); await tick(); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing") && !main.querySelector(".error"), "landing: a failed call, the login page and no error");
+  const lpBefore = lpReads.length;
+  await go("#/p/maity/inbox"); await tick();
+  expect(lpReads.length === lpBefore && byId("login-handle"), "landing: only the root asks for it");
+  // A hub whose machine form does not list it is not asked.
+  lpAnswer = () => Promise.resolve(lpPage);
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : p === "/landing" ? (lpReads.push(p), lpAnswer()) : lpGet(p));
+  win.Maity.api.forgetRoutes();
+  const lpBefore2 = lpReads.length;
+  await go("#/all"); await go(""); await tick(); await tick();
+  expect(lpReads.length === lpBefore2 && byId("login-handle"), "landing: a hub without it is not asked; the login page");
+  win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
+  await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(byId("login-handle") && text(main).includes("wrong"), "password: the old password no longer signs in");
@@ -2282,7 +2730,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
   // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
-  expect(main.querySelectorAll(".project-label.personal").length === 1
+  expect(main.querySelectorAll(".project-label.personal").length === 2
     && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
     "no project: a personal request is still shown, before the empty state");
   // A truly empty account: the empty state alone.
@@ -2316,12 +2764,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(fieldError("project-slug").includes("exists") && fieldError("project-repository").includes("forge"),
     "the hub's invalid fields shown next to slug and repository");
   byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
-  byId("project-ktw").checked = true; byId("project-preset").value = "solo";
+  // Project memory (§6.1, §6.21): Keep the Why preselected, its three setup options ticked beneath it.
+  const setupRow = (key) => byId("setup-" + key).parentNode;
+  const setupKeys = ["keep_the_why_init", "keep_the_why_badge", "maity_badge"];
+  expect(byId("project-memory").value === "keep-the-why" && byId("project-memory").querySelectorAll("option").map((o) => text(o)).join() === "Keep the Why,None"
+    && setupKeys.every((k) => byId("setup-" + k).checked && !setupRow(k).hidden)
+    && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
+    && text(main).includes("an agent sets it up in the repository, through the setup cards below"),
+    "create: Project memory with Keep the Why preselected, the three setup options ticked, the setup's agent said");
+  // The hub's refusal of an option is said at the options.
+  const spPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
+  byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(text(byId("project-setup-error")) === "Add the Maity badge to the README: Must be ticked or not.", "create: the hub's refusal of a setup option is said at the options");
+  win.Maity.api.post = spPost;
+  byId("project-preset").value = "solo";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   const sent = posts[posts.length - 1];
   expect(sent[0] === "/projects" && JSON.stringify(sent[1]) === JSON.stringify({
-    slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" }, keep_the_why: true, policy: { preset: "solo" },
-  }), "POST /projects with the contract's body");
+    slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" },
+    memory: { provider: "keep-the-why" }, setup: { keep_the_why_init: true, keep_the_why_badge: true, maity_badge: true }, policy: { preset: "solo" },
+  }) && !("keep_the_why" in sent[1]), "POST /projects with memory and every setup option sent explicitly " + JSON.stringify(sent[1]));
   expect(!fieldError("project-slug") && !byId("project-slug").getAttribute("aria-invalid"), "errors cleared on resubmit");
   noProjects = false;
   win.onhashchange(); await tick(); await tick();
@@ -2331,11 +2795,105 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No agents in this project yet") && main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent"),
     "the new project opens Join an agent at once");
   expect(chip("Dogfood Hub") && chip("Dogfood Hub").getAttribute("aria-current") === "page", "the new project is in the switcher");
+  // With a repository the hub makes the setup cards at once; the Maity badge is on from the start.
+  await go("#/p/dogfood/board"); for (let k = 0; k < 4; k++) await tick();
+  const setupCards = main.querySelectorAll("article.card.card-setup");
+  expect(setupCards.map((c) => c.attrs["aria-label"]).sort().join("|") === "Add the Keep the Why badge to the README|Add the Maity badge to the README|Set up Keep the Why in the repository"
+    && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
+    "create: the three setup cards on the new project's board, open, marked Setup");
+  await projectSettings();
+  const memPanel = header.querySelector("section.memory-panel");
+  expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 3
+    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/p\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
+    "settings: the memory provider read only, with links to its setup cards");
+  expect(byId("badge-select").value === "members" && text(header.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/#/p/dogfood/overview)")
+    && text(header.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
+    "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
+  const bgPatches = [];
+  const bgPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { bgPatches.push([p, b]); return bgPatch(p, b); };
+  byId("badge-select").value = "agents_online";
+  header.querySelector("form.badge-form").dispatch("submit"); await tick();
+  expect(!bgPatches.length, "settings: a badge change without a reason is not sent");
+  byId("badge-select").value = "agents_online"; byId("badge-reason").value = "Show who works";
+  header.querySelector("form.badge-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(bgPatches.length === 1 && JSON.stringify(bgPatches[0][1]) === JSON.stringify({ policy: { badge: "agents_online" }, reason: "Show who works" }),
+    "settings: the badge changed as a policy change with its reason");
+  win.Maity.api.patch = bgPatch;
+  if (header.querySelector("section.memory-panel")) await projectSettings();
+  // None: only the Maity badge is offered; without a repository the cards wait for one.
+  await go("#/new");
+  byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
+  byId("project-memory").value = "none"; byId("project-memory").dispatch("change");
+  expect(setupRow("keep_the_why_init").hidden && setupRow("keep_the_why_badge").hidden && !setupRow("maity_badge").hidden,
+    "create: under None only the Maity badge is offered");
+  byId("setup-maity_badge").checked = false; byId("project-preset").value = "hierarchical";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "plain", name: "Plain", memory: { provider: "none" },
+    setup: { keep_the_why_init: false, keep_the_why_badge: false, maity_badge: false }, policy: { preset: "hierarchical" } }),
+    "create: None sends the Keep the Why options false and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
+    && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+    && text(header.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
+    "settings: None, nothing chosen, the badge off");
+  await projectSettings();
+  // Keep the Why without a repository: the options are kept, the cards wait for the repository.
+  await go("#/new");
+  byId("project-name").value = "Later"; byId("project-name").dispatch("input");
+  byId("setup-keep_the_why_badge").checked = false; byId("project-preset").value = "hierarchical";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Add the Maity badge to the README.")
+    && text(header.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
+    "settings: options chosen without a repository wait for it");
+  await projectSettings();
+  // A hub before §6.21 names only keep_the_why: the dropdown sends that alias, no setup options.
+  const akGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/P" } } } } } } },
+    components: { schemas: { P: { properties: { slug: {}, name: {}, repository: {}, keep_the_why: {}, policy: {} } } } } }) : akGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  byId("project-name").value = "Alias Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
+  expect(byId("project-memory") && byId("project-memory").value === "keep-the-why" && !main.querySelector("fieldset.project-setup"),
+    "create: a hub that knows only keep_the_why offers the dropdown without setup options");
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", keep_the_why: true, policy: { preset: "hierarchical" } }),
+    "create: and sends keep_the_why");
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  expect(!byId("project-memory") && text(main).includes("Project memory: this hub's machine form could not be read, so its defaults apply."),
+    "create: an unreadable machine form is said, not silent");
+  win.Maity.api.get = akGet; win.Maity.api.forgetRoutes();
+  // A hub whose machine form does not name memory and setup refuses them: they are not offered nor sent.
+  const omGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: {} } } }) : omGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  byId("project-name").value = "Old Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
+  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"), "create: a hub without memory and setup offers neither");
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "old-hub", name: "Old Hub", policy: { preset: "hierarchical" } }),
+    "create: and sends neither");
+  win.Maity.api.get = omGet; win.Maity.api.forgetRoutes();
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
+  await go("#/p/sample/inbox"); await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("None") && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.")
+    && byId("badge-select").value === "members" && !header.querySelector("img.badge-preview")
+    && text(header.querySelector("form.badge-form .paste-line")).includes("/badge/sample.svg"),
+    "settings: a project with None and its badge on; no preview without a hub to serve it");
+  await projectSettings();
   // A first-time human: the empty board and inbox say where their content comes from.
-  await go("#/p/dogfood/board");
+  await go("#/p/plain/board");
   expect(text(main).includes("Every open card, and the done and cancelled ones of the last 14 days.")
     && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
-  await go("#/p/dogfood/inbox");
+  await go("#/p/plain/inbox");
   expect(text(main).includes("No open requests.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;
@@ -2701,7 +3259,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("proposes a change to its soul"), "personal request: never in a project's inbox");
   await go("#/all"); await hgSettle();
   const psHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("proposes a change to its soul"));
-  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 1
+  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 2
     && !main.querySelectorAll("a.project-label").some((a) => a.getAttribute("href").includes("elsewhere")),
     "personal request: listed as Personal, with no link into its project");
   if (psHead().attrs["aria-expanded"] !== "true") { psHead().click(); await tick(); }
@@ -2884,7 +3442,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
   const pmHand = pmSeq(6005);
-  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/p/maity/board"
+  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/p/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
   expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/p/maity/members/hum-maintainer", "messages: the members it mentions, as links");
@@ -2943,7 +3501,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tkTab && tkTab.getAttribute("aria-current") === "page" && tkSeqs() === "4330,4310",
     "ticker: a tab; For me lists the items with a reason for the viewer, newest first");
   expect(text(tkSeq(4310)).includes("For you: you own the whole repository, you follow web/.") && text(tkSeq(4310)).includes("Contract change")
-    && tkSeq(4310).querySelector("a").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214",
+    && tkSeq(4310).querySelectorAll("a").find((a) => !a.classList.contains("id-ref")).getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214"
+    && !tkSeq(4310).querySelector("a.id-ref") && tkSeq(4310).querySelectorAll("a").length === 1,
     "ticker: why in words, a contract change marked, its link");
   expect(text(tkSeq(4330)).includes("(muted: it woke no one here)"), "ticker: a muted one says so");
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
@@ -3725,7 +4284,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ceLabel(ceBrief.id)).includes("Ctrl+Enter saves"), "Ctrl+Enter: the briefing says so");
   await ceCase("briefing", ceBrief, "Review first.", "/projects/maity/members/" + ceBrief.id.slice("briefing-".length), ceSubmitOf(ceBrief));
   await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick(); await tick();
-  byId("join-agent").value = byId("join-agent").querySelectorAll("option").map((o) => o.attrs.value).filter(Boolean)[0] || "";
+  byId("join-agent").value = "agt-x"; byId("join-agent").dispatch("change");
   await ceCase("join", byId("join-briefing"), "Start with the open PRs.", "/projects/maity/joins", ceSubmitOf(byId("join-briefing")));
   win.Maity.api.post = cePost; win.Maity.api.patch = cePatch;
   await go("#/p/maity/inbox");
@@ -4018,6 +4577,274 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/members");
   expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
   win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
+
+  // Statistics (js/statistics.js, docs/api.md §16.6): the instance's counts, never a name; a 7/30/90 switch.
+  const stGets = [];
+  const stGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/admin/statistics")) stGets.push(p); return stGet(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  const stBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Statistics");
+  const stRow = (key) => stBox().querySelectorAll("tr").find((tr) => tr.attrs["data-series"] === key);
+  const stCells = (key) => stRow(key).childNodes.map((c) => text(c));
+  const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
+  expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
+    "statistics: the admin area's first section, read for 30 days");
+  expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
+    "statistics: the totals as tiles " + JSON.stringify(stTiles()));
+  expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"
+    && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
+      && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
+    "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
+  expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
+    && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
+    && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,
+    "statistics: reviews from when they are known, who comes back explained, when counted, every day in a table");
+  btn(stBox(), "90 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stGets[stGets.length - 1] === "/admin/statistics?days=90" && btn(stBox(), "90 days").getAttribute("aria-pressed") === "true"
+    && btn(stBox(), "30 days").getAttribute("aria-pressed") === "false" && stBox().querySelectorAll("details.stat-days tbody tr").length === 90
+    && text(stBox().querySelectorAll("details.stat-days tbody tr")[89]).endsWith("–"),
+    "statistics: the switch reads 90 days; days before history show reviews as –");
+  // A fresh instance: zeros, nothing broken.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
+      days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
+        cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
+    : stGet(p));
+  btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
+    && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
+  btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
+  // A slow count does not hold up the other sections.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? new Promise(() => {}) : stGet(p));
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
+    "statistics: while it counts, users, mail and the instance are there");
+  win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
+  // The landing page's editor in the admin area (js/landing.js, §16.7): a preview by the same renderer, the hub's refusals at their field.
+  const leGet = win.Maity.api.get, lePatch = win.Maity.api.patch;
+  const lePatches = [];
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
+  win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  const leBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Landing page");
+  const lePreview = () => leBox().querySelector(".landing-preview");
+  const leSave = async () => { leBox().querySelector("form.landing-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  expect(leBox() && !byId("landing-enabled").checked && byId("landing-title").value === "Bring your own coding agent."
+    && byId("landing-markdown").value.startsWith("## A team of agents") && byId("landing-cta-href").value === "/#/register"
+    && text(leBox().querySelector(".landing-changed")).endsWith("by you.") && text(lePreview().querySelector(".landing-title")) === "Bring your own coding agent.",
+    "landing editor: the settings read, who changed them last, a preview by the visitor's renderer");
+  byId("landing-title").value = "Hello"; byId("landing-title").dispatch("input");
+  expect(text(lePreview().querySelector(".landing-title")) === "Hello", "landing editor: the preview follows the typing");
+  expect(!lePreview().querySelector("a") && lePreview().querySelectorAll(".inert-link").length >= 2,
+    "landing editor: the preview's links are text, so a click cannot leave unsaved work");
+  const leMd = byId("landing-markdown").value;
+  byId("landing-enabled").checked = true; byId("landing-markdown").value = "";
+  await leSave();
+  expect(!lePatches.length && text(byId("landing-markdown-error")) === "required while the page is on", "landing editor: on without text is refused before sending");
+  byId("landing-markdown").value = "Hello\n\nA <b>bad</b> line"; byId("landing-cta-href").value = "/#/register";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-markdown-error")).startsWith("Line 3 breaks the rules: “A <b>bad</b> line”."),
+    "landing editor: the hub's refused line is named and quoted at the text");
+  byId("landing-markdown").value = leMd; byId("landing-cta-href").value = "ftp://example.org";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "The link: not allowed here", "landing editor: a button link that is neither a route nor https is refused");
+  byId("landing-cta-href").value = "/#/register"; byId("landing-cta-label").value = "";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "a button needs a label as well as a link", "landing editor: a button without a label is said so");
+  byId("landing-cta-label").value = "Get started";
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("too large", 413, p, "payload_too_large")) : lePatch(p, b));
+  await leSave();
+  expect(text(byId("landing-markdown-error")) === "larger than the hub accepts in one save; shorten the text", "landing editor: the hub's body cap is said at the text");
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
+  await leSave();
+  expect(lePatches.length === 2 && JSON.stringify(lePatches[1]) === JSON.stringify({ enabled: true, title: "Hello", markdown: leMd, cta: { label: "Get started", href: "/#/register" } })
+    && text(leBox()).includes("Saved. Visitors see it within a minute."), "landing editor: saved as one PATCH of all fields");
+  win.Maity.api.get = leGet; win.Maity.api.patch = lePatch; win.Maity.api.forgetRoutes();
+  await go("#/all");
+
+  // Unified instance administration: source-aware mail editing and isolated capabilities.
+  const adminGet = win.Maity.api.get, adminPatch = win.Maity.api.patch, adminPost = win.Maity.api.post;
+  const adminHas = win.Maity.api.hubHas, adminMissing = win.Maity.api.missingRoute;
+  const adminWrites = [], adminReads = [];
+  win.Maity.api.hubHas = async () => true;
+  win.Maity.api.get = (path) => { adminReads.push(path); return adminGet(path); };
+  win.Maity.api.patch = (path, body) => { adminWrites.push([path, JSON.parse(JSON.stringify(body))]); return adminPatch(path, body); };
+  await go("#/admin");
+  expect(text(main).includes("Instance administration") && main.querySelector("table.users") && byId("mail-host") && text(main).includes("fixture-head"), "admin: unified users, mail and instance health");
+  expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
+  byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(adminWrites[0]) === JSON.stringify(["/admin/settings/mail", { reply_to: "reply@example.org", password: "temporary-test-value" }]), "admin: only changed writable fields, password once");
+  expect(byId("mail-password").value === "" && !text(main).includes("temporary-test-value"), "admin: saved password is never displayed or retained in input");
+  byId("mail-password-remove").checked = true;
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(adminWrites[1][1]) === JSON.stringify({ password: null }), "admin: explicit password deletion writes null");
+  const testWrites = [];
+  win.Maity.api.post = async (path, body) => { testWrites.push([path, body]); return { ok: false, stage: "auth", smtp_code: 535, detail: "535 Credentials … rejected", at: "2026-10-24T00:00:00Z" }; };
+  byId("mail-test-to").value = "admin@example.org";
+  main.querySelector("form.admin-mail-test").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(testWrites) === JSON.stringify([["/admin/settings/mail/test", { to: "admin@example.org" }]]) && text(main).includes("Stage: auth") && text(main).includes("535 Credentials … rejected") && text(main).includes("Test mail failed."), "admin: test uses only recipient and shows unsuccessful200 stage/redacted reply");
+  win.Maity.api.get = (path) => path === "/health" ? Promise.reject(new win.Maity.api.ApiError("outdated", 503, path, "schema_outdated", { revision: "old", head: "new" })) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Database reachable, migration required.") && text(main).includes("Revision: old · head: new"), "admin: outdated schema is shown with both revisions");
+  win.Maity.api.patch = async () => { throw new win.Maity.api.ApiError("invalid settings", 400, "/admin/settings/mail", "invalid", { fields: { password: "secret_key_missing" } }); };
+  byId("mail-password").value = "failed-test-value";
+  main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
+  expect(byId("mail-password").value === "" && text(main).includes("instance encryption key is not configured") && !text(main).includes("failed-test-value"), "admin: failed save clears password and explains field refusal");
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("absent", 404, path, "not_found")) : adminGet(path);
+  win.Maity.api.missingRoute = async (err, method, path) => path === "/admin/settings/mail" && err.status === 404;
+  await go("#/all"); await go("#/admin");
+  expect(!main.querySelectorAll(".admin-section").some((s) => s.getAttribute("aria-label") === "Mail settings") && win.Maity.api.absent.has("GET", "/admin/settings/mail"), "admin: missing-route helper removes section and remembers absent endpoint");
+  win.Maity.api.missingRoute = adminMissing;
+  win.Maity.api.hubHas = async (method, path) => path === "/health";
+  await go("#/all"); await go("#/admin");
+  expect(!byId("mail-host") && !main.querySelector("table.users") && text(main).includes("Instance information"), "admin: unavailable sections are omitted independently");
+  win.Maity.api.hubHas = async () => true;
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Mail settings could not be read: denied") && text(main).includes("Instance information"), "admin:403 is visible and other sections still load");
+  win.Maity.api.get = (path) => path === "/me" ? adminGet(path).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } }))
+    : (adminReads.push(path), adminGet(path));
+  adminReads.length = 0; await go("#/all"); await go("#/admin");
+  expect(text(main).includes("Only the instance admin can open this area.") && !adminReads.some((p) => p.startsWith("/admin/") || p === "/health"), "admin: non-admin cannot read configuration even by direct route");
+  win.Maity.api.get = adminGet; win.Maity.api.patch = adminPatch; win.Maity.api.post = adminPost;
+  win.Maity.api.hubHas = adminHas; win.Maity.api.missingRoute = adminMissing; win.Maity.api.forgetRoutes();
+
+  // Preferences (§19.4): the human writes them; an agent only proposes, reviewed in the personal inbox.
+  const pfM = win.Maity.preferences;
+  expect(JSON.stringify(pfM.diffLines("a\nb\nc", "a\nc\nd").map((d) => d.op + d.text)) === JSON.stringify(["samea", "delb", "samec", "addd"]),
+    "preferences: the diff keeps the common lines and marks the removed and the added ones");
+  expect(pfM.utf8Length("aä€😀") === 1 + 2 + 3 + 4, "preferences: the 8 KiB cap counts UTF-8 bytes");
+  // Near the cap a text holds thousands of lines: the diff stays bounded and says so.
+  const pfMany = pfM.diffLines("x\n".repeat(4094), "y\n".repeat(4094));
+  expect(pfMany.coarse && pfMany.length === 8189 && pfMany.filter((d) => d.op === "del").length === 4094,
+    "preferences: thousands of changed lines are shown removed then added, without the full table");
+  const pfMid = pfM.diffLines(["a", "b", "c", "d"].join("\n").repeat(1), ["a", "c", "d", "e"].join("\n"));
+  const pfEdge = pfM.diffLines("keep\n" + "x\n".repeat(3000) + "end", "keep\n" + "x\n".repeat(3000) + "END");
+  expect(!pfMid.coarse && !pfEdge.coarse && pfEdge.filter((d) => d.op !== "same").length === 2,
+    "preferences: a long text changed in one line is matched exactly (common start and end trimmed)");
+  const pfSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  // A personal request that cannot be read in full offers no reply that could apply it unseen.
+  const pfGet0 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/requests/req-p002" ? Promise.reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable", {})) : pfGet0(p));
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHeadU = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHeadU.attrs["aria-expanded"] !== "true") { pfHeadU.click(); await pfSettle(); }
+  const pfU = main.querySelector(".current");
+  expect(pfU && !btn(pfU, "Go") && !btn(pfU, "No") && !pfU.querySelector(".pref-review") && !byId("reply-maity-req-p002")
+    && text(pfU).includes("could not be read in full") && btn(pfU, "Try again") && btn(pfU, "Later"),
+    "preferences review: an unreadable personal request offers no plain Go, only Try again");
+  win.Maity.api.get = pfGet0;
+  btn(pfU, "Try again").click(); await pfSettle();
+  expect(main.querySelector(".current .pref-review") && btn(main.querySelector(".current"), "Accept") && !text(main.querySelector(".current")).includes("could not be read in full"),
+    "preferences review: Try again reads it and shows the review");
+  // On the version it was written against: Accept, or edit first.
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHead0 = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHead0.attrs["aria-expanded"] !== "true") { pfHead0.click(); await pfSettle(); }
+  const pfFresh = main.querySelector(".current .pref-review");
+  expect(pfFresh && btn(pfFresh, "Accept") && btn(pfFresh, "Edit, then accept") && btn(pfFresh, "Decline") && !text(pfFresh).includes("changed since"),
+    "preferences review: on the current version it offers Accept, Edit then accept, and Decline");
+  const pfPuts = [];
+  const pfPut = win.Maity.api.put;
+  win.Maity.api.put = (p, b) => { pfPuts.push([p, b]); return pfPut(p, b); };
+  await go("#/p/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  const pfText = () => byId("preferences-text");
+  const pfSave = () => main.querySelector(".preferences-form").querySelectorAll("button").find((b) => b.textContent === "Save");
+  expect(pfText() && pfText().value.startsWith("Direct and short.") && text(main.querySelector(".preferences-version")).startsWith("Version 2 · written by @maintainer")
+    && pfSave().disabled, "preferences: the account shows the text, its version and author; Save waits for a change");
+  pfText().value += "\nShort commit messages."; pfText().dispatch("input");
+  expect(!pfSave().disabled && text(main.querySelector(".preferences-form")).includes(" of 8 KiB"), "preferences: an edit enables Save and shows the size");
+  main.querySelector(".preferences-form").dispatch("submit"); await pfSettle();
+  expect(JSON.stringify(pfPuts[0]) === JSON.stringify(["/me/preferences", { markdown: pfText().value, base_version: 2 }])
+    && text(main).includes("Saved as version 3.") && text(main.querySelector(".preferences-version")).startsWith("Version 3"),
+    "preferences: Save sends the text with the version it was written against");
+  // Saved meanwhile elsewhere: the edit stays, the newer version is shown, the human chooses.
+  await pfPut("/me/preferences", { markdown: "From another tab.", base_version: 3 });
+  pfText().value = "Mine, written on version 3."; pfText().dispatch("input");
+  main.querySelector(".preferences-form").dispatch("submit"); await pfSettle();
+  const pfConflict = main.querySelector(".preferences-conflict");
+  expect(text(pfConflict).includes("changed meanwhile, now Version 4") && pfText().value === "Mine, written on version 3."
+    && btn(pfConflict, "Take version 4") && btn(pfConflict, "Save mine over it") && pfConflict.querySelector(".pref-diff"),
+    "preferences: a conflict keeps the edit and offers the newer version or saving over it");
+  btn(pfConflict, "Save mine over it").click(); await pfSettle();
+  expect(pfPuts[pfPuts.length - 1][1].base_version === 4 && text(main).includes("Saved as version 5."), "preferences: saving over it names the version it overrides");
+  // The projects whose agents read them.
+  const pfSample = byId("preferences-in-sample");
+  expect(byId("preferences-in-maity").checked && pfSample && !pfSample.checked, "preferences: on per project, as the hub has it");
+  pfSample.checked = true; pfSample.dispatch("change"); await pfSettle();
+  expect(JSON.stringify(pfPuts[pfPuts.length - 1]) === JSON.stringify(["/me/preferences/projects/sample", { include: true }]), "preferences: a project switched on is saved at once");
+  // Earlier versions, read when opened.
+  const pfHistory = main.querySelector("details.preferences-history");
+  pfHistory.open = true; pfHistory.dispatch("toggle"); await pfSettle();
+  expect(pfHistory.querySelectorAll(".preferences-versions li").length === 5 && text(pfHistory).includes("Version 1 · written by @maintainer"),
+    "preferences: the earlier versions, newest first");
+  // A hub without preferences: said quietly.
+  const pfGet = win.Maity.api.get;
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => (p === "/me/preferences" ? Promise.reject(new win.Maity.api.ApiError("x", 404, p, "not_found", {}))
+    : p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : pfGet(p));
+  await go("#/p/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  expect(text(main).includes("This hub keeps no preferences yet.") && !main.querySelector(".preferences .error"), "preferences: a hub without them says so quietly");
+  win.Maity.api.get = pfGet; win.Maity.api.forgetRoutes();
+
+  // The review: the current text (version 5 now), the proposal on version 2: stale.
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHead().attrs["aria-expanded"] !== "true") { pfHead().click(); await pfSettle(); }
+  let pfReview = main.querySelector(".current .pref-review");
+  expect(pfReview && text(pfReview).includes("Why: You asked twice this week") && text(pfReview).includes("written against version 2, yours is now version 5")
+    && !btn(pfReview, "Accept") && btn(pfReview, "Merge by hand") && btn(pfReview, "Decline"),
+    "preferences review: a proposal on an older version offers no plain Accept, only merging by hand or declining");
+  expect(!btn(main.querySelector(".current"), "Go") && !btn(main.querySelector(".current"), "No") && !byId("reply-maity-req-p002")
+    && btn(main.querySelector(".current"), "Later"), "preferences review: its own answers replace the plain replies; Later stays");
+  expect(pfReview.querySelectorAll(".pref-diff li.pref-add").some((li) => text(li).includes("German in chat")), "preferences review: the diff shows the added line");
+  // Merge by hand: the edit goes with the current version.
+  const pfPosts = [];
+  const pfPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { pfPosts.push([p, b]); return pfPost(p, b); };
+  btn(pfReview, "Merge by hand").click(); await tick();
+  let pfEdit = byId("pref-edit-req-p002");
+  expect(pfEdit && !pfReview.querySelector(".pref-edit").hidden && pfEdit.value.includes("German in chat"), "preferences review: the editor opens with the proposal");
+  const pfDraft = "Mine, written on version 3.\nGerman in chat, English in code and docs.";
+  pfEdit.value = pfDraft; pfEdit.dispatch("input");
+  // Saved elsewhere while merging: 409, and the newer text cannot be read either; the edit stays.
+  const pfConflictErr = () => Promise.reject(new win.Maity.api.ApiError("changed", 409, "/requests/req-p002/answer", "conflict", { current_version: 5, base_version: 5 }));
+  win.Maity.api.post = (p, b) => (p === "/requests/req-p002/answer" ? pfConflictErr() : pfPost(p, b));
+  win.Maity.api.get = (p) => (p === "/requests/req-p002" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : pfGet(p));
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  pfReview = main.querySelector(".current .pref-review");
+  expect(byId("pref-edit-req-p002").value === pfDraft && !pfReview.querySelector(".pref-edit").hidden
+    && text(pfReview).includes("could not be read again: down"), "preferences review: a failed re-read keeps the edit open and says why");
+  // The re-read works: the review is drawn again against the newer version, the edit kept and open.
+  win.Maity.api.get = pfGet;
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  pfReview = main.querySelector(".current .pref-review");
+  pfEdit = byId("pref-edit-req-p002");
+  expect(pfEdit && pfEdit.value === pfDraft && !pfReview.querySelector(".pref-edit").hidden && btn(pfReview, "Merge by hand").hidden
+    && text(pfReview).includes("changed while you looked"), "preferences review: after a conflict the edit is kept, open, against the newer version");
+  win.Maity.api.post = (p, b) => { pfPosts.push([p, b]); return pfPost(p, b); };
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  expect(JSON.stringify(pfPosts[0]) === JSON.stringify(["/requests/req-p002/answer", { reply_id: "go", markdown: pfEdit.value, base_version: 5 }]),
+    "preferences review: an edited accept carries the text and the current version");
+  const pfNow = await pfGet("/me/preferences");
+  expect(pfNow.version === 6 && pfNow.by.kind === "human" && pfNow.proposed_by && pfNow.proposed_by.request_id === "req-p002", "preferences review: the edit is the next version, proposed by the agent");
+  win.Maity.api.post = pfPost; win.Maity.api.put = pfPut;
+
+  // An agent's card, for its owner: give it the owner's preferences.
+  const pfPatches = [];
+  const pfPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { pfPatches.push([p, b]); return pfPatch(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); await pfSettle();
+  const pfToggle = byId("owner-preferences-agt-a");
+  expect(pfToggle && !pfToggle.checked && main.querySelectorAll(".owner-preferences").length === 1,
+    "preferences: the owner's switch on an agent card, where the hub knows it");
+  pfToggle.checked = true; pfToggle.dispatch("change"); await pfSettle();
+  expect(JSON.stringify(pfPatches[0]) === JSON.stringify(["/projects/maity/members/agt-a", { owner_preferences: true }]), "preferences: the switch is saved on the membership at once");
+  win.Maity.api.patch = pfPatch;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

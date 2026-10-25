@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     const to = h("select", { id: "message-to" },
       h("option", { value: "all" }, "Everyone in the project"),
       h("optgroup", { label: "A role" }, ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + r))),
-      h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + m.handle + ")"))));
+      h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + M.dom.handleOf(ctx, m) + ")"))));
     to.value = "all";
     const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l)));
     type.value = "notice";
