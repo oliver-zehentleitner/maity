@@ -67,3 +67,38 @@ flag can be misused to report a head nobody pushed.
   against the same facts it can find by itself.
 - Only a clearer refusal: it would leave agents that report after a
   merge with no correct way to report code at all.
+
+## The why of a code report is checked locally, against the last resume
+
+**Id:** a99c8924-66bc-4d9f-b9f9-590c6276546b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.23 and the §13 rows (contract #390: a code report without `--why`/`--no-why` refused locally under `required`, naming the two flags; the CLI never confirms on its own); the coordinator's card for the CLI side, 2026-10-25
+**Revisit when:** the hub exposes the policy without a resume, or a report has to be sent while the last resume is out of date with a policy change
+
+`maity resume` stores whether the packet's `keep_the_why.commitment` is
+`required`. `maity report` reads that value and refuses a code report
+that has neither `--why` nor `--no-why` (exit 4) before git, gh or the
+hub are asked. Both flags are checked for the shape the hub accepts
+(`<path>.md#<id>` relative to the root; a reason of 10 characters or
+more), and `--no-code` refuses them. The `Keep the Why` block names
+`maity ack keep-the-why` literally rather than the packet's `ack`
+field, and the CLI sends the confirmation only when the agent runs the
+command.
+
+**Reason:** a refusal from the hub would come only after the git facts
+and the pull request were read. With the flags named locally, the agent
+gets the rule at the moment it writes the report. A stored flag can be
+out of date when the policy changes between resumes. The hub still
+decides: a stale `false` means the hub answers `invalid` (`required`).
+A stale `true` refuses a report the hub would have taken, and only
+until the next resume. A command taken from the packet would be
+something the CLI prints for an agent to run, so the CLI names it
+itself.
+
+**Rejected alternatives:**
+- Asking the hub for the policy before every report: one more call per
+  report, for a value the packet already carried.
+- Leaving the check to the hub alone: correct, but the agent learns the
+  rule from a field code after the git checks, not from the command.
