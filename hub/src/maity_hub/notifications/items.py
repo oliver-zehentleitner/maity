@@ -190,9 +190,13 @@ def _classify(
         mentioned = principal in [m.get("member_id") for m in payload.get("mentions") or []]
         writer = look.name(row.actor_membership)
         if row.conversation_id is not None and f"member:{principal}" in (row.audience or []):
-            title = f"{writer} in {look.handle(row.conversation_id)}"
+            room = look.room(row.conversation_id)
+            if room is not None and not look.inside(row):
+                return None  # a group chat notifies its participants, from their stay on
+            chat = room if room is not None else look.handle(row.conversation_id)
+            title = f"{writer} in {chat}"
             if mentioned:
-                title = f"{writer} mentioned you in {look.handle(row.conversation_id)}"
+                title = f"{writer} mentioned you in {chat}"
             return Item(
                 kind="mention" if mentioned else "chat",
                 title=None if row.redacted else _cut(title),
@@ -411,6 +415,7 @@ class Lookup:
 
     def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
         self.conn = conn
+        self.mine = mine
         # The dashboard's address of the project is `#/<owner>/<slug>` (§6.25).
         self.home = f"/#/{namespace.full_name(conn, mine.project)}"
         self.request_ids = {r.subject_id for r in rows if r.kind in REQUEST_EVENTS and r.subject_id}
@@ -429,7 +434,10 @@ class Lookup:
             )
         }
         principals = {h or a for h, a in self.members.values() if h or a}
-        principals |= {r.conversation_id for r in rows if r.conversation_id is not None}
+        self.conversation_ids = {r.conversation_id for r in rows if r.conversation_id is not None}
+        self._rooms: dict[str, str] | None = None
+        self._stays: dict[str, int] | None = None
+        principals |= self.conversation_ids
         self.human_ids = {p for p in principals if p.startswith("hum-")}
         self.agent_ids = principals - self.human_ids
         self.humans = dict(
@@ -448,6 +456,46 @@ class Lookup:
             if self.agent_ids
             else []
         )
+
+    def _group_chats(self) -> None:
+        """The batch's group chats, read once: their names, and the member's stays in them."""
+        if self._rooms is not None:
+            return
+        ids = {c for c in self.conversation_ids if c.startswith("cnv-")}
+        self._rooms, self._stays = {}, {}
+        if not ids:
+            return
+        for found, title in self.conn.execute(
+            select(t.conversation.c.id, t.conversation.c.title).where(t.conversation.c.id.in_(ids))
+        ):
+            self._rooms[found] = str(title or found)
+        for found, window in self.conn.execute(
+            select(
+                t.conversation_participant.c.conversation_id,
+                t.conversation_participant.c.window_after,
+            ).where(
+                t.conversation_participant.c.conversation_id.in_(ids),
+                t.conversation_participant.c.membership_id == self.mine.id,
+                t.conversation_participant.c.here.is_(True),
+            )
+        ):
+            self._stays[found] = window
+
+    def room(self, conversation_id: str) -> str | None:
+        """A group chat's name (its title, else its id); None for a direct chat (§9.2)."""
+        if not conversation_id.startswith("cnv-"):
+            return None
+        self._group_chats()
+        assert self._rooms is not None
+        return self._rooms.get(conversation_id, conversation_id)
+
+    def inside(self, row: Any) -> bool:
+        """The member is a participant of the group chat now, and the message falls into
+        their current stay; an observer, who only reads along, never is (§9.2)."""
+        self._group_chats()
+        assert self._stays is not None
+        window = self._stays.get(row.conversation_id)
+        return window is not None and row.seq > window
 
     def request(self, request_id: str | None) -> Any:
         if request_id is None or request_id not in self.request_ids:
