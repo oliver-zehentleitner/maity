@@ -538,3 +538,20 @@ def test_chat_with_a_group_id_says_when_the_hub_has_no_group_chats(
     fake.routes[("GET", f"{P}/conversations")] = listing()
     assert cli.main(["chat", "cnv-0009"]) == cli.EXIT_ERROR
     assert said in capsys.readouterr().err
+
+
+def test_chat_participants_sharing_a_handle_show_names_or_ids() -> None:
+    people = [
+        {"member_id": "hum-m", "kind": "human", "handle": "maintainer"},
+        {"member_id": "agt-1", "kind": "agent", "handle": "agent-b"},
+        {"member_id": "agt-2", "kind": "agent", "handle": "agent-b"},
+    ]
+    # The hub as merged sends no `name` on participants: the two namesakes keep their ids.
+    assert cli._handles({"participants": people}) == {
+        "hum-m": "maintainer", "agt-1": "agt-1", "agt-2": "agt-2"
+    }  # fmt: skip
+    named = [{**p, "name": f"o{i}/agent-b"} if p["kind"] == "agent" else p
+             for i, p in enumerate(people)]  # fmt: skip
+    assert cli._handles({"participants": named}) == {
+        "hum-m": "maintainer", "agt-1": "o1/agent-b", "agt-2": "o2/agent-b"
+    }  # fmt: skip

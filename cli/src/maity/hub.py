@@ -208,6 +208,7 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
     text = f"{what}: {code or 'error'}: {message}"
     if code == "invalid":
         text += _field_reasons(details.get("fields"))
+        text += _ambiguous(details.get("mentions"))
     err = HubError(text, code=code, status=exc.code)
     err.details = details
     retry_after = exc.headers.get("Retry-After") if exc.headers else None
@@ -217,6 +218,29 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
 
 
 _TOKEN = re.compile(r"^[A-Za-z0-9_.:\-]{1,64}$")
+
+
+_HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+# Team names only: §8.6 lists global names, never an instance's `…#id`.
+_GLOBAL = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def _ambiguous(mentions: Any) -> str:
+    """`details.mentions` of an `ambiguous_mention` refusal (§8.6), short handle → the global
+    names it could mean, as one line each and the way out. Only handle- and name-shaped
+    strings are printed, like `_field_reasons`."""
+    if not isinstance(mentions, dict):
+        return ""
+    lines = []
+    for handle, names in mentions.items():
+        if not (isinstance(handle, str) and _HANDLE.match(handle) and isinstance(names, list)):
+            continue
+        shown = [f"@{n}" for n in names if isinstance(n, str) and _GLOBAL.match(n)]
+        if shown:
+            lines.append(f"\n  @{handle} could mean: {', '.join(shown)}")
+    if lines:
+        lines.append("\n  write the long form @owner/handle for the member you mean")
+    return "".join(lines)
 
 
 def _field_reasons(fields: Any) -> str:
