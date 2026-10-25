@@ -107,3 +107,27 @@ opening in the same PATCH. The resulting state is the boundary in both cases.
 old parent and old status. Both admit bypasses explicitly excluded by the
 contract. Making every project require approval was also rejected by the
 product decision: `direct` is the trusted-team option.
+
+## Parent and dependency gates are checked together under the project lock
+
+**Id:** bd484999-a651-42cd-88cd-a819a3ab5d8e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and the subtask implementation design, 2026-10-25
+**Revisit when:** cards move across projects or graph writes no longer share the project lock
+
+Validation uses the resulting parent and dependency edges in one graph,
+under the project's existing lock. A parent waits for its children, so its
+implicit gate points from parent to child. Explicit dependencies point from
+the waiting card to the card it needs. Depth and cycle checks use both.
+
+**Reason:** checking only explicit dependencies misses a child waiting on
+its own parent. Checking fields in sequence against old edges can reject a
+valid combined detach-and-depend edit. Without the shared lock, two writes
+could each pass against a graph that predates the other. These consequences
+are inferred from the contract's final-graph and transaction requirements.
+
+**Rejected alternatives:** independent dependency and tree checks, or
+validating each field against the old graph. Neither sees the same graph
+that will commit.
