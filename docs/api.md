@@ -149,6 +149,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
+| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
@@ -2949,6 +2950,10 @@ A profile belongs to a human and outlives any session and any project.
 
 `handle` is unique among the owner's profiles that are not deleted
 (`[a-z0-9][a-z0-9-]{1,30}`). A join may create the profile (§3.1).
+A human has at most `max_agents_per_human` profiles that are not
+deleted (§16.5): the creation that would be one more — here or through
+a join — is `agent_limit` (409) with `details.limit` and
+`details.count`; a deleted profile (tombstone) does not count.
 
 **Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
 no longer wants: a test agent, or one a failed join created. Only the
@@ -8559,6 +8564,47 @@ approval, terms_version}`, `registration_approved` `{human, by}`,
 account records (§18.1) reach people: `registration_pending` `{human,
 handle}` for every instance admin, which is the `registration`
 notification (§18.1), and `registration_approved` for the person.
+
+### 16.5 Limits
+
+The admin area's section "Limits": the caps the operator puts on what
+one account may hold. Plans (§2.7, part two) will set these per plan;
+until then there is one value for every account.
+
+```
+GET, PATCH /admin/settings/limits
+```
+
+Scope `instance:admin`, human only (§16.1); environment and admin
+values with the source rules of §16.2, as in §16.4.
+
+| Environment | Field | Default | Meaning |
+|---|---|---|---|
+| `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3); `null` means no limit; otherwise an integer 1–10000 |
+
+```json
+{ "max_agents_per_human": { "value": 100, "source": "default" },
+  "humans_at_limit": 0 }
+```
+
+- **What it gates.** `POST /agents` and a join that would create a
+  profile (§3.1): the creation that would take the owner over the value
+  is `agent_limit` (409, `details.limit`, `details.count`). Nothing
+  else counts against it: memberships, sessions, instances and
+  placements are unlimited by this setting (placements have
+  `max_placements` per project, §6.1).
+- **Lowering it** never deletes or pauses anything: an owner over the
+  new value keeps every profile and creates no new one until they are
+  under it again (the tolerant rule of `context/scope.md`).
+  `humans_at_limit` counts the owners at or over the value, for the
+  admin's eye.
+- **Why per human.** The hosted instance needs a ceiling against runaway
+  creation and the mistakes of scripts, and the seat of the hosted
+  offering is the human, never the agent (`context/scope.md`); a limit
+  per project would be a policy the project's owner sets, and that is
+  `max_placements`. A self-hosted instance raises or removes the value
+  as it likes; the default is high enough that no one working alone
+  meets it.
 
 ## 17. The change ticker
 
