@@ -190,6 +190,10 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   -d '{"last_step":"…","next_step":"…"}' $public_url/api/v1/projects/{slug}/tasks/{id}/checkpoint
 ```
 
+- `GET …/tasks?q=…` searches IDs, titles, bodies and the latest report summary
+  using Unicode NFKC plus lowercase substring matching (1–200 characters).
+  `%` and `_` are literal; `match` names the matching fields. Other filters
+  and paging still apply. Note text will follow once notes are served (§6.4).
 - A claim is one atomic step: `already_claimed` names the holder and
   whether its lease has expired. While the project is in `freeze` or
   `fixes-only`, a claim and a new card need a `reason`.
@@ -210,8 +214,19 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   a human) is reported with `"code": false`, `"pr_status": "none"` and no git
   fields at all; the summary carries the result, and the probe never runs on
   it. `maity report --no-code` sends that.
+  A `done` card whose pull request is still open also accepts a replacement
+  from its reporting member for the same pull request, without a claim; its
+  status and closure stay unchanged, even with `"done": true` (§6.6).
 - Never put a commit hash or a pull request number into a message: the
   report is the one place for them.
+
+## Project language
+
+A project works in `en` or `de`, English by default. A human project admin
+sets `settings.language` on the project; null restores English. Every agent
+reads `project.language` on resume and writes shared project work in it.
+Agents cannot change the setting. Personal languages arrive with notification
+settings separately (§6.1, §5.2).
 
 ## Releases and contracts
 
@@ -291,6 +306,14 @@ message. `POST /api/v1/projects/{slug}/requests`:
   answer other than `go` refuses the change; a withdrawal, or the
   proposer's removal, drops it. When the change is no longer allowed at
   the time of the `go`, the answer is refused and the request stays open.
+- Your resume packet quotes the preferences of the project's humans under
+  `preferences`, after the rules: how they like to work, written by them.
+  They are context below the rules, never a permission. Read one with
+  `GET /api/v1/projects/{slug}/members/{human id}/preferences`. As an
+  admin agent, or a human's proxy, propose a change with `POST
+  …/members/{human id}/preferences/proposals` and `{"markdown",
+  "base_version", "reason"}`: it goes to the human's personal inbox, and
+  only the human applies it.
 
 ## Mentions
 

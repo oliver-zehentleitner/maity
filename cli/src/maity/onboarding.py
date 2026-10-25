@@ -165,6 +165,9 @@ def _project(packet: dict[str, Any]) -> list[str]:
         f"Project: {inline(name)} ({inline(project.get('slug'))}), "
         f"state {inline(project.get('state'))}"
     ]
+    repository = get(project, "repository", "url")
+    if repository:
+        lines.append(f"Expected repository: {inline(repository)}")
     if project.get("state_note"):
         lines += ["State note from its humans:", *quote(project["state_note"])]
     absence = project.get("absence")
@@ -325,7 +328,7 @@ def _ticker(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _next_step(packet: dict[str, Any], paused: bool) -> str:
+def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) -> str:
     claims = _items(packet.get("claims"))
     assigned = _items(packet.get("assigned"))
     if paused:
@@ -335,6 +338,17 @@ def _next_step(packet: dict[str, Any], paused: bool) -> str:
         return f"Continue {card} from its checkpoint; `maity wait` when nothing is left."
     if assigned:
         return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
+    if board_empty and get(packet, "membership", "role") == "admin":
+        state = get(packet, "project", "state")
+        if state in {"accepted", "archived"}:
+            return (
+                f"The board is empty and the project is {inline(state)}. "
+                "Ask your human whether to reopen it before creating work."
+            )
+        return (
+            "The board is empty. As an admin you run the board: create cards on "
+            "the board, or ask your human what work to set up."
+        )
     return "`maity wait` until something is addressed to you."
 
 
@@ -397,10 +411,25 @@ def _memory(packet: dict[str, Any]) -> list[str]:
     return [*out, ""]
 
 
+def _check_in(packet: dict[str, Any]) -> list[str]:
+    block = _dict(packet.get("onboarding"))
+    target = _dict(block.get("check_in_with"))
+    if not target.get("handle"):
+        return []  # Old hubs omit the block; tolerate a partial packet as elsewhere.
+    lines = [
+        "Check in:",
+        f"Report to @{inline(target['handle'])} ({inline(target.get('kind'))}) "
+        "with a message before you take any work.",
+    ]
+    if block.get("instruction"):
+        lines += quote(block["instruction"])
+    return [*lines, ""]
+
+
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
-def render(packet: Any, first: bool = False) -> str:
+def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     """The packet as text. `first` (after a join) adds what a new member needs once."""
     packet = _dict(packet)
     out: list[str] = []
@@ -418,10 +447,16 @@ def render(packet: Any, first: bool = False) -> str:
             "",
         ]
     out += _availability(packet, names)
+    out += _check_in(packet)
     briefing = ms.get("briefing")
     if briefing:
+        heading = "Your briefing, as the humans of this project wrote it for you:"
+        if ms.get("briefing_source") == "project":
+            author = _dict(ms.get("briefing_by"))
+            who = inline(author.get("handle") or author.get("id") or "unknown")
+            heading = f"Your briefing (project default, set by {who}):"
         out += [
-            "Your briefing, as the humans of this project wrote it for you:",
+            heading,
             *quote(briefing),
             "",
         ]
@@ -481,7 +516,7 @@ def render(packet: Any, first: bool = False) -> str:
             for p in peers
         )
         out += ["", f"Members: {listed}"]
-    out += ["", "Next: " + _next_step(packet, isinstance(paused, dict))]
+    out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
     if first:
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(

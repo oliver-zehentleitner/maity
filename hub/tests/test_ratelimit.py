@@ -62,6 +62,32 @@ def test_several_at_once_wait_for_room_for_all(monkeypatch: pytest.MonkeyPatch) 
     assert limiter.take("k", 2) == 0
 
 
+def test_a_late_release_frees_no_later_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(2, 10)
+    wait, mark = limiter.place("k")
+    assert (wait, mark) == (0, 0.0)
+    now[0] = 11.0  # the place has left the window
+    assert limiter.hit("k") == 0
+    assert limiter.hit("k") == 0
+    limiter.release("k", mark)  # its own place only: gone already
+    assert limiter.hit("k") >= 1
+    # Inside the window the release frees exactly that place.
+    wait, mark = limiter.place("j")
+    limiter.hit("j")
+    limiter.release("j", mark)
+    assert limiter.hit("j") == 0
+    wait, mark = limiter.place("j")  # full now: refused, nothing to release
+    assert wait >= 1 and mark is None
+
+
 def test_at_most_four_scrypt_derivations_run_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     running = 0
     peak = 0

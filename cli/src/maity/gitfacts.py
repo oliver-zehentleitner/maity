@@ -209,3 +209,36 @@ def mismatches(facts: Facts) -> list[str]:
             f"local HEAD is at {facts.head[:12]}"
         )
     return problems
+
+
+def repository_key(value: str) -> tuple[str, str]:
+    """Compare HTTPS, SSH and scp-style remotes without treating forks as upstreams."""
+    value = value.strip()
+    if "://" in value:
+        parsed = urllib.parse.urlsplit(value)
+        host, path = (parsed.hostname or "").lower(), parsed.path
+    else:
+        host, sep, path = value.partition(":")
+        if not sep:
+            host, _, path = value.partition("/")
+        host = host.rpartition("@")[2].lower()
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4].rstrip("/")
+    return host, path
+
+
+def repository_mismatch(cwd: Path, expected: str) -> str | None:
+    """The remote that disagrees, or None. Prefer upstream so a fork's origin is fine.
+
+    This is a local advisory check: never contact a remote or block a successful join.
+    Do not return the configured URL: it can contain embedded credentials.
+    """
+    try:
+        for name in ("upstream", "origin"):
+            actual = _git(cwd, "remote", "get-url", name)
+            if actual:
+                return name if repository_key(actual) != repository_key(expected) else None
+    except (FactsError, ValueError):
+        pass
+    return None

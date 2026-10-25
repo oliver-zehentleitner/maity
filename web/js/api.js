@@ -618,8 +618,12 @@ window.Maity = window.Maity || {};
           : Math.max(a, ha) + "." + Math.max(b, hb);
         return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: next, server_time: nowIso() };
       }
-      const listed = items.slice().sort(inOrder).reverse().slice(0, limit);
-      return { counts, by_project: byProject, items: listed.map(view), next_cursor: null, next_after: head, server_time: nowIso() };
+      const offset = Number(query.get("cursor") || 0);
+      const ordered = items.slice().sort(inOrder).reverse();
+      const listed = ordered.slice(offset, offset + limit);
+      return { counts, by_project: byProject, items: listed.map(view),
+        next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
+        next_after: head, server_time: nowIso() };
     }],
     // §18.3: by ids, or everything up to a seq (of one kind or project).
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
@@ -645,6 +649,10 @@ window.Maity = window.Maity || {};
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
+      if (body.email && "language" in body.email) {
+        if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
+        set.email.language = body.email.language;
+      }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
       if ("enabled" in b) set.browser.enabled = b.enabled;
@@ -869,6 +877,22 @@ window.Maity = window.Maity || {};
         p.state_changed_at = nowIso();
       }
       if ("absence" in body) p.absence = body.absence;
+      if (body.settings && "language" in body.settings) {
+        if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+        if (!["en", "de"].includes(body.settings.language)) fail(400, "invalid", "unknown language", path);
+        p.settings = Object.assign({}, p.settings, { language: body.settings.language });
+      }
+
+      if (body.settings && "onboarding" in body.settings) {
+        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
+        const value = body.settings.onboarding || { check_in_with: "coordinator" };
+        if (value.briefing && [...value.briefing].length > BRIEFING_CHARS) fail(400, "invalid", "Briefing too long", path);
+        const old = (p.settings || {}).onboarding || {};
+        p.settings = Object.assign({}, p.settings, { onboarding: Object.assign({}, value, {
+          version: (old.version || 0) + 1, by: me().member, updated_at: nowIso(),
+        }) });
+      }
+
       if ("repository" in body) {
         if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
@@ -1153,7 +1177,19 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks$/, (m, body, path, query) => {
       const keep = statusFilter(query, "all");
-      return { items: file(m[1], "tasks.json", path).items.filter(keep), next_cursor: null };
+      let items = file(m[1], "tasks.json", path).items.filter(keep);
+      const q = query.get("q");
+      if (q !== null) {
+        if (!q || [...q].length > 200) fail(400, "invalid", "search must be 1–200 characters", path);
+        const norm = (value) => String(value || "").normalize("NFKC").toLowerCase();
+        const needle = norm(q);
+        items = items.map((card) => {
+          const match = ["id", "title", "body"].filter((key) => norm(card[key]).includes(needle));
+          if (card.report && norm(card.report.summary).includes(needle)) match.push("report");
+          return { ...card, match };
+        }).filter((card) => card.match.length);
+      }
+      return { items, next_cursor: null };
     }],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
@@ -1903,12 +1939,46 @@ window.Maity = window.Maity || {};
     return hubPaths;
   }
 
+  // Whether the hub's machine form lists a route for this method and this
+  // concrete path (its parameters matched as path segments); null when the
+  // machine form cannot be read.
+  const escapeRe = (t) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
+  function routeListed(method, path) {
+    const want = method.toUpperCase();
+    const at = String(path).split("?")[0];
+    return hubRoutes().then((found) => Array.from(found).some((key) => {
+      const [m, template] = key.split(" ");
+      return m === want && new RegExp("^" + template.split("{}").map(escapeRe).join("[^/]+") + "$").test(at);
+    }), () => null);
+  }
+
+  // A route this hub does not serve: a 404 or 405 for a method and path its
+  // machine form does not list. Where a view's feature needs one, that is a
+  // fact of this hub, said quietly in its place (M.dom.notOnHub), never as
+  // an error, and the view does not ask it again until the next navigation,
+  // so no timer keeps knocking. A 404 on a route the hub lists is the
+  // resource's (a project left, a card gone) and stays an error, as does an
+  // answer when the machine form cannot be read, and any 5xx, network
+  // failure, 401 or 403.
+  const absentRoutes = new Set();
+  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
+
   M.api = {
+    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
+    // A promise: true when err says the route itself is missing (see above).
+    missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
+      ? routeListed(method, path).then((yes) => yes === false) : Promise.resolve(false)),
+    absent: {
+      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
+      has: (method, path) => absentRoutes.has(routeOf(method, path)),
+      // On every navigation (js/app.js): a hub deployed meanwhile is asked again.
+      clear: () => { absentRoutes.clear(); },
+    },
     // Whether the hub serves `method path` (path as in docs/api.md, without
     // the prefix); rejects when its machine form cannot be read.
     hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
     // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubPaths = null; },
+    forgetRoutes: () => { hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

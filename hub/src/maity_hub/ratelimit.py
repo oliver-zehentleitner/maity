@@ -22,7 +22,10 @@ class Limiter:
     def take(self, key: str, count: int) -> int:
         """Record `count` attempts at once; 0 when all fit, else the seconds until
         enough have left the window for all of them (none is recorded then)."""
-        now = time.monotonic()
+        return self._take_at(key, count, time.monotonic())
+
+    def _take_at(self, key: str, count: int, now: float) -> int:
+        """`take` at a moment the caller read from the clock."""
         with self._lock:
             if len(self._hits) > 1024:
                 self._prune(now)
@@ -36,6 +39,23 @@ class Limiter:
                 return max(1, math.ceil(hits[over - 1] + self.window - now))
             hits.extend([now] * count)
             return 0
+
+    def place(self, key: str) -> tuple[int, float | None]:
+        """Like `hit`, and the mark of the attempt it recorded (None when refused), for
+        `release` to give back exactly that one later."""
+        now = time.monotonic()
+        wait = self._take_at(key, 1, now)
+        return wait, (None if wait else now)
+
+    def release(self, key: str, mark: float | None) -> None:
+        """Give back the attempt `place` recorded at `mark`; nothing when it has left the
+        window already, so a late release never frees an attempt made after it."""
+        if mark is None:
+            return
+        with self._lock:
+            hits = self._hits.get(key)
+            if hits is not None and mark in hits:
+                hits.remove(mark)
 
     def give_back(self, key: str, count: int) -> None:
         """Forget the `count` newest attempts: what `take` recorded for work that

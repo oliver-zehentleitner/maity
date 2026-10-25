@@ -10,7 +10,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, and_, insert, or_, select, update
 
 from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
 from maity_hub import tables as t
@@ -57,12 +57,21 @@ class RequestCreate(Written):
     needs_in_session: NeedsInSessionIn | None = None
     on_behalf_of: str | None = None
     ktw_ref: str | None = Field(default=None, max_length=255)
+    humans_only: bool = False
+
+
+class ForwardIn(Strict):
+    to: str
+    reason: str | None = markdown(default=None)
 
 
 class AnswerIn(Written):
     reply_id: str | None = Field(default=None, max_length=64)
     text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
+    # A human's edit of a preference proposal, with the version it was made on (§19.4).
+    markdown: str | None = Field(default=None, max_length=16384)
+    base_version: int | None = Field(default=None, ge=0)
 
 
 class WithdrawIn(Strict):
@@ -148,11 +157,33 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "answered_at": ts(row.answered_at),
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
+        "holder": _holder(conn, row),
+        "forwarding": row.forwarding or [],
+        "humans_only": inbox.humans_only(row),
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
         raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
     return view | shown
+
+
+def _holder(conn: Connection, row: Any) -> str:
+    """Who holds the request now (§7): `to` until its first forward, then a member id, or
+    `role:admin` while it is open to the admins and nobody has claimed it."""
+    if row.holder_member is not None:
+        found = principal_id(conn, row.holder_member)
+        assert found is not None
+        return found
+    if row.holder_pool:
+        return "role:admin"
+    return inbox.addressee_of(row).text(conn)
+
+
+def _is_agent(conn: Connection, membership_id: int | None) -> bool:
+    agent = conn.execute(
+        select(t.membership.c.agent_id).where(t.membership.c.id == membership_id)
+    ).scalar()
+    return agent is not None
 
 
 def load_request(conn: Connection, request_id: str) -> dict[str, Any]:
@@ -210,7 +241,7 @@ def _resolve_to(
 
 
 def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
-    if to.startswith("profile_owner:"):  # the hub's own addressing of a personal request
+    if to.startswith(("profile_owner:", "human:")):  # the hub's own personal addressing
         raise invalid({"to": "hub_only"}, "personal requests are filed by the hub")
     if to == "owner":
         return inbox.Addressee("owner")
@@ -294,6 +325,8 @@ def create_request(
             raise invalid(
                 {"to": "cannot_answer_consent"}, "a consent goes to a role that may answer it"
             )
+        if body.humans_only and to.kind == "member" and _is_agent(conn, to.member):
+            raise invalid({"to": "humans_only"}, "only a human holds a humans_only request")
         card = None
         if body.task_id is not None:
             card = conn.execute(
@@ -331,6 +364,7 @@ def create_request(
                     "while_open": body.while_open,
                     "needs_in_session": _needs_in_session(conn, mine, body.needs_in_session),
                     "ktw_ref": body.ktw_ref,
+                    "humans_only": body.humans_only,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -385,6 +419,13 @@ def _locked(conn: Connection, mine: Membership) -> Membership:
     from dataclasses import replace
 
     return replace(mine, project=lock_project(conn, mine.project.id))
+
+
+def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
+    """The caller's membership read again after the project lock: a demotion or a removal
+    that commits first is never overtaken (as #271 and #283)."""
+    lock_project(conn, membership(conn, caller, slug).project.id)
+    return membership(conn, caller, slug)
 
 
 def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
@@ -684,6 +725,11 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     reply_ids = {r["id"] for r in replies(klass(row), row.options)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
+    edits = body.markdown is not None or body.base_version is not None
+    if edits and (row.proposal or {}).get("kind") != "preferences":
+        raise invalid({"markdown": "not_a_preference_proposal"})
+    if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
+        raise invalid({"markdown": "go_with_markdown_and_base_version"})
 
 
 def _refuse_unless_open(row: Any) -> None:
@@ -711,6 +757,8 @@ def answer(
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
+        if inbox.forwarded(row) and row.holder_member != mine.id:
+            raise _not_holder()  # once forwarded, only its holder answers (§7)
         if not inbox.may_answer(conn, row, mine):
             raise forbidden(inbox.answer_scope(row))
         if inbox.is_asker(row, mine):
@@ -722,7 +770,9 @@ def answer(
         addressee = inbox.addressee_of(row)
         in_own_right = inbox.answered_in_own_right(conn, row, mine)
         on_behalf = None
-        if not in_own_right and addressee.kind != "role":
+        if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
+            on_behalf = addressee.text(conn)
+        elif not in_own_right and addressee.kind != "role":
             on_behalf = (
                 inbox.owner_membership(conn, mine.project.id).human_id
                 if addressee.kind == "owner"
@@ -769,6 +819,215 @@ def answer(
             subject=("request", row.id),
         )
         ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
+        return idempotency.Outcome(200, "request", row.id, view)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- forwarding and claiming (§7) --------------------------------------------------------
+
+
+def _not_holder() -> ApiError:
+    return ApiError(
+        403, "forbidden", "only the request's holder does this", {"reason": "not_request_holder"}
+    )
+
+
+def _holds(conn: Connection, row: Any, mine: Membership) -> bool:
+    """The caller holds the request: the member it was forwarded to, or before the first
+    forward any member `to` resolves to. While the admins hold it as a pool, nobody does
+    until one claims it."""
+    if row.holder_pool:
+        return False
+    if row.holder_member is not None:
+        return bool(row.holder_member == mine.id)
+    return inbox.originally_addressed(conn, row, mine)
+
+
+def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """Who holds it, as an audience: the member, `to` before the first forward, or the
+    pool's human admins only, so that opening it to the admins wakes no agent (§7)."""
+    if row.holder_member is not None:
+        return [f"member:{principal_id(conn, row.holder_member)}"]
+    if row.holder_pool:
+        humans = conn.execute(
+            select(t.membership.c.human_id).where(
+                t.membership.c.project_id == row.project_id,
+                t.membership.c.role == "admin",
+                t.membership.c.human_id.is_not(None),
+                t.membership.c.active.is_(True),
+            )
+        ).scalars()
+        return [f"member:{h}" for h in humans]
+    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+
+
+def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
+    """The asker, the old and the new holder, and the original addressee (§7)."""
+    return list(
+        dict.fromkeys(
+            [
+                *_asker_audience(conn, before),
+                *_holder_audience(conn, mine, before),
+                *_holder_audience(conn, mine, after),
+                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+            ]
+        )
+    )
+
+
+def _step(
+    conn: Connection, before: Any, action: str, to: str, by: str, reason: str | None
+) -> list[dict[str, Any]]:
+    return [
+        *(before.forwarding or []),
+        {
+            "action": action,
+            "from": _holder(conn, before),
+            "to": to,
+            "by": by,
+            "reason": reason,
+            "at": clock.rfc3339(clock.now()),
+        },
+    ]
+
+
+def _originally_for(row: Any, member: Any) -> bool:
+    """Whether `to` as filed names this membership row: its member id, `owner` for an
+    owner, a role it holds."""
+    if row.to_kind == "member":
+        return bool(row.to_member == member.id)
+    if row.to_kind == "owner":
+        return bool(member.role == "owner")
+    return bool(row.to_kind == "role" and row.to_role == member.role)
+
+
+def _pool_open() -> Any:
+    """The request is open to the admins: opened by a forward, or filed `to: role:admin`
+    and not yet forwarded or claimed (§7)."""
+    return or_(
+        t.request.c.holder_pool.is_(True),
+        and_(
+            t.request.c.holder_member.is_(None),
+            t.request.c.holder_pool.is_(None),
+            t.request.c.to_kind == "role",
+            t.request.c.to_role == "admin",
+        ),
+    )
+
+
+def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
+    """The request as forward and claim see it: readable by the caller, never a personal
+    one (`not_found`), a `decision`, and open."""
+    row = _project_request(conn, mine, request_id)
+    if row.personal or not inbox.may_read(conn, row, mine):
+        raise not_found()
+    if klass(row) != "decision":
+        raise invalid({"class": "not_forwardable"}, "only a decision request is forwarded")
+    _refuse_unless_open(row)
+    return row
+
+
+@router.post("/projects/{slug}/requests/{request_id}/forward")
+def forward(
+    slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = _locked_member(conn, caller, slug)
+        row = _open_decision(conn, mine, request_id)
+        if not _holds(conn, row, mine):
+            raise _not_holder()
+        values: dict[str, Any]
+        if body.to == "role:admin":
+            target_id = None
+            values = {"holder_member": None, "holder_pool": True}
+        else:
+            try:
+                target = member_row(conn, mine.project.id, body.to)
+            except ApiError:
+                raise invalid({"to": "not_a_member"}) from None
+            if target.id in (mine.id, row.holder_member) or target.id in (
+                row.asked_by,
+                row.on_behalf_of,
+            ):
+                raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
+            original = _originally_for(row, target)
+            if target.role != "admin" and not original:
+                raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
+            if target.agent_id is not None and inbox.humans_only(row):
+                raise humans_only("a humans_only request goes to a human or to the admins")
+            target_id = target.id
+            values = {"holder_member": target.id, "holder_pool": None}
+        action_name = "opened" if target_id is None else "forwarded"
+        steps = _step(conn, row, action_name, body.to, mine.principal_id, body.reason)
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id)
+            .values(
+                **values,
+                forwarding=steps,
+                changed_by_credential=caller.credential_id,
+                changed_via=caller.via,
+            )
+        )
+        after = _row(conn, row.id)
+        view = request_view(conn, after)
+        emit(
+            conn,
+            mine.project.id,
+            "request_forwarded",
+            _forwarding_audience(conn, mine, row, after),
+            {**view, "step": steps[-1]},
+            actor=caller.actor(mine.id),
+            subject=("request", row.id),
+        )
+        return idempotency.Outcome(200, "request", row.id, view)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/projects/{slug}/requests/{request_id}/claim")
+def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = _locked_member(conn, caller, slug)
+        row = _open_decision(conn, mine, request_id)
+        if mine.role != "admin":
+            raise ApiError(
+                403, "forbidden", "only an admin claims from the pool", {"reason": "not_admin"}
+            )
+        if mine.kind == "agent" and inbox.humans_only(row):
+            raise humans_only("only a human admin claims a humans_only request")
+        if inbox.is_asker(row, mine):
+            raise invalid({"to": "self"}, "nobody holds a request it asked")
+        won = conn.execute(
+            update(t.request)
+            .where(t.request.c.id == row.id, _pool_open())
+            .values(
+                holder_member=mine.id,
+                holder_pool=None,
+                forwarding=_step(conn, row, "claimed", mine.principal_id, mine.principal_id, None),
+                changed_by_credential=caller.credential_id,
+                changed_via=caller.via,
+            )
+        ).rowcount
+        if won != 1:  # the first claim won, or it was never opened to the admins
+            raise ApiError(
+                409,
+                "request_claimed",
+                "another admin holds the request",
+                {"holder": _holder(conn, _row(conn, row.id))},
+            )
+        after = _row(conn, row.id)
+        view = request_view(conn, after)
+        emit(
+            conn,
+            mine.project.id,
+            "request_claimed",
+            _forwarding_audience(conn, mine, row, after),
+            {**view, "step": (after.forwarding or [])[-1]},
+            actor=caller.actor(mine.id),
+            subject=("request", row.id),
+        )
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -997,6 +1256,62 @@ def file_personal(
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        class_,
+        title_text,
+        summary,
+        to_kind="profile_owner",
+        to_profile=agent_id,
+        to_human=owner,
+        options=options,
+        task_id=task_id,
+    )
+
+
+def file_to_human(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    proposal: dict[str, Any],
+) -> str:
+    """A consent request the hub files to a human in person (`to: human:<human id>`,
+    §19.4), with the proposal its go applies; personal like `file_personal`'s."""
+    proposals.check_kind(proposal)
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=human_id,
+        proposal=proposal,
+    )
+
+
+def _file_personal(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    class_: str,
+    title_text: str,
+    summary: str,
+    *,
+    to_kind: str,
+    to_profile: str | None,
+    to_human: str,
+    options: list[dict[str, Any]] | None = None,
+    task_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
+) -> str:
     request_id = new_id("request")
     conn.execute(
         insert(t.request).values(
@@ -1008,10 +1323,11 @@ def file_personal(
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",
-                "to_kind": "profile_owner",
-                "to_profile": agent_id,
-                "to_human": owner,
+                "to_kind": to_kind,
+                "to_profile": to_profile,
+                "to_human": to_human,
                 "personal": True,
+                "proposal": proposal,
                 "asked_by": mine.id,
                 "asked_session_id": caller.session_id,
                 "task_id": task_id,
@@ -1035,6 +1351,27 @@ def file_personal(
         subject=("request", request_id),
     )
     return request_id
+
+
+def _preference_edit(conn: Connection, row: Any, body: AnswerIn) -> Any:
+    """A preference proposal's go on a stale base is `conflict` before anything is
+    answered (§19.4); the human's edit goes into the proposal its settlement applies."""
+    from maity_hub import preferences
+
+    edit = (
+        {"markdown": body.markdown, "base_version": body.base_version}
+        if body.markdown is not None
+        else None
+    )
+    preferences.check_answer(conn, row, body.reply_id, edit)
+    if edit is None:
+        return row
+    conn.execute(
+        update(t.request)
+        .where(t.request.c.id == row.id)
+        .values(proposal={**row.proposal, "edit": edit})
+    )
+    return _row(conn, row.id)
 
 
 def _human(caller: Caller) -> None:
@@ -1074,7 +1411,16 @@ def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONRe
     _human(caller)
     with engine_of(request).begin() as conn:
         row = _personal(conn, caller, request_id)
-        view = request_view(conn, row)
+        # The reading human reviews what a proposal would apply (§19.4), against their
+        # current text, which only they see here.
+        view = request_view(conn, row, with_proposal=True)
+        if (row.proposal or {}).get("kind") == "preferences":
+            from maity_hub import preferences
+
+            view["memory_proposal"] = {
+                **view["memory_proposal"],
+                **preferences.review_view(conn, row),
+            }
         return JSONResponse({**view, "project": _project_inline(conn, row.project_id)})
 
 
@@ -1087,7 +1433,10 @@ def answer_personal(
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id)
         _refuse_unless_open(row)
+        proposals.require_known(row)
         _check_answer(row, body)
+        if (row.proposal or {}).get("kind") == "preferences":
+            row = _preference_edit(conn, row, body)
         conversation_id = _talk_allowed(conn, row, caller) if body.talk else None
         member = _member_of(conn, row.project_id, caller.human_id)
         now = clock.now()
@@ -1120,6 +1469,9 @@ def answer_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
+        actor = caller.actor(member.id) if member is not None else None
+        outcome = "go" if body.reply_id == "go" else "no"
+        proposals.settle(conn, _row(conn, row.id), outcome, caller.human_id, actor)
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
         view = request_view(conn, closed)

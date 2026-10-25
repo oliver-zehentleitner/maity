@@ -74,6 +74,11 @@ def absence(project: Any) -> dict[str, Any] | None:
 NO_IMAGE = {"available": False, "source": None}
 
 
+def project_language(project: Any) -> str:
+    """The working language of a new or existing project (§6.1)."""
+    return "de" if (project.settings or {}).get("language") == "de" else "en"
+
+
 def project_view(
     project: Any,
     settings: Settings,
@@ -96,7 +101,7 @@ def project_view(
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
-        "settings": project.settings,
+        "settings": {**(project.settings or {}), "language": project_language(project)},
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
     }
@@ -340,6 +345,8 @@ def member_views(
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
             # Never in an event: views built for events pass no `details` (§5.3).
             view["shared_environment"] = sharing.get(row.id, [])
+            if row.agent_id is not None:  # given its owner's preferences (§19.4)
+                view["owner_preferences"] = bool(row.owner_preferences)
         views.append(view)
     return views
 
@@ -588,13 +595,16 @@ def sees_reasons(reader: Any) -> bool:
     return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
 
 
-def sees_chat_reasons(reader: Any) -> bool:
+def sees_chat_reasons(reader: Any, group_readers: set[str] | None = None) -> bool:
     """A chat message's redaction reason (§8.5): a direct chat's human party sees it, an
-    agent never does. Only a chat's parties read its events at all."""
-    return reader is not None and reader.kind == "human"
+    agent never does. In a group chat, `group_readers` names the humans it reaches
+    (`group_chats.reason_readers`): an owner reading along is a human but not one."""
+    if reader is None or reader.kind != "human":
+        return False
+    return group_readers is None or reader.principal_id in group_readers
 
 
-def _without_reason(row: Any, reader: Any) -> Any:
+def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None) -> Any:
     """`row.payload` as `reader` sees it: the reason of a redaction (the `event_redacted`
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
@@ -603,7 +613,7 @@ def _without_reason(row: Any, reader: Any) -> Any:
     if not redaction or not isinstance(payload, dict):
         return payload
     chat = row.conversation_id is not None
-    if sees_chat_reasons(reader) if chat else sees_reasons(reader):
+    if sees_chat_reasons(reader, group_readers) if chat else sees_reasons(reader):
         return payload
     if reader is not None and row.kind == "event_redacted" and row.actor_membership == reader.id:
         return payload  # the redactor's own notice
@@ -632,6 +642,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if runner_ids
         else {}
     )
+    from maity_hub.group_chats import reason_readers as group_reason_readers
+
+    reason_readers = group_reason_readers(
+        conn,
+        {
+            r.conversation_id
+            for r in rows
+            if r.conversation_id and (r.redacted or r.kind == "event_redacted")
+        },
+    )
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
     views = []
@@ -655,7 +675,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "session_id": row.actor_session_id,
                 "via": row.actor_via,
             }
-        payload, audience = _without_reason(row, reader), row.audience
+        payload = _without_reason(row, reader, reason_readers.get(row.conversation_id or ""))
+        audience = row.audience
         if row.kind == "event_redacted" and row.subject_id in notices:
             audience = ticker_read.shaped_audience(audience, reader)  # like the item it removed
         if row.kind == "ticker":

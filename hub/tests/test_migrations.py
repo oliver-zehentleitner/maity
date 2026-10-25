@@ -60,7 +60,10 @@ def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Pa
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)
     head = head_revision(engine)
     assert head is not None
-    following = f"{int(head) + 1:04d}"
+    # The highest number plus one, not the head's: numbers are reserved ahead, so a
+    # revision chained later may carry a lower number than one merged before it.
+    numbers = [int(p.name[:4]) for p in (migrations / "versions").glob("[0-9]*.py")]
+    following = f"{max(numbers) + 1:04d}"
     created = create_revision(engine, "add the task table", migrations)
     assert created.name == f"{following}_add_the_task_table.py"
     assert f'revision: str = "{following}"' in created.read_text()

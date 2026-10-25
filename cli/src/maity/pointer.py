@@ -1,8 +1,9 @@
 """The pointer block `maity join` writes into AGENTS.md (docs/architecture.md §4.2).
 
 It says that the repository is a Maity project and that a session runs `maity resume` at its
-start. It points and nothing more: no URL to fetch, no secret, no rules (those come from the hub
-in the resume packet). Whether it is committed is the repository's choice.
+start. It points to resume and the project communication channel: no URL to fetch, no secret,
+no project rules (those come from the hub in the resume packet). Whether it is committed is
+the repository's choice.
 """
 
 from __future__ import annotations
@@ -13,12 +14,19 @@ from maity import proc
 
 BEGIN = "<!-- maity:begin -->"
 END = "<!-- maity:end -->"
+PROJECT_CHANNEL = (
+    "Maity is the project's main channel: use `maity say`, `maity ask` and `maity report` "
+    "for work communication; bring project instructions from other chats onto the relevant "
+    "card or into a Maity message."
+)
 BLOCK = f"""{BEGIN}
 ## Maity
 
 This repository is a Maity project. At the start of every session, and after a
 context compaction, run `maity resume` from this clone: it says who you are, what
 you hold, and what you missed. `maity --help` lists the other commands.
+
+{PROJECT_CHANNEL}
 {END}
 """
 
