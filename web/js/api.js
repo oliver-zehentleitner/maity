@@ -859,7 +859,12 @@ window.Maity = window.Maity || {};
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r)))
-        .concat(personalRequests().filter((r) => r.status === "open")),
+        // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
+        .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
+          const listed = Object.assign({}, r);
+          delete listed.memory_proposal;
+          return listed;
+        })),
       next_cursor: null,
     })],
     ["GET", /^\/requests\/([^/]+)$/, (m, body, path) => {

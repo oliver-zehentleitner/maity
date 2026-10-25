@@ -156,7 +156,9 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
    personal ones come first. Without any membership, `#/all` still lists
    them, before the way to create a project. A list shows no proposal, so
-   every open personal request is read on its own (`GET /requests/{id}`). A
+   every open personal request is read on its own (`GET /requests/{id}`);
+   one that cannot be read is offered no reply, only **Try again**, since a
+   plain Go could apply a proposal unseen. A
    **proposal to change your preferences** (`docs/api.md` §19.4) is then
    answered in its review instead of the plain replies: the reason, a line
    diff from your current text to the proposed one (both texts in full

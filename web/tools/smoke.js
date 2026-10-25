@@ -4081,8 +4081,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pfEdge = pfM.diffLines("keep\n" + "x\n".repeat(3000) + "end", "keep\n" + "x\n".repeat(3000) + "END");
   expect(!pfMid.coarse && !pfEdge.coarse && pfEdge.filter((d) => d.op !== "same").length === 2,
     "preferences: a long text changed in one line is matched exactly (common start and end trimmed)");
-  // On the version it was written against: Accept, or edit first.
   const pfSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  // A personal request that cannot be read in full offers no reply that could apply it unseen.
+  const pfGet0 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/requests/req-p002" ? Promise.reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable", {})) : pfGet0(p));
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHeadU = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHeadU.attrs["aria-expanded"] !== "true") { pfHeadU.click(); await pfSettle(); }
+  const pfU = main.querySelector(".current");
+  expect(pfU && !btn(pfU, "Go") && !btn(pfU, "No") && !pfU.querySelector(".pref-review") && !byId("reply-maity-req-p002")
+    && text(pfU).includes("could not be read in full") && btn(pfU, "Try again") && btn(pfU, "Later"),
+    "preferences review: an unreadable personal request offers no plain Go, only Try again");
+  win.Maity.api.get = pfGet0;
+  btn(pfU, "Try again").click(); await pfSettle();
+  expect(main.querySelector(".current .pref-review") && btn(main.querySelector(".current"), "Accept") && !text(main.querySelector(".current")).includes("could not be read in full"),
+    "preferences review: Try again reads it and shows the review");
+  // On the version it was written against: Accept, or edit first.
   await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
   const pfHead0 = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
   if (pfHead0.attrs["aria-expanded"] !== "true") { pfHead0.click(); await pfSettle(); }
