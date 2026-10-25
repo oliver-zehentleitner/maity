@@ -81,6 +81,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("human_device")
-    op.drop_index("ix_device_code_session_hash", table_name="device_code")
-    op.drop_index("ix_device_code_human_id", table_name="device_code")
+    # The indexes go with the table; MariaDB refuses to drop one a foreign key needs.
     op.drop_table("device_code")
