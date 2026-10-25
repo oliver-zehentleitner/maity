@@ -1504,8 +1504,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: a crash loop is flagged with its count");
   const plConsent = plRow("plc-0004").querySelector(".placement-consent a");
   expect(plFacts("plc-0004").includes("Waits for consent to start") && plConsent && plConsent.getAttribute("href") === "#/p/maity/inbox/req-0012"
-    && !btn(plRow("plc-0004"), "Approve"), "placements: pending consent links to its request in the inbox, no approve here");
-  btn(plRow("plc-0001"), "Stop").click(); for (let k = 0; k < 6; k++) await tick();
+    && !plRow("plc-0004").querySelectorAll("button").length, "placements: pending consent links to its request in the inbox, and offers nothing else here");
+  expect(text(plRow("plc-0001")).includes("Session: tmux -S /var/lib/maity-runner/tmux.sock attach") && text(plRow("plc-0001")).includes("Logs: maity runner logs plc-0001")
+    && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it");
+  const plStop = btn(plRow("plc-0001"), "Stop");
+  plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
   expect(plPatches.length === 1 && plPatches[0][0] === "/projects/maity/placements/plc-0001" && JSON.stringify(plPatches[0][1]) === JSON.stringify({ desired: "stopped" })
     && plFacts("plc-0001").includes("Wantedstopped") && btn(plRow("plc-0001"), "Start"),
     "placements: Stop is one PATCH of desired, unconfirmed; the row reads again");
@@ -1526,6 +1529,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   plFeed = [{ seq: 30001, kind: "placement_reported", at: "2026-10-22T14:10:00Z", actor: { kind: "runner", id: "rnr-0002" }, payload: { placement_id: "plc-0001", state: "running" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(plReads === plBefore + 1, "placements: a placement event reads the list again");
+  // A runner listed for a project one administers but owned by someone else gives no rights over it.
+  const plRunner = (owner) => Promise.resolve({ items: [{ id: "rnr-0002", name: "home-laptop", owner_id: owner }], next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) })) : plGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && !plBox().querySelectorAll("button").length, "placements: a runner someone else owns gives a project admin no actions");
+  // One's own runner gives the rights, also over agents someone else owns.
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && btn(plRow("plc-0003"), "Restart"), "placements: one's own runner gives a project admin the actions, also over another owner's agent");
+  // No agent yet: the section is still there for a placement that creates its profile.
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("No agents in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 4,
+    "placements: with no agent yet, where they run is still shown");
   // Neither the runner's owner nor the agents' owner: the rows without actions.
   const othersOwn = (r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) });
   win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then(othersOwn) : plGet(p));

@@ -1851,6 +1851,7 @@ window.MAITY_FIXTURES = {
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
+        "logs_hint": "maity runner logs plc-0001",
         "mode": "interactive",
         "model": "opus",
         "project": "maity",
@@ -1876,6 +1877,7 @@ window.MAITY_FIXTURES = {
           "id": "rnr-0002",
           "name": "home-laptop"
         },
+        "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b",
         "stop_grace_seconds": 120,
         "target": null,
         "updated_at": "2026-10-22T13:58:10Z",

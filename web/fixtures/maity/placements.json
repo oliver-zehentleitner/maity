@@ -9,6 +9,7 @@
       "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120,
       "approval": { "status": "approved", "request_id": null, "pending_change": null },
       "credential_id": "crd-b-0003", "reported_current": true,
+      "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b", "logs_hint": "maity runner logs plc-0001",
       "active": true, "closed_at": null, "closed_reason": null,
       "created_by": "hum-maintainer", "proposed_by": null,
       "created_at": "2026-10-22T13:39:02Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-22T13:58:10Z",

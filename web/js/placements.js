@@ -74,13 +74,24 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     let items = [];
     // The runners this human owns: their placements are theirs to steer.
+    // GET /runners also lists runners attached where one is an admin, so
+    // only those whose owner one is count (placements.py _has_right).
     let mine = new Set();
-    try { mine = new Set((await M.api.getAll("/runners")).items.map((r) => r.id)); } catch (err) { /* no runner of one's own known */ }
+    try {
+      mine = new Set((await M.api.getAll("/runners")).items.filter((r) => r.owner_id === ctx.me.id).map((r) => r.id));
+    } catch (err) { /* no runner of one's own known */ }
     const owns = (p) => {
       const m = p.agent && p.agent.id && ctx.memberById ? ctx.memberById[p.agent.id] : null;
       return !!m && m.owner_id === ctx.me.id;
     };
-    const mayAct = (p) => p.active && ((ctx.canAdmin && ctx.me.kind === "human" && mine.has(p.runner.id)) || owns(p));
+    const runnerOwner = (p) => ctx.canAdmin && ctx.me.kind === "human" && mine.has(p.runner.id);
+    // Waiting for consent, the inbox answers: a stop here would withdraw
+    // the request and a restart approve it, unasked (§15.6, settling).
+    const pending = (p) => !!(p.approval && (p.approval.status === "pending" || p.approval.pending_change));
+    const mayAct = (p) => p.active && !pending(p) && (runnerOwner(p) || owns(p));
+    // A row asking for a restart, or waiting for the hub: a redraw from an
+    // event waits until it is done, so neither is wiped.
+    const busy = new Set();
     const revoked = (p) => {
       const list = (p.agent && p.agent.id && credentials[p.agent.id]) || [];
       const c = list.find((x) => x.id === p.credential_id);
@@ -89,15 +100,26 @@ window.Maity = window.Maity || {};
     // A refusal as the hub answered it: its message and its code.
     const said = (err) => ({ message: (err.message || "an error") + (err.code ? " (" + err.code + ")" : "") });
 
-    async function act(p, verb, call) {
+    // One call per row at a time: its buttons are disabled until the row
+    // is drawn again; a refusal reads the list again too, as the hub has it.
+    const inFlight = new Set();
+    async function act(p, verb, call, row) {
+      if (inFlight.has(p.id)) return;
+      inFlight.add(p.id);
+      busy.add(p.id);
+      if (row) row.querySelectorAll("button").forEach((b) => { b.disabled = true; });
       status.busy(verb + "…");
+      let failed = null;
       try {
         await call();
-        status.done();
-        await reread();
       } catch (err) {
-        status.fail("Not " + verb.toLowerCase() + ": ", said(err));
+        failed = err;
       }
+      busy.delete(p.id);
+      inFlight.delete(p.id);
+      await reread();
+      if (failed) status.fail("Not " + verb.toLowerCase() + ": ", said(failed));
+      else status.done();
     }
     const path = (p) => ctx.base + "/placements/" + encodeURIComponent(p.id);
 
@@ -106,17 +128,18 @@ window.Maity = window.Maity || {};
       const name = p.agent.display_name || p.agent.handle;
       const row = h("div", { class: "placement-actions" });
       const stop = h("button", { type: "button", "aria-label": "Stop " + name,
-        onclick: () => act(p, "Stopped", () => M.api.patch(path(p), { desired: "stopped" })) }, "Stop");
+        onclick: () => act(p, "Stopped", () => M.api.patch(path(p), { desired: "stopped" }), row) }, "Stop");
       const start = h("button", { type: "button", "aria-label": "Start " + name,
-        onclick: () => act(p, "Started", () => M.api.patch(path(p), { desired: "running" })) }, "Start");
+        onclick: () => act(p, "Started", () => M.api.patch(path(p), { desired: "running" }), row) }, "Start");
       // A restart re-runs the agent: one more click says so.
       const restartWith = (rejoin) => {
         const label = rejoin ? "Restart with a new join" : "Restart";
         const b = h("button", { type: "button", "aria-label": label + " " + name }, label);
         b.addEventListener("click", () => {
+          busy.add(p.id);
           const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, "Restarted",
-            () => M.api.post(path(p) + "/restart", rejoin ? { rejoin: true } : {})) }, "Yes, " + label.toLowerCase());
-          const no = h("button", { type: "button", onclick: () => { draw(); } }, "Cancel");
+            () => M.api.post(path(p) + "/restart", rejoin ? { rejoin: true } : {}), row) }, "Yes, " + label.toLowerCase());
+          const no = h("button", { type: "button", onclick: () => { busy.delete(p.id); draw(); } }, "Cancel");
           append(clear(row), h("span", null, (rejoin ? "Restart " + name + " with a new credential?" : "Restart " + name + "? Its session ends and starts again.") + " "), yes, " ", no);
           yes.focus();
         });
@@ -141,7 +164,12 @@ window.Maity = window.Maity || {};
           h("dt", null, "Reported"), h("dd", null, stateLine(ctx, p)),
           h("dt", null, "Generation"), h("dd", null, String(p.generation),
             p.reported && p.reported.reported_at ? " · last report " + formatAgo(p.reported.reported_at, M.api.now()) : "")),
-        actions(p))));
+        actions(p),
+        // The runner's owner sees how to look at it (§15.5: theirs only).
+        p.session_hint || p.logs_hint ? h("p", { class: "hint placement-hints" },
+          p.session_hint ? ["Session: ", h("code", null, p.session_hint)] : null,
+          p.session_hint && p.logs_hint ? " · " : null,
+          p.logs_hint ? ["Logs: ", h("code", null, p.logs_hint)] : null) : null)));
     }
 
     let reading = null;
@@ -150,7 +178,7 @@ window.Maity = window.Maity || {};
       reading = (async () => {
         try {
           items = (await M.api.getAll(ctx.base + "/placements")).items;
-          draw();
+          if (!busy.size) draw();
         } catch (err) {
           status.fail("The placements could not be read: ", err);
         } finally {
