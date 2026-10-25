@@ -161,8 +161,12 @@ lift the rule. They are the revisit, not something V1 needs with one pod.
 **Revisit when:** the chart moves away from Recreate, or an upgrade's 503 window grows again
 **See:** kubernetes.md#one-pod-replaced-with-recreate-no-replica-count-in-the-chart — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
 
-`maity-hub serve` runs uvicorn through a server whose stop handler first
-sets `longpoll.stopping` and wakes every waiter. An events or runner
+`maity-hub serve` runs uvicorn through a server whose stop handler hands
+`longpoll.begin_shutdown` to the event loop (`call_soon_threadsafe`),
+which sets `longpoll.stopping` and wakes every waiter. The handler itself
+takes no lock: a signal can interrupt code that holds the registry's
+lock, and a handler waiting for that lock would never return (found in
+review). An events or runner
 long-poll then answers at once with what it has, empty and not
 superseded, as if its wait had ended. Uvicorn's
 `timeout_graceful_shutdown` (10 seconds) bounds any other request still
