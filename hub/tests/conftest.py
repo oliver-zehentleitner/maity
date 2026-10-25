@@ -99,8 +99,9 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
-    from maity_hub.routes import auth, joins, mail_settings, runners
+    from maity_hub.routes import auth, badges, joins, mail_settings, runners
 
+    badges.BY_ADDRESS.reset()
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
     runners.PAIR_BY_ADDRESS.reset()

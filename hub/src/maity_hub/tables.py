@@ -147,6 +147,7 @@ project = Table(
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
+    Column("badge", String(20), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin

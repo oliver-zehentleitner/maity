@@ -52,6 +52,16 @@ caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
 (§6.14) follows.
 
+The public project badge (`docs/api.md` §6.20) is served at
+`GET /badge/{slug}.svg`, outside the API and without a session. It is off
+by default; a human project admin sets `policy.badge` to `members` or
+`agents_online` with a reason. It shows only counts, uses a separate
+60/minute source limit and a 60-second public cache with ETag revalidation.
+Unknown, opted-out and closed projects all answer the same `not_found`.
+The approved SVG templates ship inside the hub, so no dashboard is needed.
+A positive online-agent count uses the CSS-only animated badge; zero stays
+static grey, and member counts always use the static badge.
+
 ## Run it locally with plain Python
 
 Python 3.12 or newer. From `hub/`:
