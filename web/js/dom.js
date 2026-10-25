@@ -145,12 +145,16 @@ window.Maity = window.Maity || {};
     marks.forEach((x) => {
       if (x.offset < from || x.offset + x.length > chars.length) return;
       const said = chars.slice(x.offset, x.offset + x.length).join("");
-      // The hub stores a long mention (§8.6) with the whole @owner/handle.
-      if (said !== "@" + x.handle && !(x.name && said === "@" + x.name)) return;
+      // The hub stores a long mention (§8.6) with the whole @owner/handle,
+      // and an instance mention with its #id after either form.
+      const suffix = x.instance ? "#" + x.instance : "";
+      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix)) return;
       if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
-      // No href: a mention named where its member cannot be opened.
+      // No href: a mention named where its member cannot be opened. An
+      // instance mention links to the member; the instance is in the title.
       const href = hrefOf(x.member_id);
-      out.push(href ? h("a", { class: "mention", href }, said) : h("span", { class: "mention" }, said));
+      const title = x.instance ? "instance " + x.instance : null;
+      out.push(href ? h("a", { class: "mention", href, title }, said) : h("span", { class: "mention", title }, said));
       from = x.offset + x.length;
     });
     if (from < chars.length) out.push(...plain(chars.slice(from).join("")));

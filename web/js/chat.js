@@ -519,7 +519,8 @@ window.Maity = window.Maity || {};
     // message with it, where it would reach the member.
     const mentionHint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
     // What the hub would take as a mention (§8.6): nothing inside code.
-    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/;
+    // A short handle or owner/handle, either with an instance's #id (§6.17).
+    const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9](?:\/[a-z0-9-]*[a-z0-9])?(?:#[2-9a-hjkmnp-z]{4,5})?)(?![A-Za-z0-9_])/;
     function hintMention() {
       const found = MENTIONED.exec(withoutCode(text.value));
       clear(mentionHint);
