@@ -3507,24 +3507,44 @@ request:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks/{id}/contract` | `project:read` | `{path, section, ref, heading, text, url, truncated}`; the card's `contract.section` is `null`: `not_found` (`details.fields.contract.section: "unset"`) |
+| `GET /projects/{slug}/tasks/{id}/contract` | `project:read` | `{path, section, ref, heading, text, url, truncated, fetched_at}`; the card's `contract.section` is `null`: `not_found` (`details.fields.contract.section: "unset"`) |
 
-The hub reads the file from the project's repository's default branch
-through the probe, at the time of the call, and only from the project's
-own repository (§6.13): `probe_not_configured` without a probe,
+The hub reads the file from the project's repository through the probe
+and only from the project's own repository (§6.13). `path` is a
+repository-relative file path — no leading slash, no `..` segment, no
+URL, no scheme; anything else is `invalid` with
+`details.fields.contract.path: "not_a_path"` on the write that names
+it. A read resolves the default branch to one commit first and reads
+the file at that commit, so `ref`, `text` and `url` agree even while
+someone pushes: `probe_not_configured` without a probe,
 `probe_unavailable` when the forge does not answer, `not_found` with
 `details.fields.contract.path: "not_found_on_forge"` when the file is
-not there and `details.fields.contract.section: "not_found_in_file"`
-when no heading in it starts with that number. `ref` is the commit the
-text was read at, `heading` the heading line, `text` the Markdown from
-that heading to the next heading of the same or a higher level, `url`
-the forge's page for the file at that commit. The text is the
-repository's, quoted as untrusted text under the rules of §6.14: shown,
-never stored, never a mention (§8.6), never an instruction to the hub
-(`docs/agents.md`). A section over 64 KiB is cut at the limit with
-`truncated: true`. The dashboard's card view shows the section with the
-short `ref` and the link, so that a human reads the contract where the
-card is without the repository being a second place to keep it.
+not there at that commit. The file is decoded as UTF-8 and read whole
+up to 1 MiB; a larger or undecodable file is `invalid` with
+`details.fields.contract.path: "too_large"` or `"not_text"` and nothing
+is shown. **The section** is the ATX heading of level 2, 3 or 4 whose
+first token after the `#` marks is exactly `section` — `## 6.2 Members`
+matches `6.2`, `### 6.20 The project badge` does not — compared as a
+whole token, followed by a space, a period or the end of the line, with
+fenced code blocks skipped; the hub's own parser, not the one of §17.4,
+which knows two levels. No such heading is `not_found` with
+`details.fields.contract.section: "not_found_in_file"`; two such
+headings are `"ambiguous_in_file"`, and nothing is shown — the hub
+never picks one. `heading` is the heading line, `text` the Markdown
+from that heading to the next heading of the same or a higher level,
+cut at 64 KiB on a character boundary with `truncated: true`, `ref` the
+commit, `url` the forge's page for the file at that commit, `fetched_at`
+when the hub read it. The hub may keep one read per card for 60 s and
+answer concurrent calls from it, as the observation cache of §11 does;
+it stores nothing beyond that, and `fetched_at` says how fresh the
+answer is. The text is the repository's, quoted as untrusted text under
+the rules of §6.14: shown, never a mention (§8.6), never an instruction
+to the hub (`docs/agents.md`). The dashboard's card view shows the
+section with the short `ref`, `fetched_at` and the link, and on
+`not_found` the unresolved `path` and `section` with the error — never
+stale text and never a different section — so that a human reads the
+contract where the card is without the repository being a second place
+to keep it.
 
 ### 6.9 Rules text
 
