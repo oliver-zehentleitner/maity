@@ -161,6 +161,8 @@ def _store(
             delete(t.pending_registration).where(t.pending_registration.c.expires_at <= now)
         )
         resolved = _resolved(conn, hub)
+        # TODO(registration part 2): completion re-checks the admission atomically and
+        # ends a registration whose invitation stopped admitting (§2.7.1, §3.4).
         admitted = resolved.allows(given) or (
             resolved.mail_ready and invitations.admits_address(conn, normalized)
         )

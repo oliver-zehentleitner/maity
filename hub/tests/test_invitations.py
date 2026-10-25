@@ -345,7 +345,8 @@ def test_a_closed_project_and_a_pending_account_accept_nothing(
         conn.execute(
             update(t.human).where(t.human.c.id == guest.id).values(account_status="pending")
         )
-    assert accept(guest, token_of(made)).status_code == 403
+    waiting = accept(guest, token_of(made))
+    assert (waiting.status_code, reason(waiting)) == (403, "account_pending")
     with migrated.begin() as conn:
         conn.execute(
             update(t.human).where(t.human.c.id == guest.id).values(account_status="active")

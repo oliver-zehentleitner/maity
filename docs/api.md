@@ -2349,7 +2349,7 @@ person, one project and one role, it is used once, and it expires.
   recipient's security-mail budget); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
-- `ttl_seconds` defaults to 86 400 (a day), maximum 604 800 (a week).
+- `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
   (`https://<public host>/#/invite/<token>`) and stored hashed, as the

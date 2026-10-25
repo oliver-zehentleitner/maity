@@ -114,8 +114,9 @@ def admits_address(conn: Connection, normalized: str) -> bool:
 
 
 def account_address(conn: Connection, human_id: str) -> str | None:
-    """The account's verified address (§18.4), normalized, or None. Accounts carry no
-    address until the notification settings store them (#280); then this reads there."""
+    """The account's verified address (§18.4), normalized, or None. Fails closed: with
+    None an address-bound invitation is `invitation_address_mismatch` for everyone."""
+    # TODO(#280): read the verified address the notification settings store.
     del conn, human_id
     return None
 

@@ -285,8 +285,10 @@ def _accept(
     conn: Connection, row: Any, project: Any, caller: Any
 ) -> tuple[ApiError | None, dict[str, Any] | None]:
     human = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
-    if human.account_status != "active":  # pending (§2.7.5): the invitation waits
-        return forbidden(message="the account waits for approval"), None
+    if human.account_status != "active":  # pending (§1.3, §2.7.5): the invitation waits
+        return _refused("account_pending", "the account waits for approval")
+    # TODO(§2.6.5): accept only from a session in good standing — a session fresh from a
+    # mailbox link accepts nothing — once such sessions exist; every session is one now.
     if project.state in CLOSED_STATES:
         return ApiError(409, "project_closed", f"the project is {project.state}"), None
     if row.address_normalized is not None and (
