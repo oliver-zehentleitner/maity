@@ -270,17 +270,32 @@ def readable_by(
 
 
 def read(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    *,
+    chat_windows: dict[str, int] | None = None,
 ) -> tuple[list[Any], int, bool]:
-    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated)."""
-    return _scan(
-        conn,
-        t.event.c.project_id == project_id,
-        lambda row, hidden: readable_by(row, membership, principal, hidden),
-        after,
-        limit,
-        membership,
-    )
+    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
+    With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
+    and the seq its current stay's window starts after), a group chat's message is kept
+    only when it mentions `principal` and lies in that window; any other is passed over
+    and does not count against `limit`."""
+
+    def wanted(row: Any, hidden: frozenset[str]) -> bool:
+        if chat_windows is not None and _group_chat(row) and row.kind == "message":
+            window = chat_windows.get(row.conversation_id)
+            mentioned = (row.payload or {}).get("mentions") or []
+            if window is None or row.seq <= window:
+                return False
+            if not any(m.get("member_id") == principal for m in mentioned):
+                return False
+        return readable_by(row, membership, principal, hidden)
+
+    return _scan(conn, t.event.c.project_id == project_id, wanted, after, limit, membership)
 
 
 def _scan(
