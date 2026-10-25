@@ -89,7 +89,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/join/{token}`,
   `/join/{token}`, `/r/{token}`, `/runners/pair/{token}`,
-  `/mail/verify/{token}` and `/mail/unsubscribe/{token}` (§18.6), and the single
+  `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
+  `/mail/second-factor-reset/{token}` (§18.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
 - Every string the hub renders into HTML (project name, handles, titles)
   is escaped; the dashboard renders agent-written text as text only
@@ -177,7 +178,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
-| 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send — and the instance has no complete SMTP setting (§16.2) |
+| 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send, a second-factor reset (§2.8.3) — and the instance has no complete SMTP setting (§16.2) |
+| 409 | `address_unverified` | a second-factor reset for a human without a verified address, whom the reset mail cannot reach (§2.8.3) |
 | 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
 | 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
 | 409 | `jour_fixe_open` | a jour fixe round started by hand while an earlier round is not yet final, its report included (§20.1, §20.6); `details.round` |
@@ -188,7 +190,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `request_claimed` | a claim on a request that is no longer open to `role:admin`, because another admin claimed it first (§7); `details.holder` |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
-| 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4) |
+| 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
@@ -1236,7 +1238,8 @@ session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
-`password_change`) are set on an ended session. A session of another
+`password_change`, `second_factor_disabled`, `second_factor_reset`,
+§2.8) are set on an ended session. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -1698,7 +1701,7 @@ secret_key_missing`.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
+| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5), and after a reset until the human has enrolled again (§2.8.3) |
 | `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
 | `POST /auth/second-factor/totp` | human, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unfinished one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unfinished until it expires |
@@ -1709,24 +1712,32 @@ secret_key_missing`.
   given in the last 10 minutes on the calling session — its sign-in by
   password, or `POST /auth/reauthenticate` — otherwise `forbidden` with
   `details.reason: reauthentication_required`. For an account
-  **without one**: a session in good standing (§2.6.5) that is at least
-  24 hours old, the guard §2.6.3 sets for changing the verified address
-  (not in good standing: `forbidden`, `details.reason:
+  **without one** (none can exist until the accounts design adds them:
+  `POST /auth/register` and `maity-hub owner create` both set a
+  password, §2.7.1): a session in good standing (§2.6.5) that is at
+  least 24 hours old, the guard §2.6.3 sets for changing the verified
+  address (not in good standing: `forbidden`, `details.reason:
   not_in_good_standing`; younger: `details.reason: session_too_new`).
   Never a fresh session from the mailbox: temporary access to the
   mailbox (§2.3) must not install a factor of its holder's choosing,
   which would give standing at the next sign-in (§2.8.2) and end the
   human's trusted sessions; and for a password account it would lock
-  out the human who holds the password. One exception: a human without
-  a password who has **no session in good standing at all** may enrol
-  from the session at hand — the enrolment session under
-  `required_admins` (§2.8.5) or after a reset (§2.8.3), or any session
-  otherwise. With no trusted session there is nothing for a factor to
-  take over — the mailbox already is the whole account — and the human
-  is not held out for good, after a reset ended every session included. The moment the human has a session in
-  good standing, the 24-hour rule applies as written. Setting a first
-  password on an account without one is the accounts design's item
-  (pending), not this section's.
+  out the human who holds the password. How a passwordless account's
+  first session comes to be in good standing — and with it how such an
+  account enrols for the first time, under `required_admins` or after a
+  reset — is the accounts design's item (pending), as is setting a
+  first password on it; until that is settled, such a human without a
+  session in good standing waits at the enrolment session (§2.8.5).
+- **Enrolling again.** For a human who is already enrolled, `POST
+  /auth/second-factor/totp` needs the proof and step-up (§2.8.4). The
+  old secret and recovery codes stay valid until the confirm; the
+  confirm replaces both, moves the generation (so outstanding reset
+  links die), and writes `second_factor_changed` `{change: enrolled}`.
+  Until then the human is never without a factor.
+- **Existing sessions.** Enrolling leaves the human's other full
+  sessions as they are — listed with `second_factor: false`, in good
+  standing only if they already were — and the recovery-codes page
+  offers "End my other sessions" (`POST /auth/sessions/end-others`).
 - **The code.** RFC 6238 with SHA-1, 6 digits, a 30-second step; the
   current step and one step either side are accepted, and every step is
   accepted once per human (the hub stores the last step used), so a
@@ -1747,18 +1758,28 @@ secret_key_missing`.
   missing or no longer opens them, the hub does **not** treat the
   instance as `off`: it fails closed. An enrolled human's sign-in stops
   at the second-factor session, whose verify answers `409
-  secret_key_missing`, and `GET /admin/settings/sign-in` warns
-  `second_factor_key_missing`. The operator restores the key, or resets
-  humans one by one with `maity-hub second-factor reset` (§2.8.3), which
-  needs no key.
+  secret_key_missing`, and `GET /admin/settings/sign-in` names
+  `secret_key` in `missing` (§2.6.6). The operator restores the key, or
+  resets humans one by one with `maity-hub second-factor reset`
+  (§2.8.3), which needs no key. `required_admins` without the key would
+  hold every admin at an enrolment session that can do nothing: the hub
+  refuses to start with `MAITY_SIGN_IN_SECOND_FACTOR=required_admins` in
+  the environment and no usable `MAITY_SECRET_KEY` (as §16.2 does for an
+  invalid setting), and a `PATCH` to `required_admins` without it is
+  `invalid` with `details.fields.second_factor: "secret_key_missing"`.
 - **The QR** is drawn in the dashboard's own code from `otpauth_uri`,
   no third-party script or image service (§1.1, as the device code's
   QR in §2.6.7); the secret is also shown as text for manual entry.
-- **Told.** Turning it on, turning it off and new recovery codes each
-  write the account record `second_factor_changed` `{change: enrolled |
-  disabled | recovery_codes | reset, by}` (§18.1, a `security`
-  notification) and send the security mail of §18.5. Turning it off
-  also ends every other session of the human.
+- **Told.** Every change writes the account record
+  `second_factor_changed` `{change, by}` (§18.1, a `security`
+  notification) and sends the security mail of §18.5. `change` is
+  `enrolled`, `disabled`, `recovery_codes`, `recovery_code_used`,
+  `reset` or `instance_off`; `by` is the human's own handle for the
+  first four, the admin's handle for a reset through the API,
+  `operator` for `maity-hub second-factor reset`, and for
+  `instance_off` the admin who switched it or `environment`. Turning
+  the factor off also ends every other session of the human
+  (`ended_by: second_factor_disabled`, §2.6.5).
 
 #### 2.8.2 The sign-in step
 
@@ -1769,11 +1790,14 @@ included:
 
 - The first factor answers as it does today, with `member` replaced by
   `{"second_factor": "required", "expires_in": 300}` (the login and the
-  code redemptions answer 200; the link page's `POST` shows the code
-  page instead of redirecting). The cookies are set, the session
-  exists, and its state is `second_factor`.
+  code redemptions answer 200; the link page's `POST` answers its `303`
+  to the dashboard route `/#/sign-in/second-factor`, with `next` kept on
+  the session). The cookies are set, the session exists, and its state
+  is `second_factor`.
 - A second-factor session reaches only `GET /auth/session` (which
-  answers `{second_factor: "required", expires_at}` and no member),
+  answers `{second_factor: "required", session_id, csrf_token,
+  expires_at}` and no member — the verify carries the CSRF token as
+  every cookie call),
   `POST /auth/second-factor/verify` and `POST /auth/logout`. Every other
   call is `forbidden` with `details.reason: second_factor_required`,
   before any side effect. It lives 5 minutes and is not listed in the
@@ -1791,7 +1815,9 @@ included:
   session (the first factor must be done again) and writes the account
   record `second_factor_failed` `{method, ip, browser, os}`, a
   `security` notification with a security mail: someone held the
-  password, the mailbox or a device code, but not the app.
+  password, the mailbox or a device code, but not the app. At step-up
+  (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
+  session, writes it too, with `method: step_up`.
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
   it, with that session's own lineage for "End this session", §2.6.5),
@@ -1809,8 +1835,9 @@ included:
   nothing.
 
 **Good standing.** A session whose sign-in included the second factor
-is in good standing (§2.6.5), whatever the first factor was: the factor is what neither a mailbox nor an unlocked dashboard
-provides, which is the reason good standing exists. The session list
+is in good standing (§2.6.5), whatever the first factor was: the factor
+is what neither a mailbox nor an unlocked dashboard provides, which is
+the reason good standing exists. The session list
 carries `second_factor: true | false` per session.
 
 #### 2.8.3 Recovery
@@ -1832,20 +1859,25 @@ a new enrolment from Profile → Security. Without a recovery code:
   an old link never removes a factor set up after it. Taking effect is
   one transaction — the link consumed, the generation checked and
   moved, the enrolment and the recovery codes deleted, every session of
-  the human ended — and of two links racing only the first succeeds. On
+  the human ended (`ended_by: second_factor_reset`, §2.6.5) — and of
+  two links racing only the first succeeds. On
   effect: `second_factor_changed` `{change: reset, by: <admin
   handle>}` is written and the security mail of §18.5 sent, and the
   next sign-in of the human goes into enrolment (§2.8.5) whatever the
-  policy says, unless it is `off`. A human without a verified address,
-  or an instance without mail, cannot be reset this way: `invalid`
-  with `details.fields.id: "mail_required"`.
+  policy says, unless it is `off`. An instance without mail cannot
+  reset this way (`409 mail_not_configured`, §1.3), nor a human without
+  a verified address (`409 address_unverified`). The mail proves the
+  mailbox, not the person: the dashboard tells the admin to confirm the
+  request with the person by another channel first, since whoever holds
+  the mailbox is exactly who would ask for a reset.
 - **The admin's own** is never reset through this endpoint
   (`forbidden`, `details.reason: own_account`): the admin uses a
   recovery code, or the operator's command below.
 - **The operator** — the person with access to the server — has
   `maity-hub second-factor reset --handle <handle>`, which resets at
-  once, moves the generation and writes the same record and mail. It is the last way in, as
-  `maity-hub owner create` is the first.
+  once, moves the generation and writes the same record and mail (`by:
+  operator`). It is the last way in, as `maity-hub owner create` is the
+  first.
 - A reset request is not an event; the accounts design's instance audit
   log records it (pending). Until then the human's account record is
   its trace.
@@ -1855,7 +1887,9 @@ a new enrolment from Profile → Security. Without a recovery code:
 For an enrolled human the hub remembers on the session when the factor
 was last given (`second_factor_at`): at the sign-in step, or with `POST
 /auth/second-factor/verify` from a full session, which answers 200
-`{valid_until}`. A sensitive call needs it within the last **10
+`{valid_until}`; a recovery code is accepted there too and writes
+`second_factor_changed` `{change: recovery_code_used}` as at the
+sign-in step. A sensitive call needs it within the last **10
 minutes**; otherwise it is `forbidden` with
 `details.reason: step_up_required` and changes nothing, and the
 dashboard asks for a code and repeats the call. A human who is not
@@ -1893,7 +1927,7 @@ environment winning as there:
   calls answer `forbidden` with `details.reason: method_disabled` —
   `POST /auth/second-factor/verify` included, which nothing then needs.
   Second-factor and enrolment sessions open at the switch end at their
-  next call (the first factor is done again, and now gives a full
+  next call (`ended_by: second_factor_disabled`; the first factor is done again, and now gives a full
   session). Existing enrolments stay stored and apply again when the
   setting returns; each enrolled human gets a `second_factor_changed`
   `{change: instance_off}` record and security mail, so the switch
@@ -1906,23 +1940,23 @@ environment winning as there:
   project must enrol. A sign-in of such a human who has not enrolled
   ends in an **enrolment session**: like a second-factor session
   (§2.8.2) it reaches only `GET /auth/session` (`{second_factor:
-  "enrolment_required"}`), `POST /auth/reauthenticate`, the enrolment
-  calls of §2.8.1 and `POST /auth/logout`, every other call `forbidden` with `details.reason:
-  second_factor_enrolment_required`; the confirm completes the sign-in
+  "enrolment_required", session_id, csrf_token, expires_at}`, no
+  member), `POST /auth/reauthenticate`, the enrolment calls of §2.8.1
+  and `POST /auth/logout`, every other call `forbidden` with
+  `details.reason: second_factor_enrolment_required`; the confirm completes the sign-in
   as the verify does. Full sessions such a human already holds when
   the setting is turned on, or when they become an owner, are moved to
   that state at their next call, not ended. An account without a
   password satisfies the setting like any other, once it holds a
   session in good standing at least 24 hours old (§2.8.1) — an
   enrolment session keeps its age and good standing, and lives as long
-  as any session (§2.1); until then it waits at the enrolment session,
-  unless it has no session in good standing at all, in which case it
-  enrols from the enrolment session (§2.8.1, the exception there). A session in good
-  standing that is moved into the enrolment state keeps that standing
-  for the decisions §2.6.5 ties to it, "This was me" on a sign-in alert
-  among them.
-  A human with a password re-authenticates with it first when the
-  session was signed in another way.
+  as any session (§2.1); until then it waits at the enrolment session
+  (how such an account first gains good standing is pending, §2.8.1).
+  A session in good standing that is moved into the enrolment state
+  keeps that standing for the decisions §2.6.5 ties to it, "This was
+  me" on a sign-in alert among them. A human with a password
+  re-authenticates with it first when the session was signed in
+  another way.
 
 #### 2.8.6 Rate limits
 
@@ -7413,6 +7447,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{slug}/requests/{id}/forward` | the request's current holder | 7 |
 | POST | `/projects/{slug}/requests/{id}/claim` | a member with the role `admin`, while the request is open to `role:admin` | 7 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 18.6 |
+| GET, POST | `/mail/second-factor-reset/{token}` (outside the API) | — (the token) | 18.6, 2.8.3 |
 
 `DELETE` answers `200` with the resource in its final state; no endpoint
 answers `204`.
