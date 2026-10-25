@@ -4357,6 +4357,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account/notifications");
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-card").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
+  expect(!byId("notify-kind-keep_the_why"), "notifications: a hub whose settings do not list Keep the Why shows no switch for it");
+  const ksGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me/notification-settings"
+    ? ksGet(p).then((x) => ({ ...x, kinds: x.kinds.concat(["keep_the_why"]), browser: { ...x.browser, kinds: { ...x.browser.kinds, keep_the_why: true } } })) : ksGet(p));
+  win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
+  expect(byId("notify-kind-keep_the_why") && byId("notify-kind-keep_the_why").checked, "notifications: a hub that lists Keep the Why has its switch, on by default");
+  win.Maity.api.get = ksGet; win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
   const fresh = [
     { id: "ntf-5001", seq: 5001, kind: "chat", at: "2026-10-22T15:00:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "secret text" },
     { id: "ntf-5002", seq: 5002, kind: "card", at: "2026-10-22T15:01:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-b" }, title: "tsk-0004 …: reported", target: { type: "task", id: "tsk-0004" }, read: false, redacted: false },

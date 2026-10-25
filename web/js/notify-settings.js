@@ -102,7 +102,10 @@ window.Maity = window.Maity || {};
         }
         save({ enabled: on.checked }, on.checked ? "Browser notifications are on." : "Browser notifications are off.");
       });
-      const kinds = KINDS.map(([k, label]) => {
+      // Only the kinds this hub knows (its `kinds`, else the ones it keeps a
+      // switch for): an older hub refuses a kind it has not heard of.
+      const known = (k) => (Array.isArray(settings.kinds) ? settings.kinds.includes(k) : k in (b.kinds || {}));
+      const kinds = KINDS.filter(([k]) => known(k)).map(([k, label]) => {
         const box2 = h("input", { type: "checkbox", id: "notify-kind-" + k, disabled: b.enabled ? null : true });
         box2.checked = !!b.kinds[k];
         box2.addEventListener("change", () => save({ kinds: { [k]: box2.checked } }, label + (box2.checked ? ": on." : ": off.")));
