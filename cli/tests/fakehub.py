@@ -74,6 +74,7 @@ class FakeHub:
     routes: dict[tuple[str, str], Callable[[Seen], tuple[Any, ...]]] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
     openapi: dict[str, Any] = field(default_factory=lambda: {"paths": {}})  # GET openapi.json
+    join_handle: str = "agent-b"  # the handle the join page (§3.2) names
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -174,6 +175,11 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "Maity-Signing": "required",
                     },
                 )
+            if path in (f"/api/v1/join/{TOKEN}", f"/{TOKEN}") and self.command == "GET":
+                if hub.join_used:
+                    return self._error(404, "not_found")
+                page = f"# Join\n\n| | |\n|---|---|\n| Your handle | `{hub.join_handle}` |\n"
+                return self._send(200, page)
             if path in (f"/api/v1/join/{TOKEN}", f"/{TOKEN}") and self.command == "POST":
                 if hub.join_used:
                     return self._error(404, "not_found")

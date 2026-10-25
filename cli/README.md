@@ -166,15 +166,22 @@ the packet itself, complete.
 ```
 
 - One state per clone, shared by that clone's worktrees. Outside a clone,
-  `maity` refuses unless `MAITY_STATE_DIR` names a directory.
+  `maity join` uses `~/.local/state/maity/<hub host>/<handle>` (handle
+  from the join page; `$XDG_STATE_HOME` if set) and prints the
+  `export MAITY_STATE_DIR=…` line every later command needs. Every other
+  command outside a clone refuses unless `MAITY_STATE_DIR` names a
+  directory.
 - The credential sits inside the Git directory, so Git never tracks it
   and `git clean -xdf` does not delete it. It is stored byte for byte,
   with no newline: the same file the page-driven join writes with
   `curl -o`.
 - No command prints the credential or anything else from its file. Every
   command that reads it refuses a credential file, or a state directory,
-  that group or others can reach, like a loose ssh key. A directory named by
-  `MAITY_STATE_DIR` is checked, never chmodded.
+  that group or others can reach, like a loose ssh key. Only `maity join`
+  changes a mode: an empty directory of yours, with no credential yet, is
+  set to 0700, with one line saying so. The directory is checked before the
+  join's single-use code is spent; a credential the directory still refuses
+  afterwards goes to a new private directory, and the CLI says which.
 - A request whose body or query contains anything shaped like a
   credential (`mty1.<id>.<secret>`) is refused before it is sent. The hub
   would revoke a real one.
