@@ -393,9 +393,12 @@ plans come, they price what organisations need — private orgs and
 teams, roles and policies, audit and reporting, single sign-on,
 support — and never the number of agents or sessions; local and
 self-hosted use stays free. Price tiers and conversion figures stay out
-of the repository. Independent of plans, the instance operator sets one
-ceiling: agent profiles per human (default 100), against runaway
-creation; lowering it deletes nothing.
+of the repository, and so does the configuration of the plans
+themselves — what each includes, its limits, its price is instance data
+in the hosted instance's database, never shipped to local or
+self-hosted installations. Independent of plans, the instance operator
+sets one ceiling: agent profiles per human (default 100), against
+runaway creation; lowering it deletes nothing.
 
 **Reason:** an agent is the user's tool, and charging per tool would
 punish exactly the use Maity exists for — many small agents, freely

@@ -8580,19 +8580,33 @@ values with the source rules of §16.2, as in §16.4.
 
 | Environment | Field | Default | Meaning |
 |---|---|---|---|
-| `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3); `null` means no limit; otherwise an integer 1–10000 |
+| `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
   "humans_at_limit": 0 }
 ```
 
-- **What it gates.** `POST /agents` and a join that would create a
-  profile (§3.1): the creation that would take the owner over the value
-  is `agent_limit` (409, `details.limit`, `details.count`). Nothing
-  else counts against it: memberships, sessions, instances and
-  placements are unlimited by this setting (placements have
-  `max_placements` per project, §6.1).
+`null` keeps the meaning of §16.2 here too: a `PATCH` with
+`max_agents_per_human: null` restores the default and the source
+`default`; "no limit" is the value `unlimited`, stored as the admin's
+value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
+naming it is `invalid`, `read_only`) and `0` under `unlimited`.
+
+- **What it gates.** Two creations: `POST /agents`, and
+  `POST /projects/{slug}/joins` when it names a new handle and so
+  creates the profile at the moment the link is issued (§3.1). The
+  creation that would take the owner over the value is `agent_limit`
+  (409, `details.limit`, `details.count`). Count and insert are one
+  atomic step per owner across both endpoints and across projects —
+  the hub serialises creations per owner, not per project — so at
+  `limit − 1` two concurrent creations yield exactly one profile and
+  one `agent_limit`. Nothing else is gated: a join for an existing
+  profile, a replacement or a new instance of one, an exchange of a
+  link already issued, memberships, sessions and placements
+  (`max_placements` per project, §6.1) work at and over the value. A
+  join link that expires or is revoked unused leaves its profile, and
+  that profile counts until its owner deletes it (§6.3).
 - **Lowering it** never deletes or pauses anything: an owner over the
   new value keeps every profile and creates no new one until they are
   under it again (the tolerant rule of `context/scope.md`).
@@ -8604,7 +8618,10 @@ values with the source rules of §16.2, as in §16.4.
   per project would be a policy the project's owner sets, and that is
   `max_placements`. A self-hosted instance raises or removes the value
   as it likes; the default is high enough that no one working alone
-  meets it.
+  meets it. When plans exist (§2.7, part two), their shape — what each
+  includes, its limits, its price — is configuration of the hosted
+  instance in its database, like this value, never a file shipped with
+  the code: a local or self-hosted instance carries none of it.
 
 ## 17. The change ticker
 
