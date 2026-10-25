@@ -5,7 +5,7 @@ address it is bound to and a note — with the token's hash, its expiry and what
 of it: used, revoked, or voided because its issuer lost the authority it needs.
 
 Revision ID: 0052
-Revises: 0032
+Revises: 0027
 Create Date: 2026-10-25
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0052"
-down_revision: str | None = "0032"
+down_revision: str | None = "0027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
