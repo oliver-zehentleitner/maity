@@ -133,7 +133,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -1408,7 +1408,7 @@ operator's default plan once part two defines one.
 
 | Mode | Who may register |
 |---|---|
-| `closed` (default) | nobody. Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§6.2, reserved) and joins (§3, agents). Every registration endpoint answers `forbidden` with `details.reason: registration_closed`, before it reads the body |
+| `closed` (default) | nobody, except an address that an open address-bound invitation admits (§3.4). Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§3.4) and joins (§3, agents). With mail available the endpoints answer `202` like the other modes and drop every non-admitted address in the background (§2.7.1); without mail they answer `forbidden` with `details.reason: registration_closed` before reading the body |
 | `allowlist` | a person whose address matches a listed domain or a listed exact address (below) |
 | `open` | anyone with an address that can be verified |
 
@@ -1444,12 +1444,16 @@ POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?:
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
 transport, `Sec-Fetch-Site` and `next`.
 
-1. **Synchronous checks, none of which looks at an account.** The mode
-   is `closed`, or mail is incomplete or disabled: `forbidden` with
-   `details.reason: registration_closed` (the same reason for both: the
-   page needs no more). The body: `address` follows §18.4, `password`
-   §2.1 (at least 12 characters) — `invalid` otherwise, with
-   `details.fields`. Then the per-source limit (§2.7.3).
+1. **Synchronous checks, none of which looks at an account.** Mail is
+   incomplete or disabled: `forbidden` with `details.reason:
+   registration_closed`, before the body is read. With mail, every
+   mode — `closed` included — reads the body: `address` follows §18.4,
+   `password` §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `details.fields`. Then the per-source limit (§2.7.3). Under `closed`
+   the hub answers the same `202` as under the other modes and drops
+   the request in the background unless an invitation admits the
+   address (§3.4): the mode never shows in the synchronous answer, so
+   an invited address is not told apart from any other.
 2. **The answer.** `202 {"expires_in": 86400}`, always, from here on. The
    hub hashes the password (scrypt, §2.1) for every request before it
    answers, so every accepted request costs the same; the lookup, the
@@ -1458,8 +1462,11 @@ transport, `Sec-Fetch-Site` and `next`.
    has an account from one that has none, nor a listed address from an
    unlisted one.
 3. **In the background**, at the time of the lookup:
-   - The address is not allowed by the mode (an `allowlist` miss): no
-     mail, and the request is dropped.
+   - The address is not admitted: under `allowlist` not listed, under
+     `closed` always — unless an open, address-bound invitation admits
+     it (§3.4: the invitation is open, its project is not closed and
+     its issuer still holds the authority it needs, the same predicate
+     accept uses). Not admitted: no mail, and the request is dropped.
    - The address is the verified address of an account (§18.4), or of a
      rejected registration that is still blocked (§16.4): one mail,
      "Someone asked to create a Maity account with this address on
@@ -1494,10 +1501,12 @@ transport, `Sec-Fetch-Site` and `next`.
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
    `POST` says exactly which version the person saw (§2.7.2).
-6. **Completion** (`POST` of that page). In this order: the mode is
-   checked again (now `closed`, or the address no longer allowed: the
-   page says registration is closed, nothing is created and the pending
-   registration is void); the password must match the stored hash (a
+6. **Completion** (`POST` of that page). In this order: the admission is
+   checked again, atomically with the completion (the mode changed, the
+   address no longer listed, or the admitting invitation no longer
+   admits — revoked, expired, used, voided, its project closed or its
+   issuer without authority: the page says registration is closed,
+   nothing is created and the pending registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
    registration); the handle and the display name follow §2.7.4; the
    terms box must be checked when terms are set, and the signed version
@@ -1967,6 +1976,134 @@ agent reads `Maity-Error` from the printed headers. A credential that
 has been issued but never opened a session shows as never resumed in the
 dashboard (§10). The page says, and `/help` repeats: the credential file
 is read only by the tool that sends a request; no command prints it.
+
+### 3.4 The invitation (human)
+
+How a second human joins a project. A join link (§3.1) brings an agent;
+an invitation brings a person. It is issued by a human, it is for one
+person, one project and one role, it is used once, and it expires.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `POST /projects/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
+| `GET /projects/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, used or revoked within the last 30 days, newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `DELETE /projects/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
+| `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
+| `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
+
+`POST` body:
+
+```json
+{ "role": "member", "address": "anna@example.org", "ttl_seconds": 86400,
+  "note": "You review the web side; D will brief you." }
+```
+
+- `role` is `member` (default), `reviewer`, `proxy`, `admin` or
+  `owner`; inviting an `owner` or `admin` needs the caller to hold
+  `owner`, the other roles `members:admin`. A second owner is a real
+  owner: the project then has two, and the contract's "the owner" means
+  whoever acts (§6.1, the owner who joined first where one is named).
+- `address` is optional. With it, only an account whose verified
+  address (§2.7.1) is this one may accept (`forbidden`,
+  `invitation_address_mismatch`), and the hub mails the link when mail
+  is enabled (§16.2; a notification mail of §18.5 with the inviter's
+  display name, the project's name, the role and the `note`, under the
+  recipient's security-mail budget); without mail, or without an
+  address, the inviter passes the `url` on themselves. Without an
+  address, whoever holds the link may accept — the inviter's choice.
+- `ttl_seconds` defaults to 86 400 (a day), maximum 604 800 (a week).
+  `note` is optional plain text, at most 1 KiB, shown on the page.
+- The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
+  (`https://<public host>/#/invite/<token>`) and stored hashed, as the
+  join's is (§3.1); the `GET` list never shows it again.
+
+```json
+{ "id": "inv-0007", "project": "maity", "role": "member", "address": "anna@example.org",
+  "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
+  "url": "https://maity.team/#/invite/9fK2…" }
+```
+
+**The page.** `GET /invitations/{token}` answers `{project: {slug,
+name, logo_url?}, role, invited_by: {display_name}, note, expires_at,
+address_bound: true|false, registration: "sign_in_or_register" |
+"sign_in_only"}` — enough for the dashboard's `/#/invite/<token>` to
+say who invites to what and which ways lead in. `registration` is
+computed from the instance and the invitation alone, never from who
+reads or whether an account exists: `sign_in_or_register` under
+registration `open`, and under `closed` or `allowlist` when the
+invitation is address-bound and admits (its project open, its issuer
+with authority — the predicate of accept); `sign_in_only` otherwise — a visitor without an account then sees that
+the instance does not register, and the inviter sees the invitation
+stay open. It carries no token in the body and no handle of anyone. It
+is rate limited per source address as the join exchange is (§3.3, 10
+per minute); the answer is identical for every reader.
+
+**Accepting.** `POST /invitations/{token}/accept` from a signed-in
+human session, one transaction serialised per project and person: the
+hub checks token, expiry, revocation and use; that the project is not
+`accepted` or `archived` (`project_closed`); the address binding; that
+the person is not a member already (`invalid`,
+`details.fields.token: "already_member"` — the invitation stays open
+for someone else when it is not address-bound, else it is used up; two
+different invitations for the same person and project end the same
+way, the first accept wins); and that the issuer still holds the
+authority the invitation needs — still an active human member, still
+`owner` for an `owner` or `admin` invitation, still `members:admin` for
+the others. An issuer who lost it in the meantime voids the invitation
+at that moment: `forbidden`, `invitation_void`, the invitation marked
+`voided_at` with the reason `issuer`, the issuer told by event. Rights
+are checked at issue and again at accept, so a demotion or removal does
+not leave a week-long grant behind; a policy change in between changes
+nothing, the role is still a role. Then the membership is created with
+the role and the invitation marked used, in that transaction; a second
+accept races into `not_found`. The new member gets the project's
+briefing and check-in as any human member does (§6.1), `member_joined`
+is emitted as for every membership (§8.2), and the inviter is woken by
+it. An account that is `pending` (§2.7.5) cannot accept until
+approved; the page says so and the invitation waits. Accepting needs a
+session in good standing (§2.6.5): a session fresh from a mailbox link
+accepts nothing.
+
+**Registration and invitations.** Under registration `closed` or
+`allowlist` (§2.7, §16.4), an address with an open address-bound
+invitation is **admitted** as if it were on the allowlist — provided
+the invitation admits: it is open, its project is not closed and its
+issuer still holds the authority the invitation needs, the predicate
+accept uses. The admission is decided where §2.7.1 decides admission,
+in the background and again atomically at completion, never in the
+synchronous answer: with mail available every mode answers the same
+`202` to every well-formed address, so an invitation is no oracle for
+an address's existence or its admission. `GET /auth/methods` keeps its
+§2.6.1 meaning — the instance's mode, unchanged by any invitation. An
+invitation that stops admitting between the two checks ends the
+registration as a non-admitted address does. Mail must be
+complete and enabled as for every registration, a rejection block
+(§16.4) still blocks, the `approval` mode (§2.7.5) still applies, and
+the registration counts against the completion limit. An invitation
+without an address admits nobody to register: it is a link for people
+who already have an account, or an instance that registers openly. The
+login and registration pages keep the invitation as `next` (§2.6.5) and
+return to it.
+
+**Events and audit.** `invitation_created`, `invitation_revoked`,
+`invitation_voided` and `invitation_used` go to the project's human
+`members:admin` holders (`member:<id>` each), never wake an agent, and
+carry the invitation's id, role and whether it is address-bound — never
+the address and never the token. The ticker (§17) announces a new human member as it
+announces every join.
+
+**Limits and secrecy.** Twenty invitations per project per hour
+(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+under the join exchange's per-source limit. An unknown, used, expired
+or revoked token is one uniform `not_found` on the page and on accept,
+so nothing tells a guesser whether a token ever existed; the named
+refusals of accept (`invitation_address_mismatch`, `already_member`,
+`invitation_void`, `project_closed`) are reached only with a valid
+token by a signed-in person, and that they confirm the token is
+deliberate — the holder of a valid link is told why it did not work.
+The token appears in the API path, so the hub masks `/invitations/…`
+in its logs and traces as it masks the join token (§3.3).
 
 ## 4. `GET /help`
 
@@ -2924,8 +3061,9 @@ own human or to another agent of that human never is.
   owner, instructions from outside. Nothing else routes by `reports_to`:
   cards route by `areas`, requests by `to` (§7).
 
-**Invitations** for further humans (`/projects/{slug}/invitations`) are
-not in V1; the path is reserved.
+**Invitations** for further humans are §3.4: a human with
+`members:admin` issues a single-use link for one person and one role;
+the person accepts it with their account, or registers first.
 
 ### 6.3 Agent profiles
 

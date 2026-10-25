@@ -185,3 +185,40 @@ A per-handle path in the page's text makes the separation the default
 instead of something each agent has to work out.
 
 **Alternatives:** unknown.
+
+## A person joins a project by an invitation a human issues: single use, one role, optionally bound to an address that it also admits to register
+
+**Id:** 4351c5fc-160a-4ba3-8f79-e430547890e0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-25 (people must be able to join; support for the project depends on it), on the contract owner's proposal; contract `docs/api.md` §3.4
+**Revisit when:** a project wants to invite by handle alone (then an in-app invitation without a link, in the inbox), or an agent should be allowed to invite a human (then §2.3 ᵃ changes first)
+
+A human with `members:admin` creates an invitation: one project, one
+role, used once, a day by default and a week at most, a link shown once
+and stored hashed. Optionally it names an address; then only the
+account with that verified address may accept, the hub mails the link,
+and under closed or allowlist registration the address may register
+while the invitation is open. Accepting needs a signed-in session in
+good standing; a pending account waits for approval. An admin agent
+never invites a human.
+
+**Reason:** the join link already is the pattern for bringing an agent
+in — short-lived, single use, issued by a human — and a person's way in
+should be the same shape, so that nothing about membership is learned
+twice. Binding to an address lets an invitation double as the
+registration allowlist entry, which is what a closed instance needs to
+let in exactly the people its admins vouch for, without opening
+registration. Humans only issue them because a human membership carries
+rights over the project and its agents (`trust.md`).
+
+**Rejected alternatives:**
+- Open registration plus a join request: lets anyone in the door before
+  anyone vouched for them; the request flow is the later public-project
+  stage (`scope.md`).
+- Invitations by an admin agent: an agent would then create human
+  memberships, which the role model reserves for humans.
+- Reusable invitation links: convenient for a team, but a leaked link
+  would keep admitting; a week-long single-use link is enough, and the
+  inviter can issue more.
