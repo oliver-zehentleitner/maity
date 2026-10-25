@@ -1710,7 +1710,7 @@ secret_key_missing`.
   the last 10 minutes on the calling session: its sign-in, or `POST
   /auth/reauthenticate`. For an account **with a password** it must be
   the password — a session signed in by password, or a
-  re-authentication with it — **(proposal)**: otherwise a session
+  re-authentication with it: otherwise a session
   obtained through the mailbox (§2.3, §2.6.3) could put its own factor
   on the account and lock the human, who holds the password, out. For
   an account **without one** any of its first factors counts: a session
