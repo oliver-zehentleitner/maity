@@ -277,6 +277,11 @@ from the last `maity resume`. When it does, a code report with neither is
 refused before anything is read or sent (exit 4). `--no-code` takes
 neither.
 
+While the project's setup cards (§6.21) are not done, the resume lists
+them in a `Setup waits` block after `Check in`, one line per card with
+its id and status, and who holds it when it is claimed. It is a hint:
+nothing is refused while it is shown.
+
 The resume shows a `Keep the Why` block there: either the time this
 instance confirmed, or the request to confirm with
 `maity ack keep-the-why` by the deadline, 30 minutes after the
