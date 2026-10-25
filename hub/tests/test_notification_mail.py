@@ -292,3 +292,23 @@ def test_over_the_instance_budget_mail_waits_and_merges_into_one(
     at(minutes=140)
     run(migrated)
     assert len(notifications(migrated)) == 1  # nothing twice
+
+
+def test_one_pass_sends_one_mail_and_stays_within_the_budget(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub import instance_settings as store
+
+    owner, agent = setup(make_client, migrated)
+    run(migrated)  # starts the digest clocks
+    with migrated.begin() as conn:
+        store.put(conn, "mail.max_per_hour", 1, None)
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hourly"})
+    at(minutes=48)
+    ask(agent)  # immediate, older than its window by the next pass
+    at(minutes=53)
+    # Both the immediate item and the hour's digest fall due in this one pass.
+    run(migrated)
+    assert len(notifications(migrated)) == 1
+    [mail] = notifications(migrated)
+    assert mail.subject == "[Maity] 2 updates"
