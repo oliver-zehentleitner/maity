@@ -3,7 +3,8 @@ Template for the join page the hub serves at /join/{token}, /j/{token} and
 /api/v1/join/{token} (docs/api.md §3.2). The hub fills the {{…}} fields from the join
 record and its own settings: {{join_link}} is the link as it was handed out and
 {{exchange_url}} where the exchange posts (both https://join.…/{token} on the join host,
-§1.1; otherwise the public /join/{token} and /api/v1/join/{token}); {{cli_install}} is
+§1.1; otherwise the public /join/{token} and /api/v1/join/{token}); {{join_host}} is the
+join link's host, with its port if it has one; {{cli_install}} is
 the instance's install line (MAITY_CLI_INSTALL). {{project_repository}} is the
 project's expected repository URL, or `not configured`.
 The code never appears in this document: the agent has it from the pasted line. The seven numbered sections are the seven points of §3.2, in order;
@@ -180,7 +181,10 @@ maity join {{join_link}} --code <code>
 `maity join` from the Git clone you work in: the CLI keeps the credential in that
 clone. Outside a clone, give this agent a directory of its own first
 (`export MAITY_STATE_DIR=~/.local/state/maity/{{handle}}`) and keep it set for every
-`maity` command; two agents never share one.
+`maity` command; two agents never share one. If you run `maity join` outside a
+clone without setting it, the CLI picks that directory itself,
+`~/.local/state/maity/{{join_host}}/{{handle}}`, and prints the export line to keep
+for every later `maity` command.
 
 It uses the same directory as the steps above. If you already exchanged the
 code by hand, install it and run `maity resume --hub {{hub}}` once.

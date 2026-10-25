@@ -5,6 +5,8 @@
   `~/.local/state/maity/<hub host>/<handle>` (or under `$XDG_STATE_HOME`), and prints
   the `export MAITY_STATE_DIR=…` line every later command needs. An empty state
   directory of yours that others can reach is set to 0700, with one line saying so.
+- docs/hub: the join page (§3.2) says which directory `maity join` picks outside a clone,
+  `~/.local/state/maity/<join host>/<handle>`, filled in by the hub (`{{join_host}}`).
 
 ### Fixed
 
