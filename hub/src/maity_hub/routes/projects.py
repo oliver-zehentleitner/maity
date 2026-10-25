@@ -62,6 +62,7 @@ class PolicyIn(Strict):
     coordinator: str | None = None
     coordinator_substitute: str | None = None
     on_runner_revoke: str | None = None
+    badge: str | None = None
 
 
 class AbsenceIn(Strict):
