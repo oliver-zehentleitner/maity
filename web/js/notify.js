@@ -13,7 +13,7 @@ window.Maity = window.Maity || {};
 
   const KIND_WORDS = {
     inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards", agent: "Agents stopped",
-    ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
+    keep_the_why: "Keep the Why", ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§18.2: one per session).
@@ -38,6 +38,13 @@ window.Maity = window.Maity || {};
     if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
     if (t0.type === "settings") return "#/account/notifications";
     const slug = item.project && item.project.slug;
+    // An agent of one's own that has not confirmed Keep the Why (§6.23):
+    // in the project's Members where one is a member, else among one's
+    // agents on the account.
+    if (t0.type === "member" && item.kind === "keep_the_why") {
+      return slug && item.project.member !== false ? "#/p/" + encodeURIComponent(slug) + "/members/" + encodeURIComponent(t0.id)
+        : "#/account/picture/" + encodeURIComponent(t0.id);
+    }
     if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
     const t = item.target || {};

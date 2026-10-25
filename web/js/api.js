@@ -1180,6 +1180,12 @@ window.Maity = window.Maity || {};
         if ("badge" in body.policy && !["off", "members", "agents_online"].includes(body.policy.badge)) {
           fail(400, "invalid", "unknown badge value", path, { fields: { "policy.badge": "unknown" } });
         }
+        if ("keep_the_why" in body.policy) {
+          if (!["required", "optional"].includes(body.policy.keep_the_why)) fail(400, "invalid", "unknown keep_the_why value", path, { fields: { "policy.keep_the_why": "unknown" } });
+          if (body.policy.keep_the_why === "required" && (p.memory || {}).provider === "none") {
+            fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
+          }
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
       return p;

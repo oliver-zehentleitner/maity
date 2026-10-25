@@ -122,7 +122,28 @@ window.Maity = window.Maity || {};
       h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
       h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
       h("p", { class: "muted" }, pr + " · " + observed),
-      r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null);
+      r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null,
+      whyLine(ctx, r));
+  }
+
+  // The why of a code report (docs/api.md §6.23): the entry that keeps it,
+  // as a link to its file at the report's head on the forge, the entry's id
+  // beside it; or the reason there is none, for the reviewer to judge.
+  function whyLine(ctx, r) {
+    const w = r.why;
+    if (!w) return null;
+    if (typeof w.none === "string") return h("p", { class: "report-why" }, "No why: " + w.none);
+    if (typeof w.ref !== "string") return null;
+    const cut = w.ref.indexOf("#");
+    const path = cut < 0 ? w.ref : w.ref.slice(0, cut);
+    const id = cut < 0 ? "" : w.ref.slice(cut + 1);
+    const repo = M.ids.where(ctx).repository;
+    const safe = typeof repo === "string" && /^https:\/\//.test(repo) && /^[0-9a-f]{40}$/.test(r.head || "")
+      && /^[A-Za-z0-9._\/-]+\.md$/.test(path) && !path.startsWith("/") && !path.split("/").includes("..");
+    const href = safe ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + "/blob/" + r.head + "/" + path : null;
+    return h("p", { class: "report-why" }, "Why: ",
+      href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, path) : h("code", null, path),
+      id ? h("span", { class: "muted" }, " #" + id) : null);
   }
 
   // One pull request as the hub has it. Only what the forge probe observed

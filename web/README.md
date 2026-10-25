@@ -102,7 +102,10 @@ After that:
 - **What is shown.** Nothing for one's own actions. A chat's or a
   mention's text (the hub's `content`, cut at 120 characters) only where
   the human allowed it. The kinds include the change ticker (off by
-  default) and sign-ins and address changes.
+  default), sign-ins and address changes, and an agent of one's own that
+  has not confirmed Keep the Why (`keep_the_why`, `docs/api.md` §6.23): its
+  item leads to the agent in the project's Members where one is a member,
+  else to the agent marked among one's agents (`#/account/picture/<id>`).
 - **Two tabs.** When another tab took over the long-poll (`superseded`),
   this tab waits five minutes.
 
@@ -124,7 +127,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
-| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
+| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -209,7 +212,9 @@ too.
    with that card marked and focused): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
-   and report; context rounds are marked, contract cards show their
+   and report — a code report's why (§6.23) as a link to its entry's
+   file at the reported head on the forge with the entry's id beside it,
+   or "No why: <reason>"; context rounds are marked, contract cards show their
    state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
    `docs/api.md` §6.8): folded until opened, then the section the card
    names, read by the hub from the repository (`GET …/tasks/{id}/contract`)
@@ -339,7 +344,10 @@ too.
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
    presence (with when last seen), when they joined; agents also with their
-   owner and whether they are paused (by whom, why). Where the hub sends
+   owner and whether they are paused (by whom, why). Under
+   `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
+   column says per instance when it confirmed or by when it is to; an agent
+   past that deadline unconfirmed is marked, not shown as an error. Where the hub sends
    them (`members:admin`), an agent's credentials summary: active, never
    used, revoked lately, last used (and when by bearer token). With
    `members:admin` each row has **Manage**: one form for what §6.2 lets an
@@ -874,6 +882,12 @@ at creation — its cards as links once the hub made them, the options
 still waiting for a repository, or that none was chosen (a project that
 predates the field says so). A change is work in the repository, so the
 panel points to a card for an agent rather than offering a switch.
+
+**Keep the Why commitment** (`policy.keep_the_why`, `docs/api.md` §6.23),
+for a human owner or admin where the hub's policy has the field:
+required (every agent instance confirms at its resume, is reminded, its
+owner told; a code report names its why) or optional, changed with a
+reason. Under memory provider `none` it is shown disabled with why.
 
 **README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
 for a human owner or admin where the hub's policy has the field: off,
