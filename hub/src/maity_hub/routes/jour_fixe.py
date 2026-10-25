@@ -534,7 +534,8 @@ def redact(
     slug: str, round_id: str, body: RedactIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        mine = membership(conn, caller, slug)  # its role as of the lock
         row = _round(conn, mine.project.id, round_id)
         redaction.redact(conn, row, mine, body.target, body.reason, caller.actor(mine.id))
         shown = _views(conn, [_round(conn, mine.project.id, round_id)], slug, mine)[0]
