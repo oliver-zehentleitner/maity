@@ -302,3 +302,19 @@ def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> N
         assert seen["posts"][0]["redaction"]["by"] == round_.owner.id
         assert seen["statement"]["topics"][0]["redaction"]["reason"] is None
         assert seen["statement"]["topics"][0]["proposals"][0]["redaction"]["reason"] is None
+
+
+def test_a_replayed_post_shows_no_redaction_reason(round_: Round) -> None:
+    round_.statement()
+    path = f"/api/v1{rounds_path(round_.id, '/posts')}"
+    body = {"step": "response", "topic_id": "t1", "body": "the token is s3cret"}
+    headers = round_.lead.auth | {"Idempotency-Key": "jour-fixe-replay-0001"}
+    first = round_.lead.client.post(path, json=body, headers=headers)
+    assert first.status_code == 201, first.text
+    seq = first.json()["message_seq"]
+    round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "private reason"})
+    replay = round_.lead.client.post(path, json=body, headers=headers)
+    assert replay.status_code == 201, replay.text
+    shown = replay.json()
+    assert shown["body"] is None and shown["redaction"]["reason"] is None
+    assert "private reason" not in replay.text
