@@ -545,3 +545,30 @@ def test_forgetting_old_rows_never_touches_waiting_mail(migrated: Engine) -> Non
         left = conn.execute(select(t.mail_outbox.c.status, t.mail_outbox.c.id)).all()
     assert sorted(status for status, _ in left) == ["sent", "waiting"]
     assert fresh in {row_id for _, row_id in left}
+
+
+def test_one_account_per_address(make_client: ClientFactory, migrated: Engine) -> None:
+    first = with_mail(make_client, migrated)
+    second = with_mail(make_client, migrated, "someone")
+    first.patch(S, {"email": {"address": "Shared@Example.org"}})
+    second.patch(S, {"email": {"address": "shared@example.org"}})
+    first_link, second_link = (link(row, "verify") for row in outbox_rows(migrated)[-2:])
+    assert first.client.post(f"/mail/verify/{first_link}").status_code == 200
+    # The other account's link for the same address, any case, no longer works.
+    assert second.client.post(f"/mail/verify/{second_link}").status_code == 404
+    got = second.get(S).json()["email"]
+    assert (got["address"], got["pending_address"]) == (None, "shared@example.org")
+    with migrated.begin() as conn:
+        normalized = conn.execute(
+            select(t.notification_settings.c.address_normalized).where(
+                t.notification_settings.c.human_id == first.id
+            )
+        ).scalar_one()
+    assert normalized == "shared@example.org"
+    # Removing it frees the address for the other account.
+    first.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
+    second.patch(S, {"email": {"address": "shared@example.org"}})
+    assert (
+        second.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}").status_code
+        == 200
+    )
