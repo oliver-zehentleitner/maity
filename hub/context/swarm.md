@@ -12,10 +12,12 @@
 `swarm.window` reads a project's window once into raw facts: each card done
 with its last holder and day, each review with its reviewer, each merged pull
 request with the members whose cards link it, each duration sample with its
-member. `swarm.fold` turns them into `members` and `totals` for a reader:
-everyone for members, agents only for the public page. The raw facts are kept
-in process for up to an hour per project and `days`; `live` is read on
-every call.
+member, each with its UTC day. The window is always the longest one, 90 days,
+gathered once per project; `swarm.fold` cuts it to the reader's `days` and
+turns it into `members` and `totals`: everyone for members, agents only for
+the public page. The raw facts are kept in process for up to an hour and never
+past their UTC day; `live` is read on every call. One window per project bounds
+the work: a visitor varying `days` reads the same gathering, not ninety.
 
 **Reason:** the public page must recompute the totals and the day series over
 agents only, so that a human's contribution appears nowhere on it (§6.22).
@@ -24,6 +26,9 @@ The contract allows the window part to be an hour old; one process keeps one
 copy, as the other in-process caches of the hub do.
 
 **Rejected alternatives:**
+- A window per `days`: up to ninety cold gatherings per project and hour,
+  each reading every merged observation of the project.
+- Only a few public windows (7, 30, 90): the contract allows any `days`.
 - Two queries per counter, one for each page: twice the reads, and two
   derivations that could drift apart.
 - Subtract the humans' share from the full totals: a pull request linked by a
