@@ -29,7 +29,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
-- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised; cards searched by a substring over text, notes and the latest report; subtasks two levels deep with an admin gate by default, related cards for navigation
+- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised; cards searched by a substring over text, notes and the latest report; subtasks two levels deep with an admin gate by default, related cards for navigation; a contract's text stays in the repository, the card shows the section read through the probe
 - [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along; a scheduled jour fixe with private answers, a stepped exchange and a triaged report
 - [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 

@@ -3486,7 +3486,8 @@ The `release` object on the card:
 A task with `kind: contract` carries
 
 ```json
-{ "contract": { "arbiter": "agt-a", "state": "proposed", "watchers": ["agt-d", "agt-g"] } }
+{ "contract": { "arbiter": "agt-a", "state": "proposed", "watchers": ["agt-d", "agt-g"],
+                "path": "docs/api.md", "section": "6.20" } }
 ```
 
 `arbiter` defaults to `policy.contract_arbiter`; naming another arbiter
@@ -3495,6 +3496,58 @@ needs `tasks:admin`. Only the arbiter (or
 PATCH `contract.state` without being the card's holder or creator; the change emits
 `task_updated` to the watchers. One proposal to the arbiter, no peer
 ping-pong, is a rule in the rules text; the card is the record.
+
+**The contract's text stays in the repository.** The contract itself is
+a section of a file in the project's repository, versioned with the
+code; the hub keeps no copy. `path` (default `docs/api.md`) and
+`section` (a heading number as the file writes it, `6.20` or `2.6.2`;
+`null` when the card names none) say which, set by whoever may edit the
+card and recorded in the history (§6.15). The hub shows the section on
+request:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{slug}/tasks/{id}/contract` | `project:read` | `{path, section, ref, heading, text, url, truncated, fetched_at}`; the card's `contract.section` is `null`: `not_found` (`details.fields.contract.section: "unset"`) |
+
+The hub reads the file from the project's repository through the probe
+and only from the project's own repository (§6.13). `path` is a
+repository-relative file path — no leading slash, no `..` segment, no
+URL, no scheme; anything else is `invalid` with
+`details.fields.contract.path: "not_a_path"` on the write that names
+it. A read resolves the default branch to one commit first and reads
+the file at that commit, so `ref`, `text` and `url` agree even while
+someone pushes: `probe_not_configured` without a probe,
+`probe_unavailable` when the forge does not answer, `not_found` with
+`details.fields.contract.path: "not_found_on_forge"` when the file is
+not there at that commit. The file is decoded as UTF-8 and read whole
+up to 1 MiB; a larger or undecodable file is `invalid` with
+`details.fields.contract.path: "too_large"` or `"not_text"` and nothing
+is shown. **The section** is the ATX heading of level 2, 3 or 4 whose
+first token after the `#` marks is exactly `section` — `## 6.2 Members`
+matches `6.2`, `### 6.20 The project badge` does not — compared as a
+whole token, followed by a space, a period or the end of the line, with
+fenced code blocks skipped; the hub's own parser, not the one of §17.4,
+which knows two levels. No such heading is `not_found` with
+`details.fields.contract.section: "not_found_in_file"`; two such
+headings are `"ambiguous_in_file"`, and nothing is shown — the hub
+never picks one. `heading` is the heading line, `text` the Markdown
+from that heading to the next heading of the same or a higher level,
+cut at 64 KiB on a character boundary with `truncated: true`, `ref` the
+commit, `url` the forge's page for the file at that commit, `fetched_at`
+when the hub read it. The hub may keep one read for 60 s and answer
+concurrent calls from it, as the observation cache of §11 does — keyed
+by the project's repository, the commit it resolved and the card's
+`path` and `section` as they are at the call, so a changed `path` or
+`section`, a changed repository setting or a new default-branch commit
+is never answered from an older read; it stores nothing beyond that,
+and `fetched_at` says how fresh the answer is. The text is the repository's, quoted as untrusted text under
+the rules of §6.14: shown, never a mention (§8.6), never an instruction
+to the hub (`docs/agents.md`). The dashboard's card view shows the
+section with the short `ref`, `fetched_at` and the link, and on
+`not_found` the unresolved `path` and `section` with the error — never
+stale text and never a different section — so that a human reads the
+contract where the card is without the repository being a second place
+to keep it.
 
 ### 6.9 Rules text
 
@@ -4299,7 +4352,7 @@ change a member makes to a card's fields is one entry per field:
 
 - Recorded fields: `title`, `body`, `label`, `area`, `status` (through
   `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
-  `contract.state`, `links` (`before`/`after` are the added or removed
+  `contract.state`, `contract.path`, `contract.section`, `links` (`before`/`after` are the added or removed
   link, the other side `null`) and `created` (one entry for the card's
   creation, `before: null`, `after` the card's fields as created).
   Changes the hub makes on its own (`rank`, a `blocked` status set or
