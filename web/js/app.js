@@ -24,6 +24,9 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
+    // One card (#/p/<slug>/tasks/<id>, an id's link, js/ids.js): the board
+    // with that card marked; its tab is the board's.
+    { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
     { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
@@ -1062,14 +1065,14 @@ window.Maity = window.Maity || {};
       return;
     }
     if (seq !== renderSeq) return;
-    renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
+    renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
     if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = where.route;
+    else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {

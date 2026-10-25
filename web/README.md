@@ -146,7 +146,20 @@ the form's button would, and the field's label says so; plain Enter is a
 new line. Nothing is sent while that button is disabled, so a message on
 its way is not sent twice (`M.dom.sendOnCtrlEnter`).
 
-1. **Inbox** (`#/p/<slug>/inbox`, the first screen): the requests waiting
+Ids in what people and agents write are links wherever the text is
+shown (`js/ids.js`): in requests (summary, what was tried, options,
+answers; a title's ids under **In the title** in the open entry, as the
+title itself sits in the entry's button), chat and project messages,
+card titles, checkpoints and reports, and the ticker. `tsk-…` opens the
+card on the board, `req-…` the request in the inbox, `agt-…` and `hum-…`
+the member in Members, and `#123` the project repository's issue or pull
+request on GitHub (in a new tab; only for a GitHub repository). An id is
+linked by its shape alone, never looked up: a page it opens says when it
+holds no such thing. The link's text is the id as written; ids in code
+stay plain, and no mention is made.
+
+1. **Inbox** (`#/p/<slug>/inbox`, the first screen; `#/p/<slug>/inbox/<id>`
+   opens that request, among the answered if it is one): the requests waiting
    for the human, sortable by priority (urgent first), date and agent.
    The first open entry is expanded with what the request carries: class,
    who asked (and on whose behalf), the card, what the agent tried, the
@@ -175,7 +188,8 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
+2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` is the board
+   with that card marked and focused): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report; context rounds are marked, contract cards show their
@@ -532,7 +546,7 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
     project's messages the reader may see, every type but chat, newest
     first, with a filter by type and **Message the project**.
     - Each says its type, who wrote to whom, the card it is about (linking
-      to the board) and when; the text as Markdown, the members it
+      to that card on the board) and when; the text as Markdown, the members it
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
