@@ -141,6 +141,7 @@ def test_what_issuing_refuses(
     assert owner.post(PATH, {"ttl_seconds": 604_801}).json()["error"]["details"]["fields"] == {
         "ttl_seconds": "out_of_range"
     }
+    assert owner.post(PATH, {"ttl_seconds": 59}).status_code == 400
     assert owner.post(PATH, {"note": "x" * 1025}).status_code == 400
     assert owner.post(PATH, {"note": "é" * 513}).status_code == 400  # 1 KiB of UTF-8
     assert owner.post(PATH, {"address": "not an address"}).status_code == 400
@@ -184,6 +185,17 @@ def test_revoking_and_what_cannot_be_revoked(
     again = owner.delete(f"{PATH}/{made['id']}")
     assert again.status_code == 200 and again.json() == first.json()
     assert page(make_client(), token_of(made)).status_code == 404
+    revoked_guest = flow.human(make_client, migrated, "late")
+    assert accept(revoked_guest, token_of(made)).status_code == 404
+    expired = issue(owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.invitation)
+            .where(t.invitation.c.id == expired["id"])
+            .values(expires_at=clock.now() - timedelta(seconds=1))
+        )
+    too_late = owner.delete(f"{PATH}/{expired['id']}")
+    assert too_late.json()["error"]["details"] == {"from": "expired", "to": "revoked"}
     used = issue(owner)
     guest = flow.human(make_client, migrated, "guest")
     assert accept(guest, token_of(used)).status_code == 201
@@ -195,25 +207,37 @@ def test_revoking_and_what_cannot_be_revoked(
         "invitation_created",
         "invitation_revoked",
         "invitation_created",
+        "invitation_created",
         "invitation_used",
     ]  # the second DELETE told nobody again
 
 
-def test_the_list_keeps_thirty_days(owner: flow.Human, migrated: Engine) -> None:
-    old, fresh = issue(owner), issue(owner)
+def test_the_list_keeps_each_ended_one_thirty_days_from_its_end(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§3.4: open ones, and used, revoked, voided or expired ones by the time they ended."""
+    made = {name: issue(owner) for name in ("open", "old_revoked", "revoked", "voided",
+                                            "expired", "old_expired")}  # fmt: skip
+    now = clock.now()
+    long_ago, lately = now - timedelta(days=31), now - timedelta(days=2)
+    changes: dict[str, dict[str, Any]] = {
+        "old_revoked": {"revoked_at": long_ago, "expires_at": now - timedelta(days=29)},
+        "revoked": {"revoked_at": lately},
+        "voided": {"voided_at": lately, "void_reason": "issuer"},
+        "expired": {"expires_at": lately},
+        "old_expired": {"expires_at": long_ago},
+    }
     with migrated.begin() as conn:
-        long_ago = clock.now() - timedelta(days=31)
-        conn.execute(
-            update(t.invitation)
-            .where(t.invitation.c.id == old["id"])
-            .values(created_at=long_ago, expires_at=long_ago + timedelta(days=1))
-        )
-    assert [i["id"] for i in owner.get(PATH).json()["items"]] == [fresh["id"]]
-    newest = issue(owner)
-    first = owner.get(f"{PATH}?limit=1").json()
-    assert [i["id"] for i in first["items"]] == [newest["id"]] and first["next_cursor"]
-    rest = owner.get(f"{PATH}?limit=1&cursor={first['next_cursor']}").json()
-    assert [i["id"] for i in rest["items"]] == [fresh["id"]] and rest["next_cursor"] is None
+        for name, values in changes.items():
+            conn.execute(
+                update(t.invitation).where(t.invitation.c.id == made[name]["id"]).values(**values)
+            )
+    listed = {i["id"] for i in owner.get(PATH).json()["items"]}
+    assert listed == {made[n]["id"] for n in ("open", "revoked", "voided", "expired")}
+    first = owner.get(f"{PATH}?limit=3").json()
+    rest = owner.get(f"{PATH}?limit=3&cursor={first['next_cursor']}").json()
+    assert len(first["items"]) == 3 and rest["next_cursor"] is None
+    assert {i["id"] for i in first["items"] + rest["items"]} == listed
 
 
 # --- the page ---------------------------------------------------------------------------
@@ -320,6 +344,10 @@ def test_accepting_makes_a_member_and_uses_the_invitation(
         "human",
     )
     assert guest.get("/projects/maity").status_code == 200
+    owners_view = owner.get(f"/projects/maity/members/{owner.id}").json()
+    guests_view = owner.get(f"/projects/maity/members/{guest.id}").json()
+    for key in ("briefing", "briefing_version", "briefing_by"):  # as every human starts
+        assert guests_view.get(key) == owners_view.get(key), key
     used = owner.get(PATH).json()["items"][0]
     assert used["used_by"] == guest.id and used["used_at"]
     with migrated.connect() as conn:
@@ -347,6 +375,8 @@ def test_a_closed_project_and_a_pending_account_accept_nothing(
         )
     waiting = accept(guest, token_of(made))
     assert (waiting.status_code, reason(waiting)) == (403, "account_pending")
+    unknown = accept(guest, "A" * 22)  # the same: a pending account learns nothing
+    assert (unknown.status_code, reason(unknown)) == (403, "account_pending")
     with migrated.begin() as conn:
         conn.execute(
             update(t.human).where(t.human.c.id == guest.id).values(account_status="active")
@@ -413,6 +443,7 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     assert listed["voided_at"] and listed["used_at"] is None
     voided = kinds(migrated)[-1]
     assert voided.kind == "invitation_voided" and f"member:{admin.id}" in voided.audience
+    assert voided.payload == {"id": made["id"], "role": "member", "address_bound": False}
     assert accept(guest, token_of(made)).status_code == 404
 
 

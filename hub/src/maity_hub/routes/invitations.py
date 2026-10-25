@@ -17,7 +17,6 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
-    briefings,
     clock,
     events,
     idempotency,
@@ -132,7 +131,8 @@ def list_invitations(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    """Open ones, and those used, revoked, voided or expired within the last 30 days."""
+    """Open ones, and those used, revoked, voided or expired within the last 30 days,
+    each by its own time (§3.4)."""
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
@@ -140,11 +140,16 @@ def list_invitations(
         since = clock.now() - invitations.LISTED_FOR
         query = select(t.invitation).where(
             c.project_id == mine.project.id,
-            or_(
-                c.expires_at >= since,
+            or_(  # each ended one by the time it ended; an open one has not expired
                 c.used_at >= since,
                 c.revoked_at >= since,
                 c.voided_at >= since,
+                and_(
+                    c.used_at.is_(None),
+                    c.revoked_at.is_(None),
+                    c.voided_at.is_(None),
+                    c.expires_at >= since,
+                ),
             ),
         )
         if cursor is not None:
@@ -270,6 +275,12 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
 
     def run() -> tuple[ApiError | None, dict[str, Any] | None]:
         with events.transaction(engine) as conn:
+            # Before any side effect (§2.7.5): a pending account learns nothing of the token.
+            status = conn.execute(
+                select(t.human.c.account_status).where(t.human.c.id == caller.human_id)
+            ).scalar_one()
+            if status != "active":
+                return _refused("account_pending", "the account waits for approval")
             row = _open(conn, token)
             project = events.lock_project(conn, row.project_id)
             row = _open(conn, token)  # as it is under the lock: a second accept loses
@@ -284,9 +295,6 @@ async def accept_invitation(token: str, request: Request, caller: HumanCaller) -
 def _accept(
     conn: Connection, row: Any, project: Any, caller: Any
 ) -> tuple[ApiError | None, dict[str, Any] | None]:
-    human = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
-    if human.account_status != "active":  # pending (§1.3, §2.7.5): the invitation waits
-        return _refused("account_pending", "the account waits for approval")
     # TODO(§2.6.5): accept only from a session in good standing — a session fresh from a
     # mailbox link accepts nothing — once such sessions exist; every session is one now.
     if project.state in CLOSED_STATES:
@@ -326,8 +334,6 @@ def _accept(
     key = result.inserted_primary_key
     assert key is not None
     membership_id = int(key[0])
-    # Version 1 of the briefing, by the inviter, as a join records it (§6.2).
-    briefings.record(conn, membership_id, None, row.created_by, now)
     actor = caller.actor(membership_id)
     _use(conn, row, caller.human_id, actor)
     new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()

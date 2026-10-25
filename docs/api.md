@@ -2324,7 +2324,7 @@ person, one project and one role, it is used once, and it expires.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `POST /projects/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
-| `GET /projects/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, used or revoked within the last 30 days, newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `GET /projects/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, or were used, revoked, voided or expired within the last 30 days (each by its own time), newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
 | `DELETE /projects/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
 | `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
 | `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
