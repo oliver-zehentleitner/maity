@@ -239,9 +239,25 @@ mailbox can obtain a sign-in link, but not the code from the human's
 app. The reset needs the human's mailbox as well as the admin so that
 neither alone removes a human's second factor.
 
+A factor enrolled outside good standing — for an account without a
+password, from a fresh mail or device-code session — stays
+**unconfirmed** until a session in good standing that existed before it
+says "This was me"; it is asked at sign-in but gives no good standing,
+and such a session can remove it with "Not me" (proposal, after the
+second review round). Otherwise temporary access to the mailbox would
+become durable standing through a factor its holder chose, ending the
+human's trusted sessions under the existing standing rules.
+
 **Rejected alternatives:**
 - SMS codes: a paid gateway, stored phone numbers the hub has no other
   use for, and SIM swapping (as in the passwordless entry).
+- Requiring a trusted session's approval before an enrolment from an
+  untrusted session takes effect: an account without any session in
+  good standing could then never enrol, which `required_admins` needs;
+  the unconfirmed state lets it enrol without gaining standing.
+- Accepting that a mailbox session enrols a factor that gives standing:
+  it turns the stated mailbox limit into a takeover of the trusted
+  sessions.
 - A code by mail as the second factor: mail is already a first factor
   (§2.6.3), so for a mail sign-in both factors would be the same
   mailbox.
