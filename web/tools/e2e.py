@@ -388,7 +388,8 @@ def watch_page(run: Run, page: Page) -> None:
 def expect_inbox_empty(page: Page) -> None:
     """The empty inbox says "Nothing waits for you." while the hub has no
     notifications route, and "No open requests." once it has one."""
-    empty = re.compile(r"^(Nothing waits for you\.|No open requests\.)$")
+    # Not anchored: the empty entry also holds a hint, as the plain text match allowed.
+    empty = re.compile(r"Nothing waits for you\.|No open requests\.")
     expect(page.get_by_text(empty)).to_be_visible()
 
 
