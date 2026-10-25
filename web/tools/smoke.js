@@ -4128,6 +4128,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
     && /chat-button/.test(meOrder[0]) && /bell/.test(meOrder[1]) && !/chat-button/.test(meOrder[1]) && header.querySelector(".me").childNodes.length === 4,
     "header: Chat, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  // The counts' refresh redraws Chat on the same route: 1 to 0 drops the badge, 0 to 3 brings it back.
+  const rcGet = win.Maity.api.get;
+  let rcChat = 0;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? rcGet(p).then((r) => ({ ...r, counts: { ...r.counts, chat: rcChat } })) : rcGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count"), "header: a refresh to no unread chat messages drops Chat's badge on the same route");
+  rcChat = 3;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(chatBtn().getAttribute("aria-label") === "3 unread chat messages" && text(chatBtn().querySelector(".count")) === "3"
+    && header.querySelectorAll("a.chat-button").length === 1, "header: a refresh to new chat messages brings Chat's badge back, one button");
+  win.Maity.api.get = rcGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chats-all a");
   expect(plainTitle() === "Chats · Maity" && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread")
@@ -4187,6 +4200,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chatBtn() && chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count")
     && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"),
     "notifications: a hub without them keeps the bell as a link to everything waiting and Chat, both without a count, and no error");
+  // Refreshes on such a hub replace the bell in place: one bell, the order kept.
+  for (let k = 0; k < 3; k++) { await fireIntervals(); await tick(); }
+  const fbOrder = header.querySelector(".me").childNodes.map((el) => el.getAttribute("class") || "");
+  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1 && fbOrder.length === 4
+    && /chat-button/.test(fbOrder[0]) && fbOrder[1] === "bell-box", "notifications: refreshes without them keep one bell, Chat first " + JSON.stringify(fbOrder));
   const nSettingsAsked = [];
   const nGetNone = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };

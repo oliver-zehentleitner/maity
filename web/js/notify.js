@@ -93,9 +93,11 @@ window.Maity = window.Maity || {};
   // link to where it happened, unread ones marked, and Mark all read.
   function bell(ctx, onChange) {
     // A hub without notifications: the bell still stands, a link to
-    // everything waiting, without a count.
+    // everything waiting, without a count; in the same box as the full
+    // bell, so that a refresh replaces it in place.
     if (!state.available) {
-      return h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18));
+      return h("div", { class: "bell-box" },
+        h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
     }
     // What is unread on the bell: every kind but the open requests, which
     // the inbox and the switcher show. Sign-in and address alerts count,

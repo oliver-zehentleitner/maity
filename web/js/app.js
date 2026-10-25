@@ -807,6 +807,17 @@ window.Maity = window.Maity || {};
     else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
   }
 
+  // The Chat button follows the counts too, keeping the focus if it had it.
+  function renderChat(ctx) {
+    const old = document.getElementById("header").querySelector("a.chat-button");
+    if (!old) return;
+    const focused = document.activeElement === old;
+    const fresh = M.notify.chatButton(ctx);
+    old.parentNode.insertBefore(fresh, old);
+    old.remove();
+    if (focused) fresh.focus();
+  }
+
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
   function renderSwitcher(ctx) {
@@ -964,6 +975,7 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
+        renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
