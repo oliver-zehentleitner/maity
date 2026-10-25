@@ -37,18 +37,21 @@ CHOICES = {
     "spawn_requests": ("off", "consent", "direct"),
     "spawn_consent_by": ("human", "role"),
     "on_runner_revoke": ("keep", "stop", "inherit"),
+    "badge": ("off", "members", "agents_online"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
 FIELDS = ("preset", *CHOICES, "contract_arbiter", "lease_seconds", "max_placements")
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
-# agents, nor reset the placement limit; only the field itself changes them (§6.1).
+# agents, reset the placement limit or publish a badge; only the field itself
+# changes them (§6.1).
 KEPT_ON_PRESET = (
     "signing",
     "spawn_requests",
     "spawn_consent_by",
     "max_placements",
     "on_runner_revoke",
+    "badge",
 )
 
 
@@ -59,6 +62,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "lease_seconds": LEASE_DEFAULT,
         "max_placements": MAX_PLACEMENTS_DEFAULT,
         "on_runner_revoke": "inherit",
+        "badge": "off",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -80,6 +84,7 @@ def of(project: Any) -> dict[str, Any]:
         "spawn_consent_by": project.spawn_consent_by,
         "max_placements": project.max_placements,
         "on_runner_revoke": project.on_runner_revoke,
+        "badge": getattr(project, "badge", "off"),
     }
 
 
@@ -98,6 +103,7 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "spawn_consent_by": policy["spawn_consent_by"],
         "max_placements": policy["max_placements"],
         "on_runner_revoke": policy["on_runner_revoke"],
+        "badge": policy["badge"],
     }
 
 

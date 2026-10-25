@@ -36,6 +36,14 @@ or the human's proxy as a personal request reviewed with conflict
 detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
 
+The public project badge (`docs/api.md` §6.20) is served at
+`GET /badge/{slug}.svg`, outside the API and without a session. It is off
+by default; a human project admin sets `policy.badge` to `members` or
+`agents_online` with a reason. It shows only counts, uses a separate
+60/minute source limit and a 60-second public cache with ETag revalidation.
+Unknown, opted-out and closed projects all answer the same `not_found`.
+The approved SVG template ships inside the hub, so no dashboard is needed.
+
 ## Run it locally with plain Python
 
 Python 3.12 or newer. From `hub/`:

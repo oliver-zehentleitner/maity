@@ -58,6 +58,7 @@ class PolicyIn(Strict):
     spawn_consent_by: str | None = None
     max_placements: int | None = None
     on_runner_revoke: str | None = None
+    badge: str | None = None
 
 
 class AbsenceIn(Strict):
