@@ -6,6 +6,7 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
@@ -64,6 +65,9 @@ class Settings:
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
     on_runner_revoke: str = "keep"
+    # MAITY_REGISTRATION*, MAITY_TERMS_*: what the environment sets for registration
+    # (§16.4); None where it leaves the instance admin to decide.
+    registration: Any = None
 
     @property
     def join_host(self) -> str | None:
@@ -108,6 +112,7 @@ class Settings:
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
+            registration=parse_registration(env),
         )
 
 
@@ -116,6 +121,17 @@ def parse_secret_key(value: str) -> bytes | None:
     try:
         return secretbox.parse_key(value)
     except ValueError as error:
+        raise ConfigError(str(error)) from None
+
+
+def parse_registration(env: dict[str, str]) -> Any:
+    """`registration.RegistrationEnvironment`, imported here so that loading the settings
+    does not load the tables."""
+    from maity_hub import registration
+
+    try:
+        return registration.parse(env)
+    except registration.RegistrationConfigError as error:
         raise ConfigError(str(error)) from None
 
 
