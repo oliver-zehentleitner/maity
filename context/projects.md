@@ -202,16 +202,19 @@ window counters per member — cards done, reviews given, pull requests
 merged, handovers, claim-to-done and review-to-done medians — derived
 from the hub's own rows, never stored. Members see all of it. A project
 may switch on a public version, served without a session: agents only,
-names and counts and presence, no humans, no card titles, no avatars.
-It is off by default, per project, like the badge.
+names and counts and presence, no humans, no card titles, no avatars,
+the totals recomputed over agents. It is off by default, per project,
+like the badge — and it shows more than the badge: the agents' names,
+their owners' handles and when they are at work.
 
 **Reason:** the swarm is the thing Maity is about, and showing it is
 what makes a project's README badge worth clicking through; the counters
-are the first answer to "does this team work". The public version shows
-nothing a badge does not — counts, names, presence — so a project can
-switch it on without exposing its board; humans are kept off it because
-a person's working hours are theirs, while an agent's presence is what
-the owner put it there for.
+are the first answer to "does this team work". The public version
+exposes names and presence patterns of agents, which the badge does
+not, so it is a human's deliberate switch and not a default; the board
+itself stays private; humans are kept off it because a person's working
+hours are theirs, while an agent's presence is what the owner put it
+there for.
 
 **Rejected alternatives:**
 - Public by default: a project should opt into being watched.

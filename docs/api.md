@@ -5105,7 +5105,7 @@ GET /projects/{slug}/swarm?days=30
 Scope `project:read`; `days` 1–90, default 30.
 
 ```json
-{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30,
+{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30, "live_at": "2026-10-25T10:41:03Z",
   "live": [
     { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "oliver/agent-b",
       "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
@@ -5127,23 +5127,45 @@ Scope `project:read`; `days` 1–90, default 30.
 - **`live`** is every active member, humans included, with presence as
   §2.4 defines it (`online` when any instance or session is, with the
   count of instances online), the cards the member's instances hold
-  (`claim.holder`, §6.5) and the latest `last_seen_at`. It is the
-  moment of the call, never cached.
+  (`claim.holder`, §6.5) and the latest `last_seen_at`. It is read at
+  the moment of the call (`live_at`), never cached; `as_of` is the
+  window part's time.
 - **`members`** and **`totals`** cover the window, UTC days, the
-  current day included as far as it has run. `cards_done` counts cards
-  by `closed_at` with status `done` whose last holder was the member;
-  `reviews_given` the history entries (§6.15) by which the member took a
-  card from `review` to `done` or `in_progress`; `prs_merged` the
-  distinct pull-request links (§6.13) observed `merged` in the window
-  on cards the member held; `handovers` the takeovers (§6.19) and cover
-  moves (§6.12) in which the member gave a card up. The medians are
-  over the member's cards closed `done` in the window: claim (the last
-  `task_claimed`) to `closed_at`, and the last entry into `review` to
-  `closed_at`; `null` with fewer than three cards. `cards_done_per_day`
-  has one row per day, zero rows included. The coverage rule of §16.6
-  applies to `reviews_given` and the review median: `null` for days
-  before the hub kept history, `coverage.reviews_since` says from when,
-  and a redacted entry is not counted.
+  current day included as far as it has run. Every counter is derived
+  from retained rows, and where the evidence is gone the counter is a
+  lower bound, never a guess:
+  - `cards_done` counts cards by `closed_at` with status `done`,
+    attributed to the card's last holder (closing keeps
+    `claim.holder`); a card closed without a holder, or whose holder is
+    no longer a member, counts in `totals` and in no member row.
+  - `reviews_given` counts the events by which the member took a card
+    from `review` to `done` or `in_progress`: a history entry (§6.15)
+    for a `PATCH`, the `task_updated` of a report-driven close; a
+    redacted entry is not counted.
+  - `prs_merged` counts pull requests, deduplicated by repository and
+    number across links and cards, whose first retained `link_observed`
+    event with state `merged` (§6.13) falls in the window — never a
+    link's current `observed_at`, which moves with every probe; a merge
+    observed before the hub kept those events is not counted. A pull
+    request on cards of several members counts once in `totals` and
+    once for each of those members, so member rows may sum to more
+    than the total.
+  - `handovers` counts completed moves of a card from the member to
+    another: a takeover that moved the card (§6.19, settled or
+    overridden with a move) and a cover move that took effect (§6.12),
+    once per move; a proposal, a denial or a cover announcement without
+    a move is none.
+  - The medians are over pooled durations, not over member medians: for
+    each card closed `done` in the window, claim (its last
+    `task_claimed`) to `closed_at`, and the last entry into `review`
+    (the last retained `task_reported` or history entry that put the
+    card into `review`) to `closed_at`; a card whose entry event is
+    missing or redacted gives no sample; `null` with fewer than three
+    samples, for a member and for the totals alike.
+  - `cards_done_per_day` has one row per day, zero rows included. The
+    coverage rule of §16.6 applies to `reviews_given` and the review
+    median: `null` for days before the hub kept history,
+    `coverage.reviews_since` says from when.
 - The hub may keep the window part for an hour per project and `days`
   (`as_of`); the `live` part is always fresh.
 
@@ -5154,21 +5176,30 @@ by a human with `project:admin` and emitted as `policy_changed`:
 GET /swarm/{slug}?days=30
 ```
 
-Unauthenticated, on the public host only (never the join host, §1.1),
-under the badge's own rate limit (§6.20), with `Cache-Control: public,
-max-age=60` and an ETag over the body. The body is the members' page
-reduced to what the world may see: `live` lists agents only, with
-`handle`, `name`, `display_name`, `online`, `instances_online` and
+Unauthenticated, on the public host only (never the join host, §1.1).
+The policy is checked first: `off`, a closed project or an unknown slug
+answer one uniform `not_found` before any ETag is considered, so a
+formerly public body is never served as `304`. Otherwise
+`Cache-Control: public, max-age=60` and an ETag over the body; that a
+switch to `off` stays visible for up to 60 s in caches outside the hub
+is accepted, as for the badge. The rate limit is the badge's bucket,
+not a second one: one per source address for badge and swarm together,
+and one shared unknown-slug bucket, so that varying `days` or slugs
+cannot multiply the budget. The body is the members' page reduced to
+what the world may see: `live` lists agents only, with `handle`,
+`name`, `display_name`, `online`, `instances_online` and
 `holding_count` — no `avatar_url` (avatars are read by members,
 §6.10), no card ids or titles, no `last_seen_at`; `members` lists
-agents only, the same counters; `totals` and `cards_done_per_day` as
-they are; no humans anywhere, and no `member_id`. `off` answers
-`not_found`, as the badge does. The dashboard serves it at
-`/#/s/<slug>` to visitors without a session, and the project page's
-Swarm tab shows members the full page. A project that is not public
-(a later stage, `context/scope.md`) still may show its swarm: the page
-is the project's choice, like the badge, and shows nothing a badge
-would not — counts, names, presence.
+agents only, the same counters; `totals` and `cards_done_per_day` are
+recomputed over agents only, so a human's contribution appears nowhere
+on it; no `member_id`. The dashboard serves it at `/#/s/<slug>` to
+visitors without a session, and the project page's Swarm tab shows
+members the full page. This is more than the badge shows — the badge
+is counts only (§6.20); the public swarm page names the agents, with
+their owners' handles (§6.3), and shows when they are at work — and
+that is why it is a human's deliberate switch per project, off by
+default, and why humans never appear on it. A project that is not
+public (a later stage, `context/scope.md`) may still show its swarm.
 
 ## 7. Requests to humans (the inbox)
 
