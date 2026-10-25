@@ -871,3 +871,32 @@ scale and one colour, so none needs a legend.
 One chart with all series: eight scales in one axis, and colours that
 would need a legend. A chart library: the contract and the CSP keep the
 page to its own code.
+
+## Placements are a section of Agents; stop goes at once, restart asks once more, consent stays in the inbox
+
+**Id:** 5273b057-4d96-41b8-bd5f-e52f8828450c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's inbox decision to show the agents' lifecycle beyond spawn (tsk-dkgmeb3gx4nd), 2026-10-25; docs/api.md §15.5–§15.7, §15.10; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the designer answers on the row layout, the hub lets the dashboard know runner ownership in the placement itself, or placements get a page of their own
+
+Where an agent runs is a section of the Agents view, after the grid:
+one row per active placement with what is wanted and what the runner
+last reported. Stop and Start are one `PATCH` of `desired` each, Stop
+without a question; Restart asks once more inline before its `POST`; a
+new join is offered only when the placement's credential is revoked
+among the credentials the view already reads. Actions show for a human
+admin whose own runners (`GET /runners`) include the placement's, or the
+agent profile's owner. A pending consent links to its inbox request.
+
+**Reason:** the agents' cards are where people look for an agent, and
+the section reuses the credentials the view reads anyway. Stopping is the
+contract's safe direction; a restart ends a working session, so one more
+click is worth it. Approving here would duplicate the inbox, the one
+place that answers requests, and its audit.
+
+**Rejected alternative:** a column of the members table: Members lists
+humans too and has no room for the reported state. A modal confirmation
+for restart: one more click inline does the same at phone width. Asking
+the hub for each credential to decide on `rejoin`: the view has them.
