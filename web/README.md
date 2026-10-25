@@ -883,8 +883,9 @@ hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
 link to the member (`#/p/<slug>/members/<id>`), taken from the text at
 its offset (code points) only where it reads `@` and the stored handle,
-or `@` and the stored global name for a long mention; nothing typed
-becomes a link. The **@ picker** in the inbox's free text offers the
+or `@` and the stored global name for a long mention, either followed by
+`#` and the stored instance for an instance mention (§6.17; it links to
+the member, the instance in its title); nothing typed becomes a link. The **@ picker** in the inbox's free text offers the
 project's members by handle (`GET …/members`, read on the first `@`),
 by `owner/handle` where the short handle is shared, never the writer:
 typing either form narrows it (`@anna/` too), arrow keys choose, Enter or

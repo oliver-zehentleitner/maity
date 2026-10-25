@@ -13,6 +13,8 @@ window.Maity = window.Maity || {};
   // An @ that starts a mention: at the start or after a character that is
   // none of [A-Za-z0-9_.@/+-] (§8.6), followed by what is typed so far.
   // One "/" may follow: the long form owner/handle (§8.6).
+  // An instance's #id after a handle (§6.17) matches nothing here, so
+  // the picker stays closed while it is typed.
   const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*(?:\/[a-z0-9-]*)?)$/;
   let serial = 0;
 

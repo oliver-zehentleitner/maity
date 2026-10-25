@@ -305,6 +305,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   gnText.value = "@ol"; gnText.dispatch("input"); await tick();
   expect(JSON.stringify(gnOpts()) === JSON.stringify(["@oliver", "@anna/oliver"]), "global names: a human comes first and keeps the short handle");
   gnText.dispatch("keydown", { key: "Escape" });
+  gnText.value = "@agent-b#wl"; gnText.dispatch("input"); await tick();
+  expect(gnList.hidden && gnText.value === "@agent-b#wl", "global names: an instance #id being typed offers nothing and is left as typed");
   const gnRefused = win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid",
     { fields: { body: "ambiguous_mention" }, mentions: { "agent-b": ["anna/agent-b", "oliver/agent-b"] } }));
   expect(gnRefused && gnRefused.message === "@agent-b is 2 agents here: write @anna/agent-b or @oliver/agent-b."
@@ -407,6 +409,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "mentions: offsets count code points, not UTF-16 units");
   expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
     "mentions: a stored mention whose text does not match stays text");
+  // An instance mention (§8.6, §6.17): @handle#id or @owner/handle#id links to the member, the instance in the title.
+  const instShort = linkOf(wm("ping @agent-b#wle2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wle2", field: "body", offset: 5, length: 13 }]));
+  const instLong = linkOf(wm("ping @maintainer/agent-b#wle2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wle2", field: "body", offset: 5, length: 24 }]));
+  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wle2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wle2"
+    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wle2",
+    "mentions: a stored instance mention, short or long, links to its member with the instance in the title");
+  expect(!linkOf(wm("ping @agent-b#k3pa", [{ member_id: "agt-b", handle: "agent-b", instance: "wle2", field: "body", offset: 5, length: 13 }])).length,
+    "mentions: a stored instance mention whose #id does not match stays text");
   expect(!linkOf(wm("hi @agent-b", [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 3, length: 8 }])).length
     && !linkOf(wm("hi @agent-b", [])).length, "mentions: only this field's stored mentions, never a typed @");
   expect(wm("a @x @y", [{ member_id: "x", handle: "x", field: "body", offset: 2, length: 2 }, { member_id: "y", handle: "y", field: "body", offset: 5, length: 2 }])
@@ -1536,6 +1546,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hintLink = hintEl().querySelector("a");
   expect(!hintEl().hidden && text(hintEl()).includes("In this chat @agent-c notifies nobody.") && hintLink
     && hintLink.getAttribute("href") === "#/p/maity/message/%40agent-c", "message: a chat's @name is said to notify nobody, with a project message offered");
+  chatText.value = "Ask @maintainer/agent-c#k3pa"; chatText.dispatch("input");
+  expect(!hintEl().hidden && text(hintEl()).includes("In this chat @maintainer/agent-c#k3pa notifies nobody.")
+    && hintEl().querySelector("a").getAttribute("href") === "#/p/maity/message/" + encodeURIComponent("@maintainer/agent-c#k3pa"),
+    "message: a chat's instance mention, long or short, gets the hint with the whole mention");
   chatText.value = "mail me@agent-c"; chatText.dispatch("input");
   expect(hintEl().hidden, "message: an @ inside a word gives no hint");
   chatText.value = "run `@agent-c` or\n```\n@agent-c\n```"; chatText.dispatch("input");
