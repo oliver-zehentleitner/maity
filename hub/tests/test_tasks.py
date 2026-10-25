@@ -27,6 +27,9 @@ TASK_KEYS = {
     "checkpoint",
     "depends_on",
     "ships_with",
+    "parent",
+    "related",
+    "children",
     "blocked_by_request",
     "ktw_ref",
     "report",
@@ -200,7 +203,7 @@ def test_done_is_refused_while_a_dependency_is_open(owner: flow.Human) -> None:
     owner.post(f"/projects/maity/tasks/{card['id']}/report", _report())
     refused = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
     assert refused.status_code == 409
-    assert refused.json()["error"]["details"] == {"open": [dep["id"]]}
+    assert refused.json()["error"]["details"] == {"open": [dep["id"]], "children": []}
     owner.patch(f"/projects/maity/tasks/{dep['id']}", {"status": "cancelled"})
     done = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
     assert done.json()["status"] == "done" and done.json()["closed_at"]

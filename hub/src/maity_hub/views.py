@@ -580,7 +580,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
     if not rows:
         return []
     edges: dict[str, dict[str, list[str]]] = {
-        r.id: {"depends_on": [], "ships_with": []} for r in rows
+        r.id: {"depends_on": [], "ships_with": [], "related": []} for r in rows
     }
     for edge in conn.execute(
         select(t.card_edge.c.from_card, t.card_edge.c.to_card, t.card_edge.c.kind).where(
@@ -588,6 +588,12 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
         )
     ):
         edges[edge.from_card].setdefault(edge.kind, []).append(edge.to_card)
+    children = {r.id: {"open": 0, "total": 0} for r in rows}
+    for child in conn.execute(
+        select(t.card.c.parent, t.card.c.status).where(t.card.c.parent.in_(children))
+    ):
+        children[child.parent]["total"] += 1
+        children[child.parent]["open"] += child.status not in ("done", "cancelled")
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
     )
@@ -631,6 +637,9 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "checkpoint": row.checkpoint,
                 "depends_on": sorted(edges[row.id]["depends_on"]),
                 "ships_with": sorted(edges[row.id]["ships_with"]),
+                "related": sorted(edges[row.id]["related"]),
+                "parent": row.parent,
+                "children": children[row.id],
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,

@@ -219,7 +219,7 @@ open. Your own pause refuses nothing.
 
 Cards live on the project's board: `GET /api/v1/projects/{slug}/tasks`
 (filters `status`, `kind`, `label`, `holder`, `assigned_to`, `area`,
-`closed_after`; newest change first; `limit` up to 200, then `cursor` from
+`parent`, `closed_after`; newest change first; `limit` up to 200, then `cursor` from
 `next_cursor`). A card you hold stays yours until you release it, the card
 closes, or an admin reassigns it after your lease ran out; a report keeps
 it with you:
@@ -237,6 +237,17 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   using Unicode NFKC plus lowercase substring matching (1–200 characters).
   `%` and `_` are literal; `match` names the matching fields (`id`, `title`,
   `body`, `note`, `report`). Other filters and paging still apply.
+- Cards accept `parent` and `related` at creation or by `PATCH`. A parent has
+  computed `children: {open, total}`; `GET …/tasks?parent=<id>` lists its
+  children. Two levels only: releases are neither parents nor children,
+  and a closed parent takes no new child. `related` is symmetric navigation
+  and may name a release; it gates nothing. Parent gates and `depends_on`
+  together must be acyclic.
+- `policy.subtasks` defaults to `proposed`: a member without `tasks:admin`
+  creates children as proposals, and an admin opens them. Explicit `open`,
+  opening one's own proposal or attaching an open card is `forbidden`
+  (`subtasks_proposed`), including a combined attach-and-open `PATCH`.
+  `direct` uses ordinary card rights; an editor may always clear `parent`.
 - A claim is one atomic step: `already_claimed` names the holder and
   whether its lease has expired. While the project is in `freeze` or
   `fixes-only`, a claim and a new card need a `reason`.
@@ -246,7 +257,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   it with the facts from git (`head`, `remote_head` and `pr.head` are the
   full 40-hex commit, and `head` must equal `remote_head`); the card
   goes to `review`, or to `done` with `"done": true` if you hold done
-  authority and nothing it depends on is open. `maity report` fills the
+  authority and no dependency or child is open. `dependencies_open` lists
+  both in `details.open`, with children repeated in `details.children`. `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`

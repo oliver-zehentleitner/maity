@@ -55,6 +55,14 @@ caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
 (§6.14) follows.
 
+Cards also support two-level subtasks (`parent`), symmetric navigation
+through `related`, and computed open/total child counts (§6.4). The done
+gate includes open children. `policy.subtasks` defaults to `proposed`,
+requiring an admin to open a member's child card; `direct` lets the team
+use ordinary card rights. Parent and dependency edits are checked together
+under the project lock, so a combined edit cannot bypass depth or cycle
+rules. Parent and related edits are in history; computed counts are events.
+
 The public project badge (`docs/api.md` §6.20) is served at
 `GET /badge/{slug}.svg`, outside the API and without a session. It is off
 by default; a human project admin sets `policy.badge` to `members` or

@@ -104,6 +104,8 @@ class TaskCreate(Written):
     assigned_to: str | None = None
     depends_on: list[str] = Field(default_factory=list, max_length=100)
     ships_with: list[str] = Field(default_factory=list, max_length=100)
+    parent: str | None = Field(default=None, max_length=40)
+    related: list[str] = Field(default_factory=list, max_length=100)
     ktw_ref: str | None = Field(default=None, max_length=255)
     release: ReleaseIn | None = None
     contract: ContractIn | None = None
@@ -119,6 +121,8 @@ class TaskPatch(Written):
     status: str | None = None
     depends_on: list[str] | None = Field(default=None, max_length=100)
     ships_with: list[str] | None = Field(default=None, max_length=100)
+    parent: str | None = Field(default=None, max_length=40)
+    related: list[str] | None = Field(default=None, max_length=100)
     ktw_ref: str | None = Field(default=None, max_length=255)
     assigned_to: str | None = None
     release: ReleasePatchIn | None = None
@@ -459,7 +463,12 @@ def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any
 
 
 def _touch_partners(
-    conn: Connection, mine: Membership, caller: Caller, partners: set[str], fg: Forge
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    partners: set[str],
+    fg: Forge,
+    field: str = "ships_with",
 ) -> None:
     """A mirrored `ships_with` edge changed these cards too: say so on them."""
     for partner_id in sorted(partners):
@@ -480,8 +489,8 @@ def _touch_partners(
             audience(conn, partner),
             {
                 "id": partner_id,
-                "fields": ["ships_with"],
-                "ships_with": task_view(conn, partner, fg)["ships_with"],
+                "fields": [field],
+                field: task_view(conn, partner, fg)[field],
                 "history": [],  # the mirrored edge is the hub's; the edit is on the other card
                 "project_state": mine.project.state,
             },
@@ -492,6 +501,36 @@ def _touch_partners(
 
 def _verification(caller: Caller) -> str:
     return "signed" if caller.via == "signed" else "bearer"
+
+
+def _touch_parents(
+    conn: Connection, mine: Membership, caller: Caller, parents: set[str], fg: Forge
+) -> None:
+    """Counts are computed, announced on the parent, and never card history."""
+    for parent_id in sorted(parents):
+        conn.execute(update(t.card).where(t.card.c.id == parent_id).values(updated_at=clock.now()))
+        parent = _card(conn, parent_id)
+        emit(
+            conn,
+            mine.project.id,
+            "task_updated",
+            audience(conn, parent),
+            {
+                "id": parent_id,
+                "fields": ["children"],
+                "children": task_view(conn, parent, fg)["children"],
+                "history": [],
+                "project_state": mine.project.state,
+            },
+            actor=caller.actor(mine.id),
+            subject=("task", parent_id),
+        )
+
+
+def _subtasks_proposed() -> ApiError:
+    return ApiError(
+        403, "forbidden", "subtasks wait for an admin to open them", {"reason": "subtasks_proposed"}
+    )
 
 
 # --- the board -------------------------------------------------------------------
@@ -508,6 +547,7 @@ def list_tasks(
     holder: str | None = None,
     assigned_to: str | None = None,
     area: str | None = None,
+    parent: str | None = None,
     closed_after: datetime | None = None,
     order: Literal["board", "updated"] = "board",
     q: str | None = Query(default=None, min_length=1, max_length=200),
@@ -528,6 +568,7 @@ def list_tasks(
             (t.card.c.kind, kind),
             (t.card.c.label, label),
             (t.card.c.area, area),
+            (t.card.c.parent, parent),
         ):
             if value is not None:
                 query = query.where(column == value)
@@ -548,7 +589,7 @@ def list_tasks(
             )
         bound = paging.scope(
             status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
-            area=area, closed_after=closed_after, order=order,
+            area=area, parent=parent, closed_after=closed_after, order=order,
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
@@ -659,6 +700,8 @@ CREATED = (
     "assigned_to",
     "depends_on",
     "ships_with",
+    "parent",
+    "related",
     "ktw_ref",
     "contract",
     "links",
@@ -701,6 +744,24 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         now = clock.now()
         card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
+        status = body.status
+        if (
+            body.parent is not None
+            and mine.project.subtasks == "proposed"
+            and not mine.may("tasks:admin")
+        ):
+            if "status" in body.model_fields_set and status == "open":
+                raise _subtasks_proposed()
+            status = "proposed"
+        cards.check_subtask_graph(
+            conn,
+            mine.project.id,
+            card_id,
+            kind=body.kind,
+            parent=body.parent,
+            depends_on=body.depends_on,
+            fields={"parent"} if body.parent is not None else {"depends_on"},
+        )
         try:
             # The pre-checks hold under the project lock; the constraints are the backstop.
             with conn.begin_nested():
@@ -714,7 +775,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
                         body=body.body,
                         mentions=found,
                         label=body.label,
-                        status=body.status,
+                        status=status,
+                        parent=body.parent,
                         area=body.area,
                         created_by=mine.id,
                         assigned_to=assigned,
@@ -731,6 +793,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
         partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
         _touch_partners(conn, mine, caller, partners, fg)
+        related = cards.set_symmetric(conn, mine.project.id, card_id, body.related, "related")
+        _touch_partners(conn, mine, caller, related, fg, "related")
         card = _card(conn, card_id)
         for link in body.links:
             card_links.add(conn, card, link, mine.project.repository_url, mine.id)
@@ -755,6 +819,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             subject=("task", card_id),
         )
         history.stamp(conn, [entry], seq)
+        if body.parent is not None:
+            _touch_parents(conn, mine, caller, {body.parent}, fg)
         _ping(conn, mine, caller, card, found, "body", before=[])
         releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
         return idempotency.Outcome(201, "task", card_id, view)
@@ -818,6 +884,34 @@ def patch_task(
         ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
         values: dict[str, Any] = {}
+        parent = body.parent if "parent" in given else card.parent
+        wanted_status = body.status if body.status is not None else card.status
+        opens_child = (card.status == "proposed" and wanted_status == "open") or (
+            parent != card.parent and wanted_status != "proposed"
+        )
+        if (
+            parent is not None
+            and mine.project.subtasks == "proposed"
+            and not mine.may("tasks:admin")
+            and opens_child
+        ):
+            raise _subtasks_proposed()
+        graph_fields = given & {"parent", "depends_on"}
+        if graph_fields:
+            cards.check_subtask_graph(
+                conn,
+                mine.project.id,
+                card.id,
+                kind=card.kind,
+                parent=parent,
+                depends_on=body.depends_on,
+                fields=graph_fields,
+            )
+        if "parent" in given:
+            values["parent"] = parent
+            # The graph above sees both changes; the existing dependency helper below
+            # must also see the new parent gate, not the old one.
+            conn.execute(update(t.card).where(t.card.c.id == card.id).values(parent=parent))
         for field in ("title", "body", "ktw_ref"):
             if field in given and (field != "title" or body.title is not None):
                 values[field] = getattr(body, field)
@@ -845,7 +939,9 @@ def patch_task(
             _refuse_closed_release(card)
         before = (
             cards.edges(conn, card.id)
-            if body.depends_on is not None or body.ships_with is not None
+            if body.depends_on is not None
+            or body.ships_with is not None
+            or body.related is not None
             else None
         )
         depends_changed = body.depends_on is not None and cards.set_depends_on(
@@ -854,6 +950,9 @@ def patch_task(
         partners: set[str] = set()
         if body.ships_with is not None:
             partners = cards.set_ships_with(conn, mine.project.id, card.id, body.ships_with)
+        related: set[str] = set()
+        if body.related is not None:
+            related = cards.set_symmetric(conn, mine.project.id, card.id, body.related, "related")
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})
@@ -866,7 +965,7 @@ def patch_task(
                 values.update(_closing(card))
         previous_mentions = card.mentions or []
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
-        edges_changed = depends_changed or bool(partners)
+        edges_changed = depends_changed or bool(partners) or bool(related)
         if not changed and not edges_changed:
             return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
         conn.execute(
@@ -885,7 +984,11 @@ def patch_task(
         payload = {k: view[k] for k in changed if k in view and k != "body"}  # never body
         fields = [k for k in changed if k in view]
         extra: list[tuple[str, Any, Any]] = []
-        for name, moved in (("depends_on", depends_changed), ("ships_with", bool(partners))):
+        for name, moved in (
+            ("depends_on", depends_changed),
+            ("ships_with", bool(partners)),
+            ("related", bool(related)),
+        ):
             if moved and before is not None and before[name] != view[name]:
                 payload[name] = view[name]
                 fields.append(name)
@@ -913,6 +1016,7 @@ def patch_task(
             extra=extra,
         )
         _touch_partners(conn, mine, caller, partners, fg)
+        _touch_partners(conn, mine, caller, related, fg, "related")
         seq = emit(
             conn,
             mine.project.id,
@@ -929,6 +1033,16 @@ def patch_task(
             subject=("task", card.id),
         )
         history.stamp(conn, entries, seq)
+        touched_parents: set[str] = set()
+        if "parent" in changed:
+            touched_parents.update(p for p in (before_card.parent, card.parent) if p is not None)
+        elif (
+            "status" in changed
+            and card.parent is not None
+            and ((before_card.status in cards.CLOSED) != (card.status in cards.CLOSED))
+        ):
+            touched_parents.add(card.parent)
+        _touch_parents(conn, mine, caller, touched_parents, fg)
         if found is not None:
             _ping(conn, mine, caller, card, found, "body", before=previous_mentions)
         if card.kind == "release" and changed.get("status") in cards.CLOSED:
@@ -1521,6 +1635,7 @@ def report(
             if card.status not in ("in_progress", "blocked", "review"):
                 raise cards.invalid_transition(card.status, "review")
         closing = body.done and not already_done
+        was_closed = card.status in cards.CLOSED
         if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
             if not cards.has_done_authority(mine, card):
@@ -1591,6 +1706,8 @@ def report(
             subject=("task", card.id),
         )
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
+        if card.parent is not None and was_closed != (card.status in cards.CLOSED):
+            _touch_parents(conn, mine, caller, {card.parent}, fg)
         if closing and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
             ticker.on_release_done(
