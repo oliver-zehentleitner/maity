@@ -1,4 +1,4 @@
-"""Approved badge template, copied byte for byte until brand assets land (#248).
+"""Approved badge template packaged with the API-only hub.
 
 Source: web/brand/maity-badge-template.svg at c30e02b83a469bd63b5411e7157280ca72118fed.
 Only the placeholders may change (docs/api.md §6.20).

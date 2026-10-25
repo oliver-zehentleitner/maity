@@ -228,7 +228,7 @@ def test_xml_escaping() -> None:
 
 
 def test_migration_backfills_existing_projects(engine: Engine) -> None:
-    db.migrate(engine, "0030")
+    db.migrate(engine, "0025")
     project_id = factory.project(engine)
     db.migrate(engine)
     with engine.connect() as conn:

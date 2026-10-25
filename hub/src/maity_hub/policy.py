@@ -52,8 +52,7 @@ FIELDS = (
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit or coordinator seats, or publish a badge;
-# only the field itself
-# changes them (§6.1).
+# only the field itself changes them (§6.1).
 KEPT_ON_PRESET = (
     "signing",
     "spawn_requests",

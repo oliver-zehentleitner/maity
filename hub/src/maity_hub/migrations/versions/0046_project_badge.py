@@ -1,7 +1,7 @@
 """Opt-in project badge (docs/api.md §6.20).
 
 Revision ID: 0046
-Revises: 0030
+Revises: 0025
 Create Date: 2026-10-25
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0046"
-down_revision: str | None = "0030"
+down_revision: str | None = "0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
