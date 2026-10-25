@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import getpass
 import logging
 import re
 import sys
 from types import FrameType
+from typing import Any
 
 import uvicorn
 from sqlalchemy import insert, select
@@ -170,10 +172,21 @@ GRACEFUL_SECONDS = 10
 
 class _Server(uvicorn.Server):
     """On the stop signal, first release every open long-poll, then shut down as
-    uvicorn does: a restart takes a second, not the length of the longest wait."""
+    uvicorn does: a restart takes a second, not the length of the longest wait.
+
+    The signal handler takes no lock: it may have interrupted code that holds the
+    long-poll registry's lock. It only hands the release to the event loop, which runs
+    it between two callbacks."""
+
+    _loop: asyncio.AbstractEventLoop | None = None
+
+    async def startup(self, sockets: Any = None) -> None:
+        self._loop = asyncio.get_running_loop()
+        await super().startup(sockets=sockets)
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
-        longpoll.begin_shutdown()
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(longpoll.begin_shutdown)
         super().handle_exit(sig, frame)
 
 
