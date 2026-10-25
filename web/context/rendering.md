@@ -254,7 +254,9 @@ that is the board with the card marked), the request in the inbox
 when it holds no such thing. An inbox entry's title sits inside its
 button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
-project the human is not in) links none.
+project the human is not in, a chat read along from outside, `#/observe`)
+links none. Known false positive, accepted: a three-digit hex colour
+(`#123`) links as a number.
 
 **Reason:** one request per id to know whether it exists would cost a
 read for every id in every text, and the page behind the link has to say
