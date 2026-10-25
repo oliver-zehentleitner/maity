@@ -587,7 +587,9 @@ window.Maity = window.Maity || {};
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
     const reason = h("input", { id: "badge-reason", required: true, placeholder: "Why it changes (logged)" });
-    const origin = (window.location && window.location.origin) || "";
+    // As reached in this tab; a file:// page has no origin to name.
+    const raw = window.location && window.location.origin;
+    const origin = raw && raw !== "null" ? raw : "https://<hub>";
     const url = origin + "/badge/" + encodeURIComponent(ctx.slug) + ".svg";
     const snippet = "[![maity](" + url + ")](" + origin + "/#/p/" + encodeURIComponent(ctx.slug) + "/overview)";
     const copy = h("button", {
@@ -611,11 +613,15 @@ window.Maity = window.Maity || {};
       },
     },
     h("h2", { class: "panel-title" }, "README badge"),
-    h("p", { class: "hint" }, "Public: anyone with the address sees the count, never a name. The hub serves it while the badge is on."),
+    h("p", { class: "hint" }, "Public: anyone with the address sees the count, never a name. The hub serves it while the badge is on. "
+      + "The address is this hub's as reached in this tab."),
     h("label", { for: "badge-select" }, "Badge"), select,
     // Shown from the hub itself; fixture mode has no hub to serve it.
     current !== "off" && M.api.source === "api"
-      ? h("img", { class: "badge-preview", src: "/badge/" + encodeURIComponent(ctx.slug) + ".svg", alt: "The project's badge as the hub serves it" }) : null,
+      // Versioned by the rules: a policy change bumps it, so a cached
+      // badge of the old variant is not shown (§6.20: max-age=60).
+      ? h("img", { class: "badge-preview", src: "/badge/" + encodeURIComponent(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
+        alt: "The project's badge as the hub serves it" }) : null,
     h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
     current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
     h("label", { for: "badge-reason" }, "Reason"), reason,

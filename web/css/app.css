@@ -369,6 +369,7 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card-release { border-left: 3px solid var(--accent); }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
+.badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
 .checkpoint, .report { margin-top: 6px; font-size: 0.88rem; }

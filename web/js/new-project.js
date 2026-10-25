@@ -57,7 +57,12 @@ window.Maity = window.Maity || {};
   M.views.newProject = async function (ctx, root) {
     // Memory and setup where the hub takes them (§6.21); an older hub
     // refuses a field it does not know, so then they are not offered.
-    const knowsMemory = await M.api.hubBody("POST", "/projects").then((f) => f.has("memory") && f.has("setup"), () => false);
+    // A hub before §6.21 knows the provider only as keep_the_why: the
+    // dropdown then sends that alias, without setup options.
+    let fieldsRead = true;
+    const fields = await M.api.hubBody("POST", "/projects").catch(() => { fieldsRead = false; return new Set(); });
+    const knowsMemory = fields.has("memory") && fields.has("setup");
+    const knowsAlias = !knowsMemory && fields.has("keep_the_why");
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
@@ -144,6 +149,7 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
+        if (knowsAlias) body.keep_the_why = memory.input.value === "keep-the-why";
         if (knowsMemory) {
           body.memory = { provider: memory.input.value };
           // §6.21: every option sent as it stands; under None the Keep the
@@ -173,7 +179,10 @@ window.Maity = window.Maity || {};
       },
     },
     name.nodes, slug.nodes, repository.nodes,
-    knowsMemory ? [memory.nodes, setupBox] : null,
+    knowsMemory || knowsAlias ? memory.nodes : null,
+    knowsMemory ? setupBox : null,
+    // What the hub chooses is said where its machine form could not be read.
+    fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),
     preset.nodes);
     const submit = h("button", { type: "submit" }, "Create project");
     append(form, submit, status.el);

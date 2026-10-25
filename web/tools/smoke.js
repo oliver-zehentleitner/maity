@@ -2453,7 +2453,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 3
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/p\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
     "settings: the memory provider read only, with links to its setup cards");
-  expect(byId("badge-select").value === "members" && text(header.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin || "") + "/#/p/dogfood/overview)")
+  expect(byId("badge-select").value === "members" && text(header.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/#/p/dogfood/overview)")
     && text(header.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
   const bgPatches = [];
@@ -2497,6 +2497,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(header.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
+  // A hub before §6.21 names only keep_the_why: the dropdown sends that alias, no setup options.
+  const akGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/P" } } } } } } },
+    components: { schemas: { P: { properties: { slug: {}, name: {}, repository: {}, keep_the_why: {}, policy: {} } } } } }) : akGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  byId("project-name").value = "Alias Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
+  expect(byId("project-memory") && byId("project-memory").value === "keep-the-why" && !main.querySelector("fieldset.project-setup"),
+    "create: a hub that knows only keep_the_why offers the dropdown without setup options");
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", keep_the_why: true, policy: { preset: "hierarchical" } }),
+    "create: and sends keep_the_why");
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  expect(!byId("project-memory") && text(main).includes("Project memory: this hub's machine form could not be read, so its defaults apply."),
+    "create: an unreadable machine form is said, not silent");
+  win.Maity.api.get = akGet; win.Maity.api.forgetRoutes();
   // A hub whose machine form does not name memory and setup refuses them: they are not offered nor sent.
   const omGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: {} } } }) : omGet(p));
