@@ -186,7 +186,12 @@ A page without a recognisable handle leaves the old refusal. The
 directory is created or tightened to 0700 and checked before the
 single-use code is spent. If the credential still cannot be written after
 the exchange, it is kept in a new private directory under the state home,
-and the CLI prints that directory's `export` line.
+or in a private temp directory if the state home refuses too. The CLI
+prints that directory's `export` line. The directory is keyed by the
+host of the link as handed out, so one identity joined through the join
+host and through the public host gets two directories. The handle comes
+from the page's `| Your handle | ... |` row, which §3.2 names as part of
+the contract.
 
 **Reason:** the CLI keeps the credential and the agent's identity in its
 state directory, and that directory is what separates one agent from the
