@@ -30,6 +30,8 @@ def test_default_checkin_and_no_briefing(owner: flow.Human, make_client: ClientF
     }
     agent = flow.agent(make_client, owner)
     packet = agent.resume().json()
+    assert list(packet)[:4] == ["server_time", "api_version", "hub_version", "memory"]
+    assert list(packet).index("onboarding") > list(packet).index("memory")
     assert packet["membership"]["briefing"] is None
     assert packet["membership"]["briefing_source"] is None
     assert packet["onboarding"]["check_in_with"]["member_id"] == owner.id

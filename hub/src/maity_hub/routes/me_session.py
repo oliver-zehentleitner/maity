@@ -332,12 +332,12 @@ def _packet(
         "api_version": API_VERSION,
         "hub_version": __version__,
         # First of the contents: the soul is what an agent loads before anything (§19.3).
+        "memory": memory.packet_block(conn, mine, agent.id, cursor),
         **(
             {"onboarding": check_in}
             if (check_in := onboarding.hint(conn, project, mine.row))
             else {}
         ),
-        "memory": memory.packet_block(conn, mine, agent.id, cursor),
         "session": session,
         "hints": {"wait_timeout": wait_timeout(body.harness)},
         "me": {

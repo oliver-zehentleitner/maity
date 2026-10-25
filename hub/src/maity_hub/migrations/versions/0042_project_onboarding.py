@@ -1,7 +1,7 @@
 """Durable onboarding version and one check-in per membership (§6.1).
 
 Revision ID: 0042
-Revises: 0039 (rechain at merge; reservation approved by the coordinator)
+Revises: 0037 (rechain at merge; reservation approved by the coordinator)
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0042"
-down_revision: str | None = "0035"
+down_revision: str | None = "0037"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -13,3 +13,8 @@
   stores the onboarding version across resets and check-in timestamps,
   including backfilled historical claims. Availability stand-ins follow
   when the availability producer merges.
+
+### Fixed
+
+- hub: keep memory first in resume before the optional onboarding hint and
+  chain onboarding after the merged preferences migration.
