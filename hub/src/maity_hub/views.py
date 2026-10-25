@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import avatars, clock, forge, onboarding, policy, ticker_read
+from maity_hub import availability, avatars, clock, forge, onboarding, policy, ticker_read
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -293,6 +293,12 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    project_ids = {r.project_id for r in rows}
+    projects = (
+        {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
+        if project_ids
+        else {}
+    )
     from maity_hub import briefings  # briefings formats with this module's helpers
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
@@ -332,11 +338,19 @@ def member_views(
             )
         else:
             is_listening = False
+        shown_presence = presence(row, session, is_listening)
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
-                "presence": presence(row, session, is_listening),
+                "presence": shown_presence,
                 "paused": paused(row),
+                "availability": availability.view(
+                    row, shown_presence, humans.get(row.human_id), projects[row.project_id]
+                ),
+                "availability_policy": availability.policy_of(row),
+                # Cover by a substitute is not built yet (§6.12).
+                "covered_by": None,
+                "covering": [],
                 "joined_at": ts(row.joined_at),
                 "placement": placed.get(row.id),  # always null for a human
             }

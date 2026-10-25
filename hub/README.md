@@ -36,6 +36,14 @@ or the human's proxy as a personal request reviewed with conflict
 detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
 
+Availability (`docs/api.md` §6.12): every member's computed
+`availability`, the agent's and the human's limit (`POST /me/limit`, a
+runner's `rate_limited` report), the owner's absence (at most 90 days),
+the `availability_policy` per membership, leases held through a limit for
+at most a day, `member_availability_changed` and `member_limit_ended` from
+a background sweep, and the policy's `coordinator` seats are in; cover by
+a substitute and the coordinator gate follow.
+
 ## Run it locally with plain Python
 
 Python 3.12 or newer. From `hub/`:

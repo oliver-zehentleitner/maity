@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, and_, select, update
 
-from maity_hub import clock
+from maity_hub import availability, clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.config import DEFAULT_CLI_INSTALL
@@ -162,12 +162,12 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         ).all()
         for membership_id, lease in memberships:
             conn.execute(
-                update(t.card)
-                .where(
+                update(t.card).where(
                     t.card.c.claim_holder == membership_id,
                     t.card.c.status.notin_(CLOSED_STATUSES),
                 )
-                .values(lease_until=now + timedelta(seconds=lease))
+                # A limit's hold is never shortened by a renewal (§6.12).
+                .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
 
@@ -368,7 +368,8 @@ def _agent(
         lease = conn.execute(
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
         ).scalar_one()
-        conn.execute(update(t.card).where(held).values(lease_until=now + timedelta(seconds=lease)))
+        renewed = availability.renewed_lease(conn, membership_id, now, lease)
+        conn.execute(update(t.card).where(held).values(lease_until=renewed))
     if session is not None:
         # The claim belongs to the instance; it follows the instance's live session.
         conn.execute(

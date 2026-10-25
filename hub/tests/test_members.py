@@ -51,6 +51,10 @@ def test_the_member_view_has_the_contract_shape(
         "last_seen_at",
         "presence",
         "paused",
+        "availability",  # §6.12
+        "availability_policy",
+        "covered_by",
+        "covering",
         "joined_at",
         "briefing",  # the owner holds members:admin
         "briefing_by",  # with it: who wrote it, its version and when (§6.2)

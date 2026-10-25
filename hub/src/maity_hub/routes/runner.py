@@ -20,7 +20,7 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, longpoll
+from maity_hub import availability, clock, events, idempotency, longpoll
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
@@ -46,7 +46,7 @@ Harness = Literal[
 ]
 Mode = Literal["interactive", "supervised"]
 REPORTED_STATES = Literal[
-    "pending", "starting", "running", "stopping", "stopped", "exited", "failed"
+    "pending", "starting", "running", "stopping", "stopped", "exited", "failed", "rate_limited"
 ]
 
 
@@ -333,6 +333,12 @@ def _check_codes(body: Status) -> None:
             rule[0] == "state" and body.state != rule[1]
         ):
             errors["detail"] = "not_with_reason"
+    if body.state == "rate_limited":
+        # The reset time is the agent's limit (§15.7, §6.12): required, at most 7 days.
+        if body.retry_at is None:
+            errors["retry_at"] = "required_with_rate_limited"
+        elif body.retry_at > clock.now() + availability.LIMIT_AHEAD:
+            errors["retry_at"] = "too_far"
     if errors:
         raise invalid(errors)
 

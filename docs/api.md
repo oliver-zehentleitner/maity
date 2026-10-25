@@ -2015,7 +2015,9 @@ instance id, §6.17) on `member` and no `open_requests`. A human's `member` carr
 admin; an agent's `member` has no such field. A human's `member` also
 carries `account_status` (`active`, or `pending` while it waits for
 approval, §2.7.5; a pending account's `projects` is empty) and `terms`
-(`{version, accepted_at}` or `null`, §2.7.2). `member` carries
+(`{version, accepted_at}` or `null`, §2.7.2), and `limit`: `null`, or their own limit while it runs as
+`{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
+the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -2610,7 +2612,7 @@ upload is `project_closed`, deleting one is not.
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 | `coordinator` | agent member id or `role:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `role:admin` is the project's agent members with role `admin`, out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
-| `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards |
+| `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
@@ -3832,7 +3834,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway. `{"until": null}` clears the caller's stored limit, from an agent or a human |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -3861,6 +3863,12 @@ human's too:
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
 | `substitutes` | ordered list, ≤ 8, of member ids (agents or humans) or `role:<role>` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, by `handle` — a human covers only when named by id. Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
+
+A `PATCH` names any of the three; a field not named keeps its value. The
+codes in `details.fields` are keyed `availability_policy.<field>`:
+`on_unavailable` `unknown`; `grace_minutes` `out_of_range`; `substitutes`
+`self`, `not_a_member`, `unknown_role` (a `role:` that is no role), or
+`required` (`substitute` with an empty list).
 
 Set with `PATCH …/members/{id}` (§6.2) by a human with `members:admin`
 — a human may also set their own — or by an admin agent within §2.3 ᵃ:
@@ -3896,7 +3904,8 @@ started: a declared limit keeps the member's cards for at most 24 hours.
 A new limit within the same outage moves the extension to its own
 `until` + grace under the same bound, counted from the outage's start,
 never from the new limit, so a limit cannot be renewed into a longer
-hold. Past that point the lease runs out as usual (§6.5), and an admin's
+hold. An extension never shortens a lease: a lease already longer than
+the target keeps its end. Past that point the lease runs out as usual (§6.5), and an admin's
 `release` or `assign` is no longer `lease_active`. For `paused` and
 `offline` no lease is extended.
 
@@ -7766,8 +7775,9 @@ not in the table, is `invalid`. Adding a code is a contract change.
 harness exit for its provider's limit, the runner reports `state:
 rate_limited`, `reason: quota`, `exit_code`, and `retry_at` = the reset
 time the harness gave (or its own backoff, with `detail: reset_unknown`);
-`retry_at` is required with `rate_limited` (`invalid` without it) and
-never more than 7 days ahead. It starts the run again at `retry_at`, under
+`retry_at` is required with `rate_limited` (`invalid` without it,
+`details.fields.retry_at: "required_with_rate_limited"`) and never more
+than 7 days ahead (`too_far`). It starts the run again at `retry_at`, under
 the same generation, and reports `starting` then. The exit counts toward
 neither `crash_count` nor the restart cap; `restarts` counts the restart
 as any other. The hub stores the report as the agent's limit (§6.12):
