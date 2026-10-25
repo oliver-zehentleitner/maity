@@ -408,15 +408,16 @@ def statement(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def post_view(conn: Connection, ref: str) -> dict[str, Any]:
-    """A post's replay: `<round id>/<post id>`."""
+def _replay_post(conn: Connection, ref: str, request: Request) -> dict[str, Any]:
+    """A post's replay (`<round id>/<post id>`), for a member only, as it shows now."""
     round_id, post_id = ref.split("/", 1)
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
+    mine = _member_now(conn, row.project_id, request)
     found: dict[str, Any] = next(p for p in row.posts if p["id"] == post_id)
-    return views.post(found)
+    return views.post(found, mine, _readers(conn, [row])[row.id])
 
 
-idempotency.LOADERS["jour_fixe_post"] = idempotency.plain(post_view)
+idempotency.LOADERS["jour_fixe_post"] = _replay_post
 
 
 @router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/posts")
