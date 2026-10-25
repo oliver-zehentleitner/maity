@@ -941,7 +941,7 @@ def patch_task(
             values["area"] = body.area
         if "assigned_to" in given:
             mine.require("tasks:admin")
-            if card.claim_holder is not None and not cards.holds(mine, card):
+            if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
