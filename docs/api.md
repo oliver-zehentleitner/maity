@@ -3189,14 +3189,31 @@ project; the card is then a subtask of that card. The tree is two levels
 deep at most: a card that has a parent is not itself named as one
 (`invalid`, `details.fields.parent: "too_deep"`), a card that has
 children takes no parent (`"has_children"`), a card is never its own
-parent (`"self"`), and a release card (§6.7) is neither parent nor child
-(`"release_card"`). `related` is an array of task ids in the same
-project, symmetric and mirrored by the hub as `ships_with` is; it is
-navigation only and gates nothing, and may name a release card. Both are
-edges on the card: set at creation or by `PATCH` under the rule of the
-table above, recorded in the history (§6.15), announced as
-`task_updated` with `fields: ["parent"]` or `["related"]` — the mirrored
-card gets its own, as for `ships_with`.
+parent (`"self"`), a release card (§6.7) is neither parent nor child
+(`"release_card"`), and a closed parent takes no new child: creating a
+card under, or moving one to, a parent that is `done` or `cancelled` is
+`invalid` (`"parent_closed"`). `related` is an array of task ids in the
+same project, symmetric and mirrored by the hub as `ships_with` is; it
+is navigation only and gates nothing, and may name a release card. Both
+are edges on the card: set at creation or by `PATCH` under the rule of
+the table above and recorded in the history (§6.15). `related` is
+announced as `ships_with` is, `task_updated` with `fields: ["related"]`
+on both cards. `parent` is not mirrored: the child gets `task_updated`
+with `fields: ["parent"]`, and the old and the new parent each get one
+with `fields: ["children"]` and the new counts — as does a parent
+whenever a child closes, is cancelled or comes back from `cancelled`
+(§6.7). `children` has no history entry; it is computed.
+
+A cycle is checked over the union of the explicit `depends_on` edges
+and the implicit parent→child gate (a parent waits for its children):
+`C.parent = P` together with `C.depends_on = [P]` would wait forever
+and is `invalid` (`"cycle"` on the field the write names), on every
+write of `parent` or `depends_on`. `P.depends_on = [C]` beside
+`C.parent = P` is redundant and allowed. Every rule of this section —
+depth, closed parent, cycle, the policy below — is checked on the card
+and the graph as they would be after the write, in one transaction
+under the project's lock: a `PATCH` that names several fields passes or
+fails as a whole.
 
 A parent is not `done` while any child is not `done` or `cancelled`:
 the same `dependencies_open` as for `depends_on`, the open children in
@@ -3218,7 +3235,9 @@ without `tasks:admin` creates a child as `proposed` — a body naming
 child from `proposed` to `open` only with `tasks:admin`; setting
 `parent` on an existing card that is not `proposed` is `forbidden` the
 same way for that caller, so a card cannot be opened first and attached
-after. Clearing `parent` is free for whoever may edit the card. Under
+after — nor attached and opened in one `PATCH`: the check sees the
+resulting card, an `open` child that was not one before, and refuses
+it. Clearing `parent` is free for whoever may edit the card. Under
 `direct`, a child is created, attached and opened as any card. A card
 that is `proposed` by this rule is found where every proposal is: on
 the board's first column and in the project overview's counts (§6.11).
