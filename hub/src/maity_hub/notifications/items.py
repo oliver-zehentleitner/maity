@@ -200,9 +200,13 @@ def _classify(
         mentioned = principal in [m.get("member_id") for m in payload.get("mentions") or []]
         writer = _name(conn, row.actor_membership)
         if row.conversation_id is not None and f"member:{principal}" in (row.audience or []):
-            title = f"{writer} in {_handle(conn, row.conversation_id)}"
+            room = _room(conn, row.conversation_id)
+            if room is not None and not _inside(conn, row, mine):
+                return None  # a group chat notifies its participants, from their stay on
+            chat = room if room is not None else _handle(conn, row.conversation_id)
+            title = f"{writer} in {chat}"
             if mentioned:
-                title = f"{writer} mentioned you in {_handle(conn, row.conversation_id)}"
+                title = f"{writer} mentioned you in {chat}"
             return Item(
                 kind="mention" if mentioned else "chat",
                 text=None if row.redacted else payload.get("body"),
@@ -496,6 +500,29 @@ def _handle(conn: Connection, agent_id: str) -> str:
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == agent_id)
     ).scalar()
     return str(handle or agent_id)
+
+
+def _room(conn: Connection, conversation_id: str) -> str | None:
+    """A group chat's name (its title, else its id); None for a direct chat (§9.2)."""
+    if not conversation_id.startswith("cnv-"):
+        return None
+    title = conn.execute(
+        select(t.conversation.c.title).where(t.conversation.c.id == conversation_id)
+    ).scalar()
+    return str(title or conversation_id)
+
+
+def _inside(conn: Connection, row: Any, mine: Membership) -> bool:
+    """The member is a participant of the group chat now, and the message falls into
+    their current stay; an observer, who only reads along, never is (§9.2)."""
+    window = conn.execute(
+        select(t.conversation_participant.c.window_after).where(
+            t.conversation_participant.c.conversation_id == row.conversation_id,
+            t.conversation_participant.c.membership_id == mine.id,
+            t.conversation_participant.c.here.is_(True),
+        )
+    ).scalar()
+    return window is not None and row.seq > window
 
 
 def _owned_agent(conn: Connection, membership_id: int | None, human_id: str) -> bool:

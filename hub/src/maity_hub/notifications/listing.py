@@ -63,8 +63,48 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
 
 
 def _unread_chats(conn: Connection, mine: Any) -> int:
-    """The other party's messages after the human's chat mark, over the human's direct
-    chats in this project: the number the chat list shows (§9)."""
+    """The others' messages after the human's chat mark, over the human's direct chats
+    and the group chats they are in now: the number the chat list shows (§9)."""
+    return _unread_direct(conn, mine) + _unread_groups(conn, mine)
+
+
+def _unread_groups(conn: Connection, mine: Any) -> int:
+    """Per group chat of the member's current stay: the others' messages after both the
+    stay began and the member's read mark (§9.2)."""
+    stays = conn.execute(
+        select(
+            t.conversation_participant.c.conversation_id,
+            t.conversation_participant.c.window_after,
+        ).where(
+            t.conversation_participant.c.membership_id == mine.id,
+            t.conversation_participant.c.here.is_(True),
+        )
+    ).all()
+    unread = 0
+    for conversation_id, window in stays:
+        seen = conn.execute(
+            select(t.conversation_read.c.last_seq).where(
+                t.conversation_read.c.reader == mine.id,
+                t.conversation_read.c.conversation_id == conversation_id,
+            )
+        ).scalar()
+        unread += int(
+            conn.execute(
+                select(func.count()).where(
+                    t.event.c.project_id == mine.project.id,
+                    t.event.c.kind == "message",
+                    t.event.c.conversation_id == conversation_id,
+                    t.event.c.seq > max(window, seen or 0),
+                    t.event.c.actor_membership != mine.id,
+                    t.event.c.redacted.is_(False),
+                )
+            ).scalar_one()
+        )
+    return unread
+
+
+def _unread_direct(conn: Connection, mine: Any) -> int:
+    """The agent's messages after the human's mark, over their direct chats (§9)."""
     agents = conn.execute(
         select(t.membership.c.agent_id)
         .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
