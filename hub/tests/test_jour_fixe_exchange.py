@@ -292,3 +292,13 @@ def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> N
     assert all(i["text"] is None for i in topic["items"])
     assert topic["proposals"][0]["title"] is None
     assert "s3cret" not in str(view) and "slow CI" not in str(view)
+    # The reason as the message's tombstone shows it (§8.5): an agent never reads it.
+    for seen in (
+        round_.lead.get(rounds_path(round_.id)).json(),
+        round_.lead.get("/projects/maity/jour-fixe/rounds").json()["items"][0],
+        round_.lead.get("/projects/maity/jour-fixe").json()["current_round"],
+    ):
+        assert seen["posts"][0]["redaction"]["reason"] is None
+        assert seen["posts"][0]["redaction"]["by"] == round_.owner.id
+        assert seen["statement"]["topics"][0]["redaction"]["reason"] is None
+        assert seen["statement"]["topics"][0]["proposals"][0]["redaction"]["reason"] is None

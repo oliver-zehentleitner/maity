@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, idempotency, paging, policy, rules
+from maity_hub import clock, events, group_chats, idempotency, paging, policy, rules
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
@@ -81,6 +81,17 @@ def _now(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
     return exchange.participants_now(conn, rows)
 
 
+def _readers(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
+    """Per round who reads a redaction's reason in its thread (§8.5)."""
+    found = group_chats.reason_readers(conn, [r.conversation_id for r in rows if r.conversation_id])
+    return {r.id: found.get(r.conversation_id, set()) for r in rows}
+
+
+def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[dict[str, Any]]:
+    now, readers = _now(conn, rows), _readers(conn, rows)
+    return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+
+
 def _round(conn: Connection, project_id: str, round_id: str) -> Any:
     row = conn.execute(
         select(t.jour_fixe_round).where(
@@ -97,7 +108,7 @@ def round_view(conn: Connection, round_id: str) -> dict[str, Any]:
     slug = conn.execute(
         select(t.project.c.slug).where(t.project.c.id == row.project_id)
     ).scalar_one()
-    return views.full(row, slug, _now(conn, [row])[row.id])
+    return _views(conn, [row], slug, None)[0]  # a replay: no reader, no reason
 
 
 def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
@@ -175,14 +186,15 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             )
             .order_by(t.jour_fixe_round.c.scheduled_for.desc())
         ).first()
-        now = _now(conn, [r for r in (running, last) if r is not None])
+        rows = [r for r in (running, last) if r is not None]
+        shown = {r.id: v for r, v in zip(rows, _views(conn, rows, slug, mine), strict=True)}
         return JSONResponse(
             {
                 "policy": project.jour_fixe,
                 "moderators": _resolved(conn, project),
                 "next_at": clock.rfc3339(slot) if slot is not None else None,
-                "current_round": views.full(running, slug, now[running.id]) if running else None,
-                "last_round": views.full(last, slug, now[last.id]) if last else None,
+                "current_round": shown[running.id] if running else None,
+                "last_round": shown[last.id] if last else None,
             }
         )
 
@@ -253,12 +265,11 @@ def list_rounds(
             query.order_by(c.scheduled_for.desc(), c.id.desc()).limit(limit + 1)
         ).all()
         page = rows[:limit]
-        now = _now(conn, list(page))
         next_cursor = (
             paging.cursor(page[-1].scheduled_for, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse(
-            {"items": [views.full(r, slug, now[r.id]) for r in page], "next_cursor": next_cursor}
+            {"items": _views(conn, list(page), slug, mine), "next_cursor": next_cursor}
         )
 
 
@@ -287,6 +298,7 @@ def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) 
     ).first()
     if owned is None:
         raise not_found()
+    # Never a participant of the thread, so never a reader of a redaction's reason.
     return views.minimal(row, slug, active)
 
 
@@ -301,7 +313,7 @@ def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> 
             return JSONResponse(_observer_round(conn, caller, slug, round_id))
         mine.require("project:read")
         row = _round(conn, mine.project.id, round_id)
-        return JSONResponse(views.full(row, slug, _now(conn, [row])[row.id]))
+        return JSONResponse(_views(conn, [row], slug, mine)[0])
 
 
 @router.post("/projects/{slug}/jour-fixe/rounds")
