@@ -190,7 +190,9 @@ def test_assign_moves_an_expired_claim_and_refuses_an_active_one(
     )
     with migrated.connect() as conn:
         event = conn.execute(select(t.event).where(t.event.c.kind == "task_assigned")).one()
-    assert f"member:{a.id}" in event.audience and f"member:{b.id}" in event.audience
+    # The former holder by its instance, which wakes it (§8.2); the assignee's team.
+    assert f"instance:{a.id}#{a.instance}" in event.audience
+    assert f"member:{b.id}" in event.audience
     assert (
         a.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": a.id}).status_code == 403
     )

@@ -13,7 +13,7 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, group_chats, idempotency, longpoll, mentions
+from maity_hub import clock, events, group_chats, idempotency, instances, longpoll, mentions
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -123,7 +123,14 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    since,
+                    limit,
+                    instance=mine.instance,
+                    credential_id=caller.credential_id,
                 )
             else:
                 rows, examined, _ = events.read(
@@ -262,11 +269,15 @@ def post_message(
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
+            principal, instance = instances.split_address(to)
             try:
-                member_row(conn, mine.project.id, to)
+                addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            target = f"member:{to}"
+            if instance is not None:
+                # One instance of a team: its token wakes only it, the team reads it (§8.2).
+                instances.require_active(conn, addressee, instance, "to")
+            target = instances.token(principal, instance)
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(

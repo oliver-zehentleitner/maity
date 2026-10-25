@@ -32,6 +32,7 @@ from sqlalchemy import Connection, Engine, delete, insert, select, update
 from maity_hub import clock, forge, releases, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
+from maity_hub.instances import token
 from maity_hub.views import principal_id
 
 log = logging.getLogger(__name__)
@@ -177,7 +178,8 @@ def _project(engine: Engine, project_id: str) -> Any:
 
 def _audience(conn: Connection, card: Any) -> list[str]:
     holder = principal_id(conn, card.claim_holder)
-    return [*([f"member:{holder}"] if holder else []), "role:admin"]
+    # The holding instance, which the observation wakes; its team reads it (§8.2).
+    return [*([token(holder, card.claim_instance)] if holder else []), "role:admin"]
 
 
 # --- reports (§6.6) ---------------------------------------------------------------------------
