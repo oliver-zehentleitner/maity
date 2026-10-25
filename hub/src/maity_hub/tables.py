@@ -131,6 +131,15 @@ pending_registration = Table(
     **MYSQL_TABLE,
 )
 
+# One row per address that registration ever changed pending registrations for, locked
+# (`SELECT … FOR UPDATE`) to serialise those changes (§2.7.1). Only a lock, no data.
+registration_lock = Table(
+    "registration_lock",
+    metadata,
+    Column("address_normalized", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # An address that may not register until `until` (§16.4): after a rejection or an expired
 # approval, 30 days; the instance admin lifts it early.
 registration_block = Table(

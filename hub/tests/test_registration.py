@@ -4,7 +4,9 @@ up to the pending registration. The mail and the completion come with the outbox
 from __future__ import annotations
 
 import base64
+import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Any
 
@@ -312,3 +314,47 @@ def test_the_admin_lifts_a_block(make_client: ClientFactory, migrated: Engine) -
         assert conn.execute(select(t.registration_block)).all() == []
     other = flow.human(make_client, migrated, "someone")
     assert other.delete("/admin/registrations/blocks/x@example.com").status_code == 403
+
+
+def test_every_request_counts_for_the_breaker_even_a_source_limited_one(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The reviewer's probe: 13 requests from one source with a breaker of 12; the last
+    three are over the per-source limit, and the breaker still trips for the next source."""
+    settings = hub(
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+        MAITY_REGISTRATION="open",
+        MAITY_REGISTRATION_BREAKER="12",
+        **MAIL,
+    )
+    client = client_for(make_client, settings)
+    answers = [register(client, f"s{n}@example.com").status_code for n in range(13)]
+    assert answers == [202] * 10 + [429] * 3
+    fresh = make_client(peer="198.51.100.9", mail=settings.mail, registration=settings.registration)
+    assert register(fresh, "fresh@example.com").status_code == 429
+
+
+def test_an_addresses_pending_registrations_change_one_at_a_time(migrated: Engine) -> None:
+    """Two transactions for one address: the second waits for the first's lock (§2.7.1).
+    SQLite serialises every writer anyway, so this runs on PostgreSQL and MariaDB."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the row lock is for the server databases")
+    first = migrated.connect()
+    second = migrated.connect()
+    try:
+        first_tx = first.begin()
+        routes.lock_address(first, "race@example.com")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+
+            def take() -> None:
+                with second.begin():
+                    routes.lock_address(second, "race@example.com")
+
+            waiting = pool.submit(take)
+            time.sleep(0.5)
+            assert not waiting.done()  # held by the first transaction
+            first_tx.commit()
+            waiting.result(timeout=10)
+    finally:
+        first.close()
+        second.close()

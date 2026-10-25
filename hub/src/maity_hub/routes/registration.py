@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import clock, registration, registration_mail
@@ -112,11 +113,13 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
     # Before the body is read: a closed instance says nothing more (§2.7.1 step 1).
     if not await run_in_threadpool(mode_open):
         raise _closed()
+    # Every request to an open instance counts for the breaker, whatever is refused
+    # after it: an invalid body, the per-source limit (§2.7.3).
+    tripped = registration.BREAKER.hit(hub_env.breaker)
+    if tripped:
+        raise rate_limited(tripped)
     body = _body(await request.body())
     wait = BY_SOURCE.hit(origin.address)
-    if wait:
-        raise rate_limited(wait)
-    wait = registration.BREAKER.hit(hub_env.breaker)
     if wait:
         raise rate_limited(wait)
     # Every accepted request costs one scrypt before it is answered (§2.7.1 step 2).
@@ -171,6 +174,7 @@ def _store(
         if _has_account(conn, normalized):
             registration_mail.send(conn, kind="already_registered", to=given)
             return
+        lock_address(conn, normalized)
         _void_earlier(conn, normalized, source, now)
         pending_id = new_id("pending_registration")
         terms = resolved.value("terms")
@@ -197,6 +201,23 @@ def _has_account(conn: Connection, normalized: str) -> bool:
     address until the notification settings store them (#280); then this looks there."""
     del conn, normalized
     return False
+
+
+def lock_address(conn: Connection, normalized: str) -> None:
+    """Serialise what changes one address's pending registrations (§2.7.1): its row in
+    `registration_lock`, made if absent, then locked until commit. Two requests for one
+    address cannot both count four live ones and leave six, or both stay live from one
+    source. The claim at completion takes the account address lock (§18.4) as well."""
+    try:
+        with conn.begin_nested():
+            conn.execute(insert(t.registration_lock).values(address_normalized=normalized))
+    except IntegrityError:
+        pass  # it exists; lock it below
+    conn.execute(
+        select(t.registration_lock.c.address_normalized)
+        .where(t.registration_lock.c.address_normalized == normalized)
+        .with_for_update()
+    )
 
 
 def _void_earlier(conn: Connection, normalized: str, source: str, now: Any) -> None:

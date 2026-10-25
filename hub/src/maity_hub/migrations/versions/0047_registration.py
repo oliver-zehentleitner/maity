@@ -4,7 +4,8 @@
 registration waits for the operator), `registered_at` for an account made by
 registration, and the accepted terms version with its time. `pending_registration`
 holds a request whose address is not yet proven, for at most 24 hours;
-`registration_block` an address that may not register until a date.
+`registration_block` an address that may not register until a date; `registration_lock`
+is a row per address that serialises changes to its pending registrations.
 
 Revision ID: 0047
 Revises: 0031
@@ -68,6 +69,12 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "registration_lock",
+        sa.Column("address_normalized", sa.String(length=254), nullable=False),
+        sa.PrimaryKeyConstraint("address_normalized", name=op.f("pk_registration_lock")),
+        **TABLE_OPTIONS,
+    )
+    op.create_table(
         "registration_block",
         sa.Column("address_normalized", sa.String(length=254), nullable=False),
         sa.Column("until", TIMESTAMP, nullable=False),
@@ -79,6 +86,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("registration_block")
+    op.drop_table("registration_lock")
     op.drop_table("pending_registration")  # its index goes with it
     with op.batch_alter_table("human", schema=None) as batch_op:
         batch_op.drop_column("terms_accepted_at")
