@@ -844,3 +844,30 @@ would invite a change whose consequences the hub does not carry out.
 Sending `memory` and `setup` always: a creation on an older hub would
 fail. Inferring support from a project's view having `memory`: a human
 without projects has no view to look at.
+
+## Statistics sum counts of things over the window and show people by their busiest day
+
+**Id:** 39d109d7-026a-4d53-b7c2-5fda6ff51b77
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
+
+Each day series is one row: the window's figure, today's value and a
+small line of the days. For registrations, new instances, cards and
+reviews the figure is the sum of the days; for humans and agent
+instances active it is the highest day ("up to N a day"). The days are
+also a folded table, which is what a screen reader reads; the lines are
+inline SVG drawn by the page.
+
+**Reason:** the hub counts a person active once per day, so adding the
+days would count the same person thirty times and look like growth that
+is not there; a distinct count per window is not in the answer, and the
+page invents no number. One line per series keeps every chart to one
+scale and one colour, so none needs a legend.
+
+**Rejected alternative:** a sum for every series: wrong for people.
+One chart with all series: eight scales in one axis, and colours that
+would need a legend. A chart library: the contract and the CSP keep the
+page to its own code.

@@ -110,7 +110,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
-| `#/admin` | instance administration: users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
+| `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
@@ -1197,10 +1197,24 @@ and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
 
 **Instance administration** in the settings menu opens `#/admin` for the
-instance admin. It combines Users, Mail settings and Instance information;
+instance admin. It combines Statistics, Users, Mail settings and Instance information;
 `#/admin/users` still opens the existing searchable user list. Each section
 is omitted when the hub does not list its route. A failed or forbidden read
 is shown without preventing the other sections from loading.
+
+**Statistics** (`js/statistics.js`, `docs/api.md` §16.6) comes first: the
+instance's counts, never a name. The totals as tiles (humans, with those
+waiting for approval; agent profiles; projects not archived; agent
+instances online; humans with an agent); one row per day series —
+registrations, new agent instances, humans and agent instances active,
+cards created, claimed and done, reviews — with the window's figure (the
+sum, or for people their highest day), today's value and a small line of
+the window; who comes back after 7 and 30 days, in one sentence; when the
+hub counted. **7 / 30 / 90 days** reads that window again. Reviews before
+the hub kept card history are unknown and show –, with the date from
+which they count. Every day is in a folded table, the readable form of
+the lines; a failed read clears the old counts and says so. The lines are
+the dashboard's own SVG, no chart library.
 
 Mail settings identify values set by the environment and keep them read-only.
 Only changed fields are saved. A blank password keeps the stored one; its

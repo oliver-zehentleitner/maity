@@ -1115,8 +1115,26 @@ window.Maity = window.Maity || {};
       return { items: page.map(clean), next_cursor: next };
     }],
     // The hub's machine form (§4): here only what the views ask of it.
+    // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
+    // instance; a window beyond the fixture's days reads zero days, with
+    // reviews unknown before the hub kept history, as the hub answers.
+    ["GET", /^\/admin\/statistics$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const n = Number(query.get("days") || 30);
+      if (!Number.isInteger(n) || n < 1 || n > 90) fail(400, "invalid", "days is 1–90", path, { fields: { days: "out_of_range" } });
+      const base = fixtures()[params.get("stats") === "empty" ? "admin-statistics-empty.json" : "admin-statistics.json"];
+      const since = base.coverage.reviews_since;
+      const days = [];
+      for (let i = 0; i < n; i += 1) {
+        const date = new Date(Date.parse(base.days[0].date + "T00:00:00Z") - i * 86400000).toISOString().slice(0, 10);
+        days.push(base.days[i] || { date, registrations: 0, new_instances: 0, humans_active: 0, agents_active: 0,
+          cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: since && date < since ? null : 0 });
+      }
+      return Object.assign({}, base, { window_days: n, days });
+    }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
       "/api/v1/admin/users": { get: {} },
+      "/api/v1/admin/statistics": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
