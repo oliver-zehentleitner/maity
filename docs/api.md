@@ -1717,12 +1717,13 @@ secret_key_missing`.
   mailbox (§2.3) must not install a factor of its holder's choosing,
   which would give standing at the next sign-in (§2.8.2) and end the
   human's trusted sessions; and for a password account it would lock
-  out the human who holds the password. One exception, under
-  `required_admins` only (§2.8.5): a human without a password who has
-  **no session in good standing at all** may enrol from the enrolment
-  session itself. With no trusted session there is nothing for a factor
-  to take over — the mailbox already is the whole account — and the
-  human is not held out for good. The moment the human has a session in
+  out the human who holds the password. One exception: a human without
+  a password who has **no session in good standing at all** may enrol
+  from the session at hand — the enrolment session under
+  `required_admins` (§2.8.5) or after a reset (§2.8.3), or any session
+  otherwise. With no trusted session there is nothing for a factor to
+  take over — the mailbox already is the whole account — and the human
+  is not held out for good, after a reset ended every session included. The moment the human has a session in
   good standing, the 24-hour rule applies as written. Setting a first
   password on an account without one is the accounts design's item
   (pending), not this section's.
@@ -1916,7 +1917,7 @@ environment winning as there:
   enrolment session keeps its age and good standing, and lives as long
   as any session (§2.1); until then it waits at the enrolment session,
   unless it has no session in good standing at all, in which case it
-  enrols from the enrolment session (§2.8.1). A session in good
+  enrols from the enrolment session (§2.8.1, the exception there). A session in good
   standing that is moved into the enrolment state keeps that standing
   for the decisions §2.6.5 ties to it, "This was me" on a sign-in alert
   among them.

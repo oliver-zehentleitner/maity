@@ -4,8 +4,8 @@
   recovery codes for every account, sealed with `MAITY_SECRET_KEY`,
   enrolled with the password re-given (`POST /auth/reauthenticate`) or,
   without a password, from a session in good standing at least 24 hours
-  old (under `required_admins` from the enrolment session when the human
-  has no session in good standing at all); recovery codes and reset links bound to the factor's generation;
+  old, or from any session when the human has no session in good
+  standing at all; recovery codes and reset links bound to the factor's generation;
   a lost instance key fails closed;
   a second-factor session after every first factor (password, device
   code, mail link) that reaches nothing but the verify and logout; step-up
