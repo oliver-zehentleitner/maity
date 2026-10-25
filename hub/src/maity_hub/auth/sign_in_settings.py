@@ -15,6 +15,7 @@ from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
 
 SWITCHES = ("device_code", "email_link")
+SEEN = "sign_in.second_factor_seen"
 FIELDS = (*SWITCHES, "second_factor")
 
 store.register(
@@ -27,6 +28,9 @@ store.register(
         lambda v: v if v in SECOND_FACTOR_POLICIES else None,
         "optional",
     ),
+    # `off` once the hub has told the switch to it, so it is told once, whether the
+    # admin made it or the environment did (§2.8.5); no row otherwise.
+    store.Setting(SEEN, lambda v: v if v in SECOND_FACTOR_POLICIES else None, None),
 )
 
 
@@ -85,16 +89,29 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
             errors[name] = "invalid"
     if errors:
         raise invalid(errors)
-    before = second_factor_policy(conn, hub)
     for name, value in body.items():
         store.put(conn, f"sign_in.{name}", value, by)
     if not resolve(conn, hub)["device_code"][0]:
         # A method switched off voids its open codes at once (§2.6.5).
         device_codes.void_open(conn)
-    if before != "off" and second_factor_policy(conn, hub) == "off":
+    note_second_factor(conn, hub, by)
+
+
+def note_second_factor(conn: Connection, hub: Settings, by: str) -> None:
+    """Tell every enrolled human once when the policy has become `off` since the hub
+    last looked: after an admin's `PATCH` (`by` the admin) and at startup (`by`
+    `environment` when the environment set it)."""
+    current = second_factor_policy(conn, hub)
+    seen = store.stored(conn, "sign_in").get(SEEN)
+    if current == "off" and seen != "off":
         from maity_hub.auth import second_factor  # it imports this module
 
         second_factor.told_instance_off(conn, by)
+    # Only `off` is remembered, so an instance that never switched it off keeps no row.
+    if current == "off" and seen != "off":
+        store.put(conn, SEEN, "off", None)
+    elif current != "off" and seen == "off":
+        store.put(conn, SEEN, None, None)
 
 
 def device_code_enabled(conn: Connection, hub: Settings) -> bool:

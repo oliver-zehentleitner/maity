@@ -111,6 +111,12 @@ def downgrade() -> None:
     op.drop_table("second_factor_reset")
     op.drop_table("recovery_code")
     op.drop_table("second_factor")
+    # The two new reasons do not fit the old width: they go before it shrinks.
+    op.execute(
+        "UPDATE human_session SET ended_by = NULL "
+        "WHERE ended_by IN ('second_factor_disabled', 'second_factor_reset', "
+        "'second_factor_failed')"
+    )
     with op.batch_alter_table("human_session") as batch:
         for name in ("next", "second_factor", "second_factor_at", "password_at"):
             batch.drop_column(name)

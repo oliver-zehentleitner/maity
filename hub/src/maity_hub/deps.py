@@ -10,11 +10,11 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import events, runner_revoke
 from maity_hub import tables as t
-from maity_hub.auth import second_factor
+from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, invalid, not_found, unauthenticated
 from maity_hub.forge import Forge
 from maity_hub.net import Origin
 
@@ -87,9 +87,20 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
                 {"reason": runner_revoke.REASON},
             ) from None
 
-    caller = await run_in_threadpool(retrying, run)
+    try:
+        caller = await run_in_threadpool(retrying, run)
+    except second_factor.SessionEnded as ended:
+        # The refusal rolled the authentication transaction back; the end has to
+        # commit on its own (§2.8.5).
+        await run_in_threadpool(_end_session, engine, ended)
+        raise unauthenticated("the sign-in has to start again") from None
     request.state.caller = caller
     return caller
+
+
+def _end_session(engine: Engine, ended: second_factor.SessionEnded) -> None:
+    with engine.begin() as conn:
+        sessions.end_where(conn, t.human_session.c.id_hash == ended.id_hash, ended.by)
 
 
 def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
