@@ -3201,8 +3201,8 @@ announced as `ships_with` is, `task_updated` with `fields: ["related"]`
 on both cards. `parent` is not mirrored: the child gets `task_updated`
 with `fields: ["parent"]`, and the old and the new parent each get one
 with `fields: ["children"]` and the new counts — as does a parent
-whenever a child closes, is cancelled or comes back from `cancelled`
-(§6.7). `children` has no history entry; it is computed.
+whenever a child closes or is cancelled. `children` has no history
+entry; it is computed.
 
 A cycle is checked over the union of the explicit `depends_on` edges
 and the implicit parent→child gate (a parent waits for its children):
