@@ -77,6 +77,30 @@ def test_a_new_member_is_available_with_the_default_policy(
     assert view["covered_by"] is None and view["covering"] == []
 
 
+def test_first_resume_stores_a_silent_baseline_and_repeated_resume_keeps_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    agent = flow.agent(make_client, owner)
+
+    def stored() -> Any:
+        with migrated.connect() as conn:
+            return conn.execute(
+                select(t.membership).where(t.membership.c.agent_id == agent.id)
+            ).one()
+
+    assert stored().availability_state is None
+    agent.resume()
+    baseline = stored()
+    assert baseline.availability_state == "available"
+    assert baseline.availability_since == now[0]
+    assert baseline.outage_since is None
+    assert events(migrated, "member_availability_changed") == []
+    now[0] += timedelta(seconds=1)
+    agent.resume()
+    assert stored().availability_since == baseline.availability_since
+    assert events(migrated, "member_availability_changed") == []
+
+
 def test_an_agent_without_a_session_is_offline_and_a_paused_one_paused(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
