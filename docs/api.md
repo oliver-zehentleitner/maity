@@ -4229,8 +4229,14 @@ nofollow"` and shows its host next to the label. A forge URL may be
 added as `kind: url`; it is then a plain link, not observed, and not
 held to the repository rule.
 
-At most 20 links per card. The same `forge_url` (or `url`) twice on one
-card is `already_linked` with `details.link`.
+At most 20 links per card (`invalid`, `details.fields.links:
+"too_many"`). The same `forge_url` (or `url`) twice on one card is
+`already_linked` (409) with `details.link`. Other codes in
+`details.fields`: `kind` `unknown`; `url` `not_https`, `user_info` or
+`not_a_url`; `forge_url` or `url` `not_with_kind` when the field does not
+go with the `kind`. An issue or pull request number above 2147483647 is
+`not_a_forge_url`. The first observation of a link also emits
+`link_observed`, with `old: null`.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -4450,7 +4456,7 @@ to every body.
 | `POST /projects/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin`, the card's creator | `{state: incorporated\|dismissed, reason?}`; only an `open` note (`invalid_transition` otherwise); `200` with the note |
 | `POST /projects/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason}`; replaces `body` with the tombstone of §8.5 and empties `mentions`, and redacts the note's `note_added` event the same way; the note keeps its place and state |
 
-- Caps: a note's `body` 4 KiB; 50 open notes and 200 notes in all per
+- Caps: a note's `body` 4 KiB (`invalid`, `details.fields.body: "too_long"`); 50 open notes and 200 notes in all per
   card (more is `invalid` with `details.fields.body: "note_cap"`), of
   which agents together may post at most 150 — the last 50 places are
   for humans, so agents cannot use up a card's notes for good (an agent

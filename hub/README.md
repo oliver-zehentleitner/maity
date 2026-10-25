@@ -43,6 +43,14 @@ the `availability_policy` per membership, leases held through a limit for
 at most a day, `member_availability_changed` and `member_limit_ended` from
 a background sweep, and the policy's `coordinator` seats are in; cover by
 a substitute and the coordinator gate follow.
+Cards carry links, an edit history and notes (`docs/api.md` §6.13,
+§6.15, §6.16): forge links parsed by the hub and observed by the probe for
+the project's own repository only, in one GraphQL read per repository;
+URL links; one history entry per changed field with diffs for title and
+body, tied to the write's event and redacted with it; notes with their
+caps, the agents' share and the per-member rate, resolution by the
+creator or an admin, and redaction. The card import from a forge issue
+(§6.14) follows.
 
 ## Run it locally with plain Python
 
