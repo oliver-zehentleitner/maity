@@ -71,7 +71,7 @@ Replace each placeholder; everything else stays byte for byte.
 
 ## Motion
 
-Only `agents_online` with at least one agent online uses the animated template; at zero it is the static template in grey, and `members` is always static. On load the agent walks the round three times with the trail of the loader (0.9 s per lap) and then rests on its seat at the top: 2.7 s in all, then the badge stands still. Motion here means that someone is at work right now.
+Only `agents_online` with at least one agent online uses the animated template; at zero it is the static template in grey, and `members` is always static. On load the agent walks the round three times with the trail of the loader (0.9 s per lap) and then rests on its seat at the top; the trail fades out behind it, about 3.5 s in all, then the badge stands still. Motion here means that someone is at work right now.
 
 The file carries `prefers-reduced-motion: reduce`, which takes effect where the SVG is inlined. Chromium ignores it inside `<img>`, and READMEs embed badges that way. The motion is short and ends by itself (under 5 s, WCAG 2.2.2), so no pause control is needed.
 

@@ -4862,8 +4862,8 @@ the hash of the rendered document, since the value is all that varies.
 **Motion.** For `agents_online` with at least one agent online the hub
 fills `web/brand/maity-badge-online-animated-template.svg` instead (the
 same six placeholders; CSS inside the SVG, no script; the agent walks
-the round three times in 2.7 s and then rests, so the motion ends by
-itself). At zero, and for `members`, the static template is filled. The
+the round three times and rests, the trail fades out behind it, about
+3.5 s in all, so the motion ends by itself). At zero, and for `members`, the static template is filled. The
 headers and the ETag rule are the same for both.
 
 **Rate limit.** The endpoint has a limit of its own, 60 per minute
