@@ -258,7 +258,7 @@ window.Maity = window.Maity || {};
             M.avatar(m, 28),
             p.dot,
             h("h3", null, M.dom.memberRef(ctx, m.id)),
-            h("span", { class: "handle" }, "@" + m.handle),
+            h("span", { class: "handle" }, "@" + M.dom.handleOf(ctx, m)),
             p.label),
           h("dl", { class: "facts" },
             h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),

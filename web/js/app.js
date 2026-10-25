@@ -106,7 +106,8 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      fail: (prefix, err) => { el.textContent = prefix + err.message; el.className = "send-status failed"; },
+      // An ambiguous mention is said with the long forms to write (§8.6).
+      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
     };
   }
 

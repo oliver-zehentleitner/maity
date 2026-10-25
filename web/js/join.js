@@ -45,7 +45,7 @@ window.Maity = window.Maity || {};
 
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + p.handle + ")"
+      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + (p.name || p.handle) + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
     profileOptions();
@@ -285,7 +285,7 @@ window.Maity = window.Maity || {};
             h("header", null,
               h("span", { class: "seat-mark", "aria-hidden": "true" }),
               h("h3", null, profileName(j.agent_id)),
-              p ? h("span", { class: "handle" }, "@" + p.handle) : null,
+              p ? h("span", { class: "handle" }, "@" + (p.name || p.handle)) : null,
               h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
             h("dl", { class: "facts" },
               h("dt", null, "Role"), h("dd", null, j.role, j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),

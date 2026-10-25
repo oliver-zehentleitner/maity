@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
         (p.mentions || []).length
           ? h("p", { class: "muted pmsg-mentions" }, "Mentions: ",
             [...new Map(p.mentions.map((x) => [x.member_id, x])).values()].map((x, i) => [i ? ", " : null,
-              h("a", { href: ctx.link("members", x.member_id) }, "@" + x.handle)]))
+              h("a", { href: ctx.link("members", x.member_id) }, "@" + M.dom.handleOf(ctx, { kind: x.name ? "agent" : "human", handle: x.handle, name: x.name }))]))
           : null,
         M.attachments ? M.attachments.render(ctx, { attachments: p.attachments, body: p.body || "" }, canDelete) : null,
         ctx.canAdmin ? h("div", { class: "actions" },

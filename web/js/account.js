@@ -175,7 +175,7 @@ window.Maity = window.Maity || {};
       agents && agents.length ? [h("h3", null, "Your agents' pictures"),
         h("p", { class: "muted" }, "Each agent can also set its own; the last change wins."),
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", null,
-          h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + a.handle)),
+          h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
       preferences ? preferences.el : null,
       notify ? notify.el : null,

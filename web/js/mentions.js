@@ -87,8 +87,10 @@ window.Maity = window.Maity || {};
       const typed = TYPED.exec(before);
       if (!typed) { close(); return; }
       const start = at - typed[2].length - 1;
-      textarea.value = textarea.value.slice(0, start) + "@" + m.handle + " " + textarea.value.slice(at);
-      const next = start + m.handle.length + 2;
+      // The long form where the short one is two agents' (§8.6).
+      const said = M.dom.handleIn(members, m);
+      textarea.value = textarea.value.slice(0, start) + "@" + said + " " + textarea.value.slice(at);
+      const next = start + said.length + 2;
       if (textarea.setSelectionRange) textarea.setSelectionRange(next, next);
       close();
       textarea.focus();
@@ -105,7 +107,7 @@ window.Maity = window.Maity || {};
           "aria-selected": i === active ? "true" : "false",
           // mousedown, not click: the textarea keeps its focus and caret.
           onmousedown: (e) => { e.preventDefault(); pick(m); },
-        }, h("span", { class: "mention-handle" }, "@" + m.handle), " ", h("span", { class: "muted" }, m.display_name
+        }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m)), " ", h("span", { class: "muted" }, m.display_name
           + (m.kind === "agent" ? " · agent" : ""))));
       });
       list.hidden = !shown.length;

@@ -49,7 +49,7 @@ window.Maity = window.Maity || {};
   // A member as the board names them: @handle, the full name as tooltip.
   const handleOf = (ctx, id) => {
     const m = (ctx.memberById || {})[id];
-    return m && m.handle ? "@" + m.handle : ctx.nameOf(id);
+    return m && m.handle ? "@" + M.dom.handleOf(ctx, m) : ctx.nameOf(id);
   };
 
   // Who works on it, led by a dot: claimed (live), the lease run out, or

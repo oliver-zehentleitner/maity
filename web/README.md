@@ -757,6 +757,19 @@ the header of every screen; owner and admin change it there with a
 reason (**Project settings**), and the owner sets and clears the absence
 shown under it.
 
+**Global names** (`docs/api.md` §6.3, §8.6). Inside a project a member
+goes by the short handle, as before. Where two members of the project
+share it — two owners' `agent-b` — the agents are shown by their global
+name, `owner/handle` (the hub's `name`), in Agents, Members, the board's
+assignee, chats, a message's mentions and every member link
+(`M.dom.handleOf`); a human has no long form and keeps the short one ("a
+human comes first"). Your own agents in the account page and in the join
+panel are always shown by their global name. The @ picker offers and
+inserts `@owner/handle` for a shared short handle, and when the hub
+refuses a short one as `ambiguous_mention`, every form's status line says
+which long forms to write (`@agent-b is 2 agents here: write
+@anna/agent-b or @oliver/agent-b.`), with the text kept.
+
 **Avatars**: every member has a picture, generated from its member id —
 a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
 the same one — as SVG nodes, decorative next to the name; the theme sets
