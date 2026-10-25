@@ -18,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.access import membership
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
@@ -109,7 +110,8 @@ async def list_notifications(
             # Every snapshot, a held one included, checks the session again: one ended
             # while the request waited receives nothing more (§18.2).
             _require_live(conn, session)
-            return _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
+            held = _held_at_enrolment(conn, request, session)
+            return _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after, held)
 
     first = await run_in_threadpool(answer)
     if not wait or first["items"]:
@@ -143,12 +145,13 @@ def _answer(
     kinds: set[str] | None,
     slugs: set[str] | None,
     after: str | None,
+    held: bool = False,
 ) -> dict[str, Any]:
     hub = settings_of(request)
     since = _open(conn, request, human_id, after, "after") if after is not None else None
     where = items.scope(conn, human_id, hub.public_url)
-    found = items.derive(conn, where)
-    answer: dict[str, Any] = listing.counts(conn, where, found)
+    found = _visible(items.derive(conn, where), held)
+    answer: dict[str, Any] = _counts(conn, where, found, held)
     project_ids = _project_ids(conn, slugs)
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=unread)
     head = listing.head(conn, where)
@@ -179,6 +182,32 @@ def _answer(
     return answer
 
 
+def _held_at_enrolment(conn: Connection, request: Request, session_hash: str) -> bool:
+    """A session in good standing held at enrolment reaches the bell for one thing only:
+    confirming sign-in alerts, "This was me" (§2.8.5)."""
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.id_hash == session_hash)
+    ).one()
+    return second_factor.state(conn, settings_of(request), row) == "enrolment"
+
+
+def _visible(found: list[Item], held: bool) -> list[Item]:
+    """Everything, or for a session held at enrolment its account's security alerts."""
+    return [i for i in found if i.kind == "security"] if held else found
+
+
+def _counts(conn: Connection, where: Scope, found: list[Item], held: bool) -> dict[str, Any]:
+    """§18.2's counts; for a session held at enrolment only its security alerts count,
+    so the numbers tell it nothing of chats, cards or requests either."""
+    answer = listing.counts(conn, where, found)
+    if held:
+        answer["counts"] = {
+            kind: (count if kind == "security" else 0) for kind, count in answer["counts"].items()
+        }
+        answer["by_project"] = {}
+    return answer
+
+
 def _project_ids(conn: Connection, slugs: set[str] | None) -> set[str] | None:
     if slugs is None:
         return None
@@ -201,11 +230,16 @@ def read_notifications(
         session = conn.execute(
             select(t.human_session).where(t.human_session.c.id_hash == session_hash)
         ).one()
+        held = _held_at_enrolment(conn, request, session_hash)
+        if held and "up_to" in body:
+            # Held at enrolment it confirms sign-ins one by one, nothing in bulk (§2.8.5).
+            raise forbidden(message="mark the alerts one by one from this session")
         where = items.scope(conn, human_id, settings_of(request).public_url)
-        found = items.derive(conn, where)
+        found = _visible(items.derive(conn, where), held)
         chosen = _chosen(conn, request, human_id, where, found, body)
         listing.mark(conn, where, found, chosen, session)
-        return JSONResponse(listing.counts(conn, where, items.derive(conn, where)))
+        visible = _visible(items.derive(conn, where), held)
+        return JSONResponse(_counts(conn, where, visible, held))
 
 
 def _chosen(
