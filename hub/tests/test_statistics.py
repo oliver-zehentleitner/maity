@@ -67,7 +67,7 @@ def test_a_week_of_use_in_counts(make_client: ClientFactory, migrated: Engine) -
     assert answer["window_days"] == 7 and len(answer["days"]) == 7
     assert answer["days"][0]["date"] == clock.now().date().isoformat()  # newest first
     three = row(answer, 3)
-    assert (three["cards_created"], three["cards_claimed"], three["first_joins"]) == (1, 1, 1)
+    assert (three["cards_created"], three["cards_claimed"], three["new_instances"]) == (1, 1, 1)
     assert three["agents_active"] == 1  # it claimed and reported
     assert (row(answer, 1)["cards_done"], row(answer, 1)["reviews"]) == (1, 1)
     assert row(answer, 1)["humans_active"] == 1
@@ -82,6 +82,28 @@ def test_a_week_of_use_in_counts(make_client: ClientFactory, migrated: Engine) -
         "humans_with_an_agent": 1,
     }
     assert answer["returning"] == {"after_7_days": 0, "after_30_days": 0}  # all new
+    # The history (§6.15) starts with the first card three days ago: before it, unknown.
+    since = answer["coverage"]["reviews_since"]
+    assert since == row(answer, 3)["date"]
+    assert row(answer, 4)["reviews"] is None and row(answer, 6)["reviews"] is None
+    assert row(answer, 2)["reviews"] == 0
+
+
+def test_a_report_that_closes_a_card_counts_as_done(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """`cards_done` reads `closed_at`: a self-done report emits no `task_updated` (§6.6)."""
+    changed = owner.patch(
+        "/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "self-done"}
+    )
+    assert changed.status_code == 200, changed.text
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    assert agent.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    closed = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    assert closed.status_code == 200, closed.text
+    today = owner.get(PATH).json()["days"][0]
+    assert (today["cards_done"], today["reviews"]) == (1, 0)
 
 
 def test_the_query_count_does_not_grow_with_the_window(owner: flow.Human, migrated: Engine) -> None:

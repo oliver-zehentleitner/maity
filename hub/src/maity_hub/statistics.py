@@ -23,7 +23,7 @@ MAX_DAYS, DEFAULT_DAYS = 90, 30
 CACHE_FOR = timedelta(hours=1)
 SERIES = (
     "registrations",
-    "first_joins",
+    "new_instances",
     "humans_active",
     "agents_active",
     "cards_created",
@@ -31,8 +31,6 @@ SERIES = (
     "cards_done",
     "reviews",
 )
-# The card events whose order says what status a card had: what `reviews` walks.
-STATUS_KINDS = ("task_created", "task_claimed", "task_released", "task_reported", "task_updated")
 
 
 def _day(value: Any) -> str:
@@ -66,7 +64,7 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         add("registrations", day, n)
 
-    # An instance's first join is its first credential (§3.3, §6.17).
+    # An instance's first exchange is its first credential (§3.3, §6.17).
     for (first,) in conn.execute(
         select(func.min(t.credential.c.created_at)).group_by(
             t.credential.c.membership_id, t.credential.c.instance
@@ -74,7 +72,7 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         stamp = first if isinstance(first, datetime) else datetime.fromisoformat(str(first))
         if stamp.replace(tzinfo=UTC) >= since:
-            add("first_joins", stamp.date())
+            add("new_instances", stamp.date())
 
     humans = _humans_active(conn, active_since)
     for day, members in humans.items():
@@ -90,19 +88,46 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         add("cards_created" if kind == "task_created" else "cards_claimed", day, n)
 
-    done, reviews = _status_changes(conn, since)
-    for day in done:
-        add("cards_done", day)
-    for day in reviews:
-        add("reviews", day)
+    # By `closed_at`: a report that closes a card emits no `task_updated` (§6.6).
+    for day, n in conn.execute(
+        select(func.date(t.card.c.closed_at), func.count())
+        .where(t.card.c.status == "done", t.card.c.closed_at >= since)
+        .group_by(func.date(t.card.c.closed_at))
+    ):
+        add("cards_done", day, n)
 
+    reviews_since = _reviews(conn, since, add) or today
+    days_out = []
+    for d in window:
+        found: dict[str, Any] = {"date": d.isoformat(), **rows[d.isoformat()]}
+        if d < reviews_since:  # before the hub kept history it cannot know (§16.6)
+            found["reviews"] = None
+        days_out.append(found)
     return {
         "as_of": clock.rfc3339(now),
         "window_days": days,
         "totals": _totals(conn, now),
-        "days": [{"date": d.isoformat(), **rows[d.isoformat()]} for d in window],
+        "days": days_out,
         "returning": _returning(conn, humans, today),
+        "coverage": {"reviews_since": reviews_since.isoformat()},
     }
+
+
+def _reviews(conn: Connection, since: datetime, add: Any) -> date | None:
+    """Count the history entries (§6.15) that took a card's `status` from `review` to
+    `done` or `in_progress`; a redacted entry is not counted, so the number is a lower
+    bound. Returns the first day the hub kept history, or None when it has none yet."""
+    first = conn.execute(select(func.min(t.card_history.c.at))).scalar()
+    for at, before, after in conn.execute(
+        select(t.card_history.c.at, t.card_history.c.before, t.card_history.c.after).where(
+            t.card_history.c.field == "status",
+            t.card_history.c.at >= since,
+            t.card_history.c.redacted.is_(False),
+        )
+    ):
+        if before == "review" and after in ("done", "in_progress"):
+            add("reviews", _as_date(at))
+    return _as_date(first) if first is not None else None
 
 
 def _agents_active(since: datetime) -> Any:
@@ -140,54 +165,6 @@ def _humans_active(conn: Connection, since: datetime) -> dict[str, set[str]]:
     ):
         found[_day(day)].add(human)
     return found
-
-
-def _status_changes(conn: Connection, since: datetime) -> tuple[list[str], list[str]]:
-    """The days of `task_updated` to `done`, and of cards leaving `review` (to `done` or
-    `in_progress`). The status a card had is followed through its own events, so this
-    reads every status event of the cards that changed status in the window, once."""
-    moved = select(t.event.c.subject_id).where(
-        t.event.c.at >= since, t.event.c.kind == "task_updated"
-    )
-    done: list[str] = []
-    reviews: list[str] = []
-    status: dict[str, str] = {}
-    for row in conn.execute(
-        select(t.event.c.subject_id, t.event.c.kind, t.event.c.at, t.event.c.payload)
-        .where(t.event.c.kind.in_(STATUS_KINDS), t.event.c.subject_id.in_(moved))
-        .order_by(t.event.c.seq)
-    ):
-        payload = row.payload if isinstance(row.payload, dict) else {}
-        before = status.get(row.subject_id)
-        after = _status_after(row.kind, payload, before)
-        if after is not None:
-            status[row.subject_id] = after
-        at = row.at if isinstance(row.at, datetime) else datetime.fromisoformat(str(row.at))
-        if row.kind != "task_updated" or "status" not in payload:
-            continue
-        if at.replace(tzinfo=UTC) < since:
-            continue
-        day = at.date().isoformat()
-        if payload["status"] == "done":
-            done.append(day)
-        if before == "review" and payload["status"] in ("done", "in_progress"):
-            reviews.append(day)
-    return done, reviews
-
-
-def _status_after(kind: str, payload: dict[str, Any], before: str | None) -> str | None:
-    if kind == "task_created":
-        return str(payload.get("status") or "open")
-    if kind == "task_claimed":
-        return "in_progress"
-    if kind == "task_released":
-        return "open" if before == "in_progress" else before
-    if kind == "task_reported":
-        # A report puts a card in review; one that closes it is followed by no other
-        # status event, and a closed card leaves review no more (§6.6).
-        return before if before in ("done", "cancelled") else "review"
-    status = payload.get("status")
-    return str(status) if status else None
 
 
 def _totals(conn: Connection, now: datetime) -> dict[str, int]:
