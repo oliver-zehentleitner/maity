@@ -955,3 +955,53 @@ the inbox.
 
 **Rejected alternative:** keeping the panel and reopening it after a
 save: it fixes the jump but not the place the maintainer found odd.
+
+## Signed in, the theme is set in Your account; the header has a theme menu only signed out
+
+**Id:** 4faefa89-4543-48f1-a964-53574a6ded5d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25, together with the instruction of the same day to put Chat and Notifications buttons where the theme menu was; the dashboard's implementation, 2026-10-25
+**See:** rendering.md#the-theme-is-set-on-html-by-a-script-in-head-without-defer-the-dark-tokens-answer-the-system-and-an-explicit-pick — ce73e8de-738e-4a8b-89ac-f98ef7d7ed81 — as of 2026-10-25
+**Revisit when:** the theme is kept on the hub per human, or the signed-in header gets room to spare again
+
+The theme menu (System, Light, Dark) shows in the header only on the
+pages one sees signed out: the sign-in page, the landing page, the
+public swarm page. Signed in, the header has none; Your account has a
+Theme section (`#/account/theme`, also in the profile menu) with the
+same three choices as radio buttons and a line that the choice is kept
+in this browser only. It is the same per-browser value either way, so a
+pick made signed out holds after signing in.
+
+**Reason:** a signed-in human sets the theme rarely, and the header's
+top right is wanted for what is used all the time (chat and
+notifications). Signed out there is no account to go to, so the menu
+stays there.
+
+**Rejected alternative:** the menu in the header and in the account:
+it keeps the place the header needs. Keeping the choice per human on
+the hub: a contract change for something a browser holds well enough,
+and the instruction asked for none.
+
+## At phone width the header's text beside the logo is hidden from sight, not from screen readers
+
+**Id:** d88c7687-5b55-45c7-92e8-6689e2181e06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
+
+Below 600 px the span beside the logo (the project's name, "Everything
+waiting for you", "Your account", …) is clipped to one pixel by CSS,
+the usual visually hidden pattern; on wider screens it stays as it was.
+
+**Reason:** on a phone the text crowded the menus, and the switcher's
+current tab already names the scope. Clipped rather than removed, a
+screen reader still reads where the page is.
+
+**Rejected alternative:** `display: none`: it takes the name from
+screen readers too, and the page title alone is read only on load.
+Shortening the text: the project names are the operators', of any
+length.

@@ -39,13 +39,15 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`#/account/picture`), **Preferences**
-(`#/account/preferences`), **Sign in another device** (`#/account/sign-in-device`,
+(`#/account/preferences`), **Theme** (`#/account/theme`), **Sign in another device** (`#/account/sign-in-device`,
 where the hub's machine form lists device codes), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
-stay on screen.
+stay on screen; the text beside the logo (the project's name, "Everything
+waiting for you", "Your account", …) is hidden from sight there, since the
+switcher's current tab names it, and stays in the page for a screen reader.
 
 **Notifications** (`docs/api.md` §18, `js/notify.js`). Where the hub has
 them, `GET /me/notifications?limit=0` gives the counts, per project too
@@ -60,13 +62,16 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
-**Theme.** Beside the settings gear a menu picks **System** (the
-default: the browser's light or dark), **Light** or **Dark**, kept per
-browser (`localStorage`, `maity.theme`; without storage the pick holds for
+**Theme.** **System** (the default: the browser's light or dark),
+**Light** or **Dark**, kept per browser (`localStorage`, `maity.theme`; without storage the pick holds for
 the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
 `<head>` without `defer`, so the page is painted in that theme from the
 start; the CSS gives the dark tokens to the system's choice unless Light
-is picked, and to an explicit Dark.
+is picked, and to an explicit Dark. Signed out (the sign-in page, the
+landing page) a menu in the header picks it; signed
+in the header has none, and **Your account → Theme** (`#/account/theme`)
+picks it with three radio buttons, saying that the choice is kept in this
+browser only. A pick made signed out stays after signing in.
 
 A **bell** left of the menus has the unread count of every kind but the
 open requests. It reads the latest 20 items when it opens, unread ones
@@ -116,7 +121,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/admin/users` | compatibility route for the searchable user list |
 | `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 | `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |

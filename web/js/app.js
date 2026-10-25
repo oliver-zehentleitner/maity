@@ -128,6 +128,34 @@ window.Maity = window.Maity || {};
       h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
   }
 
+  // Light, dark, or as the system has it; per browser (js/theme.js). The
+  // header's menu is for pages without a session (the maintainer's
+  // instruction): signed in, the theme is chosen in Your account.
+  const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+  function themeMenu() {
+    if (!M.theme) return null;
+    const theme = M.menuButton({
+      label: "Theme: " + THEME_WORDS[M.theme.get()],
+      listLabel: "Theme",
+      class: "theme-menu",
+      face: M.icons.theme(M.theme.get(), 18),
+      items: () => M.theme.THEMES.map((t) => ({
+        label: THEME_WORDS[t],
+        checked: t === M.theme.get(),
+        onSelect: () => {
+          M.theme.set(t);
+          clear(theme.button);
+          append(theme.button, M.icons.theme(t, 18));
+          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+        },
+      })),
+    });
+    return h("span", { class: "me" }, theme.el);
+  }
+  M.themeMenu = themeMenu;
+  M.THEME_WORDS = THEME_WORDS;
+
   function stateBadge(state, note) {
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
@@ -139,7 +167,8 @@ window.Maity = window.Maity || {};
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
+      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
@@ -810,25 +839,6 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
       ].filter(Boolean),
     });
-    // Light, dark, or as the system has it; per browser (js/theme.js).
-    const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
-    const theme = M.theme ? M.menuButton({
-      label: "Theme: " + THEME_WORDS[M.theme.get()],
-      listLabel: "Theme",
-      class: "theme-menu",
-      face: M.icons.theme(M.theme.get(), 18),
-      items: () => M.theme.THEMES.map((t) => ({
-        label: THEME_WORDS[t],
-        checked: t === M.theme.get(),
-        onSelect: () => {
-          M.theme.set(t);
-          clear(theme.button);
-          append(theme.button, M.icons.theme(t, 18));
-          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
-          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
-        },
-      })),
-    }) : null;
     // Sign in another device (§2.6.2) where the hub's machine form has it.
     let deviceCodes = false;
     M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
@@ -841,6 +851,7 @@ window.Maity = window.Maity || {};
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
         { label: "Preferences", href: "#/account/preferences" },
+        { label: "Theme", href: "#/account/theme" },
         deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
@@ -857,7 +868,7 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), theme ? theme.el : null, settings.el, profile.el)),
+        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },

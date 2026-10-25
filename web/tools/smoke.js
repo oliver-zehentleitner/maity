@@ -599,41 +599,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main.querySelectorAll(".credentials").find((c) => btn(c, "Revoke")), "Revoke").click(); await tick(); await tick();
   expect(main.querySelectorAll(".credentials li.revoked").length === 2, "revoke keeps the credential listed as revoked");
 
-  // The theme (System, Light, Dark): a menu beside the gear; the pick on <html> as data-theme, per browser.
+  // The theme (System, Light, Dark), signed in: no switch in the header; Your account sets it, kept per browser on <html> as data-theme.
   const thButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Theme: "));
   const thHtml = document.documentElement;
   const thStore = {};
   win.localStorage = { getItem: (k) => (k in thStore ? thStore[k] : null), setItem: (k, v) => { thStore[k] = String(v); }, removeItem: (k) => { delete thStore[k]; } };
-  expect(thButton() && thButton().getAttribute("aria-label") === "Theme: System" && thHtml.attrs["data-theme"] === undefined,
-    "theme: System by default, no data-theme on <html>");
-  const thPick = async (label) => {
-    thButton().click(); await tick();
-    header.querySelectorAll(".menu-item").find((el) => el.textContent === label && el.getAttribute("role") === "menuitemradio").click(); await tick();
-  };
-  thButton().click(); await tick();
-  expect(JSON.stringify(header.querySelectorAll(".menu-item").filter((el) => el.getAttribute("role") === "menuitemradio").map((el) => el.textContent + ":" + el.getAttribute("aria-checked")))
-    === JSON.stringify(["System:true", "Light:false", "Dark:false"]), "theme: three choices, the current one checked");
-  thButton().click(); await tick();
-  await thPick("Dark");
-  expect(thHtml.attrs["data-theme"] === "dark" && thStore["maity.theme"] === "dark" && thButton().getAttribute("aria-label") === "Theme: Dark", "theme: Dark sets data-theme=dark and is kept");
-  expect(byId(thButton().getAttribute("aria-controls")).getAttribute("aria-label") === "Theme",
-    "theme: the menu's name stays Theme when the pick changes");
-  await thPick("Light");
+  expect(!thButton() && !header.querySelector(".theme-menu") && thHtml.attrs["data-theme"] === undefined,
+    "theme: signed in, no theme switch in the header; System by default, no data-theme on <html>");
+  const thProto = Object.getPrototypeOf(header);
+  const thFocusWas = thProto.focus;
+  thProto.focus = function () { document.activeElement = this; };
+  await go("#/account/theme"); for (let k = 0; k < 3; k++) await tick();
+  const thRadio = (t) => byId("theme-" + t);
+  expect(thRadio("system") && thRadio("system").checked && !thRadio("light").checked && !thRadio("dark").checked
+    && main.querySelector("fieldset.theme-choice").getAttribute("aria-labelledby") === "theme-heading" && text(byId("theme-heading")) === "Theme"
+    && document.activeElement === byId("theme-heading"),
+    "theme: #/account/theme focuses the account's Theme, three choices, the current one checked");
+  thProto.focus = thFocusWas; document.activeElement = undefined;
+  const thChoose = async (t) => { thRadio(t).checked = true; thRadio(t).dispatch("change"); await tick(); };
+  await thChoose("dark");
+  expect(thHtml.attrs["data-theme"] === "dark" && thStore["maity.theme"] === "dark", "theme: Dark in the account sets data-theme=dark and is kept");
+  await thChoose("light");
   expect(thHtml.attrs["data-theme"] === "light" && thStore["maity.theme"] === "light", "theme: Light sets data-theme=light");
-  await thPick("System");
+  await thChoose("system");
   expect(thHtml.attrs["data-theme"] === undefined && !("maity.theme" in thStore), "theme: System removes both");
   // Storage that refuses: the pick still applies, nothing throws.
   win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
-  await thPick("Dark");
+  await thChoose("dark");
   expect(thHtml.attrs["data-theme"] === "dark", "theme: without storage the pick applies to this page");
-  await thPick("System");
+  await thChoose("system");
   delete win.localStorage;
+  await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   // Both ways to dark hold the same tokens: the system's (unless Light was picked) and an explicit Dark.
   const thCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
   const thDark = (sel) => { const m = thCss.split(sel + " {")[1]; return m ? m.split("}")[0].replace(/\s+/g, " ").trim() : ""; };
   expect(thCss.includes('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {') && thDark(':root[data-theme="dark"]').includes("--bg: #111418;")
     && thDark(':root:not([data-theme="light"])') === thDark(':root[data-theme="dark"]'),
     "theme: the dark tokens apply by the system unless Light is picked, and when Dark is picked, the same in both");
+  expect(/@media \(max-width: 600px\) \{\s+\.bar > \.project \{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset\(50%\);/.test(thCss),
+    "header: at phone width the text beside the logo is hidden from sight, still read out");
   // The brand (web/brand/BRAND.md): the 28 px header lockup in the page's theme, the favicons, the loader.
   const brImgs = header.querySelector(".brand").querySelectorAll("img");
   expect(brImgs.length === 2 && brImgs.map((i) => i.getAttribute("src")).join(" ") === "brand/maity-lockup.svg brand/maity-lockup-dark.svg"
@@ -2597,13 +2601,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Theme", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
     "header: arrows move through the items; Picture goes to the account's picture");
-  for (let k = 0; k < 4; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[5].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[5],
+  for (let k = 0; k < 5; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[6].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[6],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -2704,6 +2708,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
+  // Signed out, the theme is a menu in the header, beside nothing else.
+  expect(thButton() && thButton().getAttribute("aria-label") === "Theme: System", "theme: signed out, a theme switch in the header, System by default");
+  const thPick = async (label) => {
+    thButton().click(); await tick();
+    header.querySelectorAll(".menu-item").find((el) => el.textContent === label && el.getAttribute("role") === "menuitemradio").click(); await tick();
+  };
+  thButton().click(); await tick();
+  expect(JSON.stringify(header.querySelectorAll(".menu-item").filter((el) => el.getAttribute("role") === "menuitemradio").map((el) => el.textContent + ":" + el.getAttribute("aria-checked")))
+    === JSON.stringify(["System:true", "Light:false", "Dark:false"]), "theme: signed out, three choices, the current one checked");
+  thButton().click(); await tick();
+  win.localStorage = { getItem: (k) => (k in thStore ? thStore[k] : null), setItem: (k, v) => { thStore[k] = String(v); }, removeItem: (k) => { delete thStore[k]; } };
+  await thPick("Dark");
+  expect(thHtml.attrs["data-theme"] === "dark" && thStore["maity.theme"] === "dark" && thButton().getAttribute("aria-label") === "Theme: Dark", "theme: signed out, Dark sets data-theme=dark and is kept");
+  expect(byId(thButton().getAttribute("aria-controls")).getAttribute("aria-label") === "Theme",
+    "theme: the menu's name stays Theme when the pick changes");
+  await thPick("System");
+  expect(thHtml.attrs["data-theme"] === undefined && !("maity.theme" in thStore), "theme: signed out, System removes both");
+  delete win.localStorage;
   // The instance's landing page (js/landing.js, docs/api.md §16.7): at the root, for a visitor without a session.
   const lpGet = win.Maity.api.get;
   const lpPage = { enabled: true, title: "Bring your own coding agent.", updated_at: "2026-10-25T10:30:00Z",
@@ -2728,6 +2750,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lpSign = lpLinks.find((a) => text(a) === "Sign in");
   expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
     "landing: the button and a sign-in link");
+  expect(thButton() && header.querySelector(".theme-menu"), "landing: the theme switch in its header");
   await go("#/login"); await tick();
   expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
   lpAnswer = () => Promise.resolve({ enabled: false });
