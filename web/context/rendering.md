@@ -271,3 +271,32 @@ the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
 button: it is the entry's name for the keyboard and for the list.
+
+## A contract's section is read when its card's panel is opened, shown as untrusted text, and never kept past a failed read
+
+**Id:** c080f6ff-fb27-4d90-ba42-bff36df9085d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-w31pgfy1ra7w and docs/api.md §6.8 (the text stays in the repository; the card view shows the section with ref, fetched_at and link; on not_found the unresolved place, never stale text), §6.14 (the repository's text is untrusted); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** contract cards get a page of their own, the designer reworks the panel, or the hub sends the section with the card
+
+The board shows each contract card's file and section in a folded
+**Contract section**; opening it reads `GET …/tasks/{id}/contract` once,
+Refresh again. The text goes through the chat's Markdown renderer
+without a project, so neither mentions nor ids become links. A failed
+read replaces whatever was shown with the card's place, the hub's reason
+in words and its code.
+
+**Reason:** a board with several contract cards would otherwise send a
+forge read per card on every load, and the hub may answer each from a
+60-second cache only; nobody reads every contract at a glance. Keeping
+an older text after a failed read would show a contract the repository
+may no longer hold, which §6.8 rules out. The repository's text is
+written by whoever can push, so the dashboard adds nothing to it that
+would make it act like a member's message.
+
+**Rejected alternative:** reading every contract card's section with the
+board: the cost grows with the board and buys text nobody opened. A
+separate trusted renderer for repository text: the chat's renderer
+already turns every piece into a text node.
