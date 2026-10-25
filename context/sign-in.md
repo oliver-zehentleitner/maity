@@ -202,7 +202,7 @@ maintainer's direction settled the choice, not each reason):
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's go on the two-factor sketch, 2026-10-25 (TOTP app and ten recovery codes for password accounts, per instance off / optional / required for admins, asked at a new session and before sensitive actions, agents unaffected, passkeys a later stage); contract in `docs/api.md` §2.8
+**Source:** the maintainer's go on the two-factor sketch and his acceptance of the contract's seven proposed defaults, both 2026-10-25; the contract arbiter's rulings and two review rounds the same day; contract in `docs/api.md` §2.8
 **Revisit when:** passkeys (WebAuthn) are taken up, a human CLI login is added, or the second factor is found to be skipped by a sign-in method or by a call that should have asked for it
 **See:** sign-in.md#a-sign-in-link-is-only-as-strong-as-the-mailbox--the-hub-says-so-and-makes-a-mail-sign-in-visible-instead-of-claiming-to-stop-it — 7865693c-fe02-4df8-ac9e-ebb1bbf8cf20 — as of 2026-10-25
 
@@ -216,17 +216,18 @@ lost factor is reset by the instance admin only when the human confirms
 it by mail, or by the operator on the server.
 
 Which parts are confirmed and which are inferred: the factor types, the
-three policy values, step-up as such, agents being unaffected and
-passkeys later are the maintainer's go. The reasons below, asking after
-every method, `optional` as the default, the reset with proof by mail,
-the list of sensitive calls and the limits are this contract's
-proposal, marked as such in §2.8 for the maintainer to confirm. The go
-named password accounts; the contract arbiter's ruling (2026-10-25)
-lets every account enrol, since the factor is second to whatever first
-factor the account uses, opened by that first factor given in the last
-10 minutes; for an account with a password that first factor must be
-the password (the arbiter's second ruling, the same day): otherwise a session obtained through the mailbox could put its own
-factor on the account and lock out the human who holds the password.
+three policy values, step-up, agents being unaffected and passkeys
+later are the maintainer's go; asking after every first factor, the
+device code included, `optional` as the default, the admin reset with
+proof by mail and the operator command, good standing after the factor,
+the step-up list and window and the limits are defaults this contract
+proposed and the maintainer accepted. Every account may enrol, with or
+without a password (the arbiter's ruling; the go had named password
+accounts). The proof for enrolling, turning the factor off and new
+recovery codes is the password re-given within 10 minutes, or, for an
+account without one, a session in good standing at least 24 hours old
+(the arbiter's ruling after the second review round). The reasons below
+are this contract's reading.
 
 **Reason:** TOTP needs nothing from the browser or the operating
 system and nothing outside the hub — no relying-party binding to a host
@@ -239,22 +240,23 @@ mailbox can obtain a sign-in link, but not the code from the human's
 app. The reset needs the human's mailbox as well as the admin so that
 neither alone removes a human's second factor.
 
-A factor enrolled outside good standing — for an account without a
-password, from a fresh mail or device-code session — stays
-**unconfirmed** until a session in good standing that existed before it
-says "This was me"; it is asked at sign-in but gives no good standing,
-and such a session can remove it with "Not me" (proposal, after the
-second review round). Otherwise temporary access to the mailbox would
-become durable standing through a factor its holder chose, ending the
-human's trusted sessions under the existing standing rules.
+The proof keeps a fresh session from the mailbox out of enrolment:
+otherwise temporary access to the mailbox would install a factor of its
+holder's choosing, which gives good standing at the next sign-in and
+with it the power to end the human's trusted sessions — and on a
+password account would lock out the human who holds the password.
 
 **Rejected alternatives:**
 - SMS codes: a paid gateway, stored phone numbers the hub has no other
   use for, and SIM swapping (as in the passwordless entry).
-- Requiring a trusted session's approval before an enrolment from an
-  untrusted session takes effect: an account without any session in
-  good standing could then never enrol, which `required_admins` needs;
-  the unconfirmed state lets it enrol without gaining standing.
+- Any first factor given in the last 10 minutes as the proof (the
+  arbiter's first ruling): a fresh mailbox session could then enrol and
+  gain standing through its own factor.
+- A factor enrolled outside good standing that stays "unconfirmed" and
+  gives no standing until a trusted session confirms it (proposed in
+  the second review round): the arbiter chose the 24-hour guard
+  instead, which keeps such a factor from being installed at all; an
+  account without a trusted session that old waits.
 - Accepting that a mailbox session enrols a factor that gives standing:
   it turns the stated mailbox limit into a takeover of the trusted
   sessions.
@@ -266,5 +268,6 @@ human's trusted sessions under the existing standing rules.
   dependency (reason inferred).
 - Asking only after the password, leaving the device code and the mail
   link as they are: the mail link would stay a way around the factor
-  (reason inferred; the device code is a proposal either way, since its
-  approval already comes from a signed-in device).
+  (reason inferred). The device code was a close call, since its
+  approval already comes from a signed-in device; the maintainer
+  accepted asking after it too.
