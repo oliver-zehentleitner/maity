@@ -4,7 +4,7 @@
 item goes out once. `notification_mail_state` holds when a human's last hourly and daily
 digest left.
 
-Revision ID: 0043
+Revision ID: 0045
 Revises: 0036
 Create Date: 2026-10-25
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0043"
+revision: str = "0045"
 down_revision: str | None = "0036"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
