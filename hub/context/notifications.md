@@ -107,3 +107,39 @@ lock.
   the other pending registrations in the same transaction.
 - A lock on the human's row: it would not serialize two accounts racing
   for one address.
+
+## Notification mail is planned per human once a minute from the derived items, each item mailed once
+
+**Id:** de75f59b-21f5-4a26-8ab4-9819c23c6228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4, §18.5, §2.6.5; the implementation of tsk-32jx98jzne6z, part N3, 2026-10-25
+**Revisit when:** many humans make one pass longer than a minute, or the instance budget's "merged into each human's next mail" needs to hold exactly
+
+`maity_hub.notifications.mailer` runs once a minute. For each human with
+a verified address it derives the unread items, as the bell does, and
+keeps those not yet in `mail_item_sent` and not older than the address's
+`verified_at`. A new sign-in goes out at once as a security mail.
+Outside quiet hours, `immediate` items go out together once the oldest
+is two minutes old, unless ten notification mails left in the past hour;
+then they join the hour's digest. `hourly` and `daily` digests go out
+when the full hour or `daily_at` (in the human's time zone) has passed
+since the last one, recorded in `notification_mail_state`. A human's
+first pass only starts those two clocks. Every mail is a row in the
+outbox; the instance's `max_per_hour` holds rows back there rather than
+merging them into the next mail.
+
+**Reason:** deriving from the same items as the bell keeps a mail from
+ever saying more than the human may read at the moment it is built
+(§18.5, freshness). A row per mailed item is the simplest guard against
+sending twice across passes and restarts. Starting from `verified_at`
+keeps a newly confirmed address from receiving a month of backlog.
+
+**Rejected alternatives:**
+- Mailing from event hooks at write time: the readability check would be
+  the event's, not the mail's, and quiet hours and digests would need a
+  queue anyway.
+- Merging every held mail into one at the instance budget: kept simple
+  for one replica; the outbox delays them instead, which can mean two
+  mails where §18.5 asks for one.
