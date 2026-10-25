@@ -546,6 +546,11 @@ def _tombstone(
     ).rowcount
     if won != 1:
         return
+    marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
+    if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
+        from maity_hub.jourfixe import exchange
+
+        exchange.redact_copy(conn, marker, {k: v for k, v in tombstone.items() if k != "redacted"})
     events.emit(
         conn,
         mine.project.id,
