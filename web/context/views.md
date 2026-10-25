@@ -941,7 +941,8 @@ the hub for each credential to decide on `rejoin`: the view has them.
 **Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
 
 The project's settings are a view, `#/p/<slug>/settings`, shown as the
-last tab of the project's row, after Runners and Why. The gear menu keeps
+last tab of the project's row, after Runners and Why, for every member:
+what one may change is a form, the rest read only. The gear menu keeps
 what is not the project's (runners, instance administration). A save
 redraws the route it was made on, so it stays on Settings; the
 overview's Set the repository goes there at the repository field.

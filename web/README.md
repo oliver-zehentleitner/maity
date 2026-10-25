@@ -115,7 +115,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
-| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why): language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab |
+| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -275,12 +275,15 @@ too.
    of it that still works when the one pressed is disabled at the new
    place. Below 600 px the controls grow to 40 px and the arrows wrap onto
    their own line. The board can be
-   filtered by member (assigned or holding) and by area. The search field
+   filtered by column (one column, or **Closed** for done and cancelled
+   together; remembered per project in this browser, and set aside for a
+   card opened by its link), by member (assigned or holding) and by area,
+   together. The search field
    filters loaded IDs, titles and bodies immediately as you type (Unicode
    NFKC, case-insensitive). Press Enter or **Search all cards** to include
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
-   restores the board while keeping the member and area filters.
+   restores the board while keeping the column, member and area filters.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
@@ -951,9 +954,9 @@ fails while the bundle is stale.
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being
   read or typed, reloads on its own and says "1 new request." in its
-  status line, for a screen reader too, unless the **Project settings**
-  panel is open or a header control has the focus. Only the switcher is redrawn: an open **Project settings** panel,
-  what is typed in it, and how far a tab row is scrolled stay.
+  status line, for a screen reader too, unless a header control has the
+  focus. Only the switcher is redrawn: what is typed on the page and how
+  far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 5 seconds, page by page.

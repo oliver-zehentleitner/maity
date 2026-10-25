@@ -136,16 +136,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
-  // The gear menu in the header, and its "Project settings" item, which opens and closes the panel.
+  // The gear menu in the header: the hub's and one's own, not the project's.
   const gearButton = () => header.querySelectorAll("button").find((b) => b.getAttribute("aria-label") === "Settings");
-  // Project settings are the project's Settings tab (the maintainer's request): the helper goes there,
-  // and called again, back to where it came from.
-  let settingsFrom = null;
+  // Project settings are the project's Settings tab (the maintainer's request): the helper opens it,
+  // drawn afresh; a test moves on by its next go().
   const onSettings = () => /^#\/p\/[^/]+\/settings$/.test(win.location.hash);
-  // Opens it, drawn afresh (where the panel used to be closed again after a look, the test moves on
-  // by its next go()).
   const projectSettings = async () => {
-    settingsFrom = win.location.hash;
     const slug = (/^#\/p\/([^/]+)/.exec(win.location.hash) || [])[1];
     await go("#/p/" + slug + "/settings"); for (let k = 0; k < 6; k++) await tick();
   };
@@ -1724,6 +1720,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
 
+  // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
+  const cfStore = {};
+  const cfLs = win.localStorage;
+  win.localStorage = { getItem: (k) => (k in cfStore ? cfStore[k] : null), setItem: (k, v) => { cfStore[k] = String(v); }, removeItem: (k) => { delete cfStore[k]; } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const cfCols = () => main.querySelectorAll("section.column").map((c) => c.getAttribute("aria-label"));
+  const cfCards = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  const cfAll = cfCols().length;
+  expect(byId("board-column") && byId("board-column").value === "" && cfAll >= 7, "board: the column filter shows every column by default " + JSON.stringify(cfCols()));
+  byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]) && cfCards().includes("tsk-0003") && cfCards().includes("tsk-0002") && !cfCards().includes("tsk-0006")
+    && cfStore["maity.board.column.maity"] === "closed", "board: Closed shows the done and cancelled columns only, and is remembered " + JSON.stringify([cfCols(), cfCards()]));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("board-column").value === "closed" && JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]), "board: the column filter is there again on the next visit");
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-member").value = "agt-a"; byId("board-member").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["In progress"]) && cfCards().includes("tsk-0001") && !cfCards().includes("tsk-0007"),
+    "board: the column filter works with the member filter " + JSON.stringify(cfCards()));
+  await go("#/p/maity/tasks/tsk-0003"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll("article.card.wanted").length === 1 && cfCols().length === cfAll, "board: a card asked for by its link is shown whatever the column filter says");
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+  expect(cfCols().length === cfAll && !("maity.board.column.maity" in cfStore), "board: every column again, nothing remembered");
+  win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = "review"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Review"]), "board: with storage blocked the filter still works");
+  win.localStorage = cfLs;
+  await go("#/p/maity/inbox");
+
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -2438,7 +2464,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze") && onSettings(), "state changed to freeze; the save stays on the Settings tab");
+  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+    && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
+    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
@@ -4533,6 +4561,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { role: "member" })) }) : value);
   await go("#/p/maity/inbox"); await projectSettings();
   expect(!byId("project-language") && text(main).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
+  expect(onSettings() && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("section.memory-panel")
+    && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
   const oldAvailable = win.Maity.notify.state.available;
