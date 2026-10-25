@@ -11,11 +11,13 @@ from sqlalchemy import Engine, delete
 
 from maity_hub import landing
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
 
 ADMIN_PATH = "/admin/settings/landing"
+OFF = {"enabled": False, "title": None, "markdown": None, "cta": None}
 GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/#/login)."
 
 
@@ -138,6 +140,16 @@ def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
 def test_what_the_markdown_may_hold(owner: flow.Human, markdown: str) -> None:
     saved = owner.patch(ADMIN_PATH, {"markdown": markdown})
     assert saved.status_code == 200, (markdown, saved.text)
+
+
+def test_the_markdown_is_capped_in_bytes() -> None:
+    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times. Checked on
+    `check` itself: through the API the body cap (64 KiB, 413) is reached first."""
+    fits = "\U0001f984" * (landing.MAX_MARKDOWN // 4)
+    assert landing.check({"markdown": fits}, OFF)["markdown"] == fits
+    with pytest.raises(ApiError) as over:
+        landing.check({"markdown": fits + "x"}, OFF)
+    assert over.value.details == {"fields": {"markdown": "invalid"}}
 
 
 def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> None:

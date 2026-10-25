@@ -25,7 +25,7 @@ from maity_hub.views import ts
 
 ROW = "landing"  # the one row of `instance_landing`
 MAX_TITLE, MAX_LABEL = 120, 40
-MAX_MARKDOWN = 64 * 1024
+MAX_MARKDOWN = 64 * 1024  # bytes of UTF-8, not characters (§16.7)
 FIELDS = ("enabled", "title", "markdown", "cta")
 
 # A fence as `web/js/markdown.js` reads one: three or more backticks or tildes, up to
@@ -118,7 +118,11 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
             else:
                 after[name] = found
         elif name == "markdown":
-            if not isinstance(value, str) or not value.strip() or len(value) > MAX_MARKDOWN:
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value.encode()) > MAX_MARKDOWN
+            ):
                 errors[name] = "invalid"
             else:
                 problem = markdown_problem(value)
