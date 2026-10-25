@@ -18,6 +18,10 @@
   `enabled: false` holds everything, failures of the instance's setting
   retried for 24 hours; three hard failures in a row disable the address
   and write `mail_disabled` (§18.7); rows leave the outbox after a week.
+- hub: the registration mail budget (§16.2): `registration_max_per_hour`
+  (default 30, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR`), dropped over it
+  like sign-in mail, `registration_sent_last_hour` and
+  `registration_dropped_last_hour` in the mail settings.
 
 ### Security
 
