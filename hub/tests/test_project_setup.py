@@ -217,3 +217,34 @@ def test_the_packet_names_the_setup_that_waits(
         done = owner.patch(f"/projects/maity/tasks/{card.id}", {"status": "cancelled"})
         assert done.status_code == 200, done.text
     assert "setup" not in agent.resume().json()
+
+
+@pytest.mark.parametrize("state", ["accepted", "archived"])
+def test_a_patch_that_sets_the_repository_and_closes_makes_no_card(
+    owner: flow.Human, migrated: Engine, state: str
+) -> None:
+    create(owner)
+    done = owner.patch("/projects/maity", {"repository": REPO, "state": state, "reason": "r"})
+    assert done.status_code == 200, done.text
+    assert done.json()["setup"]["cards"] is None and cards(migrated) == []
+
+
+def test_a_patch_that_sets_the_repository_and_freezes_gives_the_hubs_reason(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    create(owner)
+    done = owner.patch("/projects/maity", {"repository": REPO, "state": "freeze", "reason": "r"})
+    assert done.status_code == 200, done.text
+    made = task_created(migrated)
+    assert made and all(e.payload["project_state"] == "freeze" for e in made)
+    assert all(e.payload["reason"] == "project setup" for e in made)
+
+
+def test_a_patch_that_reopens_and_sets_the_repository_makes_the_cards(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    create(owner)
+    owner.patch("/projects/maity", {"state": "accepted", "reason": "r"})
+    done = owner.patch("/projects/maity", {"repository": REPO, "state": "build", "reason": "r"})
+    assert done.status_code == 200, done.text
+    assert [c.title for c in cards(migrated)] == TITLES[:2]

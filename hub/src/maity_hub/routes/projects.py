@@ -477,16 +477,11 @@ def patch_project(
                 ktw.CACHE.forget(project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
-            if project.repository_url is None and values.get("repository_url"):
-                # The repository is first set: the setup cards chosen at creation (§6.21).
-                project_setup.make_cards(
-                    conn,
-                    _load(conn, project.id),
-                    mine.id,
-                    settings_of(request).public_url,
-                    actor,
-                    reader_of(request),
-                )
+        first_repository = (
+            "repository" in given
+            and project.repository_url is None
+            and values.get("repository_url")
+        )
         if state_changes:
             now = clock.now()
             conn.execute(
@@ -511,6 +506,18 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if first_repository:
+            # The repository is first set: the setup cards chosen at creation (§6.21),
+            # decided on the state this PATCH leaves, so a project it closes gets none
+            # and one it freezes gets the hub's reason.
+            project_setup.make_cards(
+                conn,
+                _load(conn, project.id),
+                mine.id,
+                settings_of(request).public_url,
+                actor,
+                reader_of(request),
+            )
         if new_policy is not None:
             conn.execute(
                 update(t.project)
