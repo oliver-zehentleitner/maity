@@ -2,7 +2,7 @@
 rounds, their answers and answer tags, and the presence minutes of agents.
 
 Revision ID: 0038
-Revises: 0024
+Revises: 0025
 Create Date: 2026-10-23
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0038"
-down_revision: str | None = "0024"
+down_revision: str | None = "0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
