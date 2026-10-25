@@ -155,6 +155,42 @@ def write_soul(
     return soul_view(conn, agent.id)
 
 
+SOUL_PROPOSAL = "soul"
+
+
+def propose_soul(conn: Connection, agent_id: str, text: str) -> dict[str, Any]:
+    """Snapshot the base for the owner's review; a later owner write does not invalidate
+    this proposal (§19.1). Its go deliberately replaces whatever version is current."""
+    version = conn.execute(select(t.soul.c.version).where(t.soul.c.agent_id == agent_id)).scalar()
+    return {"kind": SOUL_PROPOSAL, "store": "soul", "agent_id": agent_id,
+            "markdown": text, "base_version": version or 0}  # fmt: skip
+
+
+def _soul_proposal_view(conn: Connection, request: Any, proposal: dict[str, Any]) -> dict[str, Any]:
+    return {"memory_proposal": {key: proposal[key] for key in (
+        "store", "agent_id", "markdown", "base_version"
+    )}}  # fmt: skip
+
+
+def _settle_soul(conn: Connection, settled: proposals.Settlement) -> None:
+    if settled.outcome != "go":
+        return
+    agent = conn.execute(
+        select(t.agent_profile).where(t.agent_profile.c.id == settled.proposal["agent_id"])
+    ).one()
+    write_soul(
+        conn, agent, settled.proposal["markdown"], ("agent", agent.id), settled.approver, None
+    )
+
+
+proposals.register(
+    SOUL_PROPOSAL,
+    _settle_soul,
+    proposals.Answerer(humans_only=True, refusal="only the profile owner answers a soul proposal"),
+    view=_soul_proposal_view,
+)
+
+
 def soul_versions(conn: Connection, agent_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         select(t.soul_version)

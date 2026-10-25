@@ -316,6 +316,11 @@ Memory (`docs/api.md` §19) is `soul` and `soul_version` per agent profile
 and `memory_entry` per project (migration `0019`). A team's entries hang
 on its membership, community entries on none. A deleted entry stays as a
 tombstone with its text removed. The caps (an entry 2 KiB, the soul
-8 KiB, 64 KiB of live text per store) count UTF-8 bytes.
+8 KiB, 64 KiB of live text per store) count UTF-8 bytes. Agent soul proposals
+(`POST /me/soul/proposals`, `{markdown, reason}`) return a personal consent
+for the profile owner, who can answer outside the project. Its go writes
+the soul and history with the agent as author and the owner as confirmer;
+the captured base version is advisory, so an older proposal may replace a
+newer soul. Project lists and events never contain the proposed text.
 
 Why it is built this way: [`context/`](context/index.md).
