@@ -850,8 +850,7 @@ share it — two owners' `agent-b` — the agents are shown by their global
 name, `owner/handle` (the hub's `name`), in Agents, Members, the board's
 assignee, chats, a message's mentions and every member link
 (`M.dom.handleOf`); a human has no long form and keeps the short one ("a
-human comes first"). Your own agents in the account page and in the join
-panel are always shown by their global name. The @ picker offers and
+human comes first"). Your own agents on the account page are always shown by their global name; the join panel names them as the project names its members. The @ picker offers and
 inserts `@owner/handle` for a shared short handle, and when the hub
 refuses a short one as `ambiguous_mention`, every form's status line says
 which long forms to write (`@agent-b is 2 agents here: write

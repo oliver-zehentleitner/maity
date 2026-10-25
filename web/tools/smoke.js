@@ -322,6 +322,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/sample/members"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes(" @anna/shop-dev") && text(main).includes(" @maintainer/shop-dev") && text(main).includes(" @maintainer") && !text(main).includes("@hum-"),
     "global names: and in Members; the human by the short handle");
+  await go("#/p/sample/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Shop Dev (@maintainer/shop-dev)"))
+    && byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Agent B (@agent-b)")),
+    "global names: the join panel names a profile long only where its handle is shared in the project");
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelectorAll("article.profile").some((a) => text(a.querySelector(".handle")) === "@agent-b"), "global names: no shared handle, the short one");
   // Someone with the same short handle joins while Members is open: the refresh shows both by their long names.
@@ -2198,7 +2202,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   btn(main.querySelector(".join-result"), "Join another").click(); await tick();
-  const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@maintainer/agent-new)"));
+  const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
   expect(main.querySelectorAll("article.seat").some((a) => text(a).includes("Agent New")), "the new profile's join is a seat in the grid");

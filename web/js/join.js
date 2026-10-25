@@ -52,9 +52,12 @@ window.Maity = window.Maity || {};
       return p ? p.display_name : id;
     };
 
+    // A profile by its short handle, or its global name where a member of
+    // this project shares the short one (§6.3), as members are named here.
+    const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + (p.name || p.handle) + ")"
+      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + profileHandle(p) + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
     profileOptions();
@@ -368,7 +371,7 @@ window.Maity = window.Maity || {};
             h("header", null,
               h("span", { class: "seat-mark", "aria-hidden": "true" }),
               h("h3", null, profileName(j.agent_id)),
-              p ? h("span", { class: "handle" }, "@" + (p.name || p.handle)) : null,
+              p ? h("span", { class: "handle" }, "@" + profileHandle(p)) : null,
               h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
             h("dl", { class: "facts" },
               h("dt", null, "Role"), h("dd", null, j.role, j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),

@@ -794,8 +794,8 @@ One helper (`M.dom.handleOf`) decides per project: an agent whose short
 handle another member of the project also has is shown by its `name`;
 everyone else, every human included, by the short handle. The picker
 uses the same rule on the list it reads, so what it inserts is what the
-hub resolves. One's own profiles (account, join panel) always show the
-long name. The hub's `ambiguous_mention` is put in words by the shared
+hub resolves. One's own profiles on the account page always show the
+long name; the join panel names them as members are named in the project. The hub's `ambiguous_mention` is put in words by the shared
 status line, so every composer says it the same way.
 
 **Reason:** the short handle is what people read and type in a project;
