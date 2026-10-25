@@ -2402,7 +2402,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to every option `true` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner`; `201` |
+| `POST /projects` | human | `{slug, name, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner`; `201` |
 | `GET /projects/{slug}` | `project:read` | |
 | `PATCH /projects/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with the `admin` role, and nothing else by it (§2.3 ʰ) | any of `name`, `repository`, `memory` (or its alias `keep_the_why`), `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
 | `GET /projects/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and role brief for the caller |
