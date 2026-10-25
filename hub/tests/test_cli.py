@@ -279,3 +279,49 @@ def test_quickstart_names_the_account_after_the_login(
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
     assert main(["quickstart"]) == 0
     assert f"maity-hub: sign in as {handle}" in capsys.readouterr().out
+
+
+def test_quickstart_never_migrates_a_file_that_holds_tables(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import sqlite3
+
+    with sqlite3.connect("maity-hub.db") as db:
+        db.execute("CREATE TABLE notes (text TEXT)")
+        db.execute("INSERT INTO notes VALUES ('mine')")
+    assert main(["quickstart", "--handle", "me"]) == 1
+    assert "holds tables but no Maity schema version" in capsys.readouterr().err
+    with sqlite3.connect("maity-hub.db") as db:
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert tables == {"notes"}  # nothing migrated, nothing added
+
+
+def test_quickstart_never_adds_a_second_first_account(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from maity_hub import cli
+
+    asked = cli._read_password
+
+    def meanwhile() -> str:  # another `owner create` finishes while we ask
+        monkeypatch.setattr(cli, "_read_password", asked)
+        _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+        assert main(["owner", "create", "--handle", "other", "--display-name", "Other"]) == 0
+        return ACCOUNT_PASSWORD
+
+    monkeypatch.setattr(cli, "_read_password", meanwhile)
+    _banner_only(monkeypatch)
+    assert main(["quickstart", "--handle", "me"]) == 1
+    captured = capsys.readouterr()
+    assert "an account was created meanwhile" in captured.err
+    assert "sign in as me" not in captured.out
+    from maity_hub.db import make_engine
+
+    engine = make_engine("sqlite:///maity-hub.db")
+    with engine.connect() as conn:
+        from sqlalchemy import select
+
+        from maity_hub import tables as t
+
+        assert [r.handle for r in conn.execute(select(t.human.c.handle))] == ["other"]
+    engine.dispose()
