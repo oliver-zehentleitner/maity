@@ -352,6 +352,34 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# A mail link and its browser-bound code share one single-use row (§2.6.3).
+email_sign_in = Table(
+    "email_sign_in",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    Column("pending_hash", String(HEX_SHA256), nullable=False, unique=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("address_epoch", Integer, nullable=False),
+    Column("source", String(64), nullable=False),
+    Column("next_path", String(512), nullable=False),
+    Column("code_mac", String(HEX_SHA256)),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+email_sign_in_day = Table(
+    "email_sign_in_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+
 # --- projects and memberships -------------------------------------------------
 
 project = Table(
