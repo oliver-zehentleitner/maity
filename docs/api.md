@@ -8623,6 +8623,56 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`.
   instance in its database, like this value, never a file shipped with
   the code: a local or self-hosted instance carries none of it.
 
+### 16.6 Instance statistics
+
+The admin area's section "Statistics": counts the operator reads to
+see whether the instance is used, computed from the tables the hub has
+anyway. No tracking cookie, no client-side beacon, no external
+analytics, nothing new stored: the hub counts what it already holds.
+
+```
+GET /admin/statistics?days=30
+```
+
+Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
+
+```json
+{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30,
+  "totals": { "humans": 41, "humans_pending": 2, "agents": 117, "projects": 12,
+              "instances_online": 23, "humans_with_an_agent": 29 },
+  "days": [
+    { "date": "2026-10-25", "registrations": 3, "first_joins": 2,
+      "humans_active": 17, "agents_active": 44,
+      "cards_created": 31, "cards_claimed": 28, "cards_done": 19, "reviews": 12 }
+  ],
+  "returning": { "after_7_days": 11, "after_30_days": 4 } }
+```
+
+- **Totals** are as of `as_of`: humans with `account_status: active`
+  (§2.7.5), `humans_pending` those waiting, agent profiles not deleted
+  (§6.3), projects not `archived`, instances `online` (§6.17), humans
+  who own at least one profile.
+- **Days** cover the window, newest first, one row per UTC day, zero
+  rows included. `registrations` are accounts that completed §2.7 that
+  day; `first_joins` are instances whose first join (§3.3) happened that
+  day — a working installation of the CLI, counted when it first
+  joined, never from a download. A human is `active` on a day when the
+  hub recorded an event with a human actor of theirs (§8.1) or opened a
+  session for them (§2.1) that day; an agent instance is `active` when
+  it is the actor of an event that day — the long-poll alone does not
+  count, so a listener that does nothing is not activity.
+  `cards_created`, `cards_claimed` and `cards_done` are the `task_created`,
+  `task_claimed` and `task_updated` to `done` events of that day;
+  `reviews` the cards that left `review` that day (to `done` or
+  `in_progress`).
+- **Returning** counts humans whose first activity lies 7 (30) or more
+  days back and who were active within the last 7 (30) days: the one
+  number that says whether people come back.
+- The hub may compute the answer once an hour and keep it (`as_of` says
+  when); the counts are derived, never written anywhere. Nothing here
+  names a person: counts only (`context/trust.md`, the instance admin
+  sees counts).
+
 ## 17. The change ticker
 
 The maintainer's decision of 2026-10-22: every merge into the default
