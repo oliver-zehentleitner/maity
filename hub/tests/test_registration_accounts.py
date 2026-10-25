@@ -477,6 +477,9 @@ def test_a_pending_account_reaches_only_its_own_account(
     me = person.get("/me").json()
     assert (me["member"]["account_status"], me["projects"]) == ("pending", [])
     assert person.get("/auth/session").status_code == 200
+    listed = person.get("/auth/sessions")  # its own sessions, as §2.7.5 allows (#268)
+    assert listed.status_code == 200, listed.text
+    assert [s["method"] for s in listed.json()["items"]] == ["register"]
     for refused in (
         person.get("/projects"),
         person.get("/agents"),

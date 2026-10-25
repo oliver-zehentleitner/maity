@@ -27,7 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import clock, invitations, registration
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
-from maity_hub.auth import passwords
+from maity_hub.auth import passwords, sessions
 from maity_hub.auth.caller import SESSION_ABSOLUTE, session_id_hash
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN
@@ -255,10 +255,13 @@ def _registered_last_hour(conn: Connection, now: Any) -> int:
     )
 
 
-def start_session(conn: Connection, human_id: str, source: str) -> tuple[str, str]:
-    """A fresh dashboard session (§2.1): the session id and its CSRF token."""
-    # TODO(#268): record `method: "register"` for the session list (§2.6.5).
+def start_session(
+    conn: Connection, human_id: str, source: str, user_agent: str | None = None
+) -> tuple[str, str]:
+    """A fresh dashboard session (§2.1), `method: "register"` in the session list
+    (§2.6.5): the session id and its CSRF token. The link page sets the cookies."""
     now = clock.now()
+    browser, system = sessions.describe(user_agent)
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     conn.execute(
         insert(t.human_session).values(
@@ -269,6 +272,11 @@ def start_session(conn: Connection, human_id: str, source: str) -> tuple[str, st
             last_seen_at=now,
             expires_at=now + SESSION_ABSOLUTE,
             source=source[:64],
+            public_id=new_id("human_session"),
+            method="register",
+            browser=browser,
+            os=system,
+            ip=source[:64],
         )
     )
     return session_id, csrf
