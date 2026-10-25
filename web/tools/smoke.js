@@ -4314,7 +4314,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
       && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
     "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
-  expect(stCells("reviews")[1] !== "–" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
+  expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
     && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
     && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,
     "statistics: reviews from when they are known, who comes back explained, when counted, every day in a table");
@@ -4335,6 +4335,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
   btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
+  // A slow count does not hold up the other sections.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? new Promise(() => {}) : stGet(p));
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
+    "statistics: while it counts, users, mail and the instance are there");
   win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
   await go("#/all");
 

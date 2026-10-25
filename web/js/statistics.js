@@ -63,10 +63,12 @@ window.Maity = window.Maity || {};
     return box;
   }
 
+  // The window's figure: a sum of the days, or the highest day; partial
+  // when some days are unknown (reviews before the hub kept history).
   function figure(days, key, how) {
     const known = days.map((d) => d[key]).filter((v) => v !== null && v !== undefined);
     if (!known.length) return null;
-    return how === "peak" ? Math.max(...known) : known.reduce((a, b) => a + b, 0);
+    return { value: how === "peak" ? Math.max(...known) : known.reduce((a, b) => a + b, 0), partial: known.length < days.length };
   }
 
   async function section(ctx, root) {
@@ -95,16 +97,19 @@ window.Maity = window.Maity || {};
           note && note(t) ? h("span", { class: "stat-note muted" }, note(t)) : null))),
         h("table", { class: "stat-series" },
           h("thead", null, h("tr", null, h("th", { scope: "col" }, "Each day"), h("th", { scope: "col" }, "Last " + s.window_days + " days"),
-            h("th", { scope: "col" }, "Today"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Trend")))),
+            h("th", { scope: "col" }, "Today (UTC)"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Trend")))),
           h("tbody", null, SERIES.map(([key, label, how]) => {
-            const value = figure(s.days || [], key, how);
+            const f = figure(s.days || [], key, how);
+            const text = !f ? "–" : (how === "peak" ? "up to " + f.value + " a day" : String(f.value))
+              + (f && f.partial ? (since ? " since " + since : " (" + (s.days || []).filter((d) => d[key] != null).length + " days)") : "");
             return h("tr", { "data-series": key },
               h("th", { scope: "row" }, label),
-              h("td", null, value === null ? "–" : (how === "peak" ? "up to " + value + " a day" : String(value))),
+              h("td", null, text),
               h("td", null, newest[key] == null ? "–" : String(newest[key])),
               h("td", null, sparkline(list.map((d) => (d[key] == null ? null : d[key])))));
           }))),
-        since ? h("p", { class: "muted" }, "Reviews are counted from " + since + ", when the hub began keeping card history; earlier days show –.") : null,
+        since && (s.days || []).some((d) => d.reviews == null)
+          ? h("p", { class: "muted" }, "Reviews are counted from " + since + ", when the hub began keeping card history; earlier days show –.") : null,
         h("h3", null, "Who comes back"),
         h("p", null, (s.returning ? s.returning.after_7_days : "–") + " after 7 days · " + (s.returning ? s.returning.after_30_days : "–") + " after 30 days"),
         h("p", { class: "hint" }, "Humans whose first visit lies at least 7 (or 30) days back and who were active within the last 7 (or 30) days."),
@@ -132,7 +137,9 @@ window.Maity = window.Maity || {};
     }
 
     append(root, h("h2", null, "Statistics"), switcher, status.el, body);
-    await load();
+    // Not awaited: the admin area's other sections need not wait for the
+    // instance's heaviest read.
+    load();
   }
 
   M.statistics = { section };

@@ -68,7 +68,7 @@ window.MAITY_FIXTURES = {
   "admin-statistics-empty.json": {
     "as_of": "2026-10-25T10:00:00Z",
     "coverage": {
-      "reviews_since": null
+      "reviews_since": "2026-10-25"
     },
     "days": [
       {
@@ -91,7 +91,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -102,7 +102,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -113,7 +113,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -124,7 +124,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -135,7 +135,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -146,7 +146,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -157,7 +157,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -168,7 +168,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -179,7 +179,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -190,7 +190,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -201,7 +201,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -212,7 +212,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -223,7 +223,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -234,7 +234,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -245,7 +245,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -256,7 +256,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -267,7 +267,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -278,7 +278,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -289,7 +289,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -300,7 +300,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -311,7 +311,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -322,7 +322,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -333,7 +333,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -344,7 +344,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -355,7 +355,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -366,7 +366,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -377,7 +377,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -388,7 +388,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       },
       {
         "agents_active": 0,
@@ -399,7 +399,7 @@ window.MAITY_FIXTURES = {
         "humans_active": 0,
         "new_instances": 0,
         "registrations": 0,
-        "reviews": 0
+        "reviews": null
       }
     ],
     "returning": {
