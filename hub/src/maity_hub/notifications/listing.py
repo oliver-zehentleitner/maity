@@ -77,7 +77,8 @@ def _unread_chats(conn: Connection, mine: Any) -> int:
 
 def _unread_groups(conn: Connection, mine: Any) -> int:
     """Per group chat of the member's current stay: the others' messages after both the
-    stay began and the member's read mark (§9.2)."""
+    stay began and the member's read mark, a redacted one's tombstone included, as the
+    chat's own `unread` counts it (§9.2, §18.2)."""
     stays = conn.execute(
         select(
             t.conversation_participant.c.conversation_id,
@@ -103,7 +104,6 @@ def _unread_groups(conn: Connection, mine: Any) -> int:
                     t.event.c.conversation_id == conversation_id,
                     t.event.c.seq > max(window, seen or 0),
                     t.event.c.actor_membership != mine.id,
-                    t.event.c.redacted.is_(False),
                 )
             ).scalar_one()
         )
