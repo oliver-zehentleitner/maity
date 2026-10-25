@@ -1927,6 +1927,68 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
     "a new profile is offered and selected after its join is created");
   expect(main.querySelectorAll("article.seat").some((a) => text(a).includes("Agent New")), "the new profile's join is a seat in the grid");
+  // An agent that is already a member joins as an instance (docs/api.md §3.1, §6.17): one in place of
+  // an instance, or another one; the membership's own fields stay out of the join.
+  await go("#/p/maity/inbox"); await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick();
+  const inPosts = [];
+  const inPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { inPosts.push([p, b]); return inPost(p, b); };
+  const inBox = () => main.querySelector("fieldset.join-instance");
+  const inPick = (id) => { byId("join-agent").value = id; byId("join-agent").dispatch("change"); };
+  const inNew = () => { byId("join-replace").checked = false; byId("join-new-instance").checked = true; };
+  const inSubmit = async () => { main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  const inAgain = async () => { btn(main.querySelector(".join-result"), "Join another").click(); await tick(); };
+  inPick("agt-x");
+  expect(inBox().hidden && !byId("join-role").parentNode.hidden, "join: no instance choice for an agent that is not a member");
+  inPick("agt-b");
+  const inOpts = byId("join-replaces").querySelectorAll("option");
+  expect(!inBox().hidden && byId("join-replace").checked && inOpts.length === 1 && inOpts[0].attrs.value === "wle2"
+    && text(inOpts[0]).startsWith("agent-b#wle2 · last seen") && text(inOpts[0]).endsWith(" · 1 card")
+    && ["join-role", "join-reports", "join-areas", "join-briefing"].every((id) => byId(id).parentNode.hidden)
+    && text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
+    "join: a member offers Replace instance preselected with its active instances, the membership's fields hidden");
+  await inSubmit();
+  const inBody = inPosts[0] && inPosts[0][1];
+  expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
+    && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
+  await inAgain(); inPick("agt-b"); inNew(); await inSubmit();
+  expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
+    && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
+    "join: another instance beyond the team's limit shows the hub's instance_quota as it is");
+  inPick("agt-c");
+  expect(byId("join-replaces").querySelectorAll("option").map((o) => o.attrs.value).join() === "k3pa" && text(byId("join-quota")) === "1 of 3 instances active.",
+    "join: a revoked instance is not offered to replace");
+  inNew(); await inSubmit();
+  expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
+  // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
+  // refusal brings the choice, with the instances read again, and the next create carries it.
+  await inAgain();
+  const inGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members"
+    ? inGetAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-x", kind: "agent", handle: "spare", display_name: "Spare", role: "member",
+      team: { max_instances: 2 }, instances: [{ id: "q2zz", label: "spare#q2zz", presence: "offline", last_seen_at: null, claims: 2, revoked_at: null }] }]), next_cursor: null }))
+    : inGetAll(p));
+  win.Maity.api.post = (p, b) => {
+    inPosts.push([p, b]);
+    return b.agent.id === "agt-x" && !b.replaces && !b.new_instance
+      ? Promise.reject(new win.Maity.api.ApiError("the agent is a member: new_instance or replaces", 400, p, "invalid", { fields: { instance: "required" } }))
+      : inPost(p, b);
+  };
+  inPick("agt-x");
+  expect(inBox().hidden, "join: the list on screen does not show agt-x as a member");
+  const inProto = Object.getPrototypeOf(main);
+  const inFocus = inProto.focus;
+  inProto.focus = function () { document.activeElement = this; };
+  await inSubmit();
+  expect(inPosts.length === 4 && !inBox().hidden && byId("join-replace").checked && byId("join-replaces").value === "q2zz"
+    && text(byId("join-replaces").querySelector("option")) === "spare#q2zz · last seen never · 2 cards"
+    && text(main).includes("No join created: this agent is already a member of the project. Choose whether the line starts another instance or replaces one, then create it.")
+    && document.activeElement === byId("join-replaces") && byId("join-role").parentNode.hidden,
+    "join: the hub's instance-required refusal offers replace or another instance, the focus on the choice");
+  inProto.focus = inFocus; document.activeElement = undefined;
+  await inSubmit();
+  expect(inPosts.length === 5 && inPosts[4][1].replaces === "q2zz" && !("role" in inPosts[4][1]), "join: after the refusal the join is created as a replacement");
+  win.Maity.api.post = inPost; win.Maity.api.getAll = inGetAll;
   // Joining lives in Agents: no tab of its own; the old route opens the panel there.
   expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("Join an agent")), "join: no tab of its own any more");
   await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
@@ -3738,7 +3800,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ceLabel(ceBrief.id)).includes("Ctrl+Enter saves"), "Ctrl+Enter: the briefing says so");
   await ceCase("briefing", ceBrief, "Review first.", "/projects/maity/members/" + ceBrief.id.slice("briefing-".length), ceSubmitOf(ceBrief));
   await go("#/p/maity/join"); for (let k = 0; k < 4; k++) await tick(); await tick();
-  byId("join-agent").value = byId("join-agent").querySelectorAll("option").map((o) => o.attrs.value).filter(Boolean)[0] || "";
+  byId("join-agent").value = "agt-x"; byId("join-agent").dispatch("change");
   await ceCase("join", byId("join-briefing"), "Start with the open PRs.", "/projects/maity/joins", ceSubmitOf(byId("join-briefing")));
   win.Maity.api.post = cePost; win.Maity.api.patch = cePatch;
   await go("#/p/maity/inbox");

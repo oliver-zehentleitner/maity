@@ -984,6 +984,23 @@ window.MAITY_FIXTURES = {
         "handle": "agent-b",
         "harness": "Claude Code",
         "id": "agt-b",
+        "instances": [
+          {
+            "address": "agt-b#wle2",
+            "claims": 1,
+            "created_at": "2026-10-21T10:12:03Z",
+            "harness": "Claude Code",
+            "id": "wle2",
+            "label": "agent-b#wle2",
+            "last_seen_at": "2026-10-21T11:20:00Z",
+            "lead": false,
+            "model": "claude-opus-5-5",
+            "paused": null,
+            "presence": "offline",
+            "replaces": null,
+            "revoked_at": null
+          }
+        ],
         "joined_at": "2026-10-21T10:12:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
@@ -1000,6 +1017,13 @@ window.MAITY_FIXTURES = {
           "listening": true,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T10:12:00Z"
+        },
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 1,
+          "review_within_team": false,
+          "wake": "all"
         }
       },
       {
@@ -1012,6 +1036,38 @@ window.MAITY_FIXTURES = {
         "handle": "agent-c",
         "harness": "Pi",
         "id": "agt-c",
+        "instances": [
+          {
+            "address": "agt-c#k3pa",
+            "claims": 0,
+            "created_at": "2026-10-21T09:40:00Z",
+            "harness": "Codex",
+            "id": "k3pa",
+            "label": "agent-c#k3pa",
+            "last_seen_at": "2026-10-21T13:40:00Z",
+            "lead": false,
+            "model": null,
+            "paused": null,
+            "presence": "online",
+            "replaces": null,
+            "revoked_at": null
+          },
+          {
+            "address": "agt-c#m9td",
+            "claims": 0,
+            "created_at": "2026-10-21T09:38:00Z",
+            "harness": "Codex",
+            "id": "m9td",
+            "label": "agent-c#m9td",
+            "last_seen_at": "2026-10-21T09:39:00Z",
+            "lead": false,
+            "model": null,
+            "paused": null,
+            "presence": "offline",
+            "replaces": null,
+            "revoked_at": "2026-10-21T09:39:30Z"
+          }
+        ],
         "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
@@ -1025,7 +1081,14 @@ window.MAITY_FIXTURES = {
         "presence": "paused",
         "reports_to": "agt-a",
         "role": "member",
-        "session": null
+        "session": null,
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 3,
+          "review_within_team": false,
+          "wake": "all"
+        }
       },
       {
         "areas": [
