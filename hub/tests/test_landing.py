@@ -1,0 +1,143 @@
+"""docs/api.md §16.7: the instance's landing page."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from sqlalchemy import Engine
+
+from tests import flow
+from tests.conftest import ClientFactory
+from tests.test_join_host import join_client
+
+ADMIN_PATH = "/admin/settings/landing"
+GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/#/login)."
+
+
+@pytest.fixture
+def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
+    return flow.human(make_client, migrated)  # the first human: the instance admin
+
+
+def field(response: Any) -> Any:
+    return response.json()["error"]["details"]["fields"]
+
+
+def public(client: Any, **headers: str) -> Any:
+    return client.get("/api/v1/landing", headers=headers)
+
+
+def test_disabled_by_default_and_the_same_for_everyone(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    visitor = make_client()
+    answer = public(visitor)
+    assert (answer.status_code, answer.json()) == (200, {"enabled": False})
+    assert answer.headers["cache-control"] == "public, max-age=60"
+    assert public(owner.client).json() == {"enabled": False}  # signed in or not
+    got = owner.get(ADMIN_PATH).json()
+    assert got == {
+        "enabled": False, "title": None, "markdown": None, "cta": None,
+        "updated_at": None, "updated_by": None,
+    }  # fmt: skip
+
+
+def test_the_admin_publishes_it_and_the_etag_follows(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    visitor = make_client()
+    off_tag = public(visitor).headers["etag"]
+    saved = owner.patch(
+        ADMIN_PATH,
+        {
+            "enabled": True,
+            "title": "Bring your own coding agent.",
+            "markdown": GOOD,
+            "cta": {"label": "Sign in", "href": "/#/login"},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["updated_by"] == owner.id and saved.json()["updated_at"]
+    page = public(visitor)
+    body = page.json()
+    assert body == {
+        "enabled": True,
+        "title": "Bring your own coding agent.",
+        "markdown": GOOD,
+        "cta": {"label": "Sign in", "href": "/#/login"},
+        "updated_at": saved.json()["updated_at"],
+    }
+    tag = page.headers["etag"]
+    assert tag != off_tag
+    assert public(visitor, **{"If-None-Match": tag}).status_code == 304
+    assert public(visitor, **{"If-None-Match": off_tag}).status_code == 200
+    owner.patch(ADMIN_PATH, {"enabled": False})
+    disabled = public(visitor, **{"If-None-Match": tag})
+    assert (disabled.status_code, disabled.json()) == (200, {"enabled": False})
+
+
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        "fine\n<script>alert(1)</script>",
+        "a <b>bold</b> word",
+        "<!-- hidden -->",
+        "![logo](https://example.com/logo.png)",
+        "[x](http://example.com)",
+        "[x](javascript:alert(1))",
+        "[x](data:text/html,hi)",
+        "[x](//evil.example)",
+        "[x](https://user:pass@example.com)",
+        "[x](https:/example.com)",
+        "[x](https//example.com)",
+        "[x](/#evil)",
+        "[x](/admin)",
+        "see https://user@evil.example/",
+    ],
+)
+def test_what_the_markdown_may_not_hold(owner: flow.Human, markdown: str) -> None:
+    refused = owner.patch(ADMIN_PATH, {"markdown": markdown})
+    assert refused.status_code == 400, markdown
+    assert field(refused)["markdown"].startswith("line ")
+
+
+def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
+    text = "Install:\n\n```html\n<script>not run</script>\n```\n\nThen [sign in](/#/login)."
+    assert owner.patch(ADMIN_PATH, {"markdown": text}).status_code == 200
+    second = owner.patch(ADMIN_PATH, {"markdown": "one\n\nline three <b>"})
+    assert field(second) == {"markdown": "line 3"}
+
+
+def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> None:
+    assert field(owner.patch(ADMIN_PATH, {"enabled": True})) == {"markdown": "required"}
+    assert field(owner.patch(ADMIN_PATH, {"title": ""})) == {"title": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"title": "x" * 121})) == {"title": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "Go", "href": "http://x.com"}})) == {
+        "cta.href": "invalid"
+    }
+    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "x" * 41, "href": "/#/login"}})) == {
+        "cta": "invalid"
+    }
+    assert field(owner.patch(ADMIN_PATH, {"colour": "red"})) == {"colour": "extra_forbidden"}
+    assert (
+        owner.patch(
+            ADMIN_PATH, {"cta": {"label": "Docs", "href": "https://example.com/docs"}}
+        ).status_code
+        == 200
+    )
+
+
+def test_only_the_instance_admin_edits_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = flow.human(make_client, migrated, "someone")
+    assert other.get(ADMIN_PATH).status_code == 403
+    assert other.patch(ADMIN_PATH, {"enabled": False}).status_code == 403
+
+
+def test_the_join_host_never_serves_it(owner: flow.Human, make_client: ClientFactory) -> None:
+    owner.patch(ADMIN_PATH, {"enabled": True, "markdown": GOOD})
+    answer = join_client(make_client).get("/api/v1/landing", follow_redirects=False)
+    assert answer.status_code in (302, 404)
+    assert "markdown" not in answer.text

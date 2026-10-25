@@ -639,3 +639,6 @@ the inbox.
   instance's use (§16.6): totals, one row per UTC day for 1–90 days (default
   30) and returning humans; derived from what the hub holds, counts only,
   computed at most once an hour. Human only, `instance:admin`.
+- `GET /api/v1/landing` — the instance's landing page for visitors (§16.7):
+  `{enabled, title, markdown, cta, updated_at}`, or `{enabled: false}`; public,
+  cached a minute. The instance admin edits it at `/api/v1/admin/settings/landing`.
