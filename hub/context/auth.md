@@ -235,3 +235,36 @@ Three choices of the implementation that the contract leaves open:
 - Counting wrong codes in the database: one replica is the V1 limit for
   every limiter; a durable count only for this one would buy little
   while the per-address and per-human limits elsewhere stay in memory.
+
+## A second-factor reset: links of one generation live side by side, the page only reads, the mail goes straight to the outbox
+
+**Id:** d11356c6-3d74-4e4a-8efb-b3d129dcd516
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session and its review, 2026-10-25 (card tsk-rnchtdn1ffhe, PR #380; contract `docs/api.md` §2.8.3)
+**Revisit when:** a reset gets a cancel by the admin, or reset mails are found to be dropped or delayed under load
+
+- **A newer request does not void an older link.** Every link names the
+  factor's generation; all links of the current generation stay usable
+  until one of them is used, which moves the generation and kills the
+  rest. §2.8.3 voids links on a change of the factor, not on a new
+  request, and the admin's 3-per-day limit bounds how many can be out.
+- **The page's `GET` reads only.** It resolves the token, the request and
+  the human's language and writes nothing — no "opened" mark — so a mail
+  scanner opening the link changes nothing; the `POST` does the reset in
+  one transaction.
+- **The request mail is a security mail written straight into the
+  outbox**, not an account record that the notification mailer turns into
+  mail: it must reach the human whatever their notification modes, and
+  the security budget queues it instead of dropping it (§16.2). What the
+  human is told as a notification is the `reset` record written when the
+  reset takes effect.
+
+**Rejected alternatives:**
+- Voiding older links on a new request: the contract does not ask for it,
+  and the generation already kills every link the moment any reset or
+  change of the factor happens.
+- Sending the request through the notification mailer: a human with
+  `security` mail switched off would never see the request they have to
+  confirm.
