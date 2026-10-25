@@ -1880,13 +1880,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 6; k++) await tick();
   expect(cpPanel() && byId("board-column").value === "" && byId("board-search").value === "", "card panel: a link from elsewhere opens its card with every column shown");
   // An action in the panel keeps the focus in the panel, on its redrawn control.
-  await go("#/p/maity/tasks/tsk-0005"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const cpMove = () => cpPanel().querySelector(".card-move .menu-button");
-  cpMove().click(); await tick();
-  cpPanel().querySelectorAll(".card-move .menu-item").find((el) => el.textContent === "Move to In progress").click(); for (let k = 0; k < 6; k++) await tick();
-  expect(cpPanel() && cpPanel().contains(document.activeElement) && document.activeElement === cpMove()
-    && text(cpMove()).startsWith("In progress"),
+  const cpPick = async (label) => {
+    cpMove().click(); await tick();
+    const item = cpPanel().querySelectorAll(".card-move .menu-item").find((el) => el.textContent === label);
+    if (item) { item.click(); for (let k = 0; k < 6; k++) await tick(); }
+    return !!item;
+  };
+  await go("#/p/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpMoved = await cpPick("Move to Proposed");
+  expect(cpMoved && cpPanel() && cpPanel().contains(document.activeElement) && document.activeElement === cpMove()
+    && text(cpMove()).startsWith("Proposed"),
     "card panel: a move from the panel redraws its card there and keeps the focus on its menu");
+  // A move that leaves no control to return to (done: no menu) keeps the focus in the panel, on its heading.
+  await go("#/p/maity/tasks/tsk-0005"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpDone = await cpPick("Move to Done");
+  expect(cpDone && !cpMove() && document.activeElement === byId("card-panel-title"),
+    "card panel: a move to done, its menu gone, leaves the focus on the panel's heading");
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
   expect(!cpPanel(), "card panel: after an action Escape still closes it");
   // A hub without notes or history says so in the panel, nothing asked.

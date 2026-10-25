@@ -511,7 +511,11 @@ window.Maity = window.Maity || {};
         const card = key.split(":").slice(0, 2).join(":") + ":";
         again = all.find((e) => (e.getAttribute("data-focus") || "").startsWith(card) && usable(e)) || again;
       }
-      (again || status.el).focus();
+      // A control gone from the panel (a card moved to done has no menu
+      // left) hands the focus to the panel's heading, never out of it.
+      if (again) again.focus();
+      else if (inPanel && panel) panel.focus();
+      else status.el.focus();
     }
 
     async function reload(focusKey, inPanel) {
