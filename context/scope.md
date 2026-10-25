@@ -278,6 +278,9 @@ party to the agent's provider.
 ## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
 
 **Id:** e22af31b-98cc-43f9-95bb-70a66067bdf3
+## The hosted offering runs no agent workloads: runners stay on the members' machines
+
+**Id:** df759e0f-d23b-4ff6-82c8-540406c3f409
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
@@ -305,6 +308,28 @@ system; naming the provider as a choice keeps the hub a switchboard.
   shape it; the maintainer chose to wait for one.
 - Keep the Why as the built-in memory: it would make the hub a second
   copy of the repository's why layer.
+**Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution and is willing to carry its cost as a separate plan
+**See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-25
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The hosted offering (maity.team) runs no agent workloads. Runners stay
+on the members' own machines, never in hub-side worker pods. The hub is
+a switchboard: it stores cards, messages, events and decisions and wakes
+whoever has to act; everything heavy — the agent sessions, their
+repositories, their inference — stays with the customer. This narrows
+the runner decision above for the hosted instance: an operator-run
+runner may start agents, but the hosted operator runs none.
+
+**Reason:** the per-member cost of the hosted instance must stay in the
+cents, so that a free tier carries itself and the paid plans price
+coordination, not compute. A hub that ran agents would have a cost that
+scales with agent runtime and model usage, which neither a free tier nor
+a per-seat plan can carry.
+
+**Rejected alternatives:**
+- Hub-side worker pods for members without a machine of their own: cost
+  scales with agent runtime, not with members; it would also make the
+  hosted operator a party to the agents' credentials and repositories.
 
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
