@@ -240,12 +240,14 @@ def derive_public_url(host: str, port: int) -> str:
 
 
 def checkout_web_dir() -> Path | None:
-    """`web/` beside `hub/` when running from a checkout, else nothing."""
+    """`web/` beside `hub/` when running from a checkout, else the dashboard an installed
+    package carries (`maity_hub/web`, built in by `pyproject.toml`), else nothing."""
     package = Path(__file__).resolve().parent
     hub = package.parents[1]
     if package.parent.name == "src" and (hub / "pyproject.toml").is_file():
         return hub.parent / "web"
-    return None
+    packaged = package / "web"
+    return packaged if (packaged / "index.html").is_file() else None
 
 
 _DRIVERS = {

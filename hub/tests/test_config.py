@@ -84,3 +84,28 @@ def test_public_url_loses_its_trailing_slash() -> None:
     assert Settings.from_env({"MAITY_PUBLIC_URL": "https://hub.example/"}).public_url == (
         "https://hub.example"
     )
+
+
+def test_an_installed_package_serves_the_dashboard_it_carries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    package = tmp_path / "site-packages" / "maity_hub"
+    package.mkdir(parents=True)
+    monkeypatch.setattr(config, "__file__", str(package / "config.py"))
+    assert config.checkout_web_dir() is None  # a package without the dashboard: API only
+    (package / "web").mkdir()
+    (package / "web" / "index.html").write_text("<!doctype html>")
+    assert config.checkout_web_dir() == package / "web"
+
+
+def test_the_wheel_carries_the_dashboard_from_web() -> None:
+    import tomllib
+
+    hub = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((hub / "pyproject.toml").read_text())
+    included = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    web = {k: v for k, v in included.items() if v.startswith("maity_hub/web")}
+    assert "maity_hub/web/index.html" in web.values()
+    for source in web:
+        assert (hub / source).exists(), source
+        assert not {"fixtures", "tools", "context"} & set(Path(source).parts)

@@ -161,6 +161,10 @@ def _serve(settings: Settings) -> int:
         access_log=False,
         timeout_graceful_shutdown=GRACEFUL_SECONDS,
     )
+    if settings.web_dir is not None and settings.web_dir.is_dir():
+        print(f"maity-hub: dashboard at {settings.public_url}/", flush=True)
+    else:
+        print(f"maity-hub: API only at {settings.public_url}/api/v1, no dashboard", flush=True)
     _Server(config).run()
     return 0
 

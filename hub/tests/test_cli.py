@@ -177,3 +177,28 @@ def test_owner_create_needs_a_migrated_database(
     monkeypatch.setattr("sys.stdin", io.StringIO("a long enough password\n"))
     assert main(["owner", "create", "--handle", "ok", "--display-name", "X"]) == 1
     assert "maity-hub migrate" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("dashboard", [True, False])
+def test_serve_says_where_the_dashboard_is(
+    dashboard: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from maity_hub import cli, config
+
+    assert main(["migrate"]) == 0
+    capsys.readouterr()
+    web = tmp_path / "web"
+    if dashboard:
+        web.mkdir()
+        (web / "index.html").write_text("<!doctype html>")
+    monkeypatch.setattr(config, "checkout_web_dir", lambda: web if dashboard else None)
+    monkeypatch.setattr(cli._Server, "run", lambda self, sockets=None: None)
+    assert main(["serve"]) == 0
+    out = capsys.readouterr().out
+    if dashboard:
+        assert "maity-hub: dashboard at http://127.0.0.1:8080/" in out
+    else:
+        assert "API only at http://127.0.0.1:8080/api/v1" in out
