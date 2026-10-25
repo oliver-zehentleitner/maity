@@ -8,7 +8,7 @@ never collides), which every engine enforces the same way. An event the owner ca
 a project they are no member of names them as a human actor (`event.actor_human_id`).
 
 Revision ID: 0032
-Revises: 0020
+Revises: 0047
 Create Date: 2026-10-23
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0032"
-down_revision: str | None = "0020"
+down_revision: str | None = "0047"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
