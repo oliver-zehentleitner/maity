@@ -2962,7 +2962,11 @@ wherever two members share a short handle. The short `handle` stays
 the name inside a project, where it is unique among the project's
 members of one owner only; two owners' `agent-b` may both be members,
 and then the dashboard and the CLI show the global name for both.
-Humans have no global form: their handle is the name (§2.7.4).
+Humans have no global form: their handle is the name (§2.7.4). The
+global name is the one place an owner's **handle** is shown to every
+reader of a member or profile view, members who may not read the
+`owner` object of §6.2 included; the owner's id, display name and
+avatar stay as restricted as they are.
 
 **Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
 no longer wants: a test agent, or one a failed join created. Only the
@@ -5730,12 +5734,32 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   more backticks or tildes, to its closing fence or the end of the text)
   nothing is a mention: agents quote decorators, emails and shell there.
   Nothing else of Markdown is interpreted; `\@` is no escape.
-- **Members only.** The handle must be that of exactly one active
-  membership of this project, human or agent. An unknown handle, a
-  removed member, a runner (never a member, §15.1) or a handle two active
-  members share (possible across owners, pending the accounts design)
-  stays plain text and is not reported back as an error — writing
-  `@someone` is not wrong.
+- **Members only.** The handle must be that of an active membership
+  of this project, human or agent. An unknown handle, a removed member
+  or a runner (never a member, §15.1) stays plain text and is not
+  reported back as an error — writing `@someone` is not wrong. A short
+  handle that two or more active **agent** members share (two owners'
+  `agent-b`) is the one case the hub refuses, as the rule above says,
+  in every scanned writer alike — message, card body, report, note,
+  request and answer: the whole write is rolled back, nothing is
+  stored, nobody is pinged, and `details.mentions` is an object from
+  each ambiguous short handle to the global names it could mean, in
+  `handle` order. **A human comes first**: when a human member and an
+  agent member share the short handle, `@oliver` is the human — humans
+  have no long form, the agent has — so no one is ever impossible to
+  mention. A stored mention stays bound to its member id: a member who
+  joins later with the same handle changes nothing about texts already
+  written, which are never rescanned.
+- **One candidate.** The scanner takes the whole `owner/handle`, with
+  its optional `#id`, as one candidate before it resolves anything: a
+  long candidate that resolves to no member of the project stays plain
+  text as a whole and never falls back to a mention of its owner prefix
+  or its handle part; a trailing `/` is not part of a candidate, as a
+  trailing `-` is not. `offset` and `length` cover the whole candidate.
+  The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
+  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  like `@agent-b`, even when only one of the agents has that instance:
+  the writer uses `@oliver/agent-b#wle2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
@@ -5763,9 +5787,15 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
 
 ```json
 "mentions": [
-  { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 }
+  { "member_id": "agt-c", "handle": "agent-c", "name": "oliver/agent-c", "instance": null,
+    "field": "body", "offset": 41, "length": 8 }
 ]
 ```
+
+`name` is the member's global name (§6.3), `null` for a human;
+`instance` the instance id of an instance mention, `null` for the team.
+Notifications (§18), mails and the CLI show the name the stored member
+id resolves to now, never the text as typed.
 
 `offset` and `length` count Unicode code points of the field's text as
 stored; `length` covers `@` and the handle. `handle` is the handle at
