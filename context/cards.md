@@ -205,3 +205,30 @@ keeps the admin's oversight of what enters the board as work.
 - Subtasks always as proposals: the owner of a project with a trusted
   team would carry the gate for nothing; chosen as the default instead
   of the rule.
+
+## A contract's text stays in the repository; the card shows the section read from it
+
+**Id:** f29e3cb3-12ab-4af6-83f1-9b04dbaeb578
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; contract in `docs/api.md` §6.8
+**Revisit when:** a project wants to approve a contract's state in the hub (then a confirmation step on the card, not a copy of the text), or a project keeps its contracts outside the repository
+**See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-25
+
+A contract card names a path and a section of a file in the project's
+repository; the hub reads that section through the forge probe when
+someone asks and shows it on the card with the commit it was read at.
+The repository stays the one place the contract lives.
+
+**Reason:** the contract belongs with the code it binds, versioned and
+reviewed with it, and it is useful to people who never open the hub;
+a second copy in the hub would drift and need an approval flow of its
+own. What the human wanted was to read it where the card is, and a read
+through the probe gives that without a second source of truth.
+
+**Rejected alternatives:**
+- Contracts as hub documents with versions and approval: a second
+  source of truth and a reconciliation task.
+- Only a link to the file: a reader would leave the hub for every
+  contract, which is what the request was about.
