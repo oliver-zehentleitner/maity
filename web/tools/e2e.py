@@ -417,7 +417,11 @@ def join_line(
     """Create a join line in Agents' join panel; a new profile when handle is given."""
     page.locator("nav.views").get_by_role("link", name="Agents", exact=True).click()
     expect(page).to_have_url(re.compile(rf"#/p/{slug}/agents$"))
-    # A project without agents opens the panel itself; otherwise the title row's button does.
+    # A project without agents opens the panel itself; otherwise the title row's
+    # button does. Wait for the view to be drawn (its count line comes with the
+    # panel and the button) before looking: an instant is_visible() on a view
+    # still loading could see neither, and click a button about to be hidden.
+    expect(page.locator(".agents-count")).to_be_visible()
     panel = page.locator(".join-panel")
     if not panel.is_visible():
         page.get_by_role("button", name="+ Join an agent", exact=True).click()
