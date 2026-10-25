@@ -131,7 +131,7 @@ redaction. The request and the card already carry the round and the proposal.
 - Write the card's id into the final report: a report that changes after it
   is final, and a second writer of it besides the moderator and redaction.
 
-## A card still carries the hub's text while its title and the body's start are the proposal's
+## A card still carries the hub's text while its title or body is exactly what the hub wrote
 
 **Id:** b49bda1d-56e3-4435-93c1-c021ba596480
 **Type:** decision
@@ -143,8 +143,10 @@ redaction. The request and the card already carry the round and the proposal.
 Redacting a report proposal rewrites the card an adoption opened only "while
 the card still carries the hub's text" (`docs/api.md` §20.8). The hub
 compares: the title is replaced when it still equals the proposal's title,
-and the reason when the body still starts with it, the round's line after it
-kept. A text a person has edited since is left as it is. The card is found by
+and the body when it still equals the body the hub wrote (the reason and the
+round's line), which then becomes the same body with `[redacted]` for the
+reason. A text a person has edited since, even by adding a line, is left as
+it is. The card is found by
 its `jour_fixe` mark, so a card opened by the owner's later adopt is reached
 too.
 
@@ -157,3 +159,5 @@ anything.
   column and a write in every edit path for what a comparison already tells.
 - The history's last title and body entries: an edit back to the hub's text
   would count as an edit, though the text is the proposal's again.
+- The body starting with the reason: a person's added line would be
+  rewritten with it.
