@@ -1276,6 +1276,10 @@ def assign(
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
+        assignee = _member_id(conn, mine, body.assignee, "assignee")
+        if card.claim_holder not in (None, assignee):
+            # Before the scope: no agent, whatever its role, assigns it away (§2.3).
+            _refuse_against_a_human(conn, mine, card)
         if not mine.may("tasks:admin"):
             if not _leads_within_team(mine, card, body.assignee):
                 mine.require("tasks:admin")
@@ -1283,11 +1287,6 @@ def assign(
             # through a takeover (§6.18, §6.19), a human's never (§2.3).
             if card.claim_holder is not None:
                 raise _held(conn, card)
-        assignee = _member_id(conn, mine, body.assignee, "assignee")
-        if card.claim_holder not in (None, assignee):
-            # Before the scope: no agent, whatever its role, assigns it away (§2.3).
-            _refuse_against_a_human(conn, mine, card)
-        mine.require("tasks:admin")
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
@@ -1299,7 +1298,11 @@ def assign(
                     {"instance": "distribution_free"},
                     "the team's distribution is free: no instance is assigned",
                 )
-        chosen = instances.assigned_for(conn, assignee_row, body.instance)
+        if body.instance is None and card.assigned_to == assignee:
+            # The same team again: its instance stays; a new turn only for a new team.
+            chosen = card.assigned_instance
+        else:
+            chosen = instances.assigned_for(conn, assignee_row, body.instance)
         now = clock.now()
         values: dict[str, Any] = {"assigned_to": assignee, "assigned_instance": chosen}
         old_holder = (card.claim_holder, card.claim_instance)
@@ -1524,6 +1527,8 @@ def report(
                 raise forbidden(
                     cards.authority_scope(mine), "done needs done authority; report without done"
                 )
+            # Closing by report is a review too: not of another instance's work (§6.18).
+            cards.refuse_same_team_review(mine, card)
             cards.refuse_open_dependencies(conn, card.id)
             _refuse_unready(conn, card, fg)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")

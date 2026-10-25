@@ -9,8 +9,8 @@ it (`reported_instances`), for `review_within_team`. The project row says whethe
 of its teams narrows at all (`team_wake`), so that a project without such a team costs
 no extra query per event.
 
-Revision ID: 0020
-Revises: 0019
+Revision ID: 0022
+Revises: 0037
 Create Date: 2026-10-23
 """
 
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0020"
-down_revision: str | None = "0019"
+revision: str = "0022"
+down_revision: str | None = "0037"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

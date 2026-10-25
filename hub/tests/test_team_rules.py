@@ -572,3 +572,44 @@ def test_removing_the_last_narrowing_team_stops_the_lookup(
     assert owner.delete(f"/projects/maity/members/{first.id}").status_code == 200
     with migrated.connect() as conn:
         assert conn.execute(select(t.project.c.team_wake)).scalar_one() is False
+
+
+def test_closing_by_report_is_a_review_too(owner: flow.Human, make_client: ClientFactory) -> None:
+    owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
+    author, lead = _pair(make_client, owner, role="admin")
+    _team(owner, author.id, distribution="lead", lead_instance=lead.instance)
+    card = _assigned(owner, author)
+    path = f"/projects/maity/tasks/{card['id']}"
+    handed = lead.post(f"{path}/assign", {"assignee": author.id, "instance": author.instance})
+    assert handed.status_code == 200, handed.text
+    assert author.post(f"{path}/claim", {}).status_code == 200
+    reported = author.post(
+        f"{path}/report", {"summary": "Mine.", "pr_status": "none", "code": False}
+    )
+    assert reported.status_code == 200, reported.text
+    assert lead.patch(path, {"status": "done"}).status_code == 403
+    assert author.post(f"{path}/release", {}).status_code == 200
+    took = lead.post(f"{path}/assign", {"assignee": author.id, "instance": lead.instance})
+    assert took.status_code == 200, took.text
+    assert lead.post(f"{path}/claim", {}).status_code == 200
+    closed = lead.post(
+        f"{path}/report", {"summary": "Done.", "pr_status": "none", "code": False, "done": True}
+    )
+    assert closed.status_code == 403, closed.text
+    assert closed.json()["error"]["details"] == {
+        "reason": "same_team_review",
+        "instance": author.instance,
+    }
+
+
+def test_assigning_to_the_same_team_keeps_its_instance(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first, _ = _pair(make_client, owner, "round_robin")
+    card = _assigned(owner, first)
+    chosen = card["assigned_instance"]
+    path = f"/projects/maity/tasks/{card['id']}"
+    for _ in range(3):
+        again = owner.post(f"{path}/assign", {"assignee": first.id})
+        assert again.status_code == 200, again.text
+        assert again.json()["assigned_instance"] == chosen
