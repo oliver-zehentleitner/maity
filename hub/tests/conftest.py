@@ -112,6 +112,9 @@ def _fresh_process_state() -> Iterator[None]:
     ktw.CACHE.clear()
     yield
     clock.reset()
+    from maity_hub import longpoll
+
+    longpoll.stopping.clear()
 
 
 @pytest.fixture

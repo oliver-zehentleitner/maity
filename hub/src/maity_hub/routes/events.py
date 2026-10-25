@@ -163,7 +163,8 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 return answer(items, cursor, superseded=False)
             since = cursor  # nothing there wakes us: the next pass starts behind it
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            if remaining <= 0 or longpoll.stopping.is_set():
+                # Also when the process stops: the client simply waits again (§8.3).
                 return answer([], cursor, superseded=False)
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
