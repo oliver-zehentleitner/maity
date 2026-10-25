@@ -9,12 +9,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection
 
 from maity_hub import ratelimit
-from maity_hub.admin import instance_admin_id
+from maity_hub.admin import require_instance_admin
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, rate_limited
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, headers, settings, smtp
 
 router = APIRouter()
@@ -23,16 +22,11 @@ router = APIRouter()
 test_limiter = ratelimit.Limiter(5, 3600)
 
 
-def _require_admin(conn: Connection, caller: HumanCaller) -> None:
-    if caller.principal_id != instance_admin_id(conn):
-        raise forbidden("instance:admin")
-
-
 @router.get("/admin/settings/mail")
 def get_mail(request: Request, caller: HumanCaller) -> JSONResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        _require_admin(conn, caller)
+        require_instance_admin(conn, caller.principal_id)
         return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 
 
@@ -42,7 +36,7 @@ def patch_mail(
 ) -> JSONResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        _require_admin(conn, caller)
+        require_instance_admin(conn, caller.principal_id)
         settings.patch(conn, hub.mail, hub.secret_key, body, caller.principal_id)
         return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 
@@ -54,7 +48,7 @@ def test_mail(
     hub = settings_of(request)
     body = body or {}
     with engine_of(request).begin() as conn:
-        _require_admin(conn, caller)
+        require_instance_admin(conn, caller.principal_id)
         # The body names the recipient and nothing else: no host, port or TLS mode, so
         # the test send reaches no other address from inside the hub's network.
         extra = {name: "extra_forbidden" for name in body if name != "to"}

@@ -30,6 +30,7 @@ PREFIXES = {
     "placement": "plc",
     "memory": "mem",
     "conversation": "cnv",
+    "human_session": "hss",
     "link": "lnk",
     "history": "hst",
     "note": "nte",

@@ -145,7 +145,9 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
             raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
     conn.execute(
-        update(t.human_session).where(t.human_session.c.id_hash == id_hash).values(last_seen_at=now)
+        update(t.human_session)
+        .where(t.human_session.c.id_hash == id_hash)
+        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
     )
     conn.execute(update(t.human).where(t.human.c.id == row.human_id).values(last_seen_at=now))
     conn.execute(

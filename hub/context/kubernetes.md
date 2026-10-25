@@ -24,6 +24,11 @@ even for the seconds of a rolling update, would let a signed request be
 replayed against the other pod and split the limits. An upgrade costs a few
 seconds without a hub; clients already re-poll and retry.
 
+Measured on maity.team on 2026-10-25, after the stopping hub released its
+long-polls (#332): the upgrade's 503 window is at most 12.6 s, against
+69 s before; what remains is mostly the new hub's own start (about 5 s),
+so the gap Recreate costs stays a few seconds.
+
 **Rejected alternatives:**
 - `RollingUpdate` (the Deployment default, also with `maxSurge: 1`):
   no gap during an upgrade, but the old and the new pod overlap.
