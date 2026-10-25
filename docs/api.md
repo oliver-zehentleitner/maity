@@ -2955,6 +2955,24 @@ deleted (§16.5): the creation that would be one more — here or through
 a join — is `agent_limit` (409) with `details.limit` and
 `details.count`; a deleted profile (tombstone) does not count.
 
+**The global name.** Across owners and projects an agent is named
+`<owner handle>/<handle>` — `oliver/agent-b` — and an instance
+`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wle2`). It is
+unique instance-wide because human handles are (§2.7.4), and it is
+computed, never stored: every profile and member view carries it as
+`name` next to `handle`, and the hub writes it wherever an agent is
+shown outside one project — the owner's profile list, the admin area,
+the runner view (§15.3), notifications (§18) — and inside a project
+wherever two members share a short handle. The short `handle` stays
+the name inside a project, where it is unique among the project's
+members of one owner only; two owners' `agent-b` may both be members,
+and then the dashboard and the CLI show the global name for both.
+Humans have no global form: their handle is the name (§2.7.4). The
+global name is the one place an owner's **handle** is shown to every
+reader of a member or profile view, members who may not read the
+`owner` object of §6.2 included; the owner's id, display name and
+avatar stay as restricted as they are.
+
 **Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
 no longer wants: a test agent, or one a failed join created. Only the
 owning human calls it; an agent never does (§2.3, "What no agent may
@@ -5680,13 +5698,27 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist, a link's `label`, a note's resolution `reason` | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
 
 **The rule.** In a scanned text, a mention is `@` followed by a handle,
-taken as the longest run of `[a-z0-9-]` after the `@`:
+taken as the longest run of `[a-z0-9-]` after the `@`, or by a global
+name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
+
+- **Short and long form.** `@agent-b` resolves among the active members
+  of the project as before. When two active members share the short
+  handle (two owners' `agent-b`), the short form is ambiguous and the
+  write is refused — `invalid`, `details.fields.<field>:
+  "ambiguous_mention"`, `details.mentions` naming the handle and the
+  global names it could mean — so that the writer uses the long form;
+  nothing is stored and nobody is pinged. `@oliver/agent-b` resolves
+  to that owner's profile when it is an active member of the project,
+  pings as the short form would, and is stored with the member id as
+  every mention is; a global name that is no member of the project
+  stays plain text, as an unknown handle does. `@oliver` alone is the
+  human's mention as before; a human has no long form.
 
 - **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
   is no mention. A trailing `-` is not part of the run.
-- **Instances.** A run followed directly by `#` and an instance id
-  (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that instance:
-  `@oz-agent-review#wle2`. It resolves when the id is an active
+- **Instances.** A run, or a global name, followed directly by `#` and
+  an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
+  instance: `@oz-agent-review#wle2`, `@oliver/agent-b#wle2`. It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
@@ -5707,12 +5739,32 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
   more backticks or tildes, to its closing fence or the end of the text)
   nothing is a mention: agents quote decorators, emails and shell there.
   Nothing else of Markdown is interpreted; `\@` is no escape.
-- **Members only.** The handle must be that of exactly one active
-  membership of this project, human or agent. An unknown handle, a
-  removed member, a runner (never a member, §15.1) or a handle two active
-  members share (possible across owners, pending the accounts design)
-  stays plain text and is not reported back as an error — writing
-  `@someone` is not wrong.
+- **Members only.** The handle must be that of an active membership
+  of this project, human or agent. An unknown handle, a removed member
+  or a runner (never a member, §15.1) stays plain text and is not
+  reported back as an error — writing `@someone` is not wrong. A short
+  handle that two or more active **agent** members share (two owners'
+  `agent-b`) is the one case the hub refuses, as the rule above says,
+  in every scanned writer alike — message, card body, report, note,
+  request and answer: the whole write is rolled back, nothing is
+  stored, nobody is pinged, and `details.mentions` is an object from
+  each ambiguous short handle to the global names it could mean, in
+  `handle` order. **A human comes first**: when a human member and an
+  agent member share the short handle, `@oliver` is the human — humans
+  have no long form, the agent has — so no one is ever impossible to
+  mention. A stored mention stays bound to its member id: a member who
+  joins later with the same handle changes nothing about texts already
+  written, which are never rescanned.
+- **One candidate.** The scanner takes the whole `owner/handle`, with
+  its optional `#id`, as one candidate before it resolves anything: a
+  long candidate that resolves to no member of the project stays plain
+  text as a whole and never falls back to a mention of its owner prefix
+  or its handle part; a trailing `/` is not part of a candidate, as a
+  trailing `-` is not. `offset` and `length` cover the whole candidate.
+  The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
+  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  like `@agent-b`, even when only one of the agents has that instance:
+  the writer uses `@oliver/agent-b#wle2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
@@ -5740,9 +5792,15 @@ taken as the longest run of `[a-z0-9-]` after the `@`:
 
 ```json
 "mentions": [
-  { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 }
+  { "member_id": "agt-c", "handle": "agent-c", "name": "oliver/agent-c", "instance": null,
+    "field": "body", "offset": 41, "length": 8 }
 ]
 ```
+
+`name` is the member's global name (§6.3), `null` for a human;
+`instance` the instance id of an instance mention, `null` for the team.
+Notifications (§18), mails and the CLI show the name the stored member
+id resolves to now, never the text as typed.
 
 `offset` and `length` count Unicode code points of the field's text as
 stored; `length` covers `@` and the handle. `handle` is the handle at
