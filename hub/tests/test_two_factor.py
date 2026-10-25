@@ -579,6 +579,9 @@ def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
     admin = signed_in(make_client, migrated)
+    flow.project(admin)
+    agent = flow.agent(make_client, admin)
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hello"})
     moment.move(seconds=1)  # the alert's sign-in comes after the session confirming it
     later = make_client(secret_key=KEY)
     assert login(later).status_code == 200  # a sign-in for the admin's session to confirm
@@ -587,11 +590,19 @@ def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
     assert admin.get("/me").json()["error"]["details"]["reason"] == (
         "second_factor_enrolment_required"
     )
-    items = admin.get("/me/notifications").json()["items"]
+    bell = admin.get("/me/notifications").json()
+    items = bell["items"]
+    # Held at enrolment it sees its account's security alerts and nothing else.
+    assert {i["kind"] for i in items} == {"security"} and bell["counts"]["chat"] == 0
     alert = next(i for i in items if i["kind"] == "security")
+    up_to = admin.post("/me/notifications/read", {"up_to": bell["next_after"]})
+    assert up_to.status_code == 403
     assert admin.post("/me/notifications/read", {"ids": [alert["id"]]}).status_code == 200
     after = admin.get("/me/notifications").json()["items"]
     assert next(i for i in after if i["id"] == alert["id"])["read"] is True
+    with migrated.connect() as conn:
+        reads = conn.execute(select(t.conversation_read)).all()
+    assert reads == []  # the chat stayed unread: no id of it reached the marking
     # A fresh enrolment session (its sign-in not complete) gets neither.
     fresh = make_client(secret_key=KEY)
     login(fresh)
