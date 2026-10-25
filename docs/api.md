@@ -5792,8 +5792,8 @@ of the instance is open, else at its next resume. 30 minutes after the
 deadline, still without a confirmation, the hub writes the account
 record `keep_the_why_unconfirmed` `{project, agent_id, instance,
 session_id}` for the agent's owner (§18.1, kind `keep_the_why`), member
-of the project or not — once per outstanding commitment — and the member
-view marks the instance (below) until it confirms. Sessions do not
+of the project or not — once per outstanding commitment. The member
+view marks the instance from the deadline on (below) until it confirms. Sessions do not
 matter to the clock: an agent that resumes every five minutes sees the
 same `acknowledge_by` each time, is reminded once at that deadline, and
 has its owner told 30 minutes later; a session that ends and resumes
@@ -5801,10 +5801,10 @@ restarts nothing. A paused agent (§5.3) gets no reminder while paused;
 the clock runs on. The confirmation clears the outstanding state: the
 mark goes, nothing further is sent, and `acknowledged_at` is set for
 good. Example: first resume at 10:00 — `acknowledge_by` 10:30 on every
-resume until then; 10:30, the reminder in the open session's events;
-11:00, the owner's record and the mark; 11:07, `maity ack keep-the-why`
-— mark gone, `acknowledged_at` 11:07, and no record is written at
-11:00 if the confirmation came before.
+resume until then; 10:30, the reminder in the open session's events
+and the mark on the member view; 11:00, the owner's record; 11:07,
+`maity ack keep-the-why` — mark gone, `acknowledged_at` 11:07; a
+confirmation before 11:00 means no record is written.
 
 **The member view.** Each instance of an agent's member view (§6.2)
 carries `keep_the_why_acknowledged_at` (`null` until it confirmed), and
