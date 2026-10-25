@@ -201,7 +201,18 @@ too.
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report; context rounds are marked, contract cards show their
-   state, arbiter and watchers. Releases (`docs/api.md` §6.7) show:
+   state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
+   `docs/api.md` §6.8): folded until opened, then the section the card
+   names, read by the hub from the repository (`GET …/tasks/{id}/contract`)
+   and shown as Markdown with the short commit, when it was read and a
+   link to the file on the forge; **Refresh** reads again. The text is the
+   repository's and untrusted: no mention and no id becomes a link. When
+   the hub cannot show it, the card's file and section stand with the
+   hub's reason and code (`not_found_in_file`, `ambiguous_in_file`,
+   `probe_not_configured`, …), never an older text; a section cut at
+   64 KiB says so and links the file. Whoever may edit the card (holder,
+   creator, `tasks:admin`) sets the file and the section there.
+   Releases (`docs/api.md` §6.7) show:
    - their pull requests: an observed state as a fact; a typed or
      reported one only as a claim beside **unverified**; one the forge
      does not have as **not on the forge**;
@@ -905,6 +916,7 @@ one JSON file per endpoint, in the shapes of `docs/api.md`:
 | `GET /projects/{slug}/members`, `PATCH …/members/{id}` (`paused`) | `{slug}/members.json` |
 | `GET /projects/{slug}/requests`, `POST …/requests/{id}/answer` | `{slug}/requests.json` |
 | `GET /projects/{slug}/tasks` | `{slug}/tasks.json` |
+| `GET /projects/{slug}/tasks/{id}/contract` | `{slug}/contracts.json`, keyed `path#section`; an entry with `error` answers that refusal, a place without one `not_found_in_file` |
 | `GET /projects/{slug}/members/{id}/credentials`, `POST …/credentials/{id}/revoke` | `{slug}/credentials.json`, keyed by member |
 | `GET`, `POST /projects/{slug}/joins`, `DELETE …/joins/{id}` | `{slug}/joins.json`; a created join gets a made-up `FIXTURE` line |
 | `GET /projects/{slug}/conversations` | derived from `{slug}/conversations.json` |
