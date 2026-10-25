@@ -1005,3 +1005,28 @@ screen reader still reads where the page is.
 screen readers too, and the page title alone is read only on load.
 Shortening the text: the project names are the operators', of any
 length.
+
+## A report's why links its entry's file at the reported head; the dashboard builds the link
+
+**Id:** bae95d1f-f84a-4261-ae51-6a0f7f51296a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and the maintainer's card for the web side of the Keep the Why commitment (tsk-bq6q65910g13), 2026-10-25; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub sends a URL for the why, a forge other than GitHub is supported (§11), or the probe reads the entry at the head
+
+A code report's `why.ref` (`<path>#<id>`) shows under the report as a
+link to `<repository url>/blob/<head>/<path>`, with the entry's `#<id>`
+beside it as text; `why.none` shows as "No why: <reason>". The link is
+made only for an https repository, a 40-hex head and a relative `.md`
+path without `..`; anything else stays as code text.
+
+**Reason:** the contract carries the reference, not a URL, and the hub
+reads no repository for it. At the report's head the file is the one
+the review saw, not whatever the default branch holds later. The
+entry's Id is no heading anchor on the forge, so a fragment would point
+nowhere; it is shown for the reader to find.
+
+**Rejected alternative:** linking the default branch: the entry may move
+or change after the merge. A fragment with the Id: no forge renders it as
+an anchor. Waiting for a hub-made URL: none is in the contract.
