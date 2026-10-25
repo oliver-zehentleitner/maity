@@ -2832,6 +2832,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/"); await dsSettle();
   expect(byId("login-handle") && !dsAsked.includes("/auth/methods") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail"),
     "sign-in: a hub without the methods is not asked for them and offers the password alone");
+  // Listed, but the call fails (404, 5xx): the same, and no error on the page.
+  for (const status of [404, 503]) {
+    win.Maity.api.forgetRoutes();
+    win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", status, p, status === 404 ? "not_found" : "unavailable", {})) : dsGet(p));
+    await go("#/p/maity/inbox"); await go("#/"); await dsSettle();
+    expect(byId("login-handle") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail") && !main.querySelector(".error") && !main.querySelector(".send-status.failed"),
+      "sign-in: a methods call that answers " + status + " leaves the password form alone, with no error");
+  }
   win.Maity.api.get = dsGet; win.Maity.api.forgetRoutes();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await dsSettle();
