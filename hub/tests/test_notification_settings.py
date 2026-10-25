@@ -500,3 +500,48 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
                 address=change["address"], approve=True, signing_key=None, public_url="",
             )  # fmt: skip
         assert decided.value.details == {"reason": "not_in_good_standing"}
+
+
+def test_only_the_verified_address_in_use_counts_failures(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "me@example.org")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    with migrated.begin() as conn:  # only the verification mail to the new address waits
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.recipient != "new@example.org")
+            .values(status="sent")
+        )
+    for _ in range(3):
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.mail_outbox)
+                .where(t.mail_outbox.c.recipient == "new@example.org")
+                .values(status="waiting", not_before=clock.now())
+            )
+        server = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+        try:
+            outbox.send_due(migrated, mail_env(server.port).mail, None)
+        finally:
+            server.close()
+    got = owner.get(S).json()["email"]
+    assert (got["address_status"], got["hard_failures"]) == ("verified", 0)
+
+
+def test_forgetting_old_rows_never_touches_waiting_mail(migrated: Engine) -> None:
+    old = clock.now() - timedelta(days=8)
+    with migrated.begin() as conn:
+        for status in ("waiting", "sent", "failed", "dropped"):
+            row = outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b")
+            conn.execute(
+                update(t.mail_outbox)
+                .where(t.mail_outbox.c.id == row)
+                .values(status=status, created_at=old)
+            )
+        fresh = outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b")
+        conn.execute(update(t.mail_outbox).where(t.mail_outbox.c.id == fresh).values(status="sent"))
+        outbox.forget_old(conn)
+        left = conn.execute(select(t.mail_outbox.c.status, t.mail_outbox.c.id)).all()
+    assert sorted(status for status, _ in left) == ["sent", "waiting"]
+    assert fresh in {row_id for _, row_id in left}
