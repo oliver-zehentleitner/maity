@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from maity_hub import ratelimit
 from maity_hub.admin import require_instance_admin
+from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, headers, settings, smtp
@@ -37,6 +38,7 @@ def patch_mail(
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         require_instance_admin(conn, caller.principal_id)
+        second_factor.require_step_up(conn, hub, caller)  # §2.8.4
         settings.patch(conn, hub.mail, hub.secret_key, body, caller.principal_id)
         return JSONResponse(settings.view(conn, settings.resolve(conn, hub.mail, hub.secret_key)))
 

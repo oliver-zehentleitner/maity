@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
@@ -64,6 +65,9 @@ def patch_settings(
     address = origin_of(request).address
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
+        email = body.get("email")
+        if isinstance(email, dict) and "address" in email:
+            second_factor.require_step_up(conn, hub, caller)  # §2.8.4
 
         def wrong_password() -> None:
             # A wrong current password counts against the login limit (§2.1, §18.4).
@@ -130,6 +134,8 @@ def _decide(
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
+        if approve:
+            second_factor.require_step_up(conn, hub, caller)  # §2.8.4
         preferences.decide_held(
             conn,
             human=human,

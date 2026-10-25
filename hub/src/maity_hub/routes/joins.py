@@ -26,7 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import clock, events, idempotency, instances
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, second_factor
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.auth.leaks import revoke
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -102,6 +102,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
         agent_id = _agent_for_join(conn, body.agent, caller.principal_id)
         existing = conn.execute(
             select(t.membership).where(

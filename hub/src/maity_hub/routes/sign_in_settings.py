@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 
 from maity_hub.admin import require_instance_admin
-from maity_hub.auth import sign_in_settings
+from maity_hub.auth import second_factor, sign_in_settings
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 
 router = APIRouter()
@@ -30,5 +30,6 @@ def patch_sign_in(
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         require_instance_admin(conn, caller.principal_id)
+        second_factor.require_step_up(conn, hub, caller)  # §2.8.4
         sign_in_settings.patch(conn, hub, body, caller.principal_id)
         return JSONResponse(sign_in_settings.view(conn, hub))

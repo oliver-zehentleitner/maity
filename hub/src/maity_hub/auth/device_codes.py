@@ -19,6 +19,7 @@ from sqlalchemy import Connection, insert, select, update
 from maity_hub import avatars, clock, ids
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.views import ts
 
@@ -205,20 +206,25 @@ def pending_view(conn: Connection, row: Any, now: datetime) -> dict[str, Any]:
 
 
 def complete(
-    conn: Connection, row: Any, *, address: str, user_agent: str | None
-) -> tuple[str, str, str]:
+    conn: Connection, row: Any, *, address: str, user_agent: str | None, hub: Settings
+) -> tuple[str, str, str, str]:
     """The approved code becomes the new browser's session: (cookie value, CSRF token,
-    public id). One code yields at most one session."""
+    public id, state). One code yields at most one session; for an enrolled human it
+    owes the second step, the device code included (§2.8.2)."""
+    from maity_hub.auth import second_factor  # it imports this module through settings
+
     approver = conn.execute(
         select(t.human_session.c.public_id).where(t.human_session.c.id_hash == row.session_hash)
     ).scalar()
-    created = sessions.create(
+    created = second_factor.begin(
         conn,
+        hub,
         row.human_id,
         method="device_code",
         address=address,
         user_agent=user_agent,
         approved_by=approver,
+        next_route=row.next,
     )
     conn.execute(
         update(t.device_code)
