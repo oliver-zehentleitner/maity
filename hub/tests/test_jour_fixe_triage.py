@@ -11,6 +11,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
+from maity_hub.jourfixe import worker
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_jour_fixe_exchange import Round, kinds, rounds_path
@@ -186,3 +187,67 @@ def test_a_closed_project_finishes_the_round_but_opens_no_card(reporting: Round)
     built = body.json()["round"]["report"]
     assert built["proposals"][0]["task_id"] is None
     assert built["proposals_not_carded"] == [{"proposal_id": "r1", "reason": "project_closed"}]
+
+
+def test_a_report_replay_answers_only_a_member(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    from tests import factory
+    from tests.test_jour_fixe_exchange import STEP, listen
+
+    other = flow.human(make_client, migrated, "other")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    series = {
+        "enabled": False,
+        "recurrence": {"freq": "daily"},
+        "time": "10:00",
+        "timezone": "UTC",
+        "moderator": other.id,
+    }
+    assert (
+        owner.patch("/projects/maity", {"policy": {"jour_fixe": series}, "reason": "r"}).status_code
+        == 200
+    )
+    member = flow.agent(make_client, owner)
+    listen(member)
+    other.get("/me")
+    round_id = other.post("/projects/maity/jour-fixe/rounds", {"reason": "r"}).json()["id"]
+    member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
+    now[0] += STEP
+    worker.sweep(migrated)
+    other.get("/me")
+    statement = {"topics": [{"title": "T", "items": [{"text": "ok", "from": member.id}]}]}
+    assert other.post(rounds_path(round_id, "/statement"), statement).status_code == 201
+    now[0] += STEP
+    worker.sweep(migrated)
+    path = f"/api/v1{rounds_path(round_id, '/report')}"
+    headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": "jour-fixe-report-replay-1"}
+    body = {"summary": "s", "findings": [], "proposals": []}
+    first = other.client.post(path, json=body, headers=headers)
+    assert first.status_code == 200, first.text
+    assert owner.delete(f"/projects/maity/members/{other.id}").status_code == 200
+    replay = other.client.post(path, json=body, headers=headers)
+    assert replay.status_code == 404, replay.text
+
+
+def test_a_demoted_moderator_no_longer_decides(reporting: Round) -> None:
+    demoted = reporting.owner.patch(
+        f"/projects/maity/members/{reporting.lead.id}", {"role": "member"}
+    )
+    assert demoted.status_code == 200, demoted.text
+    refused = report(reporting, proposals=[decided(reporting.owner)])
+    assert refused.json()["error"]["details"]["reason"] == "may_not_decide"
+
+
+def test_the_report_keeps_its_byte_caps(reporting: Round) -> None:
+    summary = report(reporting, summary="ä" * 4097)  # 8194 bytes
+    assert summary.json()["error"]["details"]["fields"] == {"summary": "too_long"}
+    finding = report(reporting, findings=[{"topic_id": "t1", "text": "ä" * 513}])
+    assert finding.json()["error"]["details"]["fields"] == {"findings": "too_long"}
+    reason = report(reporting, proposals=[{**TO_OWNER, "reason": "ä" * 1025}])
+    assert reason.json()["error"]["details"]["fields"] == {"proposals": "too_long"}
+    ascii_over = report(reporting, summary="a" * 8193)
+    assert ascii_over.status_code == 400
+    assert report(reporting, summary="ä" * 4096).status_code == 200  # 8192 bytes: in
