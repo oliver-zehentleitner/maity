@@ -234,7 +234,7 @@ def test_two_completions_at_once_create_one_account(
         pytest.skip("SQLite serialises writers; the lock is for the server databases")
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     one = requested(make_client, migrated, settings)
-    two = requested(make_client, migrated, settings)
+    two = requested(make_client, migrated, settings, peer="198.51.100.4")  # both stay usable
     first, second = migrated.connect(), migrated.connect()
     started, finished = threading.Event(), threading.Event()
 
