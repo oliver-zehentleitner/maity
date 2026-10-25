@@ -8774,26 +8774,43 @@ is no environment form: the page is content, not deployment.
   "updated_at": "2026-10-25T10:30:00Z", "updated_by": "hum-maintainer" }
 ```
 
-- **Markdown rules.** The body is rendered by the dashboard with the
-  renderer it uses for card bodies: no raw HTML, no scripts, links only
-  `https` or a dashboard route, images only from the hub's own origin
-  (an uploaded logo or banner, §6.10) — anything else is `invalid` with
-  `details.fields.markdown` naming the first offending line. The text
-  is the operator's and is shown as written; it is not a mention and
-  not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Markdown rules.** Text only in this version: headings, paragraphs,
+  emphasis, lists, block quotes, fenced code and links — no images,
+  because the hub has no public image store (avatars, logos and banners
+  are read by members, §6.10, §11.2, and this page is for visitors) —
+  and no raw HTML: a line with an HTML tag outside fenced code is
+  `invalid` with `details.fields.markdown` naming it, while HTML inside
+  fenced code is text and stays inert. A link is an `https` URL or a
+  dashboard route, an absolute path beginning with `/#/`; anything else
+  (`http`, `javascript`, `data`, a protocol-relative `//`, credentials
+  in the URL, a lookalike prefix) is `invalid` the same way. The
+  dashboard renders it with its card-body renderer — text nodes, safe
+  links — extended for this surface by the dashboard-route link alone;
+  `title` and the `cta` label are text nodes. What the hub validates
+  and what the dashboard renders are the same list, kept in step. The
+  text is the operator's and is shown as written; it is not a mention
+  and not an instruction to anyone (§8.6, `docs/agents.md`).
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers `{enabled, title,
   markdown, cta, updated_at}` — `{enabled: false}` alone when disabled
-  — with `Cache-Control: public, max-age=60` and an ETag, as the badge
-  does (§6.20). It carries no `updated_by`.
-- **The dashboard's part.** At `/`, a visitor without a session sees
-  the landing page when `enabled`, with the `cta` and a sign-in link;
-  with a session they land on the dashboard as today; when disabled,
-  the login page as today. `/#/login` always reaches the login page.
-  The landing page changes nothing about §2.6.1: which sign-in methods
-  the login page offers is that section's.
-- **Changes** are recorded as an instance event for the admin's eye
-  (`updated_at`, `updated_by`); they emit no project event and wake
+  — the same body for every visitor, with `Cache-Control: public,
+  max-age=60` and an ETag computed over the body (so it changes with
+  every edit and with `enabled`, and a disabled page never answers
+  `304` to an enabled ETag). An edit or a disable is visible within
+  60 s: that delay is accepted, the page is content, not a gate. It
+  carries no `updated_by`.
+- **The dashboard's part.** At `/`, a visitor without a session fetches
+  `GET /landing` and sees the landing page when `enabled`, with the
+  `cta` and a sign-in link; when disabled, or when the call fails, the
+  login page as today — the landing page can never stand between a
+  person and sign-in. A visitor with a session lands on the dashboard
+  as today; that routing is the dashboard's and is never part of the
+  public JSON. `/#/login` always reaches the login page. The landing
+  page changes nothing about §2.6.1: which sign-in methods the login
+  page offers is that section's.
+- **Changes** are recorded on the setting itself — `updated_at`,
+  `updated_by` — which is the record in this version (there is no
+  instance event list yet); they emit no project event and wake
   nobody.
 
 ## 17. The change ticker
