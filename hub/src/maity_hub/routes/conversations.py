@@ -69,6 +69,7 @@ class Outsider:
     principal_id: str
     kind: str = "human"
     id: int = -1  # names no membership row
+    role: str | None = None  # holds no role in the project
 
     def may(self, scope: str) -> bool:
         del scope
