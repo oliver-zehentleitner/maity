@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, instances
+from maity_hub import clock, instances, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -349,6 +349,12 @@ def close(
 
 
 def _closed(conn: Connection, row: Any, actor: Actor | None) -> None:
+    if row.request_id is not None:
+        # Closing the takeover withdraws its escalation, if that is still open (§6.19).
+        from maity_hub.routes.requests import close_request  # requests settles through here
+
+        how = (row.outcome or {}).get("how") or row.status
+        close_request(conn, row.request_id, "withdrawn", actor, reason=f"takeover_{how}")
     audience = [*_parties(conn, row), *_creator(conn, row.task_id)]
     if row.request_id is not None or row.override is not None:
         audience.append("role:admin")
@@ -519,6 +525,120 @@ def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
     return owners <= {own}
 
 
+# --- escalation (§6.19) ----------------------------------------------------------------------
+
+
+REPLIES = [
+    {"id": "transfer", "label": "Transfer the card to the receiver"},
+    {"id": "keep", "label": "Keep it with the holder"},
+]
+
+
+def escalate(
+    conn: Connection, row: Any, actor: Actor | None, *, by: str | None, reason: str | None
+) -> bool:
+    """Move a disputed takeover to the admin team: a `decision` request to `role:admin`
+    with `transfer` and `keep`, the holder working on meanwhile. False when it was not
+    `objected` any more."""
+    from maity_hub import inbox
+    from maity_hub.routes.requests import file_proposal  # requests imports this module
+
+    moved = conn.execute(
+        update(t.takeover)
+        .where(t.takeover.c.id == row.id, t.takeover.c.status == "objected")
+        .values(status="escalated")
+    ).rowcount
+    if moved != 1:
+        return False
+    objection = row.objection or {}
+    request_id = file_proposal(
+        conn,
+        row.project_id,
+        row.requested_by,
+        "decision",
+        f"Takeover of {row.task_id}: transfer or keep?",
+        reason or row.reason,
+        {"kind": "takeover_escalation", "takeover_id": row.id},
+        to=inbox.Addressee("role", role="admin"),
+        options=REPLIES,
+        while_open="proceed_provisionally",
+        actor=actor,
+        tried=objection.get("reasons"),
+        task_id=row.task_id,
+        takeover_id=row.id,
+    )
+    conn.execute(update(t.takeover).where(t.takeover.c.id == row.id).values(request_id=request_id))
+    escalated = load(conn, row.id)
+    emit(
+        conn,
+        row.project_id,
+        "takeover_escalated",
+        list(dict.fromkeys([*_parties(conn, escalated), "role:admin", "role:owner"])),
+        {**view(conn, escalated), "by": by},
+        actor=actor,
+        subject=("task", row.task_id),
+    )
+    return True
+
+
+def request_escalation(
+    conn: Connection, mine: Membership, caller: Caller, row: Any, reason: str | None
+) -> None:
+    """Either party escalates a disputed takeover (§6.19)."""
+    if not (is_holder(mine, row) or is_requester(mine, row)):
+        raise ApiError(
+            403,
+            "forbidden",
+            "only the holder or the requester escalates a takeover",
+            {"reason": "not_a_party"},
+        )
+    if row.status != "objected":
+        raise invalid({"status": "not_objected"}, "only a disputed takeover is escalated")
+    escalate(conn, row, caller.actor(mine.id), by=mine.principal_id, reason=reason)
+
+
+def _admin_team_answers(conn: Connection, request: Any, mine: Any) -> str | None:
+    """Only the admin team answers an escalation, never a party (§6.19)."""
+    proposal = request.proposal or {}
+    row = conn.execute(
+        select(t.takeover).where(t.takeover.c.id == proposal.get("takeover_id"))
+    ).first()
+    if row is not None and _party(mine, row):
+        return "party_to_takeover"
+    if row is None or not admin_team(mine, row):
+        return "admin_team_only"
+    return None
+
+
+def _settle_escalation(conn: Connection, settled: proposals.Settlement) -> None:
+    """The admin team's answer closes the takeover: `transfer` moves the card, `keep`
+    refuses it (`outcome.how: decided`). A withdrawal comes from the takeover closing
+    some other way and changes nothing more."""
+    if settled.outcome == "withdrawn":
+        return
+    row = conn.execute(
+        select(t.takeover).where(t.takeover.c.id == settled.proposal.get("takeover_id"))
+    ).first()
+    if row is None or row.status != "escalated":
+        return
+    if settled.reply_id == "transfer":
+        transfer(conn, row, "decided", settled.closer, by=settled.approver)
+    elif settled.reply_id == "keep":
+        close(conn, row, "refused", "decided", settled.closer, by=settled.approver)
+
+
+proposals.register(
+    "takeover_escalation",
+    _settle_escalation,
+    proposals.Answerer(
+        humans_only=False,
+        refusal="only the admin team answers a takeover's escalation",
+        predicate=_admin_team_answers,
+        reply_required=True,
+    ),
+)
+
+
 # --- the card routes' side ----------------------------------------------------------------
 
 
@@ -626,8 +746,8 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 
 def settle(conn: Connection, project_id: str, now: datetime | None = None) -> None:
     """Move on what time decides in one project: an open takeover whose window ended is
-    transferred (`window_elapsed`). Under the project lock, so the worker and a request
-    settle alike."""
+    transferred (`window_elapsed`), a disputed one past its second window escalated.
+    Under the project lock, so the worker and a request settle alike."""
     now = now or clock.now()
     lock_project(conn, project_id)
     due = conn.execute(
@@ -639,6 +759,16 @@ def settle(conn: Connection, project_id: str, now: datetime | None = None) -> No
     ).all()
     for row in due:
         transfer(conn, row, "window_elapsed", None, by=None)
+    # A disputed one that found no settlement within the second window (§6.19).
+    disputed = conn.execute(
+        select(t.takeover).where(
+            t.takeover.c.project_id == project_id,
+            t.takeover.c.status == "objected",
+            t.takeover.c.escalate_at <= now,
+        )
+    ).all()
+    for row in disputed:
+        escalate(conn, row, None, by=None, reason=None)
 
 
 def due_projects(conn: Connection) -> list[str]:
@@ -646,7 +776,10 @@ def due_projects(conn: Connection) -> list[str]:
     return list(
         conn.execute(
             select(t.takeover.c.project_id)
-            .where(t.takeover.c.status == "open", t.takeover.c.window_ends_at <= now)
+            .where(
+                ((t.takeover.c.status == "open") & (t.takeover.c.window_ends_at <= now))
+                | ((t.takeover.c.status == "objected") & (t.takeover.c.escalate_at <= now))
+            )
             .distinct()
         ).scalars()
     )

@@ -173,6 +173,20 @@ def withdraw(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+@router.post("/projects/{slug}/takeovers/{takeover_id}/escalate")
+def escalate(
+    slug: str, takeover_id: str, body: ReasonIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        row = _takeover(conn, mine, takeover_id)
+        takeovers.refuse_closed(row)
+        takeovers.request_escalation(conn, mine, caller, row, body.reason)
+        return _outcome(conn, row.id)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
 @router.post("/projects/{slug}/takeovers/{takeover_id}/override")
 def override(
     slug: str, takeover_id: str, body: OverrideIn, request: Request, caller: AnyCaller

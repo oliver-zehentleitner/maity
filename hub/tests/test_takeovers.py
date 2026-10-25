@@ -392,3 +392,87 @@ def test_a_humans_expired_claim_is_never_taken_over(
         assert response.status_code == 403, response.text
         assert response.json()["error"]["details"]["reason"] == "humans_only"
     assert _card(owner, card_id)["claim"]["holder"] == owner.id
+
+
+# --- escalation ---------------------------------------------------------------------------
+
+
+def _disputed(owner: flow.Human, make_client: ClientFactory) -> tuple[Any, Any, str, str]:
+    holder = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner, role="admin")
+    card_id = _held(owner, holder)
+    takeover_id = _open(asker, card_id).json()["id"]
+    objected = holder.post(
+        f"/projects/maity/takeovers/{takeover_id}/respond", {"object": {"reasons": "nearly done"}}
+    )
+    assert objected.status_code == 200, objected.text
+    return holder, asker, card_id, takeover_id
+
+
+def test_a_party_escalates_to_the_admin_team(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    holder, asker, card_id, takeover_id = _disputed(owner, make_client)
+    path = f"/projects/maity/takeovers/{takeover_id}"
+    stranger = flow.agent(make_client, owner)
+    refused = stranger.post(f"{path}/escalate", {})
+    assert refused.status_code == 403, refused.text
+    escalated = holder.post(f"{path}/escalate", {"reason": "we disagree"})
+    assert escalated.status_code == 200, escalated.text
+    assert escalated.json()["status"] == "escalated"
+    request_id = escalated.json()["request_id"]
+    asked = owner.get(f"/projects/maity/requests/{request_id}").json()
+    assert asked["class"] == "decision" and asked["to"] == "role:admin"
+    assert [r["id"] for r in asked["replies"]] == ["transfer", "keep"]
+    assert asked["while_open"] == "proceed_provisionally"
+    assert asked["takeover_id"] == takeover_id and asked["tried"] == "nearly done"
+    assert _events(migrated, "takeover_escalated")
+    answer = f"/projects/maity/requests/{request_id}/answer"
+    party = asker.post(answer, {"reply_id": "transfer"})
+    assert party.status_code == 403
+    assert party.json()["error"]["details"]["reason"] == "party_to_takeover"
+    member = stranger.post(answer, {"reply_id": "transfer"})
+    assert member.json()["error"]["details"]["reason"] == "admin_team_only"
+    text_only = owner.post(answer, {"text": "move it"})
+    assert text_only.status_code == 400
+    assert text_only.json()["error"]["details"]["fields"] == {"reply_id": "required"}
+    decided = owner.post(answer, {"reply_id": "transfer"})
+    assert decided.status_code == 200, decided.text
+    row = owner.get(path).json()
+    assert (row["status"], row["outcome"]["how"]) == ("transferred", "decided")
+    assert _card(owner, card_id)["claim"]["holder"] == asker.id
+
+
+def test_keep_refuses_the_takeover(owner: flow.Human, make_client: ClientFactory) -> None:
+    holder, _, card_id, takeover_id = _disputed(owner, make_client)
+    path = f"/projects/maity/takeovers/{takeover_id}"
+    request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
+    admin = flow.agent(make_client, owner, role="admin")  # an admin agent, same owner
+    kept = admin.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "keep"})
+    assert kept.status_code == 200, kept.text
+    row = owner.get(path).json()
+    assert (row["status"], row["outcome"]["how"]) == ("refused", "decided")
+    assert _card(owner, card_id)["claim"]["holder"] == holder.id
+
+
+def test_an_unsettled_dispute_escalates_itself(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, later: list[timedelta]
+) -> None:
+    _, _, _, takeover_id = _disputed(owner, make_client)
+    later.append(timedelta(minutes=61))
+    takeovers.sweep(migrated)
+    takeovers.sweep(migrated)  # escalated once
+    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    assert row["status"] == "escalated" and row["request_id"] is not None
+    assert len(_events(migrated, "takeover_escalated")) == 1
+
+
+def test_withdrawing_an_escalated_takeover_withdraws_its_request(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    holder, asker, _, takeover_id = _disputed(owner, make_client)
+    path = f"/projects/maity/takeovers/{takeover_id}"
+    request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
+    assert asker.post(f"{path}/withdraw", {}).json()["status"] == "withdrawn"
+    asked = owner.get(f"/projects/maity/requests/{request_id}").json()
+    assert asked["status"] == "withdrawn"
