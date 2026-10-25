@@ -500,6 +500,76 @@ def test_two_accepts_at_once_use_it_once(
         pool.shutdown(wait=True, cancel_futures=True)
 
 
+def _held(migrated: Engine, change: Any, call: Any) -> Any:
+    """`change` (a held transaction under the project's lock) commits while `call`
+    waits for that lock; returns `call`'s answer. Released before the worker is joined."""
+    first = migrated.connect()
+    started, answered = threading.Event(), threading.Event()
+
+    def other() -> Any:
+        started.set()
+        found = call()
+        answered.set()
+        return found
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    first_tx = first.begin()
+    try:
+        events.lock_project(first, project_id(migrated))
+        change(first)
+        waiting = pool.submit(other)
+        assert started.wait(timeout=10)
+        assert not answered.wait(timeout=0.5)  # held by the first
+        first_tx.commit()
+        return waiting.result(timeout=10)
+    finally:
+        if first_tx.is_active:
+            first_tx.rollback()
+        first.close()
+        pool.shutdown(wait=True, cancel_futures=True)
+
+
+def test_an_accept_that_wins_leaves_nothing_to_revoke(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A revocation waits for an accept in flight and then finds it used (§3.4)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the lock is for the server databases")
+    made = issue(owner)
+
+    def use(conn: Any) -> None:
+        conn.execute(
+            update(t.invitation)
+            .where(t.invitation.c.id == made["id"])
+            .values(used_at=clock.now(), used_by=owner.id)
+        )
+
+    answer = _held(migrated, use, lambda: owner.delete(f"{PATH}/{made['id']}"))
+    assert answer.status_code == 409
+    assert answer.json()["error"]["details"] == {"from": "used", "to": "revoked"}
+    assert [e.kind for e in kinds(migrated)] == ["invitation_created"]
+
+
+def test_two_revocations_tell_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the lock is for the server databases")
+    made = issue(owner)
+    path = f"{PATH}/{made['id']}"
+
+    def revoke(conn: Any) -> None:
+        conn.execute(
+            update(t.invitation)
+            .where(t.invitation.c.id == made["id"])
+            .values(revoked_at=clock.now())
+        )
+
+    answer = _held(migrated, revoke, lambda: owner.delete(path))
+    assert answer.status_code == 200 and answer.json()["revoked_at"]
+    assert [e.kind for e in kinds(migrated)] == ["invitation_created"]  # the waiter told no one
+
+
 # --- registration admitted by an invitation (§2.7.1) ------------------------------------
 
 

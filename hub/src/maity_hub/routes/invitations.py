@@ -171,6 +171,9 @@ def revoke_invitation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        # Under the project's lock, as accept takes it: an accept and a revocation go in
+        # turn, and of two revocations only the first writes and tells (§3.4).
+        events.lock_project(conn, mine.project.id)
         row = conn.execute(
             select(t.invitation).where(
                 t.invitation.c.id == invitation_id, t.invitation.c.project_id == mine.project.id
