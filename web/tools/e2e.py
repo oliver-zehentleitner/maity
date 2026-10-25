@@ -1244,7 +1244,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     page.locator("#upload-logo").set_input_files(
         files=[{"name": "notes.txt", "mimeType": "image/png", "buffer": b"not an image at all"}]
     )
-    expect(page.locator("#header")).to_contain_text(
+    expect(page.locator("#project-panel")).to_contain_text(
         "Logo not uploaded: not a PNG, JPEG or WebP image"
     )
     page.locator("#upload-logo").set_input_files(
@@ -1927,17 +1927,21 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("#signing-confirm")).to_be_focused()  # not sent unconfirmed
     page.locator("#signing-confirm").check()
     page.get_by_role("button", name="Change signing", exact=True).click()
-    expect(page.locator("#project-panel")).to_have_count(0)  # saved: the page re-rendered
+    # Saved: the Settings tab is drawn afresh (its reason field empty) and stays.
+    expect(page.locator("#signing-reason")).to_have_value("")
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/settings$"))
+    expect(page.locator("#signing-select")).to_have_value("required")
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["policy"]["signing"] == "required"
     status, body = bearer_get(run, alpha, "/me")
     assert status == 403 and body["error"]["code"] == "signature_required", (status, body)
     run.maity(alpha, "resume")  # the CLI signs, so it still works
-    run.a11y(page, "agents, signing required")
+    run.a11y(page, "settings, signing required")
     project_settings(page)
     page.locator("#signing-select").select_option("optional")
     page.locator("#signing-reason").fill("e2e: back to optional")
     page.get_by_role("button", name="Change signing", exact=True).click()
-    expect(page.locator("#project-panel")).to_have_count(0)
+    expect(page.locator("#signing-reason")).to_have_value("")
+    expect(page.locator("#signing-select")).to_have_value("optional")
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
     no_problems(run, "signing")
