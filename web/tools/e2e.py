@@ -1967,6 +1967,8 @@ def users_step(run: Run, page: Page) -> None:
     """Users of this hub (docs/api.md §16.1), where the hub names an instance admin."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/#/all")
+    # A hash change only: wait for the new header before using its gear.
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
     link = page.get_by_role("menuitem", name="Instance administration", exact=True)
     if "instance_admin" not in me:
