@@ -9,17 +9,25 @@ mail link add the others; the rules below are written for both already.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 import unicodedata
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, ids
 from maity_hub import tables as t
-from maity_hub.auth.caller import SESSION_IDLE, session_alive, session_expires_at
+from maity_hub.auth.caller import (
+    SESSION_ABSOLUTE,
+    SESSION_IDLE,
+    session_alive,
+    session_expires_at,
+    session_id_hash,
+)
 from maity_hub.errors import ApiError
 from maity_hub.views import ts
 
@@ -132,11 +140,24 @@ def end(conn: Connection, rows: Iterable[Any], by: str) -> None:
 
 def end_where(conn: Connection, which: Any, by: str) -> None:
     """End the live sessions `which` selects. The addresses go with the end: the table
-    keeps no address history of an ended session (personal data)."""
+    keeps no address history of an ended session (personal data), and the device codes a
+    session made die with it (§2.6.2)."""
+    live = which & t.human_session.c.ended_at.is_(None)
+    hashes = list(conn.execute(select(t.human_session.c.id_hash).where(live)).scalars())
+    if not hashes:
+        return
     conn.execute(
         update(t.human_session)
-        .where(which, t.human_session.c.ended_at.is_(None))
+        .where(t.human_session.c.id_hash.in_(hashes))
         .values(ended_at=clock.now(), ended_by=by, ip=None, source=None)
+    )
+    conn.execute(
+        update(t.device_code)
+        .where(
+            t.device_code.c.session_hash.in_(hashes),
+            t.device_code.c.status.in_(("waiting", "redeemed", "approved")),
+        )
+        .values(status="denied")
     )
 
 
@@ -193,3 +214,82 @@ def safe_next(value: str | None) -> str:
     ):
         return "/"
     return value
+
+
+def create(
+    conn: Connection,
+    human_id: str,
+    *,
+    method: str,
+    address: str,
+    user_agent: str | None,
+    approved_by: str | None = None,
+) -> tuple[str, str, str]:
+    """A new session of `human_id`: (cookie value, CSRF token, public id). Only the
+    cookie value's hash is stored."""
+    now = clock.now()
+    session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
+    browser, system = describe(user_agent)
+    public_id = ids.new_id("human_session")
+    conn.execute(
+        insert(t.human_session).values(
+            id_hash=session_id_hash(session_id),
+            human_id=human_id,
+            csrf_token=csrf,
+            created_at=now,
+            last_seen_at=now,
+            expires_at=now + SESSION_ABSOLUTE,
+            source=address[:64],
+            public_id=public_id,
+            method=method,
+            browser=browser,
+            os=system,
+            ip=address[:64],
+            approved_by=approved_by,
+        )
+    )
+    conn.execute(
+        update(t.human).where(t.human.c.id == human_id).values(last_seen_at=now, last_login_at=now)
+    )
+    return session_id, csrf, public_id
+
+
+# --- the device cookie (§2.6.5) ------------------------------------------------------
+
+DEVICE_COOKIE = "maity_device"
+DEVICE_LIFETIME = timedelta(days=400)
+# One value per human who signed in on this browser; the oldest drop out past this.
+DEVICE_VALUES = 4
+
+
+def _device_values(cookie: str | None) -> list[str]:
+    return [v for v in (cookie or "").split(".") if 0 < len(v) <= 64][-DEVICE_VALUES:]
+
+
+def knows_device(conn: Connection, human_id: str, cookie: str | None) -> bool:
+    """Whether this browser's device cookie holds a value of this human."""
+    hashes = [hashlib.sha256(v.encode()).hexdigest() for v in _device_values(cookie)]
+    if not hashes:
+        return False
+    found = conn.execute(
+        select(t.human_device.c.value_hash).where(
+            t.human_device.c.human_id == human_id, t.human_device.c.value_hash.in_(hashes)
+        )
+    ).first()
+    return found is not None
+
+
+def remember_device(conn: Connection, human_id: str, cookie: str | None) -> str | None:
+    """At a completed sign-in: the cookie's new value when this browser held no value of
+    this human, else None (the cookie stays as it is)."""
+    if knows_device(conn, human_id, cookie):
+        return None
+    value = secrets.token_urlsafe(32)
+    conn.execute(
+        insert(t.human_device).values(
+            value_hash=hashlib.sha256(value.encode()).hexdigest(),
+            human_id=human_id,
+            created_at=clock.now(),
+        )
+    )
+    return ".".join([*_device_values(cookie), value][-DEVICE_VALUES:])
