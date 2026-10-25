@@ -893,6 +893,7 @@ one JSON file per endpoint, in the shapes of `docs/api.md`:
 | `GET /projects/{slug}/members`, `PATCH …/members/{id}` (`paused`) | `{slug}/members.json` |
 | `GET /projects/{slug}/requests`, `POST …/requests/{id}/answer` | `{slug}/requests.json` |
 | `GET /projects/{slug}/tasks` | `{slug}/tasks.json` |
+| `GET /projects/{slug}/tasks/{id}/contract` | `{slug}/contracts.json`, keyed `path#section`; an entry with `error` answers that refusal, a place without one `not_found_in_file` |
 | `GET /projects/{slug}/members/{id}/credentials`, `POST …/credentials/{id}/revoke` | `{slug}/credentials.json`, keyed by member |
 | `GET`, `POST /projects/{slug}/joins`, `DELETE …/joins/{id}` | `{slug}/joins.json`; a created join gets a made-up `FIXTURE` line |
 | `GET /projects/{slug}/conversations` | derived from `{slug}/conversations.json` |

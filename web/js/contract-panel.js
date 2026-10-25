@@ -30,6 +30,10 @@ window.Maity = window.Maity || {};
     probe_unavailable: "the forge did not answer",
   };
 
+  // Cards whose panel was open when their place was saved: the board draws
+  // them anew from the hub's answer, and the panel opens again with them.
+  const reopen = new Set();
+
   const mayEdit = (ctx, c) => TASKS_ADMIN.has(ctx.role) || c.created_by === ctx.me.id
     || !!(c.claim && c.claim.holder === ctx.me.id);
 
@@ -74,6 +78,10 @@ window.Maity = window.Maity || {};
       status.el);
     box.addEventListener("toggle", () => { if (box.open && !loaded && k.section) read(); });
     if (!k.section) append(body, h("p", { class: "muted" }, "The card names no section yet."));
+    if (reopen.delete(c.id)) {
+      box.open = true;
+      if (k.section) read();
+    }
     return box;
   }
 
@@ -95,6 +103,7 @@ window.Maity = window.Maity || {};
         try {
           const updated = await M.api.patch(ctx.base + "/tasks/" + encodeURIComponent(c.id), { contract: next });
           status.done();
+          reopen.add(c.id);
           onSaved(updated, idOf("contract-section"));
         } catch (err) {
           status.fail("Not saved: ", M.boardEdit ? M.boardEdit.said(err) : err);
