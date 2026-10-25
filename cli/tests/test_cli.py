@@ -813,3 +813,76 @@ def test_a_credential_refused_after_the_exchange_is_kept_elsewhere(
     assert stat.S_IMODE(rescued.stat().st_mode) == 0o700
     assert f"export MAITY_STATE_DIR={rescued}" in err and fakehub.SECRET not in err
     assert state.load_state(rescued)["member_id"] == "agt-b"
+
+
+@pytest.mark.parametrize("status", [404, 503])
+def test_a_join_page_that_does_not_answer_never_reaches_the_exchange(
+    status: int, no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.join_page_status = status
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]
+    assert cli.main(line) == cli.EXIT_ERROR
+    assert "join/" in capsys.readouterr().err  # the page call failed, nothing after it
+    assert not fake.join_used and not [s for s in fake.seen if s.method == "POST"]
+    assert not (no_clone / ".local").exists()
+
+
+def test_the_identity_directory_follows_xdg_state_home(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(no_clone / "xdg"))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK
+    host = fake.url.removeprefix("http://")
+    assert state.has_credential(no_clone / "xdg" / "maity" / host / "agent-b")
+
+
+def test_a_join_in_a_clone_never_reads_the_page(clone: Path, fake: fakehub.FakeHub) -> None:
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK
+    assert not [s for s in fake.seen if s.method == "GET" and "join" in s.path]
+
+
+def test_join_never_tightens_a_directory_with_something_in_it(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    directory = no_clone  # a home named by mistake: not empty, not maity's
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".bashrc").write_text("")
+    directory.chmod(0o755)
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]
+    assert cli.main(line) == cli.EXIT_ERROR
+    assert "accessible by group or others" in capsys.readouterr().err
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    assert not fake.join_used
+
+
+def test_a_rescue_falls_back_to_a_temp_directory_when_the_home_refuses(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    directory = no_clone / "agent"
+    monkeypatch.setenv("MAITY_STATE_DIR", str(directory))
+    monkeypatch.setenv("TMPDIR", str(no_clone.parent / "tmp"))
+    (no_clone.parent / "tmp").mkdir()
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", None)  # re-read TMPDIR
+    real = state.write_credential
+
+    def refuse_there(where: Path, value: state.Secret) -> Path:
+        if where == directory.resolve():
+            raise state.StateError("the disk said no")
+        return real(where, value)
+
+    monkeypatch.setattr(state, "write_credential", refuse_there)
+    monkeypatch.setenv("XDG_STATE_HOME", "/proc/no-such-place")  # the state home refuses too
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    (rescued,) = (no_clone.parent / "tmp").glob("maity-rescued-*")
+    assert state.credential_path(rescued).read_bytes() == fakehub.CREDENTIAL.encode()
+    assert err.count("export MAITY_STATE_DIR=") == 1
+    assert fakehub.SECRET not in err

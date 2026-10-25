@@ -90,8 +90,13 @@ def identity_dir(hub_host: str, handle: str) -> Path:
     """The state directory `maity join` gives an agent outside a Git clone (context/join.md):
     one per identity, `$XDG_STATE_HOME/maity/<hub host>/<handle>`, `~/.local/state` by
     default. Both parts come checked: `hub_host` from a parsed URL, `handle` by its pattern."""
+    return _state_home() / "maity" / hub_host / handle
+
+
+def _state_home() -> Path:
+    """`$XDG_STATE_HOME`, else `~/.local/state`."""
     root = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return Path(root).expanduser().resolve() / "maity" / hub_host / handle
+    return Path(root).expanduser().resolve()
 
 
 def _ensure_dir(path: Path) -> None:
@@ -160,18 +165,22 @@ def prepare_for_join(path: Path) -> int | None:
 def rescue_credential(value: Secret) -> Path:
     """Where a credential goes when its directory refused it after the exchange: a new
     private directory under the home, so a spent join is never lost (the code works once)."""
-    root = Path.home() / ".local" / "state" / "maity"
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    rescue = Path(tempfile.mkdtemp(prefix="rescued-", dir=root))  # mkdtemp creates it 0700
+    try:
+        root = _state_home() / "maity"
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        rescue = Path(tempfile.mkdtemp(prefix="rescued-", dir=root))  # mkdtemp: 0700
+    except OSError:  # the home itself may be what refused: the system's temp directory
+        rescue = Path(tempfile.mkdtemp(prefix="maity-rescued-"))
     return write_credential(rescue, value)
 
 
 def tighten_for_join(path: Path) -> int | None:
-    """Before a join: a state directory of this user that holds no credential yet and is
-    open to group or others is set to 0700, the mode it would have been created with.
-    Returns the mode it had, or None when nothing changed. A directory that holds a
-    credential, or is another user's, is left to `check_private` and its refusal."""
-    if not path.is_dir() or has_credential(path):
+    """Before a join: an empty state directory of this user that is open to group or
+    others is set to 0700, the mode it would have been created with. Returns the mode it
+    had, or None when nothing changed. A directory with anything in it (a credential, or
+    a home someone named by mistake), or another user's, is left to `check_private` and
+    its refusal."""
+    if not path.is_dir() or next(path.iterdir(), None) is not None:
         return None
     st = path.stat()
     if st.st_uid != os.getuid() or not st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):

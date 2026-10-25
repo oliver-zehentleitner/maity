@@ -271,14 +271,10 @@ def cmd_join(args: argparse.Namespace) -> int:
     try:
         path = state.write_credential(directory, result.credential)
     except (state.StateError, OSError) as exc:  # the join is spent: keep the credential
-        rescued = state.rescue_credential(result.credential)
-        _err(
-            f"{directory} refused the credential after the exchange ({exc}); it was kept in "
-            f"{rescued} instead. Use that directory: "
-            f"export {state.STATE_DIR_ENV}={shlex.quote(str(rescued.parent))}"
-        )
-        directory, path = rescued.parent, rescued
-        derived = True  # the first resume and every later command need that directory
+        path = state.rescue_credential(result.credential)
+        _err(f"{directory} refused the credential after the exchange ({exc}); kept it in {path}")
+        directory = path.parent
+        derived = True  # the export line below names the rescue directory
     state.save_state(
         directory,
         {
@@ -296,7 +292,7 @@ def cmd_join(args: argparse.Namespace) -> int:
     if derived:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
-            f"This agent's identity lives in {directory}, not in a Git clone. Every later maity "
+            f"This agent's identity lives in {directory}. Every later maity "
             f"command needs it: export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}",
             file=sys.stderr,
         )
