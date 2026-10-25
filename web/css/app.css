@@ -1059,3 +1059,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .match-choice { font-size: 1.5rem; font-weight: 700; min-width: 4.5rem; min-height: 3rem; }
 .device-approval .actions, .device-code .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .user-agent { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
+
+/* The theme in Your account (js/account.js): three radios in a row. */
+.theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.theme-choice label.check { display: inline-flex; align-items: center; gap: 6px; }
+
+/* At phone width the text beside the logo (the scope line, the project's
+   name) is hidden from sight only: the switcher's active tab names it, and
+   a screen reader still reads it. */
+@media (max-width: 600px) {
+  .bar > .project { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

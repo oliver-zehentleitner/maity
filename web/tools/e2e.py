@@ -803,6 +803,10 @@ def scenario(run: Run, page: Page) -> None:
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    # The text beside the logo is hidden from sight only: still in the page for a screen reader.
+    expect(page.locator("header .bar > .project")).to_have_count(1)
+    box = page.locator("header .bar > .project").bounding_box()
+    assert box and box["width"] <= 1 and box["height"] <= 1, f"the header's text beside the logo shows at 390 px: {box}"
     # Each view through its tab: the tab row scrolls sideways on its own, so
     # every tab has to stay reachable there.
     tabs = (
