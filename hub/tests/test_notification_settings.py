@@ -18,6 +18,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import outbox
+from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences, tokens
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -353,17 +354,17 @@ def test_disabled_mail_holds_the_outbox(migrated: Engine) -> None:
         server.close()
 
 
-def test_sign_in_mail_over_its_budget_is_dropped(migrated: Engine) -> None:
+@pytest.mark.parametrize("kind", ["sign_in", "registration"])
+def test_an_anonymous_answer_over_its_budget_is_dropped(migrated: Engine, kind: str) -> None:
     hub = mail_env(1)
     with migrated.begin() as conn:
-        store.put(conn, "mail.sign_in_max_per_hour", 1, None)
-        conn.execute(
-            t.mail_delivery.insert().values(kind="sign_in", outcome="sent", at=clock.now())
-        )
-        outbox.enqueue(conn, kind="sign_in", to="me@example.org", subject="s", body="b\n")
+        store.put(conn, f"mail.{kind}_max_per_hour", 1, None)
+        conn.execute(t.mail_delivery.insert().values(kind=kind, outcome="sent", at=clock.now()))
+        outbox.enqueue(conn, kind=kind, to="me@example.org", subject="s", body="b\n")
     assert outbox.send_due(migrated, hub.mail, None) == 0
     with migrated.begin() as conn:
         assert conn.execute(select(t.mail_outbox.c.status)).scalar() == "dropped"
+        assert mail_settings.counters(conn)[f"{kind}_dropped_last_hour"] == 1
 
 
 def test_the_password_limit_holds_for_an_address_change(

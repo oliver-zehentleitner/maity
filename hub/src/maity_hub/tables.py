@@ -1136,7 +1136,7 @@ mail_outbox = Table(
     "mail_outbox",
     metadata,
     Column("id", BIG_ID, primary_key=True, autoincrement=True),
-    Column("kind", String(16), nullable=False),  # notification security sign_in
+    Column("kind", String(16), nullable=False),  # notification security sign_in registration
     _ref("human_id", "human.id"),
     Column("recipient", String(254), nullable=False),
     Column("subject", String(255), nullable=False),

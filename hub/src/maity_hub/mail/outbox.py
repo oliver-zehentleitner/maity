@@ -31,7 +31,11 @@ BUDGETS = {
     "notification": "max_per_hour",
     "security": "security_max_per_hour",
     "sign_in": "sign_in_max_per_hour",
+    "registration": "registration_max_per_hour",
 }
+# Answers to an anonymous request: over their budget they are dropped, never held; a late
+# link is useless (§16.2).
+DROPPED_OVER_BUDGET = ("sign_in", "registration")
 # A failure here is the instance's setting, not the recipient's address (§18.7).
 SETTING_STAGES = ("resolve", "connect", "tls", "auth", "timeout")
 
@@ -100,8 +104,7 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
     for row in due:
         with engine.begin() as conn:
             budget = resolved.value(BUDGETS[row.kind])
-            if _sent_last_hour(conn, row.kind) >= budget and row.kind == "sign_in":
-                # A stale sign-in link is useless: over its budget it is not sent (§16.2).
+            if _sent_last_hour(conn, row.kind) >= budget and row.kind in DROPPED_OVER_BUDGET:
                 if _claim(conn, row.id):
                     _finish(conn, row.id, "dropped")
                     _count(conn, row.kind, "dropped")
