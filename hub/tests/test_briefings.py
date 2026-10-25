@@ -133,3 +133,18 @@ def test_two_admins_at_once_get_two_versions(
     assert [a.status_code for a in answers] == [200, 200], [a.text for a in answers]
     versions = [i["version"] for i in history(owner, agent.id).json()["items"]]
     assert versions == [3, 2, 1]
+
+
+def test_the_packet_names_the_briefings_writer_and_version(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """§5.2: a membership's own briefing comes with who wrote it and its version."""
+    agent = flow.agent(make_client, owner, briefing="the hub")
+    owner.patch(f"/projects/maity/members/{agent.id}", {"briefing": "the hub, and CI"})
+    block = agent.resume().json()["membership"]
+    assert (block["briefing"], block["briefing_source"], block["briefing_version"]) == (
+        "the hub, and CI",
+        "membership",
+        2,
+    )
+    assert block["briefing_by"] == {"kind": "human", "id": owner.id, "handle": "maintainer"}
