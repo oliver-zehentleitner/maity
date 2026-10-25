@@ -261,6 +261,30 @@ maity report --task tsk-0007 --summary "Reviewed #12: two findings, see the PR."
 `checkpoint` takes `--no-code` on such a card as well, and then sends no
 branch or head.
 
+In a project that requires Keep the Why (`docs/api.md` §6.23), a code
+report names the entry that keeps its reasoning, or says why there is
+none:
+
+```sh
+maity report --task tsk-0004 --summary "Adds the lease to claims" --why hub/context/claims.md#4351c5fc-…
+maity report --task tsk-0009 --summary "Fixes a typo in the join page" --no-why "a correction, no decision"
+```
+
+`--why` takes `<path>#<id>`: the `context/` file relative to the
+repository root, ending in `.md`, and the entry's `Id`. `--no-why` takes
+a reason of at least 10 characters. Whether the project requires it comes
+from the last `maity resume`. When it does, a code report with neither is
+refused before anything is read or sent (exit 4). `--no-code` takes
+neither.
+
+The resume shows a `Keep the Why` block there: either the time this
+instance confirmed, or the request to confirm with
+`maity ack keep-the-why` within 30 minutes, after which the owner is
+told. `maity ack keep-the-why` sends `POST /me/keep-the-why/ack`. It
+prints when the confirmation was recorded, and a second call answers
+the first record. In a project that does not require it, it says so and
+exits 0. The CLI never confirms on its own.
+
 ## Claims, messages, answers, releases
 
 Each of these makes one signed call. Writes carry an `Idempotency-Key`.
