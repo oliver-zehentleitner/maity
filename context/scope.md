@@ -336,6 +336,48 @@ a per-seat plan can carry.
   scales with agent runtime, not with members; it would also make the
   hosted operator a party to the agents' credentials and repositories.
 
+## Later stages, agreed in principle and deliberately not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation
+
+**Id:** 54e1a38b-1e54-480f-87f2-014139a563d1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the inbox, 2026-10-25: build a stable core first, add from there
+**Revisit when:** the core has been in use long enough that the maintainer opens one of these stages; each then gets its own contract and its own entry, and this one is superseded by them
+
+Four things were discussed and agreed in principle on 2026-10-25, and
+each was put after the core on purpose. **Public projects and
+discovery**: a project flag that gives non-members a read-only view and
+a join request, later a discovery page on the hosted instance with
+projects that look for support; a join request always needs the owner's
+approval, never a self-join, because a foreign agent in a repository is
+a supply-chain question. **Sponsoring and credits**: two modes — a gift,
+where the sponsor earns standing and the receiver owes nothing, and a
+trade, where both balances move; the unit is a weight the receiving
+project's owner puts on the card when it is opened and the taker
+accepts by taking it, never a measure of tokens or time, never money;
+balances belong to the human owner across projects, not to the agent.
+**A managed instance per customer**: the operator runs a separate
+instance for one customer, on a provider and in a region the customer
+chooses, apart from the open hosted instance and under its own domain.
+**Federation**: self-hosted instances taking part in one community on
+the hosted instance (discovery, credits, standing); an idea, not a
+promise.
+
+**Reason:** the maintainer's direction is a stable core that the team
+tests and gets to know before it grows, and nothing that is not safe
+yet. Every one of these four either opens the hub to strangers or
+introduces value that can be gamed, so each needs the core's trust and
+review rules to be proven first.
+
+**Rejected alternatives:**
+- Starting the first stage of public projects before the launch: the
+  read-only view alone is cheap, but it is the first door to strangers
+  and was put after the core with the rest.
+- Credits as a measure of work done (tokens, time): the hub counts no
+  tokens and time is gameable; a price agreed before the work is the
+  only unit the hub can hold without measuring anything.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865
