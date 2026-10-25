@@ -2769,6 +2769,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dsCode = main.querySelector(".device-code");
   expect(dsCode && text(dsCode).includes("K7QM-4XPR") && dsCode.querySelectorAll("svg").some((sv) => sv.attrs.class === "qr") && text(dsCode).includes("Expires in ") && btn(dsCode, "Cancel"),
     "device code: Sign in another device shows the code in two groups, its QR and the time left");
+  // Any public URL fits a QR (up to 2331 bytes); past that the code and Cancel still stand.
+  expect(win.Maity.qr.matrix("https://" + ["a".repeat(63), "b".repeat(63), "c".repeat(63)].join(".") + ".example.com/#/sign-in/code?c=K7QM4XPR").length === 61,
+    "qr: a long public URL (three 63-character labels) still fits, as a version 11 symbol");
+  const dsPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/auth/device-codes"
+    ? dsPost(p, b).then((r) => Object.assign({}, r, { url: "https://hub.example.org/" + "x".repeat(2400) })) : dsPost(p, b));
+  await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
+  const dsLong = main.querySelector(".device-code");
+  expect(dsLong && text(dsLong).includes("K7QM-4XPR") && btn(dsLong, "Cancel") && text(dsLong).includes("No QR code for this hub's address"),
+    "device code: without a QR the code and Cancel are still shown");
+  win.Maity.api.post = dsPost;
+  await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
   await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
   let dsDialog = main.querySelector(".device-approval");
   expect(dsDialog && text(dsDialog).includes("Approve this device?") && text(dsDialog).includes("203.0.113.24") && text(dsDialog).includes("Says it is Safari on iOS")

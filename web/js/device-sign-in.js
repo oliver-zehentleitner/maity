@@ -236,6 +236,15 @@ window.Maity = window.Maity || {};
     await start(ctx, stage);
   }
 
+  // The QR of the code's URL; the code and Cancel stand without it.
+  function qrOf(url) {
+    try {
+      return h("div", { class: "qr-box" }, M.qr.svg(url, 200));
+    } catch (err) {
+      return h("p", { class: "muted" }, "No QR code for this hub's address: enter the code on the other device instead.");
+    }
+  }
+
   async function start(ctx, stage) {
     const status = M.statusLine();
     append(clear(stage), status.el);
@@ -259,7 +268,7 @@ window.Maity = window.Maity || {};
     } }, "Cancel");
     const view = h("div", { class: "device-code" },
       h("p", { class: "device-code-text", "aria-label": "Code " + [...code.replace("-", "")].join(" ") }, grouped(code.replace("-", ""))),
-      h("div", { class: "qr-box" }, M.qr.svg(made.url, 200)),
+      qrOf(made.url),
       h("p", { class: "muted" }, "Expires in ", countdown, ". Waiting for the other device…"),
       h("div", { class: "actions" }, cancel));
     append(clear(stage), view);

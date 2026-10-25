@@ -747,9 +747,11 @@ link**; a hub without the route offers the password alone.
   belongs to an account, a link is on its way" whatever the address, and takes
   the six-digit code from the mail for when it is read elsewhere.
 - Both sides read their state with `wait=0` every 2 seconds on the page's
-  timers. The QR is made here, dark on light in either theme; a QR code made
-  here was checked bit for bit against an independent encoder, and a smoke check
-  keeps one symbol as a fixed hash.
+  timers. The QR is made here, dark on light in either theme, in any version
+  (up to 2331 bytes, so any public URL fits); it was checked bit for bit
+  against an independent encoder, and a smoke check keeps one symbol as a fixed
+  hash. Should a QR still not be possible, the code and Cancel are shown
+  without it.
 - In fixture mode one tab plays both devices: a code made on Sign in another
   device has been entered by a simulated phone (`203.0.113.24`, number 47) by
   the second read, and the mailed code is `482913`.
@@ -1216,7 +1218,7 @@ web/
 ├── js/ticker.js      (12) the change ticker, follow and mute, a manual post
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
-├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–10)
+├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–40)
 ├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent

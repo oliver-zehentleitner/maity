@@ -1,7 +1,7 @@
 // QR codes for the device-code URL (docs/api.md §2.6.7: made in the
 // dashboard's own code, no third-party script). Model 2, byte mode, error
-// correction level M, versions 1 to 10: up to 213 bytes, far more than a
-// sign-in URL needs. The steps follow ISO/IEC 18004: data bits, Reed–Solomon
+// correction level M, every version (1 to 40): up to 2331 bytes, so any
+// public URL a hub may have fits. The steps follow ISO/IEC 18004: data bits, Reed–Solomon
 // blocks interleaved, the function patterns, the codewords in the zigzag,
 // then the mask with the lowest penalty and the format bits for it.
 "use strict";
@@ -9,10 +9,12 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const MAX_VERSION = 10;
+  const MAX_VERSION = 40;
   // Level M, index = version (ISO/IEC 18004 table 9).
-  const ECC_PER_BLOCK = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
-  const BLOCKS = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+  const ECC_PER_BLOCK = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26,
+    26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28];
+  const BLOCKS = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16,
+    17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49];
   const FORMAT_BITS_M = 0;
 
   // Modules left for data and error correction once the patterns are drawn.
@@ -112,7 +114,7 @@ window.Maity = window.Maity || {};
   function alignment(ver, size) {
     if (ver === 1) return [];
     const n = Math.floor(ver / 7) + 2;
-    const step = Math.ceil((ver * 4 + 4) / (n * 2 - 2)) * 2;
+    const step = ver === 32 ? 26 : Math.ceil((ver * 4 + 4) / (n * 2 - 2)) * 2;
     const result = [6];
     for (let pos = size - 7; result.length < n; pos -= step) result.splice(1, 0, pos);
     return result;
