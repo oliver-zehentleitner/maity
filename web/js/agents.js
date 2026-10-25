@@ -221,10 +221,20 @@ window.Maity = window.Maity || {};
 
     append(root, h("div", { class: "toolbar agents-head" }, h("h2", null, "Agents"), J ? joinButton : null),
       countLine, J ? [J.panel, J.listStatus.el] : null);
+    // Where they run (js/placements.js), where the hub has placements: after
+    // the grid, before the record of earlier joins — also with no agent
+    // yet, when a placement that creates its profile is all there is.
+    const placements = async () => {
+      if (!M.placements) return;
+      const credsOf = Object.fromEntries(agents.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]));
+      const placed = await M.placements.section(ctx, credsOf);
+      if (placed) root.insertBefore(placed, earlierBox);
+    };
     // No agents yet: the panel opens, and the way in is said.
     if (!agents.length) {
       append(root, h("p", { class: "muted" }, "No agents in this project yet.", J ? " Join one: its line is made here." : ""), grid, earlierBox);
       drawGrid();
+      await placements();
       if (J) J.open(joinButton);
       return;
     }
@@ -292,6 +302,7 @@ window.Maity = window.Maity || {};
       });
     append(root, presenceStatus.el, grid, earlierBox);
     drawGrid();
+    await placements();
     // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
     if (J && args && args[0] === "join") J.open(joinButton);
   };

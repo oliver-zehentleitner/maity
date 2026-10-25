@@ -844,3 +844,62 @@ would invite a change whose consequences the hub does not carry out.
 Sending `memory` and `setup` always: a creation on an older hub would
 fail. Inferring support from a project's view having `memory`: a human
 without projects has no view to look at.
+
+## Statistics sum counts of things over the window and show people by their busiest day
+
+**Id:** 39d109d7-026a-4d53-b7c2-5fda6ff51b77
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
+
+Each day series is one row: the window's figure, today's value and a
+small line of the days. For registrations, new instances, cards and
+reviews the figure is the sum of the days; for humans and agent
+instances active it is the highest day ("up to N a day"). The days are
+also a folded table, which is what a screen reader reads; the lines are
+inline SVG drawn by the page.
+
+**Reason:** the hub counts a person active once per day, so adding the
+days would count the same person thirty times and look like growth that
+is not there; a distinct count per window is not in the answer, and the
+page invents no number. One line per series keeps every chart to one
+scale and one colour, so none needs a legend.
+
+**Rejected alternative:** a sum for every series: wrong for people.
+One chart with all series: eight scales in one axis, and colours that
+would need a legend. A chart library: the contract and the CSP keep the
+page to its own code.
+
+## Placements are a section of Agents; stop goes at once, restart asks once more, consent stays in the inbox
+
+**Id:** 5273b057-4d96-41b8-bd5f-e52f8828450c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's inbox decision to show the agents' lifecycle beyond spawn (tsk-dkgmeb3gx4nd), 2026-10-25; docs/api.md §15.5–§15.7, §15.10; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the designer answers on the row layout, the hub lets the dashboard know runner ownership in the placement itself, or placements get a page of their own
+
+Where an agent runs is a section of the Agents view, after the grid:
+one row per active placement with what is wanted and what the runner
+last reported. Stop and Start are one `PATCH` of `desired` each, Stop
+without a question; Restart asks once more inline before its `POST`; a
+new join is offered only when the placement's credential is revoked
+among the credentials the view already reads. Actions show for a human
+admin who is the owner (`owner_id`) of the placement's runner — `GET
+/runners` also lists runners attached where one is an admin — or the
+agent profile's owner. A placement waiting for consent offers only the
+link to its inbox request: there a stop would withdraw it and a restart
+approve it.
+
+**Reason:** the agents' cards are where people look for an agent, and
+the section reuses the credentials the view reads anyway. Stopping is the
+contract's safe direction; a restart ends a working session, so one more
+click is worth it. Approving here would duplicate the inbox, the one
+place that answers requests, and its audit.
+
+**Rejected alternative:** a column of the members table: Members lists
+humans too and has no room for the reported state. A modal confirmation
+for restart: one more click inline does the same at phone width. Asking
+the hub for each credential to decide on `rejoin`: the view has them.

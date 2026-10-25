@@ -767,3 +767,17 @@ def test_removing_the_boss_clears_a_new_profiles_stored_reports_to(
         row = conn.execute(select(t.placement).where(t.placement.c.id == body["id"])).one()
     assert row.new_profile["reports_to"] is None
     assert get(setup, body["id"])["generation"] == body["generation"]  # nothing to re-read
+
+
+def test_a_deleted_profile_s_placement_closes_and_none_follows(setup: Setup) -> None:
+    """§6.3: a placement makes the profile in use; the cascade closes it with
+    `membership_removed`; a deleted profile is never placed again."""
+    first = placed(setup)
+    headers = {"X-CSRF-Token": setup.owner.csrf}
+    url = f"/api/v1/agents/{setup.agent.id}"
+    refused = setup.owner.client.delete(url, headers=headers)
+    assert refused.json()["error"]["details"]["placements"] == [first["id"]]
+    assert setup.owner.client.delete(f"{url}?cascade=true", headers=headers).status_code == 200
+    closed = setup.owner.get(f"/projects/maity/placements/{first['id']}").json()
+    assert closed["closed_reason"] == "membership_removed"
+    assert place(setup).status_code == 404

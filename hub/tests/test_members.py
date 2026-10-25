@@ -243,6 +243,7 @@ def test_profiles_belong_to_their_human(
         "git_identity",
         "memberships",
         "created_at",
+        "deleted_at",  # null until its owner deletes it (§6.3)
     }
     assert body["git_identity"] == {"name": "B", "email": "b@x.y"}
     taken = owner.post("/agents", {"handle": "agent-b", "display_name": "Again"})

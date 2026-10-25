@@ -697,44 +697,15 @@ class Worker:
 # --- a member leaves ----------------------------------------------------------------------
 
 
-def member_removed(conn: Connection, project_id: str, removed: Any, actor: Actor | None) -> None:
-    """Reset the seats that name a removed member (§6.2): the coordinator seats to their
-    defaults in one `policy_changed`, and the member out of every `substitutes` list, a
-    `substitute` policy left with none becoming `wait`."""
-    from maity_hub import policy, rules  # rules reads the views, which read this module
+def drop_substitute(
+    conn: Connection, project_id: str, removed_id: str, audience: list[str], actor: Actor | None
+) -> None:
+    """Take a removed member out of every `substitutes` list (§6.2), a `substitute`
+    policy left with none becoming `wait`; the policy seats are `seats.reset`'s. Each
+    change is told to everyone and, by name, to every human who decides."""
     from maity_hub.views import member_view
 
-    removed_id = removed.agent_id or removed.human_id
-    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    # Every seat reset is told to everyone and, by name, to every human who decides
-    # (§6.2): the owners and the human admins.
-    deciders = conn.execute(
-        select(t.membership.c.human_id).where(
-            t.membership.c.project_id == project_id,
-            t.membership.c.active.is_(True),
-            t.membership.c.human_id.isnot(None),
-            t.membership.c.role.in_(("owner", "admin")),
-        )
-    ).scalars()
-    audience = ["all", *(f"member:{h}" for h in sorted(deciders))]
-    old = policy.of(project)
-    new = dict(old)
-    if project.coordinator == removed_id:
-        new["coordinator"] = "role:admin"
-    if project.coordinator_substitute == removed_id:
-        new["coordinator_substitute"] = None
-    if new != old:
-        conn.execute(
-            update(t.project).where(t.project.c.id == project_id).values(**policy.columns(new))
-        )
-        rules.bump(
-            conn,
-            project,
-            "policy_changed",
-            audience,
-            {"old": old, "new": new, "reason": "member_removed"},
-            actor=actor,
-        )
+    audience = ["all", *audience]
     rows = conn.execute(
         select(t.membership)
         .where(

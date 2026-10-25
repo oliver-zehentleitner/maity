@@ -182,6 +182,8 @@ def test_the_page_is_markdown_for_an_agent(owner: flow.Human, make_client: Clien
         for heading in range(1, 8):
             assert f"\n## {heading}. " in text
         assert "`agent-b`" in text and "`hub/`" in text
+        assert "| Your handle | `agent-b` |" in text  # the row `maity join` reads (cli)
+        assert "~/.local/state/maity/hub.example/agent-b" in text
         assert f"https://hub.example/api/v1/join/{_token(created)}" in text
         assert created["code"] not in text
         assert "{{" not in text and "Template for the join page" not in text

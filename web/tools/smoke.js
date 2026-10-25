@@ -1529,6 +1529,88 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await ctSave("/etc/passwd", "1");
   expect(text(ctBox().querySelector(".send-status")).startsWith("Not saved: contract.path: not_a_path"), "contract: the hub's refusal of a path is said");
   win.Maity.api.get = ctGet; win.Maity.api.patch = ctPatch;
+  // Where the agents run (js/placements.js, docs/api.md §15.5–§15.7): one row per placement in Agents,
+  // with Stop, Start and Restart for whoever may; a refusal as the hub words it; placement events read again.
+  const plPosts = [], plPatches = [];
+  const plPost = win.Maity.api.post, plPatch = win.Maity.api.patch, plGet = win.Maity.api.get, plGetAll = win.Maity.api.getAll;
+  let plFeed = [], plReads = 0;
+  win.Maity.api.post = (p, b) => { if (p.includes("/placements/")) plPosts.push([p, b]); return plPost(p, b); };
+  win.Maity.api.patch = (p, b) => { if (p.includes("/placements/")) plPatches.push([p, b]); return plPatch(p, b); };
+  win.Maity.api.get = (p) => (p.includes("/events?")
+    ? (() => { const items = plFeed; plFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 30000, superseded: false }); })()
+    : plGet(p));
+  win.Maity.api.getAll = (p) => { if (p === "/projects/maity/placements") plReads += 1; return plGetAll(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  const plBox = () => main.querySelector("section.placements");
+  const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
+  const plFacts = (id) => text(plRow(id).querySelector("dl.facts"));
+  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().querySelectorAll("li.placement").length === 4
+    && (() => { const kids = plBox().parentNode.childNodes; return kids[kids.indexOf(plBox()) + 1] === main.querySelector(".earlier-box"); })(),
+    "placements: a section in Agents after the grid, one row per placement");
+  expect(text(plRow("plc-0001")).includes("on home-laptop") && plFacts("plc-0001").includes("claude-code · opus · interactive")
+    && plFacts("plc-0001").includes("Wantedrunning") && plFacts("plc-0001").includes("running · since") && plFacts("plc-0001").includes("Generation4")
+    && btn(plRow("plc-0001"), "Stop") && btn(plRow("plc-0001"), "Restart") && !btn(plRow("plc-0001"), "Restart with a new join"),
+    "placements: a running one — runner, harness, model, mode, wanted, reported, generation; Stop and Restart");
+  expect(plFacts("plc-0002").includes("stopped: stopped as asked") && btn(plRow("plc-0002"), "Start") && btn(plRow("plc-0002"), "Restart with a new join"),
+    "placements: a stopped one offers Start, and a new join where its credential was revoked");
+  expect(plFacts("plc-0003").includes("failed: crash loop (5 quick exits within 30 min)") && plRow("plc-0003").querySelector(".placement-state").classList.contains("flag-inline"),
+    "placements: a crash loop is flagged with its count");
+  const plConsent = plRow("plc-0004").querySelector(".placement-consent a");
+  expect(plFacts("plc-0004").includes("Waits for consent to start") && plConsent && plConsent.getAttribute("href") === "#/p/maity/inbox/req-0012"
+    && !plRow("plc-0004").querySelectorAll("button").length, "placements: pending consent links to its request in the inbox, and offers nothing else here");
+  expect(text(plRow("plc-0001")).includes("Session: tmux -S /var/lib/maity-runner/tmux.sock attach") && text(plRow("plc-0001")).includes("Logs: maity runner logs plc-0001")
+    && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it");
+  const plStop = btn(plRow("plc-0001"), "Stop");
+  plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPatches.length === 1 && plPatches[0][0] === "/projects/maity/placements/plc-0001" && JSON.stringify(plPatches[0][1]) === JSON.stringify({ desired: "stopped" })
+    && plFacts("plc-0001").includes("Wantedstopped") && btn(plRow("plc-0001"), "Start"),
+    "placements: Stop is one PATCH of desired, unconfirmed; the row reads again");
+  btn(plRow("plc-0001"), "Restart").click(); await tick();
+  expect(!plPosts.length && text(plRow("plc-0001")).includes("Restart Agent B? Its session ends and starts again.") && btn(plRow("plc-0001"), "Yes, restart"),
+    "placements: Restart asks once more first");
+  btn(plRow("plc-0001"), "Yes, restart").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPosts.length === 1 && plPosts[0][0] === "/projects/maity/placements/plc-0001/restart" && JSON.stringify(plPosts[0][1]) === "{}"
+    && plFacts("plc-0001").includes("Waiting for the runner to act on generation 5 (last: running)") && plFacts("plc-0001").includes("Wantedrunning"),
+    "placements: the confirmed restart is one POST; pending until the runner reports the new generation");
+  btn(plRow("plc-0002"), "Restart with a new join").click(); await tick();
+  btn(plRow("plc-0002"), "Yes, restart with a new join").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPosts.length === 2 && JSON.stringify(plPosts[1][1]) === JSON.stringify({ rejoin: true }), "placements: a new join is a restart with rejoin");
+  win.Maity.api.patch = (p, b) => (p.includes("/placements/") ? Promise.reject(new win.Maity.api.ApiError("the project is closed", 409, p, "project_closed")) : plPatch(p, b));
+  btn(plRow("plc-0001"), "Stop").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(plBox().querySelector(".send-status")) === "Not stopped: the project is closed (project_closed)", "placements: a refusal is the hub's message and code");
+  const plBefore = plReads;
+  plFeed = [{ seq: 30001, kind: "placement_reported", at: "2026-10-22T14:10:00Z", actor: { kind: "runner", id: "rnr-0002" }, payload: { placement_id: "plc-0001", state: "running" } }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(plReads === plBefore + 1, "placements: a placement event reads the list again");
+  // A runner listed for a project one administers but owned by someone else gives no rights over it.
+  const plRunner = (owner) => Promise.resolve({ items: [{ id: "rnr-0002", name: "home-laptop", owner_id: owner }], next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) })) : plGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && !plBox().querySelectorAll("button").length, "placements: a runner someone else owns gives a project admin no actions");
+  // One's own runner gives the rights, also over agents someone else owns.
+  win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
+    : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && btn(plRow("plc-0003"), "Restart"), "placements: one's own runner gives a project admin the actions, also over another owner's agent");
+  // No agent yet: the section is still there for a placement that creates its profile.
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("No agents in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 4,
+    "placements: with no agent yet, where they run is still shown");
+  // Neither the runner's owner nor the agents' owner: the rows without actions.
+  const othersOwn = (r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) });
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then(othersOwn) : plGet(p));
+  win.Maity.api.getAll = (p) => (p === "/runners" ? Promise.resolve({ items: [], next_cursor: null })
+    : p === "/projects/maity/members" ? plGetAll(p).then(othersOwn) : plGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plBox().querySelectorAll("button").length,
+    "placements: neither the runner's nor the agent's owner sees no actions");
+  win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
+  win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
 
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
@@ -4351,6 +4433,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/members");
   expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
   win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
+
+  // Statistics (js/statistics.js, docs/api.md §16.6): the instance's counts, never a name; a 7/30/90 switch.
+  const stGets = [];
+  const stGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/admin/statistics")) stGets.push(p); return stGet(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  const stBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Statistics");
+  const stRow = (key) => stBox().querySelectorAll("tr").find((tr) => tr.attrs["data-series"] === key);
+  const stCells = (key) => stRow(key).childNodes.map((c) => text(c));
+  const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
+  expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
+    "statistics: the admin area's first section, read for 30 days");
+  expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
+    "statistics: the totals as tiles " + JSON.stringify(stTiles()));
+  expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"
+    && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
+      && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
+    "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
+  expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
+    && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
+    && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,
+    "statistics: reviews from when they are known, who comes back explained, when counted, every day in a table");
+  btn(stBox(), "90 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stGets[stGets.length - 1] === "/admin/statistics?days=90" && btn(stBox(), "90 days").getAttribute("aria-pressed") === "true"
+    && btn(stBox(), "30 days").getAttribute("aria-pressed") === "false" && stBox().querySelectorAll("details.stat-days tbody tr").length === 90
+    && text(stBox().querySelectorAll("details.stat-days tbody tr")[89]).endsWith("–"),
+    "statistics: the switch reads 90 days; days before history show reviews as –");
+  // A fresh instance: zeros, nothing broken.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
+      days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
+        cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
+    : stGet(p));
+  btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
+    && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
+  btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
+  // A slow count does not hold up the other sections.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? new Promise(() => {}) : stGet(p));
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
+    "statistics: while it counts, users, mail and the instance are there");
+  win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
+  await go("#/all");
 
   // Unified instance administration: source-aware mail editing and isolated capabilities.
   const adminGet = win.Maity.api.get, adminPatch = win.Maity.api.patch, adminPost = win.Maity.api.post;

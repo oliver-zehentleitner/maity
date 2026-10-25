@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "id": "plc-0001", "project": "maity",
+      "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "avatar_url": null },
+      "runner": { "id": "rnr-0002", "name": "home-laptop" },
+      "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
+      "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
+      "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120,
+      "approval": { "status": "approved", "request_id": null, "pending_change": null },
+      "credential_id": "crd-b-0003", "reported_current": true,
+      "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b", "logs_hint": "maity runner logs plc-0001",
+      "active": true, "closed_at": null, "closed_reason": null,
+      "created_by": "hum-maintainer", "proposed_by": null,
+      "created_at": "2026-10-22T13:39:02Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-22T13:58:10Z",
+      "reported": { "state": "running", "reason": null, "detail": null, "exit_code": null, "observed_generation": 4, "restarts": 0,
+        "retry_at": null, "crash_count": null, "crash_window_seconds": null, "deadline_at": null,
+        "since": "2026-10-22T13:58:30Z", "target": "local", "reported_at": "2026-10-22T13:58:31Z" }
+    },
+    {
+      "id": "plc-0002", "project": "maity",
+      "agent": { "id": "agt-c", "handle": "agent-c", "display_name": "Agent C", "avatar_url": null },
+      "runner": { "id": "rnr-0002", "name": "home-laptop" },
+      "target": null, "harness": "codex", "mode": "supervised", "model": null,
+      "workspace": { "clone": "agent-c", "branch": null, "continues_existing": false },
+      "desired": "stopped", "generation": 2, "rejoin": false, "stop_grace_seconds": 120,
+      "approval": { "status": "approved", "request_id": null, "pending_change": null },
+      "credential_id": "crd-c-0002", "reported_current": true,
+      "active": true, "closed_at": null, "closed_reason": null,
+      "created_by": "hum-maintainer", "proposed_by": null,
+      "created_at": "2026-10-21T09:30:00Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-21T12:08:00Z",
+      "reported": { "state": "stopped", "reason": "stopped_by_hub", "detail": null, "exit_code": 0, "observed_generation": 2, "restarts": 0,
+        "retry_at": null, "crash_count": null, "crash_window_seconds": null, "deadline_at": null,
+        "since": "2026-10-21T12:09:00Z", "target": "local", "reported_at": "2026-10-21T12:09:01Z" }
+    },
+    {
+      "id": "plc-0003", "project": "maity",
+      "agent": { "id": "agt-d", "handle": "agent-d", "display_name": "Agent D", "avatar_url": null },
+      "runner": { "id": "rnr-0002", "name": "home-laptop" },
+      "target": "local", "harness": "claude-code", "mode": "supervised", "model": null,
+      "workspace": { "clone": "agent-d", "branch": null, "continues_existing": false },
+      "desired": "running", "generation": 3, "rejoin": false, "stop_grace_seconds": 120,
+      "approval": { "status": "approved", "request_id": null, "pending_change": null },
+      "credential_id": "crd-d-0001", "reported_current": true,
+      "active": true, "closed_at": null, "closed_reason": null,
+      "created_by": "hum-maintainer", "proposed_by": null,
+      "created_at": "2026-10-21T13:00:00Z", "updated_by": "hum-maintainer", "updated_at": "2026-10-21T13:00:00Z",
+      "reported": { "state": "failed", "reason": "crash_loop", "detail": null, "exit_code": 1, "observed_generation": 3, "restarts": 5,
+        "retry_at": null, "crash_count": 5, "crash_window_seconds": 1800, "deadline_at": null,
+        "since": "2026-10-21T13:20:00Z", "target": "local", "reported_at": "2026-10-21T13:20:01Z" }
+    },
+    {
+      "id": "plc-0004", "project": "maity",
+      "agent": { "id": "agt-r", "handle": "reviewer", "display_name": "Reviewer", "avatar_url": null },
+      "runner": { "id": "rnr-0002", "name": "home-laptop" },
+      "target": null, "harness": "claude-code", "mode": "interactive", "model": null,
+      "workspace": { "clone": "reviewer", "branch": null, "continues_existing": false },
+      "desired": "running", "generation": 1, "rejoin": false, "stop_grace_seconds": 120,
+      "approval": { "status": "pending", "request_id": "req-0012", "pending_change": null },
+      "credential_id": null, "reported_current": false,
+      "active": true, "closed_at": null, "closed_reason": null,
+      "created_by": "hum-maintainer", "proposed_by": "agt-a",
+      "created_at": "2026-10-21T13:30:00Z", "updated_by": "agt-a", "updated_at": "2026-10-21T13:30:00Z",
+      "reported": null
+    }
+  ],
+  "next_cursor": null
+}
