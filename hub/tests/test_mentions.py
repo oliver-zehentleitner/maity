@@ -97,7 +97,15 @@ def test_a_message_mention_joins_the_audience(
     event = response.json()
     assert f"member:{named.id}" in event["audience"]
     assert event["payload"]["mentions"] == [
-        {"member_id": named.id, "handle": "agent-c", "field": "body", "offset": 3, "length": 8}
+        {
+            "member_id": named.id,
+            "handle": "agent-c",
+            "name": "maintainer/agent-c",
+            "instance": None,
+            "field": "body",
+            "offset": 3,
+            "length": 8,
+        }
     ]
 
 
@@ -130,7 +138,9 @@ def test_a_chat_is_never_resolved(make_client: ClientFactory, owner: flow.Human)
 
 def second_owners_agent(engine: Engine, owner_handle: str, handle: str) -> str:
     """Another owner's agent with the same short handle, a member of the project."""
-    owner_id = factory.human(engine, owner_handle)
+    with engine.connect() as conn:
+        known = conn.execute(select(t.human.c.id).where(t.human.c.handle == owner_handle)).scalar()
+    owner_id = known or factory.human(engine, owner_handle)
     agent_id = f"agt-{owner_handle}-{handle}"
     with engine.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
@@ -164,13 +174,54 @@ def test_the_global_name_resolves_and_a_shared_short_handle_is_refused(
     }
     long = say(writer, to=owner.id, body="cc @anna/agent-b, not @maintainer/agent-b.").json()
     assert long["payload"]["mentions"] == [
-        {"member_id": theirs, "handle": "agent-b", "field": "body", "offset": 3, "length": 13},
-        {"member_id": mine.id, "handle": "agent-b", "field": "body", "offset": 22, "length": 19},
+        {
+            "member_id": theirs,
+            "handle": "agent-b",
+            "name": "anna/agent-b",
+            "instance": None,
+            "field": "body",
+            "offset": 3,
+            "length": 13,
+        },
+        {
+            "member_id": mine.id,
+            "handle": "agent-b",
+            "name": "maintainer/agent-b",
+            "instance": None,
+            "field": "body",
+            "offset": 22,
+            "length": 19,
+        },
     ]
     assert f"member:{theirs}" in long["audience"] and f"member:{mine.id}" in long["audience"]
     # A global name that is no member, and a human's handle, which has no long form.
     other = say(writer, to=owner.id, body="@nobody/agent-b @maintainer/maintainer @maintainer")
-    assert [m["handle"] for m in other.json()["payload"]["mentions"]] == ["maintainer"]
+    [human] = other.json()["payload"]["mentions"]
+    assert (human["member_id"], human["handle"], human["name"]) == (owner.id, "maintainer", None)
+
+
+def test_a_human_comes_first_and_the_refusal_names_every_shared_handle(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    writer = agent_named(make_client, owner, "agent-a")
+    # Two agents named like the human: `@maintainer` is the human, the agents have long forms.
+    second_owners_agent(migrated, "anna", "maintainer")
+    second_owners_agent(migrated, "bob", "maintainer")
+    plain = say(writer, to=owner.id, body="@maintainer @anna/maintainer").json()
+    assert [m["member_id"] for m in plain["payload"]["mentions"]] == [
+        owner.id,
+        "agt-anna-maintainer",
+    ]
+    agent_named(make_client, owner, "agent-z")
+    second_owners_agent(migrated, "anna", "agent-z")
+    second_owners_agent(migrated, "bob", "agent-b")
+    agent_named(make_client, owner, "agent-b")
+    refused = say(writer, to=owner.id, body="@agent-z then @agent-b")
+    assert refused.json()["error"]["details"]["mentions"] == {
+        "agent-b": ["bob/agent-b", "maintainer/agent-b"],
+        "agent-z": ["anna/agent-z", "maintainer/agent-z"],
+    }
+    assert list(refused.json()["error"]["details"]["mentions"]) == ["agent-b", "agent-z"]
 
 
 def test_a_card_body_with_a_shared_short_handle_stores_nothing(

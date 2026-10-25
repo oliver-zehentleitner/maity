@@ -1,12 +1,13 @@
 """Mentions: `@handle` of an active member, resolved at write time (docs/api.md §8.6).
 
 The hub scans a text once, when it is written, and stores what it found on the object:
-`{member_id, handle, field, offset, length}` with offsets in code points. A mention is
-`@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not part of it), or an agent's
-global name `@owner/handle` (§6.3), with a word boundary before and after, outside inline
-code spans and fenced code blocks, naming an active membership of the project. A short
-handle two active members share is refused, naming the global names it could mean.
-Group words are never mentions.
+`{member_id, handle, name, instance, field, offset, length}` with offsets in code
+points. A mention is `@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not
+part of it), or an agent's global name `@owner/handle` (§6.3), with a word boundary
+before and after, outside inline code spans and fenced code blocks, naming an active
+membership of the project. A short handle two active agent members share is refused,
+naming the global names it could mean; a human with that handle comes first. Group
+words are never mentions.
 
 Which texts are scanned and who is pinged is the caller's; this module resolves, caps
 and counts pings against the writer's rate.
@@ -178,22 +179,24 @@ def resolve(
             (t.agent_profile.c.handle.in_(handles)) | (t.human.c.handle.in_(handles)),
         )
     ).all()
-    short: dict[str, list[tuple[str, str]]] = {}  # handle -> (member id, name)
-    long: dict[tuple[str, str], str] = {}  # (owner handle, handle) -> member id
+    humans: dict[str, str] = {}  # handle -> member id; human handles are unique
+    agents: dict[str, list[tuple[str, str]]] = {}  # handle -> (member id, global name)
+    long: dict[tuple[str, str], tuple[str, str]] = {}  # (owner, handle) -> (member id, name)
     for row in rows:
         member_id = row.agent_id or row.human_id
         if among is not None and member_id not in among:
             continue
         if row.agent_id:
             name = global_name(row.owner_handle, row.agent_handle)
-            short.setdefault(row.agent_handle, []).append((member_id, name))
-            long[(row.owner_handle, row.agent_handle)] = member_id
+            agents.setdefault(row.agent_handle, []).append((member_id, name))
+            long[(row.owner_handle, row.agent_handle)] = (member_id, name)
         else:
-            short.setdefault(row.human_handle, []).append((member_id, row.human_handle))
+            humans[row.human_handle] = member_id
+    # A human comes first: humans have no long form, the agent has (§8.6).
     shared = {
-        c.handle: sorted(name for _, name in short[c.handle])
-        for c in found
-        if c.owner is None and len(short.get(c.handle, [])) > 1
+        c.handle: sorted(name for _, name in agents[c.handle])
+        for c in sorted(found, key=lambda c: c.handle)
+        if c.owner is None and c.handle not in humans and len(agents.get(c.handle, [])) > 1
     }
     if shared:
         raise ApiError(
@@ -204,15 +207,20 @@ def resolve(
         )
     mentions = []
     for c in found:
+        named: tuple[str, str | None] | None
         if c.owner is not None:
-            member_id = long.get((c.owner, c.handle))
+            named = long.get((c.owner, c.handle))
+        elif c.handle in humans:
+            named = (humans[c.handle], None)  # a human's handle is the name
         else:
-            member_id = short[c.handle][0][0] if c.handle in short else None
-        if member_id is not None:
+            named = agents[c.handle][0] if c.handle in agents else None
+        if named is not None:
             mentions.append(
                 {
-                    "member_id": member_id,
+                    "member_id": named[0],
                     "handle": c.handle,
+                    "name": named[1],
+                    "instance": None,  # an instance mention comes with §6.17's suffix
                     "field": field,
                     "offset": c.offset,
                     "length": c.length,
