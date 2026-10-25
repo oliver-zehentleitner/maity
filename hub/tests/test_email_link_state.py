@@ -196,3 +196,29 @@ def test_parallel_link_and_code_make_only_one_grant(engine: Engine) -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(complete, ["link", "code"]))
     assert sum(results) == 1
+
+
+def test_request_limits_are_address_and_source_pairs() -> None:
+    limits = links.RequestLimits()
+    for _ in range(3):
+        assert limits.take("  HUMAN@EXAMPLE.ORG  ", "192.0.2.1") == (0, True)
+    assert limits.take("human@example.org", "192.0.2.1") == (0, False)
+    assert limits.take("human@example.org", "192.0.2.2") == (0, True)
+    assert limits.take("unknown@example.org", "192.0.2.1") == (0, True)
+
+
+def test_only_source_request_limit_is_observable() -> None:
+    limits = links.RequestLimits()
+    for n in range(10):
+        assert limits.take(f"unknown-{n}@example.org", "192.0.2.1") == (0, True)
+    wait, send = limits.take("another@example.org", "192.0.2.1")
+    assert wait > 0 and not send
+    assert limits.take("another@example.org", "192.0.2.2") == (0, True)
+
+
+def test_instance_void_ends_every_open_link_and_code(conn: Connection) -> None:
+    first = issue(conn)
+    second = issue(conn, "second-browser", "192.0.2.2")
+    links.void_open(conn)
+    assert links.live(conn, nonce_hash=links.digest(first.nonce)) is None
+    assert links.live(conn, nonce_hash=links.digest(second.nonce)) is None

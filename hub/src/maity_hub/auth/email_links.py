@@ -18,6 +18,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.ratelimit import Limiter
 
 LIFETIME = timedelta(minutes=15)
 
@@ -184,6 +185,15 @@ def void_human(conn: Connection, human_id: str) -> None:
     )
 
 
+def void_open(conn: Connection) -> None:
+    """Invalidate existing grants when the instance disables mail sign-in."""
+    conn.execute(
+        update(t.email_sign_in)
+        .where(t.email_sign_in.c.used_at.is_(None))
+        .values(used_at=clock.now(), code_mac=None)
+    )
+
+
 def mail_body(
     *,
     language: str,
@@ -222,3 +232,23 @@ def mail_body(
         f"{address}.\n\nIf you did not ask for this, ignore this mail; nothing happens "
         "without the link or the code.\n"
     )
+
+
+class RequestLimits:
+    """Only the source limit is observable; pair limits silently suppress delivery.
+    Keys contain hashes, and existing and unknown addresses take the same path."""
+
+    def __init__(self) -> None:
+        self.by_source = Limiter(10, 3600)
+        self.pair_quarter = Limiter(3, 900)
+        self.pair_day = Limiter(10, 86400)
+
+    def take(self, address: str, source: str) -> tuple[int, bool]:
+        wait = self.by_source.hit(source)
+        if wait:
+            return wait, False
+        normalised = address.strip().casefold()
+        key = digest(f"{source}\0{normalised}")
+        quarter = self.pair_quarter.hit(key)
+        day = self.pair_day.hit(key)
+        return 0, not (quarter or day)
