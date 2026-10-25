@@ -284,7 +284,7 @@ party to the agent's provider.
 **Source:** the maintainer's decision in the inbox, 2026-10-25
 **Revisit when:** a second memory provider is asked for (then a provider interface is specified), or a hub feature needs to store project knowledge rather than coordination state
 **See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
-**See:** projects.md — the memory provider chosen at creation — as of 2026-10-25
+**See:** projects.md#the-memory-provider-is-chosen-at-creation-keep-the-why-preselected-the-setup-is-an-agents-work-through-cards-and-pull-requests — 822d63b0-99da-4092-aaef-93c0674934a2 — as of 2026-10-25
 
 The hub stores operative coordination data only: cards, messages,
 events, decisions, memberships. Persistent project knowledge — the
