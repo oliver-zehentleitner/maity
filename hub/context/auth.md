@@ -186,3 +186,47 @@ make every second human's browser look new.
   no events and belong to no project.
 - One cookie per human (`maity_device_<id>`): it would put the human's
   id in a cookie name that every request to the hub carries.
+
+## Two-factor sign-in: whether a session must enrol is worked out per call, and the second step re-keys the session in place
+
+**Id:** ff8b8099-8384-4d68-906a-1b4d7b17bc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (card tsk-rnchtdn1ffhe; contract `docs/api.md` §2.8)
+**Revisit when:** the hub runs more than one replica (the wrong-code counts are in the process), or a role change gains a hook every path goes through
+
+Three choices of the implementation that the contract leaves open:
+
+- **Enrolment is a derived state.** A session stores `full`,
+  `second_factor` or `enrolment`, but whether a full session must enrol
+  (`required_admins` for an admin or owner, or after a reset) is
+  computed on every call in the gate (`auth.second_factor.gate`, run in
+  `deps._resolve` before any route). So a session the human held when
+  the policy was switched on, or when they became an owner, is held at
+  enrolment from its next call without anything writing to it, and is
+  released the moment the reason goes away. The gate refuses inside the
+  authentication transaction, as the other-project check does, so a
+  refused call leaves no presence behind.
+- **The second step re-keys the row.** Completing a sign-in replaces the
+  session's `id_hash` and CSRF token in a conditional update (the row
+  must still owe the step), instead of making a new row. The fresh
+  cookie value is what the fixation rule asks for; the public id, the
+  `approved_by` lineage and `created_at` stay, which the session list,
+  "End this session" and the age rules of §2.6.5 read. The conditional
+  update is also what makes one of two concurrent verifies win.
+- **Wrong codes are counted in the process**, per second-factor session
+  (five end it) and per human (ten in 15 minutes lock the checks), like
+  every other limit of the hub in V1 (`ratelimit.Limiter`). A restart
+  forgets the counts.
+
+**Rejected alternatives:**
+- Writing the enrolment state when the policy or a role changes: every
+  path that makes someone an owner or an admin, or flips the policy,
+  would have to find and rewrite the human's sessions; a missed path
+  would leave a session unrestricted.
+- A new session row at the second step: it would lose the lineage and
+  the age the standing rules read, or have to copy them.
+- Counting wrong codes in the database: one replica is the V1 limit for
+  every limiter; a durable count only for this one would buy little
+  while the per-address and per-human limits elsewhere stay in memory.
