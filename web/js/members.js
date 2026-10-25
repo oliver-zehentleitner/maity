@@ -381,7 +381,14 @@ window.Maity = window.Maity || {};
         const same = ids(fresh) === ids(items);
         items = fresh;
         // Someone joined or left: redraw (focus kept); else presence in place.
-        if (!same) { redraw(); return; }
+        // The page's member list follows, so every name on it — a global
+        // name where a handle is now shared (§6.3) — agrees with the rows.
+        if (!same) {
+          ctx.members = fresh;
+          ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+          redraw();
+          return;
+        }
         fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
         status.done();
       } catch (err) {

@@ -285,6 +285,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(slowList.hidden && !slowText.getAttribute("aria-activedescendant"), "mentions: an answer after a blur draws nothing");
   // Global names (docs/api.md §6.3, §8.6): where two agents share a short handle the picker offers and
   // inserts the long form; a human who shares one with an agent keeps the short one.
+  const idBoxGn = (nodes) => { const box = document.createElement("div"); win.Maity.dom.append(box, nodes); return box; };
   const gnText = document.createElement("textarea");
   const gnList = win.Maity.mentionPicker(gnText, () => Promise.resolve([
     { id: "agt-1", kind: "agent", handle: "agent-b", name: "oliver/agent-b", display_name: "Oliver's B" },
@@ -297,6 +298,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(gnOpts()) === JSON.stringify(["@oliver/agent-b", "@anna/agent-b", "@agent-c"]), "global names: the picker offers the long form where the short one is shared " + JSON.stringify(gnOpts()));
   gnList.querySelectorAll("li.mention-option")[1].dispatch("mousedown"); await tick();
   expect(gnText.value === "@anna/agent-b ", "global names: picking inserts the long form");
+  gnText.value = "@anna/"; gnText.dispatch("input"); await tick();
+  expect(JSON.stringify(gnOpts()) === JSON.stringify(["@anna/agent-b", "@anna/oliver"]), "global names: typing the long form narrows the picker " + JSON.stringify(gnOpts()));
+  gnList.querySelectorAll("li.mention-option")[0].dispatch("mousedown"); await tick();
+  expect(gnText.value === "@anna/agent-b ", "global names: and picking completes it");
   gnText.value = "@ol"; gnText.dispatch("input"); await tick();
   expect(JSON.stringify(gnOpts()) === JSON.stringify(["@oliver", "@anna/oliver"]), "global names: a human comes first and keeps the short handle");
   gnText.dispatch("keydown", { key: "Escape" });
@@ -305,6 +310,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gnRefused && gnRefused.message === "@agent-b is 2 agents here: write @anna/agent-b or @oliver/agent-b."
     && win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid", { fields: { body: "too_many_mentions" } })) === null,
     "global names: the hub's ambiguous_mention in words with the long forms");
+  const gnStored = idBoxGn(win.Maity.dom.withMentions("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
+    "summary", (id) => "#/m/" + id));
+  expect(gnStored.querySelector("a.mention") && text(gnStored.querySelector("a.mention")) === "@anna/shop-dev" && gnStored.querySelector("a.mention").getAttribute("href") === "#/m/agt-s2",
+    "global names: a stored long mention is a link to its member");
   // A project with two shop-dev of different owners (fixtures/sample): both by their global names; a
   // project without a shared handle keeps the short ones; the hub's refusal of the short form is said.
   await go("#/p/sample/agents"); for (let k = 0; k < 4; k++) await tick();
@@ -315,10 +324,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "global names: and in Members; the human by the short handle");
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelectorAll("article.profile").some((a) => text(a.querySelector(".handle")) === "@agent-b"), "global names: no shared handle, the short one");
+  // Someone with the same short handle joins while Members is open: the refresh shows both by their long names.
+  await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const gnAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? gnAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-b9", kind: "agent", handle: "agent-b",
+    name: "anna/agent-b", display_name: "Anna's B", role: "member", reports_to: null, areas: [], capabilities: [], presence: "offline", last_seen_at: null }]), next_cursor: null })) : gnAll(p));
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes(" @maintainer/agent-b") && text(main).includes(" @anna/agent-b"), "global names: a join seen by Members' refresh turns both into long names");
+  win.Maity.api.getAll = gnAll;
   const gnPosts = [];
   const gnPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { gnPosts.push([p, b]); return gnPost(p, b); };
   await go("#/p/sample/message"); for (let k = 0; k < 2; k++) await tick();
+  expect(byId("message-to").querySelectorAll("option").some((o) => text(o) === "Anna's Shop Dev (@anna/shop-dev)"), "global names: the message's addressee list by the long names");
   byId("message-to").value = "all"; byId("message-body").value = "Ship it, @shop-dev.";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("form.message-form")).includes("Not sent: @shop-dev is 2 agents here: write @anna/shop-dev or @maintainer/shop-dev.")

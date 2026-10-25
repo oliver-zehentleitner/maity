@@ -12,7 +12,8 @@ window.Maity = window.Maity || {};
   const SHOWN = 8;
   // An @ that starts a mention: at the start or after a character that is
   // none of [A-Za-z0-9_.@/+-] (§8.6), followed by what is typed so far.
-  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*)$/;
+  // One "/" may follow: the long form owner/handle (§8.6).
+  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*(?:\/[a-z0-9-]*)?)$/;
   let serial = 0;
 
   // The code in a text as §8.6 reads it: fenced blocks (a line starting
@@ -141,7 +142,8 @@ window.Maity = window.Maity || {};
       const away = document.activeElement && document.activeElement !== textarea;
       if (!typed || away) { close(); return; }
       const q = typed[2];
-      shown = members.filter((m) => m.id !== selfId && m.handle.startsWith(q)).slice(0, SHOWN);
+      // With a "/" typed the long form is matched; before it, the handle.
+      shown = members.filter((m) => m.id !== selfId && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q))).slice(0, SHOWN);
       active = 0;
       draw();
     }

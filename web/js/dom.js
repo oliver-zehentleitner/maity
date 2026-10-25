@@ -145,7 +145,8 @@ window.Maity = window.Maity || {};
     marks.forEach((x) => {
       if (x.offset < from || x.offset + x.length > chars.length) return;
       const said = chars.slice(x.offset, x.offset + x.length).join("");
-      if (said !== "@" + x.handle) return;
+      // The hub stores a long mention (§8.6) with the whole @owner/handle.
+      if (said !== "@" + x.handle && !(x.name && said === "@" + x.name)) return;
       if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
       // No href: a mention named where its member cannot be opened.
       const href = hrefOf(x.member_id);

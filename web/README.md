@@ -871,12 +871,14 @@ mention cap and rate are said in words.
 hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
 link to the member (`#/p/<slug>/members/<id>`), taken from the text at
-its offset (code points) only where it reads `@` and the stored handle;
-nothing typed becomes a link. The **@ picker** in the inbox's free text
-offers the project's members by handle (`GET …/members`, read on the
-first `@`), never the writer: arrow keys choose, Enter or Tab puts
-`@handle ` in, Escape closes; an `@` inside a word or in inline code
-offers nothing. The picker only helps to type; the hub resolves.
+its offset (code points) only where it reads `@` and the stored handle,
+or `@` and the stored global name for a long mention; nothing typed
+becomes a link. The **@ picker** in the inbox's free text offers the
+project's members by handle (`GET …/members`, read on the first `@`),
+by `owner/handle` where the short handle is shared, never the writer:
+typing either form narrows it (`@anna/` too), arrow keys choose, Enter or
+Tab puts `@handle ` or `@owner/handle ` in, Escape closes; an `@` inside a
+word or in inline code offers nothing. The picker only helps to type; the hub resolves.
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
