@@ -189,8 +189,17 @@ def emit(
 
 SEE_ALL_ROLES = ("owner", "admin")
 # Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
-# environment, which only the humans responsible may know.
-HUMANS_ONLY_KINDS = frozenset({"shared_environment_detected"})
+# environment, which only the humans responsible may know; invitations are a human's
+# business from issue to use, and never wake an agent (§3.4).
+HUMANS_ONLY_KINDS = frozenset(
+    {
+        "shared_environment_detected",
+        "invitation_created",
+        "invitation_revoked",
+        "invitation_voided",
+        "invitation_used",
+    }
+)
 
 
 def hidden_redactions(
