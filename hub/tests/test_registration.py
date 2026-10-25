@@ -4,7 +4,7 @@ up to the pending registration. The mail and the completion come with the outbox
 from __future__ import annotations
 
 import base64
-import time
+import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -336,25 +336,33 @@ def test_every_request_counts_for_the_breaker_even_a_source_limited_one(
 
 def test_an_addresses_pending_registrations_change_one_at_a_time(migrated: Engine) -> None:
     """Two transactions for one address: the second waits for the first's lock (§2.7.1).
-    SQLite serialises every writer anyway, so this runs on PostgreSQL and MariaDB."""
+    SQLite serialises every writer anyway, so this runs on PostgreSQL and MariaDB. The
+    first transaction is released on every exit before the worker is joined, so a failing
+    assertion cannot leave CI waiting on a blocked thread."""
     if migrated.dialect.name == "sqlite":
         pytest.skip("SQLite serialises writers; the row lock is for the server databases")
-    first = migrated.connect()
-    second = migrated.connect()
+    first, second = migrated.connect(), migrated.connect()
+    started, locked = threading.Event(), threading.Event()
+
+    def take() -> None:
+        with second.begin():
+            started.set()
+            routes.lock_address(second, "race@example.com")
+            locked.set()
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    first_tx = first.begin()
     try:
-        first_tx = first.begin()
         routes.lock_address(first, "race@example.com")
-        with ThreadPoolExecutor(max_workers=1) as pool:
-
-            def take() -> None:
-                with second.begin():
-                    routes.lock_address(second, "race@example.com")
-
-            waiting = pool.submit(take)
-            time.sleep(0.5)
-            assert not waiting.done()  # held by the first transaction
-            first_tx.commit()
-            waiting.result(timeout=10)
+        waiting = pool.submit(take)
+        assert started.wait(timeout=10)  # the worker runs and is about to take the lock
+        assert not locked.wait(timeout=0.5)  # held by the first transaction
+        first_tx.commit()
+        assert locked.wait(timeout=10)  # released: the second goes through
+        waiting.result(timeout=10)
     finally:
+        if first_tx.is_active:
+            first_tx.rollback()
         first.close()
+        pool.shutdown(wait=True, cancel_futures=True)
         second.close()
