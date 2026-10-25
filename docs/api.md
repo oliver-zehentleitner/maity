@@ -5160,13 +5160,15 @@ Scope `project:read`; `days` 1–90, default 30.
     each card closed `done` in the window, claim (its last
     `task_claimed`) to `closed_at`, and the last entry into `review` to
     `closed_at`, where the entry into `review` is the last retained
-    `task_reported` whose resulting status is `review` (§6.6) or
-    history entry whose `after` is `review`, and it must precede
-    `closed_at` — a `task_reported` of a refresh on a card already
-    `done`, or any report that did not put the card into `review`, is
-    no entry; a card without such a retained entry gives no sample;
-    `null` with fewer than three samples, for a member and for the
-    totals alike.
+    `task_reported` with `status_after: review` (§8.2 — the two status
+    fields are carried by every report event from now on; an older row
+    without them proves no transition and gives no sample) or history
+    entry whose `after` is `review`, and it must precede `closed_at` —
+    a refresh (`status_before` equal to `status_after`), a self-done
+    close, or any report that did not put the card into `review`, is
+    no entry; nothing is reconstructed from the card's current state; a
+    card without such a retained entry gives no sample; `null` with
+    fewer than three samples, for a member and for the totals alike.
   - `cards_done_per_day` has one row per day, zero rows included. The
     coverage rule of §16.6 applies to `reviews_given` and the review
     median: `null` for days before the hub kept history,
@@ -5485,7 +5487,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; community entries: `all` (§19) | ids only: `{id, store, member_id, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
-| `task_reported` | holder, creator, `role:reviewer`, `role:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report |
+| `task_reported` | holder, creator, `role:reviewer`, `role:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report, and `status_before`, `status_after` (§6.6): the card's status before and after the report — equal for a refresh, `in_progress`/`blocked` → `review` for a report that opens review, `in_progress` → `done` for a self-done close. Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
