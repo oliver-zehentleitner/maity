@@ -153,7 +153,7 @@ window.Maity = window.Maity || {};
   M.views.instanceAdmin = async (ctx, root) => {
     append(root, h("h2", null, "Instance administration"));
     if (!ctx.me.instance_admin) { append(root, h("p", null, "Only the instance admin can open this area.")); return; }
-    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.views.adminUsers(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/health", "Instance information", infoSection]];
+    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.views.adminUsers(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/health", "Instance information", infoSection]];
     for (const [path, label, load] of parts) {
       if (!await served("GET", path)) continue;
       const section = h("section", { class: "panel admin-section", "aria-label": label }); append(root, section);

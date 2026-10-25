@@ -1,0 +1,22 @@
+{
+  "docs/api.md#8.2": {
+    "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+    "heading": "### 8.2 Event kinds",
+    "text": "### 8.2 Event kinds\n\nEvery event has a `kind`. A chat message is `message` with `type: chat`; see [the events section](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md#8-events).\n\n- `message` — a chat, a handover or a blocker\n- `task_updated` — a card changed\n\nAsk @agent-a about tsk-0123456789ab before changing it.",
+    "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md",
+    "truncated": false
+  },
+  "docs/api.md#9.1": {
+    "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+    "heading": "### 9.1 A long section",
+    "text": "### 9.1 A long section\n\nThe first 64 KiB of it.",
+    "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md",
+    "truncated": true
+  },
+  "docs/api.md#4.1": {
+    "error": { "status": 404, "code": "not_found", "message": "two headings with this number", "fields": { "contract.section": "ambiguous_in_file" } }
+  },
+  "docs/runner.md#1": {
+    "error": { "status": 409, "code": "probe_not_configured", "message": "no forge token for the repository" }
+  }
+}

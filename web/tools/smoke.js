@@ -1541,6 +1541,60 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
 
+  // The contract's section on a contract card (js/contract-panel.js, docs/api.md §6.8): folded until opened,
+  // the repository's text untrusted, the hub's code when it cannot resolve it, never an older text.
+  const ctGets = [], ctPatches = [];
+  const ctGet = win.Maity.api.get, ctPatch = win.Maity.api.patch;
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  win.Maity.api.patch = (p, b) => { if (b && b.contract) ctPatches.push([p, b]); return ctPatch(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const ctCard = () => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0009");
+  const ctBox = () => ctCard().querySelector("details.contract-section");
+  const ctOpen = async () => { ctBox().open = true; ctBox().dispatch("toggle"); for (let k = 0; k < 4; k++) await tick(); };
+  const ctBody = () => ctBox().querySelector(".contract-body");
+  const ctSave = async (path, section) => {
+    byId("contract-path-tsk-0009").value = path; byId("contract-section-tsk-0009").value = section;
+    ctBox().querySelector("form.contract-place").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  };
+  expect(ctBox() && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 8.2" && !ctGets.length,
+    "contract: a contract card names its file and section, folded, nothing read yet");
+  await ctOpen();
+  const ctLinks = ctBody().querySelectorAll("a");
+  expect(ctGets.length === 1 && ctGets[0] === "/projects/maity/tasks/tsk-0009/contract"
+    && text(ctBody().querySelector(".contract-meta")).startsWith("docs/api.md at 3f9c2a1 · read ")
+    && ctLinks.some((a) => text(a) === "the file on the forge" && a.getAttribute("href").startsWith("https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e"))
+    && text(ctBody().querySelector(".contract-text")).includes("Every event has a kind.") && ctBody().querySelector(".contract-text code"),
+    "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
+  expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
+    && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(ctGets.length === 2, "contract: Refresh reads again");
+  win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
+  btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+    "contract: a failed read shows the place and the hub's code, never the older text");
+  win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
+  const ctBeforeSave = ctGets.length;
+  await ctSave("docs/api.md", "4.1");
+  expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
+    && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
+  expect(ctBox().open && ctGets.length === ctBeforeSave + 1, "contract: after a save the panel stays open and reads the new section once");
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+    "contract: ambiguous_in_file said with its code");
+  await ctSave("docs/api.md", "9.99"); await ctOpen();
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  await ctSave("docs/runner.md", "1"); await ctOpen();
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+    "contract: probe_not_configured said with its code");
+  await ctSave("docs/api.md", "9.1"); await ctOpen();
+  expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
+  const ctBefore = ctGets.length;
+  await ctSave("docs/api.md", ""); await ctOpen();
+  expect(ctPatches[ctPatches.length - 1][1].contract.section === null && ctGets.length === ctBefore
+    && text(ctBody()) === "The card names no section yet.", "contract: no section, nothing read, said so");
+  await ctSave("/etc/passwd", "1");
+  expect(text(ctBox().querySelector(".send-status")).startsWith("Not saved: contract.path: not_a_path"), "contract: the hub's refusal of a path is said");
+  win.Maity.api.get = ctGet; win.Maity.api.patch = ctPatch;
   // Where the agents run (js/placements.js, docs/api.md §15.5–§15.7): one row per placement in Agents,
   // with Stop, Start and Restart for whoever may; a refusal as the hub words it; placement events read again.
   const plPosts = [], plPatches = [];
@@ -2578,6 +2632,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await tick(); await tick();
   expect(byId("login-handle"), "sign out shows the login");
+  // The instance's landing page (js/landing.js, docs/api.md §16.7): at the root, for a visitor without a session.
+  const lpGet = win.Maity.api.get;
+  const lpPage = { enabled: true, title: "Bring your own coding agent.", updated_at: "2026-10-25T10:30:00Z",
+    markdown: "## A team\n\nRead the [contract](https://example.org/api) or [register](/#/register); not [this](javascript:alert(1)) nor <b>bold</b>.\n\n```\n<script>x</script>\n```",
+    cta: { label: "Get started", href: "/#/register" } };
+  let lpAnswer = () => Promise.resolve(lpPage);
+  // Signed out, the machine form is read afresh: the hub serves it without a session.
+  win.Maity.api.forgetRoutes();
+  const lpReads = [];
+  win.Maity.api.get = (p) => { if (p === "/landing") { lpReads.push(p); return lpAnswer(); } return lpGet(p); };
+  await go(""); await tick(); await tick();
+  const lp = main.querySelector("article.landing");
+  const lpLinks = lp ? lp.querySelectorAll("a") : [];
+  expect(lp && text(lp.querySelector(".landing-title")) === "Bring your own coding agent." && document.title === "Bring your own coding agent."
+    && lp.querySelectorAll(".landing-lockup img").length === 2 && text(lp.querySelector(".landing-body")).includes("A team"),
+    "landing: at the root without a session, the lockup, the title (also the tab's) and the operator's text");
+  expect(lpLinks.some((a) => text(a) === "contract" && a.getAttribute("href") === "https://example.org/api" && a.getAttribute("target") === "_blank")
+    && lpLinks.some((a) => text(a) === "register" && a.getAttribute("href") === "#/register" && !a.getAttribute("target"))
+    && !lpLinks.some((a) => text(a) === "this") && text(lp).includes("<b>bold</b>") && !lp.querySelector("b") && lp.querySelector("pre code").textContent === "<script>x</script>",
+    "landing: https links open apart, dashboard routes stay in the page, anything else and HTML stay text");
+  const lpCta = lpLinks.find((a) => a.classList.contains("landing-cta"));
+  const lpSign = lpLinks.find((a) => text(a) === "Sign in");
+  expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
+    "landing: the button and a sign-in link");
+  await go("#/login"); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
+  lpAnswer = () => Promise.resolve({ enabled: false });
+  await go(""); await tick(); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing"), "landing: disabled, the login page");
+  lpAnswer = () => Promise.reject(new win.Maity.api.ApiError("down", 503, "/landing", "unavailable"));
+  await go("#/all"); await go(""); await tick(); await tick();
+  expect(byId("login-handle") && !main.querySelector("article.landing") && !main.querySelector(".error"), "landing: a failed call, the login page and no error");
+  const lpBefore = lpReads.length;
+  await go("#/p/maity/inbox"); await tick();
+  expect(lpReads.length === lpBefore && byId("login-handle"), "landing: only the root asks for it");
+  // A hub whose machine form does not list it is not asked.
+  lpAnswer = () => Promise.resolve(lpPage);
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : p === "/landing" ? (lpReads.push(p), lpAnswer()) : lpGet(p));
+  win.Maity.api.forgetRoutes();
+  const lpBefore2 = lpReads.length;
+  await go("#/all"); await go(""); await tick(); await tick();
+  expect(lpReads.length === lpBefore2 && byId("login-handle"), "landing: a hub without it is not asked; the login page");
+  win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
+  await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(byId("login-handle") && text(main).includes("wrong"), "password: the old password no longer signs in");
@@ -4491,6 +4589,46 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
     "statistics: while it counts, users, mail and the instance are there");
   win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
+  // The landing page's editor in the admin area (js/landing.js, §16.7): a preview by the same renderer, the hub's refusals at their field.
+  const leGet = win.Maity.api.get, lePatch = win.Maity.api.patch;
+  const lePatches = [];
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
+  win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  const leBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Landing page");
+  const lePreview = () => leBox().querySelector(".landing-preview");
+  const leSave = async () => { leBox().querySelector("form.landing-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  expect(leBox() && !byId("landing-enabled").checked && byId("landing-title").value === "Bring your own coding agent."
+    && byId("landing-markdown").value.startsWith("## A team of agents") && byId("landing-cta-href").value === "/#/register"
+    && text(leBox().querySelector(".landing-changed")).endsWith("by you.") && text(lePreview().querySelector(".landing-title")) === "Bring your own coding agent.",
+    "landing editor: the settings read, who changed them last, a preview by the visitor's renderer");
+  byId("landing-title").value = "Hello"; byId("landing-title").dispatch("input");
+  expect(text(lePreview().querySelector(".landing-title")) === "Hello", "landing editor: the preview follows the typing");
+  expect(!lePreview().querySelector("a") && lePreview().querySelectorAll(".inert-link").length >= 2,
+    "landing editor: the preview's links are text, so a click cannot leave unsaved work");
+  const leMd = byId("landing-markdown").value;
+  byId("landing-enabled").checked = true; byId("landing-markdown").value = "";
+  await leSave();
+  expect(!lePatches.length && text(byId("landing-markdown-error")) === "required while the page is on", "landing editor: on without text is refused before sending");
+  byId("landing-markdown").value = "Hello\n\nA <b>bad</b> line"; byId("landing-cta-href").value = "/#/register";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-markdown-error")).startsWith("Line 3 breaks the rules: “A <b>bad</b> line”."),
+    "landing editor: the hub's refused line is named and quoted at the text");
+  byId("landing-markdown").value = leMd; byId("landing-cta-href").value = "ftp://example.org";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "The link: not allowed here", "landing editor: a button link that is neither a route nor https is refused");
+  byId("landing-cta-href").value = "/#/register"; byId("landing-cta-label").value = "";
+  await leSave();
+  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "a button needs a label as well as a link", "landing editor: a button without a label is said so");
+  byId("landing-cta-label").value = "Get started";
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("too large", 413, p, "payload_too_large")) : lePatch(p, b));
+  await leSave();
+  expect(text(byId("landing-markdown-error")) === "larger than the hub accepts in one save; shorten the text", "landing editor: the hub's body cap is said at the text");
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
+  await leSave();
+  expect(lePatches.length === 2 && JSON.stringify(lePatches[1]) === JSON.stringify({ enabled: true, title: "Hello", markdown: leMd, cta: { label: "Get started", href: "/#/register" } })
+    && text(leBox()).includes("Saved. Visitors see it within a minute."), "landing editor: saved as one PATCH of all fields");
+  win.Maity.api.get = leGet; win.Maity.api.patch = lePatch; win.Maity.api.forgetRoutes();
   await go("#/all");
 
   // Unified instance administration: source-aware mail editing and isolated capabilities.

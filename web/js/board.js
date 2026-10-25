@@ -428,6 +428,8 @@ window.Maity = window.Maity || {};
           (c.contract.watchers || []).length
             ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
+      // Its section from the repository, where the hub knows path and section (§6.8).
+      c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
